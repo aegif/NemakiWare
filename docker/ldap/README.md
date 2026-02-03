@@ -164,6 +164,64 @@ docker compose -f docker-compose-ldap-keycloak-test.yml down -v
 docker compose -f docker-compose-ldap-keycloak-test.yml up -d --build
 ```
 
+## OpenLDAP上のユーザー・グループ操作
+
+### ユーザー追加
+
+```bash
+cat > /tmp/new-user.ldif << 'EOF'
+dn: uid=newuser,ou=users,dc=nemakiware,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: newuser
+cn: New User
+sn: User
+givenName: New
+mail: newuser@nemakiware.example.com
+userPassword: password123
+EOF
+
+docker exec -i openldap ldapadd -x -H ldap://localhost:389 \
+  -D "cn=admin,dc=nemakiware,dc=example,dc=com" -w adminpassword < /tmp/new-user.ldif
+```
+
+### グループ追加
+
+```bash
+cat > /tmp/new-group.ldif << 'EOF'
+dn: cn=new-team,ou=groups,dc=nemakiware,dc=example,dc=com
+objectClass: groupOfNames
+cn: new-team
+member: uid=newuser,ou=users,dc=nemakiware,dc=example,dc=com
+EOF
+
+docker exec -i openldap ldapadd -x -H ldap://localhost:389 \
+  -D "cn=admin,dc=nemakiware,dc=example,dc=com" -w adminpassword < /tmp/new-group.ldif
+```
+
+### 既存グループへのメンバー追加
+
+```bash
+cat > /tmp/add-member.ldif << 'EOF'
+dn: cn=engineering,ou=groups,dc=nemakiware,dc=example,dc=com
+changetype: modify
+add: member
+member: uid=newuser,ou=users,dc=nemakiware,dc=example,dc=com
+EOF
+
+docker exec -i openldap ldapmodify -x -H ldap://localhost:389 \
+  -D "cn=admin,dc=nemakiware,dc=example,dc=com" -w adminpassword < /tmp/add-member.ldif
+```
+
+### phpLDAPadmin（Web GUI）
+
+`docker-compose-ldap-keycloak-test.yml` にphpLDAPadminが含まれている場合:
+
+- URL: `https://localhost:8443`
+- Login DN: `cn=admin,dc=nemakiware,dc=example,dc=com`
+- Password: `adminpassword`
+
 ## Related Files
 
 | File | Description |

@@ -3,7 +3,7 @@ package jp.aegif.nemaki.rag.config;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.impl.Http2SolrClient;
+import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -65,7 +65,7 @@ public class SolrClientProvider {
             synchronized (lock) {
                 if (solrClient == null) {
                     solrClient = createSolrClient();
-                    log.info("Created shared Http2SolrClient for RAG operations");
+                    log.info("Created shared HttpSolrClient for RAG operations");
                 }
             }
         }
@@ -73,15 +73,16 @@ public class SolrClientProvider {
     }
 
     /**
-     * Create a new Http2SolrClient with connection pooling.
+     * Create a new HttpSolrClient (HTTP/1.1) for reliable Solr communication.
+     * Note: Http2SolrClient has known issues with UpdateRequest and Block Join documents,
+     * so we use the more stable HTTP/1.1 client.
      */
     private SolrClient createSolrClient() {
         String url = String.format("%s://%s:%d/solr", solrProtocol, solrHost, solrPort);
 
-        return new Http2SolrClient.Builder(url)
-                .withConnectionTimeout(CONNECTION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .withRequestTimeout(SOCKET_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .withIdleTimeout(IDLE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        return new HttpSolrClient.Builder(url)
+                .withConnectionTimeout((int) CONNECTION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .withSocketTimeout((int) SOCKET_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .build();
     }
 

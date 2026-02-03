@@ -266,7 +266,9 @@ import {
   InfoCircleOutlined,
   GoogleOutlined,
   WindowsOutlined,
-  CloudUploadOutlined
+  CloudUploadOutlined,
+  CloudDownloadOutlined,
+  LinkOutlined
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -281,7 +283,7 @@ import { TypeMigrationModal } from '../TypeMigrationModal/TypeMigrationModal';
 import { canPreview } from '../../utils/previewUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchCloudAuthConfig, CloudAuthConfig } from '../../services/cloud-auth';
-import { pushToCloud, getGoogleDriveAccessToken, getOneDriveAccessToken } from '../../services/cloud-drive';
+import { pushToCloud, pullFromCloud, getCloudUrl, getGoogleDriveAccessToken, getOneDriveAccessToken } from '../../services/cloud-drive';
 import { getSafeArrayValue, getSafeStringValue, getSafeBooleanValue } from '../../utils/cmisPropertyUtils';
 import { useSearchParams } from 'react-router-dom';
 
@@ -309,15 +311,20 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [relationshipTypes, setRelationshipTypes] = useState<TypeDefinition[]>([]);
   const [typeMigrationModalVisible, setTypeMigrationModalVisible] = useState(false);
   const [relationshipDetailModalVisible, setRelationshipDetailModalVisible] = useState(false);
+  const [versionDetailModalVisible, setVersionDetailModalVisible] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<CMISObject | null>(null);
   const [selectedRelationship, setSelectedRelationship] = useState<Relationship | null>(null);
   const [relationshipEditMode, setRelationshipEditMode] = useState(false);
   const [cloudAuthConfig, setCloudAuthConfig] = useState<CloudAuthConfig | null>(null);
   const [cloudPushLoading, setCloudPushLoading] = useState(false);
+  const [cloudPullLoading, setCloudPullLoading] = useState(false);
+  const [cloudMetadata, setCloudMetadata] = useState<{ provider: string; cloudFileId: string; cloudFileUrl: string } | null>(null);
   const [relationshipTypeDefinition, setRelationshipTypeDefinition] = useState<TypeDefinition | null>(null);
   // RAG Similar Documents state
   const [ragEnabled, setRagEnabled] = useState(false);
   const [similarDocuments, setSimilarDocuments] = useState<RAGSearchResult[]>([]);
   const [similarDocsLoading, setSimilarDocsLoading] = useState(false);
+  const [previewVersion, setPreviewVersion] = useState(0);
   const [form] = Form.useForm();
   const [relationshipForm] = Form.useForm();
   const [relationshipEditForm] = Form.useForm();
@@ -341,6 +348,19 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   useEffect(() => {
     fetchCloudAuthConfig().then(setCloudAuthConfig).catch(() => {});
   }, []);
+
+  // Load existing cloud drive metadata for the object
+  useEffect(() => {
+    if (objectId) {
+      getCloudUrl(repositoryId, objectId).then(result => {
+        if (result) {
+          setCloudMetadata({ provider: result.provider, cloudFileId: result.cloudFileId, cloudFileUrl: result.cloudFileUrl });
+        } else {
+          setCloudMetadata(null);
+        }
+      }).catch(() => setCloudMetadata(null));
+    }
+  }, [objectId, repositoryId]);
 
   useEffect(() => {
     if (objectId) {
@@ -561,7 +581,10 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       setCloudPushLoading(true);
       let accessToken: string;
       if (provider === 'google') {
-        accessToken = await getGoogleDriveAccessToken(cloudAuthConfig.googleClientId!);
+        // Pass logged-in username as hint to skip Google account chooser
+        const authData = localStorage.getItem('nemakiware_auth');
+        const loginHint = authData ? JSON.parse(authData).username : undefined;
+        accessToken = await getGoogleDriveAccessToken(cloudAuthConfig.googleClientId!, loginHint);
       } else {
         accessToken = await getOneDriveAccessToken(
           cloudAuthConfig.microsoftClientId!,
@@ -569,16 +592,67 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         );
       }
       const result = await pushToCloud(repositoryId, object.id, provider, accessToken);
+      console.log('[CloudDrive] push result:', JSON.stringify(result));
+      // Save cloud metadata state for subsequent pull/update operations
+      setCloudMetadata({ provider, cloudFileId: result.cloudFileId, cloudFileUrl: result.cloudFileUrl });
       message.success(t('documentViewer.messages.cloudPushSuccess'));
       // Open cloud file in new tab
       if (result.cloudFileUrl) {
+        console.log('[CloudDrive] Opening URL:', result.cloudFileUrl);
         window.open(result.cloudFileUrl, '_blank');
+      } else {
+        console.warn('[CloudDrive] No cloudFileUrl in result');
       }
     } catch (error) {
       console.error('Cloud push failed:', error);
       message.error(t('documentViewer.messages.cloudPushError'));
     } finally {
       setCloudPushLoading(false);
+    }
+  };
+
+  const handleCloudPull = async () => {
+    console.log('[CloudDrive] handleCloudPull called:', { object: !!object, cloudAuthConfig: !!cloudAuthConfig, cloudMetadata });
+    if (!object || !cloudAuthConfig || !cloudMetadata) return;
+    try {
+      setCloudPullLoading(true);
+      const provider = cloudMetadata.provider as 'google' | 'microsoft';
+      let accessToken: string;
+      if (provider === 'google') {
+        const authData = localStorage.getItem('nemakiware_auth');
+        const loginHint = authData ? JSON.parse(authData).username : undefined;
+        accessToken = await getGoogleDriveAccessToken(cloudAuthConfig.googleClientId!, loginHint);
+      } else {
+        accessToken = await getOneDriveAccessToken(
+          cloudAuthConfig.microsoftClientId!,
+          cloudAuthConfig.microsoftTenantId!
+        );
+      }
+      // Use PWC ID if document is checked out (same pattern as handleCheckIn)
+      // Pull should update the PWC content, not the original document
+      const isPWC = getSafeBooleanValue(object.properties?.['cmis:isPrivateWorkingCopy']);
+      const checkedOutId = getSafeStringValue(object.properties?.['cmis:versionSeriesCheckedOutId']);
+      const pullObjectId = isPWC ? object.id : (checkedOutId || object.id);
+      await pullFromCloud(repositoryId, pullObjectId, provider, accessToken, cloudMetadata.cloudFileId);
+      message.success(t('documentViewer.messages.cloudPullSuccess', 'クラウドからコンテンツを取得しました'));
+      // Regenerate rendition (PDF preview) from the updated content
+      try {
+        await cmisService.generateRenditions(repositoryId, pullObjectId, true);
+        // Wait for rendition generation to complete
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      } catch (e) {
+        console.warn('[CloudDrive] Rendition regeneration failed (non-critical):', e);
+      }
+      // Reload the object, version history, and preview to reflect updated content
+      await loadObject();
+      loadVersionHistory();
+      // Force preview re-mount by incrementing version counter
+      setPreviewVersion(v => v + 1);
+    } catch (error) {
+      console.error('Cloud pull failed:', error);
+      message.error(t('documentViewer.messages.cloudPullError', 'クラウドからの取得に失敗しました'));
+    } finally {
+      setCloudPullLoading(false);
     }
   };
 
@@ -596,10 +670,17 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     try {
       setLoading(true);
       const file = values.file?.file;
-      await cmisService.checkIn(repositoryId, effectiveObjectId, file, values);
+      const newVersion = await cmisService.checkIn(repositoryId, effectiveObjectId, file, values);
       message.success(t('documentViewer.messages.checkinSuccess'));
       setCheckoutModalVisible(false);
       form.resetFields();
+      // Navigate to the new version's object ID (checkin creates a new CMIS object)
+      if (newVersion && newVersion.id && newVersion.id !== objectId) {
+        const folderId = searchParams.get('folderId');
+        const folderParam = folderId ? `&folderId=${folderId}` : '';
+        navigate(`/documents/${newVersion.id}?repositoryId=${repositoryId}${folderParam}`, { replace: true });
+        return;
+      }
       await loadObject();
       await loadVersionHistory();
     } catch (error) {
@@ -810,27 +891,39 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       title: t('common.actions'),
       key: 'actions',
       render: (_: any, record: CMISObject) => (
-        <Button
-          size="small"
-          onClick={async () => {
-            try {
-              const response = await cmisService.getContentStream(repositoryId, record.id);
-              const blob = new Blob([response]);
-              const url = window.URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = record.name || 'download';
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              window.URL.revokeObjectURL(url);
-            } catch (error) {
-              message.error(t('documentViewer.messages.downloadError'));
-            }
-          }}
-        >
-          {t('documentViewer.download')}
-        </Button>
+        <Space size="small">
+          <Button
+            size="small"
+            icon={<InfoCircleOutlined />}
+            onClick={() => {
+              setSelectedVersion(record);
+              setVersionDetailModalVisible(true);
+            }}
+          >
+            {t('documentViewer.versionDetail.detailButton')}
+          </Button>
+          <Button
+            size="small"
+            onClick={async () => {
+              try {
+                const response = await cmisService.getContentStream(repositoryId, record.id);
+                const blob = new Blob([response]);
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = record.name || 'download';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+              } catch (error) {
+                message.error(t('documentViewer.messages.downloadError'));
+              }
+            }}
+          >
+            {t('documentViewer.download')}
+          </Button>
+        </Space>
       ),
     },
   ];
@@ -1016,8 +1109,10 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       label: t('documentViewer.preview'),
       children: (
         <PreviewComponent
+          key={`preview-${object.id}-${previewVersion}`}
           repositoryId={repositoryId}
           object={object}
+          pwcObjectId={isCheckedOut && !isPrivateWorkingCopy ? getSafeStringValue(object.properties?.['cmis:versionSeriesCheckedOutId']) : undefined}
         />
       ),
     }] : []),
@@ -1212,7 +1307,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                       loading={cloudPushLoading}
                       onClick={() => handleCloudPush('google')}
                     >
-                      {t('documentViewer.editInGoogleDrive')}
+                      {cloudMetadata?.provider === 'google'
+                        ? t('documentViewer.updateInGoogleDrive', 'Google Driveを更新')
+                        : t('documentViewer.editInGoogleDrive')}
                     </Button>
                   )}
                   {cloudAuthConfig?.microsoftEnabled && (
@@ -1223,6 +1320,23 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                     >
                       {t('documentViewer.editInOneDrive')}
                     </Button>
+                  )}
+                  {cloudMetadata && (
+                    <>
+                      <Button
+                        icon={<CloudDownloadOutlined />}
+                        loading={cloudPullLoading}
+                        onClick={handleCloudPull}
+                      >
+                        {t('documentViewer.pullFromCloud', 'クラウドから取得')}
+                      </Button>
+                      <Button
+                        icon={<LinkOutlined />}
+                        onClick={() => window.open(cloudMetadata.cloudFileUrl, '_blank')}
+                      >
+                        {t('documentViewer.openInCloud', 'クラウドで開く')}
+                      </Button>
+                    </>
                   )}
                 </Space>
               )}
@@ -1522,6 +1636,77 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Version Detail Modal */}
+      <Modal
+        title={t('documentViewer.versionDetail.title')}
+        open={versionDetailModalVisible}
+        onCancel={() => {
+          setVersionDetailModalVisible(false);
+          setSelectedVersion(null);
+        }}
+        footer={[
+          <Button
+            key="close"
+            onClick={() => {
+              setVersionDetailModalVisible(false);
+              setSelectedVersion(null);
+            }}
+          >
+            {t('common.close')}
+          </Button>
+        ]}
+        width={700}
+      >
+        {selectedVersion && (
+          <Descriptions bordered column={1} size="small">
+            <Descriptions.Item label={t('documentViewer.version')}>
+              {selectedVersion.versionLabel || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.versionDetail.name')}>
+              {selectedVersion.name || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.versionDetail.description')}>
+              {selectedVersion.properties?.['cmis:description'] || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.createdBy')}>
+              {selectedVersion.createdBy || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.createdAt')}>
+              {selectedVersion.creationDate ? new Date(selectedVersion.creationDate).toLocaleString('ja-JP') : '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.versionDetail.lastModifiedBy')}>
+              {selectedVersion.lastModifiedBy || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.versionDetail.lastModifiedDate')}>
+              {selectedVersion.lastModificationDate ? new Date(selectedVersion.lastModificationDate).toLocaleString('ja-JP') : '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.comment')}>
+              {selectedVersion.properties?.['cmis:checkinComment'] || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.versionDetail.fileSize')}>
+              {selectedVersion.contentStreamLength != null
+                ? `${(selectedVersion.contentStreamLength / 1024).toFixed(1)} KB`
+                : '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.versionDetail.mimeType')}>
+              {selectedVersion.contentStreamMimeType || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.versionDetail.objectId')}>
+              <span style={{ fontSize: '12px', fontFamily: 'monospace' }}>{selectedVersion.id || '-'}</span>
+            </Descriptions.Item>
+            {/* Custom properties (non-cmis: prefixed) */}
+            {selectedVersion.properties && Object.entries(selectedVersion.properties)
+              .filter(([key]) => !key.startsWith('cmis:'))
+              .map(([key, value]) => (
+                <Descriptions.Item key={key} label={key}>
+                  {value != null ? String(value) : '-'}
+                </Descriptions.Item>
+              ))
+            }
+          </Descriptions>
+        )}
       </Modal>
 
       {/* Relationship Detail Modal */}

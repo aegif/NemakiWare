@@ -227,10 +227,12 @@ import { OfficePreview } from './OfficePreview';
 interface PreviewComponentProps {
   repositoryId: string;
   object: CMISObject;
+  /** When checked out, pass the PWC object ID to preview the working copy content */
+  pwcObjectId?: string;
 }
 
 import { useAuth } from '../../contexts/AuthContext';
-export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId, object }) => {
+export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId, object, pwcObjectId }) => {
   const { t } = useTranslation();
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
@@ -239,22 +241,24 @@ export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId
     return <Alert message={t('preview.cannotPreview')} description={t('preview.noContent')} type="info" />;
   }
 
+  // Use PWC ID for content/renditions when document is checked out
+  const effectiveObjectId = pwcObjectId || object.id;
   const fileType = getFileType(object.contentStreamMimeType);
-  const contentUrl = cmisService.getDownloadUrl(repositoryId, object.id);
+  const contentUrl = cmisService.getDownloadUrl(repositoryId, effectiveObjectId);
 
   const renderPreview = () => {
     try {
       switch (fileType) {
         case 'image':
-          return <ImagePreview url={contentUrl} fileName={object.name} repositoryId={repositoryId} objectId={object.id} />;
+          return <ImagePreview url={contentUrl} fileName={object.name} repositoryId={repositoryId} objectId={effectiveObjectId} />;
         case 'video':
-          return <VideoPreview url={contentUrl} fileName={object.name} repositoryId={repositoryId} objectId={object.id} />;
+          return <VideoPreview url={contentUrl} fileName={object.name} repositoryId={repositoryId} objectId={effectiveObjectId} />;
         case 'pdf':
-          return <PDFPreview url={contentUrl} fileName={object.name} repositoryId={repositoryId} objectId={object.id} />;
+          return <PDFPreview url={contentUrl} fileName={object.name} repositoryId={repositoryId} objectId={effectiveObjectId} />;
         case 'text':
-          return <TextPreview url={contentUrl} fileName={object.name} repositoryId={repositoryId} objectId={object.id} />;
+          return <TextPreview url={contentUrl} fileName={object.name} repositoryId={repositoryId} objectId={effectiveObjectId} />;
         case 'office':
-          return <OfficePreview url={contentUrl} fileName={object.name} mimeType={object.contentStreamMimeType!} repositoryId={repositoryId} objectId={object.id} />;
+          return <OfficePreview url={contentUrl} fileName={object.name} mimeType={object.contentStreamMimeType!} repositoryId={repositoryId} objectId={effectiveObjectId} lastModified={object.lastModificationDate} />;
         default:
           return <Alert message={t('preview.cannotPreview')} description={t('preview.unsupportedMimeType', { mimeType: object.contentStreamMimeType })} type="warning" />;
       }

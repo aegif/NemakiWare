@@ -34,6 +34,7 @@ import java.util.concurrent.locks.Lock;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.FormParam;
 import jakarta.ws.rs.GET;
@@ -220,14 +221,16 @@ private ContentService getContentServiceSafe() {
 	@GET
 	@Path("/list")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response list(@PathParam("repositoryId") String repositoryId) {
+	public Response list(@PathParam("repositoryId") String repositoryId,
+						 @QueryParam("offset") @DefaultValue("-1") int offset,
+						 @QueryParam("limit") @DefaultValue("-1") int limit,
+						 @QueryParam("query") @DefaultValue("") String query) {
 		log.debug("UserItemResource.list() called for repository: " + repositoryId);
 		JSONObject result = new JSONObject();
 		JSONArray listJSON = new JSONArray();
 
-		// Get ContentService from Spring context
 		ContentService contentService = getContentService();
-		
+
 		if (contentService == null) {
 			log.error("ContentService not found in Spring context");
 			JSONObject errorResult = new JSONObject();
@@ -237,32 +240,58 @@ private ContentService getContentServiceSafe() {
 					.entity(errorResult.toJSONString()).build();
 		}
 
-		// Get all users list
-		List<UserItem> userList;
 		try {
-			log.debug("About to call contentService.getUserItems()");
-			userList = contentService.getUserItems(repositoryId);
-			log.debug("contentService.getUserItems() returned " + userList.size() + " users");
-			for (UserItem user : userList) {
-				log.debug("Processing user: " + user.getUserId());
-				JSONObject userJSON = convertUserToJson(user, repositoryId);
-				listJSON.add(userJSON);
+			boolean paginated = offset >= 0 && limit > 0;
+			boolean hasQuery = query != null && !query.trim().isEmpty();
+			int totalCount;
+
+			if (hasQuery) {
+				// Server-side search: fetch all, filter, then paginate
+				String queryLower = query.trim().toLowerCase();
+				List<UserItem> allUsers = contentService.getUserItems(repositoryId);
+				List<UserItem> filtered = new java.util.ArrayList<>();
+				for (UserItem user : allUsers) {
+					if (matchesQuery(user, queryLower)) {
+						filtered.add(user);
+					}
+				}
+				totalCount = filtered.size();
+
+				int start = paginated ? Math.min(offset, totalCount) : 0;
+				int end = paginated ? Math.min(start + limit, totalCount) : totalCount;
+				for (int i = start; i < end; i++) {
+					listJSON.add(convertUserToJson(filtered.get(i), repositoryId));
+				}
+			} else if (paginated) {
+				// No query, paginated: use CouchDB skip/limit
+				totalCount = contentService.getUserItemCount(repositoryId);
+				List<UserItem> userList = contentService.getUserItems(repositoryId, offset, limit);
+				for (UserItem user : userList) {
+					listJSON.add(convertUserToJson(user, repositoryId));
+				}
+			} else {
+				// No query, no pagination: return all (backward compatible)
+				List<UserItem> userList = contentService.getUserItems(repositoryId);
+				totalCount = userList.size();
+				for (UserItem user : userList) {
+					listJSON.add(convertUserToJson(user, repositoryId));
+				}
 			}
+
 			result.put("users", listJSON);
 			result.put("status", "success");
-			log.info("Returning result with " + listJSON.size() + " users");
+			result.put("totalCount", totalCount);
+			if (paginated) {
+				result.put("offset", offset);
+				result.put("limit", limit);
+			}
 			return Response.ok(result.toJSONString()).build();
 		} catch (Exception e) {
 			log.error("Exception occurred: " + e.getClass().getName() + ": " + e.getMessage(), e);
-			
-			// エラー情報をJSONで返す
 			JSONObject errorResult = new JSONObject();
 			errorResult.put("status", "error");
 			errorResult.put("message", "Failed to retrieve user list");
 			errorResult.put("error", e.getMessage());
-			errorResult.put("errorType", e.getClass().getName());
-			
-			// HTTP 500 Internal Server Error を返す
 			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
 					.entity(errorResult.toJSONString())
 					.type(MediaType.APPLICATION_JSON)
@@ -1009,6 +1038,16 @@ private ContentService getContentServiceSafe() {
 		return status;
 	}
 
+
+	/**
+	 * Checks if a user matches the given search query (case-insensitive).
+	 */
+	private boolean matchesQuery(UserItem user, String queryLower) {
+		if (user.getUserId() != null && user.getUserId().toLowerCase().contains(queryLower)) return true;
+		if (user.getName() != null && user.getName().toLowerCase().contains(queryLower)) return true;
+		return false;
+	}
+
 	@SuppressWarnings("unchecked")
 	private JSONObject convertUserToJson(UserItem user, String repositoryId) {
 		String created = new String();
@@ -1074,7 +1113,12 @@ private ContentService getContentServiceSafe() {
 
 		String userId = callContext.getUsername();
 		String password = callContext.getPassword();
-		if (!userId.equals(resoureId) && !isAdminOperaiton(repositoryId, userId, password) && !isSystemUser(repositoryId, resoureId)) {
+
+		// Check if user is admin via CallContext flag (set by AuthenticationFilter for both Basic and Bearer auth)
+		Boolean isAdminFlag = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
+		boolean isAdmin = (isAdminFlag != null && isAdminFlag);
+
+		if (!userId.equals(resoureId) && !isAdmin && !isAdminOperaiton(repositoryId, userId, password) && !isSystemUser(repositoryId, resoureId)) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTAUTHENTICATED);
 		}

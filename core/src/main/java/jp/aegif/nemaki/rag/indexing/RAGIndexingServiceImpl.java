@@ -5,8 +5,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.common.SolrInputDocument;
@@ -40,7 +40,7 @@ import jp.aegif.nemaki.rag.util.SolrQuerySanitizer;
 @Service
 public class RAGIndexingServiceImpl implements RAGIndexingService {
 
-    private static final Log log = LogFactory.getLog(RAGIndexingServiceImpl.class);
+    private static final Logger log = LoggerFactory.getLogger(RAGIndexingServiceImpl.class);
 
     private static final String DOC_TYPE_DOCUMENT = "document";
     private static final String DOC_TYPE_CHUNK = "chunk";
@@ -461,38 +461,34 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         // Add children to parent for Block Join
         parentDoc.addChildDocuments(childDocs);
 
-        // COMBINED OPERATION: Combine delete and add into a single UpdateRequest
-        // NOTE: Solr does NOT provide full ACID transaction guarantees.
-        // The UpdateRequest batches operations to reduce round trips, but:
-        // 1. If a network error occurs after delete but before add completes, data may be lost
-        // 2. There is no rollback mechanism in Solr
-        // 3. Partial failures are possible in edge cases
-        //
-        // In case of failure, the document may need to be re-indexed manually.
-        // For critical data, consider implementing a recovery mechanism or
-        // tracking failed indexing operations for retry.
-        //
-        // Sanitize documentId to prevent Solr query injection
-        String sanitizedDocId = SolrQuerySanitizer.escape(document.getId());
-        UpdateRequest updateRequest = new UpdateRequest();
-        updateRequest.deleteByQuery("_root_:" + sanitizedDocId);
-        updateRequest.add(parentDoc);
-
-        if (commitWithinMs > 0) {
-            updateRequest.setCommitWithin(commitWithinMs);
-        }
-
         try {
-            updateRequest.process(solrClient, "nemaki");
+            // Step 1: Delete existing document and its chunks
+            String sanitizedDocId = SolrQuerySanitizer.escape(document.getId());
+            UpdateRequest deleteRequest = new UpdateRequest();
+            deleteRequest.deleteByQuery("_root_:" + sanitizedDocId);
+            deleteRequest.process(solrClient, "nemaki");
+
+            // Step 2: Add parent document with child chunks (Block Join)
+            // Separated from delete because SolrJ's UpdateRequest may not correctly
+            // serialize Block Join (addChildDocuments) when combined with deleteByQuery
+            // in the same request.
+            UpdateRequest addRequest = new UpdateRequest();
+            addRequest.add(parentDoc);
+            if (commitWithinMs > 0) {
+                addRequest.setCommitWithin(commitWithinMs);
+            }
+
+            log.info("[RAG SOLR] Sending add request for document: {} with {} chunks, commitWithin={}",
+                    document.getId(), childDocs.size(), commitWithinMs);
+            var response = addRequest.process(solrClient, "nemaki");
+            log.info("[RAG SOLR] Add response status: {} for document: {}",
+                    response.getStatus(), document.getId());
+
             if (commitWithinMs <= 0) {
-                // Hard commit if no commitWithin is set (legacy behavior)
                 solrClient.commit("nemaki");
             }
         } catch (Exception e) {
-            // NOTE: Solr does not provide rollback. If the delete succeeded but add failed,
-            // the document will be missing from the index until re-indexed.
-            // Consider tracking failed operations for manual recovery.
-            log.error("Index operation failed for document: " + document.getId() +
+            log.error("[RAG SOLR] Index operation failed for document: " + document.getId() +
                       ". The document may need to be re-indexed.", e);
             throw e;
         }

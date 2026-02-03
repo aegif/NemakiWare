@@ -106,6 +106,8 @@ public class CloudDriveResource extends ResourceBase {
 
 	/**
 	 * Push a document (typically a PWC) to a cloud drive.
+	 * If the document already has cloud metadata (nemaki:cloudFileId), updates the existing cloud file.
+	 * Otherwise creates a new cloud file. After push, saves cloud metadata as secondary properties.
 	 *
 	 * POST /rest/repo/{repositoryId}/cloud-drive/push/{objectId}
 	 * Body: {"provider": "google"|"microsoft", "accessToken": "..."}
@@ -155,7 +157,35 @@ public class CloudDriveResource extends ResourceBase {
 				return result.toJSONString();
 			}
 
-			String cloudFileId = service.pushToCloud(repositoryId, objectId, provider, accessToken);
+			// Check for existing cloud file ID to update instead of creating a new file
+			String existingCloudFileId = null;
+			try {
+				ContentService cs = getContentService();
+				if (cs != null) {
+					Content content = cs.getContent(repositoryId, objectId);
+					if (content != null) {
+						existingCloudFileId = getSecondaryProperty(content, "nemaki:cloudFileId");
+						String existingProvider = getSecondaryProperty(content, "nemaki:cloudProvider");
+						// Only reuse if same provider
+						if (existingCloudFileId != null && !provider.equals(existingProvider)) {
+							existingCloudFileId = null;
+						}
+					}
+				}
+			} catch (Exception e) {
+				log.warn("Could not check existing cloud metadata: " + e.getMessage());
+			}
+
+			String cloudFileId = service.pushToCloud(repositoryId, objectId, provider, accessToken, existingCloudFileId);
+
+			// Save cloud metadata as secondary properties on the CMIS object
+			try {
+				saveCloudMetadata(repositoryId, objectId, provider, cloudFileId,
+					service.getCloudFileUrl(provider, cloudFileId));
+			} catch (Exception e) {
+				log.warn("Failed to save cloud metadata to object properties: " + e.getMessage(), e);
+				// Don't fail the push operation just because metadata save failed
+			}
 
 			result.put("cloudFileId", cloudFileId);
 			result.put("cloudFileUrl", service.getCloudFileUrl(provider, cloudFileId));
@@ -173,7 +203,7 @@ public class CloudDriveResource extends ResourceBase {
 
 	/**
 	 * Pull a document from cloud drive back into NemakiWare.
-	 * Optionally check in the document after pull.
+	 * Updates the content stream of the document (typically a PWC) with content from cloud.
 	 *
 	 * POST /rest/repo/{repositoryId}/cloud-drive/pull/{objectId}
 	 * Body: {"provider": "google"|"microsoft", "accessToken": "...", "cloudFileId": "..."}
@@ -229,28 +259,66 @@ public class CloudDriveResource extends ResourceBase {
 				return result.toJSONString();
 			}
 
-			// Pull content from cloud using the interface method (no downcast)
+			// Pull content from cloud
 			InputStream cloudContent = service.pullFromCloudByFileId(provider, cloudFileId, accessToken);
 
-			// Stream content directly without loading entire file into memory
+			// Get current document to retrieve MIME type and change token
+			ContentService cs = getContentService();
+			Content content = cs.getContent(repositoryId, objectId);
+			if (content == null) {
+				addErrMsg(errMsg, "objectId", "Object not found: " + objectId);
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+
+			// Use the authenticated user's CallContext from the REST filter
+			// This ensures lastModifiedBy reflects the actual user (not "system")
+			// and that subsequent checkIn permission checks succeed
+			org.apache.chemistry.opencmis.commons.server.CallContext callContext =
+				(org.apache.chemistry.opencmis.commons.server.CallContext) request.getAttribute("CallContext");
+			if (callContext == null) {
+				// Fallback to SystemCallContext if no user context available
+				callContext = new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId);
+				log.warn("No user CallContext found on request, falling back to SystemCallContext for pull");
+			}
+
+			// Build content stream with proper MIME type
 			org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl newStream =
 				new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl();
 			newStream.setStream(cloudContent);
-			// Length unknown for streaming; set to -1
 			newStream.setLength(java.math.BigInteger.valueOf(-1));
+			// Get MIME type from existing content stream of the document
+			try {
+				jp.aegif.nemaki.cmis.service.ObjectService objSvc =
+					SpringContext.getApplicationContext().getBean("objectService",
+						jp.aegif.nemaki.cmis.service.ObjectService.class);
+				org.apache.chemistry.opencmis.commons.data.ContentStream existingStream =
+					objSvc.getContentStream(callContext, repositoryId, objectId, null, null, null);
+				if (existingStream != null) {
+					if (existingStream.getMimeType() != null) {
+						newStream.setMimeType(existingStream.getMimeType());
+					}
+					if (existingStream.getFileName() != null) {
+						newStream.setFileName(existingStream.getFileName());
+					}
+				}
+			} catch (Exception e) {
+				log.warn("Could not determine MIME type from existing content: " + e.getMessage());
+				// Fall back to docx MIME type for cloud-exported documents
+				newStream.setMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+			}
+			String changeToken = content.getChangeToken();
 
-			// Get the object service via Spring context
 			jp.aegif.nemaki.cmis.service.ObjectService objectService =
 				SpringContext.getApplicationContext().getBean("objectService",
 					jp.aegif.nemaki.cmis.service.ObjectService.class);
 
 			org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder =
 				new org.apache.chemistry.opencmis.commons.spi.Holder<>(objectId);
+			org.apache.chemistry.opencmis.commons.spi.Holder<String> changeTokenHolder =
+				(changeToken != null) ? new org.apache.chemistry.opencmis.commons.spi.Holder<>(changeToken) : null;
 
-			// Use SystemCallContext for authorized internal operation (not null)
-			jp.aegif.nemaki.cmis.factory.SystemCallContext callContext =
-				new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId);
-			objectService.setContentStream(callContext, repositoryId, objectIdHolder, true, newStream, null, null);
+			objectService.setContentStream(callContext, repositoryId, objectIdHolder, true, newStream, changeTokenHolder, null);
 
 			result.put("objectId", objectIdHolder.getValue());
 			result.put("pulled", true);
@@ -334,15 +402,118 @@ public class CloudDriveResource extends ResourceBase {
 	 * Read a secondary type property from content.
 	 */
 	private String getSecondaryProperty(Content content, String propertyId) {
-		if (content.getSubTypeProperties() == null) {
-			return null;
+		// Search in aspects (the canonical location for secondary type properties)
+		if (content.getAspects() != null) {
+			for (jp.aegif.nemaki.model.Aspect aspect : content.getAspects()) {
+				if (aspect.getProperties() != null) {
+					for (jp.aegif.nemaki.model.Property prop : aspect.getProperties()) {
+						if (propertyId.equals(prop.getKey())) {
+							Object value = prop.getValue();
+							return value != null ? value.toString() : null;
+						}
+					}
+				}
+			}
 		}
-		for (jp.aegif.nemaki.model.Property prop : content.getSubTypeProperties()) {
-			if (propertyId.equals(prop.getKey())) {
-				Object value = prop.getValue();
-				return value != null ? value.toString() : null;
+		// Fallback: search in subTypeProperties (legacy)
+		if (content.getSubTypeProperties() != null) {
+			for (jp.aegif.nemaki.model.Property prop : content.getSubTypeProperties()) {
+				if (propertyId.equals(prop.getKey())) {
+					Object value = prop.getValue();
+					return value != null ? value.toString() : null;
+				}
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Save cloud drive metadata as secondary properties on a CMIS object.
+	 */
+	private void saveCloudMetadata(String repositoryId, String objectId,
+			String provider, String cloudFileId, String cloudFileUrl) {
+		ContentService cs = getContentService();
+		if (cs == null) return;
+
+		Content content = cs.getContent(repositoryId, objectId);
+		if (content == null) return;
+
+		// Add secondary type ID if not present
+		java.util.List<String> secondaryTypeIds = content.getSecondaryIds();
+		if (secondaryTypeIds == null) {
+			secondaryTypeIds = new java.util.ArrayList<>();
+		}
+		if (!secondaryTypeIds.contains("nemaki:cloudDriveMetadata")) {
+			secondaryTypeIds.add("nemaki:cloudDriveMetadata");
+			content.setSecondaryIds(secondaryTypeIds);
+		}
+
+		// Build Aspect with cloud metadata properties
+		// NemakiWare stores secondary type properties in the "aspects" field
+		java.util.List<jp.aegif.nemaki.model.Aspect> aspects = content.getAspects();
+		if (aspects == null) {
+			aspects = new java.util.ArrayList<>();
+		}
+
+		// Find or create the cloudDriveMetadata aspect
+		jp.aegif.nemaki.model.Aspect cloudAspect = null;
+		for (jp.aegif.nemaki.model.Aspect a : aspects) {
+			if ("nemaki:cloudDriveMetadata".equals(a.getName())) {
+				cloudAspect = a;
+				break;
+			}
+		}
+		if (cloudAspect == null) {
+			cloudAspect = new jp.aegif.nemaki.model.Aspect();
+			cloudAspect.setName("nemaki:cloudDriveMetadata");
+			cloudAspect.setProperties(new java.util.ArrayList<>());
+			aspects.add(cloudAspect);
+		}
+
+		// Update aspect properties
+		java.util.List<jp.aegif.nemaki.model.Property> aspectProps = cloudAspect.getProperties();
+		if (aspectProps == null) {
+			aspectProps = new java.util.ArrayList<>();
+			cloudAspect.setProperties(aspectProps);
+		}
+		setOrAddProperty(aspectProps, "nemaki:cloudProvider", provider);
+		setOrAddProperty(aspectProps, "nemaki:cloudFileId", cloudFileId);
+		setOrAddProperty(aspectProps, "nemaki:cloudFileUrl", cloudFileUrl);
+		setOrAddProperty(aspectProps, "nemaki:cloudLastSyncedAt",
+			new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ").format(new java.util.Date()));
+
+		content.setAspects(aspects);
+
+		jp.aegif.nemaki.cmis.factory.SystemCallContext callContext =
+			new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId);
+		cs.update(callContext, repositoryId, content);
+
+		// Invalidate CMIS and content caches so the updated secondary properties are visible
+		try {
+			jp.aegif.nemaki.util.cache.NemakiCachePool cachePool =
+				SpringContext.getApplicationContext().getBean("nemakiCachePool",
+					jp.aegif.nemaki.util.cache.NemakiCachePool.class);
+			cachePool.get(repositoryId).removeCmisAndContentCache(objectId);
+		} catch (Exception e) {
+			log.warn("Failed to invalidate cache for object " + objectId + ": " + e.getMessage());
+		}
+		log.info("Saved cloud metadata for object " + objectId + ": provider=" + provider + ", cloudFileId=" + cloudFileId);
+	}
+
+	/**
+	 * Set or add a property in the subtype properties list.
+	 */
+	private void setOrAddProperty(java.util.List<jp.aegif.nemaki.model.Property> props,
+			String key, Object value) {
+		for (jp.aegif.nemaki.model.Property prop : props) {
+			if (key.equals(prop.getKey())) {
+				prop.setValue(value);
+				return;
+			}
+		}
+		jp.aegif.nemaki.model.Property newProp = new jp.aegif.nemaki.model.Property();
+		newProp.setKey(key);
+		newProp.setValue(value);
+		props.add(newProp);
 	}
 }

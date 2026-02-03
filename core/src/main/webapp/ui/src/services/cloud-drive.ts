@@ -79,11 +79,22 @@ export async function getCloudUrl(
   return result;
 }
 
+// Session cache for Google Drive access token (avoids repeated OAuth2 popups)
+let _cachedGoogleDriveToken: { token: string; expiresAt: number } | null = null;
+
 /**
  * Get Google Drive OAuth2 access token using popup flow.
  * Uses Google Identity Services to get an access token with drive.file scope.
+ * Caches the token for the session duration (typically 1 hour).
+ * @param clientId - Google OAuth2 client ID
+ * @param loginHint - Optional email to pre-select the Google account (skips account chooser)
  */
-export function getGoogleDriveAccessToken(clientId: string): Promise<string> {
+export function getGoogleDriveAccessToken(clientId: string, loginHint?: string): Promise<string> {
+  // Return cached token if still valid (with 60s margin)
+  if (_cachedGoogleDriveToken && Date.now() < _cachedGoogleDriveToken.expiresAt - 60000) {
+    return Promise.resolve(_cachedGoogleDriveToken.token);
+  }
+
   return new Promise((resolve, reject) => {
     // Load GIS script if needed
     const loadScript = (): Promise<void> => {
@@ -113,10 +124,17 @@ export function getGoogleDriveAccessToken(clientId: string): Promise<string> {
       const tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: 'https://www.googleapis.com/auth/drive.file',
-        callback: (response: { access_token?: string; error?: string }) => {
+        hint: loginHint,
+        callback: (response: { access_token?: string; error?: string; expires_in?: number }) => {
           if (response.error) {
             reject(new Error(response.error));
           } else if (response.access_token) {
+            // Cache token (default 3600s expiry)
+            const expiresIn = (response.expires_in || 3600) * 1000;
+            _cachedGoogleDriveToken = {
+              token: response.access_token,
+              expiresAt: Date.now() + expiresIn,
+            };
             resolve(response.access_token);
           } else {
             reject(new Error('No access token received'));
@@ -130,29 +148,51 @@ export function getGoogleDriveAccessToken(clientId: string): Promise<string> {
 }
 
 /**
- * Get Microsoft OneDrive access token using MSAL popup.
+ * Get Microsoft OneDrive access token using MSAL.
+ * Reuses the singleton MSAL instance from cloud-auth.ts.
+ * Tries silent token acquisition first, falls back to popup.
  */
 export async function getOneDriveAccessToken(clientId: string, tenantId: string): Promise<string> {
   const { PublicClientApplication } = await import('@azure/msal-browser');
+  const { msalInstance: sharedInstance } = await import('./cloud-auth');
 
-  const msalConfig = {
-    auth: {
-      clientId,
-      authority: `https://login.microsoftonline.com/${tenantId}`,
-      redirectUri: `${window.location.origin}/core/ui/`,
-    },
-  };
+  let instance = sharedInstance;
+  if (!instance) {
+    // Initialize MSAL if not yet done (user hasn't logged in via Microsoft)
+    instance = new PublicClientApplication({
+      auth: {
+        clientId,
+        authority: `https://login.microsoftonline.com/${tenantId}`,
+        redirectUri: `${window.location.origin}/core/ui/auth-popup.html`,
+      },
+    });
+    await instance.initialize();
+  }
 
-  const msalInstance = new PublicClientApplication(msalConfig);
-  await msalInstance.initialize();
+  const scopes = ['Files.ReadWrite'];
 
-  const loginResponse = await msalInstance.acquireTokenPopup({
-    scopes: ['Files.ReadWrite'],
-  });
+  // Try silent acquisition first (if user already logged in via Microsoft)
+  const accounts = instance.getAllAccounts();
+  if (accounts.length > 0) {
+    try {
+      const silentResponse = await instance.acquireTokenSilent({
+        scopes,
+        account: accounts[0],
+      });
+      if (silentResponse.accessToken) {
+        return silentResponse.accessToken;
+      }
+    } catch {
+      // Silent failed, fall through to popup
+    }
+  }
 
-  if (!loginResponse.accessToken) {
+  // Fall back to popup
+  const popupResponse = await instance.acquireTokenPopup({ scopes });
+
+  if (!popupResponse.accessToken) {
     throw new Error('Microsoft login did not return an access token');
   }
 
-  return loginResponse.accessToken;
+  return popupResponse.accessToken;
 }

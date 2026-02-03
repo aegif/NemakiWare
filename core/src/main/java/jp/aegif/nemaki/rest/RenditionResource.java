@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rest;
 
+import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -143,6 +144,13 @@ public class RenditionResource extends ResourceBase {
                     renditionMap.put("kind", rendition.getKind());
                     renditionMap.put("height", rendition.getHeight());
                     renditionMap.put("width", rendition.getWidth());
+                    // Include timestamps for freshness checking by UI
+                    if (rendition.getModified() != null) {
+                        renditionMap.put("modified", rendition.getModified().getTimeInMillis());
+                    }
+                    if (rendition.getCreated() != null) {
+                        renditionMap.put("created", rendition.getCreated().getTimeInMillis());
+                    }
                     renditionList.add(renditionMap);
                 }
             }
@@ -165,7 +173,8 @@ public class RenditionResource extends ResourceBase {
     }
 
     /**
-     * Generate PDF rendition for a document
+     * Generate PDF rendition for a document.
+     * When force=true, removes any existing preview renditions before generating a fresh one.
      */
     @POST
     @Path("/generate")
@@ -199,20 +208,34 @@ public class RenditionResource extends ResourceBase {
 
             Document document = (Document) content;
 
-            // Check if rendition already exists (unless force=true)
-            if (!force) {
-                List<Rendition> existingRenditions = getContentService().getRenditions(repositoryId, objectId);
-                if (CollectionUtils.isNotEmpty(existingRenditions)) {
+            // Check existing renditions
+            List<Rendition> existingRenditions = getContentService().getRenditions(repositoryId, objectId);
+            if (!force && CollectionUtils.isNotEmpty(existingRenditions)) {
+                for (Rendition r : existingRenditions) {
+                    if ("application/pdf".equals(r.getMimetype()) ||
+                        RenditionKind.CMIS_PREVIEW.value().equals(r.getKind())) {
+                        log.info("[RenditionResource] PDF rendition already exists for objectId=" + objectId);
+                        response.put("status", "success");
+                        response.put("message", "Rendition already exists");
+                        response.put("renditionId", r.getId());
+                        return Response.ok(response).build();
+                    }
+                }
+            }
+
+            // When force=true, remove existing preview renditions before generating fresh one
+            if (force && CollectionUtils.isNotEmpty(existingRenditions)) {
+                List<String> renditionIds = document.getRenditionIds();
+                if (renditionIds != null) {
+                    List<String> toRemove = new ArrayList<>();
                     for (Rendition r : existingRenditions) {
-                        if ("application/pdf".equals(r.getMimetype()) ||
-                            RenditionKind.CMIS_PREVIEW.value().equals(r.getKind())) {
-                            log.info("[RenditionResource] PDF rendition already exists for objectId=" + objectId);
-                            response.put("status", "success");
-                            response.put("message", "Rendition already exists");
-                            response.put("renditionId", r.getId());
-                            return Response.ok(response).build();
+                        if (RenditionKind.CMIS_PREVIEW.value().equals(r.getKind())) {
+                            toRemove.add(r.getId());
+                            log.info("[RenditionResource] Removing stale preview rendition: " + r.getId());
                         }
                     }
+                    renditionIds.removeAll(toRemove);
+                    document.setRenditionIds(renditionIds);
                 }
             }
 
@@ -242,12 +265,24 @@ public class RenditionResource extends ResourceBase {
                 return Response.status(Response.Status.BAD_REQUEST).entity(response).build();
             }
 
-            // Create content stream for conversion
+            // Read attachment content into byte array to avoid consuming cached InputStream
+            byte[] contentBytes;
+            try (InputStream is = attachment.getInputStream()) {
+                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                while ((bytesRead = is.read(buffer)) != -1) {
+                    baos.write(buffer, 0, bytesRead);
+                }
+                contentBytes = baos.toByteArray();
+            }
+
+            // Create content stream for conversion from byte array
             ContentStream contentStream = new ContentStreamImpl(
                 document.getName(),
-                BigInteger.valueOf(attachment.getLength()),
+                BigInteger.valueOf(contentBytes.length),
                 mimeType,
-                attachment.getInputStream()
+                new java.io.ByteArrayInputStream(contentBytes)
             );
 
             // Convert to PDF

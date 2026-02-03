@@ -7,6 +7,7 @@ import './index.css'
 // Initialize i18n before rendering the app
 import './i18n'
 
+
 const authService = AuthService.getInstance();
 (window as any).authService = authService;
 

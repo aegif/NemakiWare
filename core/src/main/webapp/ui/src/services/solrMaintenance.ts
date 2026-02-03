@@ -42,6 +42,19 @@ export interface IndexHealthStatus {
   checkTime: number;
 }
 
+export interface DiscrepancyDocumentInfo {
+  objectId: string;
+  name: string | null;
+  objectType: string | null;
+}
+
+export interface IndexDiscrepancyResult {
+  repositoryId: string;
+  missingInSolr: DiscrepancyDocumentInfo[];
+  orphanedInSolr: DiscrepancyDocumentInfo[];
+  checkTime: number;
+}
+
 export interface SolrQueryResult {
   numFound: number;
   start: number;
@@ -185,6 +198,11 @@ export class SolrMaintenanceService {
   async checkIndexHealth(repositoryId: string): Promise<IndexHealthStatus> {
     const response = await this.httpClient.getJson(`${this.getBaseUrl(repositoryId)}/health`);
     return this.handleResponse<IndexHealthStatus>(response);
+  }
+
+  async getIndexDiscrepancies(repositoryId: string): Promise<IndexDiscrepancyResult> {
+    const response = await this.httpClient.getJson(`${this.getBaseUrl(repositoryId)}/health/details`);
+    return this.handleResponse<IndexDiscrepancyResult>(response);
   }
 
   async executeSolrQuery(

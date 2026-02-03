@@ -199,6 +199,17 @@ public class TextExtractionServiceImpl implements TextExtractionService {
         } catch (TimeoutException e) {
             log.error("[TEXT EXTRACTION] TIMEOUT after " + EXTRACTION_TIMEOUT_SECONDS + " seconds for " +
                     (fileName != null ? fileName : "document") + " (" + mimeType + ")");
+
+            // Force-close the InputStream to unblock Tika's parser thread.
+            // Tika's PDF parser ignores Thread.interrupt() during I/O operations,
+            // so closing the stream is the only reliable way to break out.
+            try {
+                finalInputStream.close();
+                log.info("[TEXT EXTRACTION] Forcibly closed InputStream to unblock Tika parser");
+            } catch (Exception closeEx) {
+                log.warn("[TEXT EXTRACTION] Error closing InputStream after timeout: " + closeEx.getMessage());
+            }
+
             // Try to return any partial text that was extracted
             String partialText = stringWriter.toString();
             if (partialText != null && !partialText.trim().isEmpty()) {
@@ -251,6 +262,12 @@ public class TextExtractionServiceImpl implements TextExtractionService {
             return null;
         } finally {
             executor.shutdownNow();
+            // Ensure stream is always closed to prevent resource leaks
+            try {
+                finalInputStream.close();
+            } catch (Exception ignored) {
+                // Stream may already be closed from timeout handling
+            }
         }
     }
 

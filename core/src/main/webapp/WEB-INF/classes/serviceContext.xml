@@ -825,6 +825,7 @@
     <!-- Cloud Directory Sync Service -->
     <bean id="cloudDirectorySyncService" class="jp.aegif.nemaki.sync.service.CloudDirectorySyncServiceImpl">
         <property name="principalService" ref="PrincipalService" />
+        <property name="contentService" ref="contentService" />
         <property name="propertyManager" ref="propertyManager" />
     </bean>
 

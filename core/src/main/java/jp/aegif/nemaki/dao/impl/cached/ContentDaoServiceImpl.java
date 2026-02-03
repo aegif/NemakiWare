@@ -758,6 +758,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<UserItem> getUserItems(String repositoryId, int skip, int limit) {
+		return nonCachedContentDaoService.getUserItems(repositoryId, skip, limit);
+	}
+
+	@Override
+	public int getUserItemCount(String repositoryId) {
+		return nonCachedContentDaoService.getUserItemCount(repositoryId);
+	}
+
+	@Override
 	public GroupItem getGroupItem(String repositoryId, String objectId) {
 		GroupItem item = null;
 		Content c = this.getContent(repositoryId, objectId);
@@ -813,6 +823,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		return nonCachedContentDaoService.getGroupItems(repositoryId);
+	}
+
+	@Override
+	public List<GroupItem> getGroupItems(String repositoryId, int skip, int limit) {
+		return nonCachedContentDaoService.getGroupItems(repositoryId, skip, limit);
+	}
+
+	@Override
+	public int getGroupItemCount(String repositoryId) {
+		return nonCachedContentDaoService.getGroupItemCount(repositoryId);
 	}
 
 	@Override

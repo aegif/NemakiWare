@@ -167,14 +167,17 @@ public class PermissionServiceImpl implements PermissionService {
 		
 		log.debug("Non-admin user " + userName + " proceeding with permission checks, userItem=" + (u != null ? "exists" : "null"));
 
-		// PWC doesn't accept any actions from a non-owner user
-		// Note: Admin users bypass this check (handled above), so they CAN manipulate PWC
+		// PWC: only the checkout owner (or admin, handled above) can perform actions
+		// The owner is granted full access without further ACL checks, since PWCs
+		// typically have empty ACL entries and rely on ownership for authorization
 		if(content.isDocument()){
 			Document document = (Document)content;
 			if(document.isPrivateWorkingCopy()){
 				VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
-				if(!userName.equals(vs.getVersionSeriesCheckedOutBy())){
-					return false;
+				if(userName.equals(vs.getVersionSeriesCheckedOutBy())){
+					return true;  // PWC owner has full access
+				} else {
+					return false; // Non-owner cannot access PWC
 				}
 			}
 		}

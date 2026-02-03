@@ -24,16 +24,22 @@ import {
   GoogleOutlined,
   WindowsOutlined,
   StopOutlined,
-  ApiOutlined
+  ApiOutlined,
+  DatabaseOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import {
   CloudSyncStatus,
+  LdapConfig,
   startDeltaSync,
   startFullReconciliation,
   getSyncStatus,
   cancelSync,
-  testConnection
+  testConnection,
+  startLdapSync,
+  getLdapSyncStatus,
+  testLdapConnection,
+  getLdapConfig
 } from '../../services/cloudDirectorySync';
 
 const { Text } = Typography;
@@ -50,6 +56,7 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
   const [syncStatus, setSyncStatus] = useState<Record<string, CloudSyncStatus>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [testingConnection, setTestingConnection] = useState<Record<string, boolean>>({});
+  const [ldapConfig, setLdapConfig] = useState<LdapConfig | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isRunning = useCallback((provider: string) => {
@@ -67,6 +74,15 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
           } catch {
             // ignore poll errors
           }
+        }
+      }
+      // LDAP polling
+      if (isRunning('ldap')) {
+        try {
+          const status = await getLdapSyncStatus(repositoryId);
+          setSyncStatus(prev => ({ ...prev, ldap: status }));
+        } catch {
+          // ignore
         }
       }
     };
@@ -87,6 +103,19 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
         } catch {
           // ignore
         }
+      }
+      // Load LDAP status and config
+      try {
+        const status = await getLdapSyncStatus(repositoryId);
+        setSyncStatus(prev => ({ ...prev, ldap: status }));
+      } catch {
+        // ignore
+      }
+      try {
+        const config = await getLdapConfig(repositoryId);
+        setLdapConfig(config);
+      } catch {
+        // ignore
       }
     };
     loadStatus();
@@ -146,6 +175,36 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
     }
   };
 
+  // LDAP handlers
+  const handleLdapSync = async (dryRun: boolean) => {
+    setLoading(prev => ({ ...prev, ldap: true }));
+    try {
+      const result = await startLdapSync(repositoryId, dryRun);
+      setSyncStatus(prev => ({ ...prev, ldap: result }));
+      message.success(dryRun ? t('cloudSync.ldapPreviewStarted') : t('cloudSync.ldapSyncStarted'));
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : t('cloudSync.syncFailed'));
+    } finally {
+      setLoading(prev => ({ ...prev, ldap: false }));
+    }
+  };
+
+  const handleLdapTestConnection = async () => {
+    setTestingConnection(prev => ({ ...prev, ldap: true }));
+    try {
+      const connected = await testLdapConnection(repositoryId);
+      if (connected) {
+        message.success(t('cloudSync.connectionSuccess'));
+      } else {
+        message.warning(t('cloudSync.connectionFailed'));
+      }
+    } catch {
+      message.error(t('cloudSync.connectionFailed'));
+    } finally {
+      setTestingConnection(prev => ({ ...prev, ldap: false }));
+    }
+  };
+
   const renderStatusTag = (status: string | undefined) => {
     switch (status) {
       case 'RUNNING':
@@ -159,6 +218,102 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
       default:
         return <Tag color="default">{t('cloudSync.statusIdle')}</Tag>;
     }
+  };
+
+  const renderSyncStatus = (status: CloudSyncStatus | undefined, showPageInfo: boolean = true) => {
+    if (!status || status.status === 'IDLE') return null;
+    const running = status.status === 'RUNNING';
+    return (
+      <Card size="small" title={t('cloudSync.syncStatus')}>
+        <Descriptions column={2} size="small">
+          <Descriptions.Item label={t('cloudSync.status')}>
+            {renderStatusTag(status.status)}
+          </Descriptions.Item>
+          <Descriptions.Item label={t('cloudSync.mode')}>
+            {status.syncMode === 'DELTA' ? t('cloudSync.modeDelta') : t('cloudSync.modeFull')}
+          </Descriptions.Item>
+          <Descriptions.Item label={t('cloudSync.startTime')}>
+            {status.startTime ? new Date(status.startTime).toLocaleString() : '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label={t('cloudSync.endTime')}>
+            {status.endTime ? new Date(status.endTime).toLocaleString() : '-'}
+          </Descriptions.Item>
+          {showPageInfo && (
+            <Descriptions.Item label={t('cloudSync.currentPage')}>
+              {status.currentPage}
+            </Descriptions.Item>
+          )}
+        </Descriptions>
+
+        {running && (
+          <Progress
+            percent={status.totalPages > 0 ? Math.round((status.currentPage / status.totalPages) * 100) : 0}
+            status="active"
+            style={{ marginTop: 8 }}
+          />
+        )}
+
+        {/* Counters */}
+        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+          <Col span={6}>
+            <Statistic title={t('cloudSync.usersCreated')} value={status.usersCreated} />
+          </Col>
+          <Col span={6}>
+            <Statistic title={t('cloudSync.usersUpdated')} value={status.usersUpdated} />
+          </Col>
+          <Col span={6}>
+            <Statistic title={t('cloudSync.usersDeleted')} value={status.usersDeleted} />
+          </Col>
+          <Col span={6}>
+            <Statistic title={t('cloudSync.usersSkipped')} value={status.usersSkipped} />
+          </Col>
+          <Col span={6}>
+            <Statistic title={t('cloudSync.groupsCreated')} value={status.groupsCreated} />
+          </Col>
+          <Col span={6}>
+            <Statistic title={t('cloudSync.groupsUpdated')} value={status.groupsUpdated} />
+          </Col>
+          <Col span={6}>
+            <Statistic title={t('cloudSync.groupsDeleted')} value={status.groupsDeleted} />
+          </Col>
+          <Col span={6}>
+            <Statistic title={t('cloudSync.groupsSkipped')} value={status.groupsSkipped} />
+          </Col>
+        </Row>
+
+        {/* Errors */}
+        {status.errors && status.errors.length > 0 && (
+          <Alert
+            type="error"
+            message={t('cloudSync.errors')}
+            description={
+              <List
+                size="small"
+                dataSource={status.errors}
+                renderItem={item => <List.Item><Text type="danger">{item}</Text></List.Item>}
+              />
+            }
+            style={{ marginTop: 16 }}
+          />
+        )}
+
+        {/* Warnings */}
+        {status.warnings && status.warnings.length > 0 && (
+          <Alert
+            type="warning"
+            message={t('cloudSync.warnings')}
+            description={
+              <List
+                size="small"
+                dataSource={status.warnings}
+                renderItem={item => <List.Item><Text type="warning">{item}</Text></List.Item>}
+              />
+            }
+            style={{ marginTop: 16 }}
+          />
+        )}
+      </Card>
+    );
   };
 
   const renderProviderPanel = (provider: string) => {
@@ -211,96 +366,82 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
           </Space>
         </Card>
 
-        {/* Status */}
-        {status && status.status !== 'IDLE' && (
-          <Card size="small" title={t('cloudSync.syncStatus')}>
+        {renderSyncStatus(status)}
+      </Space>
+    );
+  };
+
+  const renderLdapPanel = () => {
+    const status = syncStatus['ldap'];
+    const running = isRunning('ldap');
+
+    return (
+      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+        {/* LDAP Configuration */}
+        {ldapConfig && (
+          <Card size="small" title={t('cloudSync.ldapConfigTitle')}>
             <Descriptions column={2} size="small">
               <Descriptions.Item label={t('cloudSync.status')}>
-                {renderStatusTag(status.status)}
+                <Tag color={ldapConfig.enabled ? 'success' : 'default'}>
+                  {ldapConfig.enabled ? t('cloudSync.ldapEnabled') : t('cloudSync.ldapDisabled')}
+                </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label={t('cloudSync.mode')}>
-                {status.syncMode === 'DELTA' ? t('cloudSync.modeDelta') : t('cloudSync.modeFull')}
+              <Descriptions.Item label={t('cloudSync.ldapUrl')}>
+                {ldapConfig.ldapUrl || '-'}
               </Descriptions.Item>
-              <Descriptions.Item label={t('cloudSync.startTime')}>
-                {status.startTime ? new Date(status.startTime).toLocaleString() : '-'}
+              <Descriptions.Item label={t('cloudSync.ldapBaseDn')}>
+                {ldapConfig.baseDn || '-'}
               </Descriptions.Item>
-              <Descriptions.Item label={t('cloudSync.endTime')}>
-                {status.endTime ? new Date(status.endTime).toLocaleString() : '-'}
+              <Descriptions.Item label={t('cloudSync.userSearchBase')}>
+                {ldapConfig.userSearchBase || '-'}
               </Descriptions.Item>
-              <Descriptions.Item label={t('cloudSync.currentPage')}>
-                {status.currentPage}
+              <Descriptions.Item label={t('cloudSync.groupSearchBase')}>
+                {ldapConfig.groupSearchBase || '-'}
               </Descriptions.Item>
             </Descriptions>
-
-            {running && (
-              <Progress
-                percent={status.totalPages > 0 ? Math.round((status.currentPage / status.totalPages) * 100) : 0}
-                status="active"
-                style={{ marginTop: 8 }}
-              />
-            )}
-
-            {/* Counters */}
-            <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-              <Col span={6}>
-                <Statistic title={t('cloudSync.usersCreated')} value={status.usersCreated} />
-              </Col>
-              <Col span={6}>
-                <Statistic title={t('cloudSync.usersUpdated')} value={status.usersUpdated} />
-              </Col>
-              <Col span={6}>
-                <Statistic title={t('cloudSync.usersDeleted')} value={status.usersDeleted} />
-              </Col>
-              <Col span={6}>
-                <Statistic title={t('cloudSync.usersSkipped')} value={status.usersSkipped} />
-              </Col>
-              <Col span={6}>
-                <Statistic title={t('cloudSync.groupsCreated')} value={status.groupsCreated} />
-              </Col>
-              <Col span={6}>
-                <Statistic title={t('cloudSync.groupsUpdated')} value={status.groupsUpdated} />
-              </Col>
-              <Col span={6}>
-                <Statistic title={t('cloudSync.groupsDeleted')} value={status.groupsDeleted} />
-              </Col>
-              <Col span={6}>
-                <Statistic title={t('cloudSync.groupsSkipped')} value={status.groupsSkipped} />
-              </Col>
-            </Row>
-
-            {/* Errors */}
-            {status.errors && status.errors.length > 0 && (
-              <Alert
-                type="error"
-                message={t('cloudSync.errors')}
-                description={
-                  <List
-                    size="small"
-                    dataSource={status.errors}
-                    renderItem={item => <List.Item><Text type="danger">{item}</Text></List.Item>}
-                  />
-                }
-                style={{ marginTop: 16 }}
-              />
-            )}
-
-            {/* Warnings */}
-            {status.warnings && status.warnings.length > 0 && (
-              <Alert
-                type="warning"
-                message={t('cloudSync.warnings')}
-                description={
-                  <List
-                    size="small"
-                    dataSource={status.warnings}
-                    renderItem={item => <List.Item><Text type="warning">{item}</Text></List.Item>}
-                  />
-                }
-                style={{ marginTop: 16 }}
-              />
-            )}
           </Card>
         )}
+
+        {ldapConfig && !ldapConfig.enabled && (
+          <Alert type="info" message={t('cloudSync.ldapNotConfigured')} />
+        )}
+
+        {/* Actions */}
+        <Card size="small" title={t('cloudSync.actions')}>
+          <Space wrap>
+            <Popconfirm
+              title={t('cloudSync.ldapSyncConfirm')}
+              onConfirm={() => handleLdapSync(false)}
+              disabled={running}
+            >
+              <Button
+                type="primary"
+                icon={<SyncOutlined />}
+                loading={loading['ldap']}
+                disabled={running}
+              >
+                {t('cloudSync.ldapSyncButton')}
+              </Button>
+            </Popconfirm>
+            <Button
+              icon={<SyncOutlined />}
+              loading={loading['ldap']}
+              disabled={running}
+              onClick={() => handleLdapSync(true)}
+            >
+              {t('cloudSync.ldapPreviewButton')}
+            </Button>
+            <Button
+              icon={<ApiOutlined />}
+              loading={testingConnection['ldap']}
+              onClick={handleLdapTestConnection}
+            >
+              {t('cloudSync.testConnectionButton')}
+            </Button>
+          </Space>
+        </Card>
+
+        {renderSyncStatus(status, false)}
       </Space>
     );
   };
@@ -309,7 +450,7 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
     <Card
       title={
         <Space>
-          <CloudOutlined />
+          <SyncOutlined />
           {t('cloudSync.title')}
         </Space>
       }
@@ -337,6 +478,16 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
               </Space>
             ),
             children: renderProviderPanel('microsoft'),
+          },
+          {
+            key: 'ldap',
+            label: (
+              <Space>
+                <DatabaseOutlined />
+                {t('cloudSync.ldapTab')}
+              </Space>
+            ),
+            children: renderLdapPanel(),
           },
         ]}
       />

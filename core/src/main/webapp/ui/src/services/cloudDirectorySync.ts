@@ -1,9 +1,9 @@
 /**
- * Cloud Directory Sync Service
+ * Directory Sync Service
  *
- * Provides API calls for cloud directory synchronization management:
- * - Delta sync (incremental changes)
- * - Full reconciliation
+ * Provides API calls for directory synchronization management:
+ * - Cloud providers (Google Workspace, Microsoft Entra ID): Delta sync, Full reconciliation
+ * - LDAP / Active Directory: Full sync, Preview (Dry Run)
  * - Status monitoring (polling)
  * - Connection testing
  * - Sync cancellation
@@ -33,11 +33,9 @@ export interface CloudSyncStatus {
   warnings: string[];
 }
 
-interface RestApiResponse {
-  status: boolean;
-  result: CloudSyncStatus;
-  errMsg: string[];
-}
+// NemakiWare REST API returns flat JSON objects (makeResult merges status into the result object)
+// e.g. {"syncId":"...","status":"success","usersCreated":0,...}
+// The "status" field from makeResult is "success" or "failure", while sync status is in the fields directly.
 
 function getBaseUrl(repositoryId: string): string {
   return `/core/rest/repo/${repositoryId}/cloud-sync`;
@@ -56,11 +54,12 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
   });
 }
 
-function parseResponse(json: RestApiResponse): CloudSyncStatus {
-  if (!json.status && json.errMsg && json.errMsg.length > 0) {
+function parseResponse(json: Record<string, unknown>): CloudSyncStatus {
+  if (json.status === 'failure' && Array.isArray(json.errMsg) && json.errMsg.length > 0) {
     throw new Error(json.errMsg.join('; '));
   }
-  return json.result;
+  // The response is flat — CloudSyncStatus fields are at top level
+  return json as unknown as CloudSyncStatus;
 }
 
 export async function startDeltaSync(repositoryId: string, provider: string): Promise<CloudSyncStatus> {
@@ -107,5 +106,104 @@ export async function testConnection(repositoryId: string, provider: string): Pr
     `${getBaseUrl(repositoryId)}/test-connection?provider=${encodeURIComponent(provider)}`
   );
   const json = await response.json();
-  return json.result?.connected ?? false;
+  return json.connected ?? false;
+}
+
+// ---- LDAP Directory Sync API ----
+// Uses separate REST endpoints: /core/rest/repo/{repositoryId}/sync
+
+export interface LdapConfig {
+  enabled: boolean;
+  ldapUrl: string;
+  baseDn: string;
+  userSearchBase: string;
+  groupSearchBase: string;
+}
+
+function getLdapBaseUrl(repositoryId: string): string {
+  return `/core/rest/repo/${repositoryId}/sync`;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseLdapResponse(json: Record<string, any>): CloudSyncStatus {
+  if (json.status === 'failure' && Array.isArray(json.errMsg) && json.errMsg.length > 0) {
+    throw new Error(json.errMsg.join('; '));
+  }
+  // Map LDAP API field names to CloudSyncStatus
+  const syncResult = json.syncResult ?? json;
+  const errors: string[] = Array.isArray(syncResult.errors)
+    ? syncResult.errors.map((e: { message?: string } | string) =>
+        typeof e === 'string' ? e : (e.message ?? JSON.stringify(e)))
+    : [];
+  const warnings: string[] = Array.isArray(syncResult.warnings)
+    ? syncResult.warnings.map((w: { message?: string } | string) =>
+        typeof w === 'string' ? w : (w.message ?? JSON.stringify(w)))
+    : [];
+  return {
+    syncId: syncResult.syncId ?? '',
+    status: mapLdapStatus(syncResult.status),
+    syncMode: syncResult.dryRun ? 'DELTA' : 'FULL', // Use DELTA for dry-run display, FULL for real sync
+    provider: 'ldap',
+    repositoryId: syncResult.repositoryId ?? '',
+    startTime: syncResult.startTime ? new Date(syncResult.startTime).toISOString() : null,
+    endTime: syncResult.endTime ? new Date(syncResult.endTime).toISOString() : null,
+    usersCreated: syncResult.usersAdded ?? syncResult.usersCreated ?? 0,
+    usersUpdated: syncResult.usersUpdated ?? 0,
+    usersDeleted: syncResult.usersRemoved ?? syncResult.usersDeleted ?? 0,
+    usersSkipped: syncResult.usersSkipped ?? 0,
+    groupsCreated: syncResult.groupsCreated ?? 0,
+    groupsUpdated: syncResult.groupsUpdated ?? 0,
+    groupsDeleted: syncResult.groupsDeleted ?? 0,
+    groupsSkipped: syncResult.groupsSkipped ?? 0,
+    currentPage: 0,
+    totalPages: 0,
+    errors,
+    warnings,
+  };
+}
+
+function mapLdapStatus(status: string | undefined): CloudSyncStatus['status'] {
+  if (!status) return 'IDLE';
+  switch (status.toUpperCase()) {
+    case 'SUCCESS': return 'COMPLETED';
+    case 'PARTIAL': return 'COMPLETED';
+    case 'FAILED': return 'ERROR';
+    case 'RUNNING': return 'RUNNING';
+    case 'IDLE': return 'IDLE';
+    default: return 'IDLE';
+  }
+}
+
+export async function startLdapSync(repositoryId: string, dryRun: boolean = false): Promise<CloudSyncStatus> {
+  const response = await fetchWithAuth(
+    `${getLdapBaseUrl(repositoryId)}/trigger?dryRun=${dryRun}`,
+    { method: 'POST' }
+  );
+  const json = await response.json();
+  return parseLdapResponse(json);
+}
+
+export async function getLdapSyncStatus(repositoryId: string): Promise<CloudSyncStatus> {
+  const response = await fetchWithAuth(`${getLdapBaseUrl(repositoryId)}/status`);
+  const json = await response.json();
+  return parseLdapResponse(json);
+}
+
+export async function testLdapConnection(repositoryId: string): Promise<boolean> {
+  const response = await fetchWithAuth(`${getLdapBaseUrl(repositoryId)}/test-connection`);
+  const json = await response.json();
+  return json.status === 'success';
+}
+
+export async function getLdapConfig(repositoryId: string): Promise<LdapConfig> {
+  const response = await fetchWithAuth(`${getLdapBaseUrl(repositoryId)}/config`);
+  const json = await response.json();
+  const config = json.config ?? json;
+  return {
+    enabled: config.enabled ?? false,
+    ldapUrl: config.ldapUrl ?? '',
+    baseDn: config.baseDn ?? '',
+    userSearchBase: config.userSearchBase ?? '',
+    groupSearchBase: config.groupSearchBase ?? '',
+  };
 }

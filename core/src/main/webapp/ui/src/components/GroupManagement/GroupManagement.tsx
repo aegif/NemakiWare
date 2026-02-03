@@ -101,6 +101,9 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
   const [modalVisible, setModalVisible] = useState(false);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [searchText, setSearchText] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
   const [membersModalVisible, setMembersModalVisible] = useState(false);
   const [selectedGroupForMembers, setSelectedGroupForMembers] = useState<Group | null>(null);
   const [form] = Form.useForm();
@@ -108,17 +111,26 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
 
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
+  const searchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    loadGroups();
+    loadGroups(1, '');
     loadUsers();
   }, [repositoryId]);
 
-  const loadGroups = async () => {
+  const loadGroups = async (page?: number, query?: string) => {
     setLoading(true);
+    const p = page ?? currentPage;
+    const q = query ?? searchText;
     try {
-      const groupList = await cmisService.getGroups(repositoryId);
-      setGroups(groupList);
+      const result = await cmisService.getGroups(repositoryId, {
+        offset: (p - 1) * pageSize,
+        limit: pageSize,
+        query: q || undefined
+      });
+      setGroups(result.groups);
+      setTotalCount(result.totalCount);
+      setCurrentPage(p);
     } catch (error: any) {
       let errorMessage = t('groupManagement.messages.loadError');
 
@@ -143,11 +155,19 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
 
   const loadUsers = async () => {
     try {
-      const userList = await cmisService.getUsers(repositoryId);
-      setUsers(userList);
+      const result = await cmisService.getUsers(repositoryId);
+      setUsers(result.users);
     } catch (error: any) {
       // User loading failed - group management can continue without user list
     }
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchText(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      loadGroups(1, value);
+    }, 300);
   };
 
   // Precompute which groups would cause circular references when editing
@@ -294,16 +314,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
     setMembersModalVisible(true);
   };
 
-  // Filter groups based on search text
-  const filteredGroups = groups.filter(group => {
-    if (!searchText) return true;
-    const searchLower = searchText.toLowerCase();
-    return (
-      group.id.toLowerCase().includes(searchLower) ||
-      group.name?.toLowerCase().includes(searchLower) ||
-      group.members?.some(member => member.toLowerCase().includes(searchLower))
-    );
-  });
+  // Groups are now filtered server-side via query parameter
 
   // Render member tags with truncation and expandable modal
   const renderMembers = (group: Group) => {
@@ -427,18 +438,25 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
         placeholder={t('groupManagement.searchPlaceholder')}
         allowClear
         value={searchText}
-        onChange={(e) => setSearchText(e.target.value)}
-        onSearch={(value) => setSearchText(value)}
+        onChange={(e) => handleSearchChange(e.target.value)}
+        onSearch={(value) => { setSearchText(value); loadGroups(1, value); }}
         style={{ marginBottom: 16 }}
         className="ant-input-search"
       />
 
       <Table
         columns={columns}
-        dataSource={filteredGroups}
+        dataSource={groups}
         rowKey="id"
         loading={loading}
-        pagination={{ pageSize: 20 }}
+        pagination={{
+          current: currentPage,
+          pageSize: pageSize,
+          total: totalCount,
+          showSizeChanger: false,
+          showTotal: (total) => t('common.totalItems', { total }),
+          onChange: (page) => loadGroups(page),
+        }}
       />
 
       {/* Create/Edit Group Modal */}

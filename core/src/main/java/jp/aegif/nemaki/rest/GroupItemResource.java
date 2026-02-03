@@ -45,6 +45,7 @@ import org.json.simple.parser.ParseException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.FormParam;
 import jakarta.ws.rs.GET;
@@ -138,7 +139,10 @@ public class GroupItemResource extends ResourceBase{
 	@GET
 	@Path("/list")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String list(@PathParam("repositoryId") String repositoryId){
+	public String list(@PathParam("repositoryId") String repositoryId,
+					   @QueryParam("offset") @DefaultValue("-1") int offset,
+					   @QueryParam("limit") @DefaultValue("-1") int limit,
+					   @QueryParam("query") @DefaultValue("") String query) {
 		if (log.isDebugEnabled()) {
 			log.debug("GroupItemResource.list() called for repository: " + repositoryId);
 		}
@@ -147,36 +151,51 @@ public class GroupItemResource extends ResourceBase{
 		JSONArray listJSON = new JSONArray();
 		JSONArray errMsg = new JSONArray();
 
+		try {
+			boolean paginated = offset >= 0 && limit > 0;
+			boolean hasQuery = query != null && !query.trim().isEmpty();
+			int totalCount;
 
-		List<GroupItem> groupList;
-		try{
-			if (log.isDebugEnabled()) {
-				log.debug("Calling getContentService().getGroupItems()");
-			}
-			groupList = getContentService().getGroupItems(repositoryId);
-			if (log.isDebugEnabled()) {
-				log.debug("getGroupItems returned " + groupList.size() + " groups");
-			}
-			
-			for(GroupItem group : groupList){
-				if (log.isDebugEnabled()) {
-					log.debug("Processing group: ID=" + group.getGroupId() + ", Name=" + group.getName());
+			if (hasQuery) {
+				String queryLower = query.trim().toLowerCase();
+				List<GroupItem> allGroups = getContentService().getGroupItems(repositoryId);
+				List<GroupItem> filtered = new java.util.ArrayList<>();
+				for (GroupItem group : allGroups) {
+					if (matchesGroupQuery(group, queryLower)) {
+						filtered.add(group);
+					}
 				}
-				JSONObject groupJSON = convertGroupToJson(group);
-				listJSON.add(groupJSON);
+				totalCount = filtered.size();
+				int start = paginated ? Math.min(offset, totalCount) : 0;
+				int end = paginated ? Math.min(start + limit, totalCount) : totalCount;
+				for (int i = start; i < end; i++) {
+					listJSON.add(convertGroupToJson(filtered.get(i)));
+				}
+			} else if (paginated) {
+				totalCount = getContentService().getGroupItemCount(repositoryId);
+				List<GroupItem> groupList = getContentService().getGroupItems(repositoryId, offset, limit);
+				for (GroupItem group : groupList) {
+					listJSON.add(convertGroupToJson(group));
+				}
+			} else {
+				List<GroupItem> groupList = getContentService().getGroupItems(repositoryId);
+				totalCount = groupList.size();
+				for (GroupItem group : groupList) {
+					listJSON.add(convertGroupToJson(group));
+				}
 			}
+
 			result.put(ITEM_ALLGROUPS, listJSON);
-		}catch(Exception ex){
-			if (log.isDebugEnabled()) {
-				log.debug("Exception in GroupItemResource.list(): " + ex.getMessage());
+			result.put("totalCount", totalCount);
+			if (paginated) {
+				result.put("offset", offset);
+				result.put("limit", limit);
 			}
-			ex.printStackTrace();
+		} catch (Exception ex) {
+			log.error("Exception in GroupItemResource.list(): " + ex.getMessage(), ex);
 			addErrMsg(errMsg, ITEM_ALLGROUPS, ErrorCode.ERR_LIST);
 		}
 		result = makeResult(status, result, errMsg);
-		if (log.isDebugEnabled()) {
-			log.debug("GroupItemResource.list() returning result");
-		}
 		return result.toString();
 	}
 
@@ -601,6 +620,13 @@ public class GroupItemResource extends ResourceBase{
 		return status;
 	}
 
+
+
+	private boolean matchesGroupQuery(GroupItem group, String queryLower) {
+		if (group.getGroupId() != null && group.getGroupId().toLowerCase().contains(queryLower)) return true;
+		if (group.getName() != null && group.getName().toLowerCase().contains(queryLower)) return true;
+		return false;
+	}
 
 	private JSONObject convertGroupToJson(GroupItem group) {
 		String created = new String();

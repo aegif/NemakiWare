@@ -57,9 +57,11 @@ export function getCmisAuthHeaders(): Record<string, string> {
       const auth: StoredAuthData = JSON.parse(authData);
 
       if (auth.token) {
-        // Use Bearer token format (standard OAuth2/JWT format)
+        // Use NemakiWare's custom AUTH_TOKEN header for CMIS Browser Binding
+        // The CMIS layer (NemakiAuthCallContextHandler) recognizes this header
+        // but does NOT recognize Authorization: Bearer
         return {
-          'Authorization': `Bearer ${auth.token}`
+          'nemaki_auth_token': auth.token
         };
       }
     }

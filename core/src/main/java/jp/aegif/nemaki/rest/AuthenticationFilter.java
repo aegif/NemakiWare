@@ -123,8 +123,9 @@ public class AuthenticationFilter implements Filter {
 				return;
 			}
 
-			// Bypass authentication for SSO token conversion endpoints (SAML and OIDC)
-			if (requestURI != null && (requestURI.contains("/authtoken/saml/convert") || requestURI.contains("/authtoken/oidc/convert"))) {
+			// Bypass authentication for SSO token conversion endpoints (SAML, OIDC, Google, Microsoft)
+			if (requestURI != null && (requestURI.contains("/authtoken/saml/convert") || requestURI.contains("/authtoken/oidc/convert")
+					|| requestURI.contains("/authtoken/google/convert") || requestURI.contains("/authtoken/microsoft/convert"))) {
 				log.debug("Bypassing authentication for SSO token conversion endpoint: " + requestURI);
 				chain.doFilter(req, res);
 				return;
@@ -154,6 +155,14 @@ public class AuthenticationFilter implements Filter {
 			if (requestURI != null && requestURI.contains("/api/v1/cmis/auth/") &&
 				(requestURI.endsWith("/login") || requestURI.contains("/saml") || requestURI.contains("/oidc"))) {
 				log.debug("Bypassing authentication for API v1 auth endpoint: " + requestURI);
+				chain.doFilter(req, res);
+				return;
+			}
+
+			// Bypass authentication for legacy authtoken login endpoint
+			// The login endpoint validates credentials itself via request body password
+			if (requestURI != null && requestURI.contains("/authtoken/") && requestURI.endsWith("/login")) {
+				log.debug("Bypassing authentication for authtoken login endpoint: " + requestURI);
 				chain.doFilter(req, res);
 				return;
 			}

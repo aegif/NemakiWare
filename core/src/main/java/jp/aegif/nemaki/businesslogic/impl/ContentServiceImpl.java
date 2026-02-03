@@ -640,6 +640,16 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public List<UserItem> getUserItems(String repositoryId, int skip, int limit) {
+		return contentDaoService.getUserItems(repositoryId, skip, limit);
+	}
+
+	@Override
+	public int getUserItemCount(String repositoryId) {
+		return contentDaoService.getUserItemCount(repositoryId);
+	}
+
+	@Override
 	public GroupItem getGroupItem(String repositoryId, String objectId) {
 		return contentDaoService.getGroupItem(repositoryId, objectId);
 	}
@@ -657,6 +667,16 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		return contentDaoService.getGroupItems(repositoryId);
+	}
+
+	@Override
+	public List<GroupItem> getGroupItems(String repositoryId, int skip, int limit) {
+		return contentDaoService.getGroupItems(repositoryId, skip, limit);
+	}
+
+	@Override
+	public int getGroupItemCount(String repositoryId) {
+		return contentDaoService.getGroupItemCount(repositoryId);
 	}
 
 	@Override
@@ -1147,34 +1167,62 @@ public class ContentServiceImpl implements ContentService {
 		contentDaoService.updateAttachment(repositoryId, an, contentStream);
 
 		// Update rendition contentStream
-
 		if (isPreviewEnabled()) {
-			ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(),
-					contentStream.getMimeType(), an.getInputStream());
-
-			if (renditionManager.checkConvertible(previewCS.getMimeType())) {
+			if (renditionManager.checkConvertible(contentStream.getMimeType())) {
 				List<String> renditionIds = originalPwc.getRenditionIds();
+
+				// Remove existing preview renditions
 				if (CollectionUtils.isNotEmpty(renditionIds)) {
 					List<String> removedRenditionIds = new ArrayList<String>();
-
-					// Create preview
 					for (String renditionId : renditionIds) {
 						Rendition rd = contentDaoService.getRendition(repositoryId, renditionId);
 						if (RenditionKind.CMIS_PREVIEW.value().equals(rd.getKind())) {
 							removedRenditionIds.add(renditionId);
-							createPreview(callContext, repositoryId, previewCS, originalPwc);
 						}
 					}
-
-					// Update reference to preview ID
 					renditionIds.removeAll(removedRenditionIds);
 					originalPwc.setRenditionIds(renditionIds);
 				}
+
+				// CRITICAL FIX: Read fresh content from CouchDB into a byte array for preview generation.
+				// Do NOT reuse the cached AttachmentNode's InputStream, as consuming it would
+				// corrupt the cache and cause subsequent reads (e.g., copyAttachment during checkIn)
+				// to get an empty/consumed stream, resulting in content reversion.
+				try {
+					AttachmentNode freshAn = contentDaoService.getAttachment(repositoryId, originalPwc.getAttachmentNodeId());
+					if (freshAn != null && freshAn.getInputStream() != null) {
+						// Read entire stream into byte array so we don't consume the cached stream
+						byte[] contentBytes;
+						try (InputStream is = freshAn.getInputStream()) {
+							java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+							byte[] buffer = new byte[8192];
+							int bytesRead;
+							while ((bytesRead = is.read(buffer)) != -1) {
+								baos.write(buffer, 0, bytesRead);
+							}
+							contentBytes = baos.toByteArray();
+						}
+						ContentStream previewCS = new ContentStreamImpl(
+								contentStream.getFileName(),
+								BigInteger.valueOf(contentBytes.length),
+								contentStream.getMimeType(),
+								new java.io.ByteArrayInputStream(contentBytes));
+						createPreview(callContext, repositoryId, previewCS, originalPwc);
+					}
+				} catch (Exception e) {
+					log.warn("replacePwc: Failed to generate preview rendition: " + e.getMessage());
+				}
+
+				// Invalidate attachment cache after preview generation consumed the stream
+				nemakiCachePool.get(repositoryId).getAttachmentCache().remove(originalPwc.getAttachmentNodeId());
 			}
 		}
 
 		// Modify signature of pwc
 		setSignature(callContext, originalPwc);
+
+		// Persist document metadata changes (modified timestamp, rendition IDs) to CouchDB
+		contentDaoService.update(repositoryId, originalPwc);
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, originalPwc, ChangeType.UPDATED);
@@ -1431,6 +1479,12 @@ public class ContentServiceImpl implements ContentService {
 		Document checkedIn = buildCopyDocument(callContext, repositoryId, pwc, addAces, removeAces);
 		Document latest = getDocumentOfLatestVersion(repositoryId, pwc.getVersionSeriesId());
 
+		// Merge secondary types (aspects/secondaryIds) from the latest version into
+		// the new version if the PWC is missing them. This handles the case where
+		// secondary type properties (e.g. cloud drive metadata) were saved on the
+		// original document during push but not on the PWC.
+		mergeSecondaryTypesFromLatest(checkedIn, latest);
+
 		// When PWCUpdatable is true
 		if (contentStream == null) {
 			checkedIn.setAttachmentNodeId(copyAttachment(callContext, repositoryId, pwc.getAttachmentNodeId()));
@@ -1485,6 +1539,50 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		return result;
+	}
+
+	/**
+	 * Merge secondary type IDs and aspects from the latest version into the new
+	 * version being created during checkIn, if the PWC-based copy is missing them.
+	 * This preserves secondary type properties (e.g. cloud drive metadata) that
+	 * were added to the original document but not to the PWC.
+	 */
+	private void mergeSecondaryTypesFromLatest(Document checkedIn, Document latest) {
+		// Merge secondaryIds
+		List<String> pwcSecIds = checkedIn.getSecondaryIds();
+		List<String> latestSecIds = latest.getSecondaryIds();
+		if (latestSecIds != null && !latestSecIds.isEmpty()) {
+			if (pwcSecIds == null) {
+				pwcSecIds = new ArrayList<>();
+			}
+			for (String secId : latestSecIds) {
+				if (!pwcSecIds.contains(secId)) {
+					pwcSecIds.add(secId);
+				}
+			}
+			checkedIn.setSecondaryIds(pwcSecIds);
+		}
+
+		// Merge aspects
+		List<jp.aegif.nemaki.model.Aspect> pwcAspects = checkedIn.getAspects();
+		List<jp.aegif.nemaki.model.Aspect> latestAspects = latest.getAspects();
+		if (latestAspects != null && !latestAspects.isEmpty()) {
+			if (pwcAspects == null) {
+				pwcAspects = new ArrayList<>();
+			}
+			Set<String> existingAspectNames = new java.util.HashSet<>();
+			for (jp.aegif.nemaki.model.Aspect a : pwcAspects) {
+				if (a.getName() != null) {
+					existingAspectNames.add(a.getName());
+				}
+			}
+			for (jp.aegif.nemaki.model.Aspect latestAspect : latestAspects) {
+				if (latestAspect.getName() != null && !existingAspectNames.contains(latestAspect.getName())) {
+					pwcAspects.add(latestAspect);
+				}
+			}
+			checkedIn.setAspects(pwcAspects);
+		}
 	}
 
 	public Document updateWithoutCheckInOut(CallContext callContext, String repositoryId, Boolean major,
@@ -2132,7 +2230,12 @@ public class ContentServiceImpl implements ContentService {
 		copy.setMimeType(mimeType);
 		setSignature(callContext, copy);
 
-		return contentDaoService.createAttachment(repositoryId, copy, cs);
+		String newAttachmentId = contentDaoService.createAttachment(repositoryId, copy, cs);
+
+		// Invalidate cache: getAttachment cached the original with its InputStream now consumed
+		nemakiCachePool.get(repositoryId).getAttachmentCache().remove(attachmentId);
+
+		return newAttachmentId;
 	}
 
 	private List<String> copyRenditions(CallContext callContext, String repositoryId, List<String> renditionIds) {
@@ -3280,8 +3383,6 @@ public class ContentServiceImpl implements ContentService {
 		Rendition rendition = new Rendition();
 		rendition.setTitle("PDF Preview");
 		rendition.setKind(RenditionKind.CMIS_PREVIEW.value());
-		rendition.setMimetype(contentStream.getMimeType());
-		rendition.setLength(contentStream.getLength());
 
 		ContentStream converted = renditionManager.convertToPdf(contentStream, document.getName());
 
@@ -3290,6 +3391,9 @@ public class ContentServiceImpl implements ContentService {
 			log.warn("createRendition: PDF conversion failed for document: " + document.getName() + " (id=" + document.getId() + ")");
 			return null;
 		} else {
+			// Set MIME type to application/pdf (the converted output), not the source MIME type
+			rendition.setMimetype("application/pdf");
+			rendition.setLength(converted.getLength());
 			String renditionId = contentDaoService.createRendition(repositoryId, rendition, converted);
 			List<String> renditionIds = document.getRenditionIds();
 			if (renditionIds == null) {

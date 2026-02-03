@@ -328,4 +328,129 @@ public class AuditMetricsResource {
                     .build();
         }
     }
+
+    @GET
+    @Path("/entries")
+    @Operation(
+            summary = "Get recent audit log entries",
+            description = "Returns recent audit log entries from the audit.log file. " +
+                          "Reads the tail of the log file for efficient access to the most recent entries."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Audit entries retrieved successfully"
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "Authentication required",
+                    content = @Content(
+                            mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = "Admin privileges required",
+                    content = @Content(
+                            mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)
+                    )
+            )
+    })
+    public Response getEntries(@jakarta.ws.rs.QueryParam("limit") @jakarta.ws.rs.DefaultValue("100") int limit) {
+        logger.info("API v1: Getting recent audit log entries (limit=" + limit + ")");
+
+        checkAdminAuthorization();
+
+        // Clamp limit
+        if (limit < 1) limit = 1;
+        if (limit > 500) limit = 500;
+
+        try {
+            // Resolve audit.log path
+            String catalinaHome = System.getProperty("catalina.home", "/usr/local/tomcat");
+            java.io.File auditFile = new java.io.File(catalinaHome + "/logs/audit.log");
+
+            java.util.List<Map<String, Object>> entries = new java.util.ArrayList<>();
+
+            if (auditFile.exists() && auditFile.length() > 0) {
+                // Read last N lines using RandomAccessFile (reverse read)
+                java.util.List<String> lines = readTailLines(auditFile, limit);
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+                for (String line : lines) {
+                    if (line.trim().isEmpty()) continue;
+                    try {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> entry = mapper.readValue(line, Map.class);
+                        entries.add(entry);
+                    } catch (Exception e) {
+                        // Skip unparseable lines
+                        logger.fine("Skipping unparseable audit log line: " + e.getMessage());
+                    }
+                }
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "ok");
+            response.put("entries", entries);
+            response.put("count", entries.size());
+            response.put("timestamp", System.currentTimeMillis());
+
+            return Response.ok(response).build();
+
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.severe("Error reading audit log entries: " + e.getMessage());
+            throw ApiException.internalError("Failed to read audit log entries");
+        }
+    }
+
+    /**
+     * Reads the last N lines from a file using reverse reading from the end.
+     * Returns lines in reverse chronological order (newest first).
+     */
+    private java.util.List<String> readTailLines(java.io.File file, int maxLines) throws java.io.IOException {
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file, "r")) {
+            long fileLength = raf.length();
+            if (fileLength == 0) return lines;
+
+            // Collect byte positions of newlines from the end
+            java.util.List<Long> newlinePositions = new java.util.ArrayList<>();
+            newlinePositions.add(fileLength); // virtual newline at end
+            long pos = fileLength - 1;
+
+            while (pos >= 0 && newlinePositions.size() <= maxLines) {
+                raf.seek(pos);
+                if (raf.read() == '\n') {
+                    newlinePositions.add(pos);
+                }
+                pos--;
+            }
+            // If we didn't hit maxLines newlines, the file start is also a boundary
+            if (newlinePositions.size() <= maxLines) {
+                newlinePositions.add(-1L); // virtual position before first byte
+            }
+
+            // Read lines from newest to oldest using byte ranges, decode as UTF-8
+            for (int i = 0; i < newlinePositions.size() - 1 && lines.size() < maxLines; i++) {
+                long lineEnd = newlinePositions.get(i);
+                long lineStart = newlinePositions.get(i + 1) + 1;
+                int len = (int) (lineEnd - lineStart);
+                if (len <= 0) continue;
+
+                byte[] buf = new byte[len];
+                raf.seek(lineStart);
+                raf.readFully(buf);
+                String line = new String(buf, java.nio.charset.StandardCharsets.UTF_8);
+                if (!line.trim().isEmpty()) {
+                    lines.add(line);
+                }
+            }
+        }
+        return lines;
+    }
 }

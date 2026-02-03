@@ -60,6 +60,12 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Cloud Drive Metadata secondary type for Google Drive / OneDrive integration -->
+				<bean class="jp.aegif.nemaki.patch.Patch_CloudDriveMetadataSecondaryType">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
@@ -104,23 +110,22 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
-				<!-- NemakiWare standard types: nemaki:document, secondary types -->
-					<!-- MUST run after StandardCmisViews to ensure base types exist -->
-					<bean class="jp.aegif.nemaki.patch.Patch_NemakiwareStandardTypes">
-						<property name="patchUtil">
-							<ref bean="patchUtil" />
-						</property>
-					</bean>
-					<!-- Webhookable secondary type: nemaki:webhookable for webhook functionality -->
-					<!-- MUST run after StandardCmisViews to ensure cmis:secondary exists -->
-					<bean class="jp.aegif.nemaki.patch.Patch_WebhookableSecondaryType">
-						<property name="patchUtil">
-							<ref bean="patchUtil" />
-						</property>
-					</bean>
-					<!-- MCP Service Account: non-admin account for MCP transport authentication -->
-				<!-- This account is used for transport-level auth, not for user permissions -->
-				<bean class="jp.aegif.nemaki.patch.Patch_McpServiceAccount">
+			<!-- NemakiWare standard types: nemaki:document, secondary types -->
+				<!-- MUST run after StandardCmisViews to ensure base types exist -->
+				<bean class="jp.aegif.nemaki.patch.Patch_NemakiwareStandardTypes">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Webhook delivery log views for Phase 3 DAO layer -->
+				<!-- MUST run after StandardCmisViews to ensure design document exists -->
+				<bean class="jp.aegif.nemaki.patch.Patch_WebhookDeliveryLogViews">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Cloud Drive Metadata secondary type for Google Drive / OneDrive integration -->
+				<bean class="jp.aegif.nemaki.patch.Patch_CloudDriveMetadataSecondaryType">
 					<property name="patchUtil">
 						<ref bean="patchUtil" />
 					</property>
@@ -186,19 +191,19 @@
 		</property>
 	</bean>
 
-	<bean id="patch_McpServiceAccount" class="jp.aegif.nemaki.patch.Patch_McpServiceAccount">
-		<property name="patchUtil">
-			<ref bean="patchUtil" />
-		</property>
-	</bean>
-
 	<bean id="patch_NemakiwareStandardTypes" class="jp.aegif.nemaki.patch.Patch_NemakiwareStandardTypes">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>
 	</bean>
 
-	<bean id="patch_WebhookableSecondaryType" class="jp.aegif.nemaki.patch.Patch_WebhookableSecondaryType">
+	<bean id="patch_WebhookDeliveryLogViews" class="jp.aegif.nemaki.patch.Patch_WebhookDeliveryLogViews">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_CloudDriveMetadataSecondaryType" class="jp.aegif.nemaki.patch.Patch_CloudDriveMetadataSecondaryType">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

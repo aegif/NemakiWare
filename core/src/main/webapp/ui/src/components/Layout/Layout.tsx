@@ -225,7 +225,7 @@ import {
   BarChartOutlined,
   SwapOutlined,
   SendOutlined,
-  CloudOutlined
+  SyncOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -303,7 +303,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
 
   // UI build info from vite.config.ts
   const uiBuildTime = typeof __UI_BUILD_TIME__ !== 'undefined' ? __UI_BUILD_TIME__ : 'dev';
-  const uiVersion = typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '3.0.0';
+  const uiVersion = typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '3.1.0';
 
   // Check if current user is admin
   // For basic auth: username === 'admin'
@@ -375,7 +375,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
         },
         {
           key: '/cloud-directory-sync',
-          icon: <CloudOutlined />,
+          icon: <SyncOutlined />,
           label: t('cloudSync.title'),
         },
       ],

@@ -14,7 +14,9 @@ import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
+import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.HttpEntity;
 import org.apache.hc.core5.http.ParseException;
@@ -89,12 +91,25 @@ public class TeiEmbeddingService implements EmbeddingService {
         this.ragConfig = ragConfig;
         this.objectMapper = new ObjectMapper();
 
+        int readTimeoutMs = ragConfig.getTeiReadTimeout();
+
         RequestConfig requestConfig = RequestConfig.custom()
                 .setConnectTimeout(Timeout.of(ragConfig.getTeiConnectTimeout(), TimeUnit.MILLISECONDS))
-                .setResponseTimeout(Timeout.of(ragConfig.getTeiReadTimeout(), TimeUnit.MILLISECONDS))
+                .setResponseTimeout(Timeout.of(readTimeoutMs, TimeUnit.MILLISECONDS))
                 .build();
 
+        // Set socket-level read timeout to ensure blocked reads don't hang indefinitely.
+        // RequestConfig.responseTimeout alone is not sufficient for Apache HttpClient 5
+        // when the server hasn't started sending the response headers yet.
+        ConnectionConfig connectionConfig = ConnectionConfig.custom()
+                .setSocketTimeout(Timeout.of(readTimeoutMs, TimeUnit.MILLISECONDS))
+                .build();
+
+        PoolingHttpClientConnectionManager connManager = new PoolingHttpClientConnectionManager();
+        connManager.setDefaultConnectionConfig(connectionConfig);
+
         this.httpClient = HttpClientBuilder.create()
+                .setConnectionManager(connManager)
                 .setDefaultRequestConfig(requestConfig)
                 .build();
     }

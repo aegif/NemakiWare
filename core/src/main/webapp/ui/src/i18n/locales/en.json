@@ -35,6 +35,7 @@
     "select": "Select",
     "clear": "Clear",
     "retry": "Retry",
+    "refresh": "Refresh",
     "reload": "Reload",
     "back": "Back",
     "next": "Next",
@@ -75,7 +76,8 @@
       "navigationFailed": "Navigation failed",
       "details": "Details: {{details}}"
     },
-    "confirmDelete": "Delete this {{item}}?"
+    "confirmDelete": "Delete this {{item}}?",
+    "totalItems": "Total {{total}} items"
   },
     "navigation": {
       "home": "Home",
@@ -463,6 +465,17 @@
       "selectValue": "Select value",
       "enterNumber": "Enter number"
     },
+    "versionDetail": {
+      "title": "Version Detail",
+      "detailButton": "Detail",
+      "name": "File Name",
+      "description": "Description",
+      "lastModifiedBy": "Last Modified By",
+      "lastModifiedDate": "Last Modified Date",
+      "fileSize": "File Size",
+      "mimeType": "MIME Type",
+      "objectId": "Object ID"
+    },
     "relationshipDetail": {
       "title": "Relationship Detail",
       "editTitle": "Edit Relationship Properties",
@@ -746,6 +759,7 @@
       "previewFailedRetry": "Preview generation failed. Please retry or download and view with a local application.",
       "previewFailed": "Preview generation failed. Please retry or download and view with a local application.",
       "notSupported": "Office document preview is not currently supported. Please download and view with a local application.",
+      "regenerate": "Regenerate Preview",
       "fileTypes": {
         "word": "Word Document",
         "excel": "Excel Document",
@@ -1001,6 +1015,10 @@
       "newVersionCreated": "New version of \"{{name}}\" created successfully",
       "folderCreateSuccess": "Folder created successfully",
       "folderCreateError": "Failed to create folder",
+      "createFolderSuccess": "Folder created successfully",
+      "createFolderError": "Failed to create folder",
+      "loadObjectsError": "Failed to load objects",
+      "selectFolder": "Please select a folder",
       "deleteSuccess": "Deleted successfully",
       "deleteSuccessWithCount": "{{count}} object(s) deleted successfully",
       "deletePartialFail": "Failed to delete {{count}} object(s)",
@@ -1390,6 +1408,28 @@
       "simulatingAs": "Searching as {{userId}}",
       "loadUsersFailed": "Failed to load user list",
       "adminOnly": "This feature is only available to administrators"
+    },
+    "discrepancy": {
+      "showDetails": "Show details",
+      "missingTitle": "Documents missing from Solr",
+      "orphanedTitle": "Orphaned documents in Solr",
+      "objectId": "Object ID",
+      "name": "Name",
+      "objectType": "Type",
+      "reindex": "Reindex",
+      "deleteFromIndex": "Delete from index",
+      "deleteConfirm": "Delete this document from the index?",
+      "bulkReindex": "Reindex all",
+      "bulkReindexConfirm": "Reindex all missing documents?",
+      "bulkDelete": "Delete all from index",
+      "bulkDeleteConfirm": "Delete all orphaned documents from the index?",
+      "reindexSuccess": "Reindexed {{objectId}}",
+      "reindexError": "Reindex failed",
+      "deleteSuccess": "Deleted {{objectId}} from index",
+      "deleteError": "Failed to delete from index",
+      "bulkReindexComplete": "Bulk reindex completed",
+      "bulkDeleteComplete": "Bulk delete completed",
+      "loadError": "Failed to load discrepancy details"
     }
   },
   "apiDocs": {
@@ -1543,7 +1583,20 @@
     "config": "Audit Log Configuration",
     "status": "Status",
     "readAuditLevel": "Read Audit Level",
-    "lastUpdated": "Last Updated"
+    "lastUpdated": "Last Updated",
+    "recentEntries": "Recent Audit Entries",
+    "noEntries": "No audit log entries",
+    "operation": "Operation",
+    "user": "User",
+    "target": "Target",
+    "result": "Result",
+    "duration": "Duration",
+    "timestamp": "Timestamp",
+    "entryCount": "Entries",
+    "loadEntries": "Load Logs",
+    "loadError": "Failed to load audit log entries",
+    "clientIp": "Client IP",
+    "errorMessage": "Error"
   },
   "filesystemImportExport": {
     "title": "Filesystem Import/Export",
@@ -1647,7 +1700,7 @@
     }
   },
   "cloudSync": {
-    "title": "Cloud Directory Sync",
+    "title": "Directory Sync",
     "actions": "Actions",
     "deltaSyncButton": "Run Delta Sync",
     "fullReconciliationButton": "Full Reconciliation",
@@ -1683,6 +1736,21 @@
     "groupsDeleted": "Groups Deleted",
     "groupsSkipped": "Groups Skipped",
     "errors": "Errors",
-    "warnings": "Warnings"
+    "warnings": "Warnings",
+    "ldapTab": "LDAP / Active Directory",
+    "ldapSyncButton": "Run Sync",
+    "ldapPreviewButton": "Preview (Dry Run)",
+    "ldapSyncStarted": "LDAP sync started",
+    "ldapPreviewStarted": "Preview started",
+    "ldapSyncConfirm": "Run LDAP sync? Users and groups will be synchronized.",
+    "ldapConfigTitle": "LDAP Configuration",
+    "ldapUrl": "LDAP URL",
+    "ldapBaseDn": "Base DN",
+    "ldapEnabled": "Enabled",
+    "ldapDisabled": "Disabled",
+    "ldapNotConfigured": "LDAP sync is not configured. Set directory.sync.enabled=true in server configuration.",
+    "dryRun": "Dry Run",
+    "userSearchBase": "User Search Base",
+    "groupSearchBase": "Group Search Base"
   }
 }

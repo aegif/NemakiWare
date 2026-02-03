@@ -108,6 +108,13 @@
 		<filter-class>jp.aegif.nemaki.rest.SimpleCorsFilter</filter-class>
 	</filter>
 	
+	<!-- Audit request context filter - captures client IP and request metadata for audit logging -->
+	<!-- Applied to CMIS binding paths where AuthenticationFilter is not used -->
+	<filter>
+		<filter-name>auditRequestContextFilter</filter-name>
+		<filter-class>jp.aegif.nemaki.audit.AuditRequestContextFilter</filter-class>
+	</filter>
+
 	<!-- REST authentication filter - re-enabled with Spring integration -->
 	<filter>
 		<filter-name>restAuthenticationFilter</filter-name>
@@ -141,6 +148,16 @@
 		<url-pattern>/odata/*</url-pattern>
 	</filter-mapping>
 	
+	<!-- Audit request context filter mapping - CMIS binding paths -->
+	<filter-mapping>
+		<filter-name>auditRequestContextFilter</filter-name>
+		<url-pattern>/browser/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>auditRequestContextFilter</filter-name>
+		<url-pattern>/atom/*</url-pattern>
+	</filter-mapping>
+
 	<!-- DeleteType filter mapping - TEMPORARILY DISABLED to allow query action support -->
 	<!-- CRITICAL FIX: This filter mapping prevents cmisaction=query from working in TCK tests -->
 	<!--
@@ -417,6 +434,10 @@
 <servlet-mapping>
  <servlet-name>default</servlet-name>
  <url-pattern>/ui/silent-callback.html</url-pattern>
+</servlet-mapping>
+<servlet-mapping>
+ <servlet-name>default</servlet-name>
+ <url-pattern>/ui/auth-popup.html</url-pattern>
 </servlet-mapping>
 <!-- Static asset directories - served directly by default servlet -->
 <servlet-mapping>

@@ -225,10 +225,6 @@ export class AuthService {
       xhr.setRequestHeader('Accept', 'application/json');
       xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
       
-      // Add Basic authentication header required by NemakiWare auth endpoint
-      const credentials = btoa(`${username}:${password}`);
-      xhr.setRequestHeader('Authorization', `Basic ${credentials}`);
-      
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {

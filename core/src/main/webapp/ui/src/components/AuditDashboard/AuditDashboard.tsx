@@ -10,22 +10,52 @@ import {
   Tag,
   Space,
   Popconfirm,
-  message
+  message,
+  Table,
+  Select,
+  Tooltip,
+  Typography
 } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   StopOutlined,
   ReloadOutlined,
   BarChartOutlined,
-  DeleteOutlined
+  DeleteOutlined,
+  FileTextOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
-import { AuditMetricsService, AuditMetricsResponse } from '../../services/auditMetrics';
+import {
+  AuditMetricsService,
+  AuditMetricsResponse,
+  AuditEntry,
+  AuditEntriesResponse
+} from '../../services/auditMetrics';
+
+const { Text } = Typography;
 
 /** Auto-refresh interval in milliseconds */
 const AUTO_REFRESH_INTERVAL_MS = 30000;
+
+const DELETE_OPERATIONS = new Set([
+  'DELETE_DOCUMENT', 'DELETE_FOLDER', 'DELETE_TREE',
+  'ARCHIVE_DELETE', 'DELETE_USER', 'DELETE_GROUP'
+]);
+const WRITE_OPERATIONS = new Set([
+  'CREATE_DOCUMENT', 'CREATE_FOLDER', 'UPDATE_DOCUMENT', 'UPDATE_FOLDER',
+  'SET_CONTENT_STREAM', 'CHECK_IN', 'CHECK_OUT', 'CANCEL_CHECK_OUT',
+  'APPLY_ACL', 'CREATE_USER', 'UPDATE_USER', 'CREATE_GROUP', 'UPDATE_GROUP',
+  'ARCHIVE_RESTORE', 'MOVE_OBJECT'
+]);
+
+function getOperationColor(op: string): string {
+  if (DELETE_OPERATIONS.has(op)) return 'red';
+  if (WRITE_OPERATIONS.has(op)) return 'blue';
+  return 'default';
+}
 
 export const AuditDashboard: React.FC = () => {
   const { t } = useTranslation();
@@ -34,6 +64,12 @@ export const AuditDashboard: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+
+  // Audit entries state
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [entriesLoading, setEntriesLoading] = useState(false);
+  const [entriesLoaded, setEntriesLoaded] = useState(false);
+  const [entryLimit, setEntryLimit] = useState(100);
 
   // Memoize the service to prevent recreation on every render
   const service = useMemo(
@@ -55,7 +91,6 @@ export const AuditDashboard: React.FC = () => {
   }, [service, t]);
 
   // Use ref to store the latest fetchMetrics function for the interval
-  // This prevents unnecessary interval re-registration when fetchMetrics changes
   const fetchMetricsRef = useRef(fetchMetrics);
   useEffect(() => {
     fetchMetricsRef.current = fetchMetrics;
@@ -74,20 +109,102 @@ export const AuditDashboard: React.FC = () => {
     }
   }, [service, t, fetchMetrics]);
 
+  const fetchEntries = useCallback(async () => {
+    setEntriesLoading(true);
+    try {
+      const data: AuditEntriesResponse = await service.getRecentEntries(entryLimit);
+      setEntries(data.entries || []);
+      setEntriesLoaded(true);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : t('auditDashboard.loadError', 'Failed to load audit log entries'));
+    } finally {
+      setEntriesLoading(false);
+    }
+  }, [service, entryLimit, t]);
+
   // Initial fetch and auto-refresh setup
   useEffect(() => {
-    // Initial fetch
     fetchMetrics();
-
-    // Auto-refresh using ref to avoid re-registration
     const interval = setInterval(() => {
       fetchMetricsRef.current();
     }, AUTO_REFRESH_INTERVAL_MS);
-
     return () => clearInterval(interval);
-    // Only run on mount and unmount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const columns: ColumnsType<AuditEntry> = useMemo(() => [
+    {
+      title: t('auditDashboard.timestamp', 'Timestamp'),
+      dataIndex: 'timestamp',
+      key: 'timestamp',
+      width: 180,
+      render: (val: string) => val ? new Date(val).toLocaleString() : '-',
+      sorter: (a: AuditEntry, b: AuditEntry) => (a.timestamp || '').localeCompare(b.timestamp || ''),
+      defaultSortOrder: 'descend' as const,
+    },
+    {
+      title: t('auditDashboard.operation', 'Operation'),
+      dataIndex: 'operation',
+      key: 'operation',
+      width: 180,
+      render: (val: string) => <Tag color={getOperationColor(val)}>{val}</Tag>,
+      filters: [...new Set(entries.map(e => e.operation))].filter(Boolean).map(op => ({ text: op, value: op })),
+      onFilter: (value: React.Key | boolean, record: AuditEntry) => record.operation === value,
+    },
+    {
+      title: t('auditDashboard.user', 'User'),
+      dataIndex: 'userId',
+      key: 'userId',
+      width: 120,
+    },
+    {
+      title: t('auditDashboard.target', 'Target'),
+      dataIndex: 'objectName',
+      key: 'objectName',
+      width: 200,
+      ellipsis: true,
+      render: (val: string) => val ? <Tooltip title={val}>{val}</Tooltip> : '-',
+    },
+    {
+      title: t('auditDashboard.result', 'Result'),
+      dataIndex: 'result',
+      key: 'result',
+      width: 100,
+      render: (val: string) => {
+        if (val === 'SUCCESS') return <Tag color="success">SUCCESS</Tag>;
+        if (val === 'FAILURE') return <Tag color="error">FAILURE</Tag>;
+        return <Tag>{val || '-'}</Tag>;
+      },
+      filters: [
+        { text: 'SUCCESS', value: 'SUCCESS' },
+        { text: 'FAILURE', value: 'FAILURE' },
+      ],
+      onFilter: (value: React.Key | boolean, record: AuditEntry) => record.result === value,
+    },
+    {
+      title: t('auditDashboard.duration', 'Duration'),
+      dataIndex: 'durationMs',
+      key: 'durationMs',
+      width: 100,
+      render: (val: number) => val != null ? `${val} ms` : '-',
+      sorter: (a: AuditEntry, b: AuditEntry) => (a.durationMs ?? 0) - (b.durationMs ?? 0),
+    },
+    {
+      title: t('auditDashboard.clientIp', 'Client IP'),
+      dataIndex: 'clientIp',
+      key: 'clientIp',
+      width: 130,
+      render: (val: string) => val || '-',
+    },
+    {
+      title: t('auditDashboard.errorMessage', 'Error'),
+      dataIndex: 'errorMessage',
+      key: 'errorMessage',
+      width: 200,
+      ellipsis: true,
+      render: (val: string) => val ? <Text type="danger">{val}</Text> : '-',
+    },
+  ], [t, entries]);
 
   if (loading && !metrics) {
     return <Spin size="large" style={{ display: 'block', textAlign: 'center', padding: '50px' }} />;
@@ -236,6 +353,58 @@ export const AuditDashboard: React.FC = () => {
           type="info"
           showIcon
         />
+      </Card>
+
+      {/* Recent Audit Entries */}
+      <Card
+        title={
+          <Space>
+            <FileTextOutlined />
+            <span>{t('auditDashboard.recentEntries', 'Recent Audit Entries')}</span>
+          </Space>
+        }
+        extra={
+          <Space>
+            <Select
+              value={entryLimit}
+              onChange={setEntryLimit}
+              style={{ width: 100 }}
+              options={[
+                { value: 50, label: '50' },
+                { value: 100, label: '100' },
+                { value: 200, label: '200' },
+                { value: 500, label: '500' },
+              ]}
+            />
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={fetchEntries}
+              loading={entriesLoading}
+            >
+              {t('auditDashboard.loadEntries', 'Load Logs')}
+            </Button>
+          </Space>
+        }
+        style={{ marginTop: 16 }}
+      >
+        {!entriesLoaded ? (
+          <Alert
+            message={t('auditDashboard.noEntries', 'No audit log entries')}
+            description={t('auditDashboard.loadEntries', 'Load Logs')}
+            type="info"
+            showIcon
+          />
+        ) : (
+          <Table<AuditEntry>
+            columns={columns}
+            dataSource={entries}
+            rowKey={(record) => record.eventId || `${record.timestamp}-${record.operation}`}
+            size="small"
+            scroll={{ x: 1200 }}
+            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `${total}` }}
+            locale={{ emptyText: t('auditDashboard.noEntries', 'No audit log entries') }}
+          />
+        )}
       </Card>
     </div>
   );

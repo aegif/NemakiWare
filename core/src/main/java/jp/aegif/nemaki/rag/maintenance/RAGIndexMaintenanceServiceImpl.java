@@ -30,8 +30,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.response.QueryResponse;
@@ -57,7 +57,7 @@ import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 @Component
 public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceService {
 
-    private static final Log log = LogFactory.getLog(RAGIndexMaintenanceServiceImpl.class);
+    private static final Logger log = LoggerFactory.getLogger(RAGIndexMaintenanceServiceImpl.class);
 
     private static final int BATCH_SIZE = 10;  // Smaller batch for embedding generation
     private static final int MAX_ERRORS = 100;

@@ -236,7 +236,9 @@ public interface ContentService {
 	UserItem getUserItem(String repositoryId, String objectId);
 	UserItem getUserItemById(String repositoryId, String userId);
 	List<UserItem> getUserItems(String repositoryId);
-	
+	List<UserItem> getUserItems(String repositoryId, int skip, int limit);
+	int getUserItemCount(String repositoryId);
+
 	GroupItem getGroupItem(String repositoryId, String objectId);
 	GroupItem getGroupItemById(String repositoryId, String groupId);
 
@@ -251,7 +253,9 @@ public interface ContentService {
 	GroupItem getGroupItemByIdFresh(String repositoryId, String groupId);
 
 	List<GroupItem> getGroupItems(String repositoryId);
-	
+	List<GroupItem> getGroupItems(String repositoryId, int skip, int limit);
+	int getGroupItemCount(String repositoryId);
+
 	Set<String> getGroupIdsContainingUser(String repositoryId, String userId);
 	String getAnonymous(String repositoryId);
 	String getAnyone(String repositoryId);

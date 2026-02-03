@@ -423,6 +423,8 @@ public interface ContentDaoService {
 	UserItem getUserItem(String repositoryId, String objectId);
 	UserItem getUserItemById(String repositoryId, String userId);
 	List<UserItem> getUserItems(String repositoryId);
+	List<UserItem> getUserItems(String repositoryId, int skip, int limit);
+	int getUserItemCount(String repositoryId);
 
 	GroupItem getGroupItem(String repositoryId, String objectId);
 	GroupItem getGroupItemById(String repositoryId, String userId);
@@ -438,6 +440,8 @@ public interface ContentDaoService {
 	GroupItem getGroupItemByIdFresh(String repositoryId, String groupId);
 
 	List<GroupItem> getGroupItems(String repositoryId);
+	List<GroupItem> getGroupItems(String repositoryId, int skip, int limit);
+	int getGroupItemCount(String repositoryId);
 	List<String> getJoinedGroupByUserId(String repositoryId, String userId);
 
 	PatchHistory getPatchHistoryByName(String repositoryId, String name);

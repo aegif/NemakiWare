@@ -35,6 +35,7 @@
     "select": "選択",
     "clear": "クリア",
     "retry": "再試行",
+    "refresh": "更新",
     "reload": "再読み込み",
     "back": "戻る",
     "next": "次へ",
@@ -75,7 +76,8 @@
       "navigationFailed": "ナビゲーションに失敗しました",
       "details": "詳細: {{details}}"
     },
-    "confirmDelete": "この{{item}}を削除しますか？"
+    "confirmDelete": "この{{item}}を削除しますか？",
+    "totalItems": "全 {{total}} 件"
   },
     "navigation": {
       "home": "ホーム",
@@ -463,6 +465,17 @@
       "selectValue": "値を選択",
       "enterNumber": "数値を入力"
     },
+    "versionDetail": {
+      "title": "バージョン詳細",
+      "detailButton": "詳細",
+      "name": "ファイル名",
+      "description": "説明",
+      "lastModifiedBy": "最終更新者",
+      "lastModifiedDate": "最終更新日時",
+      "fileSize": "ファイルサイズ",
+      "mimeType": "MIMEタイプ",
+      "objectId": "オブジェクトID"
+    },
     "relationshipDetail": {
       "title": "関連オブジェクト詳細",
       "editTitle": "関連プロパティを編集",
@@ -746,6 +759,7 @@
       "previewFailedRetry": "プレビューの生成に失敗しました。再試行するか、ダウンロードしてローカルアプリケーションでご確認ください。",
       "previewFailed": "プレビューの生成に失敗しました。再試行するか、ダウンロードしてローカルアプリケーションでご確認ください。",
       "notSupported": "オフィス文書のプレビューは現在サポートされていません。ダウンロードしてローカルアプリケーションでご確認ください。",
+      "regenerate": "プレビューを再生成",
       "fileTypes": {
         "word": "Word文書",
         "excel": "Excel文書",
@@ -1001,6 +1015,10 @@
       "newVersionCreated": "「{{name}}」の新しいバージョンを作成しました",
       "folderCreateSuccess": "フォルダを作成しました",
       "folderCreateError": "フォルダの作成に失敗しました",
+      "createFolderSuccess": "フォルダを作成しました",
+      "createFolderError": "フォルダの作成に失敗しました",
+      "loadObjectsError": "オブジェクトの読み込みに失敗しました",
+      "selectFolder": "フォルダを選択してください",
       "deleteSuccess": "削除しました",
       "deleteSuccessWithCount": "{{count}}件のオブジェクトを削除しました",
       "deletePartialFail": "{{count}}件のオブジェクトの削除に失敗しました",
@@ -1390,6 +1408,28 @@
       "simulatingAs": "{{userId}} として検索を実行中",
       "loadUsersFailed": "ユーザー一覧の読み込みに失敗しました",
       "adminOnly": "この機能は管理者のみ利用できます"
+    },
+    "discrepancy": {
+      "showDetails": "詳細を表示",
+      "missingTitle": "Solrに未登録のドキュメント",
+      "orphanedTitle": "Solrに孤立したドキュメント",
+      "objectId": "オブジェクトID",
+      "name": "名前",
+      "objectType": "タイプ",
+      "reindex": "再インデックス",
+      "deleteFromIndex": "インデックスから削除",
+      "deleteConfirm": "このドキュメントをインデックスから削除しますか？",
+      "bulkReindex": "全て再インデックス",
+      "bulkReindexConfirm": "未登録の全ドキュメントを再インデックスしますか？",
+      "bulkDelete": "全てインデックスから削除",
+      "bulkDeleteConfirm": "孤立した全ドキュメントをインデックスから削除しますか？",
+      "reindexSuccess": "{{objectId}} を再インデックスしました",
+      "reindexError": "再インデックスに失敗しました",
+      "deleteSuccess": "{{objectId}} をインデックスから削除しました",
+      "deleteError": "インデックスからの削除に失敗しました",
+      "bulkReindexComplete": "一括再インデックスが完了しました",
+      "bulkDeleteComplete": "一括削除が完了しました",
+      "loadError": "不整合詳細の読み込みに失敗しました"
     }
   },
   "apiDocs": {
@@ -1543,7 +1583,20 @@
     "config": "監査ログ設定",
     "status": "状態",
     "readAuditLevel": "READ監査レベル",
-    "lastUpdated": "最終更新"
+    "lastUpdated": "最終更新",
+    "recentEntries": "最近の監査ログ",
+    "noEntries": "監査ログエントリがありません",
+    "operation": "操作",
+    "user": "ユーザー",
+    "target": "対象",
+    "result": "結果",
+    "duration": "所要時間",
+    "timestamp": "日時",
+    "entryCount": "表示件数",
+    "loadEntries": "ログ読込",
+    "loadError": "監査ログの読込に失敗しました",
+    "clientIp": "クライアントIP",
+    "errorMessage": "エラー"
   },
   "filesystemImportExport": {
     "title": "ファイルシステム インポート/エクスポート",
@@ -1647,7 +1700,7 @@
     }
   },
   "cloudSync": {
-    "title": "クラウドディレクトリ同期",
+    "title": "ディレクトリ同期",
     "actions": "操作",
     "deltaSyncButton": "Delta同期実行",
     "fullReconciliationButton": "Full Reconciliation",
@@ -1683,6 +1736,21 @@
     "groupsDeleted": "グループ削除",
     "groupsSkipped": "グループスキップ",
     "errors": "エラー",
-    "warnings": "警告"
+    "warnings": "警告",
+    "ldapTab": "LDAP / Active Directory",
+    "ldapSyncButton": "同期実行",
+    "ldapPreviewButton": "プレビュー（Dry Run）",
+    "ldapSyncStarted": "LDAP同期を開始しました",
+    "ldapPreviewStarted": "プレビューを開始しました",
+    "ldapSyncConfirm": "LDAP同期を実行しますか？ユーザーとグループが同期されます。",
+    "ldapConfigTitle": "LDAP設定",
+    "ldapUrl": "LDAP URL",
+    "ldapBaseDn": "Base DN",
+    "ldapEnabled": "有効",
+    "ldapDisabled": "無効",
+    "ldapNotConfigured": "LDAP同期は設定されていません。サーバー設定で directory.sync.enabled=true を設定してください。",
+    "dryRun": "Dry Run",
+    "userSearchBase": "ユーザー検索ベース",
+    "groupSearchBase": "グループ検索ベース"
   }
 }

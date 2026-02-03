@@ -351,13 +351,13 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
           throw new Error(`${t('permissionManagement.messages.loadAclError')}: ${err.message}`);
         });
 
-      const userList = await cmisService.getUsers(repositoryId)
+      const userResult = await cmisService.getUsers(repositoryId)
         .catch(err => {
           // Failed to load users
           throw new Error(`${t('permissionManagement.messages.loadUsersError')}: ${err.message}`);
         });
 
-      const groupList = await cmisService.getGroups(repositoryId)
+      const groupResult = await cmisService.getGroups(repositoryId)
         .catch(err => {
           // Failed to load groups
           throw new Error(`${t('permissionManagement.messages.loadGroupsError')}: ${err.message}`);
@@ -365,8 +365,8 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
 
       setObject(obj);
       setACL(aclData);
-      setUsers(userList);
-      setGroups(groupList);
+      setUsers(userResult.users);
+      setGroups(groupResult.groups);
 
       const inheritanceEnabled = aclData.aclInherited !== false;
       setIsInherited(inheritanceEnabled);

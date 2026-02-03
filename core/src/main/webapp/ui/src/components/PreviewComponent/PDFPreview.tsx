@@ -105,6 +105,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Button, Spin, Alert } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { useAuth } from '../../contexts/AuthContext';
@@ -123,9 +124,10 @@ interface PDFPreviewProps {
   fileName: string;
   repositoryId?: string;
   objectId?: string;
+  onRegenerate?: () => void;
 }
 
-export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositoryId, objectId }) => {
+export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositoryId, objectId, onRegenerate }) => {
   const { t } = useTranslation();
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
@@ -288,9 +290,16 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
             <Button onClick={zoomIn} disabled={scale >= 3.0}>
               {t('preview.pdf.zoomIn')}
             </Button>
-            <a href={pdfData || '#'} download={fileName} style={{ marginLeft: 'auto' }}>
-              <Button disabled={!pdfData}>{t('common.download')}</Button>
-            </a>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+              {onRegenerate && (
+                <Button icon={<ReloadOutlined />} onClick={onRegenerate}>
+                  {t('preview.office.regenerate')}
+                </Button>
+              )}
+              <a href={pdfData || '#'} download={fileName}>
+                <Button disabled={!pdfData}>{t('common.download')}</Button>
+              </a>
+            </span>
           </div>
 
           <div style={{

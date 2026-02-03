@@ -30,13 +30,21 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 
 	private ObjectService objectService;
 
+	/** Cached webUrl from the last OneDrive push (used by getCloudFileUrl) */
+	private final java.util.Map<String, String> oneDriveWebUrlCache = new java.util.concurrent.ConcurrentHashMap<>();
+
 	public void setObjectService(ObjectService objectService) {
 		this.objectService = objectService;
 	}
 
 	@Override
 	public String pushToCloud(String repositoryId, String objectId, String provider, String accessToken) {
-		log.info("pushToCloud: provider=" + provider + ", objectId=" + objectId);
+		return pushToCloud(repositoryId, objectId, provider, accessToken, null);
+	}
+
+	@Override
+	public String pushToCloud(String repositoryId, String objectId, String provider, String accessToken, String existingCloudFileId) {
+		log.info("pushToCloud: provider=" + provider + ", objectId=" + objectId + ", existingCloudFileId=" + existingCloudFileId);
 
 		// Use SystemCallContext for authorized internal operation (not null)
 		jp.aegif.nemaki.cmis.factory.SystemCallContext callContext =
@@ -49,7 +57,7 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 
 		switch (provider) {
 			case "google":
-				return pushToGoogleDrive(contentStream, accessToken);
+				return pushToGoogleDrive(contentStream, accessToken, existingCloudFileId);
 			case "microsoft":
 				return pushToOneDrive(contentStream, accessToken);
 			default:
@@ -85,8 +93,16 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 		}
 		switch (provider) {
 			case "google":
-				return "https://drive.google.com/file/d/" + cloudFileId + "/edit";
+				// Use docs.google.com/open which auto-redirects to the correct editor
+				// (Docs, Sheets, Slides) based on the file's MIME type
+				return "https://docs.google.com/open?id=" + cloudFileId;
 			case "microsoft":
+				// Use cached webUrl from Graph API (works for both personal and org accounts)
+				String cachedUrl = oneDriveWebUrlCache.get(cloudFileId);
+				if (cachedUrl != null) {
+					return cachedUrl;
+				}
+				// Fallback for previously uploaded files
 				return "https://onedrive.live.com/edit?id=" + cloudFileId;
 			default:
 				return null;
@@ -115,22 +131,62 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 
 	// ---- Google Drive operations ----
 
-	private String pushToGoogleDrive(ContentStream contentStream, String accessToken) {
+	// Mapping from common MIME types to Google Workspace MIME types for conversion
+	private static final java.util.Map<String, String> GOOGLE_DOCS_MIME_MAP = java.util.Map.of(
+		"application/msword", "application/vnd.google-apps.document",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.google-apps.document",
+		"application/vnd.oasis.opendocument.text", "application/vnd.google-apps.document",
+		"text/plain", "application/vnd.google-apps.document",
+		"application/vnd.ms-excel", "application/vnd.google-apps.spreadsheet",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.google-apps.spreadsheet",
+		"application/vnd.oasis.opendocument.spreadsheet", "application/vnd.google-apps.spreadsheet",
+		"application/vnd.ms-powerpoint", "application/vnd.google-apps.presentation",
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.google-apps.presentation",
+		"application/vnd.oasis.opendocument.presentation", "application/vnd.google-apps.presentation"
+	);
+
+	private String pushToGoogleDrive(ContentStream contentStream, String accessToken, String existingCloudFileId) {
 		try {
 			Drive driveService = buildGoogleDriveService(accessToken);
 
-			File fileMetadata = new File();
-			fileMetadata.setName(contentStream.getFileName());
+			String mimeType = contentStream.getMimeType();
+			String googleMimeType = GOOGLE_DOCS_MIME_MAP.get(mimeType);
 
 			InputStreamContent mediaContent = new InputStreamContent(
 				contentStream.getMimeType(), contentStream.getStream());
 
-			File uploadedFile = driveService.files().create(fileMetadata, mediaContent)
-				.setFields("id, webViewLink")
-				.execute();
+			if (existingCloudFileId != null && !existingCloudFileId.isEmpty()) {
+				// Update existing file
+				File fileMetadata = new File();
+				// Don't set name on update to preserve original name in Drive
+				if (googleMimeType != null) {
+					fileMetadata.setMimeType(googleMimeType);
+				}
 
-			log.info("Pushed to Google Drive: fileId=" + uploadedFile.getId());
-			return uploadedFile.getId();
+				File updatedFile = driveService.files().update(existingCloudFileId, fileMetadata, mediaContent)
+					.setFields("id, webViewLink, mimeType")
+					.execute();
+
+				log.info("Updated Google Drive file: fileId=" + updatedFile.getId() + ", mimeType=" + updatedFile.getMimeType());
+				return updatedFile.getId();
+
+			} else {
+				// Create new file
+				File fileMetadata = new File();
+				fileMetadata.setName(contentStream.getFileName());
+
+				if (googleMimeType != null) {
+					fileMetadata.setMimeType(googleMimeType);
+					log.info("Converting to Google Docs format: " + mimeType + " -> " + googleMimeType);
+				}
+
+				File uploadedFile = driveService.files().create(fileMetadata, mediaContent)
+					.setFields("id, webViewLink, mimeType")
+					.execute();
+
+				log.info("Pushed to Google Drive: fileId=" + uploadedFile.getId() + ", mimeType=" + uploadedFile.getMimeType());
+				return uploadedFile.getId();
+			}
 
 		} catch (Exception e) {
 			throw new RuntimeException("Failed to push to Google Drive", e);
@@ -141,8 +197,35 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 		try {
 			Drive driveService = buildGoogleDriveService(accessToken);
 
+			// First check if the file is a Google Docs format (requires export instead of download)
+			File fileMeta = driveService.files().get(cloudFileId).setFields("mimeType").execute();
+			String mimeType = fileMeta.getMimeType();
+
 			ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-			driveService.files().get(cloudFileId).executeMediaAndDownloadTo(outputStream);
+
+			if (mimeType != null && mimeType.startsWith("application/vnd.google-apps.")) {
+				// Google Docs format: must use export
+				String exportMimeType;
+				switch (mimeType) {
+					case "application/vnd.google-apps.document":
+						exportMimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+						break;
+					case "application/vnd.google-apps.spreadsheet":
+						exportMimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+						break;
+					case "application/vnd.google-apps.presentation":
+						exportMimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+						break;
+					default:
+						exportMimeType = "application/pdf";
+						break;
+				}
+				driveService.files().export(cloudFileId, exportMimeType).executeMediaAndDownloadTo(outputStream);
+				log.info("Exported Google Docs file " + cloudFileId + " as " + exportMimeType);
+			} else {
+				// Regular file: direct download
+				driveService.files().get(cloudFileId).executeMediaAndDownloadTo(outputStream);
+			}
 
 			return new ByteArrayInputStream(outputStream.toByteArray());
 
@@ -188,7 +271,11 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 				org.json.simple.JSONObject json = (org.json.simple.JSONObject)
 					new org.json.simple.parser.JSONParser().parse(response.body());
 				String fileId = (String) json.get("id");
-				log.info("Pushed to OneDrive: fileId=" + fileId);
+				String webUrl = (String) json.get("webUrl");
+				if (webUrl != null && fileId != null) {
+					oneDriveWebUrlCache.put(fileId, webUrl);
+				}
+				log.info("Pushed to OneDrive: fileId=" + fileId + ", webUrl=" + webUrl);
 				return fileId;
 			} else {
 				throw new RuntimeException("OneDrive upload failed: HTTP " + response.statusCode() + " " + response.body());
@@ -203,7 +290,9 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 
 	private InputStream pullFromOneDrive(String cloudFileId, String accessToken) {
 		try {
-			java.net.http.HttpClient httpClient = java.net.http.HttpClient.newHttpClient();
+			java.net.http.HttpClient httpClient = java.net.http.HttpClient.newBuilder()
+				.followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
+				.build();
 			java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
 				.uri(java.net.URI.create("https://graph.microsoft.com/v1.0/me/drive/items/" + cloudFileId + "/content"))
 				.header("Authorization", "Bearer " + accessToken)
@@ -213,6 +302,7 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 			java.net.http.HttpResponse<byte[]> response = httpClient.send(request,
 				java.net.http.HttpResponse.BodyHandlers.ofByteArray());
 
+			log.info("OneDrive download response: HTTP " + response.statusCode() + ", body size=" + response.body().length + " bytes");
 			if (response.statusCode() >= 200 && response.statusCode() < 300) {
 				return new ByteArrayInputStream(response.body());
 			} else {

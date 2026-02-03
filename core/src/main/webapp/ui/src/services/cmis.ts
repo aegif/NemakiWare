@@ -1679,9 +1679,16 @@ export class CMISService {
     }
   }
 
-  async getUsers(repositoryId: string): Promise<User[]> {
+  async getUsers(repositoryId: string, params?: {
+    offset?: number; limit?: number; query?: string;
+  }): Promise<{ users: User[]; totalCount: number }> {
     try {
-      const url = `/core/rest/repo/${repositoryId}/user/list`;
+      const searchParams = new URLSearchParams();
+      if (params?.offset != null && params.offset >= 0) searchParams.set('offset', String(params.offset));
+      if (params?.limit != null && params.limit > 0) searchParams.set('limit', String(params.limit));
+      if (params?.query) searchParams.set('query', params.query);
+      const qs = searchParams.toString();
+      const url = `/core/rest/repo/${repositoryId}/user/list${qs ? '?' + qs : ''}`;
       const response = await this.httpClient.getJson(url);
 
       if (response.status === 200) {
@@ -1689,8 +1696,6 @@ export class CMISService {
           const data = JSON.parse(response.responseText);
           const rawUsers = data.users || [];
 
-          // Transform user data to match UI expectations
-          // Preserve firstName and lastName as separate fields for table display
           const transformedUsers = rawUsers.map((user: any) => ({
             id: user.userId || user.id,
             name: user.userName || user.userId || user.id,
@@ -1700,30 +1705,24 @@ export class CMISService {
             groups: user.groups || []
           }));
 
-          return transformedUsers;
+          return {
+            users: transformedUsers,
+            totalCount: data.totalCount ?? transformedUsers.length
+          };
         } catch (e) {
           throw new Error('Invalid response format');
         }
       } else if (response.status === 500) {
-        // サーバー側エラーの詳細情報を解析
         let errorMessage = 'サーバーエラーが発生しました';
         let errorDetails = '';
         try {
           const errorResponse = JSON.parse(response.responseText);
-          if (errorResponse.message) {
-            errorMessage = errorResponse.message;
-          }
-          if (errorResponse.error) {
-            errorDetails = errorResponse.error;
-          }
-          if (errorResponse.errorType) {
-            errorDetails += ` (${errorResponse.errorType})`;
-          }
+          if (errorResponse.message) errorMessage = errorResponse.message;
+          if (errorResponse.error) errorDetails = errorResponse.error;
+          if (errorResponse.errorType) errorDetails += ` (${errorResponse.errorType})`;
         } catch (e) {
-          // JSONパースできない場合はレスポンステキストをそのまま使用
           errorDetails = response.responseText || 'Unknown server error';
         }
-
         const error = new Error(errorMessage);
         (error as any).details = errorDetails;
         (error as any).status = response.status;
@@ -1804,8 +1803,19 @@ export class CMISService {
       if (response.status === 200) {
         try {
           const data = JSON.parse(response.responseText);
+          // Check legacy API status field - server returns HTTP 200 even on failure
+          if (data.status === false || data.status === 'error') {
+            const errMessages = data.errMsg || data.errors || [];
+            const errText = Array.isArray(errMessages)
+              ? errMessages.map((e: any) => typeof e === 'string' ? e : JSON.stringify(e)).join(', ')
+              : String(errMessages);
+            throw new Error(errText || 'User update failed');
+          }
           return data;
         } catch (e) {
+          if (e instanceof Error && e.message !== 'Invalid response format') {
+            throw e;
+          }
           throw new Error('Invalid response format');
         }
       }
@@ -1845,9 +1855,16 @@ export class CMISService {
     }
   }
 
-  async getGroups(repositoryId: string): Promise<Group[]> {
+  async getGroups(repositoryId: string, params?: {
+    offset?: number; limit?: number; query?: string;
+  }): Promise<{ groups: Group[]; totalCount: number }> {
     try {
-      const url = `/core/rest/repo/${repositoryId}/group/list`;
+      const searchParams = new URLSearchParams();
+      if (params?.offset != null && params.offset >= 0) searchParams.set('offset', String(params.offset));
+      if (params?.limit != null && params.limit > 0) searchParams.set('limit', String(params.limit));
+      if (params?.query) searchParams.set('query', params.query);
+      const qs = searchParams.toString();
+      const url = `/core/rest/repo/${repositoryId}/group/list${qs ? '?' + qs : ''}`;
       const response = await this.httpClient.getJson(url);
 
       if (response.status === 200) {
@@ -1855,43 +1872,36 @@ export class CMISService {
           const data = JSON.parse(response.responseText);
           const rawGroups = data.groups || [];
 
-          // Transform group data to match UI expectations
           const transformedGroups = rawGroups.map((group: any) => {
             const userMembers = group.users || [];
             const groupMembers = group.groups || [];
             return {
               id: group.groupId || group.id,
               name: group.groupName || group.name || group.groupId || 'Unknown Group',
-              members: [...userMembers, ...groupMembers],  // Combined for backward compatibility
+              members: [...userMembers, ...groupMembers],
               userMembers,
               groupMembers
             };
           });
 
-          return transformedGroups;
+          return {
+            groups: transformedGroups,
+            totalCount: data.totalCount ?? transformedGroups.length
+          };
         } catch (e) {
           throw new Error('Invalid response format');
         }
       } else if (response.status === 500) {
-        // サーバー側エラーの詳細情報を解析
         let errorMessage = 'サーバーエラーが発生しました';
         let errorDetails = '';
         try {
           const errorResponse = JSON.parse(response.responseText);
-          if (errorResponse.message) {
-            errorMessage = errorResponse.message;
-          }
-          if (errorResponse.error) {
-            errorDetails = errorResponse.error;
-          }
-          if (errorResponse.errorType) {
-            errorDetails += ` (${errorResponse.errorType})`;
-          }
+          if (errorResponse.message) errorMessage = errorResponse.message;
+          if (errorResponse.error) errorDetails = errorResponse.error;
+          if (errorResponse.errorType) errorDetails += ` (${errorResponse.errorType})`;
         } catch (e) {
-          // JSONパースできない場合はレスポンステキストをそのまま使用
           errorDetails = response.responseText || 'Unknown server error';
         }
-
         const error = new Error(errorMessage);
         (error as any).details = errorDetails;
         (error as any).status = response.status;

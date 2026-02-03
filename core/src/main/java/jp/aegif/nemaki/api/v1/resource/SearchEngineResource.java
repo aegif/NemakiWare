@@ -30,6 +30,8 @@ import jp.aegif.nemaki.businesslogic.RAGIndexMaintenanceService.RAGReindexStatus
 import jp.aegif.nemaki.businesslogic.RAGIndexMaintenanceService.RAGHealthStatus;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService.DiscrepancyDocumentInfo;
+import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService.IndexDiscrepancyResult;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService.IndexHealthStatus;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService.ReindexStatus;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService.SolrQueryResult;
@@ -239,6 +241,71 @@ public class SearchEngineResource {
         } catch (Exception e) {
             logger.severe("Error checking index health: " + e.getMessage());
             throw ApiException.internalError("Failed to check index health: " + e.getMessage(), e);
+        }
+    }
+
+    @GET
+    @Path("/health/details")
+    @Operation(
+            summary = "Get index discrepancy details",
+            description = "Returns detailed lists of documents missing from Solr or orphaned in Solr"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Discrepancy details retrieved",
+                    content = @io.swagger.v3.oas.annotations.media.Content(
+                            mediaType = MediaType.APPLICATION_JSON,
+                            schema = @Schema(implementation = IndexDiscrepancyResponse.class)
+                    )
+            )
+    })
+    public Response getHealthDetails(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId) {
+        
+        logger.info("API v1: Getting index discrepancy details for repository " + repositoryId);
+        
+        checkAdminAuthorization();
+        
+        try {
+            if (solrIndexMaintenanceService == null) {
+                throw ApiException.internalError("Solr index maintenance service is not available");
+            }
+            
+            IndexDiscrepancyResult discrepancies = solrIndexMaintenanceService.getIndexDiscrepancies(repositoryId);
+            
+            IndexDiscrepancyResponse response = new IndexDiscrepancyResponse();
+            response.setRepositoryId(discrepancies.getRepositoryId());
+            response.setCheckTime(discrepancies.getCheckTime());
+            
+            List<DiscrepancyDocResponse> missingList = new ArrayList<>();
+            for (DiscrepancyDocumentInfo info : discrepancies.getMissingInSolr()) {
+                DiscrepancyDocResponse doc = new DiscrepancyDocResponse();
+                doc.setObjectId(info.getObjectId());
+                doc.setName(info.getName());
+                doc.setObjectType(info.getObjectType());
+                missingList.add(doc);
+            }
+            response.setMissingInSolr(missingList);
+            
+            List<DiscrepancyDocResponse> orphanedList = new ArrayList<>();
+            for (DiscrepancyDocumentInfo info : discrepancies.getOrphanedInSolr()) {
+                DiscrepancyDocResponse doc = new DiscrepancyDocResponse();
+                doc.setObjectId(info.getObjectId());
+                doc.setName(info.getName());
+                doc.setObjectType(info.getObjectType());
+                orphanedList.add(doc);
+            }
+            response.setOrphanedInSolr(orphanedList);
+            
+            return Response.ok(response).build();
+            
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.severe("Error getting index discrepancy details: " + e.getMessage());
+            throw ApiException.internalError("Failed to get index discrepancy details: " + e.getMessage(), e);
         }
     }
     
@@ -905,6 +972,44 @@ public class SearchEngineResource {
         public void setCheckTime(long checkTime) { this.checkTime = checkTime; }
         public Map<String, LinkInfo> getLinks() { return links; }
         public void setLinks(Map<String, LinkInfo> links) { this.links = links; }
+    }
+
+    @Schema(description = "Single document in discrepancy result")
+    public static class DiscrepancyDocResponse {
+        @Schema(description = "Object ID")
+        private String objectId;
+        @Schema(description = "Document name")
+        private String name;
+        @Schema(description = "Object type")
+        private String objectType;
+
+        public String getObjectId() { return objectId; }
+        public void setObjectId(String objectId) { this.objectId = objectId; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getObjectType() { return objectType; }
+        public void setObjectType(String objectType) { this.objectType = objectType; }
+    }
+
+    @Schema(description = "Index discrepancy details response")
+    public static class IndexDiscrepancyResponse {
+        @Schema(description = "Repository ID")
+        private String repositoryId;
+        @Schema(description = "Documents in CouchDB but missing from Solr")
+        private List<DiscrepancyDocResponse> missingInSolr;
+        @Schema(description = "Documents in Solr but missing from CouchDB")
+        private List<DiscrepancyDocResponse> orphanedInSolr;
+        @Schema(description = "Time of the check (epoch millis)")
+        private long checkTime;
+
+        public String getRepositoryId() { return repositoryId; }
+        public void setRepositoryId(String repositoryId) { this.repositoryId = repositoryId; }
+        public List<DiscrepancyDocResponse> getMissingInSolr() { return missingInSolr; }
+        public void setMissingInSolr(List<DiscrepancyDocResponse> missingInSolr) { this.missingInSolr = missingInSolr; }
+        public List<DiscrepancyDocResponse> getOrphanedInSolr() { return orphanedInSolr; }
+        public void setOrphanedInSolr(List<DiscrepancyDocResponse> orphanedInSolr) { this.orphanedInSolr = orphanedInSolr; }
+        public long getCheckTime() { return checkTime; }
+        public void setCheckTime(long checkTime) { this.checkTime = checkTime; }
     }
     
     @Schema(description = "Operation response")

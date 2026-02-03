@@ -1,10 +1,23 @@
 package jp.aegif.nemaki.sync.service;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.common.NemakiObjectType;
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Group;
+import jp.aegif.nemaki.model.GroupItem;
+import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
+import org.apache.commons.collections4.CollectionUtils;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -29,6 +42,7 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 	private static final Log log = LogFactory.getLog(CloudDirectorySyncServiceImpl.class);
 
 	private PrincipalService principalService;
+	private ContentService contentService;
 	private PropertyManager propertyManager;
 
 	private static final int DEFAULT_THREAD_POOL_SIZE = 2;
@@ -54,6 +68,10 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 
 	public void setPrincipalService(PrincipalService principalService) {
 		this.principalService = principalService;
+	}
+
+	public void setContentService(ContentService contentService) {
+		this.contentService = contentService;
 	}
 
 	public void setPropertyManager(PropertyManager propertyManager) {
@@ -347,6 +365,9 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				// Cloud-synced users get a random password hash (login via OIDC only)
 				newUser.setPasswordHash(UUID.randomUUID().toString());
 				principalService.createUser(repositoryId, newUser);
+				ensureUserItem(repositoryId, userId,
+						newUser.getName(), newUser.getFirstName(), newUser.getLastName(),
+						email, newUser.getPasswordHash());
 				result.incrementUsersCreated();
 			} else {
 				boolean updated = false;
@@ -365,12 +386,22 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 						updated = true;
 					}
 				}
+				// Update email on User object
+				if (email != null && !email.equals(existing.getEmail())) {
+					existing.setEmail(email);
+					updated = true;
+				}
 				if (updated) {
 					principalService.updateUser(repositoryId, existing);
 					result.incrementUsersUpdated();
 				} else {
 					result.incrementUsersSkipped();
 				}
+				// Ensure UserItem exists even for previously synced users
+				// Pass source email (not existing.getEmail() which may be null)
+				ensureUserItem(repositoryId, userId, existing.getName(),
+						existing.getFirstName(), existing.getLastName(),
+						email, existing.getPasswordHash());
 			}
 		} catch (Exception e) {
 			log.warn("Failed to sync Google user " + email + ": " + e.getMessage());
@@ -449,6 +480,7 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				newGroup.setUsers(memberEmails);
 				newGroup.setGroups(new ArrayList<>());
 				principalService.createGroup(repositoryId, newGroup);
+				ensureGroupItem(repositoryId, groupId, groupName, memberEmails, new ArrayList<>());
 				result.incrementGroupsCreated();
 			} else {
 				boolean updated = false;
@@ -466,6 +498,8 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				} else {
 					result.incrementGroupsSkipped();
 				}
+				ensureGroupItem(repositoryId, groupId, existing.getName(),
+						existing.getUsers(), existing.getGroups());
 			}
 		} catch (Exception e) {
 			log.warn("Failed to sync Google group " + gGroup.getEmail() + ": " + e.getMessage());
@@ -617,6 +651,8 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 			return;
 		}
 
+		String effectiveEmail = email != null ? email : upn;
+
 		try {
 			User existing = principalService.getUserById(repositoryId, userId);
 			if (existing == null) {
@@ -625,9 +661,12 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				newUser.setName(displayName != null ? displayName : userId);
 				newUser.setFirstName(givenName != null ? givenName : "");
 				newUser.setLastName(surname != null ? surname : "");
-				newUser.setEmail(email != null ? email : upn);
+				newUser.setEmail(effectiveEmail);
 				newUser.setPasswordHash(UUID.randomUUID().toString());
 				principalService.createUser(repositoryId, newUser);
+				ensureUserItem(repositoryId, userId,
+						newUser.getName(), newUser.getFirstName(), newUser.getLastName(),
+						newUser.getEmail(), newUser.getPasswordHash());
 				result.incrementUsersCreated();
 			} else {
 				boolean updated = false;
@@ -643,12 +682,22 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 					existing.setLastName(surname);
 					updated = true;
 				}
+				// Update email on User object
+				if (effectiveEmail != null && !effectiveEmail.equals(existing.getEmail())) {
+					existing.setEmail(effectiveEmail);
+					updated = true;
+				}
 				if (updated) {
 					principalService.updateUser(repositoryId, existing);
 					result.incrementUsersUpdated();
 				} else {
 					result.incrementUsersSkipped();
 				}
+				// Ensure UserItem exists even for previously synced users
+				// Pass source email (not existing.getEmail() which may be null)
+				ensureUserItem(repositoryId, userId, existing.getName(),
+						existing.getFirstName(), existing.getLastName(),
+						effectiveEmail, existing.getPasswordHash());
 			}
 		} catch (Exception e) {
 			log.warn("Failed to sync MS user " + userId + ": " + e.getMessage());
@@ -750,6 +799,8 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				newGroup.setUsers(memberIds);
 				newGroup.setGroups(new ArrayList<>());
 				principalService.createGroup(repositoryId, newGroup);
+				ensureGroupItem(repositoryId, groupId,
+						displayName != null ? displayName : groupId, memberIds, new ArrayList<>());
 				result.incrementGroupsCreated();
 			} else {
 				boolean updated = false;
@@ -767,6 +818,8 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				} else {
 					result.incrementGroupsSkipped();
 				}
+				ensureGroupItem(repositoryId, groupId, existing.getName(),
+						existing.getUsers(), existing.getGroups());
 			}
 		} catch (Exception e) {
 			log.warn("Failed to sync MS group " + msGroupId + ": " + e.getMessage());
@@ -1019,6 +1072,173 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 			return (String) json.get("access_token");
 		} else {
 			throw new RuntimeException("Failed to get MS token: HTTP " + response.statusCode());
+		}
+	}
+
+	// ---- CMIS Item creation helpers (for UI management screen visibility) ----
+
+	/**
+	 * Get or create the system sub-folder (e.g. "users", "groups") under .system folder.
+	 * Mirrors the logic in UserItemResource.getOrCreateSystemSubFolder().
+	 */
+	private Folder getOrCreateSystemSubFolder(String repositoryId, String name) {
+		Folder systemFolder = contentService.getSystemFolder(repositoryId);
+
+		// Fallback: search for .system folder directly in root children
+		if (systemFolder == null) {
+			systemFolder = findSystemFolderInRoot(repositoryId);
+		}
+
+		if (systemFolder == null) {
+			log.warn("SystemFolder not found for repository: " + repositoryId + ", skipping CMIS item creation");
+			return null;
+		}
+
+		List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
+		if (CollectionUtils.isNotEmpty(children)) {
+			for (Content child : children) {
+				if (name.equals(child.getName())) {
+					return (Folder) child;
+				}
+			}
+		}
+
+		// Create the sub-folder
+		PropertiesImpl properties = new PropertiesImpl();
+		properties.addProperty(new PropertyStringImpl("cmis:name", name));
+		properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
+		properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
+		return contentService.createFolder(new SystemCallContext(repositoryId), repositoryId,
+				properties, systemFolder, null, null, null, null);
+	}
+
+	/**
+	 * Find the .system folder by searching root folder children directly.
+	 * Uses known root folder IDs for supported repositories (same as UserItemResource).
+	 */
+	private Folder findSystemFolderInRoot(String repositoryId) {
+		try {
+			String rootFolderId;
+			switch (repositoryId) {
+				case "bedroom":
+					rootFolderId = "e02f784f8360a02cc14d1314c10038ff";
+					break;
+				case "canopy":
+					rootFolderId = "ddd70e3ed8b847c2a364be81117c57ae";
+					break;
+				default:
+					log.warn("Unknown repository for .system folder lookup: " + repositoryId);
+					return null;
+			}
+			List<Content> rootChildren = contentService.getChildren(repositoryId, rootFolderId);
+			if (rootChildren != null) {
+				for (Content child : rootChildren) {
+					if (child instanceof Folder && ".system".equals(child.getName())) {
+						return (Folder) child;
+					}
+				}
+			}
+		} catch (Exception e) {
+			log.warn("Error finding .system folder for " + repositoryId + ": " + e.getMessage());
+		}
+		return null;
+	}
+
+	/**
+	 * Ensure a UserItem (cmis:item) exists for the given user so it appears in the UI management screen.
+	 * If the user already exists, update firstName, lastName, and email.
+	 */
+	private void ensureUserItem(String repositoryId, String userId, String name,
+			String firstName, String lastName, String email, String passwordHash) {
+		if (contentService == null) {
+			return;
+		}
+		try {
+			UserItem existing = contentService.getUserItemById(repositoryId, userId);
+			if (existing != null) {
+				// Update existing user's firstName, lastName, email
+				boolean updated = false;
+				List<Property> subTypeProperties = existing.getSubTypeProperties();
+				if (subTypeProperties == null) {
+					subTypeProperties = new ArrayList<>();
+				}
+				updated |= updateSubTypeProperty(subTypeProperties, "nemaki:firstName", firstName);
+				updated |= updateSubTypeProperty(subTypeProperties, "nemaki:lastName", lastName);
+				updated |= updateSubTypeProperty(subTypeProperties, "nemaki:email", email);
+				if (name != null && !name.equals(existing.getName())) {
+					existing.setName(name);
+					updated = true;
+				}
+				if (updated) {
+					existing.setSubTypeProperties(subTypeProperties);
+					existing.setModifier("system");
+					existing.setModified(new java.util.GregorianCalendar());
+					contentService.update(new SystemCallContext(repositoryId), repositoryId, existing);
+				}
+				return;
+			}
+			Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
+			if (usersFolder == null) {
+				log.warn("Cannot create UserItem for " + userId + ": users folder not available");
+				return;
+			}
+			UserItem userItem = new UserItem(null, NemakiObjectType.nemakiUser,
+					userId, name, passwordHash, false, usersFolder.getId());
+			List<Property> subTypeProperties = new ArrayList<>();
+			if (firstName != null) subTypeProperties.add(new Property("nemaki:firstName", firstName));
+			if (lastName != null) subTypeProperties.add(new Property("nemaki:lastName", lastName));
+			if (email != null) subTypeProperties.add(new Property("nemaki:email", email));
+			userItem.setSubTypeProperties(subTypeProperties);
+			contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, userItem);
+		} catch (Exception e) {
+			log.warn("Failed to create/update UserItem for " + userId + ": " + e.getMessage());
+		}
+	}
+
+	/**
+	 * Update or add a subtype property. Returns true if the property was changed.
+	 */
+	private boolean updateSubTypeProperty(List<Property> properties, String key, String value) {
+		if (value == null) return false;
+		for (int i = 0; i < properties.size(); i++) {
+			if (key.equals(properties.get(i).getKey())) {
+				if (value.equals(properties.get(i).getValue())) return false;
+				properties.set(i, new Property(key, value));
+				return true;
+			}
+		}
+		properties.add(new Property(key, value));
+		return true;
+	}
+
+	/**
+	 * Ensure a GroupItem (cmis:item) exists for the given group so it appears in the UI management screen.
+	 */
+	private void ensureGroupItem(String repositoryId, String groupId, String groupName,
+			List<String> users, List<String> groups) {
+		if (contentService == null) {
+			log.debug("ContentService not available, skipping GroupItem creation for " + groupId);
+			return;
+		}
+		try {
+			GroupItem existing = contentService.getGroupItemById(repositoryId, groupId);
+			if (existing != null) {
+				return; // Already exists
+			}
+			Folder groupsFolder = getOrCreateSystemSubFolder(repositoryId, "groups");
+			if (groupsFolder == null) {
+				log.warn("Cannot create GroupItem for " + groupId + ": groups folder not available");
+				return;
+			}
+			GroupItem groupItem = new GroupItem(null, NemakiObjectType.nemakiGroup,
+					groupId, groupName,
+					users != null ? users : new ArrayList<>(),
+					groups != null ? groups : new ArrayList<>());
+			groupItem.setParentId(groupsFolder.getId());
+			contentService.createGroupItem(new SystemCallContext(repositoryId), repositoryId, groupItem);
+			log.info("Created GroupItem for cloud-synced group: " + groupId);
+		} catch (Exception e) {
+			log.warn("Failed to create GroupItem for " + groupId + ": " + e.getMessage());
 		}
 	}
 }

@@ -499,7 +499,16 @@ public class AuditLogger {
                 long durationMs = System.currentTimeMillis() - startTime;
                 builder.durationMs(durationMs);
 
-                // Add result information if verbose
+                // Extract basic object info (name, type, path) from result at all detail levels
+                if (result != null) {
+                    try {
+                        extractBasicResultInfo(builder, result);
+                    } catch (Exception e) {
+                        log.debug("Failed to extract basic result info for audit: " + e.getMessage());
+                    }
+                }
+
+                // Add detailed result information if verbose
                 if (detailLevel == DetailLevel.VERBOSE && result != null) {
                     try {
                         addResultInfo(builder, result);
@@ -792,6 +801,35 @@ public class AuditLogger {
         // Add property count for verbose logging
         if (detailLevel == DetailLevel.VERBOSE) {
             builder.detail("propertyCount", properties.getProperties().size());
+        }
+    }
+
+    /**
+     * Extracts basic object identification info (name, type, path) from the result.
+     * Called at all detail levels so audit entries always show the target object.
+     */
+    private void extractBasicResultInfo(AuditEventBuilder builder, Object result) {
+        if (result instanceof org.apache.chemistry.opencmis.commons.data.ObjectData) {
+            org.apache.chemistry.opencmis.commons.data.ObjectData objData =
+                (org.apache.chemistry.opencmis.commons.data.ObjectData) result;
+            if (objData.getProperties() != null && objData.getProperties().getProperties() != null) {
+                java.util.Map<String, PropertyData<?>> props = objData.getProperties().getProperties();
+
+                PropertyData<?> nameProp = props.get("cmis:name");
+                if (nameProp != null && nameProp.getFirstValue() != null) {
+                    builder.objectName(nameProp.getFirstValue().toString());
+                }
+
+                PropertyData<?> typeProp = props.get("cmis:objectTypeId");
+                if (typeProp != null && typeProp.getFirstValue() != null) {
+                    builder.objectType(typeProp.getFirstValue().toString());
+                }
+
+                PropertyData<?> pathProp = props.get("cmis:path");
+                if (pathProp != null && pathProp.getFirstValue() != null) {
+                    builder.objectPath(pathProp.getFirstValue().toString());
+                }
+            }
         }
     }
 

@@ -249,7 +249,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
-import { CMISObject, TypeDefinition } from '../../types/cmis';
+import { CMISObject, TypeDefinition, AllowableActions } from '../../types/cmis';
 import { FolderTree } from '../FolderTree/FolderTree';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -375,6 +375,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // Custom property input states (2025-12-23)
   const [selectedDocumentTypeDefinition, setSelectedDocumentTypeDefinition] = useState<TypeDefinition | null>(null);
   const [selectedFolderTypeDefinition, setSelectedFolderTypeDefinition] = useState<TypeDefinition | null>(null);
+
+  // Folder permission state for conditional button rendering
+  const [folderAllowableActions, setFolderAllowableActions] = useState<AllowableActions | undefined>(undefined);
+  const canCreateDoc = folderAllowableActions?.canCreateDocument === true;
+  const canCreateFld = folderAllowableActions?.canCreateFolder === true;
 
   // Import/Export states (2026-01-28)
   const [importModalVisible, setImportModalVisible] = useState(false);
@@ -502,6 +507,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       const folder = await cmisService.getObject(repositoryId, selectedFolderId);
       const folderPath = folder.path || '/';
       setCurrentFolderPath(folderPath);
+      setFolderAllowableActions(folder.allowableActions);
     } catch (error) {
       message.error(`${t('documentList.messages.loadObjectsError')}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       // Clear objects on error to show empty state
@@ -1478,25 +1484,31 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   {isSearchMode && (
                     <Button onClick={handleClearSearch}>{t('common.clear')}</Button>
                   )}
-                  <Button
-                    type="primary"
-                    icon={<UploadOutlined />}
-                    onClick={() => setUploadModalVisible(true)}
-                  >
-                    {t('documentList.uploadFile')}
-                  </Button>
-                  <Button
-                    icon={<PlusOutlined />}
-                    onClick={() => setFolderModalVisible(true)}
-                  >
-                    {t('documentList.createFolder')}
-                  </Button>
-                  <Button
-                    icon={<ImportOutlined />}
-                    onClick={() => setImportModalVisible(true)}
-                  >
-                    {t('importExport.import')}
-                  </Button>
+                  {canCreateDoc && (
+                    <Button
+                      type="primary"
+                      icon={<UploadOutlined />}
+                      onClick={() => setUploadModalVisible(true)}
+                    >
+                      {t('documentList.uploadFile')}
+                    </Button>
+                  )}
+                  {canCreateFld && (
+                    <Button
+                      icon={<PlusOutlined />}
+                      onClick={() => setFolderModalVisible(true)}
+                    >
+                      {t('documentList.createFolder')}
+                    </Button>
+                  )}
+                  {canCreateDoc && (
+                    <Button
+                      icon={<ImportOutlined />}
+                      onClick={() => setImportModalVisible(true)}
+                    >
+                      {t('importExport.import')}
+                    </Button>
+                  )}
                   <Button
                     icon={<ExportOutlined />}
                     onClick={handleExport}

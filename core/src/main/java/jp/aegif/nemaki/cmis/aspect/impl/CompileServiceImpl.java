@@ -1803,9 +1803,6 @@ public class CompileServiceImpl implements CompileService {
 	}
 
 	private void setCmisSecondaryTypes(String repositoryId, PropertiesImpl props, Content content, TypeDefinition tdf) {
-		if (log.isDebugEnabled()) {
-			log.debug("setCmisSecondaryTypes called for content: " + content.getId());
-		}
 		List<Aspect> aspects = content.getAspects();
 		List<String> secondaryIds = new ArrayList<String>();
 
@@ -1818,26 +1815,15 @@ public class CompileServiceImpl implements CompileService {
 
 		// CMIS 1.1 COMPLIANCE FIX: Always provide empty list instead of null for multi-cardinality properties
 		// This ensures CMIS Browser Binding returns [] instead of null for compliance
-		// Fixed: Create PropertyIdImpl directly to force empty list instead of null
 		PropertyDefinition<?> pdf = tdf.getPropertyDefinitions().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 		if (checkAddProperty(props, tdf, PropertyIds.SECONDARY_OBJECT_TYPE_IDS)) {
-			if (log.isDebugEnabled()) {
-				log.debug("Creating PropertyIdImpl with list size: " + secondaryIds.size());
-			}
 			PropertyIdImpl propId = new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
-			if (log.isDebugEnabled()) {
-				log.debug("PropertyIdImpl created, getValues() = " + propId.getValues());
-				log.debug("PropertyIdImpl getFirstValue() = " + propId.getFirstValue());
-			}
 			if (pdf != null) {
 				propId.setDisplayName(pdf.getDisplayName());
 				propId.setLocalName(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 				propId.setQueryName(pdf.getQueryName());
 			}
 			props.addProperty(propId);
-			if (log.isDebugEnabled()) {
-				log.debug("PropertyIdImpl added to properties");
-			}
 		}
 
 		// each secondary properties

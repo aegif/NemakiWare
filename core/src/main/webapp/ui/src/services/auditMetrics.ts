@@ -83,6 +83,31 @@ export function isErrorResponse(
   return response.status === 'error';
 }
 
+/** A single audit log entry parsed from audit.log */
+export interface AuditEntry {
+  eventId: string;
+  timestamp: string;
+  operation: string;
+  userId: string;
+  repositoryId: string;
+  objectName?: string;
+  objectType?: string;
+  result: string;
+  durationMs?: number;
+  clientIp?: string;
+  errorMessage?: string;
+  httpMethod?: string;
+  requestPath?: string;
+}
+
+/** Response from GET /audit/entries */
+export interface AuditEntriesResponse {
+  status: string;
+  entries: AuditEntry[];
+  count: number;
+  timestamp: number;
+}
+
 export class AuditMetricsService {
   // Use the OpenAPI compliant endpoint (legacy endpoint also available at /core/rest/all/audit/metrics)
   private baseUrl = '/core/api/v1/cmis/audit/metrics';
@@ -177,5 +202,27 @@ export class AuditMetricsService {
     }
 
     return response.text();
+  }
+
+  /**
+   * Fetches recent audit log entries from the audit.log file.
+   * Requires admin authentication.
+   */
+  async getRecentEntries(limit: number = 100): Promise<AuditEntriesResponse> {
+    const response = await fetch(
+      `/core/api/v1/cmis/audit/metrics/entries?limit=${limit}`,
+      { credentials: 'include' }
+    );
+
+    if (response.status === 401 || response.status === 403) {
+      this.onAuthError();
+      throw new Error('Authentication required');
+    }
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch audit entries: ${response.status}`);
+    }
+
+    return response.json();
   }
 }

@@ -1996,6 +1996,57 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<UserItem> getUserItems(String repositoryId, int skip, int limit) {
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+
+			Map<String, Object> queryParams = new HashMap<String, Object>();
+			queryParams.put("skip", skip);
+			queryParams.put("limit", limit);
+			ViewResult result = client.queryView("_repo", "userItemsById", queryParams);
+
+			List<UserItem> userItems = new ArrayList<UserItem>();
+			if (result != null && result.getRows() != null) {
+				for (ViewResultRow row : result.getRows()) {
+					try {
+						Object rawDoc = row.getValue();
+						if (rawDoc instanceof Map) {
+							@SuppressWarnings("unchecked")
+							Map<String, Object> docMap = (Map<String, Object>) rawDoc;
+							CouchUserItem cui = new CouchUserItem(docMap);
+							if (cui.getUserId() != null && cui.getId() != null && cui.getType() != null) {
+								UserItem converted = cui.convert();
+								if (converted != null) {
+									userItems.add(converted);
+								}
+							}
+						}
+					} catch (Exception convertException) {
+						log.error("getUserItems(paginated): Exception during conversion", convertException);
+					}
+				}
+			}
+			return userItems;
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to retrieve user items from repository: " + repositoryId, e);
+		}
+	}
+
+	@Override
+	public int getUserItemCount(String repositoryId) {
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			ViewResult result = client.queryView("_repo", "userItemsById");
+			if (result != null && result.getRows() != null) {
+				return result.getRows().size();
+			}
+			return 0;
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to count user items for repository: " + repositoryId, e);
+		}
+	}
+
+	@Override
 	public GroupItem getGroupItem(String repositoryId, String objectId) {
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
@@ -2143,6 +2194,57 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		} catch (Exception e) {
 			log.error("Error getting group items for repository: " + repositoryId + ", error: " + e.getMessage(), e);
 			return new ArrayList<GroupItem>();
+		}
+	}
+
+	@Override
+	public List<GroupItem> getGroupItems(String repositoryId, int skip, int limit) {
+		try {
+			Map<String, Object> queryParams = new HashMap<String, Object>();
+			queryParams.put("include_docs", true);
+			queryParams.put("skip", skip);
+			queryParams.put("limit", limit);
+			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "groupItemsById", queryParams);
+
+			List<GroupItem> groupItems = new ArrayList<GroupItem>();
+			if (result.getRows() != null) {
+				for (ViewResultRow row : result.getRows()) {
+					if (row.getDoc() != null) {
+						try {
+							ObjectMapper mapper = createConfiguredObjectMapper();
+							com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+							Map<String, Object> docProperties = doc.getProperties();
+							CouchGroupItem cgi = mapper.convertValue(docProperties, CouchGroupItem.class);
+							if (cgi != null) {
+								GroupItem gi = cgi.convert();
+								groupItems.add(gi);
+							}
+						} catch (Exception e) {
+							log.error("Failed to convert group item document: " + e.getMessage(), e);
+						}
+					}
+				}
+			}
+			return groupItems;
+		} catch (Exception e) {
+			log.error("Error getting group items (paginated) for repository: " + repositoryId + ", error: " + e.getMessage(), e);
+			return new ArrayList<GroupItem>();
+		}
+	}
+
+	@Override
+	public int getGroupItemCount(String repositoryId) {
+		try {
+			Map<String, Object> queryParams = new HashMap<String, Object>();
+			queryParams.put("include_docs", false);
+			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "groupItemsById", queryParams);
+			if (result != null && result.getRows() != null) {
+				return result.getRows().size();
+			}
+			return 0;
+		} catch (Exception e) {
+			log.error("Error counting group items for repository: " + repositoryId, e);
+			return 0;
 		}
 	}
 
@@ -2833,103 +2935,31 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public AttachmentNode getAttachment(String repositoryId, String attachmentId) {
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			
-			// FORCE ERROR log for visibility
-			log.debug("=== GET ATTACHMENT DEBUG ===");
-			log.error("Repository: " + repositoryId);
-			log.error("Attachment ID: " + attachmentId);
-			
-			// Try to get the document as raw JSON first
-			try {
-				Object rawDoc = client.get(Object.class, attachmentId);
-				log.error("Raw document retrieved: " + (rawDoc != null ? "SUCCESS" : "NULL"));
-				if (rawDoc != null) {
-					log.error("Raw document type: " + rawDoc.getClass().getSimpleName());
-					log.error("Raw document content: " + rawDoc.toString().substring(0, Math.min(200, rawDoc.toString().length())));
-				}
-			} catch (Exception rawEx) {
-				log.error("Error getting raw document: " + rawEx.getMessage());
-			}
-			
+
 			CouchAttachmentNode can = client.get(CouchAttachmentNode.class, attachmentId);
-			
+
 			if (can != null) {
-				log.error("CouchAttachmentNode retrieved successfully");
-				log.error("- Name: " + can.getName());
-				log.error("- Length: " + can.getLength());
-				log.error("- MimeType: " + can.getMimeType());
-				log.error("- Type: " + can.getType());
-				
 				AttachmentNode result = can.convert();
-				log.error("AttachmentNode converted successfully");
-				log.error("- Result Name: " + result.getName());
-				log.error("- Result Length: " + result.getLength());
-				log.error("- Result MimeType: " + result.getMimeType());
-				
-				// CRITICAL FIX: Set the actual binary stream from CouchDB attachment
-				// The AttachmentNode needs the actual InputStream to provide content
+
+				// Set the actual binary stream from CouchDB attachment
 				try {
-					// Get the binary attachment stream from CouchDB
-					// Standard attachment name used in createAttachment is "content"
 					Object attachmentObj = client.getAttachment(attachmentId, "content");
 					if (attachmentObj != null && attachmentObj instanceof InputStream) {
-						InputStream attachmentStream = (InputStream) attachmentObj;
-						log.error("Successfully retrieved binary attachment stream for: " + attachmentId);
-
-						// DEBUG: Log retrieved content details
-						log.error("Attachment ID: " + attachmentId);
-						try {
-							// Try to peek at the content without consuming it
-							if (attachmentStream.markSupported()) {
-								attachmentStream.mark(100);
-								byte[] firstBytes = new byte[50];
-								int bytesRead = attachmentStream.read(firstBytes);
-								if (bytesRead > 0) {
-									String preview = new String(firstBytes, 0, bytesRead, "UTF-8");
-									log.error("Retrieved content preview: " + preview);
-									log.error("Retrieved bytes read: " + bytesRead);
-								}
-								attachmentStream.reset();
-							} else {
-								// Wrap in BufferedInputStream to support mark/reset
-								java.io.BufferedInputStream bufferedStream = new java.io.BufferedInputStream(attachmentStream);
-								bufferedStream.mark(100);
-								byte[] firstBytes = new byte[50];
-								int bytesRead = bufferedStream.read(firstBytes);
-								if (bytesRead > 0) {
-									String preview = new String(firstBytes, 0, bytesRead, "UTF-8");
-									log.error("Retrieved content preview (buffered): " + preview);
-									log.error("Retrieved bytes read: " + bytesRead);
-								}
-								bufferedStream.reset();
-								attachmentStream = bufferedStream;
-							}
-						} catch (Exception debugEx) {
-							log.error("Could not preview retrieved content: " + debugEx.getMessage());
-						}
-
-						result.setInputStream(attachmentStream);
+						result.setInputStream((InputStream) attachmentObj);
 					} else {
-						log.error("WARNING: No binary attachment stream found for: " + attachmentId);
-						// Attachment might be metadata-only (no binary content)
+						log.debug("No binary attachment stream found for: " + attachmentId);
 					}
 				} catch (Exception streamEx) {
-					log.error("Error retrieving binary attachment stream for: " + attachmentId, streamEx);
-					// Continue without stream - attachment might be metadata-only
+					log.warn("Error retrieving binary attachment stream for: " + attachmentId + " - " + streamEx.getMessage());
 				}
-				
+
 				return result;
 			} else {
-				log.error("CRITICAL: CouchAttachmentNode is null - Jackson deserialization failed!");
+				log.warn("CouchAttachmentNode is null for: " + attachmentId);
 				return null;
 			}
 		} catch (Exception e) {
 			log.error("Error getting attachment: " + attachmentId + " in repository: " + repositoryId, e);
-			log.error("Exception type: " + e.getClass().getName());
-			log.error("Exception message: " + e.getMessage());
-			if (e.getCause() != null) {
-				log.error("Exception cause: " + e.getCause().getClass().getName() + " - " + e.getCause().getMessage());
-			}
 			return null;
 		}
 	}

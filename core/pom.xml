@@ -1001,6 +1001,8 @@
 								<include>oidc-callback.html</include>
 								<include>saml-callback.html</include>
 								<include>silent-callback.html</include>
+								<include>auth-popup.html</include>
+								<include>auth-popup-entry.js</include>
 								<include>assets/**</include>
 								<include>pdf-worker/**</include>
 								<include>*.png</include>

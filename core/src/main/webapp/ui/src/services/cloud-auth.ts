@@ -104,6 +104,13 @@ export async function signInWithGoogle(
 }
 
 /**
+ * Cached MSAL instance to prevent interaction_in_progress errors.
+ * MSAL requires a singleton PublicClientApplication per clientId.
+ */
+export let msalInstance: InstanceType<typeof import('@azure/msal-browser').PublicClientApplication> | null = null;
+let msalClientId: string | null = null;
+
+/**
  * Initiate Microsoft Sign-In using popup and return NemakiWare auth token.
  *
  * Uses MSAL.js (loaded dynamically) to perform Authorization Code flow
@@ -114,23 +121,53 @@ export async function signInWithMicrosoft(
   tenantId: string,
   repositoryId: string
 ): Promise<AuthToken> {
-  // Dynamically import MSAL
-  const { PublicClientApplication } = await import('@azure/msal-browser');
+  const { PublicClientApplication, BrowserAuthError } = await import('@azure/msal-browser');
 
-  const msalConfig = {
-    auth: {
-      clientId,
-      authority: `https://login.microsoftonline.com/${tenantId}`,
-      redirectUri: `${window.location.origin}/core/ui/`,
-    },
-  };
+  // Reuse MSAL instance for the same clientId to avoid interaction_in_progress
+  if (!msalInstance || msalClientId !== clientId) {
+    const msalConfig = {
+      auth: {
+        clientId,
+        authority: `https://login.microsoftonline.com/${tenantId}`,
+        // Use a blank page as popup redirect target to avoid React SPA
+        // rendering the login page inside the popup window
+        redirectUri: `${window.location.origin}/core/ui/auth-popup.html`,
+      },
+    };
+    msalInstance = new PublicClientApplication(msalConfig);
+    await msalInstance.initialize();
+    msalClientId = clientId;
+  }
 
-  const msalInstance = new PublicClientApplication(msalConfig);
-  await msalInstance.initialize();
+  const loginRequest = { scopes: ['openid', 'profile', 'email'] };
 
-  const loginResponse = await msalInstance.loginPopup({
-    scopes: ['openid', 'profile', 'email'],
-  });
+  let loginResponse;
+  try {
+    loginResponse = await msalInstance.loginPopup(loginRequest);
+  } catch (err) {
+    // If a previous popup was interrupted, clear the state and retry once
+    if (err instanceof BrowserAuthError && err.errorCode === 'interaction_in_progress') {
+      // Clear MSAL interaction cache in sessionStorage
+      const keys = Object.keys(sessionStorage);
+      for (const key of keys) {
+        if (key.startsWith('msal.') && key.includes('interaction')) {
+          sessionStorage.removeItem(key);
+        }
+      }
+      // Retry with a fresh instance
+      msalInstance = new PublicClientApplication({
+        auth: {
+          clientId,
+          authority: `https://login.microsoftonline.com/${tenantId}`,
+          redirectUri: `${window.location.origin}/core/ui/auth-popup.html`,
+        },
+      });
+      await msalInstance.initialize();
+      loginResponse = await msalInstance.loginPopup(loginRequest);
+    } else {
+      throw err;
+    }
+  }
 
   if (!loginResponse.idToken) {
     throw new Error('Microsoft login did not return an ID token');

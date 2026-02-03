@@ -278,24 +278,35 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
   const [modalVisible, setModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [searchText, setSearchText] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
   const [form] = Form.useForm();
   const { t } = useTranslation();
 
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
+  const searchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    loadUsers();
+    loadUsers(1, '');
     loadGroups();
   }, [repositoryId]);
 
-  const loadUsers = async () => {
+  const loadUsers = async (page?: number, query?: string) => {
     setLoading(true);
+    const p = page ?? currentPage;
+    const q = query ?? searchText;
     try {
-      const userList = await cmisService.getUsers(repositoryId);
-      setUsers(userList);
+      const result = await cmisService.getUsers(repositoryId, {
+        offset: (p - 1) * pageSize,
+        limit: pageSize,
+        query: q || undefined
+      });
+      setUsers(result.users);
+      setTotalCount(result.totalCount);
+      setCurrentPage(p);
     } catch (error: any) {
-      // Failed to load users
       let errorMessage = t('userManagement.messages.loadError');
 
       if (error.status === 500) {
@@ -319,11 +330,19 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
 
   const loadGroups = async () => {
     try {
-      const groupList = await cmisService.getGroups(repositoryId);
-      setGroups(groupList);
+      const result = await cmisService.getGroups(repositoryId);
+      setGroups(result.groups);
     } catch (error: any) {
       // Group loading failed - user management can continue without group list
     }
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchText(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      loadUsers(1, value);
+    }, 300);
   };
 
   const handleSubmit = async (values: any) => {
@@ -399,18 +418,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
     form.resetFields();
   };
 
-  // Filter users based on search text (includes firstName and lastName)
-  const filteredUsers = users.filter(user => {
-    if (!searchText) return true;
-    const searchLower = searchText.toLowerCase();
-    return (
-      user.id.toLowerCase().includes(searchLower) ||
-      user.name?.toLowerCase().includes(searchLower) ||
-      user.firstName?.toLowerCase().includes(searchLower) ||
-      user.lastName?.toLowerCase().includes(searchLower) ||
-      user.email?.toLowerCase().includes(searchLower)
-    );
-  });
+  // Users are now filtered server-side via query parameter
 
   const columns = [
     {
@@ -519,18 +527,25 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
         placeholder={t('userManagement.searchPlaceholder')}
         allowClear
         value={searchText}
-        onChange={(e) => setSearchText(e.target.value)}
-        onSearch={(value) => setSearchText(value)}
+        onChange={(e) => handleSearchChange(e.target.value)}
+        onSearch={(value) => { setSearchText(value); loadUsers(1, value); }}
         style={{ marginBottom: 16 }}
         className="ant-input-search"
       />
 
       <Table
         columns={columns}
-        dataSource={filteredUsers}
+        dataSource={users}
         rowKey="id"
         loading={loading}
-        pagination={{ pageSize: 20 }}
+        pagination={{
+          current: currentPage,
+          pageSize: pageSize,
+          total: totalCount,
+          showSizeChanger: false,
+          showTotal: (total) => t('common.totalItems', { total }),
+          onChange: (page) => loadUsers(page),
+        }}
       />
 
       <Modal
@@ -551,7 +566,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
             label={t('userManagement.columns.userId')}
             rules={[
               { required: true, message: t('userManagement.validation.userIdRequired') },
-              { pattern: /^[a-zA-Z0-9_-]+$/, message: t('common.validation.alphanumericOnly') }
+              { pattern: /^[a-zA-Z0-9_.@+-]+$/, message: t('common.validation.alphanumericOnly') }
             ]}
           >
             <Input 

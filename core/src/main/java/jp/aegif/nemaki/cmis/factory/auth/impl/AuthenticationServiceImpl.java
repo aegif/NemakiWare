@@ -124,6 +124,21 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		Object _app = callContext.get(CallContextKey.AUTH_TOKEN_APP);
 		String app = (_app == null) ? "" : (String) _app;
 
+		// If username is not set (e.g., token-only authentication from SSO/cloud auth),
+		// resolve the username from the token via reverse lookup
+		if (StringUtils.isBlank(userName)) {
+			String resolvedUser = tokenService.validateToken(app, callContext.getRepositoryId(), token);
+			if (resolvedUser != null) {
+				userName = resolvedUser;
+				// Set the username in the call context so downstream code can use it
+				((CallContextImpl) callContext).put(CallContext.USERNAME, userName);
+				log.info("Token-only auth: resolved username '" + userName + "' from token for repository: " + callContext.getRepositoryId());
+			} else {
+				log.warn("Token-only auth: could not resolve username from token for repository: " + callContext.getRepositoryId());
+				return false;
+			}
+		}
+
 		if (authenticateUserByToken(app, callContext.getRepositoryId(), userName, token)) {
 			if (authenticateAdminByToken(callContext.getRepositoryId(), userName)) {
 				setAdminFlagInContext(callContext, true);

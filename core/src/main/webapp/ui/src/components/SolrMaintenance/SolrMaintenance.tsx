@@ -35,7 +35,8 @@ import {
   Collapse,
   List,
   Tooltip,
-  Select
+  Select,
+  Modal
 } from 'antd';
 import {
   SyncOutlined,
@@ -50,7 +51,7 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
-import { SolrMaintenanceService, ReindexStatus, IndexHealthStatus, SolrQueryResult, CmisQueryResult, UserInfo } from '../../services/solrMaintenance';
+import { SolrMaintenanceService, ReindexStatus, IndexHealthStatus, SolrQueryResult, CmisQueryResult, UserInfo, IndexDiscrepancyResult, DiscrepancyDocumentInfo } from '../../services/solrMaintenance';
 import { RAGMaintenanceService, RAGReindexStatus, RAGHealthStatus } from '../../services/ragMaintenance';
 import { RAGSearchAdmin } from './RAGSearchAdmin';
 
@@ -79,6 +80,12 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
   const [selectedSimulateUser, setSelectedSimulateUser] = useState<string | undefined>(undefined);
   const [cmisSelectedSimulateUser, setCmisSelectedSimulateUser] = useState<string | undefined>(undefined);
   const [cmisQueryResult, setCmisQueryResult] = useState<CmisQueryResult | null>(null);
+
+  // Discrepancy details state
+  const [discrepancyModalVisible, setDiscrepancyModalVisible] = useState(false);
+  const [discrepancyModalType, setDiscrepancyModalType] = useState<'missing' | 'orphaned'>('missing');
+  const [discrepancyData, setDiscrepancyData] = useState<IndexDiscrepancyResult | null>(null);
+  const [discrepancyLoading, setDiscrepancyLoading] = useState(false);
 
   // RAG state
   const [ragHealthStatus, setRagHealthStatus] = useState<RAGHealthStatus | null>(null);
@@ -152,8 +159,8 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
   const loadUsers = useCallback(async () => {
     setUsersLoading(true);
     try {
-      const userList = await service.getUsers(repositoryId);
-      setUsers(userList);
+      const result = await service.getUsers(repositoryId);
+      setUsers(result.users);
     } catch (error: unknown) {
       console.error('Failed to load users:', error);
     } finally {
@@ -361,6 +368,71 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     }
   };
 
+  const handleShowDiscrepancies = async (type: 'missing' | 'orphaned') => {
+    setDiscrepancyModalType(type);
+    setDiscrepancyModalVisible(true);
+    setDiscrepancyLoading(true);
+    try {
+      const result = await service.getIndexDiscrepancies(repositoryId);
+      setDiscrepancyData(result);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('solrMaintenance.discrepancy.loadError')}: ${errorMessage}`);
+    } finally {
+      setDiscrepancyLoading(false);
+    }
+  };
+
+  const handleReindexSingle = async (objectId: string) => {
+    try {
+      await service.reindexDocument(repositoryId, objectId);
+      message.success(t('solrMaintenance.discrepancy.reindexSuccess', { objectId }));
+      handleShowDiscrepancies('missing');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('solrMaintenance.discrepancy.reindexError')}: ${errorMessage}`);
+    }
+  };
+
+  const handleDeleteFromIndexSingle = async (objectId: string) => {
+    try {
+      await service.deleteFromIndex(repositoryId, objectId);
+      message.success(t('solrMaintenance.discrepancy.deleteSuccess', { objectId }));
+      handleShowDiscrepancies('orphaned');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('solrMaintenance.discrepancy.deleteError')}: ${errorMessage}`);
+    }
+  };
+
+  const handleBulkReindex = async () => {
+    if (!discrepancyData) return;
+    for (const doc of discrepancyData.missingInSolr) {
+      try {
+        await service.reindexDocument(repositoryId, doc.objectId);
+      } catch {
+        // continue
+      }
+    }
+    message.success(t('solrMaintenance.discrepancy.bulkReindexComplete'));
+    handleShowDiscrepancies('missing');
+    loadHealthStatus();
+  };
+
+  const handleBulkDeleteFromIndex = async () => {
+    if (!discrepancyData) return;
+    for (const doc of discrepancyData.orphanedInSolr) {
+      try {
+        await service.deleteFromIndex(repositoryId, doc.objectId);
+      } catch {
+        // continue
+      }
+    }
+    message.success(t('solrMaintenance.discrepancy.bulkDeleteComplete'));
+    handleShowDiscrepancies('orphaned');
+    loadHealthStatus();
+  };
+
   const getStatusTag = (status: string) => {
     switch (status) {
       case 'idle':
@@ -425,18 +497,34 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
             />
           </Col>
           <Col span={6}>
-            <Statistic
-              title={t('solrMaintenance.healthCheck.missingInSolr')}
-              value={healthStatus.missingInSolr}
-              valueStyle={{ color: healthStatus.missingInSolr > 0 ? '#cf1322' : '#3f8600' }}
-            />
+            <div style={{ cursor: healthStatus.missingInSolr > 0 ? 'pointer' : 'default' }}
+                 onClick={() => healthStatus.missingInSolr > 0 && handleShowDiscrepancies('missing')}>
+              <Statistic
+                title={t('solrMaintenance.healthCheck.missingInSolr')}
+                value={healthStatus.missingInSolr}
+                valueStyle={{ color: healthStatus.missingInSolr > 0 ? '#cf1322' : '#3f8600' }}
+              />
+              {healthStatus.missingInSolr > 0 && (
+                <Button type="link" size="small" style={{ padding: 0 }}>
+                  {t('solrMaintenance.discrepancy.showDetails')}
+                </Button>
+              )}
+            </div>
           </Col>
           <Col span={6}>
-            <Statistic
-              title={t('solrMaintenance.healthCheck.orphanedInSolr')}
-              value={healthStatus.orphanedInSolr}
-              valueStyle={{ color: healthStatus.orphanedInSolr > 0 ? '#faad14' : '#3f8600' }}
-            />
+            <div style={{ cursor: healthStatus.orphanedInSolr > 0 ? 'pointer' : 'default' }}
+                 onClick={() => healthStatus.orphanedInSolr > 0 && handleShowDiscrepancies('orphaned')}>
+              <Statistic
+                title={t('solrMaintenance.healthCheck.orphanedInSolr')}
+                value={healthStatus.orphanedInSolr}
+                valueStyle={{ color: healthStatus.orphanedInSolr > 0 ? '#faad14' : '#3f8600' }}
+              />
+              {healthStatus.orphanedInSolr > 0 && (
+                <Button type="link" size="small" style={{ padding: 0 }}>
+                  {t('solrMaintenance.discrepancy.showDetails')}
+                </Button>
+              )}
+            </div>
           </Col>
         </Row>
         <div style={{ marginTop: 16 }}>
@@ -1135,6 +1223,101 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
         </div>
         <Tabs items={tabItems} />
       </Card>
+
+      <Modal
+        title={discrepancyModalType === 'missing'
+          ? t('solrMaintenance.discrepancy.missingTitle')
+          : t('solrMaintenance.discrepancy.orphanedTitle')}
+        open={discrepancyModalVisible}
+        onCancel={() => setDiscrepancyModalVisible(false)}
+        width={900}
+        footer={[
+          discrepancyModalType === 'missing' && discrepancyData && discrepancyData.missingInSolr.length > 0 && (
+            <Popconfirm
+              key="bulkReindex"
+              title={t('solrMaintenance.discrepancy.bulkReindexConfirm')}
+              onConfirm={handleBulkReindex}
+              okText={t('common.confirm')}
+              cancelText={t('common.cancel')}
+            >
+              <Button type="primary">{t('solrMaintenance.discrepancy.bulkReindex')}</Button>
+            </Popconfirm>
+          ),
+          discrepancyModalType === 'orphaned' && discrepancyData && discrepancyData.orphanedInSolr.length > 0 && (
+            <Popconfirm
+              key="bulkDelete"
+              title={t('solrMaintenance.discrepancy.bulkDeleteConfirm')}
+              onConfirm={handleBulkDeleteFromIndex}
+              okText={t('common.confirm')}
+              cancelText={t('common.cancel')}
+            >
+              <Button danger>{t('solrMaintenance.discrepancy.bulkDelete')}</Button>
+            </Popconfirm>
+          ),
+          <Button key="close" onClick={() => setDiscrepancyModalVisible(false)}>{t('common.close')}</Button>,
+        ]}
+      >
+        {discrepancyLoading ? (
+          <Spin style={{ display: 'block', textAlign: 'center', padding: 40 }} />
+        ) : discrepancyData && (
+          <Table
+            dataSource={
+              (discrepancyModalType === 'missing'
+                ? discrepancyData.missingInSolr
+                : discrepancyData.orphanedInSolr
+              ).map((doc: DiscrepancyDocumentInfo) => ({ ...doc, key: doc.objectId }))
+            }
+            columns={[
+              {
+                title: t('solrMaintenance.discrepancy.objectId'),
+                dataIndex: 'objectId',
+                key: 'objectId',
+                width: 320,
+                render: (value: string) => <Text code style={{ fontSize: 11 }}>{value}</Text>,
+              },
+              {
+                title: t('solrMaintenance.discrepancy.name'),
+                dataIndex: 'name',
+                key: 'name',
+                render: (value: string | null) => value || <Text type="secondary">-</Text>,
+              },
+              {
+                title: t('solrMaintenance.discrepancy.objectType'),
+                dataIndex: 'objectType',
+                key: 'objectType',
+                width: 150,
+                render: (value: string | null) => value || <Text type="secondary">-</Text>,
+              },
+              {
+                title: t('common.actions'),
+                key: 'actions',
+                width: 120,
+                render: (_: unknown, record: DiscrepancyDocumentInfo) => (
+                  discrepancyModalType === 'missing' ? (
+                    <Button size="small" type="link" onClick={() => handleReindexSingle(record.objectId)}>
+                      {t('solrMaintenance.discrepancy.reindex')}
+                    </Button>
+                  ) : (
+                    <Popconfirm
+                      title={t('solrMaintenance.discrepancy.deleteConfirm')}
+                      onConfirm={() => handleDeleteFromIndexSingle(record.objectId)}
+                      okText={t('common.confirm')}
+                      cancelText={t('common.cancel')}
+                    >
+                      <Button size="small" type="link" danger>
+                        {t('solrMaintenance.discrepancy.deleteFromIndex')}
+                      </Button>
+                    </Popconfirm>
+                  )
+                ),
+              },
+            ]}
+            pagination={{ pageSize: 20 }}
+            size="small"
+            scroll={{ x: 'max-content' }}
+          />
+        )}
+      </Modal>
     </div>
   );
 };

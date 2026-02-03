@@ -22,6 +22,18 @@ public interface CloudDriveService {
 	String pushToCloud(String repositoryId, String objectId, String provider, String accessToken);
 
 	/**
+	 * Push a document's content to a cloud drive provider, optionally updating an existing cloud file.
+	 *
+	 * @param repositoryId Repository ID
+	 * @param objectId CMIS object ID of the document (typically a PWC)
+	 * @param provider Cloud provider ("google" or "microsoft")
+	 * @param accessToken OAuth2 access token for the cloud provider API
+	 * @param existingCloudFileId Existing cloud file ID to update (null for new upload)
+	 * @return Cloud file ID assigned by the provider
+	 */
+	String pushToCloud(String repositoryId, String objectId, String provider, String accessToken, String existingCloudFileId);
+
+	/**
 	 * Pull a document's content from a cloud drive provider.
 	 *
 	 * @param repositoryId Repository ID

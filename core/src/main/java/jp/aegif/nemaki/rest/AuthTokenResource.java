@@ -235,11 +235,60 @@ public class AuthTokenResource extends ResourceBase{
 			return makeResult(false, result, errMsg).toString();
 		}
 		
-		// SECURITY FIX: Basic Authentication validation is required
-		// This endpoint should only be accessible with valid Basic auth credentials
-		// The AuthenticationFilter should handle the actual authentication
-		// If we reach here, authentication was successful via HTTP Basic Auth
-		
+		// Extract password from request body (form-encoded or JSON)
+		String password = null;
+		if (requestBody != null && !requestBody.isEmpty()) {
+			if (requestBody.startsWith("{")) {
+				try {
+					JSONParser parser = new JSONParser();
+					JSONObject bodyJson = (JSONObject) parser.parse(requestBody);
+					password = (String) bodyJson.get("password");
+				} catch (Exception e) {
+					logger.warn("Failed to parse JSON request body for login");
+				}
+			} else {
+				// Form-encoded: password=xxx
+				for (String param : requestBody.split("&")) {
+					String[] kv = param.split("=", 2);
+					if (kv.length == 2 && "password".equals(kv[0])) {
+						password = java.net.URLDecoder.decode(kv[1], java.nio.charset.StandardCharsets.UTF_8);
+					}
+				}
+			}
+		}
+		if (StringUtils.isBlank(password)) {
+			addErrMsg(errMsg, "password", "isNull");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		// Authenticate using AuthenticationService
+		try {
+			org.apache.chemistry.opencmis.commons.enums.CmisVersion cmisVersion =
+				org.apache.chemistry.opencmis.commons.enums.CmisVersion.CMIS_1_1;
+			org.apache.chemistry.opencmis.commons.server.CallContext ctxt =
+				new org.apache.chemistry.opencmis.server.impl.CallContextImpl(
+					null, cmisVersion, repositoryId, null, null, null, null, null);
+			((org.apache.chemistry.opencmis.server.impl.CallContextImpl) ctxt).put(
+				org.apache.chemistry.opencmis.commons.server.CallContext.USERNAME, userName);
+			((org.apache.chemistry.opencmis.server.impl.CallContextImpl) ctxt).put(
+				org.apache.chemistry.opencmis.commons.server.CallContext.PASSWORD, password);
+
+			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
+			if (authService == null) {
+				addErrMsg(errMsg, "authService", "notAvailable");
+				return makeResult(false, result, errMsg).toString();
+			}
+			boolean authenticated = authService.login(ctxt);
+			if (!authenticated) {
+				addErrMsg(errMsg, "login", "invalidCredentials");
+				return makeResult(false, result, errMsg).toString();
+			}
+		} catch (Exception e) {
+			logger.error("Authentication failed for user: " + userName, e);
+			addErrMsg(errMsg, "login", "authenticationError");
+			return makeResult(false, result, errMsg).toString();
+		}
+
 		try {
 			TokenService tokenService = getTokenService();
 			if (tokenService == null) {
@@ -247,7 +296,7 @@ public class AuthTokenResource extends ResourceBase{
 				result = makeResult(false, result, errMsg);
 				return result.toString();
 			}
-			
+
 			// Only generate token after successful authentication
 			String app = ""; // Default app for React UI
 			Token token = tokenService.setToken(app, repositoryId, userName);
@@ -1012,34 +1061,48 @@ public class AuthTokenResource extends ResourceBase{
 
 	/**
 	 * Get or create the users folder under the system folder.
-	 *
-	 * Uses the same pattern as UserItemResource.getOrCreateSystemSubFolder()
-	 *
-	 * @param repositoryId Repository ID
-	 * @param contentService ContentService instance
-	 * @return Users folder, or null if not found/created
+	 * Uses the same fallback pattern as UserItemResource.getOrCreateSystemSubFolder().
 	 */
 	private Folder getOrCreateUsersFolder(String repositoryId, ContentService contentService) {
 		try {
-			// Get system folder (same approach as UserItemResource)
 			Folder systemFolder = contentService.getSystemFolder(repositoryId);
+
+			// Fallback: search for .system folder directly in root children
+			if (systemFolder == null) {
+				logger.warn("SystemFolder not found via getSystemFolder(), searching in root children");
+				String rootFolderId = getRootFolderIdForRepository(repositoryId);
+				if (rootFolderId != null) {
+					java.util.List<jp.aegif.nemaki.model.Content> rootChildren =
+							contentService.getChildren(repositoryId, rootFolderId);
+					if (rootChildren != null) {
+						for (jp.aegif.nemaki.model.Content child : rootChildren) {
+							if (".system".equals(child.getName()) && child instanceof Folder) {
+								systemFolder = (Folder) child;
+								logger.info("Found .system folder via root scan: {}", systemFolder.getId());
+								break;
+							}
+						}
+					}
+				}
+			}
+
 			if (systemFolder == null) {
 				logger.error("System folder not found for repository: {}", repositoryId);
 				return null;
 			}
 
-			// Search for existing users folder in system folder children
-			java.util.List<jp.aegif.nemaki.model.Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
+			// Search for existing users folder
+			java.util.List<jp.aegif.nemaki.model.Content> children =
+					contentService.getChildren(repositoryId, systemFolder.getId());
 			if (children != null) {
 				for (jp.aegif.nemaki.model.Content child : children) {
 					if ("users".equals(child.getName()) && child instanceof Folder) {
-						logger.debug("Found existing users folder: {}", child.getId());
 						return (Folder) child;
 					}
 				}
 			}
 
-			// Create users folder if it doesn't exist
+			// Create users folder
 			logger.info("Creating users folder under system folder for repository: {}", repositoryId);
 			org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl properties =
 				new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
@@ -1047,22 +1110,31 @@ public class AuthTokenResource extends ResourceBase{
 			properties.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
 			properties.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
 
-			Folder usersFolder = contentService.createFolder(
+			return contentService.createFolder(
 				new SystemCallContext(repositoryId),
 				repositoryId,
 				properties,
 				systemFolder,
 				null, null, null, null
 			);
-
-			if (usersFolder != null) {
-				logger.info("Successfully created users folder: {}", usersFolder.getId());
-			}
-
-			return usersFolder;
 		} catch (Exception e) {
 			logger.error("Failed to get or create users folder: " + e.getMessage(), e);
 			return null;
+		}
+	}
+
+	/**
+	 * Get root folder ID for the specified repository.
+	 */
+	private String getRootFolderIdForRepository(String repositoryId) {
+		switch (repositoryId) {
+			case "bedroom":
+				return "e02f784f8360a02cc14d1314c10038ff";
+			case "canopy":
+				return "ddd70e3ed8b847c2a364be81117c57ae";
+			default:
+				logger.warn("Unknown repository ID for root folder lookup: {}", repositoryId);
+				return null;
 		}
 	}
 
@@ -1186,7 +1258,7 @@ public class AuthTokenResource extends ResourceBase{
 		if (tokenService != null) {
 			return tokenService;
 		}
-		
+
 		try {
 			// Fallback: Get TokenService from Spring WebApplicationContext
 			WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(
@@ -1199,8 +1271,18 @@ public class AuthTokenResource extends ResourceBase{
 		} catch (Exception e) {
 			logger.error("Failed to retrieve TokenService from Spring context", e);
 		}
-		
+
 		logger.error("TokenService is not available - neither via injection nor Spring context lookup");
+		return null;
+	}
+
+	private jp.aegif.nemaki.cmis.factory.auth.AuthenticationService getAuthenticationService() {
+		try {
+			return jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+				.getBean("AuthenticationService", jp.aegif.nemaki.cmis.factory.auth.AuthenticationService.class);
+		} catch (Exception e) {
+			logger.error("Failed to retrieve AuthenticationService from Spring context", e);
+		}
 		return null;
 	}
 }

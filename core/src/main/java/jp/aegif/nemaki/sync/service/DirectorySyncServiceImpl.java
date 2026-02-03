@@ -60,6 +60,8 @@ import jp.aegif.nemaki.sync.util.PasswordEncryptionUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
+import jp.aegif.nemaki.model.Property;
+
 public class DirectorySyncServiceImpl implements DirectorySyncService {
 
     private static final Log log = LogFactory.getLog(DirectorySyncServiceImpl.class);
@@ -300,6 +302,26 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         if (existingName != null && !existingName.equals(ldapDisplayName)) {
             return true;
         }
+
+        // Check firstName, lastName, email changes via subTypeProperties
+        List<Property> subTypeProperties = existingUser.getSubTypeProperties();
+        if (subTypeProperties == null) {
+            subTypeProperties = new ArrayList<>();
+        }
+        Map<String, String> propMap = new HashMap<>();
+        for (Property p : subTypeProperties) {
+            propMap.put(p.getKey(), String.valueOf(p.getValue()));
+        }
+
+        if (ldapUser.getFirstName() != null && !ldapUser.getFirstName().equals(propMap.get("nemaki:firstName"))) {
+            return true;
+        }
+        if (ldapUser.getLastName() != null && !ldapUser.getLastName().equals(propMap.get("nemaki:lastName"))) {
+            return true;
+        }
+        if (ldapUser.getEmail() != null && !ldapUser.getEmail().equals(propMap.get("nemaki:email"))) {
+            return true;
+        }
         
         return false;
     }
@@ -313,8 +335,29 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         existingUser.setName(displayName);
         existingUser.setModifier("system");
         existingUser.setModified(new GregorianCalendar());
+
+        // Update firstName, lastName, email from LDAP attributes
+        List<Property> subTypeProperties = existingUser.getSubTypeProperties();
+        if (subTypeProperties == null) {
+            subTypeProperties = new ArrayList<>();
+        }
+        updateSubTypeProperty(subTypeProperties, "nemaki:firstName", ldapUser.getFirstName());
+        updateSubTypeProperty(subTypeProperties, "nemaki:lastName", ldapUser.getLastName());
+        updateSubTypeProperty(subTypeProperties, "nemaki:email", ldapUser.getEmail());
+        existingUser.setSubTypeProperties(subTypeProperties);
         
         contentService.update(new SystemCallContext(repositoryId), repositoryId, existingUser);
+    }
+
+    private void updateSubTypeProperty(List<Property> properties, String key, String value) {
+        if (value == null) return;
+        for (int i = 0; i < properties.size(); i++) {
+            if (key.equals(properties.get(i).getKey())) {
+                properties.set(i, new Property(key, value));
+                return;
+            }
+        }
+        properties.add(new Property(key, value));
     }
 
     private void createUser(String repositoryId, LdapUser ldapUser, String userPrefix, DirectorySyncConfig config) {
@@ -357,6 +400,13 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
             false,
             usersFolder.getId()
         );
+
+        // Set firstName, lastName, email from LDAP attributes
+        List<Property> subTypeProperties = new ArrayList<>();
+        if (ldapUser.getFirstName() != null) subTypeProperties.add(new Property("nemaki:firstName", ldapUser.getFirstName()));
+        if (ldapUser.getLastName() != null) subTypeProperties.add(new Property("nemaki:lastName", ldapUser.getLastName()));
+        if (ldapUser.getEmail() != null) subTypeProperties.add(new Property("nemaki:email", ldapUser.getEmail()));
+        newUser.setSubTypeProperties(subTypeProperties);
 
         newUser.setCreator("system");
         newUser.setModifier("system");

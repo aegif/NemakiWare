@@ -50,8 +50,8 @@ export const RAGSearchAdmin: React.FC<RAGSearchAdminProps> = ({ repositoryId }) 
     setLoadingUsers(true);
     setError(null);
     try {
-      const userList = await cmisService.getUsers(repositoryId);
-      setUsers(userList);
+      const result = await cmisService.getUsers(repositoryId);
+      setUsers(result.users);
     } catch (err) {
       console.error('Failed to load users:', err);
       setError(t('rag.admin.loadUsersFailed'));
