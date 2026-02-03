@@ -499,7 +499,9 @@ public class McpToolsProvider {
         try {
             // Build the login URL - user should open this in browser
             // baseUrl already includes the context path (e.g., http://localhost:8080/core)
-            String loginUrl = baseUrl + "/ui/#/cloud-login?code=" + initResult.getLoginCode();
+            // SECURITY: URL includes both requestId and loginCode for secure completion
+            String loginUrl = baseUrl + "/ui/#/cloud-login?requestId=" + initResult.getRequestId()
+                    + "&code=" + initResult.getLoginCode();
 
             Map<String, Object> responseObj = new LinkedHashMap<>();
             responseObj.put("success", true);
@@ -510,7 +512,8 @@ public class McpToolsProvider {
             responseObj.put("expires_in_seconds", 300);
 
             String response = objectMapper.writeValueAsString(responseObj);
-            log.info("MCP cloud login initiated, request_id={}, login_code={}", initResult.getRequestId(), initResult.getLoginCode());
+            // SECURITY: Don't log the login_code - it's a shared secret
+            log.info("MCP cloud login initiated, request_id={}", initResult.getRequestId());
             return resultFactory.success(response);
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize cloud login response", e);

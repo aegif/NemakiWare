@@ -32,10 +32,11 @@ import { CloudAuthConfig, fetchCloudAuthConfig, signInWithGoogle, signInWithMicr
 
 const { Title, Text, Paragraph } = Typography;
 
-// LocalStorage key for MCP pending login code
+// LocalStorage keys for MCP pending login
 // Using localStorage instead of sessionStorage because OAuth libraries (MSAL, Google)
 // may clear or interfere with sessionStorage during authentication flows
-const MCP_PENDING_LOGIN_KEY = 'mcp_pending_login_code';
+const MCP_PENDING_LOGIN_CODE_KEY = 'mcp_pending_login_code';
+const MCP_PENDING_REQUEST_ID_KEY = 'mcp_pending_request_id';
 
 interface McpCloudLoginProps {
   repositoryId?: string;
@@ -49,19 +50,24 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
   const [searchParams] = useSearchParams();
   const { isAuthenticated, authToken, login } = useAuth();
 
-  // Get loginCode from URL params or localStorage (for returning from login page)
+  // Get requestId and loginCode from URL params or localStorage (for returning from login page)
+  const urlRequestId = searchParams.get('requestId');
   const urlCode = searchParams.get('code');
-  const storedCode = localStorage.getItem(MCP_PENDING_LOGIN_KEY);
+  const storedRequestId = localStorage.getItem(MCP_PENDING_REQUEST_ID_KEY);
+  const storedCode = localStorage.getItem(MCP_PENDING_LOGIN_CODE_KEY);
+
+  // Use URL values if available, otherwise fall back to stored values
+  const requestId = urlRequestId || storedRequestId;
   const loginCode = urlCode || storedCode;
 
-  // Save code to localStorage when we have a URL code (for recovery if tab is closed)
+  // Save requestId and code to localStorage when we have URL values (for recovery if tab is closed)
   useEffect(() => {
-    if (urlCode) {
-      // Always save URL code to localStorage for recovery
-      // SECURITY: Don't log the code - it's a shared secret
-      localStorage.setItem(MCP_PENDING_LOGIN_KEY, urlCode);
+    if (urlRequestId && urlCode) {
+      // SECURITY: Don't log the credentials - they're shared secrets
+      localStorage.setItem(MCP_PENDING_REQUEST_ID_KEY, urlRequestId);
+      localStorage.setItem(MCP_PENDING_LOGIN_CODE_KEY, urlCode);
     }
-  }, [urlCode]);
+  }, [urlRequestId, urlCode]);
   const [status, setStatus] = useState<'pending' | 'submitting' | 'success' | 'error'>('pending');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -83,15 +89,16 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
     loadConfig();
   }, []);
 
-  // Auto-submit when user is authenticated
+  // Auto-submit when user is authenticated and both requestId and loginCode are available
   useEffect(() => {
-    if (isAuthenticated && authToken && loginCode && status === 'pending') {
+    if (isAuthenticated && authToken && requestId && loginCode && status === 'pending') {
       completeLogin();
     }
-  }, [isAuthenticated, authToken, loginCode, status]);
+  }, [isAuthenticated, authToken, requestId, loginCode, status]);
 
   const completeLogin = async () => {
-    if (!loginCode || !authToken?.username) {
+    // SECURITY: Both requestId and loginCode are required
+    if (!requestId || !loginCode || !authToken?.username) {
       return;
     }
 
@@ -105,8 +112,9 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          loginCode: loginCode,
-          userId: authToken.username
+          requestId: requestId,
+          loginCode: loginCode
+          // Note: userId is now obtained from server-side authenticated session
         }),
         credentials: 'include'
       });
@@ -114,8 +122,9 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
       const result = await response.json();
 
       if (result.status === 'success') {
-        // Clear any stored pending code on success
-        localStorage.removeItem(MCP_PENDING_LOGIN_KEY);
+        // Clear stored pending login data on success
+        localStorage.removeItem(MCP_PENDING_REQUEST_ID_KEY);
+        localStorage.removeItem(MCP_PENDING_LOGIN_CODE_KEY);
         setStatus('success');
       } else {
         setStatus('error');
@@ -169,8 +178,8 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
     }
   };
 
-  // No login code provided
-  if (!loginCode) {
+  // No requestId or login code provided
+  if (!requestId || !loginCode) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#f0f2f5' }}>
         <Card style={{ maxWidth: 480, width: '100%', textAlign: 'center' }}>

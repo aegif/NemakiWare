@@ -529,49 +529,98 @@ public class McpAuthenticationHandler {
      * Complete a cloud login request after browser authentication.
      * Called by the callback endpoint when OAuth completes.
      *
-     * SECURITY: Uses constant-time comparison for login code to prevent timing attacks.
+     * SECURITY:
+     * - Requires both requestId and loginCode to prevent brute-force attacks
+     * - Uses constant-time comparison for login code to prevent timing attacks
+     * - Limits failed attempts per request to prevent enumeration
      *
+     * @param requestId The request ID from the URL
      * @param loginCode The login code displayed to the user
      * @param userId The authenticated user ID
      * @return true if the login was completed, false if the code was invalid
      */
+    public boolean completeCloudLogin(String requestId, String loginCode, String userId) {
+        // SECURITY: Require requestId to narrow down the search and prevent brute-force
+        if (requestId == null || requestId.isEmpty()) {
+            log.warn("Cloud login completion failed: requestId is required");
+            return false;
+        }
+
+        CloudLoginRequest request = pendingCloudLogins.get(requestId);
+        if (request == null) {
+            log.warn("Cloud login completion failed: invalid requestId");
+            return false;
+        }
+
+        if (request.isExpired()) {
+            pendingCloudLogins.remove(requestId);
+            log.warn("Cloud login completion failed: request expired");
+            return false;
+        }
+
+        // SECURITY: Check failure limit before attempting validation
+        if (request.isFailedTooManyTimes()) {
+            pendingCloudLogins.remove(requestId);
+            log.warn("Cloud login completion failed: too many failed attempts for requestId={}", requestId);
+            return false;
+        }
+
+        // Use constant-time comparison to prevent timing attacks
+        if (java.security.MessageDigest.isEqual(
+                request.getLoginCode().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                loginCode.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+            request.complete(userId);
+            log.info("Cloud login completed for requestId={}, user={}", requestId, userId);
+            return true;
+        }
+
+        // SECURITY: Increment failure count on invalid code
+        request.incrementFailedAttempts();
+        log.warn("Cloud login completion failed: invalid code for requestId={} (attempts: {})",
+                requestId, request.getFailedAttempts());
+        return false;
+    }
+
+    /**
+     * Legacy method for backward compatibility.
+     * @deprecated Use {@link #completeCloudLogin(String, String, String)} with requestId instead.
+     */
+    @Deprecated
     public boolean completeCloudLogin(String loginCode, String userId) {
+        // SECURITY: This method is deprecated and will be removed.
+        // For now, search all pending requests (less secure)
         for (Map.Entry<String, CloudLoginRequest> entry : pendingCloudLogins.entrySet()) {
             CloudLoginRequest request = entry.getValue();
-            // Use constant-time comparison to prevent timing attacks
-            if (java.security.MessageDigest.isEqual(
-                    request.getLoginCode().getBytes(java.nio.charset.StandardCharsets.UTF_8),
-                    loginCode.getBytes(java.nio.charset.StandardCharsets.UTF_8)) && !request.isExpired()) {
+            if (!request.isExpired() && !request.isFailedTooManyTimes() &&
+                    java.security.MessageDigest.isEqual(
+                        request.getLoginCode().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        loginCode.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
                 request.complete(userId);
-                // SECURITY: Don't log the login code
                 log.info("Cloud login completed for requestId={}, user={}", entry.getKey(), userId);
                 return true;
             }
         }
-        // SECURITY: Don't log the attempted code (could be used for enumeration)
         log.warn("Invalid or expired cloud login attempt");
         return false;
     }
 
     /**
-     * Generate a secure, user-friendly login code.
+     * Generate a secure login code.
      *
-     * SECURITY: Uses 8 alphanumeric characters (32^8 = ~1 trillion combinations)
-     * formatted as XXXX-XXXX for readability. This provides sufficient entropy
-     * to resist brute-force attacks within the 5-minute TTL.
+     * SECURITY: Uses 128 bits of entropy encoded as Base64URL (22 characters).
+     * This provides 2^128 combinations, making brute-force attacks computationally
+     * infeasible even without rate limiting.
+     *
+     * Combined with requestId requirement, an attacker would need to guess both:
+     * - The UUID requestId (122 bits of entropy)
+     * - The login code (128 bits of entropy)
      */
     private String generateLoginCode() {
-        // Generate an 8-character alphanumeric code with hyphen for readability
-        String chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Exclude confusing chars (I, O, 0, 1)
-        StringBuilder code = new StringBuilder();
-        java.security.SecureRandom random = new java.security.SecureRandom();
-        for (int i = 0; i < 8; i++) {
-            if (i == 4) {
-                code.append('-'); // Add hyphen for readability: XXXX-XXXX
-            }
-            code.append(chars.charAt(random.nextInt(chars.length())));
-        }
-        return code.toString();
+        // Generate 128 bits (16 bytes) of cryptographically secure random data
+        byte[] randomBytes = new byte[16];
+        new java.security.SecureRandom().nextBytes(randomBytes);
+        // Encode as Base64URL without padding (22 characters)
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
     }
 
     /**
@@ -599,12 +648,16 @@ public class McpAuthenticationHandler {
      * Internal cloud login request data.
      */
     private static class CloudLoginRequest {
+        /** Maximum number of failed attempts before the request is invalidated */
+        private static final int MAX_FAILED_ATTEMPTS = 5;
+
         private final String requestId;
         private final String repositoryId;
         private final String loginCode;
         private final Instant expiresAt;
         private volatile boolean completed = false;
         private volatile String userId;
+        private volatile int failedAttempts = 0;
 
         CloudLoginRequest(String requestId, String repositoryId, String loginCode, Instant expiresAt) {
             this.requestId = requestId;
@@ -649,6 +702,29 @@ public class McpAuthenticationHandler {
         void resetForRelogin() {
             this.completed = false;
             // Keep userId for logging purposes, it will be overwritten on next complete()
+        }
+
+        /**
+         * Increment the failed attempts counter.
+         * SECURITY: Limits brute-force attempts against the login code.
+         */
+        synchronized void incrementFailedAttempts() {
+            this.failedAttempts++;
+        }
+
+        /**
+         * Get the current number of failed attempts.
+         */
+        int getFailedAttempts() {
+            return failedAttempts;
+        }
+
+        /**
+         * Check if too many failed attempts have occurred.
+         * SECURITY: After MAX_FAILED_ATTEMPTS, the request should be invalidated.
+         */
+        boolean isFailedTooManyTimes() {
+            return failedAttempts >= MAX_FAILED_ATTEMPTS;
         }
     }
 }
