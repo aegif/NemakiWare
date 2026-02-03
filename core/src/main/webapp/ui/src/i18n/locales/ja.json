@@ -541,7 +541,16 @@
       "path": "パス",
       "similarity": "類似度",
       "preview": "プレビュー"
-    }
+    },
+    "cloudComments": {
+      "title": "クラウドコメント",
+      "resolved": "解決済み",
+      "edited": "編集済"
+    },
+    "pullFromCloud": "クラウドから取得",
+    "openInCloud": "クラウドで開く",
+    "updateInGoogleDrive": "Google Driveを更新",
+    "updateInOneDrive": "OneDriveを更新"
   },
   "folderBrowser": {
     "newFolder": "新規フォルダ",
@@ -1853,5 +1862,19 @@
       "completionFailed": "ログインの完了に失敗しました",
       "networkError": "ネットワークエラーが発生しました"
     }
+  },
+  "cloudDrive": {
+    "importFromGoogleDrive": "Google Driveからインポート",
+    "importFromOneDrive": "OneDriveからインポート",
+    "selectFile": "ファイルを選択",
+    "import": "インポート",
+    "importSuccess": "ファイルをインポートしました: {{name}}",
+    "importError": "インポートに失敗しました",
+    "loadFilesError": "クラウドファイルの読み込みに失敗しました",
+    "fileName": "ファイル名",
+    "modifiedTime": "更新日時",
+    "size": "サイズ",
+    "googleDrive": "Google Drive",
+    "oneDrive": "OneDrive"
   }
 }

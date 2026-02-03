@@ -41,42 +41,26 @@ public class CloudDriveResource extends ResourceBase {
 	 * SECURITY: Validate Origin/Referer header to prevent CSRF attacks.
 	 * This is required for state-changing endpoints that accept cookie-based authentication.
 	 *
+	 * STRICT VALIDATION: Compares scheme+host+port exactly.
+	 * Port omission is only allowed for standard ports (HTTP:80, HTTPS:443).
+	 *
 	 * @param request The HTTP request
 	 * @return Error message if CSRF check fails, null if validation passes
 	 */
 	private String validateCsrfProtection(HttpServletRequest request) {
-		// Get the expected host from the request
+		// Get the expected origin components from the request
 		String serverHost = request.getServerName();
 		int serverPort = request.getServerPort();
 		String scheme = request.getScheme();
 
-		// Build expected origin patterns
-		String expectedOriginWithPort = scheme + "://" + serverHost + ":" + serverPort;
-		String expectedOriginWithoutPort = scheme + "://" + serverHost;
-
 		// Check Origin header first (more reliable)
 		String origin = request.getHeader("Origin");
 		if (origin != null && !origin.isEmpty()) {
-			// Validate origin matches the server
-			if (origin.equals(expectedOriginWithPort) ||
-				origin.equals(expectedOriginWithoutPort) ||
-				origin.equals(scheme + "://" + serverHost)) {
+			if (isOriginValid(origin, scheme, serverHost, serverPort)) {
 				return null; // Valid origin
 			}
-			// For development: allow localhost variations
-			if (serverHost.equals("localhost") || serverHost.equals("127.0.0.1")) {
-				try {
-					URI originUri = new URI(origin);
-					String originHost = originUri.getHost();
-					if ("localhost".equals(originHost) || "127.0.0.1".equals(originHost)) {
-						return null; // Allow localhost for development
-					}
-				} catch (Exception e) {
-					// Invalid URI, continue to reject
-				}
-			}
-			log.warn("CSRF protection: Origin header mismatch. Expected: " + expectedOriginWithPort +
-				", Received: " + origin);
+			log.warn("CSRF protection: Origin header mismatch. Expected: " + scheme + "://" + serverHost +
+				":" + serverPort + ", Received: " + origin);
 			return "CSRF protection: invalid origin";
 		}
 
@@ -85,24 +69,32 @@ public class CloudDriveResource extends ResourceBase {
 		if (referer != null && !referer.isEmpty()) {
 			try {
 				URI refererUri = new URI(referer);
+				String refererScheme = refererUri.getScheme();
 				String refererHost = refererUri.getHost();
 				int refererPort = refererUri.getPort();
-				String refererScheme = refererUri.getScheme();
 
-				// Check if referer matches server
-				if (serverHost.equals(refererHost)) {
+				// Normalize port: -1 means default port for the scheme
+				int normalizedRefererPort = normalizePort(refererScheme, refererPort);
+				int normalizedServerPort = normalizePort(scheme, serverPort);
+
+				// STRICT: scheme, host, AND port must all match
+				if (scheme.equals(refererScheme) &&
+					serverHost.equals(refererHost) &&
+					normalizedServerPort == normalizedRefererPort) {
 					return null; // Valid referer
 				}
-				// For development: allow localhost variations
-				if ((serverHost.equals("localhost") || serverHost.equals("127.0.0.1")) &&
-					("localhost".equals(refererHost) || "127.0.0.1".equals(refererHost))) {
-					return null; // Allow localhost for development
+
+				// For development: allow localhost variations but still require port match
+				if (isLocalhostDev(serverHost, refererHost)) {
+					if (normalizedServerPort == normalizedRefererPort) {
+						return null; // Allow localhost with same port for development
+					}
 				}
 			} catch (Exception e) {
 				log.warn("CSRF protection: Invalid Referer header: " + referer);
 			}
-			log.warn("CSRF protection: Referer header mismatch. Expected host: " + serverHost +
-				", Referer: " + referer);
+			log.warn("CSRF protection: Referer header mismatch. Expected: " + scheme + "://" + serverHost +
+				":" + serverPort + ", Referer: " + referer);
 			return "CSRF protection: invalid referer";
 		}
 
@@ -117,6 +109,64 @@ public class CloudDriveResource extends ResourceBase {
 		// This prevents simple form-based CSRF attacks
 		log.warn("CSRF protection: No Origin, Referer, or X-Requested-With header found");
 		return "CSRF protection: missing origin verification headers";
+	}
+
+	/**
+	 * SECURITY: Validate origin string against expected scheme/host/port.
+	 * Uses STRICT matching: scheme+host+port must all match exactly.
+	 * Port omission in Origin header is only allowed for standard ports (HTTP:80, HTTPS:443).
+	 */
+	private boolean isOriginValid(String origin, String expectedScheme, String expectedHost, int expectedPort) {
+		try {
+			URI originUri = new URI(origin);
+			String originScheme = originUri.getScheme();
+			String originHost = originUri.getHost();
+			int originPort = originUri.getPort();
+
+			// Normalize ports for comparison
+			int normalizedOriginPort = normalizePort(originScheme, originPort);
+			int normalizedExpectedPort = normalizePort(expectedScheme, expectedPort);
+
+			// STRICT: scheme must match
+			if (!expectedScheme.equals(originScheme)) {
+				return false;
+			}
+
+			// STRICT: host must match exactly
+			if (!expectedHost.equals(originHost)) {
+				// For development: allow localhost <-> 127.0.0.1 but still require port match
+				if (!isLocalhostDev(expectedHost, originHost)) {
+					return false;
+				}
+			}
+
+			// STRICT: port must match (after normalization)
+			return normalizedExpectedPort == normalizedOriginPort;
+		} catch (Exception e) {
+			return false;
+		}
+	}
+
+	/**
+	 * Normalize port number: return default port for scheme if port is -1 or matches standard port.
+	 * HTTP: 80, HTTPS: 443
+	 */
+	private int normalizePort(String scheme, int port) {
+		if ("https".equalsIgnoreCase(scheme)) {
+			return (port == -1 || port == 443) ? 443 : port;
+		} else if ("http".equalsIgnoreCase(scheme)) {
+			return (port == -1 || port == 80) ? 80 : port;
+		}
+		// For other schemes, return port as-is (or -1)
+		return port;
+	}
+
+	/**
+	 * Check if both hosts are localhost variations (for development only).
+	 */
+	private boolean isLocalhostDev(String host1, String host2) {
+		return (("localhost".equals(host1) || "127.0.0.1".equals(host1)) &&
+				("localhost".equals(host2) || "127.0.0.1".equals(host2)));
 	}
 
 	private CloudDriveService cloudDriveService;
@@ -433,6 +483,19 @@ public class CloudDriveResource extends ResourceBase {
 
 			objectService.setContentStream(callContext, repositoryId, objectIdHolder, true, newStream, changeTokenHolder, null);
 
+			// Fetch and save comments from the cloud file
+			try {
+				String comments = service.getCloudComments(provider, cloudFileId, accessToken);
+				if (comments != null && !comments.isEmpty()) {
+					saveCloudComments(callContext, repositoryId, objectId, comments);
+					result.put("commentsImported", true);
+					log.info("Imported comments from cloud file " + cloudFileId + " to object " + objectId);
+				}
+			} catch (Exception e) {
+				// Don't fail the pull operation just because comments fetch failed
+				log.warn("Failed to fetch/save cloud comments: " + e.getMessage());
+			}
+
 			result.put("objectId", objectIdHolder.getValue());
 			result.put("pulled", true);
 
@@ -671,5 +734,86 @@ public class CloudDriveResource extends ResourceBase {
 		newProp.setKey(key);
 		newProp.setValue(value);
 		props.add(newProp);
+	}
+
+	/**
+	 * Save cloud comments as a secondary type property on the CMIS object.
+	 * SECURITY: Requires authenticated CallContext for proper permission checks.
+	 *
+	 * @param callContext The authenticated user's call context (must not be null)
+	 * @param repositoryId Repository ID
+	 * @param objectId CMIS object ID
+	 * @param commentsJson JSON string containing comments array
+	 */
+	private void saveCloudComments(org.apache.chemistry.opencmis.commons.server.CallContext callContext,
+			String repositoryId, String objectId, String commentsJson) {
+		// SECURITY: Require CallContext to enforce permissions
+		if (callContext == null) {
+			throw new IllegalArgumentException("CallContext is required for permission enforcement");
+		}
+
+		ContentService cs = getContentService();
+		if (cs == null) return;
+
+		Content content = cs.getContent(repositoryId, objectId);
+		if (content == null) return;
+
+		// Add secondary type ID if not present
+		java.util.List<String> secondaryTypeIds = content.getSecondaryIds();
+		if (secondaryTypeIds == null) {
+			secondaryTypeIds = new java.util.ArrayList<>();
+		}
+		if (!secondaryTypeIds.contains("nemaki:cloudDriveMetadata")) {
+			secondaryTypeIds.add("nemaki:cloudDriveMetadata");
+			content.setSecondaryIds(secondaryTypeIds);
+		}
+
+		// Build Aspect with cloud comments property
+		java.util.List<jp.aegif.nemaki.model.Aspect> aspects = content.getAspects();
+		if (aspects == null) {
+			aspects = new java.util.ArrayList<>();
+		}
+
+		// Find or create the cloudDriveMetadata aspect
+		jp.aegif.nemaki.model.Aspect cloudAspect = null;
+		for (jp.aegif.nemaki.model.Aspect a : aspects) {
+			if ("nemaki:cloudDriveMetadata".equals(a.getName())) {
+				cloudAspect = a;
+				break;
+			}
+		}
+		if (cloudAspect == null) {
+			cloudAspect = new jp.aegif.nemaki.model.Aspect();
+			cloudAspect.setName("nemaki:cloudDriveMetadata");
+			cloudAspect.setProperties(new java.util.ArrayList<>());
+			aspects.add(cloudAspect);
+		}
+
+		// Update aspect property for comments
+		java.util.List<jp.aegif.nemaki.model.Property> aspectProps = cloudAspect.getProperties();
+		if (aspectProps == null) {
+			aspectProps = new java.util.ArrayList<>();
+			cloudAspect.setProperties(aspectProps);
+		}
+		setOrAddProperty(aspectProps, "nemaki:cloudComments", commentsJson);
+		setOrAddProperty(aspectProps, "nemaki:cloudCommentsImportedAt",
+			new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ").format(new java.util.Date()));
+
+		content.setAspects(aspects);
+
+		// SECURITY: Use the user's CallContext for proper permission checks
+		cs.update(callContext, repositoryId, content);
+
+		// Invalidate CMIS and content caches
+		try {
+			jp.aegif.nemaki.util.cache.NemakiCachePool cachePool =
+				SpringContext.getApplicationContext().getBean("nemakiCachePool",
+					jp.aegif.nemaki.util.cache.NemakiCachePool.class);
+			cachePool.get(repositoryId).removeCmisAndContentCache(objectId);
+		} catch (Exception e) {
+			log.warn("Failed to invalidate cache for object " + objectId + ": " + e.getMessage());
+		}
+
+		log.info("Saved cloud comments for object " + objectId);
 	}
 }

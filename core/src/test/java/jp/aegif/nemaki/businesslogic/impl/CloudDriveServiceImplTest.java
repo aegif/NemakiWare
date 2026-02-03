@@ -122,4 +122,44 @@ public class CloudDriveServiceImplTest {
 	public void testDeleteFromCloud_Microsoft_NoException() {
 		service.deleteFromCloud("microsoft", "file1", "invalid-token");
 	}
+
+	// ---- getCloudComments tests ----
+
+	@Test
+	public void testGetCloudComments_NullCloudFileId() {
+		String comments = service.getCloudComments("google", null, "token");
+		assertNull("Null cloudFileId should return null", comments);
+	}
+
+	@Test
+	public void testGetCloudComments_EmptyCloudFileId() {
+		String comments = service.getCloudComments("google", "", "token");
+		assertNull("Empty cloudFileId should return null", comments);
+	}
+
+	@Test
+	public void testGetCloudComments_UnknownProvider() {
+		String comments = service.getCloudComments("dropbox", "file123", "token");
+		assertNull("Unknown provider should return null", comments);
+	}
+
+	@Test
+	public void testGetCloudComments_Google_InvalidToken() {
+		// With an invalid token, the API call will fail and return null
+		String comments = service.getCloudComments("google", "file123", "invalid-token");
+		assertNull("Invalid token should result in null (error handled internally)", comments);
+	}
+
+	@Test
+	public void testGetCloudComments_Microsoft_InvalidToken() {
+		// With an invalid token, the API call will fail and return null
+		String comments = service.getCloudComments("microsoft", "file123", "invalid-token");
+		assertNull("Invalid token should result in null (error handled internally)", comments);
+	}
+
+	@Test
+	public void testGetCloudComments_NullProvider() {
+		String comments = service.getCloudComments(null, "file123", "token");
+		assertNull("Null provider should return null (handled by switch default)", comments);
+	}
 }

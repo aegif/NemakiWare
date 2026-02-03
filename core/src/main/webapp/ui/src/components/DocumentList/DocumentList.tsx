@@ -244,7 +244,10 @@ import {
   UpOutlined,
   FormOutlined,
   ImportOutlined,
-  ExportOutlined
+  ExportOutlined,
+  GoogleOutlined,
+  WindowsOutlined,
+  CloudDownloadOutlined
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -252,6 +255,17 @@ import { CMISService } from '../../services/cmis';
 import { CMISObject, TypeDefinition, AllowableActions } from '../../types/cmis';
 import { FolderTree } from '../FolderTree/FolderTree';
 import { useAuth } from '../../contexts/AuthContext';
+import { fetchCloudAuthConfig, CloudAuthConfig } from '../../services/cloud-auth';
+import {
+  getGoogleDriveAccessToken,
+  getOneDriveAccessToken,
+  importFromGoogleDrive,
+  importFromOneDrive,
+  listGoogleDriveFiles,
+  listOneDriveFiles,
+  GoogleDriveFile,
+  OneDriveFile
+} from '../../services/cloud-drive';
 
 interface DocumentListProps {
   repositoryId: string;
@@ -391,8 +405,17 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { handleAuthError } = useAuth();
+  const { handleAuthError, authToken } = useAuth();
   const cmisService = new CMISService(handleAuthError);
+
+  // Cloud import states (2026-02-03)
+  const [cloudAuthConfig, setCloudAuthConfig] = useState<CloudAuthConfig | null>(null);
+  const [cloudImportModalVisible, setCloudImportModalVisible] = useState(false);
+  const [cloudImportProvider, setCloudImportProvider] = useState<'google' | 'microsoft' | null>(null);
+  const [cloudFiles, setCloudFiles] = useState<(GoogleDriveFile | OneDriveFile)[]>([]);
+  const [cloudFilesLoading, setCloudFilesLoading] = useState(false);
+  const [cloudImporting, setCloudImporting] = useState(false);
+  const [selectedCloudFile, setSelectedCloudFile] = useState<GoogleDriveFile | OneDriveFile | null>(null);
 
   // Debug: Log component mount/unmount
   useEffect(() => {
@@ -400,6 +423,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     return () => {
       console.log('[DocumentList] Component UNMOUNTED');
     };
+  }, []);
+
+  // Load cloud auth config for cloud import buttons (2026-02-03)
+  useEffect(() => {
+    fetchCloudAuthConfig().then(setCloudAuthConfig).catch(() => {});
   }, []);
 
   // Initialize folder ID from URL parameter or default to root
@@ -608,6 +636,88 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       message.error(errorMsg);
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  /**
+   * Open cloud import modal for the specified provider (2026-02-03)
+   * Lists files from Google Drive or OneDrive for selection
+   */
+  const handleOpenCloudImport = async (provider: 'google' | 'microsoft') => {
+    if (!cloudAuthConfig) return;
+
+    setCloudImportProvider(provider);
+    setCloudImportModalVisible(true);
+    setCloudFilesLoading(true);
+    setCloudFiles([]);
+    setSelectedCloudFile(null);
+
+    try {
+      let accessToken: string;
+      if (provider === 'google') {
+        const authData = localStorage.getItem('nemakiware_auth');
+        const loginHint = authData ? JSON.parse(authData).username : undefined;
+        accessToken = await getGoogleDriveAccessToken(cloudAuthConfig.googleClientId!, loginHint);
+        const files = await listGoogleDriveFiles(accessToken);
+        setCloudFiles(files);
+      } else {
+        accessToken = await getOneDriveAccessToken(
+          cloudAuthConfig.microsoftClientId!,
+          cloudAuthConfig.microsoftTenantId!
+        );
+        const files = await listOneDriveFiles(accessToken);
+        setCloudFiles(files);
+      }
+    } catch (error) {
+      console.error('Failed to load cloud files:', error);
+      message.error(t('cloudDrive.loadFilesError'));
+      setCloudImportModalVisible(false);
+    } finally {
+      setCloudFilesLoading(false);
+    }
+  };
+
+  /**
+   * Import the selected cloud file to the current folder (2026-02-03)
+   */
+  const handleCloudImport = async () => {
+    if (!selectedCloudFile || !cloudImportProvider || !cloudAuthConfig) return;
+
+    setCloudImporting(true);
+    try {
+      let accessToken: string;
+      if (cloudImportProvider === 'google') {
+        const authData = localStorage.getItem('nemakiware_auth');
+        const loginHint = authData ? JSON.parse(authData).username : undefined;
+        accessToken = await getGoogleDriveAccessToken(cloudAuthConfig.googleClientId!, loginHint);
+        await importFromGoogleDrive(
+          repositoryId,
+          selectedFolderId,
+          selectedCloudFile as GoogleDriveFile,
+          accessToken
+        );
+      } else {
+        accessToken = await getOneDriveAccessToken(
+          cloudAuthConfig.microsoftClientId!,
+          cloudAuthConfig.microsoftTenantId!
+        );
+        await importFromOneDrive(
+          repositoryId,
+          selectedFolderId,
+          selectedCloudFile as OneDriveFile,
+          accessToken
+        );
+      }
+
+      message.success(t('cloudDrive.importSuccess', { name: selectedCloudFile.name }));
+      setCloudImportModalVisible(false);
+      setSelectedCloudFile(null);
+      await loadObjects();
+    } catch (error) {
+      console.error('Cloud import failed:', error);
+      message.error(t('cloudDrive.importError'));
+    } finally {
+      setCloudImporting(false);
     }
   };
 
@@ -1493,6 +1603,23 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                       {t('documentList.uploadFile')}
                     </Button>
                   )}
+                  {/* Cloud import buttons - only shown for the logged-in platform (2026-02-03) */}
+                  {canCreateDoc && cloudAuthConfig?.googleEnabled && authToken?.authMethod === 'google' && (
+                    <Button
+                      icon={<GoogleOutlined />}
+                      onClick={() => handleOpenCloudImport('google')}
+                    >
+                      {t('cloudDrive.importFromGoogleDrive')}
+                    </Button>
+                  )}
+                  {canCreateDoc && cloudAuthConfig?.microsoftEnabled && authToken?.authMethod === 'microsoft' && (
+                    <Button
+                      icon={<WindowsOutlined />}
+                      onClick={() => handleOpenCloudImport('microsoft')}
+                    >
+                      {t('cloudDrive.importFromOneDrive')}
+                    </Button>
+                  )}
                   {canCreateFld && (
                     <Button
                       icon={<PlusOutlined />}
@@ -2109,6 +2236,104 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         <p>
           {t('documentList.bulkDeleteConfirmMessage', { count: selectedRowKeys.length })}
         </p>
+      </Modal>
+
+      {/* Cloud Import Modal (2026-02-03) */}
+      <Modal
+        title={
+          cloudImportProvider === 'google'
+            ? t('cloudDrive.importFromGoogleDrive')
+            : t('cloudDrive.importFromOneDrive')
+        }
+        open={cloudImportModalVisible}
+        onCancel={() => {
+          if (cloudImporting) return;
+          setCloudImportModalVisible(false);
+          setSelectedCloudFile(null);
+        }}
+        footer={[
+          <Button
+            key="cancel"
+            onClick={() => {
+              setCloudImportModalVisible(false);
+              setSelectedCloudFile(null);
+            }}
+            disabled={cloudImporting}
+          >
+            {t('common.cancel')}
+          </Button>,
+          <Button
+            key="import"
+            type="primary"
+            icon={<CloudDownloadOutlined />}
+            onClick={handleCloudImport}
+            loading={cloudImporting}
+            disabled={!selectedCloudFile || cloudFilesLoading}
+          >
+            {cloudImporting
+              ? t('common.importing')
+              : t('cloudDrive.import')}
+          </Button>,
+        ]}
+        width={700}
+        maskClosable={false}
+      >
+        {cloudFilesLoading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}>{t('common.loading')}</div>
+        ) : (
+          <Table
+            dataSource={cloudFiles}
+            rowKey="id"
+            size="small"
+            pagination={{ pageSize: 10 }}
+            rowSelection={{
+              type: 'radio',
+              selectedRowKeys: selectedCloudFile ? [selectedCloudFile.id] : [],
+              onChange: (_, selectedRows) => {
+                setSelectedCloudFile(selectedRows[0] || null);
+              },
+            }}
+            onRow={(record) => ({
+              onClick: () => setSelectedCloudFile(record),
+              style: { cursor: 'pointer' },
+            })}
+            columns={[
+              {
+                title: t('cloudDrive.fileName'),
+                dataIndex: 'name',
+                key: 'name',
+                ellipsis: true,
+              },
+              {
+                title: t('cloudDrive.modifiedTime'),
+                key: 'modifiedTime',
+                width: 180,
+                render: (_, record) => {
+                  const date =
+                    (record as GoogleDriveFile).modifiedTime ||
+                    (record as OneDriveFile).lastModifiedDateTime;
+                  return date ? new Date(date).toLocaleString('ja-JP') : '-';
+                },
+              },
+              {
+                title: t('cloudDrive.size'),
+                key: 'size',
+                width: 100,
+                render: (_, record) => {
+                  const size =
+                    parseInt((record as GoogleDriveFile).size || '0') ||
+                    (record as OneDriveFile).size ||
+                    0;
+                  if (size === 0) return '-';
+                  if (size < 1024) return `${size} B`;
+                  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+                  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+                },
+              },
+            ]}
+            locale={{ emptyText: t('common.noData') }}
+          />
+        )}
       </Modal>
     </div>
   );

@@ -117,4 +117,56 @@ public class CloudDriveResourceIT {
 				.statusCode(200)
 				.body("status", anyOf(is("failure"), is("success")));
 	}
+
+	@Test
+	public void testPullFromCloud_InvalidProvider_ReturnsError() {
+		given()
+				.spec(adminSpec)
+				.contentType(ContentType.JSON)
+				.body("{\"provider\": \"dropbox\", \"accessToken\": \"test-token\", \"cloudFileId\": \"file123\"}")
+		.when()
+				.post(cloudDrivePath() + "/pull/test-object-id")
+		.then()
+				.statusCode(200)
+				.body("status", is("failure"));
+	}
+
+	@Test
+	public void testPushToCloud_InvalidProvider_ReturnsError() {
+		given()
+				.spec(adminSpec)
+				.contentType(ContentType.JSON)
+				.body("{\"provider\": \"dropbox\", \"accessToken\": \"test-token\"}")
+		.when()
+				.post(cloudDrivePath() + "/push/test-object-id")
+		.then()
+				.statusCode(200)
+				.body("status", is("failure"));
+	}
+
+	@Test
+	public void testPushToCloud_EmptyBody_ReturnsError() {
+		given()
+				.spec(adminSpec)
+				.contentType(ContentType.JSON)
+				.body("{}")
+		.when()
+				.post(cloudDrivePath() + "/push/test-object-id")
+		.then()
+				.statusCode(200)
+				.body("status", is("failure"));
+	}
+
+	@Test
+	public void testPullFromCloud_EmptyBody_ReturnsError() {
+		given()
+				.spec(adminSpec)
+				.contentType(ContentType.JSON)
+				.body("{}")
+		.when()
+				.post(cloudDrivePath() + "/pull/test-object-id")
+		.then()
+				.statusCode(200)
+				.body("status", is("failure"));
+	}
 }

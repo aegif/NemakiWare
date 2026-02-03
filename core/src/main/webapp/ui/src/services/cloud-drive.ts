@@ -2,6 +2,25 @@
  * Cloud Drive Service for pushing/pulling documents to/from Google Drive and OneDrive.
  */
 
+/** Google Drive file metadata */
+export interface GoogleDriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime?: string;
+  size?: string;
+  iconLink?: string;
+}
+
+/** OneDrive file metadata */
+export interface OneDriveFile {
+  id: string;
+  name: string;
+  mimeType?: string;
+  lastModifiedDateTime?: string;
+  size?: number;
+}
+
 export interface CloudDrivePushResult {
   cloudFileId: string;
   cloudFileUrl: string;
@@ -123,7 +142,9 @@ export function getGoogleDriveAccessToken(clientId: string, loginHint?: string):
 
       const tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/drive.file',
+        // drive.readonly: See and download all Google Drive files
+        // drive.file: Only files created/opened by this app (too restrictive for import)
+        scope: 'https://www.googleapis.com/auth/drive.readonly',
         hint: loginHint,
         callback: (response: { access_token?: string; error?: string; expires_in?: number }) => {
           if (response.error) {
@@ -195,4 +216,212 @@ export async function getOneDriveAccessToken(clientId: string, tenantId: string)
   }
 
   return popupResponse.accessToken;
+}
+
+/**
+ * List files from Google Drive.
+ * Returns files from the user's Drive (not folders).
+ */
+export async function listGoogleDriveFiles(accessToken: string): Promise<GoogleDriveFile[]> {
+  const response = await fetch(
+    'https://www.googleapis.com/drive/v3/files?' +
+    new URLSearchParams({
+      q: "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
+      fields: 'files(id,name,mimeType,modifiedTime,size,iconLink)',
+      orderBy: 'modifiedTime desc',
+      pageSize: '100',
+    }),
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to list Google Drive files: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.files || [];
+}
+
+/**
+ * List files from OneDrive.
+ * Returns files from the user's root folder (excludes folders).
+ */
+export async function listOneDriveFiles(accessToken: string): Promise<OneDriveFile[]> {
+  const response = await fetch(
+    'https://graph.microsoft.com/v1.0/me/drive/root/children?' +
+    new URLSearchParams({
+      $select: 'id,name,file,lastModifiedDateTime,size',
+      $orderby: 'lastModifiedDateTime desc',
+      $top: '100',
+    }),
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to list OneDrive files: ${response.status}`);
+  }
+
+  const data = await response.json();
+  // Filter out folders (items without 'file' property) on client side
+  // Microsoft Graph API doesn't support "$filter=file ne null" syntax
+  return (data.value || [])
+    .filter((item: any) => item.file)
+    .map((item: any) => ({
+      id: item.id,
+      name: item.name,
+      mimeType: item.file?.mimeType,
+      lastModifiedDateTime: item.lastModifiedDateTime,
+      size: item.size,
+    }));
+}
+
+/**
+ * Import a file from Google Drive to NemakiWare.
+ * Downloads the file from Google Drive and uploads it to the specified folder.
+ */
+export async function importFromGoogleDrive(
+  repositoryId: string,
+  folderId: string,
+  file: GoogleDriveFile,
+  accessToken: string
+): Promise<{ objectId: string; name: string }> {
+  // For Google Docs formats, export as Office format
+  let downloadUrl: string;
+  let exportMimeType: string | null = null;
+  let fileName = file.name;
+
+  if (file.mimeType.startsWith('application/vnd.google-apps.')) {
+    // Google Docs format - need to export
+    switch (file.mimeType) {
+      case 'application/vnd.google-apps.document':
+        exportMimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        fileName = file.name.endsWith('.docx') ? file.name : `${file.name}.docx`;
+        break;
+      case 'application/vnd.google-apps.spreadsheet':
+        exportMimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        fileName = file.name.endsWith('.xlsx') ? file.name : `${file.name}.xlsx`;
+        break;
+      case 'application/vnd.google-apps.presentation':
+        exportMimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+        fileName = file.name.endsWith('.pptx') ? file.name : `${file.name}.pptx`;
+        break;
+      default:
+        exportMimeType = 'application/pdf';
+        fileName = file.name.endsWith('.pdf') ? file.name : `${file.name}.pdf`;
+    }
+    downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=${encodeURIComponent(exportMimeType)}`;
+  } else {
+    // Regular file - direct download
+    downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+  }
+
+  // Download file content
+  const downloadResponse = await fetch(downloadUrl, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!downloadResponse.ok) {
+    const status = downloadResponse.status;
+    if (status === 401) {
+      throw new Error('Google Drive authentication expired. Please re-authenticate.');
+    } else if (status === 403) {
+      throw new Error('Access denied to Google Drive file. Please check file permissions.');
+    } else if (status === 404) {
+      throw new Error('Google Drive file not found. It may have been deleted.');
+    } else if (status === 429) {
+      throw new Error('Google Drive rate limit exceeded. Please try again later.');
+    }
+    throw new Error(`Failed to download from Google Drive (HTTP ${status})`);
+  }
+
+  const blob = await downloadResponse.blob();
+  const finalMimeType = exportMimeType || file.mimeType;
+
+  // Upload to NemakiWare using multipart form
+  const formData = new FormData();
+  formData.append('cmisaction', 'createDocument');
+  formData.append('propertyId[0]', 'cmis:objectTypeId');
+  formData.append('propertyValue[0]', 'cmis:document');
+  formData.append('propertyId[1]', 'cmis:name');
+  formData.append('propertyValue[1]', fileName);
+  formData.append('content', new File([blob], fileName, { type: finalMimeType }));
+
+  const uploadResponse = await fetch(`/core/browser/${repositoryId}/root?objectId=${folderId}`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const result = await uploadResponse.json();
+  if (result.exception) {
+    throw new Error(result.message || 'Failed to upload to NemakiWare');
+  }
+
+  return {
+    objectId: result.properties?.['cmis:objectId']?.value || result.objectId,
+    name: fileName,
+  };
+}
+
+/**
+ * Import a file from OneDrive to NemakiWare.
+ * Downloads the file from OneDrive and uploads it to the specified folder.
+ */
+export async function importFromOneDrive(
+  repositoryId: string,
+  folderId: string,
+  file: OneDriveFile,
+  accessToken: string
+): Promise<{ objectId: string; name: string }> {
+  // Download file content from OneDrive
+  const downloadResponse = await fetch(
+    `https://graph.microsoft.com/v1.0/me/drive/items/${file.id}/content`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+
+  if (!downloadResponse.ok) {
+    const status = downloadResponse.status;
+    if (status === 401) {
+      throw new Error('OneDrive authentication expired. Please re-authenticate.');
+    } else if (status === 403) {
+      throw new Error('Access denied to OneDrive file. Please check file permissions.');
+    } else if (status === 404) {
+      throw new Error('OneDrive file not found. It may have been deleted.');
+    } else if (status === 429) {
+      throw new Error('OneDrive rate limit exceeded. Please try again later.');
+    }
+    throw new Error(`Failed to download from OneDrive (HTTP ${status})`);
+  }
+
+  const blob = await downloadResponse.blob();
+  const mimeType = file.mimeType || 'application/octet-stream';
+
+  // Upload to NemakiWare using multipart form
+  const formData = new FormData();
+  formData.append('cmisaction', 'createDocument');
+  formData.append('propertyId[0]', 'cmis:objectTypeId');
+  formData.append('propertyValue[0]', 'cmis:document');
+  formData.append('propertyId[1]', 'cmis:name');
+  formData.append('propertyValue[1]', file.name);
+  formData.append('content', new File([blob], file.name, { type: mimeType }));
+
+  const uploadResponse = await fetch(`/core/browser/${repositoryId}/root?objectId=${folderId}`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const result = await uploadResponse.json();
+  if (result.exception) {
+    throw new Error(result.message || 'Failed to upload to NemakiWare');
+  }
+
+  return {
+    objectId: result.properties?.['cmis:objectId']?.value || result.objectId,
+    name: file.name,
+  };
 }

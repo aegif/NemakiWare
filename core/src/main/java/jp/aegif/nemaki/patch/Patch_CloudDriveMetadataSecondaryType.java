@@ -28,6 +28,8 @@ import java.util.List;
  * - nemaki:cloudFileUrl (STRING, SINGLE) - URL to open the file in the cloud
  * - nemaki:cloudLastSyncedAt (DATETIME, SINGLE) - Last sync timestamp
  * - nemaki:cloudEncryptedRefreshToken (STRING, SINGLE) - AES-256-GCM encrypted refresh token
+ * - nemaki:cloudComments (STRING, SINGLE) - JSON array of comments from cloud provider
+ * - nemaki:cloudCommentsImportedAt (DATETIME, SINGLE) - Timestamp when comments were imported
  *
  * This patch is idempotent - it will not create duplicate types on restart.
  */
@@ -86,12 +88,13 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 
 	private void createCloudDriveMetadataType(TypeService typeService, String repositoryId) {
 		NemakiTypeDefinition existing = typeService.getTypeDefinition(repositoryId, TYPE_ID);
-		if (existing != null) {
-			log.error("Type '" + TYPE_ID + "' already exists (ID: " + existing.getId() + ") - skipping");
-			return;
-		}
+		boolean typeExists = existing != null;
 
-		log.error("Creating secondary type: " + TYPE_ID);
+		if (typeExists) {
+			log.error("Type '" + TYPE_ID + "' already exists (ID: " + existing.getId() + ") - checking for missing properties");
+		} else {
+			log.error("Creating secondary type: " + TYPE_ID);
+		}
 
 		try {
 			List<String> propertyIds = new ArrayList<>();
@@ -123,32 +126,69 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 				false, false);
 			if (id5 != null) propertyIds.add(id5);
 
-			NemakiTypeDefinition typeDef = new NemakiTypeDefinition();
-			typeDef.setTypeId(TYPE_ID);
-			typeDef.setLocalName("cloudDriveMetadata");
-			typeDef.setLocalNameSpace(NEMAKI_NAMESPACE);
-			typeDef.setQueryName(TYPE_ID);
-			typeDef.setDisplayName("Cloud Drive Metadata");
-			typeDef.setDescription("Stores cloud drive synchronization metadata for documents pushed to Google Drive or OneDrive.");
-			typeDef.setBaseId(BaseTypeId.CMIS_SECONDARY);
-			typeDef.setParentId("cmis:secondary");
-			typeDef.setCreatable(false);
-			typeDef.setFilable(false);
-			typeDef.setQueryable(true);
-			typeDef.setFulltextIndexed(false);
-			typeDef.setIncludedInSupertypeQuery(true);
-			typeDef.setControllablePolicy(false);
-			typeDef.setControllableACL(false);
-			typeDef.setTypeMutabilityCreate(true);
-			typeDef.setTypeMutabilityUpdate(true);
-			typeDef.setTypeMutabilityDelete(true);
+			// Cloud comments properties (added 2026-02-03)
+			String id6 = createStringProperty(typeService, repositoryId,
+				"nemaki:cloudComments", "cloudComments", "Cloud Comments",
+				"JSON array of comments imported from cloud provider (Google Docs / Microsoft 365)",
+				false, false);
+			if (id6 != null) propertyIds.add(id6);
 
-			if (!propertyIds.isEmpty()) {
-				typeDef.setProperties(propertyIds);
+			String id7 = createDateTimeProperty(typeService, repositoryId,
+				"nemaki:cloudCommentsImportedAt", "cloudCommentsImportedAt",
+				"Comments Imported At",
+				"Timestamp when comments were last imported from cloud");
+			if (id7 != null) propertyIds.add(id7);
+
+			if (typeExists) {
+				// Type already exists - add any new properties to it
+				List<String> existingProps = existing.getProperties();
+				if (existingProps == null) {
+					existingProps = new ArrayList<>();
+				}
+				boolean updated = false;
+				for (String propId : propertyIds) {
+					if (!existingProps.contains(propId)) {
+						existingProps.add(propId);
+						updated = true;
+						log.error("Adding new property ID '" + propId + "' to existing type");
+					}
+				}
+				if (updated) {
+					existing.setProperties(existingProps);
+					typeService.updateTypeDefinition(repositoryId, existing);
+					log.error("Type '" + TYPE_ID + "' updated with new properties");
+				} else {
+					log.error("Type '" + TYPE_ID + "' already has all required properties");
+				}
+			} else {
+				// Create new type
+				NemakiTypeDefinition typeDef = new NemakiTypeDefinition();
+				typeDef.setTypeId(TYPE_ID);
+				typeDef.setLocalName("cloudDriveMetadata");
+				typeDef.setLocalNameSpace(NEMAKI_NAMESPACE);
+				typeDef.setQueryName(TYPE_ID);
+				typeDef.setDisplayName("Cloud Drive Metadata");
+				typeDef.setDescription("Stores cloud drive synchronization metadata for documents pushed to Google Drive or OneDrive.");
+				typeDef.setBaseId(BaseTypeId.CMIS_SECONDARY);
+				typeDef.setParentId("cmis:secondary");
+				typeDef.setCreatable(false);
+				typeDef.setFilable(false);
+				typeDef.setQueryable(true);
+				typeDef.setFulltextIndexed(false);
+				typeDef.setIncludedInSupertypeQuery(true);
+				typeDef.setControllablePolicy(false);
+				typeDef.setControllableACL(false);
+				typeDef.setTypeMutabilityCreate(true);
+				typeDef.setTypeMutabilityUpdate(true);
+				typeDef.setTypeMutabilityDelete(true);
+
+				if (!propertyIds.isEmpty()) {
+					typeDef.setProperties(propertyIds);
+				}
+
+				NemakiTypeDefinition created = typeService.createTypeDefinition(repositoryId, typeDef);
+				log.error("Type '" + TYPE_ID + "' created successfully with ID: " + created.getId());
 			}
-
-			NemakiTypeDefinition created = typeService.createTypeDefinition(repositoryId, typeDef);
-			log.error("Type '" + TYPE_ID + "' created successfully with ID: " + created.getId());
 
 		} catch (Exception e) {
 			log.error("Failed to create type: " + TYPE_ID, e);

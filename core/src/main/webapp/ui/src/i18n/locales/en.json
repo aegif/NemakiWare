@@ -541,7 +541,16 @@
       "path": "Path",
       "similarity": "Similarity",
       "preview": "Preview"
-    }
+    },
+    "cloudComments": {
+      "title": "Cloud Comments",
+      "resolved": "Resolved",
+      "edited": "Edited"
+    },
+    "pullFromCloud": "Pull from Cloud",
+    "openInCloud": "Open in Cloud",
+    "updateInGoogleDrive": "Update Google Drive",
+    "updateInOneDrive": "Update OneDrive"
   },
   "folderBrowser": {
     "newFolder": "New Folder",
@@ -1853,5 +1862,19 @@
       "completionFailed": "Failed to complete login",
       "networkError": "A network error occurred"
     }
+  },
+  "cloudDrive": {
+    "importFromGoogleDrive": "Import from Google Drive",
+    "importFromOneDrive": "Import from OneDrive",
+    "selectFile": "Select File",
+    "import": "Import",
+    "importSuccess": "File imported: {{name}}",
+    "importError": "Failed to import file",
+    "loadFilesError": "Failed to load cloud files",
+    "fileName": "File Name",
+    "modifiedTime": "Modified",
+    "size": "Size",
+    "googleDrive": "Google Drive",
+    "oneDrive": "OneDrive"
   }
 }

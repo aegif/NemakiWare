@@ -268,7 +268,8 @@ import {
   WindowsOutlined,
   CloudUploadOutlined,
   CloudDownloadOutlined,
-  LinkOutlined
+  LinkOutlined,
+  CommentOutlined
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -287,6 +288,18 @@ import { pushToCloud, pullFromCloud, getCloudUrl, getGoogleDriveAccessToken, get
 import { getSafeArrayValue, getSafeStringValue, getSafeBooleanValue } from '../../utils/cmisPropertyUtils';
 import { useSearchParams } from 'react-router-dom';
 
+// Cloud comment interface for Google/Microsoft imported comments (2026-02-03)
+interface CloudComment {
+  id: string;
+  author: string;
+  authorEmail?: string;
+  content: string;
+  createdTime: string;
+  modifiedTime?: string;
+  resolved?: boolean;
+  replies?: CloudComment[];
+}
+
 interface DocumentViewerProps {
   repositoryId: string;
 }
@@ -295,7 +308,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const { objectId } = useParams<{ objectId: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { handleAuthError } = useAuth();
+  const { handleAuthError, authToken } = useAuth();
   const [object, setObject] = useState<CMISObject | null>(null);
   const [typeDefinition, setTypeDefinition] = useState<TypeDefinition | null>(null);
   const [versionHistory, setVersionHistory] = useState<VersionHistory | null>(null);
@@ -319,6 +332,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [cloudPushLoading, setCloudPushLoading] = useState(false);
   const [cloudPullLoading, setCloudPullLoading] = useState(false);
   const [cloudMetadata, setCloudMetadata] = useState<{ provider: string; cloudFileId: string; cloudFileUrl: string } | null>(null);
+  // Cloud comments state (2026-02-03)
+  const [cloudComments, setCloudComments] = useState<CloudComment[]>([]);
   const [relationshipTypeDefinition, setRelationshipTypeDefinition] = useState<TypeDefinition | null>(null);
   // RAG Similar Documents state
   const [ragEnabled, setRagEnabled] = useState(false);
@@ -458,6 +473,21 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
       // Expose propertyDefinitions for test verification
       (window as any).__NEMAKI_PROPERTY_DEFINITIONS__ = mergedTypeDef.propertyDefinitions;
+
+      // Extract cloud comments from properties if available (2026-02-03)
+      const cloudCommentsJson = getSafeStringValue(obj.properties?.['nemaki:cloudComments']);
+      if (cloudCommentsJson) {
+        try {
+          const parsedComments: CloudComment[] = JSON.parse(cloudCommentsJson);
+          setCloudComments(parsedComments);
+          console.log('[DocumentViewer] Cloud comments loaded:', parsedComments.length);
+        } catch (parseError) {
+          console.warn('[DocumentViewer] Failed to parse cloud comments:', parseError);
+          setCloudComments([]);
+        }
+      } else {
+        setCloudComments([]);
+      }
     } catch (error: any) {
       console.error('[DocumentViewer] loadObject error:', error);
       // CRITICAL FIX (2025-12-28): Set error state to show proper error UI instead of loading spinner
@@ -1301,7 +1331,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                       {t('common.cancel')}
                     </Button>
                   </Popconfirm>
-                  {cloudAuthConfig?.googleEnabled && (
+                  {/* FEATURE: Show cloud edit button only for the login platform (2026-02-03)
+                      - Google Drive button only shown if logged in via Google
+                      - OneDrive button only shown if logged in via Microsoft
+                      This provides a cleaner UX and prevents confusion about which cloud service to use */}
+                  {cloudAuthConfig?.googleEnabled && authToken?.authMethod === 'google' && (
                     <Button
                       icon={<GoogleOutlined />}
                       loading={cloudPushLoading}
@@ -1312,13 +1346,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                         : t('documentViewer.editInGoogleDrive')}
                     </Button>
                   )}
-                  {cloudAuthConfig?.microsoftEnabled && (
+                  {cloudAuthConfig?.microsoftEnabled && authToken?.authMethod === 'microsoft' && (
                     <Button
                       icon={<WindowsOutlined />}
                       loading={cloudPushLoading}
                       onClick={() => handleCloudPush('microsoft')}
                     >
-                      {t('documentViewer.editInOneDrive')}
+                      {cloudMetadata?.provider === 'microsoft'
+                        ? t('documentViewer.updateInOneDrive', 'OneDriveを更新')
+                        : t('documentViewer.editInOneDrive')}
                     </Button>
                   )}
                   {cloudMetadata && (
@@ -1440,6 +1476,89 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 </div>
               }
               style={{ marginTop: 16, marginBottom: 16 }}
+            />
+          )}
+
+          {/* Cloud Comments Section (2026-02-03) */}
+          {cloudComments.length > 0 && (
+            <Collapse
+              size="small"
+              style={{ marginTop: 16, marginBottom: 16 }}
+              items={[
+                {
+                  key: 'cloud-comments',
+                  label: (
+                    <Space>
+                      <CommentOutlined />
+                      {t('documentViewer.cloudComments.title', 'クラウドコメント')}
+                      <Tag color="blue">{cloudComments.length}</Tag>
+                    </Space>
+                  ),
+                  children: (
+                    <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+                      {cloudComments.map((comment, index) => (
+                        <div
+                          key={comment.id || index}
+                          style={{
+                            padding: '12px',
+                            borderBottom: index < cloudComments.length - 1 ? '1px solid #f0f0f0' : 'none',
+                            backgroundColor: comment.resolved ? '#f5f5f5' : 'transparent',
+                          }}
+                        >
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>{comment.author}</strong>
+                            {comment.authorEmail && (
+                              <span style={{ color: '#888', marginLeft: 8, fontSize: 12 }}>
+                                ({comment.authorEmail})
+                              </span>
+                            )}
+                            {comment.resolved && (
+                              <Tag color="green" style={{ marginLeft: 8 }}>
+                                {t('documentViewer.cloudComments.resolved', '解決済み')}
+                              </Tag>
+                            )}
+                          </div>
+                          <div style={{ whiteSpace: 'pre-wrap', marginBottom: 8 }}>
+                            {comment.content}
+                          </div>
+                          <div style={{ fontSize: 12, color: '#888' }}>
+                            {new Date(comment.createdTime).toLocaleString('ja-JP')}
+                            {comment.modifiedTime && comment.modifiedTime !== comment.createdTime && (
+                              <span style={{ marginLeft: 8 }}>
+                                ({t('documentViewer.cloudComments.edited', '編集済')})
+                              </span>
+                            )}
+                          </div>
+                          {/* Render replies if any */}
+                          {comment.replies && comment.replies.length > 0 && (
+                            <div style={{ marginTop: 12, marginLeft: 24, borderLeft: '2px solid #e8e8e8', paddingLeft: 12 }}>
+                              {comment.replies.map((reply, replyIndex) => (
+                                <div
+                                  key={reply.id || replyIndex}
+                                  style={{
+                                    padding: '8px 0',
+                                    borderBottom: replyIndex < (comment.replies?.length || 0) - 1 ? '1px solid #f0f0f0' : 'none',
+                                  }}
+                                >
+                                  <div style={{ marginBottom: 4 }}>
+                                    <strong style={{ fontSize: 13 }}>{reply.author}</strong>
+                                  </div>
+                                  <div style={{ whiteSpace: 'pre-wrap', marginBottom: 4, fontSize: 13 }}>
+                                    {reply.content}
+                                  </div>
+                                  <div style={{ fontSize: 11, color: '#888' }}>
+                                    {new Date(reply.createdTime).toLocaleString('ja-JP')}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ),
+                },
+              ]}
             />
           )}
 

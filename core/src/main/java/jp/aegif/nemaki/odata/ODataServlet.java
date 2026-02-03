@@ -67,16 +67,17 @@ public class ODataServlet extends HttpServlet {
     @Override
     public void init() throws ServletException {
         super.init();
-        
+
         // Get Spring application context
         WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(getServletContext());
         if (context != null) {
-            repositoryService = context.getBean(RepositoryService.class);
-            objectService = context.getBean(ObjectService.class);
-            navigationService = context.getBean(NavigationService.class);
-            discoveryService = context.getBean(DiscoveryService.class);
-            versioningService = context.getBean(VersioningService.class);
-            aclService = context.getBean(AclService.class);
+            // Use bean names to avoid ambiguity with proxy beans (e.g., RepositoryService vs repositoryService)
+            repositoryService = context.getBean("RepositoryService", RepositoryService.class);
+            objectService = context.getBean("ObjectService", ObjectService.class);
+            navigationService = context.getBean("NavigationService", NavigationService.class);
+            discoveryService = context.getBean("DiscoveryService", DiscoveryService.class);
+            versioningService = context.getBean("VersioningService", VersioningService.class);
+            aclService = context.getBean("AclService", AclService.class);
         }
     }
     

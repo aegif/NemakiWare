@@ -245,6 +245,9 @@ private ContentService getContentServiceSafe() {
 			boolean hasQuery = query != null && !query.trim().isEmpty();
 			int totalCount;
 
+			// Performance optimization: Fetch all groups once instead of per-user (N+1 query fix)
+			List<jp.aegif.nemaki.model.GroupItem> allGroups = contentService.getGroupItems(repositoryId);
+
 			if (hasQuery) {
 				// Server-side search: fetch all, filter, then paginate
 				String queryLower = query.trim().toLowerCase();
@@ -260,21 +263,21 @@ private ContentService getContentServiceSafe() {
 				int start = paginated ? Math.min(offset, totalCount) : 0;
 				int end = paginated ? Math.min(start + limit, totalCount) : totalCount;
 				for (int i = start; i < end; i++) {
-					listJSON.add(convertUserToJson(filtered.get(i), repositoryId));
+					listJSON.add(convertUserToJsonWithGroups(filtered.get(i), allGroups));
 				}
 			} else if (paginated) {
 				// No query, paginated: use CouchDB skip/limit
 				totalCount = contentService.getUserItemCount(repositoryId);
 				List<UserItem> userList = contentService.getUserItems(repositoryId, offset, limit);
 				for (UserItem user : userList) {
-					listJSON.add(convertUserToJson(user, repositoryId));
+					listJSON.add(convertUserToJsonWithGroups(user, allGroups));
 				}
 			} else {
 				// No query, no pagination: return all (backward compatible)
 				List<UserItem> userList = contentService.getUserItems(repositoryId);
 				totalCount = userList.size();
 				for (UserItem user : userList) {
-					listJSON.add(convertUserToJson(user, repositoryId));
+					listJSON.add(convertUserToJsonWithGroups(user, allGroups));
 				}
 			}
 
@@ -1111,6 +1114,64 @@ private ContentService getContentServiceSafe() {
 		} catch (Exception e) {
 			log.error("Failed to retrieve groups for user " + user.getUserId() + ": " + e.getMessage());
 			// Return empty array on error rather than failing the entire request
+		}
+		userJSON.put("groups", userGroups);
+
+		return userJSON;
+	}
+
+	/**
+	 * Optimized version of convertUserToJson that accepts pre-fetched groups list.
+	 * This avoids N+1 query problem when listing multiple users.
+	 */
+	@SuppressWarnings("unchecked")
+	private JSONObject convertUserToJsonWithGroups(UserItem user, List<jp.aegif.nemaki.model.GroupItem> allGroups) {
+		String created = new String();
+		try {
+			if (user.getCreated() != null) {
+				created = DateUtil.formatSystemDateTime(user.getCreated());
+			}
+		} catch (Exception ex) {
+			log.warn("Failed to format created date for user " + user.getUserId());
+		}
+		String modified = new String();
+		try {
+			if (user.getModified() != null) {
+				modified = DateUtil.formatSystemDateTime(user.getModified());
+			}
+		} catch (Exception ex) {
+			log.warn("Failed to format modified date for user " + user.getUserId());
+		}
+		JSONObject userJSON = new JSONObject();
+		userJSON.put(ITEM_USERID, user.getUserId());
+		userJSON.put(ITEM_USERNAME, user.getName());
+		userJSON.put(ITEM_TYPE, user.getType());
+		userJSON.put(ITEM_CREATOR, user.getCreator());
+		userJSON.put(ITEM_CREATED, created);
+		userJSON.put(ITEM_MODIFIER, user.getModifier());
+		userJSON.put(ITEM_MODIFIED, modified);
+
+		Map<String, Object> kvMap = new HashMap<>();
+		for(Property p : user.getSubTypeProperties()) kvMap.put(p.getKey(), p.getValue());
+
+		userJSON.put(ITEM_FIRSTNAME, MapUtils.getObject(kvMap, "nemaki:firstName", ""));
+		userJSON.put(ITEM_LASTNAME, MapUtils.getObject(kvMap, "nemaki:lastName", ""));
+		userJSON.put(ITEM_EMAIL, MapUtils.getObject(kvMap, "nemaki:email", ""));
+		userJSON.put("favorites", MapUtils.getObject(kvMap, "nemaki:favorites", new JSONArray()));
+		userJSON.put("allowedAuthMethods", kvMap.get("nemaki:allowedAuthMethods"));
+
+		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
+		userJSON.put(ITEM_IS_ADMIN, isAdmin);
+
+		// Add user's groups using pre-fetched list (no additional DB query)
+		JSONArray userGroups = new JSONArray();
+		if (allGroups != null) {
+			for (jp.aegif.nemaki.model.GroupItem group : allGroups) {
+				List<String> members = group.getUsers();
+				if (members != null && members.contains(user.getUserId())) {
+					userGroups.add(group.getGroupId());
+				}
+			}
 		}
 		userJSON.put("groups", userGroups);
 

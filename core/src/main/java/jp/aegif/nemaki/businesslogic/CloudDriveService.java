@@ -79,4 +79,16 @@ public interface CloudDriveService {
 	 * @return InputStream of the file content
 	 */
 	InputStream pullFromCloudByFileId(String provider, String cloudFileId, String accessToken);
+
+	/**
+	 * Fetch comments from a cloud file.
+	 * For Google Docs, uses the Google Drive Comments API.
+	 * For Microsoft 365 files, uses the Microsoft Graph Comments API.
+	 *
+	 * @param provider Cloud provider ("google" or "microsoft")
+	 * @param cloudFileId The file ID in the cloud provider
+	 * @param accessToken OAuth access token for the cloud provider
+	 * @return JSON string containing an array of comments, or null if no comments
+	 */
+	String getCloudComments(String provider, String cloudFileId, String accessToken);
 }

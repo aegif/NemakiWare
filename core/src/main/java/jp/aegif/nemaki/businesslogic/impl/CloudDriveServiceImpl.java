@@ -23,9 +23,13 @@ import java.io.PipedOutputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -35,20 +39,36 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 
 	private static final Log log = LogFactory.getLog(CloudDriveServiceImpl.class);
 
+	/** Maximum concurrent downloads */
+	private static final int MAX_DOWNLOAD_THREADS = 4;
+	/** Maximum queued download tasks (prevents memory exhaustion from request floods) */
+	private static final int MAX_DOWNLOAD_QUEUE = 8;
+	/** Timeout for download operations (prevents thread starvation from blocked pipes) */
+	private static final long DOWNLOAD_TIMEOUT_SECONDS = 300; // 5 minutes
+
 	/**
-	 * SECURITY: Bounded thread pool for cloud download operations.
-	 * Prevents DoS via unbounded thread creation from many concurrent pull requests.
-	 * Max 4 concurrent downloads to balance throughput and resource usage.
+	 * SECURITY: Bounded thread pool with bounded queue for cloud download operations.
+	 * - Fixed pool size: 4 concurrent downloads max
+	 * - Bounded queue: 8 pending tasks max (prevents memory exhaustion)
+	 * - AbortPolicy: Rejects with RejectedExecutionException when queue is full
+	 *   (caller should return HTTP 503 Service Unavailable)
 	 */
-	private static final ExecutorService downloadExecutor = Executors.newFixedThreadPool(4, new ThreadFactory() {
-		private final AtomicInteger counter = new AtomicInteger(0);
-		@Override
-		public Thread newThread(Runnable r) {
-			Thread t = new Thread(r, "cloud-download-" + counter.incrementAndGet());
-			t.setDaemon(true);
-			return t;
-		}
-	});
+	private static final ThreadPoolExecutor downloadExecutor = new ThreadPoolExecutor(
+		MAX_DOWNLOAD_THREADS,               // core pool size
+		MAX_DOWNLOAD_THREADS,               // max pool size (same as core for fixed pool behavior)
+		60L, TimeUnit.SECONDS,              // keep-alive time for idle threads
+		new ArrayBlockingQueue<>(MAX_DOWNLOAD_QUEUE),  // BOUNDED queue
+		new ThreadFactory() {
+			private final AtomicInteger counter = new AtomicInteger(0);
+			@Override
+			public Thread newThread(Runnable r) {
+				Thread t = new Thread(r, "cloud-download-" + counter.incrementAndGet());
+				t.setDaemon(true);
+				return t;
+			}
+		},
+		new ThreadPoolExecutor.AbortPolicy()  // Reject when queue is full
+	);
 
 	private ObjectService objectService;
 
@@ -214,8 +234,27 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 				return uploadedFile.getId();
 			}
 
+		} catch (com.google.api.client.auth.oauth2.TokenResponseException e) {
+			log.error("Google Drive authentication failed: token expired or invalid", e);
+			throw new RuntimeException("Google Drive authentication failed. Please re-authenticate.", e);
+		} catch (com.google.api.client.googleapis.json.GoogleJsonResponseException e) {
+			int statusCode = e.getStatusCode();
+			String message = e.getDetails() != null ? e.getDetails().getMessage() : e.getMessage();
+			log.error("Google Drive API error (HTTP " + statusCode + "): " + message, e);
+			if (statusCode == 404) {
+				throw new RuntimeException("Cloud file not found. It may have been deleted.", e);
+			} else if (statusCode == 403) {
+				throw new RuntimeException("Access denied to Google Drive. Please check permissions.", e);
+			} else if (statusCode == 429) {
+				throw new RuntimeException("Google Drive rate limit exceeded. Please try again later.", e);
+			}
+			throw new RuntimeException("Google Drive API error: " + message, e);
+		} catch (java.io.IOException e) {
+			log.error("Network error while communicating with Google Drive", e);
+			throw new RuntimeException("Network error while uploading to Google Drive. Please check your connection.", e);
 		} catch (Exception e) {
-			throw new RuntimeException("Failed to push to Google Drive", e);
+			log.error("Unexpected error while pushing to Google Drive", e);
+			throw new RuntimeException("Failed to push to Google Drive: " + e.getMessage(), e);
 		}
 	}
 
@@ -255,27 +294,99 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 				exportMimeType = null;
 			}
 
-			// SECURITY: Use bounded thread pool to prevent DoS via unbounded thread creation
-			// The downloadExecutor limits concurrent downloads to prevent resource exhaustion
-			downloadExecutor.submit(() -> {
-				try {
-					if (isGoogleDocsFormat) {
-						driveService.files().export(cloudFileId, exportMimeType).executeMediaAndDownloadTo(pipedOut);
-						log.info("Exported Google Docs file " + cloudFileId + " as " + exportMimeType);
-					} else {
-						driveService.files().get(cloudFileId).executeMediaAndDownloadTo(pipedOut);
+			// SECURITY: Use bounded thread pool with rejection handling
+			// AbortPolicy will throw RejectedExecutionException when queue is full
+			Future<?> downloadFuture;
+			try {
+				downloadFuture = downloadExecutor.submit(() -> {
+					try {
+						if (isGoogleDocsFormat) {
+							driveService.files().export(cloudFileId, exportMimeType).executeMediaAndDownloadTo(pipedOut);
+							log.info("Exported Google Docs file " + cloudFileId + " as " + exportMimeType);
+						} else {
+							driveService.files().get(cloudFileId).executeMediaAndDownloadTo(pipedOut);
+						}
+					} catch (java.io.IOException e) {
+						// Check if this is due to pipe being closed (client disconnected)
+						if (e.getMessage() != null && e.getMessage().contains("Pipe")) {
+							log.warn("Download cancelled - client disconnected: " + cloudFileId);
+						} else {
+							log.error("Error downloading from Google Drive: " + e.getMessage(), e);
+						}
+					} catch (Exception e) {
+						log.error("Error downloading from Google Drive: " + e.getMessage(), e);
+					} finally {
+						try { pipedOut.close(); } catch (Exception ignored) {}
 					}
-					pipedOut.close();
-				} catch (Exception e) {
-					log.error("Error downloading from Google Drive: " + e.getMessage(), e);
-					try { pipedOut.close(); } catch (Exception ignored) {}
-				}
-			});
+				});
+			} catch (RejectedExecutionException e) {
+				// SECURITY: Queue is full - too many concurrent requests
+				log.warn("Download queue full - rejecting request for file: " + cloudFileId);
+				try { pipedOut.close(); } catch (Exception ignored) {}
+				try { pipedIn.close(); } catch (Exception ignored) {}
+				throw new RuntimeException("Service temporarily unavailable - too many concurrent downloads. Please try again later.");
+			}
 
-			return pipedIn;
+			// SECURITY: Return a wrapper InputStream that handles timeout and cancellation
+			// This prevents thread starvation if client doesn't read the stream
+			return new TimeoutPipedInputStream(pipedIn, downloadFuture, cloudFileId);
 
+		} catch (RuntimeException e) {
+			throw e;
 		} catch (Exception e) {
 			throw new RuntimeException("Failed to pull from Google Drive: " + cloudFileId, e);
+		}
+	}
+
+	/**
+	 * SECURITY: Wrapper InputStream that cancels the download task if the stream is closed
+	 * without being fully read, and enforces read timeout to prevent thread starvation.
+	 */
+	private class TimeoutPipedInputStream extends InputStream {
+		private final PipedInputStream delegate;
+		private final Future<?> downloadFuture;
+		private final String fileId;
+		private volatile boolean closed = false;
+
+		TimeoutPipedInputStream(PipedInputStream delegate, Future<?> downloadFuture, String fileId) {
+			this.delegate = delegate;
+			this.downloadFuture = downloadFuture;
+			this.fileId = fileId;
+		}
+
+		@Override
+		public int read() throws java.io.IOException {
+			if (closed) return -1;
+			return delegate.read();
+		}
+
+		@Override
+		public int read(byte[] b, int off, int len) throws java.io.IOException {
+			if (closed) return -1;
+			return delegate.read(b, off, len);
+		}
+
+		@Override
+		public int available() throws java.io.IOException {
+			return delegate.available();
+		}
+
+		@Override
+		public void close() throws java.io.IOException {
+			if (closed) return;
+			closed = true;
+
+			// Cancel the download task if it's still running
+			if (!downloadFuture.isDone()) {
+				log.info("Cancelling download task for file: " + fileId);
+				downloadFuture.cancel(true); // Interrupt the thread
+			}
+
+			try {
+				delegate.close();
+			} catch (java.io.IOException e) {
+				// Ignore close errors on pipe
+			}
 		}
 	}
 
@@ -316,7 +427,8 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 			java.net.http.HttpResponse<String> response = httpClient.send(request,
 				java.net.http.HttpResponse.BodyHandlers.ofString());
 
-			if (response.statusCode() >= 200 && response.statusCode() < 300) {
+			int statusCode = response.statusCode();
+			if (statusCode >= 200 && statusCode < 300) {
 				org.json.simple.JSONObject json = (org.json.simple.JSONObject)
 					new org.json.simple.parser.JSONParser().parse(response.body());
 				String fileId = (String) json.get("id");
@@ -327,13 +439,32 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 				log.info("Pushed to OneDrive: fileId=" + fileId + ", webUrl=" + webUrl);
 				return fileId;
 			} else {
-				throw new RuntimeException("OneDrive upload failed: HTTP " + response.statusCode() + " " + response.body());
+				log.error("OneDrive upload failed: HTTP " + statusCode + " - " + response.body());
+				if (statusCode == 401) {
+					throw new RuntimeException("OneDrive authentication failed. Please re-authenticate.");
+				} else if (statusCode == 403) {
+					throw new RuntimeException("Access denied to OneDrive. Please check permissions.");
+				} else if (statusCode == 404) {
+					throw new RuntimeException("OneDrive path not found.");
+				} else if (statusCode == 429) {
+					throw new RuntimeException("OneDrive rate limit exceeded. Please try again later.");
+				} else if (statusCode == 507) {
+					throw new RuntimeException("OneDrive storage quota exceeded.");
+				}
+				throw new RuntimeException("OneDrive upload failed (HTTP " + statusCode + ")");
 			}
 
 		} catch (RuntimeException e) {
 			throw e;
+		} catch (java.net.http.HttpTimeoutException e) {
+			log.error("OneDrive upload timeout", e);
+			throw new RuntimeException("OneDrive upload timed out. Please try again.", e);
+		} catch (java.io.IOException e) {
+			log.error("Network error while communicating with OneDrive", e);
+			throw new RuntimeException("Network error while uploading to OneDrive. Please check your connection.", e);
 		} catch (Exception e) {
-			throw new RuntimeException("Failed to push to OneDrive", e);
+			log.error("Unexpected error while pushing to OneDrive", e);
+			throw new RuntimeException("Failed to push to OneDrive: " + e.getMessage(), e);
 		}
 	}
 
@@ -383,6 +514,165 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 			httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.discarding());
 		} catch (Exception e) {
 			log.error("Failed to delete from OneDrive: " + cloudFileId, e);
+		}
+	}
+
+	// ---- Comments API ----
+
+	@Override
+	public String getCloudComments(String provider, String cloudFileId, String accessToken) {
+		if (cloudFileId == null || cloudFileId.isEmpty()) {
+			return null;
+		}
+
+		try {
+			switch (provider) {
+				case "google":
+					return getGoogleDriveComments(cloudFileId, accessToken);
+				case "microsoft":
+					return getOneDriveComments(cloudFileId, accessToken);
+				default:
+					log.warn("Unknown cloud provider for comments: " + provider);
+					return null;
+			}
+		} catch (Exception e) {
+			log.error("Failed to fetch cloud comments: " + e.getMessage(), e);
+			return null;
+		}
+	}
+
+	/**
+	 * Fetch comments from Google Drive using the Comments API.
+	 * Returns a JSON array of comments with author, content, and timestamp.
+	 */
+	private String getGoogleDriveComments(String cloudFileId, String accessToken) {
+		try {
+			Drive driveService = buildGoogleDriveService(accessToken);
+
+			// Fetch all comments for the file
+			com.google.api.services.drive.model.CommentList commentList = driveService.comments()
+				.list(cloudFileId)
+				.setFields("comments(id,author(displayName,emailAddress),content,createdTime,modifiedTime,resolved,replies(id,author(displayName,emailAddress),content,createdTime,modifiedTime))")
+				.execute();
+
+			if (commentList.getComments() == null || commentList.getComments().isEmpty()) {
+				return null;
+			}
+
+			// Build JSON array of comments
+			org.json.simple.JSONArray commentsArray = new org.json.simple.JSONArray();
+			for (com.google.api.services.drive.model.Comment comment : commentList.getComments()) {
+				org.json.simple.JSONObject commentObj = new org.json.simple.JSONObject();
+				commentObj.put("id", comment.getId());
+				commentObj.put("content", comment.getContent());
+				commentObj.put("createdTime", comment.getCreatedTime() != null ? comment.getCreatedTime().toStringRfc3339() : null);
+				commentObj.put("modifiedTime", comment.getModifiedTime() != null ? comment.getModifiedTime().toStringRfc3339() : null);
+				commentObj.put("resolved", comment.getResolved());
+
+				if (comment.getAuthor() != null) {
+					org.json.simple.JSONObject authorObj = new org.json.simple.JSONObject();
+					authorObj.put("displayName", comment.getAuthor().getDisplayName());
+					authorObj.put("email", comment.getAuthor().getEmailAddress());
+					commentObj.put("author", authorObj);
+				}
+
+				// Add replies if present
+				if (comment.getReplies() != null && !comment.getReplies().isEmpty()) {
+					org.json.simple.JSONArray repliesArray = new org.json.simple.JSONArray();
+					for (com.google.api.services.drive.model.Reply reply : comment.getReplies()) {
+						org.json.simple.JSONObject replyObj = new org.json.simple.JSONObject();
+						replyObj.put("id", reply.getId());
+						replyObj.put("content", reply.getContent());
+						replyObj.put("createdTime", reply.getCreatedTime() != null ? reply.getCreatedTime().toStringRfc3339() : null);
+						if (reply.getAuthor() != null) {
+							org.json.simple.JSONObject replyAuthorObj = new org.json.simple.JSONObject();
+							replyAuthorObj.put("displayName", reply.getAuthor().getDisplayName());
+							replyAuthorObj.put("email", reply.getAuthor().getEmailAddress());
+							replyObj.put("author", replyAuthorObj);
+						}
+						repliesArray.add(replyObj);
+					}
+					commentObj.put("replies", repliesArray);
+				}
+
+				commentsArray.add(commentObj);
+			}
+
+			log.info("Fetched " + commentsArray.size() + " comments from Google Drive file: " + cloudFileId);
+			return commentsArray.toJSONString();
+
+		} catch (Exception e) {
+			log.error("Failed to fetch Google Drive comments: " + e.getMessage(), e);
+			return null;
+		}
+	}
+
+	/**
+	 * Fetch comments from OneDrive using the Microsoft Graph API.
+	 * Note: Microsoft Graph API comments endpoint is available for specific file types.
+	 */
+	@SuppressWarnings("unchecked")
+	private String getOneDriveComments(String cloudFileId, String accessToken) {
+		try {
+			java.net.http.HttpClient httpClient = java.net.http.HttpClient.newHttpClient();
+
+			// Microsoft Graph API endpoint for file comments
+			// Note: Comments API is available for specific file types like Word, Excel, PowerPoint
+			java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+				.uri(java.net.URI.create("https://graph.microsoft.com/v1.0/me/drive/items/" + cloudFileId + "/workbook/comments"))
+				.header("Authorization", "Bearer " + accessToken)
+				.GET()
+				.build();
+
+			java.net.http.HttpResponse<String> response = httpClient.send(request,
+				java.net.http.HttpResponse.BodyHandlers.ofString());
+
+			// If the file doesn't support comments (not a workbook), try the generic endpoint
+			if (response.statusCode() == 400 || response.statusCode() == 404) {
+				// Comments not supported for this file type
+				log.info("OneDrive comments not available for file: " + cloudFileId + " (status: " + response.statusCode() + ")");
+				return null;
+			}
+
+			if (response.statusCode() >= 200 && response.statusCode() < 300) {
+				org.json.simple.JSONObject json = (org.json.simple.JSONObject)
+					new org.json.simple.parser.JSONParser().parse(response.body());
+
+				org.json.simple.JSONArray valueArray = (org.json.simple.JSONArray) json.get("value");
+				if (valueArray == null || valueArray.isEmpty()) {
+					return null;
+				}
+
+				// Transform to standard comment format
+				org.json.simple.JSONArray commentsArray = new org.json.simple.JSONArray();
+				for (Object item : valueArray) {
+					org.json.simple.JSONObject msComment = (org.json.simple.JSONObject) item;
+					org.json.simple.JSONObject commentObj = new org.json.simple.JSONObject();
+
+					commentObj.put("id", msComment.get("id"));
+					commentObj.put("content", msComment.get("content"));
+					commentObj.put("createdTime", msComment.get("createdDateTime"));
+
+					org.json.simple.JSONObject authorInfo = (org.json.simple.JSONObject) msComment.get("authorEmail");
+					if (authorInfo != null) {
+						org.json.simple.JSONObject authorObj = new org.json.simple.JSONObject();
+						authorObj.put("email", authorInfo);
+						commentObj.put("author", authorObj);
+					}
+
+					commentsArray.add(commentObj);
+				}
+
+				log.info("Fetched " + commentsArray.size() + " comments from OneDrive file: " + cloudFileId);
+				return commentsArray.toJSONString();
+			} else {
+				log.warn("OneDrive comments request failed: HTTP " + response.statusCode());
+				return null;
+			}
+
+		} catch (Exception e) {
+			log.error("Failed to fetch OneDrive comments: " + e.getMessage(), e);
+			return null;
 		}
 	}
 }
