@@ -571,8 +571,17 @@
       "firstName": "First Name",
       "lastName": "Last Name",
       "email": "Email",
-      "groups": "Groups"
+      "groups": "Groups",
+      "authMethods": "Auth Methods"
     },
+    "authMethods": {
+      "all": "All Allowed",
+      "password": "Password Only",
+      "cloud": "Cloud Only",
+      "both": "Password + Cloud",
+      "disabled": "Disabled"
+    },
+    "authMethodsTooltip": "Configure which authentication methods are allowed for this user. If not set, all methods are allowed.",
     "placeholders": {
       "userId": "Enter user ID",
       "userName": "Enter user name",
@@ -580,7 +589,8 @@
       "lastName": "Enter last name",
       "email": "Enter email",
       "password": "Enter password",
-      "groups": "Select groups"
+      "groups": "Select groups",
+      "authMethods": "Select auth methods"
     },
     "validation": {
       "userIdRequired": "Please enter a user ID",

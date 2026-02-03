@@ -67,9 +67,12 @@ public class AuthResource {
     
     @Autowired
     private ContentService contentService;
-    
+
     @Autowired
     private TokenService tokenService;
+
+    @Autowired
+    private jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authenticationService;
     
     @Context
     private UriInfo uriInfo;
@@ -435,16 +438,22 @@ public class AuthResource {
             if (StringUtils.isBlank(username)) {
                 throw ApiException.unauthorized("Could not extract username from OIDC user info");
             }
-            
+
             UserItem user = getOrCreateUser(repositoryId, username);
             if (user == null) {
                 throw ApiException.internalError("Failed to create or find user");
             }
-            
+
+            // Check if cloud/OIDC authentication is allowed for this user
+            if (authenticationService != null && !authenticationService.isAuthMethodAllowed(user, "cloud")) {
+                logger.info("API v1: OIDC authentication denied for user " + username + " (not in allowedAuthMethods)");
+                throw ApiException.permissionDenied("Authentication method not allowed for this user");
+            }
+
             if (tokenService == null) {
                 throw ApiException.internalError("Token service not available");
             }
-            
+
             Token token = tokenService.setToken("", repositoryId, username);
             
             AuthResponse response = new AuthResponse();

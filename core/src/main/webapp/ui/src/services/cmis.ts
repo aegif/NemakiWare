@@ -1702,7 +1702,8 @@ export class CMISService {
             firstName: user.firstName,
             lastName: user.lastName,
             email: user.email,
-            groups: user.groups || []
+            groups: user.groups || [],
+            allowedAuthMethods: user.allowedAuthMethods
           }));
 
           return {
@@ -1789,6 +1790,10 @@ export class CMISService {
       // Add groups parameter - serialize as JSON
       if (user.groups !== undefined) {
         formData.append('groups', JSON.stringify(user.groups));
+      }
+      // Add allowedAuthMethods parameter (empty string clears it)
+      if (user.allowedAuthMethods !== undefined) {
+        formData.append('allowedAuthMethods', user.allowedAuthMethods || '');
       }
 
       // Use PUT method via httpClient.request()

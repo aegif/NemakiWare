@@ -55,6 +55,15 @@ export interface User {
   email?: string;
   password?: string;
   groups: string[];
+  /**
+   * Allowed authentication methods for this user.
+   * - undefined/null: All methods allowed (default, backward compatible)
+   * - "password": Password authentication only
+   * - "cloud": Cloud/OIDC authentication only
+   * - "password,cloud": Both methods allowed
+   * - "disabled": Authentication disabled (account locked)
+   */
+  allowedAuthMethods?: string;
 }
 
 export interface Group {

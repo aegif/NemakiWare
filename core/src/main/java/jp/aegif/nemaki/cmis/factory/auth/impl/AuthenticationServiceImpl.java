@@ -102,6 +102,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 					return false;
 				}
 			} else {
+				// Check if cloud/external authentication is allowed for this user
+				if (!isAuthMethodAllowed(userItem, "cloud")) {
+					log.info("External/cloud authentication denied for user " + proxyUserId + " (not in allowedAuthMethods)");
+					return false;
+				}
 				boolean isAdmin = userItem.isAdmin() == null ? false : true;
 				setAdminFlagInContext(callContext, isAdmin);
 			}
@@ -225,12 +230,77 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		return tokenService.isAdmin(repositoryId, userName);
 	}
 
+	/**
+	 * Check if a specific authentication method is allowed for a user.
+	 *
+	 * The user's allowedAuthMethods property (nemaki:allowedAuthMethods) controls which
+	 * authentication methods are permitted:
+	 * - null/empty: All methods allowed (backward compatibility)
+	 * - "password": Only password authentication
+	 * - "cloud": Only cloud/OIDC authentication
+	 * - "password,cloud": Both methods allowed
+	 * - "disabled": No authentication allowed (account disabled)
+	 *
+	 * @param user The user to check
+	 * @param method The authentication method to check ("password" or "cloud")
+	 * @return true if the method is allowed, false otherwise
+	 */
+	public boolean isAuthMethodAllowed(UserItem user, String method) {
+		if (user == null || method == null) {
+			return false;
+		}
+
+		// Get allowedAuthMethods from subTypeProperties
+		String allowedMethods = null;
+		if (user.getSubTypeProperties() != null) {
+			for (jp.aegif.nemaki.model.Property prop : user.getSubTypeProperties()) {
+				if ("nemaki:allowedAuthMethods".equals(prop.getKey())) {
+					allowedMethods = String.valueOf(prop.getValue());
+					break;
+				}
+			}
+		}
+
+		// null/empty means all methods allowed (backward compatibility)
+		if (allowedMethods == null || allowedMethods.isEmpty() || "null".equals(allowedMethods)) {
+			return true;
+		}
+
+		// "disabled" means no authentication allowed
+		if ("disabled".equalsIgnoreCase(allowedMethods.trim())) {
+			if (log.isDebugEnabled()) {
+				log.debug("User " + user.getUserId() + " has authentication disabled");
+			}
+			return false;
+		}
+
+		// Check if the requested method is in the comma-separated list
+		String[] methods = allowedMethods.split(",");
+		for (String m : methods) {
+			if (method.equalsIgnoreCase(m.trim())) {
+				return true;
+			}
+		}
+
+		if (log.isDebugEnabled()) {
+			log.debug("Auth method '" + method + "' not allowed for user " + user.getUserId() +
+					  " (allowed: " + allowedMethods + ")");
+		}
+		return false;
+	}
+
 	private UserItem getAuthenticatedUserItem(String repositoryId, String userId, String password) {
 		UserItem u = contentService.getUserItemById(repositoryId, userId);
-		
+
 		if (log.isDebugEnabled()) {
-			log.debug("Authentication attempt - repositoryId: " + repositoryId + ", userId: " + userId + 
+			log.debug("Authentication attempt - repositoryId: " + repositoryId + ", userId: " + userId +
 				", userItem: " + (u != null ? "found" : "not found"));
+		}
+
+		// Check if password authentication is allowed for this user
+		if (u != null && !isAuthMethodAllowed(u, "password")) {
+			log.info("Password authentication denied for user " + userId + " (not in allowedAuthMethods)");
+			return null;
 		}
 
 		// パスワード認証とセキュリティアップグレード

@@ -414,18 +414,26 @@ public class UserResource {
             if (request.getFirstName() != null) propMap.put("nemaki:firstName", request.getFirstName());
             if (request.getLastName() != null) propMap.put("nemaki:lastName", request.getLastName());
             if (request.getEmail() != null) propMap.put("nemaki:email", request.getEmail());
+            // Allow setting allowedAuthMethods (including null/empty to clear it)
+            if (request.getAllowedAuthMethods() != null) {
+                if (request.getAllowedAuthMethods().isEmpty()) {
+                    propMap.remove("nemaki:allowedAuthMethods");
+                } else {
+                    propMap.put("nemaki:allowedAuthMethods", request.getAllowedAuthMethods());
+                }
+            }
 
             List<Property> properties = new ArrayList<>();
             for (Map.Entry<String, Object> entry : propMap.entrySet()) {
                 properties.add(new Property(entry.getKey(), entry.getValue()));
             }
             user.setSubTypeProperties(properties);
-            
+
             if (StringUtils.isNotBlank(request.getPassword())) {
                 String passwordHash = BCrypt.hashpw(request.getPassword(), BCrypt.gensalt());
                 user.setPassowrd(passwordHash);
             }
-            
+
             setModificationSignature(user);
             
             contentService.update(new SystemCallContext(repositoryId), repositoryId, user);
@@ -603,7 +611,8 @@ public class UserResource {
         response.setFirstName((String) MapUtils.getObject(propMap, "nemaki:firstName", ""));
         response.setLastName((String) MapUtils.getObject(propMap, "nemaki:lastName", ""));
         response.setEmail((String) MapUtils.getObject(propMap, "nemaki:email", ""));
-        
+        response.setAllowedAuthMethods((String) propMap.get("nemaki:allowedAuthMethods"));
+
         Object favoritesObj = propMap.get("nemaki:favorites");
         if (favoritesObj instanceof List) {
             @SuppressWarnings("unchecked")

@@ -37,7 +37,11 @@ public class UserRequest {
     @Schema(description = "Groups to assign the user to")
     @JsonProperty("groups")
     private List<String> groups;
-    
+
+    @Schema(description = "Allowed authentication methods", example = "password,cloud")
+    @JsonProperty("allowedAuthMethods")
+    private String allowedAuthMethods;
+
     public UserRequest() {
     }
     
@@ -95,5 +99,13 @@ public class UserRequest {
     
     public void setGroups(List<String> groups) {
         this.groups = groups;
+    }
+
+    public String getAllowedAuthMethods() {
+        return allowedAuthMethods;
+    }
+
+    public void setAllowedAuthMethods(String allowedAuthMethods) {
+        this.allowedAuthMethods = allowedAuthMethods;
     }
 }

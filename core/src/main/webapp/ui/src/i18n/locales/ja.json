@@ -571,8 +571,17 @@
       "firstName": "名",
       "lastName": "姓",
       "email": "メールアドレス",
-      "groups": "所属グループ"
+      "groups": "所属グループ",
+      "authMethods": "認証方式"
     },
+    "authMethods": {
+      "all": "すべて許可",
+      "password": "パスワードのみ",
+      "cloud": "クラウドのみ",
+      "both": "パスワード+クラウド",
+      "disabled": "無効"
+    },
+    "authMethodsTooltip": "このユーザーに許可される認証方式を設定します。未設定の場合はすべての方式が許可されます。",
     "placeholders": {
       "userId": "ユーザーIDを入力",
       "userName": "ユーザー名を入力",
@@ -580,7 +589,8 @@
       "lastName": "姓を入力",
       "email": "メールアドレスを入力",
       "password": "パスワードを入力",
-      "groups": "グループを選択"
+      "groups": "グループを選択",
+      "authMethods": "認証方式を選択"
     },
     "validation": {
       "userIdRequired": "ユーザーIDを入力してください",

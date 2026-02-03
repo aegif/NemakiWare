@@ -463,6 +463,14 @@ public class AuthTokenResource extends ResourceBase{
 				return makeResult(false, result, errMsg).toString();
 			}
 
+			// Check if cloud/OIDC authentication is allowed for this user
+			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
+			if (authService != null && !authService.isAuthMethodAllowed(userItem, "cloud")) {
+				logger.info("OIDC authentication denied for user {} (not in allowedAuthMethods)", userName);
+				addErrMsg(errMsg, "auth", "methodNotAllowed");
+				return makeResult(false, result, errMsg).toString();
+			}
+
 			TokenService tokenService = getTokenService();
 			if (tokenService == null) {
 				addErrMsg(errMsg, "tokenService", "notAvailable");

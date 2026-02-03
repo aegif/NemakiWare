@@ -353,6 +353,11 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 		}
 
 		String userId = email;
+		// Determine allowed auth methods based on user status
+		// Google: suspended == true means account is disabled
+		Boolean suspended = gUser.getSuspended();
+		String allowedAuthMethods = (suspended != null && suspended) ? "disabled" : "cloud";
+
 		try {
 			User existing = principalService.getUserById(repositoryId, userId);
 			if (existing == null) {
@@ -367,7 +372,7 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				principalService.createUser(repositoryId, newUser);
 				ensureUserItem(repositoryId, userId,
 						newUser.getName(), newUser.getFirstName(), newUser.getLastName(),
-						email, newUser.getPasswordHash());
+						email, newUser.getPasswordHash(), allowedAuthMethods);
 				result.incrementUsersCreated();
 			} else {
 				boolean updated = false;
@@ -399,9 +404,10 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				}
 				// Ensure UserItem exists even for previously synced users
 				// Pass source email (not existing.getEmail() which may be null)
+				// Also update allowedAuthMethods based on current suspension status
 				ensureUserItem(repositoryId, userId, existing.getName(),
 						existing.getFirstName(), existing.getLastName(),
-						email, existing.getPasswordHash());
+						email, existing.getPasswordHash(), allowedAuthMethods);
 			}
 		} catch (Exception e) {
 			log.warn("Failed to sync Google user " + email + ": " + e.getMessage());
@@ -653,6 +659,12 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 
 		String effectiveEmail = email != null ? email : upn;
 
+		// Determine allowed auth methods based on user status
+		// Microsoft: accountEnabled == false means account is disabled
+		Object accountEnabledObj = msUser.get("accountEnabled");
+		boolean accountEnabled = accountEnabledObj == null || Boolean.TRUE.equals(accountEnabledObj);
+		String allowedAuthMethods = accountEnabled ? "cloud" : "disabled";
+
 		try {
 			User existing = principalService.getUserById(repositoryId, userId);
 			if (existing == null) {
@@ -666,7 +678,7 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				principalService.createUser(repositoryId, newUser);
 				ensureUserItem(repositoryId, userId,
 						newUser.getName(), newUser.getFirstName(), newUser.getLastName(),
-						newUser.getEmail(), newUser.getPasswordHash());
+						newUser.getEmail(), newUser.getPasswordHash(), allowedAuthMethods);
 				result.incrementUsersCreated();
 			} else {
 				boolean updated = false;
@@ -695,9 +707,10 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				}
 				// Ensure UserItem exists even for previously synced users
 				// Pass source email (not existing.getEmail() which may be null)
+				// Also update allowedAuthMethods based on current account status
 				ensureUserItem(repositoryId, userId, existing.getName(),
 						existing.getFirstName(), existing.getLastName(),
-						effectiveEmail, existing.getPasswordHash());
+						effectiveEmail, existing.getPasswordHash(), allowedAuthMethods);
 			}
 		} catch (Exception e) {
 			log.warn("Failed to sync MS user " + userId + ": " + e.getMessage());
@@ -1146,17 +1159,19 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 
 	/**
 	 * Ensure a UserItem (cmis:item) exists for the given user so it appears in the UI management screen.
-	 * If the user already exists, update firstName, lastName, and email.
+	 * If the user already exists, update firstName, lastName, email, and allowedAuthMethods.
+	 *
+	 * @param allowedAuthMethods The allowed authentication methods (null = all allowed, "disabled" = account disabled, "cloud" = cloud only)
 	 */
 	private void ensureUserItem(String repositoryId, String userId, String name,
-			String firstName, String lastName, String email, String passwordHash) {
+			String firstName, String lastName, String email, String passwordHash, String allowedAuthMethods) {
 		if (contentService == null) {
 			return;
 		}
 		try {
 			UserItem existing = contentService.getUserItemById(repositoryId, userId);
 			if (existing != null) {
-				// Update existing user's firstName, lastName, email
+				// Update existing user's firstName, lastName, email, allowedAuthMethods
 				boolean updated = false;
 				List<Property> subTypeProperties = existing.getSubTypeProperties();
 				if (subTypeProperties == null) {
@@ -1165,6 +1180,9 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				updated |= updateSubTypeProperty(subTypeProperties, "nemaki:firstName", firstName);
 				updated |= updateSubTypeProperty(subTypeProperties, "nemaki:lastName", lastName);
 				updated |= updateSubTypeProperty(subTypeProperties, "nemaki:email", email);
+				if (allowedAuthMethods != null) {
+					updated |= updateSubTypeProperty(subTypeProperties, "nemaki:allowedAuthMethods", allowedAuthMethods);
+				}
 				if (name != null && !name.equals(existing.getName())) {
 					existing.setName(name);
 					updated = true;
@@ -1188,6 +1206,7 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 			if (firstName != null) subTypeProperties.add(new Property("nemaki:firstName", firstName));
 			if (lastName != null) subTypeProperties.add(new Property("nemaki:lastName", lastName));
 			if (email != null) subTypeProperties.add(new Property("nemaki:email", email));
+			if (allowedAuthMethods != null) subTypeProperties.add(new Property("nemaki:allowedAuthMethods", allowedAuthMethods));
 			userItem.setSubTypeProperties(subTypeProperties);
 			contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, userItem);
 		} catch (Exception e) {

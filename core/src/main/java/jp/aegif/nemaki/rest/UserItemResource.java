@@ -843,6 +843,7 @@ private ContentService getContentServiceSafe() {
 			@FormParam(FORM_LASTNAME) String lastName, @FormParam(FORM_EMAIL) String email,
 			@FormParam("addFavorites") String addFavorites, @FormParam("removeFavorites") String removeFavorites,
 			@FormParam(FORM_PASSWORD) String password, @FormParam("groups") String groupsJson,
+			@FormParam("allowedAuthMethods") String allowedAuthMethods,
 			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
@@ -878,6 +879,14 @@ private ContentService getContentServiceSafe() {
 				map.put("nemaki:lastName", lastName);
 			if (email != null)
 				map.put("nemaki:email", email);
+			// Handle allowedAuthMethods (empty string clears it)
+			if (allowedAuthMethods != null) {
+				if (allowedAuthMethods.isEmpty()) {
+					map.remove("nemaki:allowedAuthMethods");
+				} else {
+					map.put("nemaki:allowedAuthMethods", allowedAuthMethods);
+				}
+			}
 			if (addFavorites != null) {
 				try {
 					JSONArray adds = (JSONArray) (parser.parse(addFavorites));
@@ -1083,6 +1092,7 @@ private ContentService getContentServiceSafe() {
 		userJSON.put(ITEM_LASTNAME, MapUtils.getObject(kvMap, "nemaki:lastName", ""));
 		userJSON.put(ITEM_EMAIL, MapUtils.getObject(kvMap, "nemaki:email", ""));
 		userJSON.put("favorites", MapUtils.getObject(kvMap, "nemaki:favorites", new JSONArray()));
+		userJSON.put("allowedAuthMethods", kvMap.get("nemaki:allowedAuthMethods"));
 
 		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
 		userJSON.put(ITEM_IS_ADMIN, isAdmin);

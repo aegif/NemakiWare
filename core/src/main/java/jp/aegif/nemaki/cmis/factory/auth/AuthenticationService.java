@@ -39,12 +39,22 @@ package jp.aegif.nemaki.cmis.factory.auth;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 
+import jp.aegif.nemaki.model.UserItem;
 
 /**
  * Authentication Service interface.
  */
 public interface AuthenticationService {
-	
+
 	public boolean login(CallContext callContext);
 	public boolean loginForNemakiConfDb(CallContext callContext);
+
+	/**
+	 * Check if a specific authentication method is allowed for a user.
+	 *
+	 * @param user The user to check
+	 * @param method The authentication method ("password", "cloud", etc.)
+	 * @return true if the method is allowed
+	 */
+	public boolean isAuthMethodAllowed(UserItem user, String method);
 }

@@ -477,6 +477,30 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       },
     },
     {
+      title: t('userManagement.columns.authMethods'),
+      dataIndex: 'allowedAuthMethods',
+      key: 'allowedAuthMethods',
+      width: 120,
+      render: (allowedAuthMethods: string | undefined) => {
+        if (!allowedAuthMethods) {
+          return <Tag color="green">{t('userManagement.authMethods.all')}</Tag>;
+        }
+        if (allowedAuthMethods === 'disabled') {
+          return <Tag color="red">{t('userManagement.authMethods.disabled')}</Tag>;
+        }
+        if (allowedAuthMethods === 'password') {
+          return <Tag color="blue">{t('userManagement.authMethods.password')}</Tag>;
+        }
+        if (allowedAuthMethods === 'cloud') {
+          return <Tag color="purple">{t('userManagement.authMethods.cloud')}</Tag>;
+        }
+        if (allowedAuthMethods === 'password,cloud' || allowedAuthMethods === 'cloud,password') {
+          return <Tag color="cyan">{t('userManagement.authMethods.both')}</Tag>;
+        }
+        return <Tag>{allowedAuthMethods}</Tag>;
+      },
+    },
+    {
       title: t('common.actions'),
       key: 'actions',
       width: 150,
@@ -631,6 +655,24 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
                 label: group.name || group.id,
                 value: group.id
               }))}
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="allowedAuthMethods"
+            label={t('userManagement.columns.authMethods')}
+            tooltip={t('userManagement.authMethodsTooltip')}
+          >
+            <Select
+              placeholder={t('userManagement.placeholders.authMethods')}
+              allowClear
+              options={[
+                { label: t('userManagement.authMethods.all'), value: '' },
+                { label: t('userManagement.authMethods.password'), value: 'password' },
+                { label: t('userManagement.authMethods.cloud'), value: 'cloud' },
+                { label: t('userManagement.authMethods.both'), value: 'password,cloud' },
+                { label: t('userManagement.authMethods.disabled'), value: 'disabled' },
+              ]}
             />
           </Form.Item>
 
