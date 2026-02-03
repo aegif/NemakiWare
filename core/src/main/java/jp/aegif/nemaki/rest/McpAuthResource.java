@@ -120,38 +120,8 @@ public class McpAuthResource extends ResourceBase {
         return makeResult(status, result, errMsg).toString();
     }
 
-    /**
-     * Check the status of a cloud login request.
-     * This can be used by clients to verify if the login code is still valid.
-     *
-     * @param repositoryId Repository ID
-     * @param loginCode The login code to check
-     * @return JSON result with status
-     */
-    @GET
-    @Path("/cloud-login/status/{loginCode}")
-    @Produces(MediaType.APPLICATION_JSON)
-    public String checkCloudLoginStatus(
-            @PathParam("repositoryId") String repositoryId,
-            @PathParam("loginCode") String loginCode) {
-
-        JSONObject result = new JSONObject();
-        JSONArray errMsg = new JSONArray();
-
-        try {
-            // Check if the login code is valid and pending
-            // Note: This is a simplified check - the full status is returned by checkCloudLoginStatus
-            // which uses the requestId, not the loginCode
-            JSONObject value = new JSONObject();
-            value.put("loginCode", loginCode);
-            value.put("repositoryId", repositoryId);
-            result.put("value", value);
-            return makeResult(true, result, errMsg).toString();
-
-        } catch (Exception e) {
-            logger.error("Error checking MCP cloud login status", e);
-            addErrMsg(errMsg, "error", e.getMessage());
-            return makeResult(false, result, errMsg).toString();
-        }
-    }
+    // SECURITY: Removed checkCloudLoginStatus endpoint that exposed loginCode in URL path.
+    // The loginCode is a shared secret that should never appear in URLs (logged in server logs,
+    // cached by proxies, stored in browser history). If status checking is needed in the future,
+    // implement it using POST with credentials in the request body.
 }

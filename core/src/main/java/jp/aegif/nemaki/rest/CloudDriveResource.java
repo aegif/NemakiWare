@@ -157,6 +157,15 @@ public class CloudDriveResource extends ResourceBase {
 				return result.toJSONString();
 			}
 
+			// SECURITY: Get the authenticated user's CallContext for ACL enforcement
+			org.apache.chemistry.opencmis.commons.server.CallContext callContext =
+				(org.apache.chemistry.opencmis.commons.server.CallContext) request.getAttribute("CallContext");
+			if (callContext == null) {
+				addErrMsg(errMsg, "authentication", "User authentication required");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+
 			// Check for existing cloud file ID to update instead of creating a new file
 			String existingCloudFileId = null;
 			try {
@@ -176,11 +185,13 @@ public class CloudDriveResource extends ResourceBase {
 				log.warn("Could not check existing cloud metadata: " + e.getMessage());
 			}
 
-			String cloudFileId = service.pushToCloud(repositoryId, objectId, provider, accessToken, existingCloudFileId);
+			// SECURITY: Pass user's CallContext to enforce ACL checks
+			String cloudFileId = service.pushToCloud(callContext, repositoryId, objectId, provider, accessToken, existingCloudFileId);
 
 			// Save cloud metadata as secondary properties on the CMIS object
+			// SECURITY: Pass user's CallContext for proper permission checks
 			try {
-				saveCloudMetadata(repositoryId, objectId, provider, cloudFileId,
+				saveCloudMetadata(callContext, repositoryId, objectId, provider, cloudFileId,
 					service.getCloudFileUrl(provider, cloudFileId));
 			} catch (Exception e) {
 				log.warn("Failed to save cloud metadata to object properties: " + e.getMessage(), e);
@@ -271,15 +282,15 @@ public class CloudDriveResource extends ResourceBase {
 				return result.toJSONString();
 			}
 
-			// Use the authenticated user's CallContext from the REST filter
-			// This ensures lastModifiedBy reflects the actual user (not "system")
-			// and that subsequent checkIn permission checks succeed
+			// SECURITY: Require authenticated user's CallContext
+			// This ensures proper ACL enforcement and lastModifiedBy reflects the actual user
 			org.apache.chemistry.opencmis.commons.server.CallContext callContext =
 				(org.apache.chemistry.opencmis.commons.server.CallContext) request.getAttribute("CallContext");
 			if (callContext == null) {
-				// Fallback to SystemCallContext if no user context available
-				callContext = new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId);
-				log.warn("No user CallContext found on request, falling back to SystemCallContext for pull");
+				// SECURITY: Do NOT fall back to SystemCallContext - require authentication
+				addErrMsg(errMsg, "authentication", "User authentication required");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
 			}
 
 			// Build content stream with proper MIME type
@@ -429,9 +440,18 @@ public class CloudDriveResource extends ResourceBase {
 
 	/**
 	 * Save cloud drive metadata as secondary properties on a CMIS object.
+	 * SECURITY: Requires authenticated CallContext for proper permission checks.
+	 *
+	 * @param callContext The authenticated user's call context (must not be null)
 	 */
-	private void saveCloudMetadata(String repositoryId, String objectId,
+	private void saveCloudMetadata(org.apache.chemistry.opencmis.commons.server.CallContext callContext,
+			String repositoryId, String objectId,
 			String provider, String cloudFileId, String cloudFileUrl) {
+		// SECURITY: Require CallContext to enforce permissions
+		if (callContext == null) {
+			throw new IllegalArgumentException("CallContext is required for permission enforcement");
+		}
+
 		ContentService cs = getContentService();
 		if (cs == null) return;
 
@@ -484,8 +504,7 @@ public class CloudDriveResource extends ResourceBase {
 
 		content.setAspects(aspects);
 
-		jp.aegif.nemaki.cmis.factory.SystemCallContext callContext =
-			new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId);
+		// SECURITY: Use the user's CallContext for proper permission checks
 		cs.update(callContext, repositoryId, content);
 
 		// Invalidate CMIS and content caches so the updated secondary properties are visible

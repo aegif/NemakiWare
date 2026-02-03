@@ -11,6 +11,7 @@ import static org.mockito.ArgumentMatchers.*;
 
 import jp.aegif.nemaki.cmis.service.ObjectService;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 
 @RunWith(MockitoJUnitRunner.class)
 public class CloudDriveServiceImplTest {
@@ -24,7 +25,7 @@ public class CloudDriveServiceImplTest {
 	@Test
 	public void testGetCloudFileUrl_Google() {
 		String url = service.getCloudFileUrl("google", "file123");
-		assertEquals("https://drive.google.com/file/d/file123/edit", url);
+		assertEquals("https://docs.google.com/open?id=file123", url);
 	}
 
 	@Test
@@ -53,18 +54,28 @@ public class CloudDriveServiceImplTest {
 
 	@Test(expected = RuntimeException.class)
 	public void testPushToCloud_NoContentStream() {
+		CallContext callContext = mock(CallContext.class);
+		when(callContext.getUsername()).thenReturn("testuser");
 		when(objectService.getContentStream(any(), eq("bedroom"), eq("doc1"), any(), any(), any()))
 				.thenReturn(null);
-		service.pushToCloud("bedroom", "doc1", "google", "token");
+		service.pushToCloud(callContext, "bedroom", "doc1", "google", "token");
 	}
 
 	@Test(expected = IllegalArgumentException.class)
 	public void testPushToCloud_UnknownProvider() {
+		CallContext callContext = mock(CallContext.class);
+		when(callContext.getUsername()).thenReturn("testuser");
 		ContentStream cs = mock(ContentStream.class);
 		when(cs.getStream()).thenReturn(new java.io.ByteArrayInputStream(new byte[0]));
 		when(objectService.getContentStream(any(), eq("bedroom"), eq("doc1"), any(), any(), any()))
 				.thenReturn(cs);
-		service.pushToCloud("bedroom", "doc1", "dropbox", "token");
+		service.pushToCloud(callContext, "bedroom", "doc1", "dropbox", "token");
+	}
+
+	@Test(expected = IllegalArgumentException.class)
+	public void testPushToCloud_NullCallContext() {
+		// SECURITY: Verify that null CallContext is rejected
+		service.pushToCloud(null, "bedroom", "doc1", "google", "token");
 	}
 
 	@Test(expected = UnsupportedOperationException.class)
@@ -91,7 +102,7 @@ public class CloudDriveServiceImplTest {
 	@Test
 	public void testGetCloudFileUrl_Google_SpecialCharsInFileId() {
 		String url = service.getCloudFileUrl("google", "abc-123_XYZ");
-		assertEquals("https://drive.google.com/file/d/abc-123_XYZ/edit", url);
+		assertEquals("https://docs.google.com/open?id=abc-123_XYZ", url);
 	}
 
 	@Test

@@ -4,6 +4,7 @@ import jp.aegif.nemaki.businesslogic.CloudDriveService;
 import jp.aegif.nemaki.cmis.service.ObjectService;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -16,9 +17,11 @@ import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.AccessToken;
 import com.google.auth.oauth2.GoogleCredentials;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 /**
@@ -38,17 +41,21 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 	}
 
 	@Override
-	public String pushToCloud(String repositoryId, String objectId, String provider, String accessToken) {
-		return pushToCloud(repositoryId, objectId, provider, accessToken, null);
+	public String pushToCloud(CallContext callContext, String repositoryId, String objectId, String provider, String accessToken) {
+		return pushToCloud(callContext, repositoryId, objectId, provider, accessToken, null);
 	}
 
 	@Override
-	public String pushToCloud(String repositoryId, String objectId, String provider, String accessToken, String existingCloudFileId) {
-		log.info("pushToCloud: provider=" + provider + ", objectId=" + objectId + ", existingCloudFileId=" + existingCloudFileId);
+	public String pushToCloud(CallContext callContext, String repositoryId, String objectId, String provider, String accessToken, String existingCloudFileId) {
+		// SECURITY: Require CallContext for ACL enforcement
+		if (callContext == null) {
+			throw new IllegalArgumentException("CallContext is required for ACL enforcement");
+		}
 
-		// Use SystemCallContext for authorized internal operation (not null)
-		jp.aegif.nemaki.cmis.factory.SystemCallContext callContext =
-			new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId);
+		log.info("pushToCloud: provider=" + provider + ", objectId=" + objectId +
+			", user=" + callContext.getUsername() + ", existingCloudFileId=" + existingCloudFileId);
+
+		// Use the provided CallContext for proper ACL checks
 		ContentStream contentStream = objectService.getContentStream(
 			callContext, repositoryId, objectId, null, null, null);
 		if (contentStream == null || contentStream.getStream() == null) {
@@ -201,11 +208,16 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 			File fileMeta = driveService.files().get(cloudFileId).setFields("mimeType").execute();
 			String mimeType = fileMeta.getMimeType();
 
-			ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+			// SECURITY: Use piped streams to avoid buffering entire file in memory
+			// This prevents DoS attacks via large file downloads
+			PipedInputStream pipedIn = new PipedInputStream(65536); // 64KB buffer
+			PipedOutputStream pipedOut = new PipedOutputStream(pipedIn);
 
-			if (mimeType != null && mimeType.startsWith("application/vnd.google-apps.")) {
+			final String exportMimeType;
+			final boolean isGoogleDocsFormat = mimeType != null && mimeType.startsWith("application/vnd.google-apps.");
+
+			if (isGoogleDocsFormat) {
 				// Google Docs format: must use export
-				String exportMimeType;
 				switch (mimeType) {
 					case "application/vnd.google-apps.document":
 						exportMimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -220,14 +232,29 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 						exportMimeType = "application/pdf";
 						break;
 				}
-				driveService.files().export(cloudFileId, exportMimeType).executeMediaAndDownloadTo(outputStream);
-				log.info("Exported Google Docs file " + cloudFileId + " as " + exportMimeType);
 			} else {
-				// Regular file: direct download
-				driveService.files().get(cloudFileId).executeMediaAndDownloadTo(outputStream);
+				exportMimeType = null;
 			}
 
-			return new ByteArrayInputStream(outputStream.toByteArray());
+			// Download in background thread to allow streaming
+			Thread downloadThread = new Thread(() -> {
+				try {
+					if (isGoogleDocsFormat) {
+						driveService.files().export(cloudFileId, exportMimeType).executeMediaAndDownloadTo(pipedOut);
+						log.info("Exported Google Docs file " + cloudFileId + " as " + exportMimeType);
+					} else {
+						driveService.files().get(cloudFileId).executeMediaAndDownloadTo(pipedOut);
+					}
+					pipedOut.close();
+				} catch (Exception e) {
+					log.error("Error downloading from Google Drive: " + e.getMessage(), e);
+					try { pipedOut.close(); } catch (Exception ignored) {}
+				}
+			});
+			downloadThread.setDaemon(true);
+			downloadThread.start();
+
+			return pipedIn;
 
 		} catch (Exception e) {
 			throw new RuntimeException("Failed to pull from Google Drive: " + cloudFileId, e);
@@ -256,9 +283,13 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 		try {
 			String fileName = contentStream.getFileName();
 
+			// SECURITY: URL-encode the filename to prevent path traversal and injection attacks
+			String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8)
+				.replace("+", "%20"); // Space should be %20, not +
+
 			java.net.http.HttpClient httpClient = java.net.http.HttpClient.newHttpClient();
 			java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-				.uri(java.net.URI.create("https://graph.microsoft.com/v1.0/me/drive/root:/" + fileName + ":/content"))
+				.uri(java.net.URI.create("https://graph.microsoft.com/v1.0/me/drive/root:/" + encodedFileName + ":/content"))
 				.header("Authorization", "Bearer " + accessToken)
 				.header("Content-Type", contentStream.getMimeType())
 				.PUT(java.net.http.HttpRequest.BodyPublishers.ofInputStream(contentStream::getStream))
@@ -290,6 +321,8 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 
 	private InputStream pullFromOneDrive(String cloudFileId, String accessToken) {
 		try {
+			// SECURITY: Use streaming download to avoid buffering entire file in memory
+			// This prevents DoS attacks via large file downloads
 			java.net.http.HttpClient httpClient = java.net.http.HttpClient.newBuilder()
 				.followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
 				.build();
@@ -299,14 +332,18 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 				.GET()
 				.build();
 
-			java.net.http.HttpResponse<byte[]> response = httpClient.send(request,
-				java.net.http.HttpResponse.BodyHandlers.ofByteArray());
+			// Use InputStream body handler for streaming (no memory buffering)
+			java.net.http.HttpResponse<InputStream> response = httpClient.send(request,
+				java.net.http.HttpResponse.BodyHandlers.ofInputStream());
 
-			log.info("OneDrive download response: HTTP " + response.statusCode() + ", body size=" + response.body().length + " bytes");
+			log.info("OneDrive download response: HTTP " + response.statusCode());
 			if (response.statusCode() >= 200 && response.statusCode() < 300) {
-				return new ByteArrayInputStream(response.body());
+				return response.body();
 			} else {
-				throw new RuntimeException("OneDrive download failed: HTTP " + response.statusCode());
+				// For error responses, we need to read the body for the error message
+				try (InputStream errorStream = response.body()) {
+					throw new RuntimeException("OneDrive download failed: HTTP " + response.statusCode());
+				}
 			}
 
 		} catch (RuntimeException e) {

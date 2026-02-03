@@ -9,7 +9,7 @@
 const http = require('http');
 const readline = require('readline');
 const fs = require('fs');
-const { exec } = require('child_process');
+const { spawn } = require('child_process');
 
 // Debug log file
 const DEBUG = process.env.MCP_DEBUG === 'true';
@@ -85,28 +85,58 @@ function sendRequest(jsonRpcMessage) {
 /**
  * Open a URL in the default browser.
  * Cross-platform support for macOS, Windows, and Linux.
+ *
+ * SECURITY: Uses spawn with array arguments instead of exec to prevent
+ * command injection attacks. The URL is passed as a direct argument,
+ * not interpreted by a shell.
  */
 function openBrowser(url) {
   log(`Opening browser: ${url}`);
-  const platform = process.platform;
-  let command;
 
-  if (platform === 'darwin') {
-    command = `open "${url}"`;
-  } else if (platform === 'win32') {
-    command = `start "" "${url}"`;
-  } else {
-    // Linux and others
-    command = `xdg-open "${url}"`;
+  // SECURITY: Validate that the URL is a valid HTTP/HTTPS URL
+  // This prevents injection of arbitrary commands via malicious URLs
+  try {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      log(`Rejected non-HTTP URL: ${url}`);
+      return;
+    }
+  } catch (e) {
+    log(`Invalid URL rejected: ${url}`);
+    return;
   }
 
-  exec(command, (error) => {
-    if (error) {
-      log(`Failed to open browser: ${error.message}`);
-    } else {
-      log('Browser opened successfully');
-    }
+  const platform = process.platform;
+  let command;
+  let args;
+
+  // SECURITY: Use spawn with explicit arguments array to avoid shell injection
+  if (platform === 'darwin') {
+    command = 'open';
+    args = [url];
+  } else if (platform === 'win32') {
+    // On Windows, use cmd with /c start but URL as separate argument
+    command = 'cmd';
+    args = ['/c', 'start', '', url];
+  } else {
+    // Linux and others
+    command = 'xdg-open';
+    args = [url];
+  }
+
+  // spawn does not invoke a shell, so arguments are passed directly
+  // This prevents command injection attacks
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: 'ignore'
   });
+
+  child.on('error', (error) => {
+    log(`Failed to open browser: ${error.message}`);
+  });
+
+  child.unref();
+  log('Browser spawn initiated');
 }
 
 /**

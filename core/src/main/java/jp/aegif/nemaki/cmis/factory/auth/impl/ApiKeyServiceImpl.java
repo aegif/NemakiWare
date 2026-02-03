@@ -159,14 +159,20 @@ public class ApiKeyServiceImpl implements ApiKeyService {
     @Override
     public String validateApiKey(String repositoryId, String apiKey) {
         if (apiKey == null || !apiKey.startsWith(API_KEY_PREFIX)) {
+            // SECURITY: Log invalid format attempts for audit
+            if (apiKey != null) {
+                log.warn("API key validation failed: invalid format (repository: " + repositoryId + ")");
+            }
             return null;
         }
 
         // Extract the key prefix for faster lookup
+        // SECURITY: Only log the prefix, never the full key
         String keyPrefix = apiKey.length() >= 11 ? apiKey.substring(0, 11) : apiKey;
 
         List<ApiKey> allKeys = getAllApiKeysFromCache(repositoryId);
 
+        boolean foundMatchingPrefix = false;
         for (ApiKey key : allKeys) {
             if (!key.isActive()) {
                 continue;
@@ -174,7 +180,12 @@ public class ApiKeyServiceImpl implements ApiKeyService {
 
             // Check if key has expired
             if (key.isExpired()) {
-                log.debug("API key '" + key.getName() + "' has expired");
+                // SECURITY: Log expired key usage attempts
+                if (keyPrefix.equals(key.getKeyPrefix())) {
+                    log.warn("API key validation failed: key '" + key.getName() +
+                        "' for user '" + key.getUserId() + "' has expired (repository: " + repositoryId + ")");
+                    foundMatchingPrefix = true;
+                }
                 continue;
             }
 
@@ -183,6 +194,8 @@ public class ApiKeyServiceImpl implements ApiKeyService {
                 continue;
             }
 
+            foundMatchingPrefix = true;
+
             // Verify the full key
             try {
                 if (BCrypt.checkpw(apiKey, key.getKeyHash())) {
@@ -190,10 +203,20 @@ public class ApiKeyServiceImpl implements ApiKeyService {
                     // Update lastUsed timestamp for audit/anomaly detection
                     updateLastUsed(repositoryId, key.getId());
                     return key.getUserId();
+                } else {
+                    // SECURITY: Log hash mismatch (possible key tampering or collision)
+                    log.warn("API key validation failed: hash mismatch for prefix " + keyPrefix +
+                        " (repository: " + repositoryId + ")");
                 }
             } catch (Exception e) {
                 log.warn("Error validating API key: " + e.getMessage());
             }
+        }
+
+        // SECURITY: Log unknown key prefix attempts
+        if (!foundMatchingPrefix) {
+            log.warn("API key validation failed: unknown key prefix " + keyPrefix +
+                " (repository: " + repositoryId + ")");
         }
 
         return null;
