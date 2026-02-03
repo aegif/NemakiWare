@@ -118,6 +118,15 @@ public class NemakiwareMcpServer {
             case "nemakiware_login":
                 return toolsProvider.executeLoginTool(arguments);
 
+            case "nemakiware_apikey_login":
+                return toolsProvider.executeApiKeyLoginTool(arguments);
+
+            case "nemakiware_cloud_login":
+                return toolsProvider.executeCloudLoginTool(arguments);
+
+            case "nemakiware_cloud_login_status":
+                return toolsProvider.executeCloudLoginStatusTool(arguments);
+
             case "nemakiware_logout":
                 return toolsProvider.executeLogoutTool(arguments);
 

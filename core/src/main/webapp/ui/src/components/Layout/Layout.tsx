@@ -225,7 +225,8 @@ import {
   BarChartOutlined,
   SwapOutlined,
   SendOutlined,
-  SyncOutlined
+  SyncOutlined,
+  KeyOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -393,6 +394,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   };
 
   const userMenuItems = [
+    {
+      key: 'api-keys',
+      icon: <KeyOutlined />,
+      label: t('apiKeyManagement.myApiKeys'),
+      onClick: () => navigate('/api-keys'),
+    },
+    {
+      type: 'divider' as const,
+    },
     {
       key: 'logout',
       icon: <LogoutOutlined />,

@@ -21,6 +21,8 @@ import org.springframework.stereotype.Component;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.cmis.factory.auth.ApiKeyService;
+import org.springframework.lang.Nullable;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.util.AuthenticationUtil;
 
@@ -31,11 +33,13 @@ import jp.aegif.nemaki.util.AuthenticationUtil;
  * 1. HTTP Basic Authentication (via Authorization header)
  * 2. HTTP Bearer Token (via Authorization header)
  * 3. MCP Session Token (via X-MCP-Session-Token header)
+ * 4. API Key (via X-API-Key header) - for cloud-only users
  *
  * Authentication priority order:
- * 1. Basic Auth (highest priority)
- * 2. Bearer Token
- * 3. MCP Session Token
+ * 1. MCP Session Token (highest priority - end-user identity)
+ * 2. API Key
+ * 3. Bearer Token
+ * 4. Basic Authentication (transport-level)
  */
 @Component
 public class McpAuthenticationHandler {
@@ -44,6 +48,7 @@ public class McpAuthenticationHandler {
 
     private static final String HEADER_AUTHORIZATION = "Authorization";
     private static final String HEADER_MCP_SESSION_TOKEN = "X-MCP-Session-Token";
+    private static final String HEADER_API_KEY = "X-API-Key";
     private static final String AUTH_BASIC = "Basic ";
     private static final String AUTH_BEARER = "Bearer ";
 
@@ -56,7 +61,9 @@ public class McpAuthenticationHandler {
     private static final int MAX_SESSION_TOKEN_LENGTH = 73; // UUID-UUID = 36 + 1 + 36 = 73
 
     private final PrincipalService principalService;
+    private final ApiKeyService apiKeyService;
     private final Map<String, McpSession> sessionTokens = new ConcurrentHashMap<>();
+    private final Map<String, CloudLoginRequest> pendingCloudLogins = new ConcurrentHashMap<>();
     private final long sessionTtlSeconds;
     private final long cleanupIntervalMinutes;
     private ScheduledExecutorService cleanupExecutor;
@@ -64,11 +71,16 @@ public class McpAuthenticationHandler {
     @Autowired
     public McpAuthenticationHandler(
             PrincipalService principalService,
+            @Nullable @Autowired(required = false) ApiKeyService apiKeyService,
             @Value("${mcp.session.ttl.seconds:86400}") long sessionTtlSeconds,
             @Value("${mcp.session.cleanup.interval.minutes:15}") long cleanupIntervalMinutes) {
         this.principalService = principalService;
+        this.apiKeyService = apiKeyService;
         this.sessionTtlSeconds = sessionTtlSeconds;
         this.cleanupIntervalMinutes = cleanupIntervalMinutes;
+        if (apiKeyService == null) {
+            log.warn("ApiKeyService is not available - API key authentication will be disabled");
+        }
     }
 
     /**
@@ -76,10 +88,11 @@ public class McpAuthenticationHandler {
      * Uses default cleanup interval of 15 minutes.
      *
      * @param principalService The principal service for user authentication
+     * @param apiKeyService The API key service for API key authentication
      * @param sessionTtlSeconds Session TTL in seconds
      */
-    McpAuthenticationHandler(PrincipalService principalService, long sessionTtlSeconds) {
-        this(principalService, sessionTtlSeconds, 15);
+    McpAuthenticationHandler(PrincipalService principalService, ApiKeyService apiKeyService, long sessionTtlSeconds) {
+        this(principalService, apiKeyService, sessionTtlSeconds, 15);
     }
 
     /**
@@ -122,20 +135,34 @@ public class McpAuthenticationHandler {
     }
 
     /**
-     * Remove expired sessions from the cache.
+     * Remove expired sessions and pending cloud logins from the cache.
      */
     private void cleanupExpiredSessions() {
-        int removedCount = 0;
-        Iterator<Map.Entry<String, McpSession>> iterator = sessionTokens.entrySet().iterator();
-        while (iterator.hasNext()) {
-            Map.Entry<String, McpSession> entry = iterator.next();
+        int removedSessions = 0;
+        Iterator<Map.Entry<String, McpSession>> sessionIterator = sessionTokens.entrySet().iterator();
+        while (sessionIterator.hasNext()) {
+            Map.Entry<String, McpSession> entry = sessionIterator.next();
             if (entry.getValue().isExpired()) {
-                iterator.remove();
-                removedCount++;
+                sessionIterator.remove();
+                removedSessions++;
             }
         }
-        if (removedCount > 0) {
-            log.debug("Cleaned up {} expired MCP sessions", removedCount);
+        if (removedSessions > 0) {
+            log.debug("Cleaned up {} expired MCP sessions", removedSessions);
+        }
+
+        // Also clean up expired pending cloud logins
+        int removedLogins = 0;
+        Iterator<Map.Entry<String, CloudLoginRequest>> loginIterator = pendingCloudLogins.entrySet().iterator();
+        while (loginIterator.hasNext()) {
+            Map.Entry<String, CloudLoginRequest> entry = loginIterator.next();
+            if (entry.getValue().isExpired()) {
+                loginIterator.remove();
+                removedLogins++;
+            }
+        }
+        if (removedLogins > 0) {
+            log.debug("Cleaned up {} expired pending cloud logins", removedLogins);
         }
     }
 
@@ -144,12 +171,12 @@ public class McpAuthenticationHandler {
      *
      * Priority order (highest to lowest):
      * 1. MCP Session Token - from nemakiware_login tool, represents end-user identity
-     * 2. Bearer Token - API token authentication
-     * 3. Basic Authentication - transport-level auth (used by MCP bridge)
+     * 2. API Key - for cloud-only users and programmatic access
+     * 3. Bearer Token - API token authentication
+     * 4. Basic Authentication - transport-level auth (used by MCP bridge)
      *
      * This priority ensures that when a user logs in via the MCP login tool,
-     * their session token takes precedence over the bridge's transport-level
-     * Basic authentication.
+     * their session token takes precedence over other authentication methods.
      *
      * @param repositoryId The target repository ID
      * @param headers Request headers map
@@ -162,18 +189,50 @@ public class McpAuthenticationHandler {
             return authenticateSessionToken(repositoryId, sessionToken);
         }
 
-        // Priority 2: Bearer Token
+        // Priority 2: API Key (for cloud-only users)
+        String apiKey = headers.get(HEADER_API_KEY);
+        if (apiKey == null) {
+            // Also check lowercase header name
+            apiKey = headers.get("x-api-key");
+        }
+        if (apiKey != null && !apiKey.isEmpty()) {
+            return authenticateApiKey(repositoryId, apiKey);
+        }
+
+        // Priority 3: Bearer Token
         String authHeader = headers.get(HEADER_AUTHORIZATION);
         if (authHeader != null && authHeader.startsWith(AUTH_BEARER)) {
             return authenticateBearer(repositoryId, authHeader);
         }
 
-        // Priority 3: Basic Authentication (transport-level, e.g., MCP bridge)
+        // Priority 4: Basic Authentication (transport-level, e.g., MCP bridge)
         if (authHeader != null && authHeader.startsWith(AUTH_BASIC)) {
             return authenticateBasic(repositoryId, authHeader);
         }
 
         return McpAuthResult.failure("Authentication required");
+    }
+
+    /**
+     * Authenticate using API Key.
+     *
+     * @param repositoryId The target repository ID
+     * @param apiKey The API key
+     * @return Authentication result
+     */
+    private McpAuthResult authenticateApiKey(String repositoryId, String apiKey) {
+        if (apiKeyService == null) {
+            log.warn("API key authentication attempted but ApiKeyService is not available");
+            return McpAuthResult.failure("API key authentication not available");
+        }
+
+        String userId = apiKeyService.validateApiKey(repositoryId, apiKey);
+        if (userId != null) {
+            log.debug("API key authenticated for user: {}", userId);
+            return McpAuthResult.success(userId, repositoryId);
+        }
+
+        return McpAuthResult.failure("Invalid API key");
     }
 
     /**
@@ -365,6 +424,216 @@ public class McpAuthenticationHandler {
 
         boolean isExpired() {
             return Instant.now().isAfter(expiresAt);
+        }
+    }
+
+    /**
+     * Login using an API key and create a new session token.
+     * This is useful for cloud-only users who have generated an API key.
+     *
+     * @param repositoryId The repository to login to
+     * @param apiKey The API key
+     * @return Login result containing the session token if successful
+     */
+    public McpLoginResult loginWithApiKey(String repositoryId, String apiKey) {
+        if (apiKeyService == null) {
+            return McpLoginResult.failure("API key authentication not available");
+        }
+
+        String userId = apiKeyService.validateApiKey(repositoryId, apiKey);
+        if (userId == null) {
+            return McpLoginResult.failure("Invalid API key");
+        }
+
+        // Generate a secure session token
+        String sessionToken = generateSessionToken();
+        McpSession session = new McpSession(userId, repositoryId, Instant.now().plusSeconds(sessionTtlSeconds));
+        sessionTokens.put(sessionToken, session);
+
+        log.info("MCP API key login successful for user '{}' in repository '{}'", userId, repositoryId);
+
+        return McpLoginResult.success(sessionToken, userId, repositoryId);
+    }
+
+    /**
+     * Initiate a cloud login request.
+     * Returns a login code that the user needs to enter in the browser.
+     *
+     * @param repositoryId The repository to login to
+     * @return Cloud login initiation result with login URL and code
+     */
+    public CloudLoginInitResult initiateCloudLogin(String repositoryId) {
+        String loginCode = generateLoginCode();
+        String requestId = UUID.randomUUID().toString();
+
+        CloudLoginRequest request = new CloudLoginRequest(
+            requestId,
+            repositoryId,
+            loginCode,
+            Instant.now().plusSeconds(300) // 5 minutes to complete login
+        );
+        pendingCloudLogins.put(requestId, request);
+
+        log.info("Cloud login initiated: requestId={}, code={}", requestId, loginCode);
+
+        return new CloudLoginInitResult(requestId, loginCode);
+    }
+
+    /**
+     * Check the status of a cloud login request.
+     *
+     * @param requestId The request ID from initiateCloudLogin
+     * @return Login result if authentication completed, null if still pending
+     */
+    public McpLoginResult checkCloudLoginStatus(String requestId) {
+        CloudLoginRequest request = pendingCloudLogins.get(requestId);
+
+        if (request == null) {
+            return McpLoginResult.failure("Invalid or expired login request");
+        }
+
+        if (request.isExpired()) {
+            pendingCloudLogins.remove(requestId);
+            return McpLoginResult.failure("Login request expired");
+        }
+
+        if (!request.isCompleted()) {
+            // Still waiting for user to complete browser authentication
+            return null;
+        }
+
+        // Login completed - create session and return
+        // Note: We don't remove the request here anymore to allow re-login with different account
+        // The request will be removed when it expires (cleanup) or when a new request is initiated
+
+        String sessionToken = generateSessionToken();
+        McpSession session = new McpSession(
+            request.getUserId(),
+            request.getRepositoryId(),
+            Instant.now().plusSeconds(sessionTtlSeconds)
+        );
+        sessionTokens.put(sessionToken, session);
+
+        // Reset the completed flag so user can re-login with a different account
+        // The user ID will be updated when completeCloudLogin is called again
+        request.resetForRelogin();
+
+        log.info("MCP cloud login successful for user '{}' in repository '{}'",
+            request.getUserId(), request.getRepositoryId());
+
+        return McpLoginResult.success(sessionToken, request.getUserId(), request.getRepositoryId());
+    }
+
+    /**
+     * Complete a cloud login request after browser authentication.
+     * Called by the callback endpoint when OAuth completes.
+     *
+     * @param loginCode The login code displayed to the user
+     * @param userId The authenticated user ID
+     * @return true if the login was completed, false if the code was invalid
+     */
+    public boolean completeCloudLogin(String loginCode, String userId) {
+        for (Map.Entry<String, CloudLoginRequest> entry : pendingCloudLogins.entrySet()) {
+            CloudLoginRequest request = entry.getValue();
+            if (request.getLoginCode().equals(loginCode) && !request.isExpired()) {
+                request.complete(userId);
+                log.info("Cloud login completed for code={}, user={}", loginCode, userId);
+                return true;
+            }
+        }
+        log.warn("Invalid or expired cloud login code: {}", loginCode);
+        return false;
+    }
+
+    /**
+     * Generate a short, user-friendly login code.
+     */
+    private String generateLoginCode() {
+        // Generate a 6-character alphanumeric code
+        String chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Exclude confusing chars (I, O, 0, 1)
+        StringBuilder code = new StringBuilder();
+        java.security.SecureRandom random = new java.security.SecureRandom();
+        for (int i = 0; i < 6; i++) {
+            code.append(chars.charAt(random.nextInt(chars.length())));
+        }
+        return code.toString();
+    }
+
+    /**
+     * Result of cloud login initiation.
+     */
+    public static class CloudLoginInitResult {
+        private final String requestId;
+        private final String loginCode;
+
+        CloudLoginInitResult(String requestId, String loginCode) {
+            this.requestId = requestId;
+            this.loginCode = loginCode;
+        }
+
+        public String getRequestId() {
+            return requestId;
+        }
+
+        public String getLoginCode() {
+            return loginCode;
+        }
+    }
+
+    /**
+     * Internal cloud login request data.
+     */
+    private static class CloudLoginRequest {
+        private final String requestId;
+        private final String repositoryId;
+        private final String loginCode;
+        private final Instant expiresAt;
+        private volatile boolean completed = false;
+        private volatile String userId;
+
+        CloudLoginRequest(String requestId, String repositoryId, String loginCode, Instant expiresAt) {
+            this.requestId = requestId;
+            this.repositoryId = repositoryId;
+            this.loginCode = loginCode;
+            this.expiresAt = expiresAt;
+        }
+
+        String getRequestId() {
+            return requestId;
+        }
+
+        String getRepositoryId() {
+            return repositoryId;
+        }
+
+        String getLoginCode() {
+            return loginCode;
+        }
+
+        boolean isExpired() {
+            return Instant.now().isAfter(expiresAt);
+        }
+
+        boolean isCompleted() {
+            return completed;
+        }
+
+        String getUserId() {
+            return userId;
+        }
+
+        void complete(String userId) {
+            this.userId = userId;
+            this.completed = true;
+        }
+
+        /**
+         * Reset the completed state to allow re-login with a different account.
+         * Called after the session token is returned to MCP client.
+         */
+        void resetForRelogin() {
+            this.completed = false;
+            // Keep userId for logging purposes, it will be overwritten on next complete()
         }
     }
 }

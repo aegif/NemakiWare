@@ -167,6 +167,15 @@ public class AuthenticationFilter implements Filter {
 				return;
 			}
 
+			// Bypass authentication for MCP cloud login completion endpoint
+			// This endpoint is accessed by users completing cloud authentication from Claude Desktop
+			// Security is ensured via login code validation (not session auth)
+			if (requestURI != null && requestURI.contains("/mcp/cloud-login/complete")) {
+				log.debug("Bypassing authentication for MCP cloud login completion endpoint: " + requestURI);
+				chain.doFilter(req, res);
+				return;
+			}
+
 			boolean auth = login(hreq, hres);
 			if(auth){
 				chain.doFilter(req, res);
@@ -247,9 +256,22 @@ public class AuthenticationFilter implements Filter {
 				return false;
 			}
 		} else {
-			// Check Authorization header for Basic or Bearer authentication
-			String authHeader = request.getHeader("Authorization");
-			if (authHeader != null && authHeader.startsWith("Bearer ")) {
+			// Check for X-API-Key header (persistent API key authentication for MCP clients)
+			String apiKey = request.getHeader("X-API-Key");
+			if (apiKey == null || apiKey.isEmpty()) {
+				// Fallback to lowercase header name
+				apiKey = request.getHeader("x-api-key");
+			}
+
+			if (apiKey != null && !apiKey.isEmpty()) {
+				// API Key authentication - set it in context for AuthenticationService to validate
+				log.info("=== AUTH: X-API-Key header found, passing to AuthenticationService ===");
+				ctxt.put(CallContextKey.API_KEY, apiKey);
+				// AuthenticationService.loginWithApiKey() will validate the key and set username
+			} else {
+				// Check Authorization header for Basic or Bearer authentication
+				String authHeader = request.getHeader("Authorization");
+				if (authHeader != null && authHeader.startsWith("Bearer ")) {
 				// Bearer token authentication (standard OAuth2/JWT format)
 				String token = authHeader.substring("Bearer ".length()).trim();
 				if (token.isEmpty()) {
@@ -289,8 +311,9 @@ public class AuthenticationFilter implements Filter {
 					return false;
 				}
 			} else {
-				log.warn("No Authorization header or AUTH_TOKEN found");
+				log.warn("No Authorization header, AUTH_TOKEN, or X-API-Key found");
 				return false;
+			}
 			}
 		}
 

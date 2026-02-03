@@ -24,6 +24,7 @@ package jp.aegif.nemaki.dao;
 import java.util.List;
 import java.util.Map;
 
+import jp.aegif.nemaki.model.ApiKey;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Change;
@@ -448,6 +449,13 @@ public interface ContentDaoService {
 	Configuration getConfiguration(String repositoryId);
 
 	/**
+	 * Get all API keys for a repository.
+	 * @param repositoryId The repository ID
+	 * @return List of API keys
+	 */
+	List<jp.aegif.nemaki.model.ApiKey> getApiKeys(String repositoryId);
+
+	/**
 	 * Create a document
 	 * @param repositoryId TODO
 	 * @param document
@@ -506,6 +514,7 @@ public interface ContentDaoService {
 
 	PatchHistory create(String repositoryId, PatchHistory patchHistory);
 	Configuration create(String repositoryId, Configuration configuration);
+	ApiKey create(String repositoryId, ApiKey apiKey);
 
 	NodeBase create(String repositoryId, NodeBase nodeBase);
 

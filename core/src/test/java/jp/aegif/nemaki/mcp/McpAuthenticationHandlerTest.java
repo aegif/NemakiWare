@@ -14,6 +14,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.cmis.factory.auth.ApiKeyService;
 import jp.aegif.nemaki.model.User;
 
 /**
@@ -23,11 +24,15 @@ import jp.aegif.nemaki.model.User;
  * 1. HTTP Basic Authentication header
  * 2. HTTP Bearer Token header
  * 3. MCP Session Token (from login tool)
+ * 4. API Key (for cloud-only users)
  */
 public class McpAuthenticationHandlerTest {
 
     @Mock
     private PrincipalService principalService;
+
+    @Mock
+    private ApiKeyService apiKeyService;
 
     private McpAuthenticationHandler authHandler;
 
@@ -46,7 +51,7 @@ public class McpAuthenticationHandlerTest {
     @Before
     public void setUp() {
         MockitoAnnotations.openMocks(this);
-        authHandler = new McpAuthenticationHandler(principalService, TEST_SESSION_TTL_SECONDS);
+        authHandler = new McpAuthenticationHandler(principalService, apiKeyService, TEST_SESSION_TTL_SECONDS);
     }
 
     // ========== Basic Authentication Tests ==========

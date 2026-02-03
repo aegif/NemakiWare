@@ -36,6 +36,8 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import com.ibm.cloud.cloudant.v1.model.AllDocsResult;
+import com.ibm.cloud.cloudant.v1.model.DocsResultRow;
 import com.ibm.cloud.cloudant.v1.model.ViewResult;
 import com.ibm.cloud.cloudant.v1.model.ViewResultRow;
 import org.springframework.stereotype.Component;
@@ -52,7 +54,9 @@ import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
+import jp.aegif.nemaki.model.ApiKey;
 import jp.aegif.nemaki.model.Archive;
+import jp.aegif.nemaki.model.couch.CouchApiKey;
 import jp.aegif.nemaki.model.couch.CouchContent;
 import jp.aegif.nemaki.model.couch.CouchDocument;
 import jp.aegif.nemaki.model.couch.CouchFolder;
@@ -2410,6 +2414,108 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<jp.aegif.nemaki.model.ApiKey> getApiKeys(String repositoryId) {
+		List<jp.aegif.nemaki.model.ApiKey> apiKeys = new ArrayList<>();
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+
+			// Use _all_docs with include_docs to get all documents, then filter by type
+			Map<String, Object> options = new HashMap<>();
+			options.put("include_docs", true);
+
+			AllDocsResult result = client.getAllDocs(options);
+			if (result != null && result.getRows() != null) {
+				for (DocsResultRow row : result.getRows()) {
+					try {
+						Object doc = row.getDoc();
+						Map<String, Object> docMap = null;
+
+						// Handle both Document and Map types from Cloudant SDK
+						if (doc instanceof com.ibm.cloud.cloudant.v1.model.Document) {
+							com.ibm.cloud.cloudant.v1.model.Document document = (com.ibm.cloud.cloudant.v1.model.Document) doc;
+							docMap = document.getProperties();
+							// Add _id and _rev from document getters
+							if (document.getId() != null) {
+								docMap.put("_id", document.getId());
+							}
+							if (document.getRev() != null) {
+								docMap.put("_rev", document.getRev());
+							}
+						} else if (doc instanceof Map) {
+							@SuppressWarnings("unchecked")
+							Map<String, Object> map = (Map<String, Object>) doc;
+							docMap = map;
+						}
+
+						if (docMap != null) {
+							String type = (String) docMap.get("type");
+
+							if ("apiKey".equals(type)) {
+								jp.aegif.nemaki.model.ApiKey apiKey = new jp.aegif.nemaki.model.ApiKey();
+								apiKey.setId((String) docMap.get("_id"));
+								apiKey.setRevision((String) docMap.get("_rev"));
+								apiKey.setType(type);
+								apiKey.setUserId((String) docMap.get("userId"));
+								apiKey.setRepositoryId((String) docMap.get("repositoryId"));
+								apiKey.setKeyHash((String) docMap.get("keyHash"));
+								apiKey.setKeyPrefix((String) docMap.get("keyPrefix"));
+								apiKey.setName((String) docMap.get("name"));
+								apiKey.setDescription((String) docMap.get("description"));
+								apiKey.setActive(docMap.get("active") != null ? (Boolean) docMap.get("active") : true);
+
+								// Convert timestamps (stored as ISO string or epoch millis)
+								Object createdObj = docMap.get("created");
+								if (createdObj != null) {
+									try {
+										if (createdObj instanceof Number) {
+											GregorianCalendar cal = new GregorianCalendar();
+											cal.setTimeInMillis(((Number) createdObj).longValue());
+											apiKey.setCreated(cal);
+										} else if (createdObj instanceof String) {
+											// ISO date string
+											GregorianCalendar cal = new GregorianCalendar();
+											cal.setTimeInMillis(java.time.Instant.parse((String) createdObj).toEpochMilli());
+											apiKey.setCreated(cal);
+										}
+									} catch (Exception e) {
+										log.debug("Failed to parse created timestamp: " + createdObj);
+									}
+								}
+								Object lastUsedObj = docMap.get("lastUsed");
+								if (lastUsedObj != null) {
+									try {
+										if (lastUsedObj instanceof Number) {
+											GregorianCalendar cal = new GregorianCalendar();
+											cal.setTimeInMillis(((Number) lastUsedObj).longValue());
+											apiKey.setLastUsed(cal);
+										} else if (lastUsedObj instanceof String) {
+											GregorianCalendar cal = new GregorianCalendar();
+											cal.setTimeInMillis(java.time.Instant.parse((String) lastUsedObj).toEpochMilli());
+											apiKey.setLastUsed(cal);
+										}
+									} catch (Exception e) {
+										log.debug("Failed to parse lastUsed timestamp: " + lastUsedObj);
+									}
+								}
+
+								apiKey.setCreator((String) docMap.get("creator"));
+								apiKeys.add(apiKey);
+								log.debug("getApiKeys: Added API key with id=" + apiKey.getId() + ", userId=" + apiKey.getUserId() + ", name=" + apiKey.getName());
+							}
+						}
+					} catch (Exception e) {
+						log.warn("Error converting API key document: " + e.getMessage());
+					}
+				}
+			}
+			log.info("getApiKeys: Retrieved " + apiKeys.size() + " API keys for repository " + repositoryId);
+		} catch (Exception e) {
+			log.error("Error getting API keys for repository " + repositoryId + ": " + e.getMessage(), e);
+		}
+		return apiKeys;
+	}
+
+	@Override
 	public Document create(String repositoryId, Document document) {
 		log.debug("COMPREHENSIVE: Creating document for repositoryId: " + repositoryId);
 		CouchDocument cd = new CouchDocument(document);
@@ -2523,6 +2629,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchConfiguration ccfg = new CouchConfiguration(configuration);
 		connectorPool.getClient(repositoryId).create(ccfg);
 		return ccfg.convert();
+	}
+
+	@Override
+	public ApiKey create(String repositoryId, ApiKey apiKey) {
+		CouchApiKey cak = new CouchApiKey(apiKey);
+		connectorPool.getClient(repositoryId).create(cak);
+		return cak.convert();
 	}
 
 	@Override

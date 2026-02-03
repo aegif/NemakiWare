@@ -20,6 +20,7 @@ import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.businesslogic.TextExtractionService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.factory.auth.ApiKeyService;
 import jp.aegif.nemaki.cmis.service.DiscoveryService;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.rag.search.VectorSearchResult;
@@ -57,6 +58,9 @@ public class McpToolsProviderTest {
     @Mock
     private DiscoveryService discoveryService;
 
+    @Mock
+    private ApiKeyService apiKeyService;
+
     private McpToolsProvider toolsProvider;
     private McpAuthenticationHandler authHandler;
     private McpToolResultFactory resultFactory;
@@ -69,7 +73,7 @@ public class McpToolsProviderTest {
     public void setUp() {
         MockitoAnnotations.openMocks(this);
         ObjectMapper objectMapper = new ObjectMapper();
-        authHandler = new McpAuthenticationHandler(principalService, TEST_SESSION_TTL_SECONDS);
+        authHandler = new McpAuthenticationHandler(principalService, apiKeyService, TEST_SESSION_TTL_SECONDS);
         resultFactory = new McpToolResultFactory(objectMapper);
         toolsProvider = new McpToolsProvider(authHandler, vectorSearchService, contentService,
                 textExtractionService, permissionService, typeManager, discoveryService,

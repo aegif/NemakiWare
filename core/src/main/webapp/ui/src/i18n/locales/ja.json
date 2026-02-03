@@ -1762,5 +1762,96 @@
     "dryRun": "Dry Run",
     "userSearchBase": "ユーザー検索ベース",
     "groupSearchBase": "グループ検索ベース"
+  },
+  "apiKeyManagement": {
+    "title": "APIキー管理",
+    "description": "APIキーはMCPクライアントやクラウド専用ユーザーがプログラムでアクセスするための永続的な認証を提供します。",
+    "createKey": "新規APIキー作成",
+    "noKeys": "APIキーがありません",
+    "noKeysDescription": "このユーザーにはまだAPIキーがありません。上のボタンをクリックして作成してください。",
+    "columns": {
+      "name": "名前",
+      "keyPrefix": "キープレフィックス",
+      "created": "作成日時",
+      "lastUsed": "最終使用",
+      "expiresAt": "有効期限",
+      "status": "ステータス",
+      "actions": "操作"
+    },
+    "status": {
+      "active": "有効",
+      "inactive": "無効",
+      "expired": "期限切れ"
+    },
+    "neverExpires": "無期限",
+    "modal": {
+      "createTitle": "新規APIキー作成",
+      "keyName": "キー名",
+      "keyNamePlaceholder": "例: MCPクライアント用",
+      "keyNameRequired": "キー名を入力してください",
+      "keyDescription": "説明（任意）",
+      "keyDescriptionPlaceholder": "このキーの使用目的を説明",
+      "expiration": "有効期限",
+      "expirationNever": "無期限",
+      "expiration7Days": "7日間",
+      "expiration30Days": "30日間",
+      "expiration90Days": "90日間",
+      "expiration1Year": "1年間",
+      "expirationCustom": "カスタム",
+      "customExpiration": "カスタム有効期限",
+      "customExpirationRequired": "有効期限を選択してください",
+      "warningTitle": "重要：このキーは一度だけ表示されます",
+      "warningMessage": "このAPIキーは安全に保存してください。このダイアログを閉じると、キーの値を再度確認することはできません。",
+      "copySuccess": "クリップボードにコピーしました",
+      "copyButton": "コピー"
+    },
+    "messages": {
+      "createSuccess": "APIキーを作成しました",
+      "createError": "APIキーの作成に失敗しました",
+      "revokeSuccess": "APIキーを無効化しました",
+      "revokeError": "APIキーの無効化に失敗しました",
+      "loadError": "APIキーの読み込みに失敗しました"
+    },
+    "confirmRevoke": "このAPIキーを無効化しますか？この操作は元に戻せません。",
+    "revoke": "無効化",
+    "neverUsed": "未使用",
+    "myApiKeys": "マイAPIキー",
+    "manageApiKeys": "APIキー管理"
+  },
+  "mcpCloudLogin": {
+    "title": "MCPクラウドログイン",
+    "description": "Claude Desktopからのログインを完了するには、以下の手順に従ってください。",
+    "codeLabel": "ログインコード",
+    "authenticatePrompt": "以下のいずれかの方法でログインしてください。",
+    "loginOptions": "ログイン方法を選択",
+    "noCode": {
+      "title": "ログインコードが見つかりません",
+      "description": "Claude Desktopから提供されたURLでアクセスしてください。",
+      "goHome": "ホームに戻る"
+    },
+    "authenticated": {
+      "message": "{{username}}としてログイン中",
+      "completeButton": "MCPログインを完了"
+    },
+    "submitting": {
+      "title": "ログインを完了しています...",
+      "description": "しばらくお待ちください。"
+    },
+    "success": {
+      "title": "ログイン完了",
+      "description": "MCPログインが正常に完了しました。",
+      "instruction": "Claude Desktopに戻ると、自動的にログイン状態が反映されます。",
+      "closeWindow": "このウィンドウを閉じる",
+      "closeManually": "このタブを手動で閉じてください",
+      "logoutAndRetry": "ログアウトして別のアカウントで試す"
+    },
+    "error": {
+      "title": "ログインに失敗しました",
+      "retry": "やり直す"
+    },
+    "errors": {
+      "completionFailed": "ログインの完了に失敗しました",
+      "networkError": "ネットワークエラーが発生しました"
+    }
   }
 }

@@ -1762,5 +1762,96 @@
     "dryRun": "Dry Run",
     "userSearchBase": "User Search Base",
     "groupSearchBase": "Group Search Base"
+  },
+  "apiKeyManagement": {
+    "title": "API Key Management",
+    "description": "API keys provide persistent authentication for MCP clients and cloud-only users for programmatic access.",
+    "createKey": "Create API Key",
+    "noKeys": "No API Keys",
+    "noKeysDescription": "This user has no API keys yet. Click the button above to create one.",
+    "columns": {
+      "name": "Name",
+      "keyPrefix": "Key Prefix",
+      "created": "Created",
+      "lastUsed": "Last Used",
+      "expiresAt": "Expires At",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "expired": "Expired"
+    },
+    "neverExpires": "Never expires",
+    "modal": {
+      "createTitle": "Create New API Key",
+      "keyName": "Key Name",
+      "keyNamePlaceholder": "e.g., MCP Client Key",
+      "keyNameRequired": "Please enter a key name",
+      "keyDescription": "Description (optional)",
+      "keyDescriptionPlaceholder": "Describe the purpose of this key",
+      "expiration": "Expiration",
+      "expirationNever": "Never expires",
+      "expiration7Days": "7 days",
+      "expiration30Days": "30 days",
+      "expiration90Days": "90 days",
+      "expiration1Year": "1 year",
+      "expirationCustom": "Custom",
+      "customExpiration": "Custom Expiration Date",
+      "customExpirationRequired": "Please select an expiration date",
+      "warningTitle": "Important: This key is only shown once",
+      "warningMessage": "Please save this API key securely. You will not be able to view the key value again after closing this dialog.",
+      "copySuccess": "Copied to clipboard",
+      "copyButton": "Copy"
+    },
+    "messages": {
+      "createSuccess": "API key created successfully",
+      "createError": "Failed to create API key",
+      "revokeSuccess": "API key revoked successfully",
+      "revokeError": "Failed to revoke API key",
+      "loadError": "Failed to load API keys"
+    },
+    "confirmRevoke": "Are you sure you want to revoke this API key? This action cannot be undone.",
+    "revoke": "Revoke",
+    "neverUsed": "Never used",
+    "myApiKeys": "My API Keys",
+    "manageApiKeys": "Manage API Keys"
+  },
+  "mcpCloudLogin": {
+    "title": "MCP Cloud Login",
+    "description": "Follow the steps below to complete login from Claude Desktop.",
+    "codeLabel": "Login Code",
+    "authenticatePrompt": "Please log in using one of the methods below.",
+    "loginOptions": "Select login method",
+    "noCode": {
+      "title": "Login Code Not Found",
+      "description": "Please access using the URL provided by Claude Desktop.",
+      "goHome": "Go Home"
+    },
+    "authenticated": {
+      "message": "Logged in as {{username}}",
+      "completeButton": "Complete MCP Login"
+    },
+    "submitting": {
+      "title": "Completing login...",
+      "description": "Please wait a moment."
+    },
+    "success": {
+      "title": "Login Complete",
+      "description": "MCP login has been completed successfully.",
+      "instruction": "Return to Claude Desktop and your login will be automatically recognized.",
+      "closeWindow": "Close this window",
+      "closeManually": "Please close this tab manually",
+      "logoutAndRetry": "Logout and try with another account"
+    },
+    "error": {
+      "title": "Login Failed",
+      "retry": "Try Again"
+    },
+    "errors": {
+      "completionFailed": "Failed to complete login",
+      "networkError": "A network error occurred"
+    }
   }
 }

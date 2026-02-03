@@ -4,6 +4,7 @@ import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -108,6 +109,9 @@ public class McpToolsProvider {
     public List<McpToolDefinition> getToolDefinitions() {
         return Arrays.asList(
             createLoginToolDefinition(),
+            createApiKeyLoginToolDefinition(),
+            createCloudLoginToolDefinition(),
+            createCloudLoginStatusToolDefinition(),
             createLogoutToolDefinition(),
             createSearchToolDefinition(),
             createRagSearchToolDefinition(),
@@ -156,6 +160,107 @@ public class McpToolsProvider {
                 "nemakiware_login",
                 "NemakiWareにログインしてセッショントークンを取得します",
                 safeSchema
+            );
+        }
+    }
+
+    /**
+     * Create the API key login tool definition.
+     */
+    private McpToolDefinition createApiKeyLoginToolDefinition() {
+        try {
+            Map<String, Object> schemaObj = new LinkedHashMap<>();
+            schemaObj.put("type", "object");
+
+            Map<String, Object> properties = new LinkedHashMap<>();
+            properties.put("apiKey", Map.of("type", "string", "description", "APIキー（nw_で始まる）"));
+
+            Map<String, Object> repoIdProp = new LinkedHashMap<>();
+            repoIdProp.put("type", "string");
+            repoIdProp.put("description", "リポジトリID（デフォルト: " + defaultRepository + "）");
+            repoIdProp.put("default", defaultRepository);
+            properties.put("repositoryId", repoIdProp);
+
+            schemaObj.put("properties", properties);
+            schemaObj.put("required", Arrays.asList("apiKey"));
+
+            String schema = objectMapper.writeValueAsString(schemaObj);
+            return new McpToolDefinition(
+                "nemakiware_apikey_login",
+                "APIキーを使用してNemakiWareにログインします。クラウド認証ユーザーやプログラムからのアクセスに便利です。",
+                schema
+            );
+        } catch (JsonProcessingException e) {
+            log.error("Failed to generate API key login tool schema", e);
+            return new McpToolDefinition(
+                "nemakiware_apikey_login",
+                "APIキーを使用してNemakiWareにログインします",
+                "{\"type\":\"object\",\"properties\":{\"apiKey\":{\"type\":\"string\",\"description\":\"APIキー\"},\"repositoryId\":{\"type\":\"string\",\"description\":\"リポジトリID\"}},\"required\":[\"apiKey\"]}"
+            );
+        }
+    }
+
+    /**
+     * Create the cloud login tool definition.
+     */
+    private McpToolDefinition createCloudLoginToolDefinition() {
+        try {
+            Map<String, Object> schemaObj = new LinkedHashMap<>();
+            schemaObj.put("type", "object");
+
+            Map<String, Object> properties = new LinkedHashMap<>();
+
+            Map<String, Object> repoIdProp = new LinkedHashMap<>();
+            repoIdProp.put("type", "string");
+            repoIdProp.put("description", "リポジトリID（デフォルト: " + defaultRepository + "）");
+            repoIdProp.put("default", defaultRepository);
+            properties.put("repositoryId", repoIdProp);
+
+            schemaObj.put("properties", properties);
+            schemaObj.put("required", Collections.emptyList());
+
+            String schema = objectMapper.writeValueAsString(schemaObj);
+            return new McpToolDefinition(
+                "nemakiware_cloud_login",
+                "クラウド認証（Google/Microsoft/SAML等）を使用してNemakiWareにログインを開始します。ブラウザで認証後、ログインコードを入力して完了します。",
+                schema
+            );
+        } catch (JsonProcessingException e) {
+            log.error("Failed to generate cloud login tool schema", e);
+            return new McpToolDefinition(
+                "nemakiware_cloud_login",
+                "クラウド認証を使用してNemakiWareにログインを開始します",
+                "{\"type\":\"object\",\"properties\":{\"repositoryId\":{\"type\":\"string\",\"description\":\"リポジトリID\"}},\"required\":[]}"
+            );
+        }
+    }
+
+    /**
+     * Create the cloud login status tool definition.
+     */
+    private McpToolDefinition createCloudLoginStatusToolDefinition() {
+        try {
+            Map<String, Object> schemaObj = new LinkedHashMap<>();
+            schemaObj.put("type", "object");
+
+            Map<String, Object> properties = new LinkedHashMap<>();
+            properties.put("requestId", Map.of("type", "string", "description", "cloud_loginツールで取得したリクエストID"));
+
+            schemaObj.put("properties", properties);
+            schemaObj.put("required", Arrays.asList("requestId"));
+
+            String schema = objectMapper.writeValueAsString(schemaObj);
+            return new McpToolDefinition(
+                "nemakiware_cloud_login_status",
+                "クラウド認証の完了状態を確認します。認証が完了するまで数秒おきにこのツールを呼び出してください。",
+                schema
+            );
+        } catch (JsonProcessingException e) {
+            log.error("Failed to generate cloud login status tool schema", e);
+            return new McpToolDefinition(
+                "nemakiware_cloud_login_status",
+                "クラウド認証の完了状態を確認します",
+                "{\"type\":\"object\",\"properties\":{\"requestId\":{\"type\":\"string\",\"description\":\"リクエストID\"}},\"required\":[\"requestId\"]}"
             );
         }
     }
@@ -345,6 +450,114 @@ public class McpToolsProvider {
         } else {
             log.warn("MCP login failed for user '{}': {}", username, loginResult.getErrorMessage());
             return resultFactory.error(loginResult.getErrorMessage());
+        }
+    }
+
+    /**
+     * Execute the API key login tool.
+     */
+    public McpToolResult executeApiKeyLoginTool(Map<String, Object> arguments) {
+        String repositoryId = getStringArg(arguments, "repositoryId", defaultRepository);
+        String apiKey = getStringArg(arguments, "apiKey", null);
+
+        if (apiKey == null || apiKey.isEmpty()) {
+            return resultFactory.error("apiKey is required");
+        }
+
+        McpLoginResult loginResult = authHandler.loginWithApiKey(repositoryId, apiKey);
+
+        if (loginResult.isSuccess()) {
+            try {
+                Map<String, Object> responseObj = new LinkedHashMap<>();
+                responseObj.put("success", true);
+                responseObj.put("session_token", loginResult.getSessionToken());
+                responseObj.put("repository_id", loginResult.getRepositoryId());
+                responseObj.put("user_id", loginResult.getUserId());
+                String response = objectMapper.writeValueAsString(responseObj);
+                log.info("MCP API key login successful for user '{}' in repository '{}'",
+                    loginResult.getUserId(), loginResult.getRepositoryId());
+                return resultFactory.success(response);
+            } catch (JsonProcessingException e) {
+                log.error("Failed to serialize login response", e);
+                return resultFactory.error("Internal error");
+            }
+        } else {
+            log.warn("MCP API key login failed: {}", loginResult.getErrorMessage());
+            return resultFactory.error(loginResult.getErrorMessage());
+        }
+    }
+
+    /**
+     * Execute the cloud login tool.
+     * Returns a login URL and request ID for polling.
+     */
+    public McpToolResult executeCloudLoginTool(Map<String, Object> arguments) {
+        String repositoryId = getStringArg(arguments, "repositoryId", defaultRepository);
+
+        McpAuthenticationHandler.CloudLoginInitResult initResult = authHandler.initiateCloudLogin(repositoryId);
+
+        try {
+            // Build the login URL - user should open this in browser
+            // baseUrl already includes the context path (e.g., http://localhost:8080/core)
+            String loginUrl = baseUrl + "/ui/#/cloud-login?code=" + initResult.getLoginCode();
+
+            Map<String, Object> responseObj = new LinkedHashMap<>();
+            responseObj.put("success", true);
+            responseObj.put("request_id", initResult.getRequestId());
+            responseObj.put("login_code", initResult.getLoginCode());
+            responseObj.put("login_url", loginUrl);
+            responseObj.put("message", "以下のURLをブラウザで開いて認証を完了してください。認証後、nemakiware_cloud_login_statusツールでログイン完了を確認してください。");
+            responseObj.put("expires_in_seconds", 300);
+
+            String response = objectMapper.writeValueAsString(responseObj);
+            log.info("MCP cloud login initiated, request_id={}, login_code={}", initResult.getRequestId(), initResult.getLoginCode());
+            return resultFactory.success(response);
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize cloud login response", e);
+            return resultFactory.error("Internal error");
+        }
+    }
+
+    /**
+     * Execute the cloud login status check tool.
+     * Polls for completion of cloud login.
+     */
+    public McpToolResult executeCloudLoginStatusTool(Map<String, Object> arguments) {
+        String requestId = getStringArg(arguments, "requestId", null);
+
+        if (requestId == null || requestId.isEmpty()) {
+            return resultFactory.error("requestId is required");
+        }
+
+        McpLoginResult statusResult = authHandler.checkCloudLoginStatus(requestId);
+
+        try {
+            Map<String, Object> responseObj = new LinkedHashMap<>();
+
+            if (statusResult == null) {
+                // Still pending
+                responseObj.put("status", "pending");
+                responseObj.put("message", "認証待ちです。ブラウザで認証を完了してください。");
+            } else if (statusResult.isSuccess()) {
+                // Login completed
+                responseObj.put("status", "completed");
+                responseObj.put("success", true);
+                responseObj.put("session_token", statusResult.getSessionToken());
+                responseObj.put("repository_id", statusResult.getRepositoryId());
+                responseObj.put("user_id", statusResult.getUserId());
+                log.info("MCP cloud login completed for user '{}' in repository '{}'",
+                    statusResult.getUserId(), statusResult.getRepositoryId());
+            } else {
+                // Login failed or expired
+                responseObj.put("status", "failed");
+                responseObj.put("error", statusResult.getErrorMessage());
+            }
+
+            String response = objectMapper.writeValueAsString(responseObj);
+            return resultFactory.success(response);
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize cloud login status response", e);
+            return resultFactory.error("Internal error");
         }
     }
 

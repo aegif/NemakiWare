@@ -115,7 +115,20 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
         }
         String app = (authTokenApp == null) ? "" : authTokenApp;
 
-        if (authToken != null && !authToken.isEmpty()) {
+        // Check for X-API-Key header (persistent API key authentication for MCP clients)
+        String apiKey = requestContext.getHeaderString("X-API-Key");
+        if (apiKey == null || apiKey.isEmpty()) {
+            // Fallback to lowercase header name
+            apiKey = requestContext.getHeaderString("x-api-key");
+        }
+
+        if (apiKey != null && !apiKey.isEmpty()) {
+            // API Key authentication - set it in context for AuthenticationService to validate
+            logger.fine("ApiAuthenticationFilter: X-API-Key header found, passing to AuthenticationService");
+            callContext.put(CallContextKey.API_KEY, apiKey);
+            // Note: AuthenticationService.loginWithApiKey() will validate the key and set username
+
+        } else if (authToken != null && !authToken.isEmpty()) {
             // Token-based authentication
             logger.fine("ApiAuthenticationFilter: AUTH_TOKEN header found, validating token");
 

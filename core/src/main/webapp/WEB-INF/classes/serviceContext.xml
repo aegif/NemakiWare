@@ -431,6 +431,9 @@
         <property name="tokenService">
             <ref bean="TokenService" />
         </property>
+        <property name="apiKeyService">
+            <ref bean="ApiKeyService" />
+        </property>
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
@@ -463,6 +466,23 @@
         </property>
         <property name="repositoryInfoMap">
             <ref bean="repositoryInfoMap" />
+        </property>
+    </bean>
+
+    <!-- API Key Service for persistent API key authentication -->
+    <bean id="ApiKeyService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.factory.auth.ApiKeyService</value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="apiKeyService" />
+        </property>
+    </bean>
+    <bean id="apiKeyService" class="jp.aegif.nemaki.cmis.factory.auth.impl.ApiKeyServiceImpl">
+        <property name="contentDaoService">
+            <ref bean="ContentDaoService" />
         </property>
     </bean>
 

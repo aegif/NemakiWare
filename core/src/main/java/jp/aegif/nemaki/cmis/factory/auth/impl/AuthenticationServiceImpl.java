@@ -29,6 +29,7 @@ import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.cmis.factory.auth.ApiKeyService;
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
@@ -52,6 +53,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private ContentDaoService contentDaoService;
 	private PrincipalService principalService;
 	private TokenService tokenService;
+	private ApiKeyService apiKeyService;
 	private PropertyManager propertyManager;
 	private RepositoryInfoMap repositoryInfoMap;
 
@@ -69,6 +71,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		// SSO
 		if (loginWithExternalAuth(callContext)) {
+			return true;
+		}
+
+		// API Key authentication (for MCP clients and cloud-only users)
+		if (loginWithApiKey(callContext)) {
 			return true;
 		}
 
@@ -169,6 +176,49 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		boolean isAdmin = user.isAdmin() == null ? false : true;
 		setAdminFlagInContext(callContext, isAdmin);
+		return true;
+	}
+
+	/**
+	 * Authenticate using an API key.
+	 * API keys bypass allowedAuthMethods restrictions, allowing cloud-only users
+	 * to authenticate via MCP clients and other programmatic access.
+	 */
+	private boolean loginWithApiKey(CallContext callContext) {
+		if (apiKeyService == null) {
+			return false;
+		}
+
+		String repositoryId = callContext.getRepositoryId();
+		Object apiKeyObj = callContext.get(CallContextKey.API_KEY);
+
+		if (apiKeyObj == null) {
+			return false;
+		}
+
+		String apiKey = (String) apiKeyObj;
+		if (StringUtils.isBlank(apiKey)) {
+			return false;
+		}
+
+		// Validate the API key
+		String userId = apiKeyService.validateApiKey(repositoryId, apiKey);
+		if (userId == null) {
+			log.debug("API key authentication failed for repository: " + repositoryId);
+			return false;
+		}
+
+		// Set the username in the call context
+		((CallContextImpl) callContext).put(CallContext.USERNAME, userId);
+
+		// Get user info and set admin flag
+		UserItem user = contentService.getUserItemById(repositoryId, userId);
+		if (user != null) {
+			boolean isAdmin = user.isAdmin() != null && user.isAdmin();
+			setAdminFlagInContext(callContext, isAdmin);
+		}
+
+		log.info("API key authentication successful for user: " + userId + " in repository: " + repositoryId);
 		return true;
 	}
 
@@ -378,6 +428,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 	public void setTokenService(TokenService tokenService) {
 		this.tokenService = tokenService;
+	}
+
+	public void setApiKeyService(ApiKeyService apiKeyService) {
+		this.apiKeyService = apiKeyService;
 	}
 
 	public void setPropertyManager(PropertyManager propertyManager) {

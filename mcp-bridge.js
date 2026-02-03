@@ -9,6 +9,7 @@
 const http = require('http');
 const readline = require('readline');
 const fs = require('fs');
+const { exec } = require('child_process');
 
 // Debug log file
 const DEBUG = process.env.MCP_DEBUG === 'true';
@@ -81,9 +82,66 @@ function sendRequest(jsonRpcMessage) {
   });
 }
 
+/**
+ * Open a URL in the default browser.
+ * Cross-platform support for macOS, Windows, and Linux.
+ */
+function openBrowser(url) {
+  log(`Opening browser: ${url}`);
+  const platform = process.platform;
+  let command;
+
+  if (platform === 'darwin') {
+    command = `open "${url}"`;
+  } else if (platform === 'win32') {
+    command = `start "" "${url}"`;
+  } else {
+    // Linux and others
+    command = `xdg-open "${url}"`;
+  }
+
+  exec(command, (error) => {
+    if (error) {
+      log(`Failed to open browser: ${error.message}`);
+    } else {
+      log('Browser opened successfully');
+    }
+  });
+}
+
+/**
+ * Check if the response contains a cloud login URL and open the browser.
+ * This provides a seamless UX for cloud authentication from MCP.
+ */
+function checkAndOpenCloudLoginUrl(response) {
+  try {
+    // Check for cloud_login tool response with login_url
+    if (response && response.result && response.result.content) {
+      const content = response.result.content;
+      if (Array.isArray(content) && content.length > 0) {
+        const textContent = content.find(c => c.type === 'text' && c.text);
+        if (textContent) {
+          const parsed = JSON.parse(textContent.text);
+          if (parsed.login_url && parsed.success) {
+            log(`Cloud login URL detected: ${parsed.login_url}`);
+            openBrowser(parsed.login_url);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore parsing errors - not all responses are cloud login responses
+    log(`checkAndOpenCloudLoginUrl error (ignored): ${e.message}`);
+  }
+}
+
 function writeResponse(response) {
   const output = JSON.stringify(response) + '\n';
   log(`Writing response: ${output.trim()}`);
+
+  // Check for cloud login URL and open browser if found
+  checkAndOpenCloudLoginUrl(response);
+
   process.stdout.write(output);
 }
 

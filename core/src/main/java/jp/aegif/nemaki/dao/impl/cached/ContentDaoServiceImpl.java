@@ -41,6 +41,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 
 import jp.aegif.nemaki.dao.ContentDaoService;
+import jp.aegif.nemaki.model.ApiKey;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Change;
@@ -884,6 +885,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public java.util.List<jp.aegif.nemaki.model.ApiKey> getApiKeys(String repositoryId) {
+		// API keys are not cached, delegate directly to non-cached implementation
+		return nonCachedContentDaoService.getApiKeys(repositoryId);
+	}
+
+	@Override
 	public Document create(String repositoryId, Document document) {
 		Document created = nonCachedContentDaoService.create(repositoryId, document);
 		
@@ -1106,6 +1113,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Configuration created = nonCachedContentDaoService.create(repositoryId, configuration);
 		nemakiCachePool.get(repositoryId).getConfigCache().put(created.getId(), created);
 		return created;
+	}
+
+	@Override
+	public ApiKey create(String repositoryId, ApiKey apiKey) {
+		// API keys are not cached - they are rarely accessed and security-sensitive
+		return nonCachedContentDaoService.create(repositoryId, apiKey);
 	}
 
 	@Override
