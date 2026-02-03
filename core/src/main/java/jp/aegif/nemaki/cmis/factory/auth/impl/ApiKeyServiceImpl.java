@@ -47,6 +47,12 @@ public class ApiKeyServiceImpl implements ApiKeyService {
     /** Length of the random part of the API key */
     private static final int API_KEY_RANDOM_LENGTH = 32;
 
+    /**
+     * Maximum number of API keys allowed per user.
+     * SECURITY: This prevents abuse where a user creates unlimited keys.
+     */
+    private static final int MAX_KEYS_PER_USER = 10;
+
     /** Cache of API keys by repository, keyed by keyPrefix for quick lookup */
     private final ConcurrentHashMap<String, ConcurrentHashMap<String, ApiKey>> keyCache = new ConcurrentHashMap<>();
 
@@ -61,6 +67,14 @@ public class ApiKeyServiceImpl implements ApiKeyService {
 
     @Override
     public ApiKeyCreationResult createApiKey(String repositoryId, String userId, String name, String description, GregorianCalendar expiresAt) {
+        // SECURITY: Enforce per-user API key quota
+        List<ApiKey> existingKeys = listApiKeys(repositoryId, userId);
+        if (existingKeys.size() >= MAX_KEYS_PER_USER) {
+            log.warn("API key quota exceeded for user " + userId + " in repository " + repositoryId +
+                    " (limit: " + MAX_KEYS_PER_USER + ")");
+            throw new IllegalStateException("API key quota exceeded. Maximum " + MAX_KEYS_PER_USER + " keys allowed per user.");
+        }
+
         // Generate a cryptographically secure random API key
         byte[] randomBytes = new byte[API_KEY_RANDOM_LENGTH];
         secureRandom.nextBytes(randomBytes);
@@ -173,6 +187,8 @@ public class ApiKeyServiceImpl implements ApiKeyService {
             try {
                 if (BCrypt.checkpw(apiKey, key.getKeyHash())) {
                     log.debug("API key validated for user: " + key.getUserId());
+                    // Update lastUsed timestamp for audit/anomaly detection
+                    updateLastUsed(repositoryId, key.getId());
                     return key.getUserId();
                 }
             } catch (Exception e) {

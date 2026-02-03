@@ -474,7 +474,8 @@ public class McpAuthenticationHandler {
         );
         pendingCloudLogins.put(requestId, request);
 
-        log.info("Cloud login initiated: requestId={}, code={}", requestId, loginCode);
+        // SECURITY: Don't log the login code - it's a shared secret
+        log.info("Cloud login initiated: requestId={}", requestId);
 
         return new CloudLoginInitResult(requestId, loginCode);
     }
@@ -528,6 +529,8 @@ public class McpAuthenticationHandler {
      * Complete a cloud login request after browser authentication.
      * Called by the callback endpoint when OAuth completes.
      *
+     * SECURITY: Uses constant-time comparison for login code to prevent timing attacks.
+     *
      * @param loginCode The login code displayed to the user
      * @param userId The authenticated user ID
      * @return true if the login was completed, false if the code was invalid
@@ -535,25 +538,37 @@ public class McpAuthenticationHandler {
     public boolean completeCloudLogin(String loginCode, String userId) {
         for (Map.Entry<String, CloudLoginRequest> entry : pendingCloudLogins.entrySet()) {
             CloudLoginRequest request = entry.getValue();
-            if (request.getLoginCode().equals(loginCode) && !request.isExpired()) {
+            // Use constant-time comparison to prevent timing attacks
+            if (java.security.MessageDigest.isEqual(
+                    request.getLoginCode().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    loginCode.getBytes(java.nio.charset.StandardCharsets.UTF_8)) && !request.isExpired()) {
                 request.complete(userId);
-                log.info("Cloud login completed for code={}, user={}", loginCode, userId);
+                // SECURITY: Don't log the login code
+                log.info("Cloud login completed for requestId={}, user={}", entry.getKey(), userId);
                 return true;
             }
         }
-        log.warn("Invalid or expired cloud login code: {}", loginCode);
+        // SECURITY: Don't log the attempted code (could be used for enumeration)
+        log.warn("Invalid or expired cloud login attempt");
         return false;
     }
 
     /**
-     * Generate a short, user-friendly login code.
+     * Generate a secure, user-friendly login code.
+     *
+     * SECURITY: Uses 8 alphanumeric characters (32^8 = ~1 trillion combinations)
+     * formatted as XXXX-XXXX for readability. This provides sufficient entropy
+     * to resist brute-force attacks within the 5-minute TTL.
      */
     private String generateLoginCode() {
-        // Generate a 6-character alphanumeric code
+        // Generate an 8-character alphanumeric code with hyphen for readability
         String chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Exclude confusing chars (I, O, 0, 1)
         StringBuilder code = new StringBuilder();
         java.security.SecureRandom random = new java.security.SecureRandom();
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 8; i++) {
+            if (i == 4) {
+                code.append('-'); // Add hyphen for readability: XXXX-XXXX
+            }
             code.append(chars.charAt(random.nextInt(chars.length())));
         }
         return code.toString();

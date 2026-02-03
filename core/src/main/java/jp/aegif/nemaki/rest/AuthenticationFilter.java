@@ -167,14 +167,9 @@ public class AuthenticationFilter implements Filter {
 				return;
 			}
 
-			// Bypass authentication for MCP cloud login completion endpoint
-			// This endpoint is accessed by users completing cloud authentication from Claude Desktop
-			// Security is ensured via login code validation (not session auth)
-			if (requestURI != null && requestURI.contains("/mcp/cloud-login/complete")) {
-				log.debug("Bypassing authentication for MCP cloud login completion endpoint: " + requestURI);
-				chain.doFilter(req, res);
-				return;
-			}
+			// NOTE: MCP cloud login completion endpoint requires authentication
+			// The authenticated user's ID is used to complete the login, ensuring
+			// only the logged-in user can bind their identity to the MCP session
 
 			boolean auth = login(hreq, hres);
 			if(auth){

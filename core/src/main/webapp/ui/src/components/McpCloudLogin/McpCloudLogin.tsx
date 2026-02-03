@@ -58,8 +58,8 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
   useEffect(() => {
     if (urlCode) {
       // Always save URL code to localStorage for recovery
+      // SECURITY: Don't log the code - it's a shared secret
       localStorage.setItem(MCP_PENDING_LOGIN_KEY, urlCode);
-      console.log('MCP: Saved login code to localStorage:', urlCode);
     }
   }, [urlCode]);
   const [status, setStatus] = useState<'pending' | 'submitting' | 'success' | 'error'>('pending');

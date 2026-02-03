@@ -81,10 +81,7 @@ export const ApiKeyManagement: React.FC<ApiKeyManagementProps> = ({
   };
 
   const handleCreateKey = async (values: { name: string; description?: string; expiresAt?: Dayjs; expirationPreset?: string }) => {
-    console.log('handleCreateKey called with values:', values);
-
     if (!targetUserId) {
-      console.error('No targetUserId available');
       message.error('User ID not available');
       return;
     }
@@ -116,8 +113,7 @@ export const ApiKeyManagement: React.FC<ApiKeyManagementProps> = ({
         }
       }
 
-      console.log('Creating API key:', { repositoryId, targetUserId, name: values.name, expiresAtMs });
-
+      // SECURITY: Don't log API key creation details
       const result = await createApiKey(
         repositoryId,
         targetUserId,
@@ -125,7 +121,6 @@ export const ApiKeyManagement: React.FC<ApiKeyManagementProps> = ({
         values.description,
         expiresAtMs
       );
-      console.log('API key created successfully:', result);
       setCreatedKeyResult(result);
       message.success(t('apiKeyManagement.messages.createSuccess'));
       loadApiKeys();

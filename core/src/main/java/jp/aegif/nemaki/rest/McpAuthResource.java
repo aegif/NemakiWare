@@ -5,6 +5,7 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
@@ -36,8 +37,12 @@ public class McpAuthResource extends ResourceBase {
      * Complete a cloud login request.
      * This endpoint is called by the UI after the user has authenticated via cloud provider.
      *
+     * SECURITY: This endpoint requires authentication. The userId is derived from
+     * the authenticated session (CallContext), NOT from the request body.
+     * This prevents attackers from completing a login as a different user.
+     *
      * @param repositoryId Repository ID
-     * @param requestBody JSON body containing loginCode and userId
+     * @param requestBody JSON body containing loginCode
      * @return JSON result with success status and session token
      */
     @POST
@@ -61,24 +66,28 @@ public class McpAuthResource extends ResourceBase {
             return makeResult(false, result, errMsg).toString();
         }
 
+        // SECURITY: Get userId from authenticated session, NOT from request body
+        // This ensures only the authenticated user can complete the login as themselves
+        CallContext callContext = (CallContext) request.getAttribute("CallContext");
+        if (callContext == null || callContext.getUsername() == null) {
+            addErrMsg(errMsg, "authentication", "required");
+            logger.warn("MCP cloud login completion failed: user not authenticated");
+            return makeResult(false, result, errMsg).toString();
+        }
+        String userId = callContext.getUsername();
+
         try {
-            // Parse request body
+            // Parse request body - only loginCode is needed
             JSONParser parser = new JSONParser();
             JSONObject body = (JSONObject) parser.parse(requestBody);
             String loginCode = (String) body.get("loginCode");
-            String userId = (String) body.get("userId");
 
             if (loginCode == null || loginCode.isEmpty()) {
                 addErrMsg(errMsg, "loginCode", "isRequired");
                 return makeResult(false, result, errMsg).toString();
             }
 
-            if (userId == null || userId.isEmpty()) {
-                addErrMsg(errMsg, "userId", "isRequired");
-                return makeResult(false, result, errMsg).toString();
-            }
-
-            // Complete the cloud login
+            // Complete the cloud login with the authenticated user's ID
             boolean completed = mcpAuthHandler.completeCloudLogin(loginCode, userId);
 
             if (completed) {
@@ -87,10 +96,10 @@ public class McpAuthResource extends ResourceBase {
                 value.put("message", "Cloud login completed. Claude Desktop will automatically detect this.");
                 result.put("value", value);
                 status = true;
-                logger.info("MCP cloud login completed for user '{}' with code '{}'", userId, loginCode);
+                logger.info("MCP cloud login completed for authenticated user '{}'", userId);
             } else {
                 addErrMsg(errMsg, "loginCode", "invalidOrExpired");
-                logger.warn("MCP cloud login completion failed for code '{}': invalid or expired", loginCode);
+                logger.warn("MCP cloud login completion failed: invalid or expired code");
             }
 
         } catch (Exception e) {
