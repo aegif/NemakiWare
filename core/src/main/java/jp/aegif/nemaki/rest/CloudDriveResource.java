@@ -18,9 +18,13 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
 import java.io.InputStream;
+import java.net.URI;
 
 /**
  * REST API for Cloud Drive integration (Google Drive / OneDrive).
+ *
+ * SECURITY: All state-changing endpoints (push, pull) require CSRF protection
+ * via Origin/Referer header validation when cookie-based authentication is used.
  *
  * Endpoints:
  * - POST /rest/repo/{repositoryId}/cloud-drive/push/{objectId}
@@ -32,6 +36,88 @@ import java.io.InputStream;
 public class CloudDriveResource extends ResourceBase {
 
 	private static final Log log = LogFactory.getLog(CloudDriveResource.class);
+
+	/**
+	 * SECURITY: Validate Origin/Referer header to prevent CSRF attacks.
+	 * This is required for state-changing endpoints that accept cookie-based authentication.
+	 *
+	 * @param request The HTTP request
+	 * @return Error message if CSRF check fails, null if validation passes
+	 */
+	private String validateCsrfProtection(HttpServletRequest request) {
+		// Get the expected host from the request
+		String serverHost = request.getServerName();
+		int serverPort = request.getServerPort();
+		String scheme = request.getScheme();
+
+		// Build expected origin patterns
+		String expectedOriginWithPort = scheme + "://" + serverHost + ":" + serverPort;
+		String expectedOriginWithoutPort = scheme + "://" + serverHost;
+
+		// Check Origin header first (more reliable)
+		String origin = request.getHeader("Origin");
+		if (origin != null && !origin.isEmpty()) {
+			// Validate origin matches the server
+			if (origin.equals(expectedOriginWithPort) ||
+				origin.equals(expectedOriginWithoutPort) ||
+				origin.equals(scheme + "://" + serverHost)) {
+				return null; // Valid origin
+			}
+			// For development: allow localhost variations
+			if (serverHost.equals("localhost") || serverHost.equals("127.0.0.1")) {
+				try {
+					URI originUri = new URI(origin);
+					String originHost = originUri.getHost();
+					if ("localhost".equals(originHost) || "127.0.0.1".equals(originHost)) {
+						return null; // Allow localhost for development
+					}
+				} catch (Exception e) {
+					// Invalid URI, continue to reject
+				}
+			}
+			log.warn("CSRF protection: Origin header mismatch. Expected: " + expectedOriginWithPort +
+				", Received: " + origin);
+			return "CSRF protection: invalid origin";
+		}
+
+		// Fall back to Referer header if Origin is not present
+		String referer = request.getHeader("Referer");
+		if (referer != null && !referer.isEmpty()) {
+			try {
+				URI refererUri = new URI(referer);
+				String refererHost = refererUri.getHost();
+				int refererPort = refererUri.getPort();
+				String refererScheme = refererUri.getScheme();
+
+				// Check if referer matches server
+				if (serverHost.equals(refererHost)) {
+					return null; // Valid referer
+				}
+				// For development: allow localhost variations
+				if ((serverHost.equals("localhost") || serverHost.equals("127.0.0.1")) &&
+					("localhost".equals(refererHost) || "127.0.0.1".equals(refererHost))) {
+					return null; // Allow localhost for development
+				}
+			} catch (Exception e) {
+				log.warn("CSRF protection: Invalid Referer header: " + referer);
+			}
+			log.warn("CSRF protection: Referer header mismatch. Expected host: " + serverHost +
+				", Referer: " + referer);
+			return "CSRF protection: invalid referer";
+		}
+
+		// If neither Origin nor Referer is present, check if request is from same origin
+		// by checking for X-Requested-With header (set by XMLHttpRequest/fetch with credentials)
+		String xRequestedWith = request.getHeader("X-Requested-With");
+		if ("XMLHttpRequest".equals(xRequestedWith)) {
+			return null; // Likely same-origin AJAX request
+		}
+
+		// SECURITY: For state-changing endpoints, require at least one of these headers
+		// This prevents simple form-based CSRF attacks
+		log.warn("CSRF protection: No Origin, Referer, or X-Requested-With header found");
+		return "CSRF protection: missing origin verification headers";
+	}
 
 	private CloudDriveService cloudDriveService;
 	private ContentService contentService;
@@ -126,6 +212,14 @@ public class CloudDriveResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// SECURITY: CSRF protection for state-changing endpoint
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
 
 		try {
 			JSONParser parser = new JSONParser();
@@ -233,6 +327,14 @@ public class CloudDriveResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// SECURITY: CSRF protection for state-changing endpoint
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
 
 		try {
 			JSONParser parser = new JSONParser();
@@ -347,6 +449,9 @@ public class CloudDriveResource extends ResourceBase {
 	/**
 	 * Get cloud file URL for a document that has cloud metadata.
 	 *
+	 * SECURITY: This endpoint enforces ACL via ObjectService.getObject() with user's CallContext.
+	 * Users can only retrieve cloud URLs for objects they have READ permission on.
+	 *
 	 * GET /rest/repo/{repositoryId}/cloud-drive/url/{objectId}
 	 */
 	@SuppressWarnings("unchecked")
@@ -363,6 +468,38 @@ public class CloudDriveResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		try {
+			// SECURITY: Get the authenticated user's CallContext for ACL enforcement
+			org.apache.chemistry.opencmis.commons.server.CallContext callContext =
+				(org.apache.chemistry.opencmis.commons.server.CallContext) request.getAttribute("CallContext");
+			if (callContext == null) {
+				addErrMsg(errMsg, "authentication", "User authentication required");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+
+			// SECURITY: Use ObjectService.getObject to enforce ACL (READ permission check)
+			// This will throw CmisPermissionDeniedException if user lacks access
+			jp.aegif.nemaki.cmis.service.ObjectService objectService;
+			try {
+				objectService = SpringContext.getApplicationContext().getBean("objectService",
+					jp.aegif.nemaki.cmis.service.ObjectService.class);
+				// This call enforces ACL - throws exception if user lacks READ permission
+				// Parameters: callContext, repositoryId, objectId, filter, includeAllowableActions,
+				//             includeRelationships, renditionFilter, includePolicyIds, includeAcl, extension
+				objectService.getObject(callContext, repositoryId, objectId, null, Boolean.FALSE,
+					org.apache.chemistry.opencmis.commons.enums.IncludeRelationships.NONE,
+					null, Boolean.FALSE, Boolean.FALSE, null);
+			} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException e) {
+				addErrMsg(errMsg, "permission", "Access denied: " + e.getMessage());
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException e) {
+				addErrMsg(errMsg, "objectId", "Object not found: " + objectId);
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+
+			// Now fetch the content (ACL already verified above)
 			ContentService cs = getContentService();
 			if (cs == null) {
 				addErrMsg(errMsg, "service", "ContentService not available");

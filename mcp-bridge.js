@@ -115,9 +115,11 @@ function openBrowser(url) {
     command = 'open';
     args = [url];
   } else if (platform === 'win32') {
-    // On Windows, use cmd with /c start but URL as separate argument
-    command = 'cmd';
-    args = ['/c', 'start', '', url];
+    // SECURITY: On Windows, avoid cmd.exe which interprets special characters.
+    // Use rundll32 with url.dll to open URLs directly without shell interpretation.
+    // This is safer than 'cmd /c start' which can be exploited with & | etc.
+    command = 'rundll32';
+    args = ['url.dll,FileProtocolHandler', url];
   } else {
     // Linux and others
     command = 'xdg-open';
@@ -128,7 +130,9 @@ function openBrowser(url) {
   // This prevents command injection attacks
   const child = spawn(command, args, {
     detached: true,
-    stdio: 'ignore'
+    stdio: 'ignore',
+    // SECURITY: Explicitly disable shell on all platforms
+    shell: false
   });
 
   child.on('error', (error) => {

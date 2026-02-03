@@ -23,6 +23,10 @@ import java.io.PipedOutputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Cloud drive integration implementation supporting Google Drive and OneDrive.
@@ -30,6 +34,21 @@ import java.util.Date;
 public class CloudDriveServiceImpl implements CloudDriveService {
 
 	private static final Log log = LogFactory.getLog(CloudDriveServiceImpl.class);
+
+	/**
+	 * SECURITY: Bounded thread pool for cloud download operations.
+	 * Prevents DoS via unbounded thread creation from many concurrent pull requests.
+	 * Max 4 concurrent downloads to balance throughput and resource usage.
+	 */
+	private static final ExecutorService downloadExecutor = Executors.newFixedThreadPool(4, new ThreadFactory() {
+		private final AtomicInteger counter = new AtomicInteger(0);
+		@Override
+		public Thread newThread(Runnable r) {
+			Thread t = new Thread(r, "cloud-download-" + counter.incrementAndGet());
+			t.setDaemon(true);
+			return t;
+		}
+	});
 
 	private ObjectService objectService;
 
@@ -236,8 +255,9 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 				exportMimeType = null;
 			}
 
-			// Download in background thread to allow streaming
-			Thread downloadThread = new Thread(() -> {
+			// SECURITY: Use bounded thread pool to prevent DoS via unbounded thread creation
+			// The downloadExecutor limits concurrent downloads to prevent resource exhaustion
+			downloadExecutor.submit(() -> {
 				try {
 					if (isGoogleDocsFormat) {
 						driveService.files().export(cloudFileId, exportMimeType).executeMediaAndDownloadTo(pipedOut);
@@ -251,8 +271,6 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 					try { pipedOut.close(); } catch (Exception ignored) {}
 				}
 			});
-			downloadThread.setDaemon(true);
-			downloadThread.start();
 
 			return pipedIn;
 
