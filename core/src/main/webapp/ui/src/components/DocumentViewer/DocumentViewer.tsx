@@ -269,8 +269,7 @@ import {
   WindowsOutlined,
   CloudUploadOutlined,
   CloudDownloadOutlined,
-  LinkOutlined,
-  CommentOutlined
+  LinkOutlined
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -289,18 +288,6 @@ import { fetchCloudAuthConfig, CloudAuthConfig } from '../../services/cloud-auth
 import { pushToCloud, pullFromCloud, getCloudUrl, getGoogleDriveAccessToken, getOneDriveAccessToken } from '../../services/cloud-drive';
 import { getSafeArrayValue, getSafeStringValue, getSafeBooleanValue } from '../../utils/cmisPropertyUtils';
 import { useSearchParams } from 'react-router-dom';
-
-// Cloud comment interface for Google/Microsoft imported comments (2026-02-03)
-interface CloudComment {
-  id: string;
-  author: string;
-  authorEmail?: string;
-  content: string;
-  createdTime: string;
-  modifiedTime?: string;
-  resolved?: boolean;
-  replies?: CloudComment[];
-}
 
 interface DocumentViewerProps {
   repositoryId: string;
@@ -334,10 +321,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [cloudPushLoading, setCloudPushLoading] = useState(false);
   const [cloudPullLoading, setCloudPullLoading] = useState(false);
   const [cloudMetadata, setCloudMetadata] = useState<{ provider: string; cloudFileId: string; cloudFileUrl: string } | null>(null);
-  // Cloud comments state (2026-02-03)
-  const [cloudComments, setCloudComments] = useState<CloudComment[]>([]);
-  const [cloudCommentsModalVisible, setCloudCommentsModalVisible] = useState(false);
-  // External context state (2026-02-04) - nemaki:externalIntegration secondary type
+  // External context state - nemaki:externalIntegration secondary type
   const [externalContext, setExternalContext] = useState<string | null>(null);
   const [externalSourceType, setExternalSourceType] = useState<string | null>(null);
   const [externalSourceId, setExternalSourceId] = useState<string | null>(null);
@@ -482,47 +466,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       // Expose propertyDefinitions for test verification
       (window as any).__NEMAKI_PROPERTY_DEFINITIONS__ = mergedTypeDef.propertyDefinitions;
 
-      // Extract cloud comments from properties if available (2026-02-03)
-      const cloudCommentsJson = getSafeStringValue(obj.properties?.['nemaki:cloudComments']);
-      if (cloudCommentsJson) {
-        try {
-          const parsed = JSON.parse(cloudCommentsJson);
-          // Handle both formats: { "comments": [...], "activities": [...] } and direct array
-          let rawComments: any[] = [];
-          if (Array.isArray(parsed)) {
-            rawComments = parsed;
-          } else if (parsed && parsed.comments && Array.isArray(parsed.comments)) {
-            rawComments = parsed.comments;
-          }
-          // Map server format to UI format (author object -> author string)
-          const parsedComments: CloudComment[] = rawComments.map((c: any) => ({
-            id: c.id,
-            author: typeof c.author === 'object' ? c.author?.displayName || 'Unknown' : c.author || 'Unknown',
-            authorEmail: typeof c.author === 'object' ? c.author?.email : undefined,
-            content: c.content || '',
-            createdTime: c.createdTime || '',
-            modifiedTime: c.modifiedTime,
-            resolved: c.resolved,
-            replies: c.replies?.map((r: any) => ({
-              id: r.id,
-              author: typeof r.author === 'object' ? r.author?.displayName || 'Unknown' : r.author || 'Unknown',
-              authorEmail: typeof r.author === 'object' ? r.author?.email : undefined,
-              content: r.content || '',
-              createdTime: r.createdTime || '',
-              modifiedTime: r.modifiedTime,
-            })) || [],
-          }));
-          setCloudComments(parsedComments);
-          console.log('[DocumentViewer] Cloud comments loaded:', parsedComments.length);
-        } catch (parseError) {
-          console.warn('[DocumentViewer] Failed to parse cloud comments:', parseError);
-          setCloudComments([]);
-        }
-      } else {
-        setCloudComments([]);
-      }
-
-      // Extract external context from nemaki:externalIntegration secondary type (2026-02-04)
+      // Extract external context from nemaki:externalIntegration secondary type
       const externalContextValue = getSafeStringValue(obj.properties?.['nemaki:externalContext']);
       const externalSourceTypeValue = getSafeStringValue(obj.properties?.['nemaki:externalSourceType']);
       const externalSourceIdValue = getSafeStringValue(obj.properties?.['nemaki:externalSourceId']);
@@ -532,10 +476,6 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       setExternalSourceType(externalSourceTypeValue);
       setExternalSourceId(externalSourceIdValue);
       setExternalContextUpdatedAt(externalContextUpdatedAtValue);
-
-      if (externalContextValue) {
-        console.log('[DocumentViewer] External context loaded:', externalContextValue.substring(0, 100) + '...');
-      }
     } catch (error: any) {
       console.error('[DocumentViewer] loadObject error:', error);
       // CRITICAL FIX (2025-12-28): Set error state to show proper error UI instead of loading spinner
@@ -728,48 +668,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       console.log('[CloudDrive] Reloading pulled object:', pullObjectId);
       const pulledObj = await cmisService.getObject(repositoryId, pullObjectId);
       setObject(pulledObj);
-      
-      // Extract cloud comments from the reloaded object
-      const cloudCommentsJson = getSafeStringValue(pulledObj.properties?.['nemaki:cloudComments']);
-      console.log('[CloudDrive] Cloud comments after pull:', cloudCommentsJson?.substring(0, 200));
-      if (cloudCommentsJson) {
-        try {
-          const parsed = JSON.parse(cloudCommentsJson);
-          let rawComments: any[] = [];
-          if (Array.isArray(parsed)) {
-            rawComments = parsed;
-          } else if (parsed && parsed.comments && Array.isArray(parsed.comments)) {
-            rawComments = parsed.comments;
-          }
-          const parsedComments: CloudComment[] = rawComments.map((c: any) => ({
-            id: c.id,
-            author: typeof c.author === 'object' ? c.author?.displayName || 'Unknown' : c.author || 'Unknown',
-            authorEmail: typeof c.author === 'object' ? c.author?.email : undefined,
-            content: c.content || '',
-            createdTime: c.createdTime || '',
-            modifiedTime: c.modifiedTime,
-            resolved: c.resolved,
-            replies: c.replies?.map((r: any) => ({
-              id: r.id,
-              author: typeof r.author === 'object' ? r.author?.displayName || 'Unknown' : r.author || 'Unknown',
-              authorEmail: typeof r.author === 'object' ? r.author?.email : undefined,
-              content: r.content || '',
-              createdTime: r.createdTime || '',
-              modifiedTime: r.modifiedTime,
-            })) || [],
-          }));
-          setCloudComments(parsedComments);
-          console.log('[CloudDrive] Cloud comments parsed:', parsedComments.length, 'comments');
-        } catch (parseError) {
-          console.warn('[CloudDrive] Failed to parse cloud comments:', parseError);
-          setCloudComments([]);
-        }
-      } else {
-        console.log('[CloudDrive] No cloud comments found in pulled object');
-        setCloudComments([]);
-      }
 
-      // Extract external context from nemaki:externalIntegration secondary type (2026-02-04)
+      // Extract external context from nemaki:externalIntegration secondary type
       const externalContextValue = getSafeStringValue(pulledObj.properties?.['nemaki:externalContext']);
       const externalSourceTypeValue = getSafeStringValue(pulledObj.properties?.['nemaki:externalSourceType']);
       const externalSourceIdValue = getSafeStringValue(pulledObj.properties?.['nemaki:externalSourceId']);
@@ -779,10 +679,6 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       setExternalSourceType(externalSourceTypeValue);
       setExternalSourceId(externalSourceIdValue);
       setExternalContextUpdatedAt(externalContextUpdatedAtValue);
-
-      if (externalContextValue) {
-        console.log('[CloudDrive] External context loaded after pull:', externalContextValue.substring(0, 100) + '...');
-      }
 
       loadVersionHistory();
       // Force preview re-mount by incrementing version counter
@@ -1601,58 +1497,6 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             />
           )}
 
-          {/* Cloud Comments Section (2026-02-03) - Compact summary with modal for details */}
-          {cloudComments.length > 0 && (
-            <Card
-              size="small"
-              style={{ marginTop: 16, marginBottom: 16 }}
-              title={
-                <Space>
-                  <CommentOutlined />
-                  {t('documentViewer.cloudComments.title', 'クラウドコメント')}
-                  <Tag color="blue">{cloudComments.length}</Tag>
-                </Space>
-              }
-              extra={
-                <Button
-                  type="link"
-                  size="small"
-                  onClick={() => setCloudCommentsModalVisible(true)}
-                >
-                  {t('documentViewer.cloudComments.viewAll', '全て表示')}
-                </Button>
-              }
-            >
-              {/* Show only first comment as preview */}
-              {cloudComments.slice(0, 1).map((comment, index) => (
-                <div key={comment.id || index}>
-                  <div style={{ marginBottom: 4 }}>
-                    <strong>{comment.author}</strong>
-                    {comment.resolved && (
-                      <Tag color="green" size="small" style={{ marginLeft: 8 }}>
-                        {t('documentViewer.cloudComments.resolved', '解決済み')}
-                      </Tag>
-                    )}
-                  </div>
-                  <Typography.Paragraph
-                    ellipsis={{ rows: 2 }}
-                    style={{ marginBottom: 4, color: '#666' }}
-                  >
-                    {comment.content}
-                  </Typography.Paragraph>
-                  <div style={{ fontSize: 12, color: '#888' }}>
-                    {new Date(comment.createdTime).toLocaleString('ja-JP')}
-                  </div>
-                </div>
-              ))}
-              {cloudComments.length > 1 && (
-                <div style={{ marginTop: 8, color: '#888', fontSize: 12 }}>
-                  {t('documentViewer.cloudComments.moreComments', '他 {{count}} 件のコメント', { count: cloudComments.length - 1 })}
-                </div>
-              )}
-            </Card>
-          )}
-
           <Tabs items={tabItems} />
         </Space>
       </Card>
@@ -1713,87 +1557,6 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             </Space>
           </Form.Item>
         </Form>
-      </Modal>
-
-      {/* Cloud Comments Modal */}
-      <Modal
-        title={
-          <Space>
-            <CommentOutlined />
-            {t('documentViewer.cloudComments.title', 'クラウドコメント')}
-            <Tag color="blue">{cloudComments.length}</Tag>
-          </Space>
-        }
-        open={cloudCommentsModalVisible}
-        onCancel={() => setCloudCommentsModalVisible(false)}
-        footer={[
-          <Button key="close" onClick={() => setCloudCommentsModalVisible(false)}>
-            {t('common.close', '閉じる')}
-          </Button>
-        ]}
-        width={700}
-      >
-        <div style={{ maxHeight: 500, overflowY: 'auto' }}>
-          {cloudComments.map((comment, index) => (
-            <div
-              key={comment.id || index}
-              style={{
-                padding: '12px',
-                borderBottom: index < cloudComments.length - 1 ? '1px solid #f0f0f0' : 'none',
-                backgroundColor: comment.resolved ? '#f5f5f5' : 'transparent',
-              }}
-            >
-              <div style={{ marginBottom: 8 }}>
-                <strong>{comment.author}</strong>
-                {comment.authorEmail && (
-                  <span style={{ color: '#888', marginLeft: 8, fontSize: 12 }}>
-                    ({comment.authorEmail})
-                  </span>
-                )}
-                {comment.resolved && (
-                  <Tag color="green" style={{ marginLeft: 8 }}>
-                    {t('documentViewer.cloudComments.resolved', '解決済み')}
-                  </Tag>
-                )}
-              </div>
-              <div style={{ whiteSpace: 'pre-wrap', marginBottom: 8 }}>
-                {comment.content}
-              </div>
-              <div style={{ fontSize: 12, color: '#888' }}>
-                {new Date(comment.createdTime).toLocaleString('ja-JP')}
-                {comment.modifiedTime && comment.modifiedTime !== comment.createdTime && (
-                  <span style={{ marginLeft: 8 }}>
-                    ({t('documentViewer.cloudComments.edited', '編集済')})
-                  </span>
-                )}
-              </div>
-              {/* Render replies if any */}
-              {comment.replies && comment.replies.length > 0 && (
-                <div style={{ marginTop: 12, marginLeft: 24, borderLeft: '2px solid #e8e8e8', paddingLeft: 12 }}>
-                  {comment.replies.map((reply, replyIndex) => (
-                    <div
-                      key={reply.id || replyIndex}
-                      style={{
-                        padding: '8px 0',
-                        borderBottom: replyIndex < (comment.replies?.length || 0) - 1 ? '1px solid #f0f0f0' : 'none',
-                      }}
-                    >
-                      <div style={{ marginBottom: 4 }}>
-                        <strong style={{ fontSize: 13 }}>{reply.author}</strong>
-                      </div>
-                      <div style={{ whiteSpace: 'pre-wrap', marginBottom: 4, fontSize: 13 }}>
-                        {reply.content}
-                      </div>
-                      <div style={{ fontSize: 11, color: '#888' }}>
-                        {new Date(reply.createdTime).toLocaleString('ja-JP')}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
       </Modal>
 
       <Modal

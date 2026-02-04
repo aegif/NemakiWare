@@ -716,26 +716,27 @@ public class CloudDriveResource extends ResourceBase {
 			saveCloudMetadata(callContext, repositoryId, newObjectId, provider, cloudFileId, cloudFileUrl);
 
 			// Fetch and save comments from cloud file (if access token provided)
-			log.info("Checking comments: accessToken=" + (accessToken != null ? "present" : "null") +
+			log.debug("Checking comments: accessToken=" + (accessToken != null ? "present" : "null") +
 					", service=" + (service != null ? "present" : "null"));
 			if (accessToken != null && !accessToken.isEmpty() && service != null) {
 				try {
-					log.info("Fetching comments from cloud file: " + cloudFileId);
+					log.debug("Fetching comments from cloud file: " + cloudFileId);
 					String comments = service.getCloudComments(provider, cloudFileId, accessToken);
-					log.info("Comments result: " + (comments != null ? comments.substring(0, Math.min(200, comments.length())) : "null"));
+					// Log presence and size only - never log content (PII risk)
+					log.debug("Comments result: present=" + (comments != null) + ", length=" + (comments != null ? comments.length() : 0));
 					if (comments != null && !comments.isEmpty()) {
 						saveCloudComments(callContext, repositoryId, newObjectId, comments);
 						result.put("commentsImported", true);
-						log.info("Imported comments from cloud file " + cloudFileId + " to object " + newObjectId);
+						log.info("Imported cloud comments to object " + newObjectId + " (length=" + comments.length() + ")");
 					} else {
-						log.info("No comments found for cloud file: " + cloudFileId);
+						log.debug("No comments found for cloud file: " + cloudFileId);
 					}
 				} catch (Exception e) {
 					// Don't fail the import just because comments fetch failed
-					log.warn("Failed to fetch/save cloud comments: " + e.getMessage(), e);
+					log.warn("Failed to fetch/save cloud comments: " + e.getMessage());
 				}
 			} else {
-				log.info("Skipping comments fetch: accessToken or service not available");
+				log.debug("Skipping comments fetch: accessToken or service not available");
 			}
 
 			result.put("objectId", newObjectId);

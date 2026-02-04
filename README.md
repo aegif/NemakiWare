@@ -7,7 +7,8 @@ NemakiWare is an open source Enterprise Content Management system, compliant wit
 - **Docker Compose deployment** with CouchDB, Solr, and Tomcat
 - **Jakarta EE 10 compatible** with Java 17
 - **Modern React SPA UI** with TypeScript, Vite 7, and Ant Design 5
-- **SAML and OIDC authentication** support (via Keycloak)
+- **SAML and OIDC authentication** support (Keycloak, Google, Microsoft)
+- **Cloud integration** with Google Workspace and Microsoft 365
 - **Full CMIS 1.1 compliance** verified with Apache Chemistry TCK
 
 ## Key Capabilities
@@ -138,9 +139,23 @@ curl -u admin:admin http://localhost:8080/core/atom/bedroom
 
 ---
 
+## Cloud Integration (Google / Microsoft)
+
+NemakiWare supports integration with Google Workspace and Microsoft 365:
+
+| Feature | Google | Microsoft |
+|---------|--------|-----------|
+| **OIDC Login** | ✅ Google Account | ✅ Microsoft Account |
+| **Cloud Drive** | ✅ Google Drive | ✅ OneDrive |
+| **Directory Sync** | ✅ Google Workspace | ✅ Entra ID |
+
+📖 **Setup Guide**: [docs/CLOUD_INTEGRATION.md](docs/CLOUD_INTEGRATION.md)
+
+---
+
 ## Optional: Keycloak (SAML/OIDC Authentication)
 
-For external authentication support:
+For external authentication via Keycloak:
 
 ```bash
 cd docker
