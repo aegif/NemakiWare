@@ -60,7 +60,7 @@ root_folders:
       - principal: "GROUP_EVERYONE"
         permission: "cmis:read"
     content:
-      type: "test:policy"
+      type: "demo:policy"
       count: 10
       formats:
         - extension: "docx"
@@ -75,7 +75,7 @@ root_folders:
       - principal: "GROUP_EVERYONE"
         permission: "cmis:write"
     content:
-      type: "test:contract"
+      type: "demo:contract"
       count: 40
       formats:
         - extension: "pdf"
@@ -88,7 +88,7 @@ root_folders:
       - principal: "GROUP_EVERYONE"
         permission: "cmis:read"
     content:
-      type: "test:invoice"
+      type: "demo:invoice"
       count: 100
       formats:
         - extension: "xlsx"
@@ -98,96 +98,96 @@ root_folders:
 # Custom Type Definitions
 custom_types:
   # Invoice document type with extended properties
-  - type_id: "test:invoice"
+  - type_id: "demo:invoice"
     display_name: "請求書"
     description: "請求書ドキュメントタイプ"
     parent_type: "nemaki:document"
     properties:
-      - id: "test:invoiceNumber"
+      - id: "demo:invoiceNumber"
         name: "請求番号"
         type: "string"
         required: false
         queryable: true
-      - id: "test:customerName"
+      - id: "demo:customerName"
         name: "顧客名"
         type: "string"
         required: false
         queryable: true
-      - id: "test:amount"
+      - id: "demo:amount"
         name: "請求金額"
         type: "integer"
         required: false
         queryable: true
-      - id: "test:issueDate"
+      - id: "demo:issueDate"
         name: "発行日"
         type: "datetime"
         required: false
         queryable: true
-      - id: "test:invoiceStatus"
+      - id: "demo:invoiceStatus"
         name: "ステータス"
         type: "string"
         required: false
         queryable: true
 
   # Contract document type with extended properties
-  - type_id: "test:contract"
+  - type_id: "demo:contract"
     display_name: "契約書"
     description: "契約書ドキュメントタイプ"
     parent_type: "nemaki:document"
     properties:
-      - id: "test:contractNumber"
+      - id: "demo:contractNumber"
         name: "契約番号"
         type: "string"
         required: false
         queryable: true
-      - id: "test:partyName"
+      - id: "demo:partyName"
         name: "契約相手方"
         type: "string"
         required: false
         queryable: true
-      - id: "test:startDate"
+      - id: "demo:startDate"
         name: "契約開始日"
         type: "datetime"
         required: false
         queryable: true
-      - id: "test:endDate"
+      - id: "demo:endDate"
         name: "契約終了日"
         type: "datetime"
         required: false
         queryable: true
-      - id: "test:contractType"
+      - id: "demo:contractType"
         name: "契約種別"
         type: "string"
         required: false
         queryable: true
 
   # Policy document type for internal regulations
-  - type_id: "test:policy"
+  - type_id: "demo:policy"
     display_name: "社内規程"
     description: "社内規程ドキュメントタイプ"
     parent_type: "nemaki:document"
     properties:
-      - id: "test:policyNumber"
+      - id: "demo:policyNumber"
         name: "規程番号"
         type: "string"
         required: false
         queryable: true
-      - id: "test:department"
+      - id: "demo:department"
         name: "管理部門"
         type: "string"
         required: false
         queryable: true
-      - id: "test:effectiveDate"
+      - id: "demo:effectiveDate"
         name: "施行日"
         type: "datetime"
         required: false
         queryable: true
-      - id: "test:reviewDate"
+      - id: "demo:reviewDate"
         name: "次回見直し日"
         type: "datetime"
         required: false
         queryable: true
-      - id: "test:policyVersion"
+      - id: "demo:policyVersion"
         name: "版数"
         type: "string"
         required: false
@@ -195,7 +195,7 @@ custom_types:
 
 # Content Generation Settings
 content_templates:
-  # Internal Regulations (Word documents with test:policy type)
+  # Internal Regulations (Word documents with demo:policy type)
   internal_regulations:
     titles:
       - "就業規則"

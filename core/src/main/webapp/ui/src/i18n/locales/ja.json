@@ -545,7 +545,9 @@
     "cloudComments": {
       "title": "クラウドコメント",
       "resolved": "解決済み",
-      "edited": "編集済"
+      "edited": "編集済",
+      "viewAll": "全て表示",
+      "moreComments": "他 {{count}} 件のコメント"
     },
     "pullFromCloud": "クラウドから取得",
     "openInCloud": "クラウドで開く",

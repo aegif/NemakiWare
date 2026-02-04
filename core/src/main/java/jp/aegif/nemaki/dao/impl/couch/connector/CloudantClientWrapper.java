@@ -439,13 +439,13 @@ public class CloudantClientWrapper {
 
 				com.ibm.cloud.cloudant.v1.model.DesignDocument designDoc = client.getDesignDocument(designOptions).execute().getResult();
 				log.debug("Retrieved design document: " + id);
-				
+
 				// Convert DesignDocument to regular Document for compatibility
 				// Create a regular Document object with design document content
 				com.ibm.cloud.cloudant.v1.model.Document result = new com.ibm.cloud.cloudant.v1.model.Document();
 				result.setId(id);
 				result.setRev(designDoc.getRev());
-				
+
 				// Set design document properties
 				Map<String, Object> properties = new HashMap<>();
 				if (designDoc.getViews() != null) {
@@ -1574,6 +1574,38 @@ public class CloudantClientWrapper {
 				}
 			} else {
 				log.error("Document properties is NULL for CouchVersionSeries: " + id);
+			}
+		}
+
+		// CRITICAL FIX (2026-02-04): For design documents (JsonNode), flatten properties to root level
+		// Design document patches expect views to be at root level, not nested in properties
+		// Without this fix, patches lose existing views when updating design documents
+		if (id != null && id.startsWith("_design/") &&
+		    (clazz.equals(com.fasterxml.jackson.databind.JsonNode.class) ||
+		     clazz.equals(com.fasterxml.jackson.databind.node.ObjectNode.class))) {
+			Map<String, Object> properties = doc.getProperties();
+			if (properties != null) {
+				Map<String, Object> completeMap = new HashMap<>();
+
+				// Add standard document fields at root level
+				completeMap.put("_id", doc.getId());
+				completeMap.put("_rev", doc.getRev());
+
+				// Flatten all properties to root level (including views)
+				for (Map.Entry<String, Object> entry : properties.entrySet()) {
+					completeMap.put(entry.getKey(), entry.getValue());
+				}
+
+				log.debug("Design document flattening - _id: {}, views: {}",
+						doc.getId(), properties.get("views") != null);
+
+				try {
+					T result = mapper.convertValue(completeMap, clazz);
+					return result;
+				} catch (Exception deserEx) {
+					log.warn("Error deserializing design document: " + deserEx.getMessage());
+					throw deserEx;
+				}
 			}
 		}
 

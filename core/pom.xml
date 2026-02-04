@@ -897,6 +897,20 @@
 			<version>directory_v1-rev20240509-2.0.0</version>
 		</dependency>
 
+		<!-- Google Drive Activity API (for approval history) -->
+		<dependency>
+			<groupId>com.google.apis</groupId>
+			<artifactId>google-api-services-driveactivity</artifactId>
+			<version>v2-rev20250517-2.0.0</version>
+		</dependency>
+
+		<!-- Google Docs API (for approval metadata) -->
+		<dependency>
+			<groupId>com.google.apis</groupId>
+			<artifactId>google-api-services-docs</artifactId>
+			<version>v1-rev20250325-2.0.0</version>
+		</dependency>
+
 		<!-- Microsoft Graph SDK (for OneDrive + directory sync) -->
 		<dependency>
 			<groupId>com.microsoft.graph</groupId>

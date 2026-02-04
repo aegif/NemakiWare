@@ -624,15 +624,15 @@ run_test "Type List Returns JSON" "
     if echo \"\$response\" | jq -e '.status' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
 " "PASS"
 
-# Test that base CMIS types are accessible via show endpoint
-run_test "Type Show cmis:document (Base Type)" "
-    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/type/show/cmis:document')
-    if echo \"\$response\" | jq -e '.type.id == \"cmis:document\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+# Test that base CMIS types are accessible via CMIS browser binding (REST /type/show is for custom types only)
+run_test "Type Definition cmis:document (Base Type)" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis:document')
+    if echo \"\$response\" | jq -e '.id == \"cmis:document\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
 " "PASS"
 
-run_test "Type Show cmis:folder (Base Type)" "
-    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/type/show/cmis:folder')
-    if echo \"\$response\" | jq -e '.type.id == \"cmis:folder\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+run_test "Type Definition cmis:folder (Base Type)" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis:folder')
+    if echo \"\$response\" | jq -e '.id == \"cmis:folder\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
 " "PASS"
 
 echo

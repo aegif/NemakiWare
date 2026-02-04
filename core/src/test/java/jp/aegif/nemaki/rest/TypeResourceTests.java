@@ -274,6 +274,11 @@ public class TypeResourceTests {
             }
 
             @Override
+            public void clearTypeCache(String repositoryId) {
+                // No-op for mock
+            }
+
+            @Override
             public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String repositoryId, String coreId) {
                 return null;
             }

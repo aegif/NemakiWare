@@ -583,7 +583,7 @@ class TestEnvironmentSetup:
         return formats[-1]
 
     def _generate_internal_regulation(self, index: int, extension: str, pages: int) -> dict:
-        """Generate an internal regulation document with test:policy type."""
+        """Generate an internal regulation document with demo:policy type."""
         templates = self.config["content_templates"]["internal_regulations"]
         titles = templates["titles"]
         departments = templates.get("departments", [{"id": "general", "name": "総務部"}])
@@ -606,11 +606,11 @@ class TestEnvironmentSetup:
             "name": f"{title}.{extension}",
             "content": content,
             "properties": {
-                "test:policyNumber": policy_number,
-                "test:department": department["id"],
-                "test:effectiveDate": effective_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
-                "test:reviewDate": review_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
-                "test:policyVersion": policy_version,
+                "demo:policyNumber": policy_number,
+                "demo:department": department["id"],
+                "demo:effectiveDate": effective_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+                "demo:reviewDate": review_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+                "demo:policyVersion": policy_version,
             },
         }
 
@@ -815,11 +815,11 @@ class TestEnvironmentSetup:
             "name": f"{title}_{contract_no}.pdf",
             "content": content,
             "properties": {
-                "test:contractNumber": contract_no,
-                "test:partyName": company,
-                "test:startDate": start_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
-                "test:endDate": end_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
-                "test:contractType": contract_type["id"],
+                "demo:contractNumber": contract_no,
+                "demo:partyName": company,
+                "demo:startDate": start_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+                "demo:endDate": end_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+                "demo:contractType": contract_type["id"],
             },
         }
 
@@ -1083,11 +1083,11 @@ class TestEnvironmentSetup:
             "name": f"請求書_{invoice_no}.xlsx",
             "content": content,
             "properties": {
-                "test:invoiceNumber": invoice_no,
-                "test:customerName": customer_name,
-                "test:amount": total_sum,
-                "test:issueDate": issue_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
-                "test:invoiceStatus": status["id"],
+                "demo:invoiceNumber": invoice_no,
+                "demo:customerName": customer_name,
+                "demo:amount": total_sum,
+                "demo:issueDate": issue_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+                "demo:invoiceStatus": status["id"],
             },
         }
 

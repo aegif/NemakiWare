@@ -101,6 +101,14 @@ public interface ContentDaoService {
 	void deleteTypeDefinition(String repositoryId, String nodeId);
 
 	/**
+	 * Clear the type definition cache for a repository.
+	 * Called by TypeManager when invalidating type cache to ensure
+	 * ContentDaoService returns fresh data from database.
+	 * @param repositoryId The repository ID
+	 */
+	void clearTypeCache(String repositoryId);
+
+	/**
 	 * List up user-defined property definitions
 	 * @param repositoryId TODO
 	 * @return

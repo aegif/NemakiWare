@@ -545,7 +545,9 @@
     "cloudComments": {
       "title": "Cloud Comments",
       "resolved": "Resolved",
-      "edited": "Edited"
+      "edited": "Edited",
+      "viewAll": "View All",
+      "moreComments": "{{count}} more comments"
     },
     "pullFromCloud": "Pull from Cloud",
     "openInCloud": "Open in Cloud",

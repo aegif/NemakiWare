@@ -54,8 +54,12 @@ export async function pushToCloud(
   });
 
   const result = await response.json();
-  if (!result.status) {
-    throw new Error(result.errMsg?.[0] || 'Failed to push to cloud');
+  // Server returns status: "success" | "failure" (string), and error: [...] array
+  if (result.status !== 'success') {
+    const errorMsg = Array.isArray(result.error) && result.error.length > 0
+      ? result.error[0]
+      : 'Failed to push to cloud';
+    throw new Error(errorMsg);
   }
   return result;
 }
@@ -77,8 +81,12 @@ export async function pullFromCloud(
   });
 
   const result = await response.json();
-  if (!result.status) {
-    throw new Error(result.errMsg?.[0] || 'Failed to pull from cloud');
+  // Server returns status: "success" | "failure" (string), and error: [...] array
+  if (result.status !== 'success') {
+    const errorMsg = Array.isArray(result.error) && result.error.length > 0
+      ? result.error[0]
+      : 'Failed to pull from cloud';
+    throw new Error(errorMsg);
   }
   return result;
 }
@@ -92,7 +100,8 @@ export async function getCloudUrl(
 ): Promise<CloudDriveUrlResult | null> {
   const response = await fetch(`/core/rest/repo/${repositoryId}/cloud-drive/url/${objectId}`);
   const result = await response.json();
-  if (!result.status) {
+  // Server returns status: "success" | "failure" (string)
+  if (result.status !== 'success') {
     return null;
   }
   return result;
@@ -140,16 +149,39 @@ export function getGoogleDriveAccessToken(clientId: string, loginHint?: string):
         return;
       }
 
+      console.log('[GoogleDrive] Initializing OAuth2 token client with clientId:', clientId);
+      console.log('[GoogleDrive] Current origin:', window.location.origin);
+
+      // Track if promise has been resolved/rejected to avoid race conditions
+      // COOP issues can cause error_callback to fire even after success
+      let settled = false;
+
       const tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         // drive.readonly: See and download all Google Drive files
         // drive.file: Only files created/opened by this app (too restrictive for import)
-        scope: 'https://www.googleapis.com/auth/drive.readonly',
+        // drive.activity.readonly: Required for fetching approval history and activities
+        // documents.readonly: Required for fetching Google Docs approval metadata
+        scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.activity.readonly https://www.googleapis.com/auth/documents.readonly',
         hint: loginHint,
-        callback: (response: { access_token?: string; error?: string; expires_in?: number }) => {
+        callback: (response: { access_token?: string; error?: string; error_description?: string; expires_in?: number }) => {
+          console.log('[GoogleDrive] OAuth2 callback received:', {
+            hasToken: !!response.access_token,
+            error: response.error,
+            errorDescription: response.error_description
+          });
+          if (settled) {
+            console.log('[GoogleDrive] Promise already settled, ignoring callback');
+            return;
+          }
           if (response.error) {
-            reject(new Error(response.error));
+            settled = true;
+            const errorMsg = response.error_description
+              ? `${response.error}: ${response.error_description}`
+              : response.error;
+            reject(new Error(errorMsg));
           } else if (response.access_token) {
+            settled = true;
             // Cache token (default 3600s expiry)
             const expiresIn = (response.expires_in || 3600) * 1000;
             _cachedGoogleDriveToken = {
@@ -158,11 +190,35 @@ export function getGoogleDriveAccessToken(clientId: string, loginHint?: string):
             };
             resolve(response.access_token);
           } else {
+            settled = true;
             reject(new Error('No access token received'));
           }
         },
+        error_callback: (error: { type: string; message?: string }) => {
+          console.log('[GoogleDrive] OAuth2 error_callback:', error);
+          // IMPORTANT: If we already got a token, ignore the error_callback
+          // This happens due to COOP (Cross-Origin-Opener-Policy) issues
+          if (settled) {
+            console.log('[GoogleDrive] Promise already settled, ignoring error_callback (COOP race condition)');
+            return;
+          }
+          settled = true;
+          // error.type can be: 'popup_failed_to_open', 'popup_closed', 'unknown'
+          let errorMsg = 'Google OAuth error';
+          if (error.type === 'popup_failed_to_open') {
+            errorMsg = 'ポップアップがブロックされました。ポップアップを許可してください。';
+          } else if (error.type === 'popup_closed') {
+            errorMsg = 'ログインがキャンセルされました';
+          } else if (error.message) {
+            errorMsg = `${error.type}: ${error.message}`;
+          } else {
+            errorMsg = `OAuth error: ${error.type}`;
+          }
+          reject(new Error(errorMsg));
+        },
       });
 
+      console.log('[GoogleDrive] Requesting access token...');
       tokenClient.requestAccessToken();
     }).catch(reject);
   });
@@ -190,7 +246,9 @@ export async function getOneDriveAccessToken(clientId: string, tenantId: string)
     await instance.initialize();
   }
 
-  const scopes = ['Files.ReadWrite'];
+  // Files.ReadWrite: Read and write files
+  // Sites.Read.All: Read activities and metadata (for activity history)
+  const scopes = ['Files.ReadWrite', 'Sites.Read.All'];
 
   // Try silent acquisition first (if user already logged in via Microsoft)
   const accounts = instance.getAllAccounts();
@@ -319,10 +377,12 @@ export async function importFromGoogleDrive(
     downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
   }
 
-  // Download file content
+  // Download file content from Google Drive
+  console.log('[CloudDrive] Downloading from Google Drive:', downloadUrl);
   const downloadResponse = await fetch(downloadUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  console.log('[CloudDrive] Download response status:', downloadResponse.status);
 
   if (!downloadResponse.ok) {
     const status = downloadResponse.status;
@@ -341,28 +401,54 @@ export async function importFromGoogleDrive(
   const blob = await downloadResponse.blob();
   const finalMimeType = exportMimeType || file.mimeType;
 
-  // Upload to NemakiWare using multipart form
-  const formData = new FormData();
-  formData.append('cmisaction', 'createDocument');
-  formData.append('propertyId[0]', 'cmis:objectTypeId');
-  formData.append('propertyValue[0]', 'cmis:document');
-  formData.append('propertyId[1]', 'cmis:name');
-  formData.append('propertyValue[1]', fileName);
-  formData.append('content', new File([blob], fileName, { type: finalMimeType }));
+  // Get NemakiWare auth token for REST API
+  const authData = localStorage.getItem('nemakiware_auth');
+  const authHeaders: Record<string, string> = {};
+  if (authData) {
+    try {
+      const auth = JSON.parse(authData);
+      if (auth.token) {
+        authHeaders['nemaki_auth_token'] = auth.token;
+      }
+    } catch {
+      console.warn('[CloudDrive] Failed to parse auth data');
+    }
+  }
 
-  const uploadResponse = await fetch(`/core/browser/${repositoryId}/root?objectId=${folderId}`, {
+  // Upload to NemakiWare using REST API (handles secondary type and comments)
+  const formData = new FormData();
+  formData.append('content', new File([blob], fileName, { type: finalMimeType }));
+  formData.append('provider', 'google');
+  formData.append('cloudFileId', file.id);
+  formData.append('accessToken', accessToken);
+  formData.append('fileName', fileName);
+
+  const importUrl = `/core/rest/repo/${repositoryId}/cloud-drive/import/${folderId}`;
+  console.log('[CloudDrive] Uploading to NemakiWare:', importUrl);
+  console.log('[CloudDrive] Auth headers:', Object.keys(authHeaders));
+
+  const uploadResponse = await fetch(importUrl, {
     method: 'POST',
+    headers: authHeaders,
     body: formData,
   });
 
+  console.log('[CloudDrive] Upload response status:', uploadResponse.status);
   const result = await uploadResponse.json();
-  if (result.exception) {
-    throw new Error(result.message || 'Failed to upload to NemakiWare');
+  console.log('[CloudDrive] Upload result:', result);
+
+  // Server returns status: "success" | "failure" (string), and error: [...] array
+  if (result.status !== 'success') {
+    const errorMsg = Array.isArray(result.error) && result.error.length > 0
+      ? result.error[0]
+      : 'Failed to import from Google Drive';
+    console.error('[CloudDrive] Import failed:', errorMsg, result.error);
+    throw new Error(errorMsg);
   }
 
   return {
-    objectId: result.properties?.['cmis:objectId']?.value || result.objectId,
-    name: fileName,
+    objectId: result.objectId,
+    name: result.name || fileName,
   };
 }
 
@@ -401,27 +487,47 @@ export async function importFromOneDrive(
   const blob = await downloadResponse.blob();
   const mimeType = file.mimeType || 'application/octet-stream';
 
-  // Upload to NemakiWare using multipart form
-  const formData = new FormData();
-  formData.append('cmisaction', 'createDocument');
-  formData.append('propertyId[0]', 'cmis:objectTypeId');
-  formData.append('propertyValue[0]', 'cmis:document');
-  formData.append('propertyId[1]', 'cmis:name');
-  formData.append('propertyValue[1]', file.name);
-  formData.append('content', new File([blob], file.name, { type: mimeType }));
+  // Get NemakiWare auth token for REST API
+  const authData = localStorage.getItem('nemakiware_auth');
+  const authHeaders: Record<string, string> = {};
+  if (authData) {
+    try {
+      const auth = JSON.parse(authData);
+      if (auth.token) {
+        authHeaders['nemaki_auth_token'] = auth.token;
+      }
+    } catch {
+      console.warn('[CloudDrive] Failed to parse auth data');
+    }
+  }
 
-  const uploadResponse = await fetch(`/core/browser/${repositoryId}/root?objectId=${folderId}`, {
+  // Upload to NemakiWare using REST API (handles secondary type and comments)
+  const formData = new FormData();
+  formData.append('content', new File([blob], file.name, { type: mimeType }));
+  formData.append('provider', 'microsoft');
+  formData.append('cloudFileId', file.id);
+  formData.append('accessToken', accessToken);
+  formData.append('fileName', file.name);
+
+  const uploadResponse = await fetch(`/core/rest/repo/${repositoryId}/cloud-drive/import/${folderId}`, {
     method: 'POST',
+    headers: authHeaders,
     body: formData,
   });
 
   const result = await uploadResponse.json();
-  if (result.exception) {
-    throw new Error(result.message || 'Failed to upload to NemakiWare');
+
+  // Server returns status: "success" | "failure" (string), and error: [...] array
+  if (result.status !== 'success') {
+    const errorMsg = Array.isArray(result.error) && result.error.length > 0
+      ? result.error[0]
+      : 'Failed to import from OneDrive';
+    console.error('[CloudDrive] Import failed:', errorMsg, result.error);
+    throw new Error(errorMsg);
   }
 
   return {
-    objectId: result.properties?.['cmis:objectId']?.value || result.objectId,
-    name: file.name,
+    objectId: result.objectId,
+    name: result.name || file.name,
   };
 }

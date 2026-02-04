@@ -21,6 +21,14 @@ public interface TypeService {
 	NemakiTypeDefinition updateTypeDefinition(
 			String repositoryId, NemakiTypeDefinition typeDefinition);
 	void deleteTypeDefinition(String repositoryId, String typeId);
+
+	/**
+	 * Clear the type definition cache for a repository.
+	 * Called by TypeManager when invalidating type cache to ensure
+	 * ContentDaoService returns fresh data from database.
+	 * @param repositoryId The repository ID
+	 */
+	void clearTypeCache(String repositoryId);
 	NemakiPropertyDefinition getPropertyDefinition(String repositoryId, String detailNodeId);
 	NemakiPropertyDefinitionDetail createPropertyDefinition(
 			String repositoryId, NemakiPropertyDefinition propertyDefinition);

@@ -60,12 +60,8 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
-				<!-- Cloud Drive Metadata secondary type for Google Drive / OneDrive integration -->
-				<bean class="jp.aegif.nemaki.patch.Patch_CloudDriveMetadataSecondaryType">
-					<property name="patchUtil">
-						<ref bean="patchUtil" />
-					</property>
-				</bean>
+				<!-- NOTE: Patch_CloudDriveMetadataSecondaryType is registered in cmisPostInitializer's cmisPatchList -->
+				<!-- DO NOT add it here to avoid duplicate execution -->
 			</list>
 		</property>
 	</bean>

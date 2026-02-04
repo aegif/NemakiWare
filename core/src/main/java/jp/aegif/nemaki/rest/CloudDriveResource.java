@@ -5,6 +5,9 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 
+import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
+import org.glassfish.jersey.media.multipart.FormDataParam;
+
 import jp.aegif.nemaki.businesslogic.CloudDriveService;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.impl.CloudDriveServiceImpl;
@@ -19,6 +22,7 @@ import org.json.simple.parser.JSONParser;
 
 import java.io.InputStream;
 import java.net.URI;
+import java.util.List;
 
 /**
  * REST API for Cloud Drive integration (Google Drive / OneDrive).
@@ -484,16 +488,20 @@ public class CloudDriveResource extends ResourceBase {
 			objectService.setContentStream(callContext, repositoryId, objectIdHolder, true, newStream, changeTokenHolder, null);
 
 			// Fetch and save comments from the cloud file
+			log.info("[pullFromCloud] Fetching comments for cloudFileId=" + cloudFileId);
 			try {
 				String comments = service.getCloudComments(provider, cloudFileId, accessToken);
+				log.info("[pullFromCloud] Comments result: " + (comments != null ? comments.substring(0, Math.min(200, comments.length())) : "null"));
 				if (comments != null && !comments.isEmpty()) {
 					saveCloudComments(callContext, repositoryId, objectId, comments);
 					result.put("commentsImported", true);
-					log.info("Imported comments from cloud file " + cloudFileId + " to object " + objectId);
+					log.info("[pullFromCloud] Imported comments from cloud file " + cloudFileId + " to object " + objectId);
+				} else {
+					log.info("[pullFromCloud] No comments found for cloud file: " + cloudFileId);
 				}
 			} catch (Exception e) {
 				// Don't fail the pull operation just because comments fetch failed
-				log.warn("Failed to fetch/save cloud comments: " + e.getMessage());
+				log.warn("[pullFromCloud] Failed to fetch/save cloud comments: " + e.getMessage(), e);
 			}
 
 			result.put("objectId", objectIdHolder.getValue());
@@ -503,6 +511,243 @@ public class CloudDriveResource extends ResourceBase {
 			log.error("Error pulling from cloud: " + e.getMessage(), e);
 			status = false;
 			addErrMsg(errMsg, "pull", "Failed to pull from cloud: " + e.getMessage());
+		}
+
+		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
+	}
+
+
+	/**
+	 * Import a document from cloud drive into NemakiWare.
+	 * Creates a new document with cloud sync secondary type and metadata.
+	 * Also fetches and stores comments from the cloud file.
+	 *
+	 * POST /rest/repo/{repositoryId}/cloud-drive/import/{folderId}
+	 * Body (multipart/form-data):
+	 *   - content: file content
+	 *   - provider: "google" | "microsoft"
+	 *   - cloudFileId: file ID in cloud provider
+	 *   - accessToken: OAuth access token for fetching comments
+	 *   - fileName: (optional) filename override
+	 */
+	@SuppressWarnings("unchecked")
+	@POST
+	@Path("/import/{folderId}")
+	@Consumes(MediaType.MULTIPART_FORM_DATA)
+	@Produces(MediaType.APPLICATION_JSON)
+	public String importFromCloud(
+			@PathParam("repositoryId") String repositoryId,
+			@PathParam("folderId") String folderId,
+			@FormDataParam("content") InputStream contentStream,
+			@FormDataParam("content") FormDataContentDisposition contentDisposition,
+			@FormDataParam("provider") String provider,
+			@FormDataParam("cloudFileId") String cloudFileId,
+			@FormDataParam("accessToken") String accessToken,
+			@FormDataParam("fileName") String fileName,
+			@Context HttpServletRequest request) {
+
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		log.info("Cloud Drive import request: repository=" + repositoryId + ", folder=" + folderId +
+			", provider=" + provider + ", cloudFileId=" + cloudFileId);
+
+		// SECURITY: CSRF protection for state-changing endpoint
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			log.warn("CSRF validation failed: " + csrfError);
+			addErrMsg(errMsg, "csrf", csrfError);
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
+
+		try {
+			// SECURITY: Require authenticated user's CallContext
+			org.apache.chemistry.opencmis.commons.server.CallContext callContext =
+				(org.apache.chemistry.opencmis.commons.server.CallContext) request.getAttribute("CallContext");
+			if (callContext == null) {
+				log.warn("No CallContext found in request - authentication required");
+				addErrMsg(errMsg, "authentication", "User authentication required");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+
+			// Validate required parameters
+			if (provider == null || provider.isEmpty()) {
+				log.warn("Missing required parameter: provider");
+				addErrMsg(errMsg, "provider", "provider is required");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+			if (cloudFileId == null || cloudFileId.isEmpty()) {
+				log.warn("Missing required parameter: cloudFileId");
+				addErrMsg(errMsg, "cloudFileId", "cloudFileId is required");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+			if (!isCloudDriveEnabled(provider)) {
+				log.warn("Cloud drive not enabled for provider: " + provider);
+				addErrMsg(errMsg, "provider", "Cloud drive is not enabled for provider: " + provider);
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+
+			// Check file content
+			if (contentStream == null) {
+				log.warn("Missing file content in multipart request");
+				addErrMsg(errMsg, "content", "File content is required");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+
+			// Determine filename from FormDataParam or contentDisposition
+			String finalFileName = fileName;
+			if (finalFileName == null || finalFileName.isEmpty()) {
+				if (contentDisposition != null) {
+					finalFileName = contentDisposition.getFileName();
+				}
+			}
+			if (finalFileName == null || finalFileName.isEmpty()) {
+				finalFileName = "imported-document";
+			}
+			log.info("Using filename: " + finalFileName);
+
+			// Create document using ObjectService
+			jp.aegif.nemaki.cmis.service.ObjectService objectService =
+				SpringContext.getApplicationContext().getBean("objectService",
+					jp.aegif.nemaki.cmis.service.ObjectService.class);
+
+			// Build properties for new document
+			org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl props =
+				new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
+			props.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(
+				org.apache.chemistry.opencmis.commons.PropertyIds.OBJECT_TYPE_ID, "cmis:document"));
+			props.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl(
+				org.apache.chemistry.opencmis.commons.PropertyIds.NAME, finalFileName));
+
+			// Determine MIME type from content disposition or fallback to binary
+			String mimeType = "application/octet-stream";
+			if (contentDisposition != null && contentDisposition.getType() != null) {
+				mimeType = contentDisposition.getType();
+			}
+			// Try to infer from filename extension
+			if (finalFileName != null) {
+				if (finalFileName.endsWith(".docx")) mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+				else if (finalFileName.endsWith(".xlsx")) mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+				else if (finalFileName.endsWith(".pptx")) mimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+				else if (finalFileName.endsWith(".pdf")) mimeType = "application/pdf";
+				else if (finalFileName.endsWith(".txt")) mimeType = "text/plain";
+			}
+
+			// Build content stream for CMIS
+			org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl cmisContentStream =
+				new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl();
+			cmisContentStream.setStream(contentStream);
+			cmisContentStream.setMimeType(mimeType);
+			cmisContentStream.setFileName(finalFileName);
+			// Note: Size is unknown when streaming from FormDataParam, set to -1 (unknown)
+			cmisContentStream.setLength(java.math.BigInteger.valueOf(-1));
+
+			// Check if a document with the same name already exists in the folder
+			jp.aegif.nemaki.businesslogic.ContentService contentService =
+				SpringContext.getApplicationContext().getBean("ContentService",
+					jp.aegif.nemaki.businesslogic.ContentService.class);
+
+			String existingObjectId = null;
+			List<jp.aegif.nemaki.model.Content> children = contentService.getChildren(repositoryId, folderId);
+			if (children != null) {
+				for (jp.aegif.nemaki.model.Content child : children) {
+					if (child != null && finalFileName.equals(child.getName())) {
+						// Check if it's a document (not a folder)
+						if (child instanceof jp.aegif.nemaki.model.Document) {
+							existingObjectId = child.getId();
+							log.info("Found existing document with same name: " + existingObjectId);
+							break;
+						}
+					}
+				}
+			}
+
+			String newObjectId;
+			boolean isNewVersion = false;
+
+			if (existingObjectId != null) {
+				// Document exists - create new version via checkOut/checkIn
+				log.info("Creating new version for existing document: " + existingObjectId);
+
+				jp.aegif.nemaki.cmis.service.VersioningService versioningService =
+					SpringContext.getApplicationContext().getBean("versioningService",
+						jp.aegif.nemaki.cmis.service.VersioningService.class);
+
+				// CheckOut the existing document
+				org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder =
+					new org.apache.chemistry.opencmis.commons.spi.Holder<>(existingObjectId);
+				versioningService.checkOut(callContext, repositoryId, objectIdHolder, null, null);
+				String pwcId = objectIdHolder.getValue();
+				log.info("Checked out document, PWC ID: " + pwcId);
+
+				// CheckIn with new content (major version)
+				org.apache.chemistry.opencmis.commons.spi.Holder<String> pwcIdHolder =
+					new org.apache.chemistry.opencmis.commons.spi.Holder<>(pwcId);
+
+				// No property changes needed for version update
+				org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl checkInProps =
+					new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
+
+				versioningService.checkIn(callContext, repositoryId, pwcIdHolder, true,
+					checkInProps, cmisContentStream, "Imported from " + provider + " cloud drive", null, null, null, null);
+
+				newObjectId = pwcIdHolder.getValue();
+				isNewVersion = true;
+				log.info("Checked in new version: " + newObjectId + " (cloudFileId: " + cloudFileId + ")");
+			} else {
+				// Create new document
+				newObjectId = objectService.createDocument(callContext, repositoryId, props,
+					folderId, cmisContentStream, null, null, null, null, null);
+				log.info("Created new document from cloud import: " + newObjectId + " (cloudFileId: " + cloudFileId + ")");
+			}
+
+			// Save cloud metadata as secondary properties
+			CloudDriveService service = getCloudDriveService();
+			String cloudFileUrl = (service != null) ? service.getCloudFileUrl(provider, cloudFileId) : null;
+			saveCloudMetadata(callContext, repositoryId, newObjectId, provider, cloudFileId, cloudFileUrl);
+
+			// Fetch and save comments from cloud file (if access token provided)
+			log.info("Checking comments: accessToken=" + (accessToken != null ? "present" : "null") +
+					", service=" + (service != null ? "present" : "null"));
+			if (accessToken != null && !accessToken.isEmpty() && service != null) {
+				try {
+					log.info("Fetching comments from cloud file: " + cloudFileId);
+					String comments = service.getCloudComments(provider, cloudFileId, accessToken);
+					log.info("Comments result: " + (comments != null ? comments.substring(0, Math.min(200, comments.length())) : "null"));
+					if (comments != null && !comments.isEmpty()) {
+						saveCloudComments(callContext, repositoryId, newObjectId, comments);
+						result.put("commentsImported", true);
+						log.info("Imported comments from cloud file " + cloudFileId + " to object " + newObjectId);
+					} else {
+						log.info("No comments found for cloud file: " + cloudFileId);
+					}
+				} catch (Exception e) {
+					// Don't fail the import just because comments fetch failed
+					log.warn("Failed to fetch/save cloud comments: " + e.getMessage(), e);
+				}
+			} else {
+				log.info("Skipping comments fetch: accessToken or service not available");
+			}
+
+			result.put("objectId", newObjectId);
+			result.put("name", finalFileName);
+			result.put("cloudFileId", cloudFileId);
+			result.put("cloudFileUrl", cloudFileUrl);
+			result.put("provider", provider);
+			result.put("isNewVersion", isNewVersion);
+
+		} catch (Exception e) {
+			log.error("Error importing from cloud: " + e.getMessage(), e);
+			status = false;
+			addErrMsg(errMsg, "import", "Failed to import from cloud: " + e.getMessage());
 		}
 
 		result = makeResult(status, result, errMsg);

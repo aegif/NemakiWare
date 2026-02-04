@@ -239,6 +239,13 @@ public class TypeServiceImpl implements TypeService{
 		}
 	}
 
+
+	@Override
+	public void clearTypeCache(String repositoryId) {
+		log.debug("TypeServiceImpl.clearTypeCache called for repository: " + repositoryId);
+		contentDaoService.clearTypeCache(repositoryId);
+	}
+
 	@Override
 	public NemakiPropertyDefinitionDetail createPropertyDefinition(
 			String repositoryId, NemakiPropertyDefinition propertyDefinition) {

@@ -77,6 +77,15 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 			if (patchUtil.getTypeManager() != null) {
 				patchUtil.getTypeManager().invalidateTypeCache(repositoryId);
 				log.error("Type cache invalidated for repository: " + repositoryId);
+
+				// CRITICAL: Force type cache rebuild after invalidation
+				// Without this, the newly created type won't be available via CMIS API
+				try {
+					patchUtil.getTypeManager().refreshTypes();
+					log.error("Type cache refreshed for repository: " + repositoryId);
+				} catch (Exception e) {
+					log.error("Failed to refresh type cache: " + e.getMessage());
+				}
 			}
 
 			log.error("=== CLOUD DRIVE METADATA SECONDARY TYPE PATCH COMPLETED for repository: " + repositoryId + " ===");
@@ -186,8 +195,26 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 					typeDef.setProperties(propertyIds);
 				}
 
-				NemakiTypeDefinition created = typeService.createTypeDefinition(repositoryId, typeDef);
-				log.error("Type '" + TYPE_ID + "' created successfully with ID: " + created.getId());
+				try {
+					NemakiTypeDefinition created = typeService.createTypeDefinition(repositoryId, typeDef);
+					log.error("Type '" + TYPE_ID + "' created successfully with ID: " + created.getId());
+				} catch (Exception createEx) {
+					// Check if this is a conflict exception (type already exists)
+					String message = createEx.getMessage() != null ? createEx.getMessage().toLowerCase() : "";
+					Throwable cause = createEx.getCause();
+					String causeMessage = (cause != null && cause.getMessage() != null) ? cause.getMessage().toLowerCase() : "";
+
+					if (message.contains("conflict") || causeMessage.contains("conflict") ||
+						createEx.getClass().getSimpleName().contains("Conflict") ||
+						(cause != null && cause.getClass().getSimpleName().contains("Conflict"))) {
+						// Type already exists in CouchDB (possibly from a previous patch run in this startup)
+						// This is expected behavior - log and continue
+						log.error("Type '" + TYPE_ID + "' already exists in CouchDB (Conflict detected) - this is OK");
+					} else {
+						// Re-throw other exceptions
+						throw createEx;
+					}
+				}
 			}
 
 		} catch (Exception e) {

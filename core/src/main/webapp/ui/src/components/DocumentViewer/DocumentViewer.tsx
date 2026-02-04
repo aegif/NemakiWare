@@ -250,7 +250,8 @@ import {
   Popconfirm,
   Select,
   Alert,
-  Collapse
+  Collapse,
+  Typography
 } from 'antd';
 import {
   DownloadOutlined,
@@ -334,6 +335,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [cloudMetadata, setCloudMetadata] = useState<{ provider: string; cloudFileId: string; cloudFileUrl: string } | null>(null);
   // Cloud comments state (2026-02-03)
   const [cloudComments, setCloudComments] = useState<CloudComment[]>([]);
+  const [cloudCommentsModalVisible, setCloudCommentsModalVisible] = useState(false);
   const [relationshipTypeDefinition, setRelationshipTypeDefinition] = useState<TypeDefinition | null>(null);
   // RAG Similar Documents state
   const [ragEnabled, setRagEnabled] = useState(false);
@@ -478,7 +480,32 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       const cloudCommentsJson = getSafeStringValue(obj.properties?.['nemaki:cloudComments']);
       if (cloudCommentsJson) {
         try {
-          const parsedComments: CloudComment[] = JSON.parse(cloudCommentsJson);
+          const parsed = JSON.parse(cloudCommentsJson);
+          // Handle both formats: { "comments": [...], "activities": [...] } and direct array
+          let rawComments: any[] = [];
+          if (Array.isArray(parsed)) {
+            rawComments = parsed;
+          } else if (parsed && parsed.comments && Array.isArray(parsed.comments)) {
+            rawComments = parsed.comments;
+          }
+          // Map server format to UI format (author object -> author string)
+          const parsedComments: CloudComment[] = rawComments.map((c: any) => ({
+            id: c.id,
+            author: typeof c.author === 'object' ? c.author?.displayName || 'Unknown' : c.author || 'Unknown',
+            authorEmail: typeof c.author === 'object' ? c.author?.email : undefined,
+            content: c.content || '',
+            createdTime: c.createdTime || '',
+            modifiedTime: c.modifiedTime,
+            resolved: c.resolved,
+            replies: c.replies?.map((r: any) => ({
+              id: r.id,
+              author: typeof r.author === 'object' ? r.author?.displayName || 'Unknown' : r.author || 'Unknown',
+              authorEmail: typeof r.author === 'object' ? r.author?.email : undefined,
+              content: r.content || '',
+              createdTime: r.createdTime || '',
+              modifiedTime: r.modifiedTime,
+            })) || [],
+          }));
           setCloudComments(parsedComments);
           console.log('[DocumentViewer] Cloud comments loaded:', parsedComments.length);
         } catch (parseError) {
@@ -663,6 +690,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       const isPWC = getSafeBooleanValue(object.properties?.['cmis:isPrivateWorkingCopy']);
       const checkedOutId = getSafeStringValue(object.properties?.['cmis:versionSeriesCheckedOutId']);
       const pullObjectId = isPWC ? object.id : (checkedOutId || object.id);
+      console.log('[CloudDrive] pullObjectId:', pullObjectId, 'current objectId:', objectId, 'isPWC:', isPWC);
       await pullFromCloud(repositoryId, pullObjectId, provider, accessToken, cloudMetadata.cloudFileId);
       message.success(t('documentViewer.messages.cloudPullSuccess', 'クラウドからコンテンツを取得しました'));
       // Regenerate rendition (PDF preview) from the updated content
@@ -673,8 +701,53 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       } catch (e) {
         console.warn('[CloudDrive] Rendition regeneration failed (non-critical):', e);
       }
-      // Reload the object, version history, and preview to reflect updated content
-      await loadObject();
+      // CRITICAL FIX: Reload the pulled object (PWC) directly instead of using loadObject()
+      // loadObject() uses objectId from URL, which may differ from pullObjectId (the PWC)
+      // Comments are saved to pullObjectId, so we must reload that specific object
+      console.log('[CloudDrive] Reloading pulled object:', pullObjectId);
+      const pulledObj = await cmisService.getObject(repositoryId, pullObjectId);
+      setObject(pulledObj);
+      
+      // Extract cloud comments from the reloaded object
+      const cloudCommentsJson = getSafeStringValue(pulledObj.properties?.['nemaki:cloudComments']);
+      console.log('[CloudDrive] Cloud comments after pull:', cloudCommentsJson?.substring(0, 200));
+      if (cloudCommentsJson) {
+        try {
+          const parsed = JSON.parse(cloudCommentsJson);
+          let rawComments: any[] = [];
+          if (Array.isArray(parsed)) {
+            rawComments = parsed;
+          } else if (parsed && parsed.comments && Array.isArray(parsed.comments)) {
+            rawComments = parsed.comments;
+          }
+          const parsedComments: CloudComment[] = rawComments.map((c: any) => ({
+            id: c.id,
+            author: typeof c.author === 'object' ? c.author?.displayName || 'Unknown' : c.author || 'Unknown',
+            authorEmail: typeof c.author === 'object' ? c.author?.email : undefined,
+            content: c.content || '',
+            createdTime: c.createdTime || '',
+            modifiedTime: c.modifiedTime,
+            resolved: c.resolved,
+            replies: c.replies?.map((r: any) => ({
+              id: r.id,
+              author: typeof r.author === 'object' ? r.author?.displayName || 'Unknown' : r.author || 'Unknown',
+              authorEmail: typeof r.author === 'object' ? r.author?.email : undefined,
+              content: r.content || '',
+              createdTime: r.createdTime || '',
+              modifiedTime: r.modifiedTime,
+            })) || [],
+          }));
+          setCloudComments(parsedComments);
+          console.log('[CloudDrive] Cloud comments parsed:', parsedComments.length, 'comments');
+        } catch (parseError) {
+          console.warn('[CloudDrive] Failed to parse cloud comments:', parseError);
+          setCloudComments([]);
+        }
+      } else {
+        console.log('[CloudDrive] No cloud comments found in pulled object');
+        setCloudComments([]);
+      }
+      
       loadVersionHistory();
       // Force preview re-mount by incrementing version counter
       setPreviewVersion(v => v + 1);
@@ -684,7 +757,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     } finally {
       setCloudPullLoading(false);
     }
-  };
+  };;
 
   const handleCheckIn = async (values: any) => {
     if (!object) return;
@@ -1479,87 +1552,56 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             />
           )}
 
-          {/* Cloud Comments Section (2026-02-03) */}
+          {/* Cloud Comments Section (2026-02-03) - Compact summary with modal for details */}
           {cloudComments.length > 0 && (
-            <Collapse
+            <Card
               size="small"
               style={{ marginTop: 16, marginBottom: 16 }}
-              items={[
-                {
-                  key: 'cloud-comments',
-                  label: (
-                    <Space>
-                      <CommentOutlined />
-                      {t('documentViewer.cloudComments.title', 'クラウドコメント')}
-                      <Tag color="blue">{cloudComments.length}</Tag>
-                    </Space>
-                  ),
-                  children: (
-                    <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-                      {cloudComments.map((comment, index) => (
-                        <div
-                          key={comment.id || index}
-                          style={{
-                            padding: '12px',
-                            borderBottom: index < cloudComments.length - 1 ? '1px solid #f0f0f0' : 'none',
-                            backgroundColor: comment.resolved ? '#f5f5f5' : 'transparent',
-                          }}
-                        >
-                          <div style={{ marginBottom: 8 }}>
-                            <strong>{comment.author}</strong>
-                            {comment.authorEmail && (
-                              <span style={{ color: '#888', marginLeft: 8, fontSize: 12 }}>
-                                ({comment.authorEmail})
-                              </span>
-                            )}
-                            {comment.resolved && (
-                              <Tag color="green" style={{ marginLeft: 8 }}>
-                                {t('documentViewer.cloudComments.resolved', '解決済み')}
-                              </Tag>
-                            )}
-                          </div>
-                          <div style={{ whiteSpace: 'pre-wrap', marginBottom: 8 }}>
-                            {comment.content}
-                          </div>
-                          <div style={{ fontSize: 12, color: '#888' }}>
-                            {new Date(comment.createdTime).toLocaleString('ja-JP')}
-                            {comment.modifiedTime && comment.modifiedTime !== comment.createdTime && (
-                              <span style={{ marginLeft: 8 }}>
-                                ({t('documentViewer.cloudComments.edited', '編集済')})
-                              </span>
-                            )}
-                          </div>
-                          {/* Render replies if any */}
-                          {comment.replies && comment.replies.length > 0 && (
-                            <div style={{ marginTop: 12, marginLeft: 24, borderLeft: '2px solid #e8e8e8', paddingLeft: 12 }}>
-                              {comment.replies.map((reply, replyIndex) => (
-                                <div
-                                  key={reply.id || replyIndex}
-                                  style={{
-                                    padding: '8px 0',
-                                    borderBottom: replyIndex < (comment.replies?.length || 0) - 1 ? '1px solid #f0f0f0' : 'none',
-                                  }}
-                                >
-                                  <div style={{ marginBottom: 4 }}>
-                                    <strong style={{ fontSize: 13 }}>{reply.author}</strong>
-                                  </div>
-                                  <div style={{ whiteSpace: 'pre-wrap', marginBottom: 4, fontSize: 13 }}>
-                                    {reply.content}
-                                  </div>
-                                  <div style={{ fontSize: 11, color: '#888' }}>
-                                    {new Date(reply.createdTime).toLocaleString('ja-JP')}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ),
-                },
-              ]}
-            />
+              title={
+                <Space>
+                  <CommentOutlined />
+                  {t('documentViewer.cloudComments.title', 'クラウドコメント')}
+                  <Tag color="blue">{cloudComments.length}</Tag>
+                </Space>
+              }
+              extra={
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => setCloudCommentsModalVisible(true)}
+                >
+                  {t('documentViewer.cloudComments.viewAll', '全て表示')}
+                </Button>
+              }
+            >
+              {/* Show only first comment as preview */}
+              {cloudComments.slice(0, 1).map((comment, index) => (
+                <div key={comment.id || index}>
+                  <div style={{ marginBottom: 4 }}>
+                    <strong>{comment.author}</strong>
+                    {comment.resolved && (
+                      <Tag color="green" size="small" style={{ marginLeft: 8 }}>
+                        {t('documentViewer.cloudComments.resolved', '解決済み')}
+                      </Tag>
+                    )}
+                  </div>
+                  <Typography.Paragraph
+                    ellipsis={{ rows: 2 }}
+                    style={{ marginBottom: 4, color: '#666' }}
+                  >
+                    {comment.content}
+                  </Typography.Paragraph>
+                  <div style={{ fontSize: 12, color: '#888' }}>
+                    {new Date(comment.createdTime).toLocaleString('ja-JP')}
+                  </div>
+                </div>
+              ))}
+              {cloudComments.length > 1 && (
+                <div style={{ marginTop: 8, color: '#888', fontSize: 12 }}>
+                  {t('documentViewer.cloudComments.moreComments', '他 {{count}} 件のコメント', { count: cloudComments.length - 1 })}
+                </div>
+              )}
+            </Card>
           )}
 
           <Tabs items={tabItems} />
@@ -1622,6 +1664,87 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Cloud Comments Modal */}
+      <Modal
+        title={
+          <Space>
+            <CommentOutlined />
+            {t('documentViewer.cloudComments.title', 'クラウドコメント')}
+            <Tag color="blue">{cloudComments.length}</Tag>
+          </Space>
+        }
+        open={cloudCommentsModalVisible}
+        onCancel={() => setCloudCommentsModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setCloudCommentsModalVisible(false)}>
+            {t('common.close', '閉じる')}
+          </Button>
+        ]}
+        width={700}
+      >
+        <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+          {cloudComments.map((comment, index) => (
+            <div
+              key={comment.id || index}
+              style={{
+                padding: '12px',
+                borderBottom: index < cloudComments.length - 1 ? '1px solid #f0f0f0' : 'none',
+                backgroundColor: comment.resolved ? '#f5f5f5' : 'transparent',
+              }}
+            >
+              <div style={{ marginBottom: 8 }}>
+                <strong>{comment.author}</strong>
+                {comment.authorEmail && (
+                  <span style={{ color: '#888', marginLeft: 8, fontSize: 12 }}>
+                    ({comment.authorEmail})
+                  </span>
+                )}
+                {comment.resolved && (
+                  <Tag color="green" style={{ marginLeft: 8 }}>
+                    {t('documentViewer.cloudComments.resolved', '解決済み')}
+                  </Tag>
+                )}
+              </div>
+              <div style={{ whiteSpace: 'pre-wrap', marginBottom: 8 }}>
+                {comment.content}
+              </div>
+              <div style={{ fontSize: 12, color: '#888' }}>
+                {new Date(comment.createdTime).toLocaleString('ja-JP')}
+                {comment.modifiedTime && comment.modifiedTime !== comment.createdTime && (
+                  <span style={{ marginLeft: 8 }}>
+                    ({t('documentViewer.cloudComments.edited', '編集済')})
+                  </span>
+                )}
+              </div>
+              {/* Render replies if any */}
+              {comment.replies && comment.replies.length > 0 && (
+                <div style={{ marginTop: 12, marginLeft: 24, borderLeft: '2px solid #e8e8e8', paddingLeft: 12 }}>
+                  {comment.replies.map((reply, replyIndex) => (
+                    <div
+                      key={reply.id || replyIndex}
+                      style={{
+                        padding: '8px 0',
+                        borderBottom: replyIndex < (comment.replies?.length || 0) - 1 ? '1px solid #f0f0f0' : 'none',
+                      }}
+                    >
+                      <div style={{ marginBottom: 4 }}>
+                        <strong style={{ fontSize: 13 }}>{reply.author}</strong>
+                      </div>
+                      <div style={{ whiteSpace: 'pre-wrap', marginBottom: 4, fontSize: 13 }}>
+                        {reply.content}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#888' }}>
+                        {new Date(reply.createdTime).toLocaleString('ja-JP')}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </Modal>
 
       <Modal

@@ -1010,7 +1010,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
           </Col>
           <Col span={6}>
             <Statistic
-              title="Eligible Documents"
+              title={t('ragMaintenance.healthCheck.eligibleDocuments')}
               value={ragHealthStatus.eligibleDocuments}
             />
           </Col>

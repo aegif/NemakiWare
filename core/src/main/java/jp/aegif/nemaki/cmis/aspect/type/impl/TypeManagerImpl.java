@@ -4143,6 +4143,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * so subtypes (including secondary types) are not loaded during initial startup.
 	 * Solution: When cache is invalidated (after PatchService creates types), immediately
 	 * regenerate the types for the specific repository to load newly created types.
+	 * 
+	 * CRITICAL FIX (2026-02-04): Also clear ContentDaoService's type cache
+	 * Root cause: ContentDaoService caches type definitions from CouchDB. When TypeManager calls
+	 * generate(), it reads from TypeService which reads from ContentDaoService's CACHED data.
+	 * If ContentDaoService cache is not cleared, TypeManager reads stale data without new types.
+	 * Solution: Call typeService.clearTypeCache() BEFORE generate() to force fresh DB read.
 	 */
 	private void invalidateTypeDefinitionCache(String repositoryId) {
 		synchronized (initLock) {
@@ -4174,6 +4180,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				propertyDefinitionCoresByPropertyId.clear();
 				propertyDefinitionCoresByQueryName.clear();
 				log.debug("invalidateTypeDefinitionCache: Cleared property definition caches");
+			}
+
+			// CRITICAL FIX (2026-02-04): Clear ContentDaoService's type cache BEFORE regenerating
+			// This ensures generate() reads fresh data from CouchDB, not stale cached data
+			if (typeService != null) {
+				log.info("invalidateTypeDefinitionCache: Clearing ContentDaoService type cache for repository=" + repositoryId);
+				typeService.clearTypeCache(repositoryId);
 			}
 
 			// CRITICAL FIX (2025-12-11): Immediately regenerate types for this repository

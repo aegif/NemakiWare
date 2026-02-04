@@ -331,6 +331,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			delete(repositoryId, nodeId);
 		}
 
+
+	@Override
+	public void clearTypeCache(String repositoryId) {
+		// No-op: Non-cached implementation doesn't have a cache to clear
+	}
+
 	@Override
 	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores(String repositoryId) {
 		try {

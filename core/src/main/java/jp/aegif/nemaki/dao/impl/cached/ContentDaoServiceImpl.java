@@ -176,6 +176,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		nemakiCachePool.get(repositoryId).getPropertyDefinitionCache().removeAll();
 	}
 
+
+	@Override
+	public void clearTypeCache(String repositoryId) {
+		log.debug("Clearing type cache for repository: " + repositoryId);
+		NemakiCache<List<NemakiTypeDefinition>> typeCache = nemakiCachePool.get(repositoryId).getTypeCache();
+		typeCache.remove("typedefs");
+		// Also clear property definition cache for consistency
+		nemakiCachePool.get(repositoryId).getPropertyDefinitionCache().removeAll();
+		log.debug("Type cache cleared for repository: " + repositoryId);
+	}
+
 	@Override
 	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores(String repositoryId) {
 		// Check cache first

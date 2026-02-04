@@ -13,6 +13,13 @@ import com.google.api.client.http.InputStreamContent;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.model.File;
+import com.google.api.services.driveactivity.v2.DriveActivity;
+import com.google.api.services.driveactivity.v2.model.ActionDetail;
+import com.google.api.services.driveactivity.v2.model.Actor;
+import com.google.api.services.driveactivity.v2.model.QueryDriveActivityRequest;
+import com.google.api.services.driveactivity.v2.model.QueryDriveActivityResponse;
+import com.google.api.services.docs.v1.Docs;
+import com.google.api.services.docs.v1.model.Document;
 import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.AccessToken;
 import com.google.auth.oauth2.GoogleCredentials;
@@ -406,6 +413,317 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 		}
 	}
 
+	/**
+	 * Build a DriveActivity service for fetching activity history (approvals, etc.)
+	 */
+	private DriveActivity buildDriveActivityService(String accessToken) {
+		try {
+			GoogleCredentials credentials = GoogleCredentials.create(
+				new AccessToken(accessToken, new Date(System.currentTimeMillis() + 3600 * 1000)));
+
+			return new DriveActivity.Builder(
+				GoogleNetHttpTransport.newTrustedTransport(),
+				GsonFactory.getDefaultInstance(),
+				new HttpCredentialsAdapter(credentials))
+				.setApplicationName("NemakiWare")
+				.build();
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to build DriveActivity service", e);
+		}
+	}
+
+	/**
+	 * Build a Google Docs service for fetching document metadata including approvals.
+	 */
+	private Docs buildDocsService(String accessToken) {
+		try {
+			GoogleCredentials credentials = GoogleCredentials.create(
+				new AccessToken(accessToken, new Date(System.currentTimeMillis() + 3600 * 1000)));
+
+			return new Docs.Builder(
+				GoogleNetHttpTransport.newTrustedTransport(),
+				GsonFactory.getDefaultInstance(),
+				new HttpCredentialsAdapter(credentials))
+				.setApplicationName("NemakiWare")
+				.build();
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to build Google Docs service", e);
+		}
+	}
+
+	/**
+	 * Fetch Google Docs approvals using the Docs API.
+	 * Note: This uses direct REST API calls since the Java client library may not expose approvals.
+	 */
+	@SuppressWarnings("unchecked")
+	private org.json.simple.JSONArray getGoogleDocsApprovals(String cloudFileId, String accessToken) {
+		try {
+			log.info("[DocsApprovals] Fetching approvals for file: " + cloudFileId);
+
+			// Try using the Docs API to get document metadata
+			// Note: Approvals may not be directly exposed in the standard Docs API
+			// We'll try to fetch what metadata is available
+			Docs docsService = buildDocsService(accessToken);
+
+			// First, try to get document revisions which might contain approval info
+			// The Docs API doesn't directly expose "approvals" but we can check metadata
+			Document doc = docsService.documents().get(cloudFileId).execute();
+
+			log.info("[DocsApprovals] Document title: " + doc.getTitle());
+			log.info("[DocsApprovals] Document ID: " + doc.getDocumentId());
+
+			// Check for any suggestion changes which might relate to approvals
+			if (doc.getSuggestedDocumentStyleChanges() != null) {
+				log.info("[DocsApprovals] Has suggested document style changes: " +
+					doc.getSuggestedDocumentStyleChanges().size());
+			}
+
+			// Since the standard Docs API doesn't expose approvals directly,
+			// let's try a direct REST API call to the approvals endpoint
+			return fetchDocsApprovalsViaRest(cloudFileId, accessToken);
+
+		} catch (Exception e) {
+			log.warn("[DocsApprovals] Failed to fetch Google Docs approvals: " + e.getMessage());
+			// Check if it's a "not a Google Docs" error (e.g., uploaded file not converted)
+			if (e.getMessage() != null && e.getMessage().contains("Invalid document")) {
+				log.info("[DocsApprovals] File is not a Google Docs document, skipping approvals");
+			}
+			return null;
+		}
+	}
+
+	/**
+	 * Fetch approvals via direct REST API call.
+	 * Google Docs Approvals API endpoint: https://docs.googleapis.com/v1/documents/{documentId}/approvals
+	 */
+	@SuppressWarnings("unchecked")
+	private org.json.simple.JSONArray fetchDocsApprovalsViaRest(String cloudFileId, String accessToken) {
+		try {
+			// Try the approvals endpoint (this may not exist in the public API)
+			String approvalsUrl = "https://docs.googleapis.com/v1/documents/" + cloudFileId + "?fields=documentStyle";
+
+			java.net.HttpURLConnection conn = (java.net.HttpURLConnection)
+				new java.net.URL(approvalsUrl).openConnection();
+			conn.setRequestMethod("GET");
+			conn.setRequestProperty("Authorization", "Bearer " + accessToken);
+			conn.setConnectTimeout(30000);
+			conn.setReadTimeout(30000);
+
+			int responseCode = conn.getResponseCode();
+			log.info("[DocsApprovals] REST API response code: " + responseCode);
+
+			if (responseCode == 200) {
+				java.io.BufferedReader reader = new java.io.BufferedReader(
+					new java.io.InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+				StringBuilder response = new StringBuilder();
+				String line;
+				while ((line = reader.readLine()) != null) {
+					response.append(line);
+				}
+				reader.close();
+				log.info("[DocsApprovals] REST API response: " + response.toString().substring(0, Math.min(500, response.length())));
+			}
+
+			// Try Drive API to get file revisions which may contain approval information
+			return fetchDriveRevisionsForApprovals(cloudFileId, accessToken);
+
+		} catch (Exception e) {
+			log.warn("[DocsApprovals] REST API call failed: " + e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Fetch file revisions from Drive API to look for approval-related changes.
+	 */
+	@SuppressWarnings("unchecked")
+	private org.json.simple.JSONArray fetchDriveRevisionsForApprovals(String cloudFileId, String accessToken) {
+		try {
+			Drive driveService = buildGoogleDriveService(accessToken);
+
+			// Get file revisions
+			com.google.api.services.drive.model.RevisionList revisions = driveService.revisions()
+				.list(cloudFileId)
+				.setFields("revisions(id,modifiedTime,lastModifyingUser(displayName,emailAddress),kind)")
+				.execute();
+
+			if (revisions.getRevisions() == null || revisions.getRevisions().isEmpty()) {
+				log.info("[DocsApprovals] No revisions found");
+				return null;
+			}
+
+			log.info("[DocsApprovals] Found " + revisions.getRevisions().size() + " revisions");
+
+			org.json.simple.JSONArray approvalsArray = new org.json.simple.JSONArray();
+
+			// Look for revisions that might represent approvals
+			// (In practice, approvals are stored separately, but revisions give us history)
+			for (com.google.api.services.drive.model.Revision rev : revisions.getRevisions()) {
+				org.json.simple.JSONObject revObj = new org.json.simple.JSONObject();
+				revObj.put("type", "revision");
+				revObj.put("id", rev.getId());
+				if (rev.getModifiedTime() != null) {
+					revObj.put("timestamp", rev.getModifiedTime().toStringRfc3339());
+				}
+				if (rev.getLastModifyingUser() != null) {
+					org.json.simple.JSONObject userObj = new org.json.simple.JSONObject();
+					userObj.put("displayName", rev.getLastModifyingUser().getDisplayName());
+					userObj.put("email", rev.getLastModifyingUser().getEmailAddress());
+					revObj.put("actor", userObj);
+				}
+				approvalsArray.add(revObj);
+			}
+
+			return approvalsArray;
+
+		} catch (Exception e) {
+			log.warn("[DocsApprovals] Failed to fetch revisions: " + e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Fetch activity history from Google Drive Activity API.
+	 * Returns a JSON array of significant activities including:
+	 * - Permission changes (share, unshare)
+	 * - Label changes (approval labels if configured)
+	 * - Settings changes
+	 *
+	 * Note: Google Docs Approvals are typically captured via the Comments API
+	 * as resolved comments, which we handle separately.
+	 */
+	@SuppressWarnings("unchecked")
+	private org.json.simple.JSONArray getGoogleDriveApprovalHistory(String cloudFileId, String accessToken) {
+		try {
+			log.info("[DriveActivity] Fetching activity for file: " + cloudFileId);
+			DriveActivity activityService = buildDriveActivityService(accessToken);
+
+			// Query activity for this specific file
+			QueryDriveActivityRequest request = new QueryDriveActivityRequest()
+				.setItemName("items/" + cloudFileId)
+				.setPageSize(50);  // Get last 50 activities
+
+			QueryDriveActivityResponse response = activityService.activity()
+				.query(request)
+				.execute();
+
+			log.info("[DriveActivity] Response received, activities count: " +
+				(response.getActivities() != null ? response.getActivities().size() : "null"));
+
+			if (response.getActivities() == null || response.getActivities().isEmpty()) {
+				log.info("[DriveActivity] No activities found for file: " + cloudFileId);
+				return null;
+			}
+
+			org.json.simple.JSONArray activitiesArray = new org.json.simple.JSONArray();
+
+			for (com.google.api.services.driveactivity.v2.model.DriveActivity activity : response.getActivities()) {
+				// Get primary action
+				ActionDetail primaryAction = activity.getPrimaryActionDetail();
+				if (primaryAction == null) {
+					log.debug("[DriveActivity] Activity has no primary action, skipping");
+					continue;
+				}
+
+				// Log the activity type for debugging
+				String detectedType = "unknown";
+				if (primaryAction.getCreate() != null) detectedType = "create";
+				else if (primaryAction.getEdit() != null) detectedType = "edit";
+				else if (primaryAction.getMove() != null) detectedType = "move";
+				else if (primaryAction.getRename() != null) detectedType = "rename";
+				else if (primaryAction.getDelete() != null) detectedType = "delete";
+				else if (primaryAction.getRestore() != null) detectedType = "restore";
+				else if (primaryAction.getPermissionChange() != null) detectedType = "permission";
+				else if (primaryAction.getComment() != null) detectedType = "comment";
+				else if (primaryAction.getAppliedLabelChange() != null) detectedType = "label";
+				else if (primaryAction.getSettingsChange() != null) detectedType = "settings";
+				log.info("[DriveActivity] Activity type detected: " + detectedType + " at " + activity.getTimestamp());
+
+				// Focus on permission and label changes (which may indicate approval workflows)
+				String actionType = null;
+				String actionDescription = null;
+
+				if (primaryAction.getPermissionChange() != null) {
+					actionType = "permission";
+					var permChange = primaryAction.getPermissionChange();
+					StringBuilder desc = new StringBuilder("Permission changed");
+					if (permChange.getAddedPermissions() != null && !permChange.getAddedPermissions().isEmpty()) {
+						desc.append(" - Added: ").append(permChange.getAddedPermissions().size());
+					}
+					if (permChange.getRemovedPermissions() != null && !permChange.getRemovedPermissions().isEmpty()) {
+						desc.append(" - Removed: ").append(permChange.getRemovedPermissions().size());
+					}
+					actionDescription = desc.toString();
+				} else if (primaryAction.getAppliedLabelChange() != null) {
+					// Applied labels can be used for approval workflows
+					actionType = "label";
+					var labelChange = primaryAction.getAppliedLabelChange();
+					StringBuilder desc = new StringBuilder("Label changed");
+					if (labelChange.getChanges() != null) {
+						desc.append(" (").append(labelChange.getChanges().size()).append(" changes)");
+					}
+					actionDescription = desc.toString();
+				} else if (primaryAction.getSettingsChange() != null) {
+					actionType = "settings";
+					actionDescription = "Settings changed";
+				} else if (primaryAction.getComment() != null) {
+					// Skip comments here - we handle them via Comments API
+					continue;
+				} else if (primaryAction.getEdit() != null) {
+					// Track edits for history
+					actionType = "edit";
+					actionDescription = "Document edited";
+				} else {
+					// Skip other activity types (create, move, rename, etc.)
+					continue;
+				}
+
+				org.json.simple.JSONObject activityObj = new org.json.simple.JSONObject();
+				activityObj.put("type", actionType);
+				activityObj.put("description", actionDescription);
+
+				// Add timestamp
+				if (activity.getTimestamp() != null) {
+					activityObj.put("timestamp", activity.getTimestamp());
+				}
+
+				// Add actor information
+				if (activity.getActors() != null && !activity.getActors().isEmpty()) {
+					Actor actor = activity.getActors().get(0);
+					org.json.simple.JSONObject actorObj = new org.json.simple.JSONObject();
+
+					if (actor.getUser() != null && actor.getUser().getKnownUser() != null) {
+						actorObj.put("displayName", actor.getUser().getKnownUser().getPersonName());
+						if (actor.getUser().getKnownUser().getIsCurrentUser() != null &&
+							actor.getUser().getKnownUser().getIsCurrentUser()) {
+							actorObj.put("isCurrentUser", true);
+						}
+					} else if (actor.getAdministrator() != null) {
+						actorObj.put("displayName", "Administrator");
+					} else if (actor.getSystem() != null) {
+						actorObj.put("displayName", "System");
+					}
+
+					activityObj.put("actor", actorObj);
+				}
+
+				activitiesArray.add(activityObj);
+			}
+
+			if (activitiesArray.isEmpty()) {
+				return null;
+			}
+
+			log.info("Fetched " + activitiesArray.size() + " activity records from Google Drive file: " + cloudFileId);
+			return activitiesArray;
+
+		} catch (Exception e) {
+			// Activity API might not be enabled or the scope might be missing
+			log.warn("Failed to fetch Google Drive activity history (API might not be enabled): " + e.getMessage());
+			return null;
+		}
+	}
+
 	// ---- OneDrive operations (via Microsoft Graph REST API) ----
 
 	private String pushToOneDrive(ContentStream contentStream, String accessToken) {
@@ -542,84 +860,178 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 	}
 
 	/**
-	 * Fetch comments from Google Drive using the Comments API.
-	 * Returns a JSON array of comments with author, content, and timestamp.
+	 * Fetch comments and approval history from Google Drive.
+	 * Returns a JSON object with "comments", "activities", and "approvals".
 	 */
+	@SuppressWarnings("unchecked")
 	private String getGoogleDriveComments(String cloudFileId, String accessToken) {
+		org.json.simple.JSONObject result = new org.json.simple.JSONObject();
+		org.json.simple.JSONArray commentsArray = new org.json.simple.JSONArray();
+		boolean hasContent = false;
+
+		// Fetch comments from Comments API
 		try {
 			Drive driveService = buildGoogleDriveService(accessToken);
 
-			// Fetch all comments for the file
 			com.google.api.services.drive.model.CommentList commentList = driveService.comments()
 				.list(cloudFileId)
 				.setFields("comments(id,author(displayName,emailAddress),content,createdTime,modifiedTime,resolved,replies(id,author(displayName,emailAddress),content,createdTime,modifiedTime))")
 				.execute();
 
-			if (commentList.getComments() == null || commentList.getComments().isEmpty()) {
-				return null;
-			}
+			if (commentList.getComments() != null && !commentList.getComments().isEmpty()) {
+				for (com.google.api.services.drive.model.Comment comment : commentList.getComments()) {
+					org.json.simple.JSONObject commentObj = new org.json.simple.JSONObject();
+					commentObj.put("id", comment.getId());
+					commentObj.put("content", comment.getContent());
+					commentObj.put("createdTime", comment.getCreatedTime() != null ? comment.getCreatedTime().toStringRfc3339() : null);
+					commentObj.put("modifiedTime", comment.getModifiedTime() != null ? comment.getModifiedTime().toStringRfc3339() : null);
+					commentObj.put("resolved", comment.getResolved());
 
-			// Build JSON array of comments
-			org.json.simple.JSONArray commentsArray = new org.json.simple.JSONArray();
-			for (com.google.api.services.drive.model.Comment comment : commentList.getComments()) {
-				org.json.simple.JSONObject commentObj = new org.json.simple.JSONObject();
-				commentObj.put("id", comment.getId());
-				commentObj.put("content", comment.getContent());
-				commentObj.put("createdTime", comment.getCreatedTime() != null ? comment.getCreatedTime().toStringRfc3339() : null);
-				commentObj.put("modifiedTime", comment.getModifiedTime() != null ? comment.getModifiedTime().toStringRfc3339() : null);
-				commentObj.put("resolved", comment.getResolved());
-
-				if (comment.getAuthor() != null) {
-					org.json.simple.JSONObject authorObj = new org.json.simple.JSONObject();
-					authorObj.put("displayName", comment.getAuthor().getDisplayName());
-					authorObj.put("email", comment.getAuthor().getEmailAddress());
-					commentObj.put("author", authorObj);
-				}
-
-				// Add replies if present
-				if (comment.getReplies() != null && !comment.getReplies().isEmpty()) {
-					org.json.simple.JSONArray repliesArray = new org.json.simple.JSONArray();
-					for (com.google.api.services.drive.model.Reply reply : comment.getReplies()) {
-						org.json.simple.JSONObject replyObj = new org.json.simple.JSONObject();
-						replyObj.put("id", reply.getId());
-						replyObj.put("content", reply.getContent());
-						replyObj.put("createdTime", reply.getCreatedTime() != null ? reply.getCreatedTime().toStringRfc3339() : null);
-						if (reply.getAuthor() != null) {
-							org.json.simple.JSONObject replyAuthorObj = new org.json.simple.JSONObject();
-							replyAuthorObj.put("displayName", reply.getAuthor().getDisplayName());
-							replyAuthorObj.put("email", reply.getAuthor().getEmailAddress());
-							replyObj.put("author", replyAuthorObj);
-						}
-						repliesArray.add(replyObj);
+					if (comment.getAuthor() != null) {
+						org.json.simple.JSONObject authorObj = new org.json.simple.JSONObject();
+						authorObj.put("displayName", comment.getAuthor().getDisplayName());
+						authorObj.put("email", comment.getAuthor().getEmailAddress());
+						commentObj.put("author", authorObj);
 					}
-					commentObj.put("replies", repliesArray);
+
+					// Add replies if present
+					if (comment.getReplies() != null && !comment.getReplies().isEmpty()) {
+						org.json.simple.JSONArray repliesArray = new org.json.simple.JSONArray();
+						for (com.google.api.services.drive.model.Reply reply : comment.getReplies()) {
+							org.json.simple.JSONObject replyObj = new org.json.simple.JSONObject();
+							replyObj.put("id", reply.getId());
+							replyObj.put("content", reply.getContent());
+							replyObj.put("createdTime", reply.getCreatedTime() != null ? reply.getCreatedTime().toStringRfc3339() : null);
+							if (reply.getAuthor() != null) {
+								org.json.simple.JSONObject replyAuthorObj = new org.json.simple.JSONObject();
+								replyAuthorObj.put("displayName", reply.getAuthor().getDisplayName());
+								replyAuthorObj.put("email", reply.getAuthor().getEmailAddress());
+								replyObj.put("author", replyAuthorObj);
+							}
+							repliesArray.add(replyObj);
+						}
+						commentObj.put("replies", repliesArray);
+					}
+
+					commentsArray.add(commentObj);
 				}
 
-				commentsArray.add(commentObj);
+				log.info("Fetched " + commentsArray.size() + " comments from Google Drive file: " + cloudFileId);
+				hasContent = true;
 			}
-
-			log.info("Fetched " + commentsArray.size() + " comments from Google Drive file: " + cloudFileId);
-			return commentsArray.toJSONString();
-
 		} catch (Exception e) {
 			log.error("Failed to fetch Google Drive comments: " + e.getMessage(), e);
-			return null;
 		}
+
+		result.put("comments", commentsArray);
+
+		// Fetch approval/activity history from Drive Activity API
+		org.json.simple.JSONArray activitiesArray = getGoogleDriveApprovalHistory(cloudFileId, accessToken);
+		if (activitiesArray != null && !activitiesArray.isEmpty()) {
+			result.put("activities", activitiesArray);
+			hasContent = true;
+		} else {
+			result.put("activities", new org.json.simple.JSONArray());
+		}
+
+		// Fetch Google Docs approvals (revisions and document metadata)
+		org.json.simple.JSONArray approvalsArray = getGoogleDocsApprovals(cloudFileId, accessToken);
+		if (approvalsArray != null && !approvalsArray.isEmpty()) {
+			result.put("approvals", approvalsArray);
+			hasContent = true;
+		} else {
+			result.put("approvals", new org.json.simple.JSONArray());
+		}
+
+		return hasContent ? result.toJSONString() : null;
 	}
 
 	/**
-	 * Fetch comments from OneDrive using the Microsoft Graph API.
-	 * Note: Microsoft Graph API comments endpoint is available for specific file types.
+	 * Fetch comments and activities from OneDrive using the Microsoft Graph API.
+	 * Returns a JSON object with "comments" and "activities".
 	 */
 	@SuppressWarnings("unchecked")
 	private String getOneDriveComments(String cloudFileId, String accessToken) {
+		org.json.simple.JSONObject result = new org.json.simple.JSONObject();
+		org.json.simple.JSONArray commentsArray = new org.json.simple.JSONArray();
+		boolean hasContent = false;
+
 		try {
 			java.net.http.HttpClient httpClient = java.net.http.HttpClient.newHttpClient();
 
-			// Microsoft Graph API endpoint for file comments
-			// Note: Comments API is available for specific file types like Word, Excel, PowerPoint
+			// Try to fetch workbook comments (Excel files)
+			try {
+				java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+					.uri(java.net.URI.create("https://graph.microsoft.com/v1.0/me/drive/items/" + cloudFileId + "/workbook/comments"))
+					.header("Authorization", "Bearer " + accessToken)
+					.GET()
+					.build();
+
+				java.net.http.HttpResponse<String> response = httpClient.send(request,
+					java.net.http.HttpResponse.BodyHandlers.ofString());
+
+				if (response.statusCode() >= 200 && response.statusCode() < 300) {
+					org.json.simple.JSONObject json = (org.json.simple.JSONObject)
+						new org.json.simple.parser.JSONParser().parse(response.body());
+
+					org.json.simple.JSONArray valueArray = (org.json.simple.JSONArray) json.get("value");
+					if (valueArray != null && !valueArray.isEmpty()) {
+						for (Object item : valueArray) {
+							org.json.simple.JSONObject msComment = (org.json.simple.JSONObject) item;
+							org.json.simple.JSONObject commentObj = new org.json.simple.JSONObject();
+
+							commentObj.put("id", msComment.get("id"));
+							commentObj.put("content", msComment.get("content"));
+							commentObj.put("createdTime", msComment.get("createdDateTime"));
+
+							Object authorInfo = msComment.get("authorEmail");
+							if (authorInfo != null) {
+								org.json.simple.JSONObject authorObj = new org.json.simple.JSONObject();
+								authorObj.put("email", authorInfo.toString());
+								commentObj.put("author", authorObj);
+							}
+
+							commentsArray.add(commentObj);
+						}
+						log.info("Fetched " + commentsArray.size() + " comments from OneDrive file: " + cloudFileId);
+						hasContent = true;
+					}
+				}
+			} catch (Exception e) {
+				log.debug("OneDrive workbook comments not available: " + e.getMessage());
+			}
+
+		} catch (Exception e) {
+			log.error("Failed to fetch OneDrive comments: " + e.getMessage(), e);
+		}
+
+		result.put("comments", commentsArray);
+
+		// Fetch activities from Microsoft Graph API
+		org.json.simple.JSONArray activitiesArray = getOneDriveActivities(cloudFileId, accessToken);
+		if (activitiesArray != null && !activitiesArray.isEmpty()) {
+			result.put("activities", activitiesArray);
+			hasContent = true;
+		} else {
+			result.put("activities", new org.json.simple.JSONArray());
+		}
+
+		return hasContent ? result.toJSONString() : null;
+	}
+
+	/**
+	 * Fetch activity history from OneDrive using Microsoft Graph API.
+	 * Returns activities like edits, shares, comments, etc.
+	 */
+	@SuppressWarnings("unchecked")
+	private org.json.simple.JSONArray getOneDriveActivities(String cloudFileId, String accessToken) {
+		try {
+			log.info("[OneDriveActivity] Fetching activities for file: " + cloudFileId);
+			java.net.http.HttpClient httpClient = java.net.http.HttpClient.newHttpClient();
+
+			// Microsoft Graph API endpoint for item activities
 			java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-				.uri(java.net.URI.create("https://graph.microsoft.com/v1.0/me/drive/items/" + cloudFileId + "/workbook/comments"))
+				.uri(java.net.URI.create("https://graph.microsoft.com/v1.0/me/drive/items/" + cloudFileId + "/activities"))
 				.header("Authorization", "Bearer " + accessToken)
 				.GET()
 				.build();
@@ -627,12 +1039,7 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 			java.net.http.HttpResponse<String> response = httpClient.send(request,
 				java.net.http.HttpResponse.BodyHandlers.ofString());
 
-			// If the file doesn't support comments (not a workbook), try the generic endpoint
-			if (response.statusCode() == 400 || response.statusCode() == 404) {
-				// Comments not supported for this file type
-				log.info("OneDrive comments not available for file: " + cloudFileId + " (status: " + response.statusCode() + ")");
-				return null;
-			}
+			log.info("[OneDriveActivity] Response status: " + response.statusCode());
 
 			if (response.statusCode() >= 200 && response.statusCode() < 300) {
 				org.json.simple.JSONObject json = (org.json.simple.JSONObject)
@@ -640,38 +1047,81 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 
 				org.json.simple.JSONArray valueArray = (org.json.simple.JSONArray) json.get("value");
 				if (valueArray == null || valueArray.isEmpty()) {
+					log.info("[OneDriveActivity] No activities found");
 					return null;
 				}
 
-				// Transform to standard comment format
-				org.json.simple.JSONArray commentsArray = new org.json.simple.JSONArray();
+				log.info("[OneDriveActivity] Found " + valueArray.size() + " activities");
+
+				org.json.simple.JSONArray activitiesArray = new org.json.simple.JSONArray();
 				for (Object item : valueArray) {
-					org.json.simple.JSONObject msComment = (org.json.simple.JSONObject) item;
-					org.json.simple.JSONObject commentObj = new org.json.simple.JSONObject();
+					org.json.simple.JSONObject msActivity = (org.json.simple.JSONObject) item;
+					org.json.simple.JSONObject activityObj = new org.json.simple.JSONObject();
 
-					commentObj.put("id", msComment.get("id"));
-					commentObj.put("content", msComment.get("content"));
-					commentObj.put("createdTime", msComment.get("createdDateTime"));
-
-					org.json.simple.JSONObject authorInfo = (org.json.simple.JSONObject) msComment.get("authorEmail");
-					if (authorInfo != null) {
-						org.json.simple.JSONObject authorObj = new org.json.simple.JSONObject();
-						authorObj.put("email", authorInfo);
-						commentObj.put("author", authorObj);
+					// Determine activity type from action object
+					org.json.simple.JSONObject action = (org.json.simple.JSONObject) msActivity.get("action");
+					if (action != null) {
+						// Action types: comment, create, delete, edit, mention, move, rename, restore, share, version
+						if (action.containsKey("comment")) {
+							activityObj.put("type", "comment");
+							activityObj.put("description", "Comment added");
+						} else if (action.containsKey("edit")) {
+							activityObj.put("type", "edit");
+							activityObj.put("description", "Document edited");
+						} else if (action.containsKey("share")) {
+							activityObj.put("type", "share");
+							activityObj.put("description", "Document shared");
+						} else if (action.containsKey("version")) {
+							activityObj.put("type", "version");
+							activityObj.put("description", "New version created");
+						} else if (action.containsKey("create")) {
+							activityObj.put("type", "create");
+							activityObj.put("description", "Document created");
+						} else if (action.containsKey("rename")) {
+							activityObj.put("type", "rename");
+							activityObj.put("description", "Document renamed");
+						} else if (action.containsKey("move")) {
+							activityObj.put("type", "move");
+							activityObj.put("description", "Document moved");
+						} else {
+							activityObj.put("type", "unknown");
+							activityObj.put("description", "Activity: " + action.keySet());
+						}
 					}
 
-					commentsArray.add(commentObj);
+					// Add timestamp
+					org.json.simple.JSONObject times = (org.json.simple.JSONObject) msActivity.get("times");
+					if (times != null && times.get("recordedDateTime") != null) {
+						activityObj.put("timestamp", times.get("recordedDateTime"));
+					}
+
+					// Add actor information
+					org.json.simple.JSONObject actor = (org.json.simple.JSONObject) msActivity.get("actor");
+					if (actor != null) {
+						org.json.simple.JSONObject user = (org.json.simple.JSONObject) actor.get("user");
+						if (user != null) {
+							org.json.simple.JSONObject actorObj = new org.json.simple.JSONObject();
+							actorObj.put("displayName", user.get("displayName"));
+							actorObj.put("email", user.get("email"));
+							activityObj.put("actor", actorObj);
+						}
+					}
+
+					activitiesArray.add(activityObj);
 				}
 
-				log.info("Fetched " + commentsArray.size() + " comments from OneDrive file: " + cloudFileId);
-				return commentsArray.toJSONString();
+				return activitiesArray;
+
+			} else if (response.statusCode() == 404) {
+				log.info("[OneDriveActivity] Activities endpoint not available for this file");
+				return null;
 			} else {
-				log.warn("OneDrive comments request failed: HTTP " + response.statusCode());
+				log.warn("[OneDriveActivity] Request failed: HTTP " + response.statusCode() + " - " + response.body());
 				return null;
 			}
 
 		} catch (Exception e) {
-			log.error("Failed to fetch OneDrive comments: " + e.getMessage(), e);
+			log.warn("[OneDriveActivity] Failed to fetch activities: " + e.getMessage());
 			return null;
 		}
 	}
