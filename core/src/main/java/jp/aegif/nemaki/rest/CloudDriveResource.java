@@ -488,16 +488,17 @@ public class CloudDriveResource extends ResourceBase {
 			objectService.setContentStream(callContext, repositoryId, objectIdHolder, true, newStream, changeTokenHolder, null);
 
 			// Fetch and save comments from the cloud file
-			log.info("[pullFromCloud] Fetching comments for cloudFileId=" + cloudFileId);
+			log.debug("[pullFromCloud] Fetching comments for cloudFileId=" + cloudFileId);
 			try {
 				String comments = service.getCloudComments(provider, cloudFileId, accessToken);
-				log.info("[pullFromCloud] Comments result: " + (comments != null ? comments.substring(0, Math.min(200, comments.length())) : "null"));
+				// Avoid logging comment content to prevent PII/sensitive data leakage
+				log.debug("[pullFromCloud] Comments fetched: " + (comments != null ? "found" : "none"));
 				if (comments != null && !comments.isEmpty()) {
 					saveCloudComments(callContext, repositoryId, objectId, comments);
 					result.put("commentsImported", true);
-					log.info("[pullFromCloud] Imported comments from cloud file " + cloudFileId + " to object " + objectId);
+					log.info("[pullFromCloud] Imported cloud comments to object " + objectId);
 				} else {
-					log.info("[pullFromCloud] No comments found for cloud file: " + cloudFileId);
+					log.debug("[pullFromCloud] No comments found for cloud file");
 				}
 			} catch (Exception e) {
 				// Don't fail the pull operation just because comments fetch failed
@@ -981,6 +982,52 @@ public class CloudDriveResource extends ResourceBase {
 		props.add(newProp);
 	}
 
+	// Maximum size limit for cloud comments to prevent DB bloat (5000 chars for RAG compatibility)
+	private static final int MAX_CLOUD_COMMENTS_SIZE = 5000;
+
+	/**
+	 * Truncate cloud comments JSON to stay within size limits.
+	 * Preserves the most recent comments/activities by removing older entries first.
+	 */
+	@SuppressWarnings("unchecked")
+	private String truncateCloudCommentsIfNeeded(String commentsJson) {
+		if (commentsJson == null || commentsJson.length() <= MAX_CLOUD_COMMENTS_SIZE) {
+			return commentsJson;
+		}
+
+		try {
+			org.json.simple.parser.JSONParser parser = new org.json.simple.parser.JSONParser();
+			org.json.simple.JSONObject json = (org.json.simple.JSONObject) parser.parse(commentsJson);
+
+			// Remove older entries from comments array (keep most recent)
+			if (json.containsKey("comments")) {
+				org.json.simple.JSONArray comments = (org.json.simple.JSONArray) json.get("comments");
+				while (json.toJSONString().length() > MAX_CLOUD_COMMENTS_SIZE && comments.size() > 1) {
+					comments.remove(0); // Remove oldest
+				}
+			}
+
+			// Remove older entries from activities array
+			if (json.containsKey("activities")) {
+				org.json.simple.JSONArray activities = (org.json.simple.JSONArray) json.get("activities");
+				while (json.toJSONString().length() > MAX_CLOUD_COMMENTS_SIZE && activities.size() > 1) {
+					activities.remove(0); // Remove oldest
+				}
+			}
+
+			String result = json.toJSONString();
+			if (result.length() > MAX_CLOUD_COMMENTS_SIZE) {
+				log.warn("Cloud comments still exceed size limit after truncation, truncating raw JSON");
+				result = result.substring(0, MAX_CLOUD_COMMENTS_SIZE);
+			}
+			log.info("Truncated cloud comments from " + commentsJson.length() + " to " + result.length() + " characters");
+			return result;
+		} catch (Exception e) {
+			log.warn("Failed to parse cloud comments for truncation, using raw truncation: " + e.getMessage());
+			return commentsJson.substring(0, MAX_CLOUD_COMMENTS_SIZE);
+		}
+	}
+
 	/**
 	 * Save cloud comments as a secondary type property on the CMIS object.
 	 * SECURITY: Requires authenticated CallContext for proper permission checks.
@@ -996,6 +1043,9 @@ public class CloudDriveResource extends ResourceBase {
 		if (callContext == null) {
 			throw new IllegalArgumentException("CallContext is required for permission enforcement");
 		}
+
+		// Truncate to prevent DB bloat and ensure RAG compatibility
+		commentsJson = truncateCloudCommentsIfNeeded(commentsJson);
 
 		ContentService cs = getContentService();
 		if (cs == null) return;

@@ -469,12 +469,12 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 			// The Docs API doesn't directly expose "approvals" but we can check metadata
 			Document doc = docsService.documents().get(cloudFileId).execute();
 
-			log.info("[DocsApprovals] Document title: " + doc.getTitle());
-			log.info("[DocsApprovals] Document ID: " + doc.getDocumentId());
+			// Avoid logging document title/metadata to prevent sensitive data leakage
+			log.debug("[DocsApprovals] Document retrieved successfully");
 
 			// Check for any suggestion changes which might relate to approvals
 			if (doc.getSuggestedDocumentStyleChanges() != null) {
-				log.info("[DocsApprovals] Has suggested document style changes: " +
+				log.debug("[DocsApprovals] Has suggested document style changes: " +
 					doc.getSuggestedDocumentStyleChanges().size());
 			}
 
@@ -510,7 +510,7 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 			conn.setReadTimeout(30000);
 
 			int responseCode = conn.getResponseCode();
-			log.info("[DocsApprovals] REST API response code: " + responseCode);
+			log.debug("[DocsApprovals] REST API response code: " + responseCode);
 
 			if (responseCode == 200) {
 				java.io.BufferedReader reader = new java.io.BufferedReader(
@@ -521,7 +521,8 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 					response.append(line);
 				}
 				reader.close();
-				log.info("[DocsApprovals] REST API response: " + response.toString().substring(0, Math.min(500, response.length())));
+				// Avoid logging response content to prevent sensitive data leakage
+				log.debug("[DocsApprovals] REST API response received");
 			}
 
 			// Try Drive API to get file revisions which may contain approval information
