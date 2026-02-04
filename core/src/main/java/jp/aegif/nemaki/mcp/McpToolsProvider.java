@@ -3,11 +3,15 @@ package jp.aegif.nemaki.mcp;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -667,6 +671,9 @@ public class McpToolsProvider {
                 repositoryId, userId, query.trim(), topK, minScore
             );
 
+            // SECURITY: Apply ACL double-check to guard against stale Solr ACL data
+            results = filterByCurrentPermissions(repositoryId, userId, results);
+
             return resultFactory.success(formatSearchResults(query, results, repositoryId));
 
         } catch (Exception e) {
@@ -702,6 +709,9 @@ public class McpToolsProvider {
             List<VectorSearchResult> results = vectorSearchService.findSimilarDocuments(
                 repositoryId, userId, documentId.trim(), topK, minScore
             );
+
+            // SECURITY: Apply ACL double-check to guard against stale Solr ACL data
+            results = filterByCurrentPermissions(repositoryId, userId, results);
 
             return resultFactory.success(formatSimilarDocumentsResults(documentId, results, repositoryId));
 
@@ -1092,5 +1102,109 @@ public class McpToolsProvider {
             // Fail closed: deny access on error
             return false;
         }
+    }
+
+    /**
+     * Filter search results by current CMIS permissions using batch operations.
+     * This provides a security double-check against potentially stale Solr ACL data.
+     *
+     * <p><strong>Performance Optimization:</strong> Uses batch APIs to reduce database calls.</p>
+     *
+     * @param repositoryId Repository ID
+     * @param userId User ID for permission check
+     * @param results Search results to filter
+     * @return Filtered results that the user can actually access
+     */
+    private List<VectorSearchResult> filterByCurrentPermissions(
+            String repositoryId, String userId, List<VectorSearchResult> results) {
+
+        if (results == null || results.isEmpty()) {
+            return results;
+        }
+
+        // Collect unique document IDs (RAG results may have multiple chunks from same document)
+        List<String> documentIds = results.stream()
+                .map(VectorSearchResult::getDocumentId)
+                .filter(id -> id != null)
+                .distinct()
+                .collect(Collectors.toList());
+
+        if (documentIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // Batch fetch all contents
+        Map<String, Content> contents = contentService.getContentsByIds(repositoryId, documentIds);
+
+        if (contents.isEmpty()) {
+            if (log.isDebugEnabled()) {
+                log.debug("MCP RAG filter: none of {} documents found", documentIds.size());
+            }
+            return new ArrayList<>();
+        }
+
+        // Build baseTypes map from TypeManager
+        Map<String, String> baseTypes = new HashMap<>();
+        for (Map.Entry<String, Content> entry : contents.entrySet()) {
+            String docId = entry.getKey();
+            Content content = entry.getValue();
+            try {
+                TypeDefinition td = typeManager.getTypeDefinition(repositoryId, content);
+                if (td != null && td.getBaseTypeId() != null) {
+                    baseTypes.put(docId, td.getBaseTypeId().value());
+                }
+            } catch (Exception e) {
+                log.warn("Failed to get type definition for document {}: {}", docId, e.getMessage());
+            }
+        }
+
+        // Remove contents without valid base types
+        contents.keySet().retainAll(baseTypes.keySet());
+
+        if (contents.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // Batch calculate ACLs
+        Map<String, Acl> acls = contentService.calculateAcls(repositoryId, contents.values());
+
+        // Get user's groups for permission check
+        Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userId);
+
+        // Create CallContext for permission check
+        CallContext callContext = new McpCallContext(repositoryId, userId);
+
+        // Batch permission check
+        String permissionKey = PermissionMapping.CAN_GET_PROPERTIES_OBJECT;
+        Map<String, Boolean> permissions = permissionService.checkPermissions(
+                callContext, repositoryId, permissionKey, acls, baseTypes, contents);
+
+        // Filter results based on permissions
+        List<VectorSearchResult> filtered = new ArrayList<>();
+        int removedCount = 0;
+
+        for (VectorSearchResult result : results) {
+            String documentId = result.getDocumentId();
+            if (documentId == null) {
+                continue;
+            }
+
+            Boolean hasPermission = permissions.get(documentId);
+            if (hasPermission != null && hasPermission) {
+                filtered.add(result);
+            } else {
+                removedCount++;
+                if (log.isDebugEnabled()) {
+                    log.debug("MCP RAG result filtered: user {} lacks permission for document {}",
+                            userId, documentId);
+                }
+            }
+        }
+
+        if (log.isDebugEnabled() && removedCount > 0) {
+            log.debug("MCP RAG filter removed {} results due to permission checks", removedCount);
+        }
+
+        return filtered;
     }
 }

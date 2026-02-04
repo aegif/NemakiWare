@@ -282,6 +282,7 @@ import { PreviewComponent } from '../PreviewComponent/PreviewComponent';
 import { ObjectPicker } from '../ObjectPicker/ObjectPicker';
 import { SecondaryTypeSelector } from '../SecondaryTypeSelector/SecondaryTypeSelector';
 import { TypeMigrationModal } from '../TypeMigrationModal/TypeMigrationModal';
+import { ExternalContextTab } from './ExternalContextTab';
 import { canPreview } from '../../utils/previewUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchCloudAuthConfig, CloudAuthConfig } from '../../services/cloud-auth';
@@ -336,6 +337,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   // Cloud comments state (2026-02-03)
   const [cloudComments, setCloudComments] = useState<CloudComment[]>([]);
   const [cloudCommentsModalVisible, setCloudCommentsModalVisible] = useState(false);
+  // External context state (2026-02-04) - nemaki:externalIntegration secondary type
+  const [externalContext, setExternalContext] = useState<string | null>(null);
+  const [externalSourceType, setExternalSourceType] = useState<string | null>(null);
+  const [externalSourceId, setExternalSourceId] = useState<string | null>(null);
+  const [externalContextUpdatedAt, setExternalContextUpdatedAt] = useState<string | null>(null);
   const [relationshipTypeDefinition, setRelationshipTypeDefinition] = useState<TypeDefinition | null>(null);
   // RAG Similar Documents state
   const [ragEnabled, setRagEnabled] = useState(false);
@@ -514,6 +520,21 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         }
       } else {
         setCloudComments([]);
+      }
+
+      // Extract external context from nemaki:externalIntegration secondary type (2026-02-04)
+      const externalContextValue = getSafeStringValue(obj.properties?.['nemaki:externalContext']);
+      const externalSourceTypeValue = getSafeStringValue(obj.properties?.['nemaki:externalSourceType']);
+      const externalSourceIdValue = getSafeStringValue(obj.properties?.['nemaki:externalSourceId']);
+      const externalContextUpdatedAtValue = getSafeStringValue(obj.properties?.['nemaki:externalContextUpdatedAt']);
+
+      setExternalContext(externalContextValue);
+      setExternalSourceType(externalSourceTypeValue);
+      setExternalSourceId(externalSourceIdValue);
+      setExternalContextUpdatedAt(externalContextUpdatedAtValue);
+
+      if (externalContextValue) {
+        console.log('[DocumentViewer] External context loaded:', externalContextValue.substring(0, 100) + '...');
       }
     } catch (error: any) {
       console.error('[DocumentViewer] loadObject error:', error);
@@ -747,7 +768,22 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         console.log('[CloudDrive] No cloud comments found in pulled object');
         setCloudComments([]);
       }
-      
+
+      // Extract external context from nemaki:externalIntegration secondary type (2026-02-04)
+      const externalContextValue = getSafeStringValue(pulledObj.properties?.['nemaki:externalContext']);
+      const externalSourceTypeValue = getSafeStringValue(pulledObj.properties?.['nemaki:externalSourceType']);
+      const externalSourceIdValue = getSafeStringValue(pulledObj.properties?.['nemaki:externalSourceId']);
+      const externalContextUpdatedAtValue = getSafeStringValue(pulledObj.properties?.['nemaki:externalContextUpdatedAt']);
+
+      setExternalContext(externalContextValue);
+      setExternalSourceType(externalSourceTypeValue);
+      setExternalSourceId(externalSourceIdValue);
+      setExternalContextUpdatedAt(externalContextUpdatedAtValue);
+
+      if (externalContextValue) {
+        console.log('[CloudDrive] External context loaded after pull:', externalContextValue.substring(0, 100) + '...');
+      }
+
       loadVersionHistory();
       // Force preview re-mount by incrementing version counter
       setPreviewVersion(v => v + 1);
@@ -1257,6 +1293,19 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         </Space>
       ),
     },
+    // External Context Tab (only shown when nemaki:externalIntegration secondary type is present) (2026-02-04)
+    ...(externalContext ? [{
+      key: 'externalContext',
+      label: t('documentViewer.externalContext.tab', '外部コンテキスト'),
+      children: (
+        <ExternalContextTab
+          context={externalContext}
+          sourceType={externalSourceType}
+          sourceId={externalSourceId}
+          updatedAt={externalContextUpdatedAt}
+        />
+      ),
+    }] : []),
     // RAG Similar Documents Tab (only shown when RAG is enabled and this is a document)
     ...(ragEnabled && object?.baseType === 'cmis:document' ? [{
       key: 'similarDocuments',

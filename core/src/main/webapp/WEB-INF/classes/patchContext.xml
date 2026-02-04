@@ -126,6 +126,12 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- External Integration secondary type for external context data (cloud sync, CRM, ERP, chat) -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ExternalIntegrationSecondaryType">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
@@ -200,6 +206,12 @@
 	</bean>
 
 	<bean id="patch_CloudDriveMetadataSecondaryType" class="jp.aegif.nemaki.patch.Patch_CloudDriveMetadataSecondaryType">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_ExternalIntegrationSecondaryType" class="jp.aegif.nemaki.patch.Patch_ExternalIntegrationSecondaryType">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

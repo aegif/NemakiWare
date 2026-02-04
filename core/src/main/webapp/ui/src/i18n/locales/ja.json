@@ -549,6 +549,25 @@
       "viewAll": "全て表示",
       "moreComments": "他 {{count}} 件のコメント"
     },
+    "externalContext": {
+      "tab": "外部コンテキスト",
+      "sourceType": "ソース種別",
+      "sourceId": "ソースID",
+      "updatedAt": "最終更新",
+      "content": "コンテンツ",
+      "copy": "コピー",
+      "copySuccess": "コピーしました",
+      "truncatedWarning": "データが切り捨てられています（5000文字上限）",
+      "parseError": "JSONの解析に失敗しました",
+      "noData": "外部コンテキストデータがありません",
+      "types": {
+        "cloud_sync": "クラウド同期",
+        "crm": "CRM",
+        "erp": "ERP",
+        "chat": "チャット",
+        "email": "メール"
+      }
+    },
     "pullFromCloud": "クラウドから取得",
     "openInCloud": "クラウドで開く",
     "updateInGoogleDrive": "Google Driveを更新",

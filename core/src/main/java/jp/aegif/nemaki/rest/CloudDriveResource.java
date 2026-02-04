@@ -982,27 +982,27 @@ public class CloudDriveResource extends ResourceBase {
 		props.add(newProp);
 	}
 
-	// Maximum size limit for cloud comments to prevent DB bloat (5000 chars for RAG compatibility)
-	private static final int MAX_CLOUD_COMMENTS_SIZE = 5000;
+	// Maximum size limit for external context to prevent DB bloat (5000 chars for RAG compatibility)
+	private static final int MAX_EXTERNAL_CONTEXT_SIZE = 5000;
 
 	/**
-	 * Truncate cloud comments JSON to stay within size limits.
+	 * Truncate external context JSON to stay within size limits.
 	 * Preserves the most recent comments/activities by removing older entries first.
 	 */
 	@SuppressWarnings("unchecked")
-	private String truncateCloudCommentsIfNeeded(String commentsJson) {
-		if (commentsJson == null || commentsJson.length() <= MAX_CLOUD_COMMENTS_SIZE) {
-			return commentsJson;
+	private String truncateExternalContextIfNeeded(String contextJson) {
+		if (contextJson == null || contextJson.length() <= MAX_EXTERNAL_CONTEXT_SIZE) {
+			return contextJson;
 		}
 
 		try {
 			org.json.simple.parser.JSONParser parser = new org.json.simple.parser.JSONParser();
-			org.json.simple.JSONObject json = (org.json.simple.JSONObject) parser.parse(commentsJson);
+			org.json.simple.JSONObject json = (org.json.simple.JSONObject) parser.parse(contextJson);
 
 			// Remove older entries from comments array (keep most recent)
 			if (json.containsKey("comments")) {
 				org.json.simple.JSONArray comments = (org.json.simple.JSONArray) json.get("comments");
-				while (json.toJSONString().length() > MAX_CLOUD_COMMENTS_SIZE && comments.size() > 1) {
+				while (json.toJSONString().length() > MAX_EXTERNAL_CONTEXT_SIZE && comments.size() > 1) {
 					comments.remove(0); // Remove oldest
 				}
 			}
@@ -1010,42 +1010,69 @@ public class CloudDriveResource extends ResourceBase {
 			// Remove older entries from activities array
 			if (json.containsKey("activities")) {
 				org.json.simple.JSONArray activities = (org.json.simple.JSONArray) json.get("activities");
-				while (json.toJSONString().length() > MAX_CLOUD_COMMENTS_SIZE && activities.size() > 1) {
+				while (json.toJSONString().length() > MAX_EXTERNAL_CONTEXT_SIZE && activities.size() > 1) {
 					activities.remove(0); // Remove oldest
 				}
 			}
 
 			String result = json.toJSONString();
-			if (result.length() > MAX_CLOUD_COMMENTS_SIZE) {
-				log.warn("Cloud comments still exceed size limit after truncation, truncating raw JSON");
-				result = result.substring(0, MAX_CLOUD_COMMENTS_SIZE);
+			if (result.length() > MAX_EXTERNAL_CONTEXT_SIZE) {
+				log.warn("External context still exceeds size limit after truncation, truncating raw JSON");
+				result = result.substring(0, MAX_EXTERNAL_CONTEXT_SIZE);
 			}
-			log.info("Truncated cloud comments from " + commentsJson.length() + " to " + result.length() + " characters");
+			log.info("Truncated external context from " + contextJson.length() + " to " + result.length() + " characters");
 			return result;
 		} catch (Exception e) {
-			log.warn("Failed to parse cloud comments for truncation, using raw truncation: " + e.getMessage());
-			return commentsJson.substring(0, MAX_CLOUD_COMMENTS_SIZE);
+			log.warn("Failed to parse external context for truncation, using raw truncation: " + e.getMessage());
+			return contextJson.substring(0, MAX_EXTERNAL_CONTEXT_SIZE);
 		}
 	}
 
 	/**
-	 * Save cloud comments as a secondary type property on the CMIS object.
+	 * Get cloud provider from content's cloudDriveMetadata aspect.
+	 */
+	private String getCloudProviderFromContent(Content content) {
+		java.util.List<jp.aegif.nemaki.model.Aspect> aspects = content.getAspects();
+		if (aspects == null) return null;
+
+		for (jp.aegif.nemaki.model.Aspect a : aspects) {
+			if ("nemaki:cloudDriveMetadata".equals(a.getName())) {
+				java.util.List<jp.aegif.nemaki.model.Property> props = a.getProperties();
+				if (props != null) {
+					for (jp.aegif.nemaki.model.Property p : props) {
+						if ("nemaki:cloudProvider".equals(p.getKey())) {
+							return (String) p.getValue();
+						}
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Save external context as a secondary type property on the CMIS object.
+	 * This method stores context data from external sources (cloud sync, CRM, ERP, chat, etc.)
+	 * in the nemaki:externalIntegration secondary type for RAG search and display.
+	 *
 	 * SECURITY: Requires authenticated CallContext for proper permission checks.
 	 *
 	 * @param callContext The authenticated user's call context (must not be null)
 	 * @param repositoryId Repository ID
 	 * @param objectId CMIS object ID
-	 * @param commentsJson JSON string containing comments array
+	 * @param contextJson JSON string containing external context data
+	 * @param sourceType Source type: "cloud_sync", "crm", "erp", "chat", etc.
+	 * @param sourceId Source system identifier (e.g., "google", "microsoft", "salesforce")
 	 */
-	private void saveCloudComments(org.apache.chemistry.opencmis.commons.server.CallContext callContext,
-			String repositoryId, String objectId, String commentsJson) {
+	private void saveExternalContext(org.apache.chemistry.opencmis.commons.server.CallContext callContext,
+			String repositoryId, String objectId, String contextJson, String sourceType, String sourceId) {
 		// SECURITY: Require CallContext to enforce permissions
 		if (callContext == null) {
 			throw new IllegalArgumentException("CallContext is required for permission enforcement");
 		}
 
 		// Truncate to prevent DB bloat and ensure RAG compatibility
-		commentsJson = truncateCloudCommentsIfNeeded(commentsJson);
+		contextJson = truncateExternalContextIfNeeded(contextJson);
 
 		ContentService cs = getContentService();
 		if (cs == null) return;
@@ -1053,46 +1080,48 @@ public class CloudDriveResource extends ResourceBase {
 		Content content = cs.getContent(repositoryId, objectId);
 		if (content == null) return;
 
-		// Add secondary type ID if not present
+		// Add nemaki:externalIntegration secondary type ID if not present
 		java.util.List<String> secondaryTypeIds = content.getSecondaryIds();
 		if (secondaryTypeIds == null) {
 			secondaryTypeIds = new java.util.ArrayList<>();
 		}
-		if (!secondaryTypeIds.contains("nemaki:cloudDriveMetadata")) {
-			secondaryTypeIds.add("nemaki:cloudDriveMetadata");
+		if (!secondaryTypeIds.contains("nemaki:externalIntegration")) {
+			secondaryTypeIds.add("nemaki:externalIntegration");
 			content.setSecondaryIds(secondaryTypeIds);
 		}
 
-		// Build Aspect with cloud comments property
+		// Build Aspect with external context properties
 		java.util.List<jp.aegif.nemaki.model.Aspect> aspects = content.getAspects();
 		if (aspects == null) {
 			aspects = new java.util.ArrayList<>();
 		}
 
-		// Find or create the cloudDriveMetadata aspect
-		jp.aegif.nemaki.model.Aspect cloudAspect = null;
+		// Find or create the externalIntegration aspect
+		jp.aegif.nemaki.model.Aspect extAspect = null;
 		for (jp.aegif.nemaki.model.Aspect a : aspects) {
-			if ("nemaki:cloudDriveMetadata".equals(a.getName())) {
-				cloudAspect = a;
+			if ("nemaki:externalIntegration".equals(a.getName())) {
+				extAspect = a;
 				break;
 			}
 		}
-		if (cloudAspect == null) {
-			cloudAspect = new jp.aegif.nemaki.model.Aspect();
-			cloudAspect.setName("nemaki:cloudDriveMetadata");
-			cloudAspect.setProperties(new java.util.ArrayList<>());
-			aspects.add(cloudAspect);
+		if (extAspect == null) {
+			extAspect = new jp.aegif.nemaki.model.Aspect();
+			extAspect.setName("nemaki:externalIntegration");
+			extAspect.setProperties(new java.util.ArrayList<>());
+			aspects.add(extAspect);
 		}
 
-		// Update aspect property for comments
-		java.util.List<jp.aegif.nemaki.model.Property> aspectProps = cloudAspect.getProperties();
+		// Update aspect properties
+		java.util.List<jp.aegif.nemaki.model.Property> aspectProps = extAspect.getProperties();
 		if (aspectProps == null) {
 			aspectProps = new java.util.ArrayList<>();
-			cloudAspect.setProperties(aspectProps);
+			extAspect.setProperties(aspectProps);
 		}
-		setOrAddProperty(aspectProps, "nemaki:cloudComments", commentsJson);
-		setOrAddProperty(aspectProps, "nemaki:cloudCommentsImportedAt",
+		setOrAddProperty(aspectProps, "nemaki:externalContext", contextJson);
+		setOrAddProperty(aspectProps, "nemaki:externalContextUpdatedAt",
 			new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ").format(new java.util.Date()));
+		setOrAddProperty(aspectProps, "nemaki:externalSourceType", sourceType != null ? sourceType : "unknown");
+		setOrAddProperty(aspectProps, "nemaki:externalSourceId", sourceId != null ? sourceId : "unknown");
 
 		content.setAspects(aspects);
 
@@ -1109,6 +1138,22 @@ public class CloudDriveResource extends ResourceBase {
 			log.warn("Failed to invalidate cache for object " + objectId + ": " + e.getMessage());
 		}
 
-		log.info("Saved cloud comments for object " + objectId);
+		log.info("Saved external context for object " + objectId + " (source: " + sourceType + "/" + sourceId + ")");
+	}
+
+	/**
+	 * Convenience method for saving cloud sync comments/activities.
+	 * Automatically sets sourceType="cloud_sync" and determines cloudProvider from object metadata.
+	 */
+	private void saveCloudComments(org.apache.chemistry.opencmis.commons.server.CallContext callContext,
+			String repositoryId, String objectId, String commentsJson) {
+		ContentService cs = getContentService();
+		if (cs == null) return;
+
+		Content content = cs.getContent(repositoryId, objectId);
+		String cloudProvider = (content != null) ? getCloudProviderFromContent(content) : null;
+
+		saveExternalContext(callContext, repositoryId, objectId, commentsJson, "cloud_sync",
+			cloudProvider != null ? cloudProvider : "unknown");
 	}
 }

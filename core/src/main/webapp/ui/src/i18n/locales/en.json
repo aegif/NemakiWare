@@ -549,6 +549,25 @@
       "viewAll": "View All",
       "moreComments": "{{count}} more comments"
     },
+    "externalContext": {
+      "tab": "External Context",
+      "sourceType": "Source Type",
+      "sourceId": "Source ID",
+      "updatedAt": "Last Updated",
+      "content": "Content",
+      "copy": "Copy",
+      "copySuccess": "Copied",
+      "truncatedWarning": "Data has been truncated (5000 character limit)",
+      "parseError": "Failed to parse JSON",
+      "noData": "No external context data available",
+      "types": {
+        "cloud_sync": "Cloud Sync",
+        "crm": "CRM",
+        "erp": "ERP",
+        "chat": "Chat",
+        "email": "Email"
+      }
+    },
     "pullFromCloud": "Pull from Cloud",
     "openInCloud": "Open in Cloud",
     "updateInGoogleDrive": "Update Google Drive",
