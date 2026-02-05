@@ -179,8 +179,8 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         await groupOptions.first().click();
         await page.waitForTimeout(200);
 
-        // Close dropdown by pressing Escape
-        await page.keyboard.press('Escape');
+        // Close dropdown by clicking modal title (Escape would close the modal)
+        await page.locator('.ant-modal-title').click();
         await page.waitForTimeout(300);
 
         // Submit form - try multiple selectors
@@ -188,9 +188,9 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         await submitBtn.click();
 
         // Wait for modal to close as success indicator
-        await page.waitForSelector('.ant-modal-content', { state: 'hidden', timeout: 10000 }).catch(() => null);
+        const modalClosed = await page.waitForSelector('.ant-modal-content', { state: 'hidden', timeout: 10000 }).then(() => true).catch(() => false);
         await page.waitForTimeout(1000);
-        createdViaUI = true;
+        createdViaUI = modalClosed;
       } catch {
         // Close modal if still open
         await page.locator('.ant-modal-content button:has-text("キャンセル")').click().catch(() => {});
@@ -199,7 +199,6 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
       // Fallback: create via API if UI failed
       if (!createdViaUI) {
-        const apiHelper = new ApiHelper(page);
         await page.request.post(
           `http://localhost:8080/core/rest/repo/bedroom/group/create/${testGroupId}`,
           {
@@ -208,13 +207,14 @@ test.describe('Group Hierarchy and Large Member Display', () => {
           }
         );
         await page.reload();
+        await page.waitForSelector('.ant-table', { timeout: 10000 });
         await page.waitForTimeout(2000);
       }
 
       // Use search box to find the created group (handles pagination)
-      const searchInput = page.locator('[role="searchbox"], input[placeholder*="検索"], input[placeholder*="グループ"]');
-      if (await searchInput.isVisible().catch(() => false)) {
-        await searchInput.fill(testGroupId);
+      const searchBox = page.locator('.ant-input-search input[type="search"], input[placeholder*="グループを検索"]');
+      if (await searchBox.count() > 0) {
+        await searchBox.first().fill(testGroupId);
         await page.waitForTimeout(2000);
       }
 

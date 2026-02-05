@@ -30,7 +30,7 @@ export function getTestState(): TestState {
   // Default state if file doesn't exist
   return {
     keycloakAvailable: false,
-    keycloakUrl: 'http://localhost:8088'
+    keycloakUrl: 'http://localhost:8180'
   };
 }
 

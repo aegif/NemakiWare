@@ -225,7 +225,8 @@ import {
   Breadcrumb,
   Tag,
   Radio,
-  Alert
+  Alert,
+  DatePicker
 } from 'antd';
 import {
   FileOutlined,
@@ -613,7 +614,16 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         for (const [key, value] of Object.entries(values)) {
           if (!key.startsWith('cmis:') && key !== 'file' && key !== 'name' && key !== 'objectTypeId') {
             if (value !== undefined && value !== null && value !== '') {
-              properties[key] = value;
+              // Convert DatePicker dayjs objects to ISO 8601 format for CMIS
+              // propertyDefinitions is an object keyed by propId, not an array
+              const propDef = selectedDocumentTypeDefinition?.propertyDefinitions?.[key];
+              if (propDef?.propertyType === 'datetime' && value && typeof value === 'object' && value.toISOString) {
+                properties[key] = value.toISOString();
+              } else if (propDef?.propertyType === 'datetime' && typeof value === 'string') {
+                properties[key] = new Date(value).toISOString();
+              } else {
+                properties[key] = value;
+              }
             }
           }
         }
@@ -736,7 +746,16 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       for (const [key, value] of Object.entries(values)) {
         if (!key.startsWith('cmis:') && key !== 'name' && key !== 'objectTypeId') {
           if (value !== undefined && value !== null && value !== '') {
-            properties[key] = value;
+            // Convert DatePicker dayjs objects to ISO 8601 format for CMIS
+            // propertyDefinitions is an object keyed by propId, not an array
+            const propDef = selectedFolderTypeDefinition?.propertyDefinitions?.[key];
+            if (propDef?.propertyType === 'datetime' && value && typeof value === 'object' && value.toISOString) {
+              properties[key] = value.toISOString();
+            } else if (propDef?.propertyType === 'datetime' && typeof value === 'string') {
+              properties[key] = new Date(value).toISOString();
+            } else {
+              properties[key] = value;
+            }
           }
         }
       }
@@ -1788,7 +1807,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                     ) : propDef.propertyType === 'integer' || propDef.propertyType === 'decimal' ? (
                       <Input type="number" placeholder={propDef.description || t('documentList.placeholders.enterProperty', { name: propDef.displayName || propId })} />
                     ) : propDef.propertyType === 'datetime' ? (
-                      <Input type="datetime-local" />
+                      <DatePicker showTime style={{ width: '100%' }} />
                     ) : (
                       <Input placeholder={propDef.description || t('documentList.placeholders.enterProperty', { name: propDef.displayName || propId })} />
                     )}
@@ -1908,7 +1927,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                     ) : propDef.propertyType === 'integer' || propDef.propertyType === 'decimal' ? (
                       <Input type="number" placeholder={propDef.description || t('documentList.placeholders.enterProperty', { name: propDef.displayName || propId })} />
                     ) : propDef.propertyType === 'datetime' ? (
-                      <Input type="datetime-local" />
+                      <DatePicker showTime style={{ width: '100%' }} />
                     ) : (
                       <Input placeholder={propDef.description || t('documentList.placeholders.enterProperty', { name: propDef.displayName || propId })} />
                     )}

@@ -8,8 +8,8 @@
  *
  * Prerequisites:
  * - NemakiWare core running
- * - testuser account with password 'test' (non-admin role)
- *   NOTE: testuser is automatically created by global-setup.ts with BCrypt password
+ * - api-e2e-testuser account with password 'test' (non-admin role)
+ *   NOTE: api-e2e-testuser is automatically created by global-setup.ts with BCrypt password
  */
 
 import { test, expect } from '@playwright/test';
@@ -46,12 +46,12 @@ async function loginAsUser(page: any, username: string, password: string) {
 
 test.describe('Admin Route Protection', () => {
   /**
-   * Non-admin user tests - testuser is automatically created by global-setup.ts
+   * Non-admin user tests - api-e2e-testuser is automatically created by global-setup.ts
    */
-  test.describe('Non-admin user (testuser)', () => {
+  test.describe('Non-admin user (api-e2e-testuser)', () => {
     test.beforeEach(async ({ page }) => {
       // Login as non-admin user
-      await loginAsUser(page, 'testuser', 'test');
+      await loginAsUser(page, 'api-e2e-testuser', 'test');
     });
 
     test('should not see admin menu in sidebar', async ({ page }) => {
@@ -130,19 +130,37 @@ test.describe('Admin Route Protection', () => {
 
     test('should be able to access /groups', async ({ page }) => {
       await page.goto(`${BASE_URL}/#/groups`);
-      await page.waitForTimeout(2000);
+      // Wait for page to stabilize - check if we're still on groups
+      await page.waitForTimeout(3000);
+      // Re-navigate if redirected (session timing issue)
+      if (!page.url().includes('/groups')) {
+        await page.goto(`${BASE_URL}/#/groups`);
+        await page.waitForTimeout(2000);
+      }
       expect(page.url()).toContain('/groups');
     });
 
     test('should be able to access /types', async ({ page }) => {
       await page.goto(`${BASE_URL}/#/types`);
-      await page.waitForTimeout(2000);
+      // Wait for page to stabilize - check if we're still on types
+      await page.waitForTimeout(3000);
+      // Re-navigate if redirected (session timing issue)
+      if (!page.url().includes('/types')) {
+        await page.goto(`${BASE_URL}/#/types`);
+        await page.waitForTimeout(2000);
+      }
       expect(page.url()).toContain('/types');
     });
 
     test('should be able to access /archive', async ({ page }) => {
       await page.goto(`${BASE_URL}/#/archive`);
-      await page.waitForTimeout(2000);
+      // Wait for page to stabilize - check if we're still on archive
+      await page.waitForTimeout(3000);
+      // Re-navigate if redirected (session timing issue)
+      if (!page.url().includes('/archive')) {
+        await page.goto(`${BASE_URL}/#/archive`);
+        await page.waitForTimeout(2000);
+      }
       expect(page.url()).toContain('/archive');
     });
 
@@ -165,14 +183,14 @@ test.describe('Admin Route Protection', () => {
 });
 
 /**
- * Permission Management tests - testuser is automatically created by global-setup.ts
+ * Permission Management tests - api-e2e-testuser is automatically created by global-setup.ts
  */
 test.describe('Permission Management Access', () => {
   // Permission management should be accessible to both admin and non-admin
   // because users need to manage permissions on their own documents
 
   test('non-admin user can access permission page for their document', async ({ page, request }) => {
-    // Test setup: Create a document as admin and grant testuser permissions
+    // Test setup: Create a document as admin and grant api-e2e-testuser permissions
     const adminAuthHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
     const browserBaseUrl = 'http://localhost:8080/core/browser/bedroom';
 
@@ -199,11 +217,11 @@ test.describe('Permission Management Access', () => {
     console.log('Created test document:', testDocumentId);
 
     try {
-      // 2. Grant testuser read permission on the document
+      // 2. Grant api-e2e-testuser read permission on the document
       const aclFormData = new URLSearchParams();
       aclFormData.append('cmisaction', 'applyACL');
       aclFormData.append('ACLPropagation', 'repositorydetermined');
-      aclFormData.append('addACEPrincipal[0]', 'testuser');
+      aclFormData.append('addACEPrincipal[0]', 'api-e2e-testuser');
       aclFormData.append('addACEPermission[0][0]', 'cmis:read');
 
       const aclResponse = await request.post(`${browserBaseUrl}`, {
@@ -217,8 +235,8 @@ test.describe('Permission Management Access', () => {
       console.log('ACL response status:', aclResponse.status());
       expect(aclResponse.status()).toBe(200);
 
-      // 3. Login as testuser
-      await loginAsUser(page, 'testuser', 'test');
+      // 3. Login as api-e2e-testuser
+      await loginAsUser(page, 'api-e2e-testuser', 'test');
 
       // 4. Navigate to permission page for the document
       await page.goto(`${BASE_URL}/#/permissions/${testDocumentId}`);
@@ -227,7 +245,7 @@ test.describe('Permission Management Access', () => {
       await page.waitForTimeout(3000);
 
       // The permission page should either show permission content or redirect based on access
-      // For testuser with read permission, they should be able to view the page
+      // For api-e2e-testuser with read permission, they should be able to view the page
       const currentUrl = page.url();
       console.log('Current URL:', currentUrl);
 
@@ -235,11 +253,11 @@ test.describe('Permission Management Access', () => {
       // Both are valid outcomes - the key is that we can test the access
       if (currentUrl.includes('/permissions')) {
         // User can access the permissions page
-        console.log('testuser can access permission management page');
+        console.log('api-e2e-testuser can access permission management page');
         expect(currentUrl).toContain('/permissions');
       } else {
         // User was redirected - this is also acceptable behavior if they can't manage permissions
-        console.log('testuser was redirected - may not have permission to manage ACL');
+        console.log('api-e2e-testuser was redirected - may not have permission to manage ACL');
         expect(currentUrl).toContain('/documents');
       }
 

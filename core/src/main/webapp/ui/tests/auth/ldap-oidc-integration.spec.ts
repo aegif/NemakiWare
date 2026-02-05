@@ -21,6 +21,9 @@
  *
  * NOTE: These tests are automatically skipped when Keycloak is not running.
  * Use the standard test environment (docker-compose-simple.yml) for basic tests.
+ *
+ * SKIPPED: These tests require the full LDAP+Keycloak test environment
+ * (docker-compose-ldap-keycloak-test.yml). They cannot run with docker-compose-simple.yml.
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -33,7 +36,7 @@ test.beforeEach(async ({}, testInfo) => {
   }
 });
 
-const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8180';
 const NEMAKIWARE_URL = process.env.NEMAKIWARE_URL || 'http://localhost:8080';
 
 // Test users from LDAP
@@ -70,9 +73,11 @@ test.describe('LDAP User Authentication via Keycloak OIDC', () => {
     await expect(oidcButton).toBeVisible({ timeout: 10000 });
     await oidcButton.click();
 
-    // Wait for redirect to Keycloak
-    await page.waitForURL(/localhost:8088|keycloak/i, { timeout: 15000 });
-    expect(page.url()).toContain('8088');
+    // Wait for redirect to Keycloak (use dynamic port from KEYCLOAK_URL)
+    const keycloakPort = new URL(KEYCLOAK_URL).port || '8088';
+    const urlPattern = new RegExp(`localhost:${keycloakPort}|keycloak`, 'i');
+    await page.waitForURL(urlPattern, { timeout: 15000 });
+    expect(page.url()).toContain(keycloakPort);
 
     // Login with LDAP user credentials
     const usernameField = page.locator('input[name="username"], #username').first();
@@ -110,7 +115,10 @@ test.describe('LDAP User Authentication via Keycloak OIDC', () => {
     const oidcButton = page.locator('button:has-text("OIDC"), button:has-text("OpenID")').first();
     await oidcButton.click();
 
-    await page.waitForURL(/localhost:8088|keycloak/i, { timeout: 15000 });
+    // Wait for redirect to Keycloak (use dynamic port from KEYCLOAK_URL)
+    const keycloakPort = new URL(KEYCLOAK_URL).port || '8088';
+    const urlPattern = new RegExp(`localhost:${keycloakPort}|keycloak`, 'i');
+    await page.waitForURL(urlPattern, { timeout: 15000 });
 
     const usernameField = page.locator('input[name="username"], #username').first();
     await usernameField.waitFor({ state: 'visible', timeout: 10000 });
@@ -145,7 +153,10 @@ test.describe('LDAP User Authentication via Keycloak OIDC', () => {
     const oidcButton = page.locator('button:has-text("OIDC"), button:has-text("OpenID")').first();
     await oidcButton.click();
 
-    await page.waitForURL(/localhost:8088|keycloak/i, { timeout: 15000 });
+    // Wait for redirect to Keycloak (use dynamic port from KEYCLOAK_URL)
+    const keycloakPort = new URL(KEYCLOAK_URL).port || '8088';
+    const urlPattern = new RegExp(`localhost:${keycloakPort}|keycloak`, 'i');
+    await page.waitForURL(urlPattern, { timeout: 15000 });
 
     const usernameField = page.locator('input[name="username"], #username').first();
     await usernameField.waitFor({ state: 'visible', timeout: 10000 });
@@ -163,25 +174,40 @@ test.describe('LDAP User Authentication via Keycloak OIDC', () => {
     await expect(errorMessage).toBeVisible({ timeout: 5000 });
 
     // Should still be on Keycloak login page
-    expect(page.url()).toContain('8088');
+    expect(page.url()).toContain(keycloakPort);
   });
 });
 
 test.describe('LDAP User Sync + OIDC Token Conversion', () => {
   test('OIDC token conversion should create NemakiWare session for LDAP user', async ({ request }) => {
-    // Simulate OIDC callback with LDAP user info
+    // Get a real access token from Keycloak for the LDAP user
+    const keycloakPort = new URL(KEYCLOAK_URL).port || '8180';
+    const tokenEndpoint = `http://localhost:${keycloakPort}/realms/nemakiware/protocol/openid-connect/token`;
+    // NemakiWare backend runs in Docker and accesses Keycloak via container name
+    const userinfoEndpoint = 'http://keycloak:8080/realms/nemakiware/protocol/openid-connect/userinfo';
+
+    const tokenResponse = await request.post(tokenEndpoint, {
+      form: {
+        grant_type: 'password',
+        client_id: 'nemakiware-ui',
+        username: LDAP_USERS.user1.username,
+        password: LDAP_USERS.user1.password,
+        scope: 'openid profile email'
+      }
+    });
+
+    expect(tokenResponse.ok()).toBeTruthy();
+    const tokenResult = await tokenResponse.json();
+    expect(tokenResult.access_token).toBeDefined();
+
+    // Use the real access token to call NemakiWare's OIDC convert endpoint
     const response = await request.post(`${NEMAKIWARE_URL}/core/rest/repo/bedroom/authtoken/oidc/convert`, {
       headers: {
         'Content-Type': 'application/json',
       },
       data: {
-        user_info: {
-          preferred_username: LDAP_USERS.user1.username,
-          email: LDAP_USERS.user1.email,
-          sub: `ldap-${LDAP_USERS.user1.username}`,
-          given_name: 'LDAP User',
-          family_name: 'One'
-        }
+        access_token: tokenResult.access_token,
+        userinfo_endpoint: userinfoEndpoint
       }
     });
 
@@ -196,18 +222,33 @@ test.describe('LDAP User Sync + OIDC Token Conversion', () => {
   });
 
   test('OIDC token conversion should work for LDAP admin user', async ({ request }) => {
+    // Get a real access token from Keycloak for the LDAP admin user
+    const keycloakPort = new URL(KEYCLOAK_URL).port || '8180';
+    const tokenEndpoint = `http://localhost:${keycloakPort}/realms/nemakiware/protocol/openid-connect/token`;
+    // NemakiWare backend runs in Docker and accesses Keycloak via container name
+    const userinfoEndpoint = 'http://keycloak:8080/realms/nemakiware/protocol/openid-connect/userinfo';
+
+    const tokenResponse = await request.post(tokenEndpoint, {
+      form: {
+        grant_type: 'password',
+        client_id: 'nemakiware-ui',
+        username: LDAP_USERS.admin.username,
+        password: LDAP_USERS.admin.password,
+        scope: 'openid profile email'
+      }
+    });
+
+    expect(tokenResponse.ok()).toBeTruthy();
+    const tokenResult = await tokenResponse.json();
+    expect(tokenResult.access_token).toBeDefined();
+
     const response = await request.post(`${NEMAKIWARE_URL}/core/rest/repo/bedroom/authtoken/oidc/convert`, {
       headers: {
         'Content-Type': 'application/json',
       },
       data: {
-        user_info: {
-          preferred_username: LDAP_USERS.admin.username,
-          email: LDAP_USERS.admin.email,
-          sub: `ldap-${LDAP_USERS.admin.username}`,
-          given_name: 'LDAP',
-          family_name: 'Administrator'
-        }
+        access_token: tokenResult.access_token,
+        userinfo_endpoint: userinfoEndpoint
       }
     });
 
@@ -220,11 +261,18 @@ test.describe('LDAP User Sync + OIDC Token Conversion', () => {
 });
 
 test.describe('LDAP Group Membership via Keycloak', () => {
-  // Re-enabled (2026-01-26): LDAP sync has been run
   test('LDAP group membership should be reflected in NemakiWare (requires sync)', async ({ request }) => {
-    // This test requires LDAP sync to have run first
-    // Check if ldapuser1 is member of expected groups after sync
+    // Trigger LDAP directory sync before checking groups
+    const syncResponse = await request.post(`${NEMAKIWARE_URL}/core/rest/repo/bedroom/sync/trigger`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64')
+      }
+    });
+    expect(syncResponse.ok()).toBeTruthy();
+    const syncResult = await syncResponse.json();
+    expect(syncResult.status).toBe('success');
 
+    // Now check if LDAP groups are present
     const response = await request.get(`${NEMAKIWARE_URL}/core/rest/repo/bedroom/group/list`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64')
@@ -258,7 +306,10 @@ test.describe('Session Management', () => {
     const oidcButton = page.locator('button:has-text("OIDC"), button:has-text("OpenID")').first();
     await oidcButton.click();
 
-    await page.waitForURL(/localhost:8088|keycloak/i, { timeout: 15000 });
+    // Extract port from KEYCLOAK_URL for dynamic matching
+    const keycloakPort = new URL(KEYCLOAK_URL).port || '8088';
+    const urlPattern = new RegExp(`localhost:${keycloakPort}|keycloak`, 'i');
+    await page.waitForURL(urlPattern, { timeout: 15000 });
 
     const usernameField = page.locator('input[name="username"], #username').first();
     await usernameField.waitFor({ state: 'visible', timeout: 10000 });

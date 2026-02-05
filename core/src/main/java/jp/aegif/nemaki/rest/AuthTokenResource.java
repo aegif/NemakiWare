@@ -406,8 +406,11 @@ public class AuthTokenResource extends ResourceBase{
 	 *
 	 * Required JSON body:
 	 *   { "access_token": "...", "userinfo_endpoint": "https://..." }
-	 * OR for backward compatibility:
-	 *   { "user_info": {...}, "access_token": "...", "userinfo_endpoint": "https://..." }
+	 * OR (UI compatibility):
+	 *   { "oidc_token": "...", "id_token": "...", "user_info": {...} }
+	 *
+	 * When userinfo_endpoint is not provided, the server derives it from the
+	 * configured oidc.issuer property (appending /protocol/openid-connect/userinfo).
 	 *
 	 * When access_token + userinfo_endpoint are provided, the server calls the endpoint
 	 * to obtain verified user information. The client-supplied user_info is ignored.
@@ -432,11 +435,28 @@ public class AuthTokenResource extends ResourceBase{
 			JSONParser parser = new JSONParser();
 			JSONObject requestJson = (JSONObject) parser.parse(requestBody);
 
+			// Accept both "access_token" (standard) and "oidc_token" (UI compatibility)
 			String accessToken = (String) requestJson.get("access_token");
+			if (StringUtils.isBlank(accessToken)) {
+				accessToken = (String) requestJson.get("oidc_token");
+			}
+
+			// Accept "userinfo_endpoint" or derive from configured oidc.issuer
 			String userinfoEndpoint = (String) requestJson.get("userinfo_endpoint");
+			if (StringUtils.isBlank(userinfoEndpoint)) {
+				PropertyManager pm = getPropertyManager();
+				if (pm != null) {
+					String issuerUrl = pm.readValue(PropertyKey.OIDC_ISSUER);
+					if (StringUtils.isNotBlank(issuerUrl)) {
+						// Standard OIDC: issuer + /protocol/openid-connect/userinfo (Keycloak)
+						userinfoEndpoint = issuerUrl + "/protocol/openid-connect/userinfo";
+						logger.info("Derived userinfo_endpoint from oidc.issuer: {}", userinfoEndpoint);
+					}
+				}
+			}
 
 			if (StringUtils.isBlank(accessToken) || StringUtils.isBlank(userinfoEndpoint)) {
-				addErrMsg(errMsg, "access_token", "access_token and userinfo_endpoint are required");
+				addErrMsg(errMsg, "access_token", "access_token and userinfo_endpoint are required (or configure oidc.issuer)");
 				return makeResult(false, result, errMsg).toString();
 			}
 
@@ -763,8 +783,14 @@ public class AuthTokenResource extends ResourceBase{
 			factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
 			factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
 			factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
-			factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
-			factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+			// ACCESS_EXTERNAL_DTD/SCHEMA may not be supported by all parsers (e.g. Apache Xerces in Tomcat)
+			// The disallow-doctype-decl feature above already provides XXE protection
+			try {
+				factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
+				factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+			} catch (IllegalArgumentException e) {
+				logger.debug("XML parser does not support ACCESS_EXTERNAL_DTD/SCHEMA properties (XXE prevention via other features)");
+			}
 
 			DocumentBuilder builder = factory.newDocumentBuilder();
 			Document document = builder.parse(new ByteArrayInputStream(xmlBytes));
@@ -854,8 +880,11 @@ public class AuthTokenResource extends ResourceBase{
 
 	/**
 	 * Validates a UserInfo endpoint URL against the allowlist using URI parsing.
-	 * Rejects URLs with: userinfo (user:pass@), non-443 ports, non-HTTPS scheme,
-	 * encoded path traversal (%2f, %2e), or hosts/paths not in the allowlist.
+	 * Rejects URLs with: userinfo (user:pass@), encoded path traversal (%2f, %2e),
+	 * or hosts/paths not in the allowlist.
+	 *
+	 * In addition to the static allowlist (Google, Microsoft), the configured OIDC issuer
+	 * host is dynamically allowed, supporting Keycloak and other OIDC providers.
 	 */
 	private boolean isAllowedUserInfoEndpoint(String url) {
 		if (url == null || url.isEmpty()) {
@@ -869,61 +898,138 @@ public class AuthTokenResource extends ResourceBase{
 				return false;
 			}
 
-			// Must be https
 			String scheme = uri.getScheme();
-			if (scheme == null || !"https".equals(scheme.toLowerCase(java.util.Locale.ROOT))) {
+			if (scheme == null) {
 				return false;
 			}
-
-			// Reject explicit non-standard port
-			int port = uri.getPort();
-			if (port != -1 && port != 443) {
-				return false;
-			}
+			scheme = scheme.toLowerCase(java.util.Locale.ROOT);
 
 			String host = uri.getHost();
 			if (host == null) {
 				return false;
 			}
 			host = host.toLowerCase(java.util.Locale.ROOT);
+			int port = uri.getPort();
 
-			java.util.List<String> allowedPaths = ALLOWED_USERINFO_HOSTS.get(host);
-			if (allowedPaths == null) {
-				return false;
-			}
-
-			// Use rawPath to detect encoded path traversal (%2f, %2e, %5c)
-			String rawPath = uri.getRawPath();
-			if (rawPath == null) {
-				rawPath = "/";
-			}
-			String rawPathLower = rawPath.toLowerCase(java.util.Locale.ROOT);
-			if (rawPathLower.contains("%2f") || rawPathLower.contains("%2e")
-					|| rawPathLower.contains("%5c") || rawPathLower.contains("\\")) {
-				return false;
-			}
-
-			// Use decoded path (from normalize()) for allowlist comparison
-			String path = uri.getPath();
-			if (path == null) {
-				path = "/";
-			}
-
-			for (String allowedPath : allowedPaths) {
-				if (allowedPath.endsWith("/")) {
-					// Directory-style prefix match (e.g. "/oauth2/" matches "/oauth2/v3/userinfo")
-					if (path.startsWith(allowedPath)) {
-						return true;
-					}
-				} else {
-					// Exact path match (e.g. "/oidc/userinfo" does NOT match "/oidc/userinfos")
-					if (path.equals(allowedPath)) {
+			// Check static allowlist (must be HTTPS on port 443)
+			if ("https".equals(scheme) && (port == -1 || port == 443)) {
+				java.util.List<String> allowedPaths = ALLOWED_USERINFO_HOSTS.get(host);
+				if (allowedPaths != null) {
+					if (matchesAllowedPath(uri, allowedPaths)) {
 						return true;
 					}
 				}
 			}
+
+			// Check dynamic allowlist: configured OIDC issuer host
+			if (isAllowedByOidcIssuer(uri, host, port, scheme)) {
+				return true;
+			}
+
 			return false;
 		} catch (java.net.URISyntaxException e) {
+			return false;
+		}
+	}
+
+	/**
+	 * Check if a URL path matches any of the allowed path patterns.
+	 */
+	private boolean matchesAllowedPath(java.net.URI uri, java.util.List<String> allowedPaths) {
+		// Use rawPath to detect encoded path traversal (%2f, %2e, %5c)
+		String rawPath = uri.getRawPath();
+		if (rawPath == null) {
+			rawPath = "/";
+		}
+		String rawPathLower = rawPath.toLowerCase(java.util.Locale.ROOT);
+		if (rawPathLower.contains("%2f") || rawPathLower.contains("%2e")
+				|| rawPathLower.contains("%5c") || rawPathLower.contains("\\")) {
+			return false;
+		}
+
+		// Use decoded path (from normalize()) for allowlist comparison
+		String path = uri.getPath();
+		if (path == null) {
+			path = "/";
+		}
+
+		for (String allowedPath : allowedPaths) {
+			if (allowedPath.endsWith("/")) {
+				if (path.startsWith(allowedPath)) {
+					return true;
+				}
+			} else {
+				if (path.equals(allowedPath)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Check if the UserInfo endpoint matches the configured OIDC issuer host.
+	 * This allows Keycloak and other self-hosted OIDC providers.
+	 * The endpoint must be on the same host/port/scheme as the configured issuer
+	 * and the path must start with /realms/ (for Keycloak) or /protocol/ path.
+	 */
+	private boolean isAllowedByOidcIssuer(java.net.URI endpointUri, String host, int port, String scheme) {
+		try {
+			PropertyManager pm = getPropertyManager();
+			if (pm == null) {
+				return false;
+			}
+			String issuerUrl = pm.readValue(PropertyKey.OIDC_ISSUER);
+			if (issuerUrl == null || issuerUrl.isEmpty()) {
+				return false;
+			}
+
+			java.net.URI issuerUri = new java.net.URI(issuerUrl.trim());
+			String issuerHost = issuerUri.getHost();
+			if (issuerHost == null) {
+				return false;
+			}
+			issuerHost = issuerHost.toLowerCase(java.util.Locale.ROOT);
+			String issuerScheme = issuerUri.getScheme();
+			if (issuerScheme == null) {
+				return false;
+			}
+			issuerScheme = issuerScheme.toLowerCase(java.util.Locale.ROOT);
+			int issuerPort = issuerUri.getPort();
+
+			// Host must match exactly
+			if (!host.equals(issuerHost)) {
+				return false;
+			}
+			// Scheme must match
+			if (!scheme.equals(issuerScheme)) {
+				return false;
+			}
+			// Port must match (considering default ports)
+			int effectivePort = port == -1 ? ("https".equals(scheme) ? 443 : 80) : port;
+			int effectiveIssuerPort = issuerPort == -1 ? ("https".equals(issuerScheme) ? 443 : 80) : issuerPort;
+			if (effectivePort != effectiveIssuerPort) {
+				return false;
+			}
+
+			// Path must be under the OIDC realm path (e.g. /realms/nemakiware/protocol/openid-connect/userinfo)
+			String path = endpointUri.getPath();
+			if (path == null) {
+				return false;
+			}
+			String issuerPath = issuerUri.getPath();
+			if (issuerPath == null) {
+				issuerPath = "/";
+			}
+			// The userinfo endpoint should be under the issuer's path
+			if (path.startsWith(issuerPath) || path.startsWith(issuerPath + "/")) {
+				logger.info("UserInfo endpoint allowed via OIDC issuer: {}", endpointUri);
+				return true;
+			}
+
+			return false;
+		} catch (Exception e) {
+			logger.debug("Error checking OIDC issuer for userinfo validation", e);
 			return false;
 		}
 	}
@@ -955,10 +1061,9 @@ public class AuthTokenResource extends ResourceBase{
 
 		try {
 			URL url = new URL(normalized);
-			if (!"https".equals(url.getProtocol())) {
-				logger.error("UserInfo endpoint must use HTTPS: {}", normalized);
-				return null;
-			}
+			// HTTPS is required for static allowlist hosts (Google, Microsoft).
+			// For configured OIDC issuer hosts (e.g. Keycloak dev), HTTP is allowed
+			// if the issuer itself uses HTTP (validated in isAllowedByOidcIssuer).
 
 			java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
 			conn.setRequestMethod("GET");

@@ -252,9 +252,8 @@ export class OIDCService {
         'Authorization': `Bearer ${oidcUser.access_token}`
       },
       body: JSON.stringify({
-        oidc_token: oidcUser.access_token,
-        id_token: oidcUser.id_token,
-        user_info: oidcUser.profile
+        access_token: oidcUser.access_token,
+        id_token: oidcUser.id_token
       })
     });
 
@@ -263,6 +262,10 @@ export class OIDCService {
     }
 
     const result = await response.json();
+    if (result.status !== 'success' || !result.value) {
+      const errorDetail = result.errMsg?.[0]?.access_token || result.errMsg?.[0]?.oidc || 'unknown error';
+      throw new Error(`OIDC token conversion failed: ${errorDetail}`);
+    }
     return {
       token: result.value.token,
       repositoryId: repositoryId,

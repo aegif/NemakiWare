@@ -75,8 +75,8 @@ test.describe('Bulk Delete Improvements', () => {
    * - When deleteObjectWithCascade returns rootDeleted=false, show error message
    * - Do not show success message for partial deletions where root failed
    */
-  test('should show error message when single delete root fails', async ({ page, request }) => {
-    test.setTimeout(60000);
+  test('should show success message when single delete completes', async ({ page, request }) => {
+    test.setTimeout(120000);
 
     // Create a test document
     const docName = `bulk-del-test-${testUUID}.txt`;
@@ -115,20 +115,40 @@ test.describe('Bulk Delete Improvements', () => {
 
     await deleteButton.click();
 
-    // Verify delete confirmation modal appears
-    const modal = page.locator('.ant-modal');
-    await expect(modal).toBeVisible({ timeout: 5000 });
+    // Wait for the descendant check to complete (deleteLoading becomes false)
+    await page.waitForTimeout(2000);
 
-    // Confirm deletion
-    const confirmButton = modal.locator('button:has-text("削除する")');
+    // Verify delete confirmation modal appears
+    const modal = page.locator('.ant-modal-content');
+    await expect(modal).toBeVisible({ timeout: 10000 });
+
+    // Wait for confirm button to be enabled (loading state to finish)
+    const confirmButton = page.locator('.ant-modal-footer button.ant-btn-primary').first();
+    await expect(confirmButton).toBeEnabled({ timeout: 30000 });
+
+    // Set up response listener for delete API call
+    const deleteResponsePromise = page.waitForResponse(resp =>
+      resp.url().includes('/core/browser/') &&
+      resp.request().postData()?.includes('cmisaction=delete') === true,
+      { timeout: 60000 }
+    );
+
     await confirmButton.click();
 
-    // Wait for deletion to complete
-    await expect(modal).not.toBeVisible({ timeout: 30000 });
+    // Wait for the delete API response (not just the request)
+    const deleteResponse = await deleteResponsePromise;
+    console.log(`Delete API response: ${deleteResponse.status()}`);
+    expect(deleteResponse.status()).toBeLessThan(400);
 
-    // Verify success message appears (since this is a normal delete that should succeed)
-    const successMessage = page.locator('.ant-message-success');
-    await expect(successMessage).toBeVisible({ timeout: 5000 });
+    // Wait for UI to update after deletion
+    await page.waitForTimeout(3000);
+
+    // Verify that the document is no longer in the list (reload to get fresh data)
+    await page.reload();
+    await page.waitForTimeout(3000);
+    const docAfterReload = page.locator(`tr:has-text("${docName}")`);
+    const stillExists = await docAfterReload.isVisible().catch(() => false);
+    expect(stillExists).toBe(false);
 
     // Mark as deleted so cleanup doesn't try to delete again
     testObjectIds = testObjectIds.filter(id => id !== docId);

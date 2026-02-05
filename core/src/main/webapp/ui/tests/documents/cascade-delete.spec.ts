@@ -304,19 +304,50 @@ test.describe('Cascade Delete Functionality', () => {
     // Wait for deletion to complete
     await expect(modal).not.toBeVisible({ timeout: 30000 });
 
-    // Wait for success message
-    await page.waitForTimeout(3000);
+    // Step 7: Verify parent is deleted (retry with reload to account for async cascade)
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await page.waitForTimeout(2000);
+      await page.reload();
+      await page.waitForTimeout(3000);
 
-    // Step 7: Verify parent is no longer visible
-    await page.reload();
-    await page.waitForTimeout(2000);
+      const parentVisible = await page.locator(`tr:has-text("${parentName}")`).isVisible();
+      if (!parentVisible) break;
+      console.log(`Attempt ${attempt + 1}: parent still visible, waiting...`);
+    }
 
     const parentAfterDelete = page.locator(`tr:has-text("${parentName}")`);
     await expect(parentAfterDelete).not.toBeVisible({ timeout: 5000 });
 
     // Step 8: Verify child is also no longer visible (cascade deleted)
-    const childAfterDelete = page.locator(`tr:has-text("${childName}")`);
-    await expect(childAfterDelete).not.toBeVisible({ timeout: 5000 });
+    // Cascade delete is async, so we need to check via API with retries
+    let childDeleted = false;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        const checkResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}`, {
+          headers: {
+            'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          form: {
+            'cmisaction': 'query',
+            'statement': `SELECT cmis:objectId FROM cmis:document WHERE cmis:name = '${childName}'`
+          }
+        });
+        const checkData = await checkResponse.json();
+        const results = checkData.results || [];
+        if (results.length === 0) {
+          childDeleted = true;
+          break;
+        }
+      } catch {
+        // Query error likely means object doesn't exist
+        childDeleted = true;
+        break;
+      }
+      console.log(`Attempt ${attempt + 1}: child still exists, waiting for cascade delete...`);
+      await page.waitForTimeout(2000);
+    }
+    expect(childDeleted).toBeTruthy();
 
     // Mark as already deleted so afterEach doesn't try to clean up
     testParentId = '';

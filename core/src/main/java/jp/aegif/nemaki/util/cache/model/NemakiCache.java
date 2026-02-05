@@ -17,7 +17,7 @@ public class NemakiCache<T> {
 
 	public T get(String key){
 		if(cacheEnabled){
-			return cache != null ? (T) cache.get(key) : null;
+			return (cache != null && key != null) ? (T) cache.get(key) : null;
 		}else{
 			return null;
 		}
@@ -25,7 +25,7 @@ public class NemakiCache<T> {
 
 	public void put(String key, T data){
 		if(cacheEnabled){
-			if (cache != null) {
+			if (cache != null && key != null) {
 				cache.put(key, data);
 			}
 		}
@@ -33,7 +33,7 @@ public class NemakiCache<T> {
 
 	public void remove(String key){
 		if(cacheEnabled){
-			if (cache != null) {
+			if (cache != null && key != null) {
 				cache.remove(key);
 			}
 		}

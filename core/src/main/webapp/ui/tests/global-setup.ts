@@ -11,7 +11,7 @@ import * as fs from 'fs';
  * - Creates test user for non-admin tests
  *
  * Environment Variables:
- * - KEYCLOAK_URL: Keycloak server URL (default: http://localhost:8088)
+ * - KEYCLOAK_URL: Keycloak server URL (default: http://localhost:8180)
  * - SKIP_KEYCLOAK: Set to 'true' to skip Keycloak checks entirely
  *
  * Test Categories:
@@ -19,7 +19,7 @@ import * as fs from 'fs';
  * - External auth tests: Require Keycloak (OIDC, SAML, LDAP integration)
  */
 
-const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8180';
 const SKIP_KEYCLOAK = process.env.SKIP_KEYCLOAK === 'true';
 
 // Global state file to share Keycloak availability with tests

@@ -303,6 +303,10 @@ public interface PropertyKey {
 	/** Enable/disable SAML login button on login page. Default: false */
 	final String SSO_SAML_ENABLED = "sso.saml.enabled";
 
+	//OIDC configuration
+	/** OIDC issuer URL (e.g. http://keycloak:8080/realms/nemakiware). Used for token validation. */
+	final String OIDC_ISSUER = "oidc.issuer";
+
 	//Thread
 	final String THREAD_MAX = "thread.max";
 

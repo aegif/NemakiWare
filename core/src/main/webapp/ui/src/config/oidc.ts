@@ -2,8 +2,8 @@ import { OIDCConfig } from '../services/oidc';
 import { getAuthConfig } from '../services/authConfig';
 
 export const defaultOIDCConfig: OIDCConfig = {
-  authority: 'http://localhost:8088/realms/nemakiware',
-  client_id: 'nemakiware-oidc-client',
+  authority: 'http://localhost:8180/realms/nemakiware',
+  client_id: 'nemakiware-ui',
   redirect_uri: `${window.location.origin}/core/ui/oidc-callback.html`,
   post_logout_redirect_uri: `${window.location.origin}/core/ui/`,
   response_type: 'code',
