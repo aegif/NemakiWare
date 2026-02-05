@@ -43,7 +43,7 @@ test.describe('Cloud Directory Sync', () => {
 
     // Look for cloud directory sync menu item
     const cloudSyncMenuItem = page.locator('.ant-menu-item').filter({
-      hasText: /クラウドディレクトリ同期|Cloud Directory Sync/i
+      hasText: /ディレクトリ同期|Directory Sync/i
     });
 
     if (await cloudSyncMenuItem.count() === 0) {

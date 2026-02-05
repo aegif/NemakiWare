@@ -1012,19 +1012,31 @@ public class AuthTokenResource extends ResourceBase{
 				return false;
 			}
 
-			// Path must be under the OIDC realm path (e.g. /realms/nemakiware/protocol/openid-connect/userinfo)
+			// Path must match a known OIDC endpoint under the issuer path
 			String path = endpointUri.getPath();
 			if (path == null) {
 				return false;
 			}
 			String issuerPath = issuerUri.getPath();
 			if (issuerPath == null) {
-				issuerPath = "/";
+				issuerPath = "";
 			}
-			// The userinfo endpoint should be under the issuer's path
-			if (path.startsWith(issuerPath) || path.startsWith(issuerPath + "/")) {
-				logger.info("UserInfo endpoint allowed via OIDC issuer: {}", endpointUri);
-				return true;
+			// Remove trailing slash for consistent matching
+			if (issuerPath.endsWith("/")) {
+				issuerPath = issuerPath.substring(0, issuerPath.length() - 1);
+			}
+
+			// Only allow known OIDC protocol endpoints (SSRF prevention)
+			java.util.List<String> allowedSuffixes = java.util.Arrays.asList(
+				"/protocol/openid-connect/userinfo",
+				"/protocol/openid-connect/token",
+				"/.well-known/openid-configuration"
+			);
+			for (String suffix : allowedSuffixes) {
+				if (path.equals(issuerPath + suffix)) {
+					logger.info("UserInfo endpoint allowed via OIDC issuer: {}", endpointUri);
+					return true;
+				}
 			}
 
 			return false;

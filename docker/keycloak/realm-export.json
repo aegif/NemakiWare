@@ -1,5 +1,8 @@
 {
   "realm": "nemakiware",
+  "displayName": "NemakiWare Development Realm",
+  "displayNameHtml": "<b>NemakiWare Dev</b>",
+  "_NOTE": "DEVELOPMENT ONLY - All passwords and secrets in this file are for local development/testing. Do NOT use in production. Replace all credentials before deploying to any non-local environment.",
   "enabled": true,
   "sslRequired": "none",
   "registrationAllowed": false,

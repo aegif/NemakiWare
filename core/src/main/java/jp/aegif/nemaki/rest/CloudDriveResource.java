@@ -496,13 +496,14 @@ public class CloudDriveResource extends ResourceBase {
 				if (comments != null && !comments.isEmpty()) {
 					saveCloudComments(callContext, repositoryId, objectId, comments);
 					result.put("commentsImported", true);
-					log.info("[pullFromCloud] Imported cloud comments to object " + objectId);
+					log.debug("[pullFromCloud] Imported cloud comments to object " + objectId);
 				} else {
 					log.debug("[pullFromCloud] No comments found for cloud file");
 				}
 			} catch (Exception e) {
 				// Don't fail the pull operation just because comments fetch failed
-				log.warn("[pullFromCloud] Failed to fetch/save cloud comments: " + e.getMessage(), e);
+				log.warn("[pullFromCloud] Failed to fetch/save cloud comments: " + e.getClass().getSimpleName());
+				log.debug("[pullFromCloud] Cloud comments fetch exception detail", e);
 			}
 
 			result.put("objectId", objectIdHolder.getValue());
@@ -727,13 +728,14 @@ public class CloudDriveResource extends ResourceBase {
 					if (comments != null && !comments.isEmpty()) {
 						saveCloudComments(callContext, repositoryId, newObjectId, comments);
 						result.put("commentsImported", true);
-						log.info("Imported cloud comments to object " + newObjectId + " (length=" + comments.length() + ")");
+						log.debug("Imported cloud comments to object " + newObjectId + " (length=" + comments.length() + ")");
 					} else {
 						log.debug("No comments found for cloud file: " + cloudFileId);
 					}
 				} catch (Exception e) {
 					// Don't fail the import just because comments fetch failed
-					log.warn("Failed to fetch/save cloud comments: " + e.getMessage());
+					log.warn("Failed to fetch/save cloud comments: " + e.getClass().getSimpleName());
+					log.debug("Cloud comments fetch exception detail", e);
 				}
 			} else {
 				log.debug("Skipping comments fetch: accessToken or service not available");

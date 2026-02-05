@@ -917,7 +917,7 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 					commentsArray.add(commentObj);
 				}
 
-				log.info("Fetched " + commentsArray.size() + " comments from Google Drive file: " + cloudFileId);
+				log.debug("Fetched " + commentsArray.size() + " comments from Google Drive file: " + cloudFileId);
 				hasContent = true;
 			}
 		} catch (Exception e) {
@@ -994,7 +994,7 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 
 							commentsArray.add(commentObj);
 						}
-						log.info("Fetched " + commentsArray.size() + " comments from OneDrive file: " + cloudFileId);
+						log.debug("Fetched " + commentsArray.size() + " comments from OneDrive file: " + cloudFileId);
 						hasContent = true;
 					}
 				}
