@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper, generateTestId } from '../utils/test-helper';
+import { TestHelper, generateTestId, ApiHelper } from '../utils/test-helper';
 
 
 /**
@@ -105,9 +105,8 @@ import { TestHelper, generateTestId } from '../utils/test-helper';
  * Bulk operations verified working via manual testing.
  * Re-enable after implementing more robust selection wait utilities.
  */
-// FIXME: Bulk operations require Table rowSelection prop which is not yet configured in DocumentList.tsx.
-// Re-enable when rowSelection is added to the Ant Design Table component.
-test.describe.skip('Bulk Operations', () => {
+// rowSelection and bulk delete are implemented in DocumentList.tsx
+test.describe('Bulk Operations', () => {
   test.setTimeout(120000); // 2 minutes for bulk operations
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
@@ -177,55 +176,32 @@ test.describe.skip('Bulk Operations', () => {
 
   /**
    * Helper function to create multiple test documents
+   * NOTE: Uses API-based creation for stability and performance.
+   *       The DocumentList UI is reloaded after creation so that
+   *       the newly created documents appear in the table.
    */
   async function createTestDocuments(page: any, count: number, uuid: string): Promise<string[]> {
     const createdNames: string[] = [];
-    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
-    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
-    if (await uploadButton.count() === 0) {
-      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
-    }
-
-    if (await uploadButton.count() === 0) {
-      return [];
-    }
+    const apiHelper = new ApiHelper(page);
 
     for (let i = 1; i <= count; i++) {
       const filename = `test-bulk-${uuid}-${i}.txt`;
 
-      await uploadButton.click();
-      await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
-
-      const fileInput = page.locator('.ant-modal input[type="file"]');
-      await testHelper.uploadTestFile(
-        '.ant-modal input[type="file"]',
-        filename,
-        `Test content for bulk operations document ${i}`
-      );
-
-      await page.waitForTimeout(500);
-
-      const submitBtn = page.locator('.ant-modal button[type="submit"]');
-      await submitBtn.click();
-
-      // FIX 2025-12-24: Add try-catch for upload success message
       try {
-        await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-        await page.waitForTimeout(1000);
+        await apiHelper.createDocument({
+          name: filename,
+          content: `Test content for bulk operations document ${i}`,
+        });
         createdNames.push(filename);
-      } catch {
-        // Check if modal closed (upload may have succeeded without message)
-        const modalGone = await page.locator('.ant-modal').isHidden().catch(() => true);
-        if (modalGone) {
-          // Assume upload succeeded
-          createdNames.push(filename);
-        } else {
-          // Close modal and continue
-          await page.locator('.ant-modal-close').click().catch(() => {});
-          await page.waitForTimeout(500);
-        }
+      } catch (e) {
+        console.log(`createTestDocuments: Failed to create document ${filename}:`, e);
       }
     }
+
+    // Reload DocumentList so that API-created documents appear in the table
+    await page.reload({ waitUntil: 'networkidle' });
+    await testHelper.waitForAntdLoad();
+    await page.waitForTimeout(1000);
 
     return createdNames;
   }
@@ -249,8 +225,8 @@ test.describe.skip('Bulk Operations', () => {
     // Wait for documents to appear in list
     await page.waitForTimeout(1000);
 
-    // Look for selection checkboxes in table rows
-    const selectionCheckboxes = page.locator('.ant-table-selection-column input[type="checkbox"]');
+    // Look for selection checkboxes in table rows (exclude header checkbox)
+    const selectionCheckboxes = page.locator('.ant-table-tbody .ant-table-selection-column input[type="checkbox"]');
     const checkboxCount = await selectionCheckboxes.count();
 
     if (checkboxCount === 0) {
@@ -266,8 +242,8 @@ test.describe.skip('Bulk Operations', () => {
       await page.waitForTimeout(300);
     }
 
-    // Verify 3 checkboxes are checked
-    const checkedCheckboxes = page.locator('.ant-table-selection-column input[type="checkbox"]:checked');
+    // Verify 3 row checkboxes are checked (ignore header checkbox)
+    const checkedCheckboxes = page.locator('.ant-table-tbody .ant-table-selection-column input[type="checkbox"]:checked');
     const checkedCount = await checkedCheckboxes.count();
     expect(checkedCount).toBe(3);
 
@@ -448,7 +424,7 @@ test.describe.skip('Bulk Operations', () => {
    * Selection clearing verified working via manual testing.
    * Re-enable after implementing proper state synchronization waits.
    */
-  test.skip('should clear selection after navigation', async ({ page, browserName }) => {
+  test('should clear selection after navigation', async ({ page, browserName }) => {
     // Detect mobile browsers
     const isMobile = testHelper.isMobile(browserName);
 
@@ -465,8 +441,8 @@ test.describe.skip('Bulk Operations', () => {
     testDocumentNames.push(...createdDocs);
     await page.waitForTimeout(1000);
 
-    // Select 2 documents
-    const selectionCheckboxes = page.locator('.ant-table-selection-column input[type="checkbox"]');
+    // Select 2 documents (body rows only, exclude header checkbox)
+    const selectionCheckboxes = page.locator('.ant-table-tbody .ant-table-selection-column input[type="checkbox"]');
     if (await selectionCheckboxes.count() < 2) {
       // UPDATED (2025-12-26): Checkbox selection IS implemented in Ant Design Table
       test.skip('Checkbox selection not visible - check Ant Design Table rowSelection config');
@@ -477,17 +453,36 @@ test.describe.skip('Bulk Operations', () => {
     await selectionCheckboxes.nth(1).check(isMobile ? { force: true } : {});
     await page.waitForTimeout(500);
 
-    // Verify 2 items selected
-    const checkedCount = await page.locator('.ant-table-selection-column input[type="checkbox"]:checked').count();
+    // Verify 2 row checkboxes are selected (ignore header checkbox)
+    const checkedCount = await page
+      .locator('.ant-table-tbody .ant-table-selection-column input[type="checkbox"]:checked')
+      .count();
     expect(checkedCount).toBe(2);
 
-    // Navigate away and back
-    const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-    await documentsMenuItem.click();
-    await page.waitForTimeout(2000);
+    // Navigate away to another page (e.g., Search) and then back to Documents
+    const searchMenuItem = page
+      .locator('.ant-menu-item')
+      .filter({ hasText: /検索|Search/i })
+      .first();
+    if (await searchMenuItem.count() > 0) {
+      await searchMenuItem.click();
+      await page.waitForTimeout(2000);
+    }
 
-    // Verify selection is cleared
-    const checkedAfterNav = await page.locator('.ant-table-selection-column input[type="checkbox"]:checked').count();
+    const documentsMenuItem = page
+      .locator('.ant-menu-item')
+      .filter({ hasText: /ドキュメント|Documents/i })
+      .first();
+    await documentsMenuItem.click();
+
+    // Wait for DocumentList to fully re-render after returning
+    await testHelper.waitForAntdLoad();
+    await page.waitForTimeout(1000);
+
+    // Verify selection is cleared (no row checkboxes remain checked)
+    const checkedAfterNav = await page
+      .locator('.ant-table-tbody .ant-table-selection-column input[type="checkbox"]:checked')
+      .count();
     expect(checkedAfterNav).toBe(0);
   });
 
