@@ -154,14 +154,15 @@ test.describe('Search Results Detailed Verification', () => {
 
     // Verify objectType column shows Japanese label (ドキュメント or フォルダ) or CMIS type
     const firstRow = rows.first();
-    // Search mode columns: タイプ(0), 名前(1), オブジェクトタイプ(2), パス(3), 作成者(4), 作成日時(5)
-    const objectTypeCell = firstRow.locator('td').nth(2); // objectType is 3rd column (index 2)
+    // Search mode columns: checkbox(0), タイプ(1), 名前(2), オブジェクトタイプ(3), パス(4), 作成者(5), 作成日時(6)
+    // Note: rowSelection adds a checkbox column at index 0, shifting all indices by +1
+    const objectTypeCell = firstRow.locator('td').nth(3); // objectType is 4th column (index 3, after checkbox)
 
     const objectTypeText = await objectTypeCell.textContent();
-    // Check for Japanese labels or CMIS type prefix
+    // Check for Japanese labels or CMIS/NemakiWare type prefix
     const validObjectTypes = ['ドキュメント', 'フォルダ', 'cmis:document', 'cmis:folder'];
     const isValidType = validObjectTypes.some(type => objectTypeText?.includes(type));
-    expect(isValidType || objectTypeText?.startsWith('cmis:')).toBeTruthy();
+    expect(isValidType || objectTypeText?.startsWith('cmis:') || objectTypeText?.startsWith('nemaki:')).toBeTruthy();
   });
 
   test('should display createdBy and creationDate in search results', async ({ page, browserName }) => {
@@ -191,14 +192,15 @@ test.describe('Search Results Detailed Verification', () => {
 
     const firstRow = rows.first();
 
-    // Search mode columns: タイプ(0), 名前(1), オブジェクトタイプ(2), パス(3), 作成者(4), 作成日時(5)
+    // Search mode columns: checkbox(0), タイプ(1), 名前(2), オブジェクトタイプ(3), パス(4), 作成者(5), 作成日時(6)
+    // Note: rowSelection adds a checkbox column at index 0, shifting all indices by +1
     // Verify createdBy column
-    const createdByCell = firstRow.locator('td').nth(4);
+    const createdByCell = firstRow.locator('td').nth(5);
     const createdByText = await createdByCell.textContent();
     expect(createdByText).toBeTruthy();
 
     // Verify creationDate column has date format
-    const creationDateCell = firstRow.locator('td').nth(5);
+    const creationDateCell = firstRow.locator('td').nth(6);
     const creationDateText = await creationDateCell.textContent();
     expect(creationDateText).toBeTruthy();
     // Verify it contains date-like content (year or slash for date separator)
