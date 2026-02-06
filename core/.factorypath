@@ -389,6 +389,8 @@
     <factorypathentry kind="VARJAR" id="M2_REPO/com/github/stephenc/jcip/jcip-annotations/1.0-1/jcip-annotations-1.0-1.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/google/apis/google-api-services-drive/v3-rev20240521-2.0.0/google-api-services-drive-v3-rev20240521-2.0.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/google/apis/google-api-services-admin-directory/directory_v1-rev20240509-2.0.0/google-api-services-admin-directory-directory_v1-rev20240509-2.0.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/com/google/apis/google-api-services-driveactivity/v2-rev20250517-2.0.0/google-api-services-driveactivity-v2-rev20250517-2.0.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/com/google/apis/google-api-services-docs/v1-rev20250325-2.0.0/google-api-services-docs-v1-rev20250325-2.0.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/microsoft/graph/microsoft-graph/6.5.0/microsoft-graph-6.5.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/microsoft/graph/microsoft-graph-core/3.1.6/microsoft-graph-core-3.1.6.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/microsoft/kiota/microsoft-kiota-abstractions/1.0.5/microsoft-kiota-abstractions-1.0.5.jar" enabled="true" runInBatchMode="false"/>

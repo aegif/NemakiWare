@@ -1,29 +1,35 @@
 package jp.aegif.nemaki.cmis.service.impl;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.locks.Lock;
 
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
-import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.chemistry.opencmis.server.impl.atompub.RelationshipService;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
-import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
-import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 
+/**
+ * Cascade delete: each parentChild child is deleted via deleteObjectInternal so that
+ * permission (CAN_DELETE_OBJECT), lock (ThreadLockService), and cache invalidation
+ * are applied per child. Loop detection uses a thread-local visited set.
+ */
 public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.ObjectServiceInternal{
 	private static final Log log = LogFactory
 			.getLog(ObjectServiceInternalImpl.class);
+
+	/** Thread-local set of object IDs currently being deleted in a cascade (for loop detection). */
+	private static final ThreadLocal<Set<String>> CASCADE_VISITED = new ThreadLocal<>();
 
 	private ContentService contentService;
 	private ExceptionService exceptionService;
@@ -43,6 +49,20 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 	public void deleteObjectInternal(CallContext callContext, String repositoryId,
 			Content content, Boolean allVersions, Boolean deleteWithParent) {
 
+		if (content == null) {
+			log.warn("deleteObjectInternal: content is null, skipping deletion");
+			return;
+		}
+		String objectId = content.getId();
+		Set<String> visited = getOrCreateCascadeVisited(deleteWithParent);
+		if (visited != null && visited.contains(objectId)) {
+			log.debug("deleteObjectInternal: Skip cascade loop for objectId=" + objectId);
+			return;
+		}
+		if (visited != null) {
+			visited.add(objectId);
+		}
+
 		Lock lock = threadLockService.getWriteLock(repositoryId, content.getId());
 
 		try{
@@ -51,12 +71,30 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 			// //////////////////
 			// General Exception
 			// //////////////////
-			String objectId = content.getId();
 			exceptionService.permissionDenied(callContext,
 					repositoryId, PermissionMapping.CAN_DELETE_OBJECT, content);
 			exceptionService.constraintDeleteRootFolder(repositoryId, objectId);
 
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+
+			// //////////////////
+			// ParentChild cascade: delete children via deleteObjectInternal so each
+			// child gets permission check, lock, and cache invalidation.
+			// //////////////////
+			if (!content.isRelationship()) {
+				List<String> childIds = contentService.getParentChildChildIds(repositoryId, objectId);
+				for (String childId : childIds) {
+					if (visited != null && visited.contains(childId)) {
+						continue;
+					}
+					Content childContent = contentService.getContent(repositoryId, childId);
+					if (childContent == null) {
+						continue;
+					}
+					log.debug("deleteObjectInternal: Cascading to parentChild child objectId=" + childId);
+					deleteObjectInternal(callContext, repositoryId, childContent, allVersions, true);
+				}
+			}
 
 			// //////////////////
 			// Body of the method
@@ -120,8 +158,36 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 
 			nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
 
-		}finally{
+		} finally {
 			lock.unlock();
+			releaseCascadeVisited(deleteWithParent, objectId, visited);
+		}
+	}
+
+	/**
+	 * Get or create the thread-local set used for cascade loop detection.
+	 * When deleteWithParent is false we are at the top level and create the set.
+	 */
+	private static Set<String> getOrCreateCascadeVisited(Boolean deleteWithParent) {
+		if (deleteWithParent != null && deleteWithParent) {
+			return CASCADE_VISITED.get();
+		}
+		Set<String> set = new HashSet<>();
+		CASCADE_VISITED.set(set);
+		return set;
+	}
+
+	/**
+	 * Remove current object from visited set or clear thread-local when leaving top-level delete.
+	 */
+	private static void releaseCascadeVisited(Boolean deleteWithParent, String objectId, Set<String> visited) {
+		if (visited == null) {
+			return;
+		}
+		if (deleteWithParent != null && deleteWithParent) {
+			visited.remove(objectId);
+		} else {
+			CASCADE_VISITED.remove();
 		}
 	}
 

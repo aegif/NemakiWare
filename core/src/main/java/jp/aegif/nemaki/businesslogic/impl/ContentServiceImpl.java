@@ -611,6 +611,25 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public List<String> getParentChildChildIds(String repositoryId, String parentObjectId) {
+		List<String> childIds = new ArrayList<>();
+		List<Relationship> sourceRels = contentDaoService.getRelationshipsBySource(repositoryId, parentObjectId);
+		if (sourceRels == null) {
+			return childIds;
+		}
+		for (Relationship rel : sourceRels) {
+			if (!isParentChildRelationshipType(repositoryId, rel.getObjectType())) {
+				continue;
+			}
+			String targetId = rel.getTargetId();
+			if (targetId != null && !targetId.isEmpty()) {
+				childIds.add(targetId);
+			}
+		}
+		return childIds;
+	}
+
+	@Override
 	public Policy getPolicy(String repositoryId, String objectId) {
 		return contentDaoService.getPolicy(repositoryId, objectId);
 	}
@@ -2878,31 +2897,8 @@ public class ContentServiceImpl implements ContentService {
 			log.debug("Archive creation disabled - skipping archive for object: {}", objectId);
 		}
 
-		// Server-side cascade: for Document/Folder/Item (not Relationship), delete parentChild children first
-		if (!content.isRelationship()) {
-			List<Relationship> sourceRelationships = contentDaoService.getRelationshipsBySource(repositoryId, objectId);
-			for (Relationship rel : sourceRelationships) {
-				if (!isParentChildRelationshipType(repositoryId, rel.getObjectType())) {
-					continue;
-				}
-				String childId = rel.getTargetId();
-				if (childId == null || visited.contains(childId)) {
-					continue;
-				}
-				log.debug("delete: Cascading to parentChild child objectId=" + childId);
-				Content childContent = getContent(repositoryId, childId);
-				if (childContent == null) {
-					continue;
-				}
-				if (childContent.isDocument()) {
-					deleteDocumentWithVisited(callContext, repositoryId, childId, true, true, visited);
-				} else if (childContent.isFolder()) {
-					deleteTreeWithVisited(callContext, repositoryId, childId, true, false, true, visited);
-				} else {
-					deleteInternal(callContext, repositoryId, childId, true, null, null, visited);
-				}
-			}
-		}
+		// ParentChild cascade is handled in ObjectServiceInternalImpl.deleteObjectInternal so that
+		// each child goes through permission check, ThreadLockService, and cache invalidation.
 
 		List<Relationship> sourceRelationships = contentDaoService.getRelationshipsBySource(repositoryId, objectId);
 		List<Relationship> targetRelationships = contentDaoService.getRelationshipsByTarget(repositoryId, objectId);

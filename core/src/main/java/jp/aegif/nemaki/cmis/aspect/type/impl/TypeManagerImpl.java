@@ -1860,11 +1860,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		boolean isBaseType = BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId());
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
 
-		// CRITICAL FIX: Only add folder-specific properties to the base cmis:folder type
-		// Custom types that inherit from cmis:folder should NOT have these properties added directly
-		if (isBaseType) {
-			addFolderPropertyDefinitions(repositoryId, type);
-		}
+		// TCK FIX: All folder types (base and custom) need folder-specific properties (cmis:parentId, etc.)
+		// so that getTypeDefinition() returns a type that includes PARENT_ID and OpenCMIS client accepts
+		// objects with parentId. Previously only cmis:folder had these, causing "parentId does not exist in type".
+		addFolderPropertyDefinitions(repositoryId, type);
 
 		return type;
 	}

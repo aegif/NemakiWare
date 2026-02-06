@@ -217,6 +217,16 @@ public interface ContentService {
 			String objectId, RelationshipDirection relationshipDirection);
 
 	/**
+	 * Get object IDs of children linked via nemaki:parentChildRelationship (or its subtypes).
+	 * Used for server-side cascade delete so child deletion goes through permission/lock/cache.
+	 *
+	 * @param repositoryId repository identifier
+	 * @param parentObjectId object ID that is the source (parent) of parentChild relationships
+	 * @return list of target (child) object IDs, never null
+	 */
+	List<String> getParentChildChildIds(String repositoryId, String parentObjectId);
+
+	/**
 	 * Get a policy
 	 * @param repositoryId TODO
 	 * @param objectId

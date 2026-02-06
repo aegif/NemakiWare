@@ -45,41 +45,47 @@
 | E1 | parentChild の子がいない、deleteObject(A) | A とリレーションのみ削除（既存挙動） |
 | E2 | 子が既に削除済み、deleteObject(親) | エラーにならず親削除完了 |
 | E3 | nemaki:parentChildRelationship のサブタイプ、deleteObject(親) | サブタイプもカスケード対象 |
+| E4 | 親は削除可・子は削除不可（ACL）、deleteObject(親) | permissionDenied で失敗し、親・子とも残る |
 
 ---
 
 ## 3. 実装方針
 
-### 3.1 変更箇所
+### 3.1 変更箇所（P1/P2 対応後）
 
-- `ContentServiceImpl.delete()`: Document/Folder/Item 削除時、source の parentChild リレーションの target（子）を先に再帰削除。
-- 再帰時に `Set<String> visited` を渡し、ループ・重複を防止。
-- Relationship オブジェクト削除時はカスケードしない（現状どおり）。
+- **ObjectServiceInternalImpl.deleteObjectInternal**: Document/Folder/Item 削除前に、`ContentService.getParentChildChildIds` で parentChild の子 ID を取得し、**各子に対して deleteObjectInternal を再帰呼び出し**する。これにより各子で以下が保証される:
+  - **権限チェック**: `permissionDenied(CAN_DELETE_OBJECT)` を通過するため、子に削除権限が無い場合はカスケードせず例外。
+  - **ロック**: `ThreadLockService.getWriteLock` で子ごとにロック取得。
+  - **キャッシュ無効化**: `nemakiCachePool.removeCmisCache` が子削除後に実行される。
+- **ループ検出**: スレッドローカルな `Set<String> CASCADE_VISITED` で再訪を防ぐ。
+- **ContentServiceImpl**: parentChild の子削除ロジックは削除済み。カスケードは ObjectServiceInternalImpl に一本化。
 
-### 3.2 parentChild 判定
+### 3.2 権限境界（設計確定）
 
-- `nemaki:parentChildRelationship` またはそのサブタイプかどうかは、TypeManager で型階層を辿って判定。
-- ContentServiceImpl に `isParentChildRelationshipType(repositoryId, typeId)` を追加。
+- **「親を削除できるなら子も削除できる」は採用しない。** 各子は `deleteObjectInternal` 経由のため、**子に CAN_DELETE_OBJECT が無い場合は削除できず、親削除も permissionDenied で失敗する**（子の削除に失敗するため）。
+- 親だけ削除可能で子は削除不可のケースでは、親の deleteObject は **子の削除試行で permissionDenied となり失敗**する。その挙動をテストで明示することを推奨。
 
-### 3.3 呼び出しフロー
+### 3.3 parentChild 判定
+
+- `nemaki:parentChildRelationship` またはそのサブタイプかどうかは、ContentServiceImpl の `isParentChildRelationshipType(repositoryId, typeId)` で型階層を辿って判定。
+- `ContentService.getParentChildChildIds(repositoryId, parentObjectId)` が parentChild の target（子）ID リストを返す。
+
+### 3.4 呼び出しフロー
 
 ```
-deleteObject(親) 
-  → ObjectServiceInternalImpl.deleteObjectInternal 
-    → ContentServiceImpl.delete(親)  [Document/Folder/Item]
-      → source の parentChild を取得
-      → 各子について visited になければ delete(子, visited) を再帰
-      → 全リレーション削除
-      → 親削除
+deleteObject(親)
+  → ObjectServiceInternalImpl.deleteObjectInternal(親)
+    → 権限・制約チェック、ロック取得
+    → getParentChildChildIds(親) で子 ID リスト取得
+    → 各子について deleteObjectInternal(子, deleteWithParent=true) を再帰
+      （各子で権限チェック・ロック・キャッシュ無効化が行われる）
+    → ContentServiceImpl.delete(親)  // リレーション削除＋本体削除
+    → removeCmisCache(親)
 
 deleteObject(リレーション)
-  → ContentServiceImpl.delete(リレーション)
-    → リレーションの source/target は Document/Folder ID
-    → getRelationshipsBySource(リレーションID) は空（リレーションが source になることはない）
-    → 通常のリレーション削除のみ実行（カスケードなし）
+  → ObjectServiceInternalImpl.deleteObjectInternal(リレーション)
+  → ContentServiceImpl.delete(リレーション)  // カスケードなし、リンクのみ削除
 ```
-
-※ 補足: Relationship の id を getRelationshipsBySource に渡すと、sourceId=relId のリレーションを探す。通常 parentChild の source は Document/Folder なので、Relationship 削除時は空で正しい。
 
 ---
 

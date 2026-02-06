@@ -1218,6 +1218,31 @@ public class CompileServiceImpl implements CompileService {
 				return compileBasicFallbackProperties(content, objectType);
 			}
 
+			// TCK FIX: Ensure type definition base type matches content kind. If content was stored with wrong
+			// objectType (e.g. folder with document type id), use the standard base type so we don't return
+			// e.g. cmis:parentId under a document type (causes "Cannot convert property cmis:parentId").
+			if (content.isFolder() && tdf.getBaseTypeId() != BaseTypeId.CMIS_FOLDER) {
+				objectType = "cmis:folder";
+				tdfc = typeManager.getTypeById(repositoryId, objectType);
+				tdf = (tdfc != null && tdfc.getTypeDefinition() != null) ? tdfc.getTypeDefinition() : tdf;
+			} else if (content.isDocument() && tdf.getBaseTypeId() != BaseTypeId.CMIS_DOCUMENT) {
+				objectType = "cmis:document";
+				tdfc = typeManager.getTypeById(repositoryId, objectType);
+				tdf = (tdfc != null && tdfc.getTypeDefinition() != null) ? tdfc.getTypeDefinition() : tdf;
+			} else if (content.isRelationship() && tdf.getBaseTypeId() != BaseTypeId.CMIS_RELATIONSHIP) {
+				objectType = "cmis:relationship";
+				tdfc = typeManager.getTypeById(repositoryId, objectType);
+				tdf = (tdfc != null && tdfc.getTypeDefinition() != null) ? tdfc.getTypeDefinition() : tdf;
+			} else if (content.isPolicy() && tdf.getBaseTypeId() != BaseTypeId.CMIS_POLICY) {
+				objectType = "cmis:policy";
+				tdfc = typeManager.getTypeById(repositoryId, objectType);
+				tdf = (tdfc != null && tdfc.getTypeDefinition() != null) ? tdfc.getTypeDefinition() : tdf;
+			} else if (content.isItem() && tdf.getBaseTypeId() != BaseTypeId.CMIS_ITEM) {
+				objectType = "cmis:item";
+				tdfc = typeManager.getTypeById(repositoryId, objectType);
+				tdf = (tdfc != null && tdfc.getTypeDefinition() != null) ? tdfc.getTypeDefinition() : tdf;
+			}
+
 			if (content.isFolder()) {
 				Folder folder = (Folder) content;
 				// Root folder
@@ -1343,8 +1368,10 @@ public class CompileServiceImpl implements CompileService {
 		// cmis:objectId - MUST be first
 		addProperty(properties, tdf, PropertyIds.OBJECT_ID, content.getId());
 		
-		// cmis:objectTypeId - MUST be early in order  
-		addProperty(properties, tdf, PropertyIds.OBJECT_TYPE_ID, content.getObjectType());
+		// cmis:objectTypeId - Use resolved type id (tdf.getId()) so client gets a type that matches properties.
+		// When we corrected to base type (e.g. cmis:folder) due to content/type mismatch, returning
+		// the stored objectType would cause "object not found" if that type is not in the repository.
+		addProperty(properties, tdf, PropertyIds.OBJECT_TYPE_ID, tdf.getId());
 		
 		// cmis:name and cmis:description
 		addProperty(properties, tdf, PropertyIds.NAME, content.getName());
