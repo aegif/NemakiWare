@@ -137,6 +137,7 @@ public class ContentServiceImpl implements ContentService {
 
 	private static final Logger log = LoggerFactory.getLogger(ContentServiceImpl.class);
 	private final static String PATH_SEPARATOR = "/";
+	private static final String PARENT_CHILD_RELATIONSHIP_TYPE = "nemaki:parentChildRelationship";
 
 	// ///////////////////////////////////////
 	// Content
@@ -2822,64 +2823,7 @@ public class ContentServiceImpl implements ContentService {
 	 */
 	@Override
 	public void delete(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent) {
-		
-		Content content = getContent(repositoryId, objectId);
-
-		// Handle case where content was already deleted (e.g., concurrent delete or cascade)
-		if (content == null) {
-			log.warn("delete: Content not found for objectId=" + objectId + " - may have been deleted already");
-			return;
-		}
-
-
-		// Record the change event(Before the content is deleted!)
-		writeChangeEvent(callContext, repositoryId, content, ChangeType.DELETED);
-
-		// Archive - Check if archive creation is enabled (CRITICAL TCK FIX for timeout)
-		boolean archiveCreateEnabled = propertyManager.readBoolean(PropertyKey.ARCHIVE_CREATE_ENABLED);
-		if (archiveCreateEnabled) {
-			log.debug("Creating archive for object: {}", objectId);
-			createArchive(callContext, repositoryId, objectId, deletedWithParent);
-		} else {
-			log.debug("Archive creation disabled - skipping archive for object: {}", objectId);
-		}
-		
-		// CRITICAL FIX: Delete attached relationships using optimized approach
-		// Collect all related documents for bulk deletion
-		List<Relationship> sourceRelationships = contentDaoService.getRelationshipsBySource(repositoryId, objectId);
-		List<Relationship> targetRelationships = contentDaoService.getRelationshipsByTarget(repositoryId, objectId);
-		
-		List<String> relationshipIds = new ArrayList<>();
-		for (Relationship rel : sourceRelationships) {
-			relationshipIds.add(rel.getId());
-		}
-		for (Relationship rel : targetRelationships) {
-			relationshipIds.add(rel.getId());
-		}
-		
-		// Delete relationships in batch if any exist
-		if (!relationshipIds.isEmpty()) {
-			try {
-				log.debug("Deleting " + relationshipIds.size() + " relationships for object: " + objectId);
-				deleteRelationshipsBatch(repositoryId, relationshipIds);
-			} catch (Exception e) {
-				log.error("Error deleting relationships for object " + objectId + ": " + e.getMessage(), e);
-				// Continue with main object deletion even if relationship deletion fails
-			}
-		}
-
-		// Delete item
-		
-		try {
-			contentDaoService.delete(repositoryId, objectId);
-		} catch (Exception e) {
-			log.error("ERROR in contentDaoService.delete() for object {}: {}", objectId, e.getMessage(), e);
-			throw e; // Re-throw to maintain original error handling
-		}
-
-		// Call Solr indexing(optional) - delete from index
-		solrUtil.deleteDocument(repositoryId, objectId);
-		
+		deleteInternal(callContext, repositoryId, objectId, deletedWithParent, null, null, new HashSet<>());
 	}
 
 
@@ -2890,34 +2834,79 @@ public class ContentServiceImpl implements ContentService {
 	 */
 	public void delete(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent,
 			String mimeType, Long contentStreamLength) {
-		
+		deleteInternal(callContext, repositoryId, objectId, deletedWithParent, mimeType, contentStreamLength, new HashSet<>());
+	}
+
+	private void deleteWithVisited(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent,
+			String mimeType, Long contentStreamLength, Set<String> visited) {
+		deleteInternal(callContext, repositoryId, objectId, deletedWithParent, mimeType, contentStreamLength, visited);
+	}
+
+	/**
+	 * Internal delete with cascade support for parentChildRelationship.
+	 * When deleting Document/Folder/Item (NOT Relationship), recursively deletes child objects
+	 * linked via nemaki:parentChildRelationship before deleting relationships and the object.
+	 * Uses visited set to prevent infinite loops on circular references.
+	 */
+	private void deleteInternal(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent,
+			String mimeType, Long contentStreamLength, Set<String> visited) {
+
 		Content content = getContent(repositoryId, objectId);
 
-		// Handle case where content was already deleted (e.g., concurrent delete or cascade)
 		if (content == null) {
 			log.warn("delete: Content not found for objectId=" + objectId + " - may have been deleted already");
 			return;
 		}
 
+		if (visited.contains(objectId)) {
+			log.debug("delete: Circular reference detected, skipping objectId=" + objectId);
+			return;
+		}
+		visited.add(objectId);
 
-		// Record the change event(Before the content is deleted!)
 		writeChangeEvent(callContext, repositoryId, content, ChangeType.DELETED);
 
-		// Archive - Check if archive creation is enabled (CRITICAL TCK FIX for timeout)
 		boolean archiveCreateEnabled = propertyManager.readBoolean(PropertyKey.ARCHIVE_CREATE_ENABLED);
 		if (archiveCreateEnabled) {
 			log.debug("Creating archive for object: {}", objectId);
-			// Use the overloaded createArchive with pre-fetched attachment info
-			createArchive(callContext, repositoryId, objectId, deletedWithParent, mimeType, contentStreamLength);
+			if (mimeType != null || contentStreamLength != null) {
+				createArchive(callContext, repositoryId, objectId, deletedWithParent, mimeType, contentStreamLength);
+			} else {
+				createArchive(callContext, repositoryId, objectId, deletedWithParent);
+			}
 		} else {
 			log.debug("Archive creation disabled - skipping archive for object: {}", objectId);
 		}
-		
-		// CRITICAL FIX: Delete attached relationships using optimized approach
-		// Collect all related documents for bulk deletion
+
+		// Server-side cascade: for Document/Folder/Item (not Relationship), delete parentChild children first
+		if (!content.isRelationship()) {
+			List<Relationship> sourceRelationships = contentDaoService.getRelationshipsBySource(repositoryId, objectId);
+			for (Relationship rel : sourceRelationships) {
+				if (!isParentChildRelationshipType(repositoryId, rel.getObjectType())) {
+					continue;
+				}
+				String childId = rel.getTargetId();
+				if (childId == null || visited.contains(childId)) {
+					continue;
+				}
+				log.debug("delete: Cascading to parentChild child objectId=" + childId);
+				Content childContent = getContent(repositoryId, childId);
+				if (childContent == null) {
+					continue;
+				}
+				if (childContent.isDocument()) {
+					deleteDocumentWithVisited(callContext, repositoryId, childId, true, true, visited);
+				} else if (childContent.isFolder()) {
+					deleteTreeWithVisited(callContext, repositoryId, childId, true, false, true, visited);
+				} else {
+					deleteInternal(callContext, repositoryId, childId, true, null, null, visited);
+				}
+			}
+		}
+
 		List<Relationship> sourceRelationships = contentDaoService.getRelationshipsBySource(repositoryId, objectId);
 		List<Relationship> targetRelationships = contentDaoService.getRelationshipsByTarget(repositoryId, objectId);
-		
+
 		List<String> relationshipIds = new ArrayList<>();
 		for (Relationship rel : sourceRelationships) {
 			relationshipIds.add(rel.getId());
@@ -2925,30 +2914,54 @@ public class ContentServiceImpl implements ContentService {
 		for (Relationship rel : targetRelationships) {
 			relationshipIds.add(rel.getId());
 		}
-		
-		// Delete relationships in batch if any exist
+
 		if (!relationshipIds.isEmpty()) {
 			try {
 				log.debug("Deleting " + relationshipIds.size() + " relationships for object: " + objectId);
 				deleteRelationshipsBatch(repositoryId, relationshipIds);
 			} catch (Exception e) {
 				log.error("Error deleting relationships for object " + objectId + ": " + e.getMessage(), e);
-				// Continue with main object deletion even if relationship deletion fails
 			}
 		}
 
-		// Delete item
-		
 		try {
 			contentDaoService.delete(repositoryId, objectId);
 		} catch (Exception e) {
 			log.error("ERROR in contentDaoService.delete() for object {}: {}", objectId, e.getMessage(), e);
-			throw e; // Re-throw to maintain original error handling
+			throw e;
 		}
 
-		// Call Solr indexing(optional) - delete from index
 		solrUtil.deleteDocument(repositoryId, objectId);
-		
+	}
+
+	/**
+	 * Check if a relationship type is nemaki:parentChildRelationship or a derived type.
+	 */
+	private boolean isParentChildRelationshipType(String repositoryId, String typeId) {
+		if (typeId == null) {
+			return false;
+		}
+		if (PARENT_CHILD_RELATIONSHIP_TYPE.equals(typeId)) {
+			return true;
+		}
+		TypeDefinition td = getTypeManager().getTypeDefinition(repositoryId, typeId);
+		if (td == null) {
+			return false;
+		}
+		String currentId = typeId;
+		Set<String> seen = new HashSet<>();
+		while (currentId != null && !seen.contains(currentId)) {
+			seen.add(currentId);
+			if (PARENT_CHILD_RELATIONSHIP_TYPE.equals(currentId)) {
+				return true;
+			}
+			TypeDefinition current = getTypeManager().getTypeDefinition(repositoryId, currentId);
+			if (current == null || current.getParentTypeId() == null) {
+				break;
+			}
+			currentId = current.getParentTypeId();
+		}
+		return false;
 	}
 	
 	/**
@@ -3191,6 +3204,100 @@ public class ContentServiceImpl implements ContentService {
 		// and Solr index update for promoted versions is handled above
 	}
 
+	/**
+	 * Same as deleteDocument but passes visited set for cascade loop detection.
+	 */
+	private void deleteDocumentWithVisited(CallContext callContext, String repositoryId, String objectId, Boolean allVersions,
+			Boolean deleteWithParent, Set<String> visited) {
+		Document document = (Document) getContent(repositoryId, objectId);
+		if (document == null) {
+			return;
+		}
+		List<Document> versionList = new ArrayList<>();
+		String versionSeriesId = document.getVersionSeriesId();
+
+		if (allVersions) {
+			try {
+				versionList = getAllVersions(callContext, repositoryId, versionSeriesId);
+				if (versionList.isEmpty()) {
+					versionList.add(document);
+				}
+			} catch (Exception e) {
+				versionList.add(document);
+			}
+		} else {
+			versionList.add(document);
+			List<Document> allVersionsInSeries = new ArrayList<>();
+			try {
+				allVersionsInSeries = contentDaoService.getAllVersions(repositoryId, versionSeriesId);
+			} catch (Exception e) {
+				// ignore
+			}
+			List<Document> remainingVersions = new ArrayList<>();
+			for (Document v : allVersionsInSeries) {
+				if (!v.isPrivateWorkingCopy() && !v.getId().equals(objectId)) {
+					remainingVersions.add(v);
+				}
+			}
+			if (remainingVersions.isEmpty()) {
+				allVersions = true;
+			} else {
+				Document nextLatest = null;
+				double highestVersionNumber = -1;
+				for (Document v : remainingVersions) {
+					try {
+						double versionNumber = Double.parseDouble(v.getVersionLabel());
+						if (versionNumber > highestVersionNumber) {
+							highestVersionNumber = versionNumber;
+							nextLatest = v;
+						}
+					} catch (NumberFormatException e) {
+						// ignore
+					}
+				}
+				if (nextLatest != null) {
+					nextLatest.setLatestVersion(true);
+					nextLatest.setLatestMajorVersion(nextLatest.isMajorVersion());
+					contentDaoService.update(repositoryId, nextLatest);
+					nemakiCachePool.get(repositoryId).getObjectDataCache().remove(nextLatest.getId());
+					solrUtil.indexDocument(repositoryId, nextLatest);
+				}
+			}
+		}
+
+		for (Document version : versionList) {
+			String mimeType = null;
+			Long contentStreamLength = null;
+			if (version.getAttachmentNodeId() != null) {
+				try {
+					AttachmentNode attachment = contentDaoService.getAttachment(repositoryId, version.getAttachmentNodeId());
+					if (attachment != null) {
+						mimeType = attachment.getMimeType();
+						contentStreamLength = attachment.getLength();
+					}
+				} catch (Exception e) {
+					// ignore
+				}
+				deleteAttachment(callContext, repositoryId, version.getAttachmentNodeId());
+			}
+			if (CollectionUtils.isNotEmpty(version.getRenditionIds())) {
+				for (String renditionId : version.getRenditionIds()) {
+					contentDaoService.delete(repositoryId, renditionId);
+				}
+			}
+			deleteWithVisited(callContext, repositoryId, version.getId(), deleteWithParent, mimeType, contentStreamLength, visited);
+		}
+
+		if (allVersions) {
+			try {
+				contentDaoService.delete(repositoryId, versionSeriesId);
+				nemakiCachePool.get(repositoryId).getObjectDataCache().remove(versionSeriesId);
+			} catch (Exception e) {
+				// ignore
+			}
+		}
+	}
+
 	// deletedWithParent flag controls whether it's deleted with the parent all
 	// together.
 	@Override
@@ -3232,6 +3339,41 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 
+		return failureIds;
+	}
+
+	private List<String> deleteTreeWithVisited(CallContext callContext, String repositoryId, String folderId, Boolean allVersions,
+			Boolean continueOnFailure, Boolean deletedWithParent, Set<String> visited) {
+		List<String> failureIds = new ArrayList<>();
+		List<Content> children = getChildren(repositoryId, folderId);
+		if (!CollectionUtils.isEmpty(children)) {
+			for (Content child : children) {
+				try {
+					if (child.isFolder()) {
+						deleteTreeWithVisited(callContext, repositoryId, child.getId(), allVersions, continueOnFailure, true, visited);
+					} else if (child.isDocument()) {
+						deleteDocumentWithVisited(callContext, repositoryId, child.getId(), allVersions, true, visited);
+					} else {
+						deleteWithVisited(callContext, repositoryId, child.getId(), true, null, null, visited);
+					}
+				} catch (Exception e) {
+					if (continueOnFailure) {
+						failureIds.add(child.getId());
+					} else {
+						throw e;
+					}
+				}
+			}
+		}
+		try {
+			deleteWithVisited(callContext, repositoryId, folderId, deletedWithParent, null, null, visited);
+		} catch (Exception e) {
+			if (continueOnFailure) {
+				failureIds.add(folderId);
+			} else {
+				throw e;
+			}
+		}
 		return failureIds;
 	}
 
