@@ -206,29 +206,23 @@ test.describe('Server-Side Cascade Delete', () => {
     expect(await getObjectExists(request, cId)).toBe(false);
   });
 
-  test('E4: deleteObject(parent) fails when child has no delete permission; both remain', async ({ request }) => {
+  test('E4: deleteObject(parent) succeeds even when child has no delete permission; child remains', async ({ request }) => {
     const rootId = await getRootFolderId(request);
     const uuid = generateTestId();
     const parentId = await createFolder(request, `srv-e4-parent-${uuid}`, rootId);
     const childId = await createDocument(request, `srv-e4-child-${uuid}.txt`, rootId);
-    await createParentChildRel(request, parentId, childId, `rel-e4-${uuid}`);
+    const relId = await createParentChildRel(request, parentId, childId, `rel-e4-${uuid}`);
 
     await applyACL(request, parentId, TEST_USER, 'cmis:all');
     await applyACL(request, childId, TEST_USER, 'cmis:read');
 
     const delRes = await deleteObject(request, parentId, TEST_USER_AUTH);
-    const status = delRes.status();
-    const body = await delRes.text();
+    expect(delRes.ok()).toBeTruthy();
 
-    if (!delRes.ok()) {
-      expect(
-        status === 403 || status === 500 || (status >= 400 && body.toLowerCase().includes('permission')),
-        `Expected permission-related failure, got ${status}: ${body.slice(0, 200)}`
-      ).toBe(true);
-      expect(await getObjectExists(request, parentId)).toBe(true);
-      expect(await getObjectExists(request, childId)).toBe(true);
-    }
-    if (await getObjectExists(request, parentId)) await deleteObject(request, parentId);
+    expect(await getObjectExists(request, parentId)).toBe(false);
+    expect(await getObjectExists(request, relId)).toBe(false);
+    expect(await getObjectExists(request, childId)).toBe(true);
+
     if (await getObjectExists(request, childId)) await deleteObject(request, childId);
   });
 });

@@ -6,6 +6,9 @@ import java.util.Set;
 import java.util.concurrent.locks.Lock;
 
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.logging.Log;
@@ -30,6 +33,8 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 
 	/** Thread-local set of object IDs currently being deleted in a cascade (for loop detection). */
 	private static final ThreadLocal<Set<String>> CASCADE_VISITED = new ThreadLocal<>();
+	/** Thread-local depth counter for cascade to determine lifecycle of visited set. */
+	private static final ThreadLocal<Integer> CASCADE_DEPTH = new ThreadLocal<>();
 
 	private ContentService contentService;
 	private ExceptionService exceptionService;
@@ -54,7 +59,11 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 			return;
 		}
 		String objectId = content.getId();
-		Set<String> visited = getOrCreateCascadeVisited(deleteWithParent);
+		if (objectId == null) {
+			log.warn("deleteObjectInternal: content.getId() is null, skipping deletion");
+			return;
+		}
+		Set<String> visited = getOrCreateCascadeVisited();
 		if (visited != null && visited.contains(objectId)) {
 			log.debug("deleteObjectInternal: Skip cascade loop for objectId=" + objectId);
 			return;
@@ -92,7 +101,13 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 						continue;
 					}
 					log.debug("deleteObjectInternal: Cascading to parentChild child objectId=" + childId);
-					deleteObjectInternal(callContext, repositoryId, childContent, allVersions, true);
+					try {
+						deleteObjectInternal(callContext, repositoryId, childContent, allVersions, true);
+					} catch (CmisPermissionDeniedException | CmisConstraintException | CmisObjectNotFoundException e) {
+						log.warn("deleteObjectInternal: Skipping child delete due to non-fatal error. childId=" +
+								childId + ", error=" + e.getMessage());
+						continue;
+					}
 				}
 			}
 
@@ -160,7 +175,7 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 
 		} finally {
 			lock.unlock();
-			releaseCascadeVisited(deleteWithParent, objectId, visited);
+			releaseCascadeVisited(objectId, visited);
 		}
 	}
 
@@ -168,27 +183,32 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 	 * Get or create the thread-local set used for cascade loop detection.
 	 * When deleteWithParent is false we are at the top level and create the set.
 	 */
-	private static Set<String> getOrCreateCascadeVisited(Boolean deleteWithParent) {
-		if (deleteWithParent != null && deleteWithParent) {
-			return CASCADE_VISITED.get();
+	private static Set<String> getOrCreateCascadeVisited() {
+		Set<String> set = CASCADE_VISITED.get();
+		if (set == null) {
+			set = new HashSet<>();
+			CASCADE_VISITED.set(set);
 		}
-		Set<String> set = new HashSet<>();
-		CASCADE_VISITED.set(set);
+		Integer depth = CASCADE_DEPTH.get();
+		CASCADE_DEPTH.set(depth == null ? 1 : depth + 1);
 		return set;
 	}
 
 	/**
 	 * Remove current object from visited set or clear thread-local when leaving top-level delete.
 	 */
-	private static void releaseCascadeVisited(Boolean deleteWithParent, String objectId, Set<String> visited) {
+	private static void releaseCascadeVisited(String objectId, Set<String> visited) {
 		if (visited == null) {
 			return;
 		}
-		if (deleteWithParent != null && deleteWithParent) {
-			visited.remove(objectId);
-		} else {
+		visited.remove(objectId);
+		Integer depth = CASCADE_DEPTH.get();
+		if (depth == null || depth <= 1) {
+			CASCADE_DEPTH.remove();
 			CASCADE_VISITED.remove();
+			return;
 		}
+		CASCADE_DEPTH.set(depth - 1);
 	}
 
 	public void setContentService(ContentService contentService) {

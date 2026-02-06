@@ -45,7 +45,7 @@
 | E1 | parentChild の子がいない、deleteObject(A) | A とリレーションのみ削除（既存挙動） |
 | E2 | 子が既に削除済み、deleteObject(親) | エラーにならず親削除完了 |
 | E3 | nemaki:parentChildRelationship のサブタイプ、deleteObject(親) | サブタイプもカスケード対象 |
-| E4 | 親は削除可・子は削除不可（ACL）、deleteObject(親) | permissionDenied で失敗し、親・子とも残る |
+| E4 | 親は削除可・子は削除不可（ACL/制約/チェックアウト等）、deleteObject(親) | 親とリレーションは削除し、子は残す（best-effort） |
 
 ---
 
@@ -54,16 +54,17 @@
 ### 3.1 変更箇所（P1/P2 対応後）
 
 - **ObjectServiceInternalImpl.deleteObjectInternal**: Document/Folder/Item 削除前に、`ContentService.getParentChildChildIds` で parentChild の子 ID を取得し、**各子に対して deleteObjectInternal を再帰呼び出し**する。これにより各子で以下が保証される:
-  - **権限チェック**: `permissionDenied(CAN_DELETE_OBJECT)` を通過するため、子に削除権限が無い場合はカスケードせず例外。
+  - **権限チェック**: `permissionDenied(CAN_DELETE_OBJECT)` を通過するため、子に削除権限が無い場合は例外になる（best-effort のため上位で握ってスキップ）。
   - **ロック**: `ThreadLockService.getWriteLock` で子ごとにロック取得。
   - **キャッシュ無効化**: `nemakiCachePool.removeCmisCache` が子削除後に実行される。
+- **best-effort**: 子削除が権限/制約/チェックアウト等で失敗した場合は**ログに残してスキップ**し、親とリレーションは削除する。
 - **ループ検出**: スレッドローカルな `Set<String> CASCADE_VISITED` で再訪を防ぐ。
 - **ContentServiceImpl**: parentChild の子削除ロジックは削除済み。カスケードは ObjectServiceInternalImpl に一本化。
 
 ### 3.2 権限境界（設計確定）
 
-- **「親を削除できるなら子も削除できる」は採用しない。** 各子は `deleteObjectInternal` 経由のため、**子に CAN_DELETE_OBJECT が無い場合は削除できず、親削除も permissionDenied で失敗する**（子の削除に失敗するため）。
-- 親だけ削除可能で子は削除不可のケースでは、親の deleteObject は **子の削除試行で permissionDenied となり失敗**する。その挙動をテストで明示することを推奨。
+- **parentChild のカスケードは best-effort。** 子に削除権限が無い場合や制約/チェックアウト等で削除できない場合でも、**親とリレーションは削除し、子は残す**。
+- フォルダ階層の deleteTree 挙動は従来どおり（部分削除が起きる可能性あり）。
 
 ### 3.3 parentChild 判定
 

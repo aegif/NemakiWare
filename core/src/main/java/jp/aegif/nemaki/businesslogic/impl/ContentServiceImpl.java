@@ -2696,7 +2696,7 @@ public class ContentServiceImpl implements ContentService {
 	private void setUpdatePropertyValue(String repositoryId, Content content, PropertyData<?> propertyData,
 			Properties properties) {
 		if (propertyData.getId().equals(PropertyIds.NAME)) {
-			if (!content.getId().equals(DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID))) {
+			if (!java.util.Objects.equals(content.getId(), DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID))) {
 				String proposedName = DataUtil.getStringProperty(properties, PropertyIds.NAME);
 
 				// Check duplicate name
@@ -3082,7 +3082,7 @@ public class ContentServiceImpl implements ContentService {
 			// Filter out PWC and the document being deleted
 			List<Document> remainingVersions = new ArrayList<Document>();
 			for (Document v : allVersionsInSeries) {
-				if (!v.isPrivateWorkingCopy() && !v.getId().equals(objectId)) {
+				if (!v.isPrivateWorkingCopy() && !java.util.Objects.equals(v.getId(), objectId)) {
 					remainingVersions.add(v);
 				}
 			}
@@ -3125,7 +3125,7 @@ public class ContentServiceImpl implements ContentService {
 					boolean isHighestMajor = true;
 					if (nextLatest.isMajorVersion()) {
 						for (Document v : remainingVersions) {
-							if (v.isMajorVersion() && !v.getId().equals(nextLatest.getId())) {
+							if (v.isMajorVersion() && !java.util.Objects.equals(v.getId(), nextLatest.getId())) {
 								try {
 									double otherVersion = Double.parseDouble(v.getVersionLabel());
 									if (otherVersion > highestVersionNumber) {
@@ -3231,7 +3231,7 @@ public class ContentServiceImpl implements ContentService {
 			}
 			List<Document> remainingVersions = new ArrayList<>();
 			for (Document v : allVersionsInSeries) {
-				if (!v.isPrivateWorkingCopy() && !v.getId().equals(objectId)) {
+				if (!v.isPrivateWorkingCopy() && !java.util.Objects.equals(v.getId(), objectId)) {
 					remainingVersions.add(v);
 				}
 			}
