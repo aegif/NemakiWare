@@ -88,14 +88,15 @@ curl -u admin:admin http://localhost:8080/core/atom/bedroom
 
 ### QA統合テスト (推奨)
 ```bash
-./qa-test.sh
-# 期待: 75/75 PASS
+./qa-test.sh qa
+# 期待: 94/94 PASS
 ```
 
 ### TCKテスト
 ```bash
-timeout 300s mvn test -Dtest=BasicsTestGroup,TypesTestGroup,ControlTestGroup,VersioningTestGroup -f core/pom.xml -Pdevelopment
-# 期待: 11/11 PASS
+timeout 900s mvn test -Dtest=BasicsTestGroup,TypesTestGroup,ControlTestGroup,VersioningTestGroup -f core/pom.xml -Pdevelopment
+# 期待: 11/11 PASS (所要時間: 約13分、タイムアウト: 15分)
+# 注意: テスト失敗時はCouchDBにゴミデータ(cmistck*, test-custom-*)が残る場合がある
 ```
 
 ### Playwrightテスト
