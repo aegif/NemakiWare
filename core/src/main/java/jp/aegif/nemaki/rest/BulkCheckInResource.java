@@ -68,8 +68,6 @@ import org.apache.chemistry.opencmis.client.api.ObjectFactory;
 import org.apache.chemistry.opencmis.client.api.ObjectType;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.glassfish.jersey.media.multipart.BodyPartEntity;
 import org.glassfish.jersey.media.multipart.FormDataBodyPart;
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
@@ -262,12 +260,31 @@ public class BulkCheckInResource extends ResourceBase {
 			@PathParam("repositoryId") String repositoryId,
 			FormDataMultiPart multiPart,
 			@FormDataParam("props") String props,
-			@FormDataParam("parentFolderId") String parentFolderId
+			@FormDataParam("parentFolderId") String parentFolderId,
+			@Context HttpServletRequest httpRequest
 			) throws Exception {
 
 		JSONArray resultArray = new JSONArray();
 
 		try {
+			// SECURITY FIX: Use authenticated user's CallContext instead of admin-fixed FakeCallContext
+			CallContext context = (CallContext) httpRequest.getAttribute("CallContext");
+			if (context == null) {
+				log.warn("No CallContext found - authentication required");
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("error", "Authentication required");
+				return errorResult.toString();
+			}
+
+			// SECURITY FIX: Restrict to admin users only (bulk operations are admin-level)
+			Boolean isAdmin = (Boolean) context.get("isAdmin");
+			if (isAdmin == null || !isAdmin) {
+				log.warn("Non-admin user attempted saveAllVersions: " + context.getUsername());
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("error", "Admin access required");
+				return errorResult.toString();
+			}
+
 			JSONParser parser = new JSONParser();
 			JSONObject propsJson = (JSONObject) parser.parse(props);
 
@@ -278,9 +295,6 @@ public class BulkCheckInResource extends ResourceBase {
 				log.warn("folder not found:" + parentFolderId);
 				return "";
 			}
-
-			//Fix user name as admin
-			CallContext context = new FakeCallContext(repositoryId, "admin");
 
 			Document firstDoc = null;
 			Document prevDoc = null;

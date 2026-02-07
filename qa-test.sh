@@ -141,7 +141,7 @@ BASE_URL="http://localhost:8080/core"
 # Test token registration for admin user
 echo -n "Testing: Token Registration for Admin User ... "
 total_tests=$((total_tests + 1))
-if token_reg_response=$(curl -s -u admin:admin "$BASE_URL/rest/repo/bedroom/authtoken/admin/register" 2>/dev/null) && \
+if token_reg_response=$(curl -s -u admin:admin -X POST "$BASE_URL/rest/repo/bedroom/authtoken/admin/register" 2>/dev/null) && \
    echo "$token_reg_response" | jq -e '.status == "success"' >/dev/null 2>&1; then
     echo -e "${GREEN}PASSED${NC}"
     success_count=$((success_count + 1))

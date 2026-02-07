@@ -1,5 +1,6 @@
 package jp.aegif.nemaki.rest;
 
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
@@ -84,10 +85,17 @@ public class AuthTokenResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// SECURITY FIX: Only allow access to own tokens (or admin)
+		CallContext callContext = (CallContext) request.getAttribute("CallContext");
+		if (!isAuthorizedForUser(callContext, userName)) {
+			addErrMsg(errMsg, "authorization", "Access denied: can only access own tokens");
+			return makeResult(false, result, errMsg).toString();
+		}
+
 		if(StringUtils.isBlank(app)){
 			app = "";
 		}
-		
+
 		TokenService tokenService = getTokenService();
 		if (tokenService == null) {
 			status = false;
@@ -115,13 +123,20 @@ public class AuthTokenResource extends ResourceBase{
 		return result.toString();
 	}
 	
-	@GET
+	@POST
 	@Path("/{userName}/register")
 	@Produces(MediaType.APPLICATION_JSON)
 	public String register(@PathParam("repositoryId") String repositoryId, @PathParam("userName") String userName, @QueryParam("app") String app){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// SECURITY FIX: Only allow registering own tokens (or admin)
+		CallContext callContext = (CallContext) request.getAttribute("CallContext");
+		if (!isAuthorizedForUser(callContext, userName)) {
+			addErrMsg(errMsg, "authorization", "Access denied: can only register own tokens");
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		//Validation
 		if(StringUtils.isBlank(app)){
@@ -135,8 +150,8 @@ public class AuthTokenResource extends ResourceBase{
 			addErrMsg(errMsg, "repositoryId", "isNull");
 			return makeResult(status, result, errMsg).toString();
 		}
-		
-		
+
+
 		TokenService tokenService = getTokenService();
 		if (tokenService == null) {
 			status = false;
@@ -180,6 +195,13 @@ public class AuthTokenResource extends ResourceBase{
 
 		logger.info("=== AuthTokenResource.logout() called for user: {} in repository: {} ===",
 		           userName, repositoryId);
+
+		// SECURITY FIX: Only allow logout of own session (or admin)
+		CallContext callContext = (CallContext) request.getAttribute("CallContext");
+		if (!isAuthorizedForUser(callContext, userName)) {
+			addErrMsg(errMsg, "authorization", "Access denied: can only logout own session");
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		// Clear the HttpOnly cookie
 		clearAuthTokenCookie();
@@ -1455,6 +1477,27 @@ public class AuthTokenResource extends ResourceBase{
 
 		logger.error("TokenService is not available - neither via injection nor Spring context lookup");
 		return null;
+	}
+
+	/**
+	 * SECURITY: Check if the authenticated user is authorized to access another user's resources.
+	 * Only the user themselves or an admin can access user-specific endpoints.
+	 */
+	private boolean isAuthorizedForUser(CallContext callContext, String targetUserName) {
+		if (callContext == null) {
+			return false;
+		}
+		String authenticatedUser = callContext.getUsername();
+		if (authenticatedUser == null) {
+			return false;
+		}
+		// Allow if accessing own resources
+		if (authenticatedUser.equals(targetUserName)) {
+			return true;
+		}
+		// Allow if admin
+		Boolean isAdmin = (Boolean) callContext.get("isAdmin");
+		return isAdmin != null && isAdmin;
 	}
 
 	private jp.aegif.nemaki.cmis.factory.auth.AuthenticationService getAuthenticationService() {

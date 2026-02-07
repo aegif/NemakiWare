@@ -189,7 +189,15 @@ public class RenditionResource extends ResourceBase {
         Map<String, Object> response = new HashMap<>();
 
         try {
-            log.info("[RenditionResource] Generating rendition for objectId=" + objectId + ", force=" + force);
+            // SECURITY FIX: Require authentication and use user's CallContext for permission checks
+            CallContext callContext = (CallContext) request.getAttribute("CallContext");
+            if (callContext == null) {
+                response.put("status", "error");
+                response.put("message", "Authentication required");
+                return Response.status(Response.Status.FORBIDDEN).entity(response).build();
+            }
+
+            log.info("[RenditionResource] Generating rendition for objectId=" + objectId + ", force=" + force + ", user=" + callContext.getUsername());
 
             // Get the document
             Content content = getContentService().getContent(repositoryId, objectId);
@@ -302,12 +310,8 @@ public class RenditionResource extends ResourceBase {
             rendition.setMimetype("application/pdf");
             rendition.setLength(pdfStream.getLength());
 
-            // Set signature from CallContext if available
-            CallContext callContext = (CallContext) request.getAttribute("CallContext");
-            String username = "system";
-            if (callContext != null) {
-                username = callContext.getUsername();
-            }
+            // Set signature from authenticated user's CallContext
+            String username = callContext.getUsername();
             rendition.setCreator(username);
             rendition.setModifier(username);
             GregorianCalendar now = new GregorianCalendar();
@@ -325,10 +329,8 @@ public class RenditionResource extends ResourceBase {
             renditionIds.add(renditionId);
             document.setRenditionIds(renditionIds);
 
-            // Update document - use SystemCallContext for internal operations
-            jp.aegif.nemaki.cmis.factory.SystemCallContext systemContext =
-                new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId);
-            getContentService().update(systemContext, repositoryId, document);
+            // SECURITY FIX: Use authenticated user's CallContext instead of SystemCallContext
+            getContentService().update(callContext, repositoryId, document);
 
             log.info("[RenditionResource] Successfully created PDF rendition: " + renditionId);
 
