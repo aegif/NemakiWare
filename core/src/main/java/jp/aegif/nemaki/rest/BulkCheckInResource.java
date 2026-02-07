@@ -267,23 +267,17 @@ public class BulkCheckInResource extends ResourceBase {
 		JSONArray resultArray = new JSONArray();
 
 		try {
-			// SECURITY FIX: Use authenticated user's CallContext instead of admin-fixed FakeCallContext
-			CallContext context = (CallContext) httpRequest.getAttribute("CallContext");
-			if (context == null) {
-				log.warn("No CallContext found - authentication required");
-				JSONObject errorResult = new JSONObject();
-				errorResult.put("error", "Authentication required");
-				return errorResult.toString();
-			}
-
-			// SECURITY FIX: Restrict to admin users only (bulk operations are admin-level)
-			Boolean isAdmin = (Boolean) context.get("isAdmin");
-			if (isAdmin == null || !isAdmin) {
-				log.warn("Non-admin user attempted saveAllVersions: " + context.getUsername());
+			// Admin check using ResourceBase.checkAdmin (CallContextKey.IS_ADMIN)
+			JSONArray adminErrMsg = new JSONArray();
+			if (!checkAdmin(adminErrMsg, httpRequest)) {
+				log.warn("Non-admin user attempted saveAllVersions");
 				JSONObject errorResult = new JSONObject();
 				errorResult.put("error", "Admin access required");
 				return errorResult.toString();
 			}
+
+			// Get authenticated user's CallContext for permission-checked operations
+			CallContext context = (CallContext) httpRequest.getAttribute("CallContext");
 
 			JSONParser parser = new JSONParser();
 			JSONObject propsJson = (JSONObject) parser.parse(props);

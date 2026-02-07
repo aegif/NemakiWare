@@ -370,21 +370,27 @@ public class AuthResource {
             if (user == null) {
                 throw ApiException.internalError("Failed to create or find user");
             }
-            
+
+            // Check if cloud/SAML authentication is allowed for this user
+            if (authenticationService != null && !authenticationService.isAuthMethodAllowed(user, "cloud")) {
+                logger.info("API v1: SAML authentication denied for user " + username + " (not in allowedAuthMethods)");
+                throw ApiException.permissionDenied("Authentication method not allowed for this user");
+            }
+
             if (tokenService == null) {
                 throw ApiException.internalError("Token service not available");
             }
-            
+
             Token token = tokenService.setToken("", repositoryId, username);
-            
+
             AuthResponse response = new AuthResponse();
             response.setToken(token.getToken());
             response.setExpiresAt(token.getExpiration());
             response.setRepositoryId(repositoryId);
             response.setUser(convertToUserResponse(user, repositoryId));
-            
+
             logger.info("API v1: SAML authentication successful for user " + username);
-            
+
             return Response.ok(response).build();
             
         } catch (ApiException e) {

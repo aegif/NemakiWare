@@ -183,9 +183,16 @@ private ContentService getContentServiceSafe() {
 	@GET
 	@Path("/debug-systemfolder")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response debugSystemFolder(@PathParam("repositoryId") String repositoryId) {
+	public Response debugSystemFolder(@PathParam("repositoryId") String repositoryId,
+			@Context HttpServletRequest httpRequest) {
 		JSONObject result = new JSONObject();
-		
+		JSONArray adminErrMsg = new JSONArray();
+		if (!checkAdmin(adminErrMsg, httpRequest)) {
+			result.put("status", "error");
+			result.put("message", "Admin access required");
+			return Response.status(Response.Status.FORBIDDEN).entity(result.toJSONString()).build();
+		}
+
 		try {
 			// Test PropertyManager
 			PropertyManager pm = getPropertyManager();
@@ -224,10 +231,19 @@ private ContentService getContentServiceSafe() {
 	public Response list(@PathParam("repositoryId") String repositoryId,
 						 @QueryParam("offset") @DefaultValue("-1") int offset,
 						 @QueryParam("limit") @DefaultValue("-1") int limit,
-						 @QueryParam("query") @DefaultValue("") String query) {
+						 @QueryParam("query") @DefaultValue("") String query,
+						 @Context HttpServletRequest httpRequest) {
 		log.debug("UserItemResource.list() called for repository: " + repositoryId);
 		JSONObject result = new JSONObject();
 		JSONArray listJSON = new JSONArray();
+
+		// Admin check
+		JSONArray adminErrMsg = new JSONArray();
+		if (!checkAdmin(adminErrMsg, httpRequest)) {
+			result.put("status", "error");
+			result.put("message", "Admin access required");
+			return Response.status(Response.Status.FORBIDDEN).entity(result.toJSONString()).build();
+		}
 
 		ContentService contentService = getContentService();
 
@@ -306,18 +322,22 @@ private ContentService getContentServiceSafe() {
 	@GET
 	@Path("/show/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("id") String userId) {
+	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("id") String userId,
+			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Authorization: admin or self only
+		status = checkAuthorityForUser(status, errMsg, httpRequest, userId, repositoryId);
+
 		// Validation
-		if (StringUtils.isBlank(userId)) {
+		if (status && StringUtils.isBlank(userId)) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USERID, ErrorCode.ERR_MANDATORY);
 		}
 
-		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
+		UserItem user = status ? getContentServiceSafe().getUserItemById(repositoryId, userId) : null;
 
 		if (user == null) {
 			status = false;
@@ -339,10 +359,17 @@ private ContentService getContentServiceSafe() {
 	@GET
 	@Path("/search")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String search(@PathParam("repositoryId") String repositoryId, @QueryParam("query") String query) {
+	public String search(@PathParam("repositoryId") String repositoryId, @QueryParam("query") String query,
+			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			return makeResult(status, result, errMsg).toJSONString();
+		}
 
 		if (StringUtils.isBlank(query)) {
 			status = false;

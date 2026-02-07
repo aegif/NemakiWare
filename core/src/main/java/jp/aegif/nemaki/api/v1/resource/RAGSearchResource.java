@@ -613,8 +613,8 @@ public class RAGSearchResource {
         // Batch calculate ACLs
         Map<String, jp.aegif.nemaki.model.Acl> acls = contentService.calculateAcls(repositoryId, contents.values());
 
-        // Batch permission check
-        String permissionKey = PermissionMapping.CAN_GET_PROPERTIES_OBJECT;
+        // Batch permission check (CAN_VIEW_CONTENT_OBJECT because RAG results include chunkText)
+        String permissionKey = PermissionMapping.CAN_VIEW_CONTENT_OBJECT;
         Map<String, Boolean> permissions = permissionService.checkPermissions(
                 context, repositoryId, permissionKey, acls, baseTypes, contents);
 

@@ -94,10 +94,17 @@ public class GroupItemResource extends ResourceBase{
 	@GET
 	@Path("/search")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String search(@PathParam("repositoryId") String repositoryId, @QueryParam("query") String query){
+	public String search(@PathParam("repositoryId") String repositoryId, @QueryParam("query") String query,
+			@Context HttpServletRequest httpRequest){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			return makeResult(status, result, errMsg).toJSONString();
+		}
 
 		if (StringUtils.isBlank(query)) {
 			status = false;
@@ -142,7 +149,8 @@ public class GroupItemResource extends ResourceBase{
 	public String list(@PathParam("repositoryId") String repositoryId,
 					   @QueryParam("offset") @DefaultValue("-1") int offset,
 					   @QueryParam("limit") @DefaultValue("-1") int limit,
-					   @QueryParam("query") @DefaultValue("") String query) {
+					   @QueryParam("query") @DefaultValue("") String query,
+					   @Context HttpServletRequest httpRequest) {
 		if (log.isDebugEnabled()) {
 			log.debug("GroupItemResource.list() called for repository: " + repositoryId);
 		}
@@ -150,6 +158,12 @@ public class GroupItemResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray listJSON = new JSONArray();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			return makeResult(status, result, errMsg).toJSONString();
+		}
 
 		try {
 			boolean paginated = offset >= 0 && limit > 0;
@@ -203,11 +217,17 @@ public class GroupItemResource extends ResourceBase{
 	@GET
 	@Path("/show/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("id") String groupId){
+	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("id") String groupId,
+			@Context HttpServletRequest httpRequest){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			return makeResult(status, result, errMsg).toJSONString();
+		}
 
 		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
 		if(group == null){

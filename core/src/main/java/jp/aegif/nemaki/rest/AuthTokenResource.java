@@ -387,6 +387,14 @@ public class AuthTokenResource extends ResourceBase{
 				return makeResult(false, result, errMsg).toString();
 			}
 
+			// Check if cloud/SAML authentication is allowed for this user
+			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
+			if (authService != null && !authService.isAuthMethodAllowed(userItem, "cloud")) {
+				logger.info("SAML authentication denied for user {} (not in allowedAuthMethods)", userName);
+				addErrMsg(errMsg, "auth", "methodNotAllowed");
+				return makeResult(false, result, errMsg).toString();
+			}
+
 			TokenService tokenService = getTokenService();
 			if (tokenService == null) {
 				addErrMsg(errMsg, "tokenService", "notAvailable");
@@ -610,6 +618,14 @@ public class AuthTokenResource extends ResourceBase{
 				return makeResult(false, result, errMsg).toString();
 			}
 
+			// Check if cloud/Google authentication is allowed for this user
+			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
+			if (authService != null && !authService.isAuthMethodAllowed(userItem, "cloud")) {
+				logger.info("Google authentication denied for user {} (not in allowedAuthMethods)", userName);
+				addErrMsg(errMsg, "auth", "methodNotAllowed");
+				return makeResult(false, result, errMsg).toString();
+			}
+
 			TokenService tokenService = getTokenService();
 			if (tokenService == null) {
 				addErrMsg(errMsg, "tokenService", "notAvailable");
@@ -741,6 +757,14 @@ public class AuthTokenResource extends ResourceBase{
 			UserItem userItem = getOrCreateUser(repositoryId, userName);
 			if (userItem == null) {
 				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Check if cloud/Microsoft authentication is allowed for this user
+			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
+			if (authService != null && !authService.isAuthMethodAllowed(userItem, "cloud")) {
+				logger.info("Microsoft authentication denied for user {} (not in allowedAuthMethods)", userName);
+				addErrMsg(errMsg, "auth", "methodNotAllowed");
 				return makeResult(false, result, errMsg).toString();
 			}
 

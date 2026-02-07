@@ -50,6 +50,7 @@ import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
+import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Content;
@@ -57,6 +58,9 @@ import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.util.constant.RenditionKind;
 import jp.aegif.nemaki.util.spring.SpringContext;
+import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
+import org.apache.chemistry.opencmis.commons.enums.Action;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 
 /**
  * Jersey REST Resource for Rendition API
@@ -102,6 +106,11 @@ public class RenditionResource extends ResourceBase {
                 .getBean("RenditionManager", RenditionManager.class);
     }
 
+    private ExceptionService getExceptionService() {
+        return SpringContext.getApplicationContext()
+                .getBean("ExceptionService", ExceptionService.class);
+    }
+
     /**
      * Get all renditions for a document
      */
@@ -116,7 +125,30 @@ public class RenditionResource extends ResourceBase {
         Map<String, Object> response = new HashMap<>();
 
         try {
+            // SECURITY FIX: Require authentication and check object-level read permission
+            CallContext callContext = (CallContext) request.getAttribute("CallContext");
+            if (callContext == null) {
+                response.put("status", "error");
+                response.put("message", "Authentication required");
+                return Response.status(Response.Status.FORBIDDEN).entity(response).build();
+            }
+
             log.info("[RenditionResource] Getting renditions for objectId=" + objectId + " in repo=" + repositoryId);
+
+            // Check object-level read permission
+            Content content = getContentService().getContent(repositoryId, objectId);
+            if (content == null) {
+                response.put("status", "error");
+                response.put("message", "Document not found");
+                return Response.status(Response.Status.NOT_FOUND).entity(response).build();
+            }
+            try {
+                getExceptionService().permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);
+            } catch (CmisPermissionDeniedException e) {
+                response.put("status", "error");
+                response.put("message", "Permission denied");
+                return Response.status(Response.Status.FORBIDDEN).entity(response).build();
+            }
 
             List<Rendition> renditions = getContentService().getRenditions(repositoryId, objectId);
 
@@ -206,6 +238,15 @@ public class RenditionResource extends ResourceBase {
                 response.put("status", "error");
                 response.put("message", "Document not found");
                 return Response.status(Response.Status.NOT_FOUND).entity(response).build();
+            }
+
+            // SECURITY FIX: Check object-level read permission before generating rendition
+            try {
+                getExceptionService().permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);
+            } catch (CmisPermissionDeniedException e) {
+                response.put("status", "error");
+                response.put("message", "Permission denied");
+                return Response.status(Response.Status.FORBIDDEN).entity(response).build();
             }
 
             if (!content.isDocument()) {

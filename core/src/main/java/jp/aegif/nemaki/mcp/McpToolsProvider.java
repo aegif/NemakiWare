@@ -1090,8 +1090,8 @@ public class McpToolsProvider {
             // and better compatibility with permission checking code
             CallContext callContext = new McpCallContext(repositoryId, userId);
 
-            // Check if user has the required permission (CAN_GET_PROPERTIES_OBJECT is the read permission)
-            String permissionKey = PermissionMapping.CAN_GET_PROPERTIES_OBJECT;
+            // Check if user has the required permission (CAN_VIEW_CONTENT_OBJECT for document content access)
+            String permissionKey = PermissionMapping.CAN_VIEW_CONTENT_OBJECT;
             Boolean hasPermission = permissionService.checkPermissionWithGivenList(
                     callContext, repositoryId, permissionKey, acl, baseType, (Content) document, userId, groups);
 
@@ -1174,8 +1174,8 @@ public class McpToolsProvider {
         // Create CallContext for permission check
         CallContext callContext = new McpCallContext(repositoryId, userId);
 
-        // Batch permission check
-        String permissionKey = PermissionMapping.CAN_GET_PROPERTIES_OBJECT;
+        // Batch permission check (CAN_VIEW_CONTENT_OBJECT because RAG results include chunkText)
+        String permissionKey = PermissionMapping.CAN_VIEW_CONTENT_OBJECT;
         Map<String, Boolean> permissions = permissionService.checkPermissions(
                 callContext, repositoryId, permissionKey, acls, baseTypes, contents);
 
