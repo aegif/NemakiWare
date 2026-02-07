@@ -111,9 +111,11 @@ public class UserController {
      */
     @GetMapping
     public ResponseEntity<Map<String, Object>> listUsers(@PathVariable String repositoryId) {
+        checkAdminAuthorization();
+
         Map<String, Object> response = new HashMap<>();
         List<Map<String, Object>> userList = new ArrayList<>();
-        
+
         try {
             List<UserItem> users = getContentService().getUserItems(repositoryId);
             
@@ -141,11 +143,22 @@ public class UserController {
      */
     @GetMapping("/{userId}")
     public ResponseEntity<Map<String, Object>> getUser(
-            @PathVariable String repositoryId, 
+            @PathVariable String repositoryId,
             @PathVariable String userId) {
-        
+
+        // Admin or self-access only
+        CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+        if (callContext == null) {
+            throw new RuntimeException("Authentication required");
+        }
+        String currentUser = callContext.getUsername();
+        Boolean isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
+        if ((isAdmin == null || !isAdmin) && !userId.equals(currentUser)) {
+            throw new RuntimeException("Only administrators or the user themselves can view user details");
+        }
+
         Map<String, Object> response = new HashMap<>();
-        
+
         try {
             UserItem user = getContentService().getUserItemById(repositoryId, userId);
             

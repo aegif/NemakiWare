@@ -148,6 +148,8 @@ public class TypeMigrationController {
             @PathVariable String repositoryId,
             @PathVariable String objectId) {
 
+        checkAdminAuthorization();
+
         Map<String, Object> response = new HashMap<>();
 
         try {

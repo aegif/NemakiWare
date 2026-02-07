@@ -122,9 +122,11 @@ public class GroupController {
      */
     @GetMapping
     public ResponseEntity<Map<String, Object>> listGroups(@PathVariable String repositoryId) {
+        checkAdminAuthorization();
+
         Map<String, Object> response = new HashMap<>();
         List<Map<String, Object>> groupList = new ArrayList<>();
-        
+
         try {
             List<GroupItem> groups = getContentService().getGroupItems(repositoryId);
             
@@ -152,11 +154,13 @@ public class GroupController {
      */
     @GetMapping("/{groupId}")
     public ResponseEntity<Map<String, Object>> getGroup(
-            @PathVariable String repositoryId, 
+            @PathVariable String repositoryId,
             @PathVariable String groupId) {
-        
+
+        checkAdminAuthorization();
+
         Map<String, Object> response = new HashMap<>();
-        
+
         try {
             GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
             

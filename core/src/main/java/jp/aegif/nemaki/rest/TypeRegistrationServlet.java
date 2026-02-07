@@ -108,17 +108,35 @@ public class TypeRegistrationServlet extends HttpServlet {
         }
     }
     
+    private boolean isAdmin(HttpServletRequest request) {
+        org.apache.chemistry.opencmis.commons.server.CallContext callContext =
+            (org.apache.chemistry.opencmis.commons.server.CallContext) request.getAttribute("CallContext");
+        if (callContext == null) return false;
+        Boolean isAdmin = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
+        return isAdmin != null && isAdmin;
+    }
+
     @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) 
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        
+
         if (log.isDebugEnabled()) {
             log.debug("GET request received");
         }
-        
+
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
-        
+
+        // Admin check for debug information
+        if (!isAdmin(request)) {
+            JSONObject error = new JSONObject();
+            error.put("status", "error");
+            error.put("message", "Admin access required");
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write(error.toJSONString());
+            return;
+        }
+
         JSONObject result = new JSONObject();
         result.put("status", "success");
         result.put("message", "TypeRegistrationServlet is running");
@@ -126,7 +144,7 @@ public class TypeRegistrationServlet extends HttpServlet {
         result.put("typeServiceAvailable", typeService != null);
         result.put("typeManagerAvailable", typeManager != null);
         result.put("typeResourceAvailable", typeResource != null);
-        
+
         // Add debug information about registered types
         String pathInfo = request.getPathInfo();
         if (log.isDebugEnabled()) {

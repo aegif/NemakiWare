@@ -47,6 +47,7 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
+import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.dao.ContentDaoService;
@@ -57,6 +58,8 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.util.constant.RenditionKind;
 import jp.aegif.nemaki.util.spring.SpringContext;
 
+import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -120,6 +123,11 @@ public class RenditionController {
                 .getBean("RenditionManager", RenditionManager.class);
     }
 
+    private ExceptionService getExceptionService() {
+        return SpringContext.getApplicationContext()
+                .getBean("ExceptionService", ExceptionService.class);
+    }
+
     /**
      * Get all renditions for a document
      *
@@ -135,6 +143,14 @@ public class RenditionController {
         Map<String, Object> response = new HashMap<>();
 
         try {
+            // Authentication check
+            CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+            if (callContext == null) {
+                response.put("status", "error");
+                response.put("message", "Authentication required");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+            }
+
             log.info("[RenditionController] Getting renditions for objectId=" + objectId + " in repo=" + repositoryId);
 
             // Check if document exists first
@@ -143,6 +159,15 @@ public class RenditionController {
                 response.put("status", "error");
                 response.put("message", "Document not found");
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+            }
+
+            // Object-level permission check
+            try {
+                getExceptionService().permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);
+            } catch (CmisPermissionDeniedException e) {
+                response.put("status", "error");
+                response.put("message", "Permission denied");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
             }
 
             List<Rendition> renditions = getContentService().getRenditions(repositoryId, objectId);

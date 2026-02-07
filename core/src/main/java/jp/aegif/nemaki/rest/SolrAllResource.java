@@ -45,11 +45,16 @@ public class SolrAllResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		
+
+		// Admin check - Solr URL is sensitive infrastructure information
+		if (!checkAdmin(errMsg, servletRequest)) {
+			return makeResult(false, result, errMsg).toJSONString();
+		}
+
 		String solrUrl = solrUtil.getSolrUrl();
-		
+
 		result.put("url", solrUrl);
-		
+
 		// Output
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();

@@ -106,11 +106,18 @@ public class ArchiveResource extends ResourceBase {
 			@PathParam("repositoryId") String repositoryId,
 			@QueryParam("skip") Integer skip,
 			@QueryParam("limit") Integer limit,
-			@QueryParam("desc") Boolean desc){
+			@QueryParam("desc") Boolean desc,
+			@Context HttpServletRequest httpRequest){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray list = new JSONArray();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			return makeResult(status, result, errMsg).toJSONString();
+		}
 
 		try{
 			List<Archive> archives = getContentService().getArchives(repositoryId, skip, limit, desc);
@@ -145,10 +152,17 @@ public class ArchiveResource extends ResourceBase {
 	@GET
 	@Path("/show/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("id") String id) {
+	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("id") String id,
+			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			return makeResult(status, result, errMsg).toJSONString();
+		}
 
 		try {
 			Archive archive = getContentService().getArchive(repositoryId, id);

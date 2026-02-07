@@ -8,20 +8,36 @@ import java.lang.management.RuntimeMXBean;
 import java.lang.management.ThreadMXBean;
 import java.util.List;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.Response;
+
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 
 @Path("/repo/{repositoryId}/metrics")
 public class MetricsResource {
 
     private static final String CONTENT_TYPE_OPENMETRICS = "text/plain; version=0.0.4; charset=utf-8";
 
+    private boolean isAdmin(HttpServletRequest request) {
+        CallContext callContext = (CallContext) request.getAttribute("CallContext");
+        if (callContext == null) return false;
+        Boolean isAdmin = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
+        return isAdmin != null && isAdmin;
+    }
+
     @GET
     @Produces("text/plain")
-    public Response getMetrics(@PathParam("repositoryId") String repositoryId) {
+    public Response getMetrics(@PathParam("repositoryId") String repositoryId,
+            @Context HttpServletRequest request) {
+        if (!isAdmin(request)) {
+            return Response.status(Response.Status.FORBIDDEN)
+                .entity("# Error: Admin access required\n").build();
+        }
         StringBuilder sb = new StringBuilder();
 
         appendJvmMetrics(sb);

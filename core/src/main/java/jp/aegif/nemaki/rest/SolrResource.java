@@ -186,10 +186,15 @@ public class SolrResource extends ResourceBase {
 	@Path("/url")
 	@Produces(MediaType.APPLICATION_JSON)
 	@SuppressWarnings("unchecked")
-	public String url() {
+	public String url(@Context HttpServletRequest request) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check - Solr URL is sensitive infrastructure information
+		if (!checkAdmin(errMsg, request)) {
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		SolrUtil util = getSolrUtil();
 		if (util == null) {

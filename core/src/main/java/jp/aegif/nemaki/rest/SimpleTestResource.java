@@ -9,12 +9,20 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.servlet.http.HttpServletRequest;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
 @Path("/test")
 public class SimpleTestResource {
+
+	private boolean isAdmin(HttpServletRequest request) {
+		CallContext callContext = (CallContext) request.getAttribute("CallContext");
+		if (callContext == null) return false;
+		Boolean isAdmin = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
+		return isAdmin != null && isAdmin;
+	}
 	private static final Log log = LogFactory.getLog(SimpleTestResource.class);
 
     @GET
@@ -45,6 +53,12 @@ public class SimpleTestResource {
     @Path("/types")
     @Produces(MediaType.APPLICATION_JSON)
     public Response invalidateTypeCache(@Context HttpServletRequest httpRequest) {
+        // Admin check
+        if (!isAdmin(httpRequest)) {
+            return Response.status(Response.Status.FORBIDDEN)
+                .entity("{\"error\":\"Admin access required\"}").build();
+        }
+
         try {
             // Get Spring Application Context first
             ApplicationContext appContext = WebApplicationContextUtils.getWebApplicationContext(

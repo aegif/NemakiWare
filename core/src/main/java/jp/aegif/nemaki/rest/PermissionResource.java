@@ -42,9 +42,11 @@ import jp.aegif.nemaki.util.spring.SpringContext;
 
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
+import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
@@ -126,20 +128,43 @@ public class PermissionResource extends ResourceBase {
 		return service;
 	}
 
+	private ExceptionService getExceptionService() {
+		return SpringContext.getApplicationContext()
+				.getBean("ExceptionService", ExceptionService.class);
+	}
+
 	@SuppressWarnings("unchecked")
 	@GET
 	@Produces(MediaType.APPLICATION_JSON)
-	public String getACL(@PathParam("repositoryId") String repositoryId, @PathParam("objectId") String objectId) {
+	public String getACL(@PathParam("repositoryId") String repositoryId, @PathParam("objectId") String objectId,
+			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
 		try {
+			// Authentication check
+			CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+			if (callContext == null) {
+				status = false;
+				addErrMsg(errMsg, "acl", "Authentication required");
+				return makeResult(status, result, errMsg).toJSONString();
+			}
+
 			Content content = getContentServiceSafe().getContent(repositoryId, objectId);
 			if (content == null) {
 				status = false;
 				addErrMsg(errMsg, "object", ErrorCode.ERR_NOTFOUND);
 			} else {
+				// Object-level permission check
+				try {
+					getExceptionService().permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_ACL_OBJECT, content);
+				} catch (CmisPermissionDeniedException e) {
+					status = false;
+					addErrMsg(errMsg, "acl", "Permission denied");
+					return makeResult(status, result, errMsg).toJSONString();
+				}
+
 				boolean aclInherited = getContentServiceSafe().getAclInheritedWithDefault(repositoryId, content);
 
 				// Use calculateAcl to get both local and inherited ACLs
