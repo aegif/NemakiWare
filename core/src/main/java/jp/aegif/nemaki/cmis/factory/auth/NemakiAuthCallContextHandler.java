@@ -100,8 +100,25 @@ public class NemakiAuthCallContextHandler extends org.apache.chemistry.opencmis.
 			log.warn("Failed to process SSO headers", e);
 		}
 
-		//Nemaki auth token
-		ctxMap.put(CallContextKey.AUTH_TOKEN, request.getHeader(CallContextKey.AUTH_TOKEN));
+		//Nemaki auth token (header first, then HttpOnly cookie fallback)
+		String authToken = request.getHeader(CallContextKey.AUTH_TOKEN);
+		if (authToken == null || authToken.isEmpty()) {
+			// Fallback: read from HttpOnly cookie (secure browser-based auth)
+			jakarta.servlet.http.Cookie[] cookies = request.getCookies();
+			if (cookies != null) {
+				for (jakarta.servlet.http.Cookie cookie : cookies) {
+					if ("nemaki_auth_token".equals(cookie.getName())) {
+						String value = cookie.getValue();
+						if (value != null && !value.isEmpty()) {
+							authToken = value;
+							log.debug("Auth token extracted from HttpOnly cookie");
+							break;
+						}
+					}
+				}
+			}
+		}
+		ctxMap.put(CallContextKey.AUTH_TOKEN, authToken);
 		ctxMap.put(CallContextKey.AUTH_TOKEN_APP, request.getHeader(CallContextKey.AUTH_TOKEN_APP));
 		
 		log.info("Call context map created with " + ctxMap.size() + " entries");

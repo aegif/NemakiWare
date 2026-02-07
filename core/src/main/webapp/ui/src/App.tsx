@@ -199,9 +199,8 @@
  * - Route component throws: ErrorBoundary implemented in ProtectedRoute (catches 401 errors)
  */
 
-import { HashRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ConfigProvider, App as AntApp } from 'antd';
-import { useEffect } from 'react';
 import { Layout } from './components/Layout/Layout';
 import { DocumentList } from './components/DocumentList/DocumentList';
 import { DocumentViewer } from './components/DocumentViewer/DocumentViewer';
@@ -244,7 +243,6 @@ const MCP_PENDING_LOGIN_KEY = 'mcp_pending_login_code';
 function AppRoutes() {
   const { isAuthenticated, authToken } = useAuth();
   const location = useLocation();
-  const navigate = useNavigate();
 
   // Public routes that don't require authentication
   // cloud-login needs to be accessible for MCP cloud authentication flow

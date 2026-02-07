@@ -28,7 +28,7 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
-import { CloudAuthConfig, fetchCloudAuthConfig, signInWithGoogle, signInWithMicrosoft } from '../../services/cloud-auth';
+import { fetchCloudAuthConfig } from '../../services/cloud-auth';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -48,7 +48,7 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { isAuthenticated, authToken, login } = useAuth();
+  const { isAuthenticated, authToken } = useAuth();
 
   // Get requestId and loginCode from URL params or localStorage (for returning from login page)
   const urlRequestId = searchParams.get('requestId');
@@ -71,15 +71,13 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
   const [status, setStatus] = useState<'pending' | 'submitting' | 'success' | 'error'>('pending');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [cloudAuthConfig, setCloudAuthConfig] = useState<CloudAuthConfig | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
 
   // Load cloud auth configuration
   useEffect(() => {
     const loadConfig = async () => {
       try {
-        const config = await fetchCloudAuthConfig();
-        setCloudAuthConfig(config);
+        await fetchCloudAuthConfig();
       } catch (error) {
         console.error('Failed to load cloud auth config:', error);
       } finally {
@@ -135,46 +133,6 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
       setErrorMessage(error.message || t('mcpCloudLogin.errors.networkError'));
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    if (!cloudAuthConfig?.googleEnabled || !cloudAuthConfig.googleClientId) {
-      message.error('Google authentication is not configured');
-      return;
-    }
-
-    try {
-      const auth = await signInWithGoogle(cloudAuthConfig.googleClientId, repositoryId);
-      // Login successful - update auth context
-      login(auth);
-      // completeLogin will be called by useEffect when isAuthenticated changes
-    } catch (error: any) {
-      console.error('Google login error:', error);
-      setStatus('error');
-      setErrorMessage(error.message || 'Google authentication failed');
-    }
-  };
-
-  const handleMicrosoftLogin = async () => {
-    if (!cloudAuthConfig?.microsoftEnabled || !cloudAuthConfig.microsoftClientId) {
-      message.error('Microsoft authentication is not configured');
-      return;
-    }
-
-    try {
-      const auth = await signInWithMicrosoft(
-        cloudAuthConfig.microsoftClientId,
-        cloudAuthConfig.microsoftTenantId || 'common',
-        repositoryId
-      );
-      // Login successful - update auth context
-      login(auth);
-      // completeLogin will be called by useEffect when isAuthenticated changes
-    } catch (error: any) {
-      console.error('Microsoft login error:', error);
-      setStatus('error');
-      setErrorMessage(error.message || 'Microsoft authentication failed');
     }
   };
 
@@ -288,8 +246,6 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
       </div>
     );
   }
-
-  const hasCloudAuth = cloudAuthConfig?.googleEnabled || cloudAuthConfig?.microsoftEnabled;
 
   // Main view - user needs to authenticate
   return (

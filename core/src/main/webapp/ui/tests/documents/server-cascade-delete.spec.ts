@@ -225,4 +225,129 @@ test.describe('Server-Side Cascade Delete', () => {
 
     if (await getObjectExists(request, childId)) await deleteObject(request, childId);
   });
+
+  test('B4: deleteObject(parent) cascades to multiple children', async ({ request }) => {
+    const rootId = await getRootFolderId(request);
+    const uuid = generateTestId();
+    const parentId = await createFolder(request, `srv-multi-parent-${uuid}`, rootId);
+    const child1Id = await createDocument(request, `srv-multi-child1-${uuid}.txt`, rootId);
+    const child2Id = await createDocument(request, `srv-multi-child2-${uuid}.txt`, rootId);
+    const child3Id = await createFolder(request, `srv-multi-child3-${uuid}`, rootId);
+
+    await createParentChildRel(request, parentId, child1Id, `rel-pc1-${uuid}`);
+    await createParentChildRel(request, parentId, child2Id, `rel-pc2-${uuid}`);
+    await createParentChildRel(request, parentId, child3Id, `rel-pc3-${uuid}`);
+
+    const delRes = await deleteObject(request, parentId);
+    expect(delRes.ok()).toBeTruthy();
+
+    expect(await getObjectExists(request, parentId)).toBe(false);
+    expect(await getObjectExists(request, child1Id)).toBe(false);
+    expect(await getObjectExists(request, child2Id)).toBe(false);
+    expect(await getObjectExists(request, child3Id)).toBe(false);
+  });
+
+  test('E5: Mixed permission children - deletable ones deleted, non-deletable remain', async ({ request }) => {
+    const rootId = await getRootFolderId(request);
+    const uuid = generateTestId();
+    const parentId = await createFolder(request, `srv-mixed-parent-${uuid}`, rootId);
+    const deletableChildId = await createDocument(request, `srv-mixed-ok-${uuid}.txt`, rootId);
+    const nonDeletableChildId = await createDocument(request, `srv-mixed-deny-${uuid}.txt`, rootId);
+
+    await createParentChildRel(request, parentId, deletableChildId, `rel-ok-${uuid}`);
+    await createParentChildRel(request, parentId, nonDeletableChildId, `rel-deny-${uuid}`);
+
+    // Grant test user full access to parent and deletable child, but only read to non-deletable
+    await applyACL(request, parentId, TEST_USER, 'cmis:all');
+    await applyACL(request, deletableChildId, TEST_USER, 'cmis:all');
+    await applyACL(request, nonDeletableChildId, TEST_USER, 'cmis:read');
+
+    const delRes = await deleteObject(request, parentId, TEST_USER_AUTH);
+    expect(delRes.ok()).toBeTruthy();
+
+    expect(await getObjectExists(request, parentId)).toBe(false);
+    expect(await getObjectExists(request, deletableChildId)).toBe(false);
+    expect(await getObjectExists(request, nonDeletableChildId)).toBe(true);
+
+    // Cleanup
+    if (await getObjectExists(request, nonDeletableChildId)) await deleteObject(request, nonDeletableChildId);
+  });
+
+  test('B5: Four-level deep cascade (parent->child->grandchild->great-grandchild)', async ({ request }) => {
+    const rootId = await getRootFolderId(request);
+    const uuid = generateTestId();
+    const level1Id = await createFolder(request, `srv-deep-l1-${uuid}`, rootId);
+    const level2Id = await createFolder(request, `srv-deep-l2-${uuid}`, rootId);
+    const level3Id = await createFolder(request, `srv-deep-l3-${uuid}`, rootId);
+    const level4Id = await createDocument(request, `srv-deep-l4-${uuid}.txt`, rootId);
+
+    await createParentChildRel(request, level1Id, level2Id, `rel-12-${uuid}`);
+    await createParentChildRel(request, level2Id, level3Id, `rel-23-${uuid}`);
+    await createParentChildRel(request, level3Id, level4Id, `rel-34-${uuid}`);
+
+    const delRes = await deleteObject(request, level1Id);
+    expect(delRes.ok()).toBeTruthy();
+
+    expect(await getObjectExists(request, level1Id)).toBe(false);
+    expect(await getObjectExists(request, level2Id)).toBe(false);
+    expect(await getObjectExists(request, level3Id)).toBe(false);
+    expect(await getObjectExists(request, level4Id)).toBe(false);
+  });
+
+  test('B6: Tree structure cascade (parent with two children, each with grandchildren)', async ({ request }) => {
+    const rootId = await getRootFolderId(request);
+    const uuid = generateTestId();
+
+    // Tree structure:
+    //       parent
+    //      /      \
+    //   child1   child2
+    //    |         |
+    //  grand1    grand2
+
+    const parentId = await createFolder(request, `srv-tree-parent-${uuid}`, rootId);
+    const child1Id = await createFolder(request, `srv-tree-c1-${uuid}`, rootId);
+    const child2Id = await createFolder(request, `srv-tree-c2-${uuid}`, rootId);
+    const grand1Id = await createDocument(request, `srv-tree-g1-${uuid}.txt`, rootId);
+    const grand2Id = await createDocument(request, `srv-tree-g2-${uuid}.txt`, rootId);
+
+    await createParentChildRel(request, parentId, child1Id, `rel-p-c1-${uuid}`);
+    await createParentChildRel(request, parentId, child2Id, `rel-p-c2-${uuid}`);
+    await createParentChildRel(request, child1Id, grand1Id, `rel-c1-g1-${uuid}`);
+    await createParentChildRel(request, child2Id, grand2Id, `rel-c2-g2-${uuid}`);
+
+    const delRes = await deleteObject(request, parentId);
+    expect(delRes.ok()).toBeTruthy();
+
+    expect(await getObjectExists(request, parentId)).toBe(false);
+    expect(await getObjectExists(request, child1Id)).toBe(false);
+    expect(await getObjectExists(request, child2Id)).toBe(false);
+    expect(await getObjectExists(request, grand1Id)).toBe(false);
+    expect(await getObjectExists(request, grand2Id)).toBe(false);
+  });
+
+  test('E6: Deleting middle of chain only affects descendants', async ({ request }) => {
+    const rootId = await getRootFolderId(request);
+    const uuid = generateTestId();
+
+    // Chain: A -> B -> C
+    // Delete B: should delete B and C, but A remains
+
+    const aId = await createFolder(request, `srv-mid-a-${uuid}`, rootId);
+    const bId = await createFolder(request, `srv-mid-b-${uuid}`, rootId);
+    const cId = await createDocument(request, `srv-mid-c-${uuid}.txt`, rootId);
+
+    await createParentChildRel(request, aId, bId, `rel-ab-${uuid}`);
+    await createParentChildRel(request, bId, cId, `rel-bc-${uuid}`);
+
+    const delRes = await deleteObject(request, bId);
+    expect(delRes.ok()).toBeTruthy();
+
+    expect(await getObjectExists(request, aId)).toBe(true); // A remains
+    expect(await getObjectExists(request, bId)).toBe(false); // B deleted
+    expect(await getObjectExists(request, cId)).toBe(false); // C cascaded
+
+    // Cleanup
+    if (await getObjectExists(request, aId)) await deleteObject(request, aId);
+  });
 });

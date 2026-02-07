@@ -186,13 +186,16 @@ public class Content extends NodeBase {
 
 	@Override
 	public boolean equals(Object obj) {
+		if (this == obj) {
+			return true;
+		}
 		if (obj == null || !(obj instanceof Content)) {
 			return false;
 		}
 		String thisId = this.getId();
 		String otherId = ((Content) obj).getId();
-		if (thisId == null) {
-			return otherId == null;
+		if (thisId == null || otherId == null) {
+			return false;
 		}
 		return thisId.equals(otherId);
 	}
@@ -200,6 +203,6 @@ public class Content extends NodeBase {
 	@Override
 	public int hashCode() {
 		String id = this.getId();
-		return id != null ? id.hashCode() : 0;
+		return id != null ? id.hashCode() : System.identityHashCode(this);
 	}
 }

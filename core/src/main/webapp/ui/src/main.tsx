@@ -118,8 +118,9 @@ const authData = localStorage.getItem('nemakiware_auth');
 if (authData) {
   try {
     const auth = JSON.parse(authData);
-    if (auth.token && auth.repositoryId && auth.username) {
+    if (auth.repositoryId && auth.username) {
       // AuthService will automatically load from localStorage
+      // Actual authentication is handled by HttpOnly cookie
     }
   } catch (e) {
     console.error('main.tsx: Failed to parse auth data:', e);

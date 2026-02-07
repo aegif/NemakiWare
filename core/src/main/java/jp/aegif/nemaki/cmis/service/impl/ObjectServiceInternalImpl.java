@@ -68,6 +68,8 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 			log.debug("deleteObjectInternal: Skip cascade loop for objectId=" + objectId);
 			return;
 		}
+		// Increment depth AFTER loop check so early returns don't leak CASCADE_DEPTH
+		incrementCascadeDepth();
 		if (visited != null) {
 			visited.add(objectId);
 		}
@@ -115,28 +117,25 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 			// Body of the method
 			// //////////////////
 			if (content.isDocument()) {
+				// Version deletion validation (CMIS 1.1 spec):
+				// Individual version deletion only allowed for latest version.
+				// Version series deletion (allVersions=true) can be done from any version.
+				jp.aegif.nemaki.model.Document doc = (jp.aegif.nemaki.model.Document) content;
 
-		// CRITICAL TCK FIX (2025-11-01): Version deletion validation
-		// CMIS 1.1 spec: Individual version deletion only allowed for latest version
-		// Version series deletion (allVersions=true) can be done from any version
-		jp.aegif.nemaki.model.Document doc = (jp.aegif.nemaki.model.Document) content;
-
-		// Check if this is a versioned document and NOT the latest version
-		if (doc.getVersionSeriesId() != null && !doc.isLatestVersion()) {
-			// If allVersions is false or null, cannot delete non-latest version individually
-			if (allVersions == null || !allVersions.booleanValue()) {
-				if (log.isDebugEnabled()) {
-					log.debug("Blocking deletion of non-latest version: document=" +
-						doc.getId() + ", versionLabel=" + doc.getVersionLabel() +
-						", isLatestVersion=" + doc.isLatestVersion() +
-						", allVersions=" + allVersions);
+				if (doc.getVersionSeriesId() != null && !doc.isLatestVersion()) {
+					if (allVersions == null || !allVersions.booleanValue()) {
+						if (log.isDebugEnabled()) {
+							log.debug("Blocking deletion of non-latest version: document=" +
+								doc.getId() + ", versionLabel=" + doc.getVersionLabel() +
+								", isLatestVersion=" + doc.isLatestVersion() +
+								", allVersions=" + allVersions);
+						}
+						exceptionService.constraint(doc.getId(),
+							"Cannot delete non-latest version individually. " +
+							"Only the latest version can be deleted, or use allVersions=true to delete the entire version series.");
+					}
+					// If allVersions=true, allow deletion (will delete entire version series)
 				}
-				exceptionService.constraint(doc.getId(),
-					"Cannot delete non-latest version individually. " +
-					"Only the latest version can be deleted, or use allVersions=true to delete the entire version series.");
-			}
-			// If allVersions=true, allow deletion (will delete entire version series)
-		}
 
 				contentService.deleteDocument(callContext, repositoryId,
 						content.getId(), allVersions, deleteWithParent);
@@ -181,7 +180,8 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 
 	/**
 	 * Get or create the thread-local set used for cascade loop detection.
-	 * When deleteWithParent is false we are at the top level and create the set.
+	 * Does NOT modify CASCADE_DEPTH; callers must call incrementCascadeDepth()
+	 * after confirming the deletion should proceed (i.e. after loop detection check).
 	 */
 	private static Set<String> getOrCreateCascadeVisited() {
 		Set<String> set = CASCADE_VISITED.get();
@@ -189,9 +189,17 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 			set = new HashSet<>();
 			CASCADE_VISITED.set(set);
 		}
+		return set;
+	}
+
+
+	/**
+	 * Increment the cascade depth counter. Must be called after loop detection
+	 * confirms the deletion should proceed.
+	 */
+	private static void incrementCascadeDepth() {
 		Integer depth = CASCADE_DEPTH.get();
 		CASCADE_DEPTH.set(depth == null ? 1 : depth + 1);
-		return set;
 	}
 
 	/**

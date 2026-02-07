@@ -409,8 +409,8 @@ public class AuthTokenResource extends ResourceBase{
 	 * OR (UI compatibility):
 	 *   { "oidc_token": "...", "id_token": "...", "user_info": {...} }
 	 *
-	 * When userinfo_endpoint is not provided, the server derives it from the
-	 * configured oidc.issuer property (appending /protocol/openid-connect/userinfo).
+	 * When userinfo_endpoint is not provided, the server discovers it from the
+	 * configured oidc.issuer property via OIDC Discovery (/.well-known/openid-configuration).
 	 *
 	 * When access_token + userinfo_endpoint are provided, the server calls the endpoint
 	 * to obtain verified user information. The client-supplied user_info is ignored.
@@ -441,16 +441,17 @@ public class AuthTokenResource extends ResourceBase{
 				accessToken = (String) requestJson.get("oidc_token");
 			}
 
-			// Accept "userinfo_endpoint" or derive from configured oidc.issuer
+			// Accept "userinfo_endpoint" or derive from configured oidc.issuer via OIDC Discovery
 			String userinfoEndpoint = (String) requestJson.get("userinfo_endpoint");
 			if (StringUtils.isBlank(userinfoEndpoint)) {
 				PropertyManager pm = getPropertyManager();
 				if (pm != null) {
 					String issuerUrl = pm.readValue(PropertyKey.OIDC_ISSUER);
 					if (StringUtils.isNotBlank(issuerUrl)) {
-						// Standard OIDC: issuer + /protocol/openid-connect/userinfo (Keycloak)
-						userinfoEndpoint = issuerUrl + "/protocol/openid-connect/userinfo";
-						logger.info("Derived userinfo_endpoint from oidc.issuer: {}", userinfoEndpoint);
+						userinfoEndpoint = discoverUserInfoEndpoint(issuerUrl);
+						if (userinfoEndpoint != null) {
+							logger.info("Discovered userinfo_endpoint via OIDC Discovery: {}", userinfoEndpoint);
+						}
 					}
 				}
 			}
@@ -1072,12 +1073,12 @@ public class AuthTokenResource extends ResourceBase{
 		}
 
 		try {
-			URL url = new URL(normalized);
+			java.net.URI uri = java.net.URI.create(normalized);
 			// HTTPS is required for static allowlist hosts (Google, Microsoft).
 			// For configured OIDC issuer hosts (e.g. Keycloak dev), HTTP is allowed
 			// if the issuer itself uses HTTP (validated in isAllowedByOidcIssuer).
 
-			java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+			java.net.HttpURLConnection conn = (java.net.HttpURLConnection) uri.toURL().openConnection();
 			conn.setRequestMethod("GET");
 			conn.setRequestProperty("Authorization", "Bearer " + accessToken);
 			conn.setRequestProperty("Accept", "application/json");
@@ -1097,6 +1098,61 @@ public class AuthTokenResource extends ResourceBase{
 			}
 		} catch (Exception e) {
 			logger.error("Failed to fetch UserInfo from provider: {}", e.getMessage(), e);
+			return null;
+		}
+	}
+
+	/**
+	 * Discover the userinfo_endpoint from an OIDC issuer via OpenID Connect Discovery.
+	 * Fetches {issuerUrl}/.well-known/openid-configuration and extracts "userinfo_endpoint".
+	 * This is provider-agnostic (works with Keycloak, Google, Microsoft, Auth0, etc.).
+	 *
+	 * @param issuerUrl the OIDC issuer URL (e.g. "https://keycloak.example.com/realms/myrealm")
+	 * @return the userinfo_endpoint URL, or null if discovery fails
+	 */
+	private String discoverUserInfoEndpoint(String issuerUrl) {
+		if (issuerUrl == null || issuerUrl.trim().isEmpty()) {
+			return null;
+		}
+		String normalized = issuerUrl.trim();
+		if (normalized.endsWith("/")) {
+			normalized = normalized.substring(0, normalized.length() - 1);
+		}
+
+		String discoveryUrl = normalized + "/.well-known/openid-configuration";
+		try {
+			// SSRF prevention: validate discovery URL against allowed OIDC issuer hosts
+			if (!isAllowedUserInfoEndpoint(discoveryUrl)) {
+				logger.warn("OIDC Discovery URL not allowed: {}", discoveryUrl);
+				return null;
+			}
+
+			java.net.URI uri = java.net.URI.create(discoveryUrl);
+			java.net.HttpURLConnection conn = (java.net.HttpURLConnection) uri.toURL().openConnection();
+			conn.setRequestMethod("GET");
+			conn.setRequestProperty("Accept", "application/json");
+			conn.setConnectTimeout(10000);
+			conn.setReadTimeout(10000);
+
+			int responseCode = conn.getResponseCode();
+			if (responseCode != 200) {
+				logger.warn("OIDC Discovery returned HTTP {} for {}", responseCode, discoveryUrl);
+				return null;
+			}
+
+			try (java.io.InputStream is = conn.getInputStream();
+			     java.io.InputStreamReader reader = new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8)) {
+				JSONParser parser = new JSONParser();
+				JSONObject config = (JSONObject) parser.parse(reader);
+				String endpoint = (String) config.get("userinfo_endpoint");
+				if (endpoint != null && !endpoint.trim().isEmpty()) {
+					return endpoint.trim();
+				}
+				logger.warn("OIDC Discovery response missing userinfo_endpoint field");
+				return null;
+			}
+		} catch (Exception e) {
+			logger.warn("OIDC Discovery failed for {}: {}", discoveryUrl, e.getMessage());
 			return null;
 		}
 	}

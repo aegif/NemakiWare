@@ -9,6 +9,7 @@ NemakiWare is an open source Enterprise Content Management system, compliant wit
 - **Modern React SPA UI** with TypeScript, Vite 7, and Ant Design 5
 - **SAML and OIDC authentication** support (Keycloak, Google, Microsoft)
 - **Cloud integration** with Google Workspace and Microsoft 365
+- **RAG semantic search** powered by Hugging Face TEI and Solr DenseVector
 - **Full CMIS 1.1 compliance** verified with Apache Chemistry TCK
 
 ## Key Capabilities
@@ -22,6 +23,11 @@ NemakiWare is an open source Enterprise Content Management system, compliant wit
     * PDF, Microsoft Office (Word, Excel, PowerPoint)
     * OpenDocument (Writer, Calc, Impress)
     * HTML, XML, RTF, plain text
+
+* **RAG Semantic Search** (Hugging Face TEI + Solr DenseVector)
+    * Multilingual vector search with `intfloat/multilingual-e5-large` (1024 dim)
+    * Automatic document chunking and embedding
+    * Combined keyword + semantic search results
 
 * **NoSQL CouchDB backend**
     * Document-based storage with easy replication
@@ -69,6 +75,17 @@ This starts:
 | CouchDB | 5984 | Document database |
 | Solr | 8983 | Full-text search engine |
 | Core | 8080 | CMIS server + React UI |
+
+To also enable RAG semantic search (requires 16GB+ memory):
+
+```bash
+docker compose -f docker-compose-simple.yml --profile rag up -d --build
+```
+
+This additionally starts:
+| Service | Port | Description |
+|---------|------|-------------|
+| TEI | 8081 | Vector embedding server (Hugging Face TEI) |
 
 ### 3. Wait for Startup
 
@@ -236,6 +253,18 @@ NemakiWare/
 | Search | Apache Solr 9.x |
 | UI | React 18, TypeScript, Vite 7, Ant Design 5 |
 | Java | 17 (required) |
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/ARCHITECTURE.md) | System architecture overview |
+| [AWS Deployment Guide](docs/AWS-DEPLOYMENT-GUIDE.md) | Production deployment on AWS |
+| [Cloud Integration](docs/CLOUD_INTEGRATION.md) | Google / Microsoft integration setup |
+| [E2E Test Environment](docs/e2e-test-environment.md) | Playwright test environment setup |
+| [SSO Authentication](docs/SSO-AUTHENTICATION.md) | SAML / OIDC authentication with Keycloak |
 
 ---
 

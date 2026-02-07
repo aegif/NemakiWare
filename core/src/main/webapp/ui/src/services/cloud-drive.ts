@@ -401,19 +401,9 @@ export async function importFromGoogleDrive(
   const blob = await downloadResponse.blob();
   const finalMimeType = exportMimeType || file.mimeType;
 
-  // Get NemakiWare auth token for REST API
-  const authData = localStorage.getItem('nemakiware_auth');
+  // Authentication is handled by HttpOnly cookie (nemaki_auth_token)
+  // which is automatically sent by the browser for same-origin requests.
   const authHeaders: Record<string, string> = {};
-  if (authData) {
-    try {
-      const auth = JSON.parse(authData);
-      if (auth.token) {
-        authHeaders['nemaki_auth_token'] = auth.token;
-      }
-    } catch {
-      console.warn('[CloudDrive] Failed to parse auth data');
-    }
-  }
 
   // Upload to NemakiWare using REST API (handles secondary type and comments)
   const formData = new FormData();
@@ -487,19 +477,9 @@ export async function importFromOneDrive(
   const blob = await downloadResponse.blob();
   const mimeType = file.mimeType || 'application/octet-stream';
 
-  // Get NemakiWare auth token for REST API
-  const authData = localStorage.getItem('nemakiware_auth');
+  // Authentication is handled by HttpOnly cookie (nemaki_auth_token)
+  // which is automatically sent by the browser for same-origin requests.
   const authHeaders: Record<string, string> = {};
-  if (authData) {
-    try {
-      const auth = JSON.parse(authData);
-      if (auth.token) {
-        authHeaders['nemaki_auth_token'] = auth.token;
-      }
-    } catch {
-      console.warn('[CloudDrive] Failed to parse auth data');
-    }
-  }
 
   // Upload to NemakiWare using REST API (handles secondary type and comments)
   const formData = new FormData();

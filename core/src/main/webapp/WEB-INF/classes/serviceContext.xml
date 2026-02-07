@@ -871,6 +871,44 @@
         <property name="contentService" ref="ContentService" />
     </bean>
 
+    <!-- Webhook Service and related beans -->
+    <bean id="WebhookDaoService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.dao.WebhookDaoService</value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="webhookDaoService" />
+        </property>
+    </bean>
+    <bean id="webhookDaoService" class="jp.aegif.nemaki.dao.impl.couch.WebhookDaoServiceImpl">
+        <property name="connectorPool" ref="connectorPool" />
+    </bean>
+
+    <bean id="webhookDispatcher" class="jp.aegif.nemaki.webhook.HttpWebhookDispatcher" />
+
+    <bean id="WebhookService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.businesslogic.WebhookService</value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="webhookService" />
+        </property>
+    </bean>
+    <bean id="webhookService" class="jp.aegif.nemaki.businesslogic.impl.WebhookServiceImpl">
+        <property name="contentService" ref="ContentService" />
+        <property name="dispatcher" ref="webhookDispatcher" />
+        <property name="webhookDaoService" ref="WebhookDaoService" />
+    </bean>
+
+    <bean id="webhookResource" class="jp.aegif.nemaki.rest.WebhookResource">
+        <property name="webhookService" ref="WebhookService" />
+        <property name="contentService" ref="ContentService" />
+    </bean>
+
     <!-- API v1 Component Scanning -->
     <!-- Enable component scanning for OpenAPI v1 resources and filters -->
     <!-- This allows @Autowired dependencies to be injected via Jersey-Spring bridge -->

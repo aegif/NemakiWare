@@ -76,79 +76,14 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
     
     @Override
     public void dispatch(String url, String payload, Map<String, String> headers, WebhookConfig config) {
-        if (url == null || url.isEmpty()) {
-            log.warn("Webhook dispatch skipped: URL is null or empty");
-            return;
-        }
-        
-        if (payload == null) {
-            log.warn("Webhook dispatch skipped: payload is null");
-            return;
-        }
-        
         HttpURLConnection connection = null;
         try {
-            URL targetUrl = new URL(url);
-            
-            // Validate URL protocol (only HTTP/HTTPS allowed)
-            String protocol = targetUrl.getProtocol().toLowerCase();
-            if (!protocol.equals("http") && !protocol.equals("https")) {
-                log.warn("Webhook dispatch skipped: unsupported protocol " + protocol);
-                return;
-            }
-            
-            // SSRF protection: resolve and validate hostname
-            // Returns the resolved IP address to prevent DNS rebinding attacks
-            InetAddress resolvedAddress = resolveAndValidateUrl(targetUrl);
-            if (resolvedAddress == null) {
-                log.warn("Webhook dispatch skipped: URL blocked for security reasons - " + url);
-                return;
-            }
-            
-            // Build URL using resolved IP to prevent DNS rebinding
-            int port = targetUrl.getPort() != -1 ? targetUrl.getPort() : targetUrl.getDefaultPort();
-            URL resolvedUrl = new URL(protocol, resolvedAddress.getHostAddress(), port,
-                    targetUrl.getFile());
-            
-            connection = (HttpURLConnection) resolvedUrl.openConnection();
-            connection.setRequestMethod("POST");
-            connection.setDoOutput(true);
-            connection.setConnectTimeout(connectTimeout);
-            connection.setReadTimeout(readTimeout);
-            
-            // SSRF protection: Disable automatic redirect following
-            connection.setInstanceFollowRedirects(false);
-            
-            // Set Host header to original hostname (required for virtual hosting)
-            connection.setRequestProperty("Host", targetUrl.getHost() +
-                    (targetUrl.getPort() != -1 ? ":" + targetUrl.getPort() : ""));
-            
-            // Set default headers
-            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-            connection.setRequestProperty("User-Agent", "NemakiWare-Webhook/1.0");
-            
-            // Set custom headers from webhook config
-            if (headers != null) {
-                for (Map.Entry<String, String> header : headers.entrySet()) {
-                    if (header.getKey() != null && header.getValue() != null) {
-                        connection.setRequestProperty(header.getKey(), header.getValue());
-                    }
-                }
-            }
-            
-            // Write payload
-            byte[] payloadBytes = payload.getBytes(StandardCharsets.UTF_8);
-            connection.setRequestProperty("Content-Length", String.valueOf(payloadBytes.length));
-            
-            try (OutputStream os = connection.getOutputStream()) {
-                os.write(payloadBytes);
-                os.flush();
-            }
-            
+            connection = openConnection(url, payload, headers);
+
             // Get response
             int responseCode = connection.getResponseCode();
             String responseBody = readResponseBody(connection, responseCode);
-            
+
             if (responseCode >= 200 && responseCode < 300) {
                 log.info("Webhook delivered successfully to " + url + " (HTTP " + responseCode + ")");
                 if (log.isDebugEnabled() && responseBody != null && !responseBody.isEmpty()) {
@@ -158,7 +93,9 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
                 log.warn("Webhook delivery failed to " + url + " (HTTP " + responseCode + ")" + 
                         (responseBody != null && !responseBody.isEmpty() ? " - Response: " + responseBody : ""));
             }
-            
+
+        } catch (IllegalArgumentException e) {
+            log.warn("Webhook dispatch skipped: " + e.getMessage());
         } catch (MalformedURLException e) {
             log.error("Webhook dispatch failed: malformed URL " + url, e);
         } catch (IOException e) {
@@ -170,6 +107,82 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
         }
     }
     
+
+    /**
+     * Build an HTTP POST connection, validate the URL (SSRF protection), set headers,
+     * and write the payload. Returns the opened connection ready for reading the response.
+     *
+     * @throws IllegalArgumentException if url/payload is invalid or blocked by SSRF protection
+     * @throws MalformedURLException if the URL is malformed
+     * @throws IOException if an I/O error occurs during connection or payload write
+     */
+    private HttpURLConnection openConnection(String url, String payload, Map<String, String> headers)
+            throws IOException {
+        if (url == null || url.isEmpty()) {
+            throw new IllegalArgumentException("URL is null or empty");
+        }
+        if (payload == null) {
+            throw new IllegalArgumentException("payload is null");
+        }
+
+        URL targetUrl = new URL(url);
+
+        // Validate URL protocol (only HTTP/HTTPS allowed)
+        String protocol = targetUrl.getProtocol().toLowerCase();
+        if (!protocol.equals("http") && !protocol.equals("https")) {
+            throw new IllegalArgumentException("unsupported protocol " + protocol);
+        }
+
+        // SSRF protection: resolve and validate hostname
+        // Returns the resolved IP address to prevent DNS rebinding attacks
+        InetAddress resolvedAddress = resolveAndValidateUrl(targetUrl);
+        if (resolvedAddress == null) {
+            throw new IllegalArgumentException("URL blocked for security reasons (SSRF protection) - " + url);
+        }
+
+        // Build URL using resolved IP to prevent DNS rebinding
+        int port = targetUrl.getPort() != -1 ? targetUrl.getPort() : targetUrl.getDefaultPort();
+        URL resolvedUrl = new URL(protocol, resolvedAddress.getHostAddress(), port,
+                targetUrl.getFile());
+
+        HttpURLConnection connection = (HttpURLConnection) resolvedUrl.openConnection();
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setConnectTimeout(connectTimeout);
+        connection.setReadTimeout(readTimeout);
+
+        // SSRF protection: Disable automatic redirect following
+        connection.setInstanceFollowRedirects(false);
+
+        // Set Host header to original hostname (required for virtual hosting)
+        connection.setRequestProperty("Host", targetUrl.getHost() +
+                (targetUrl.getPort() != -1 ? ":" + targetUrl.getPort() : ""));
+
+        // Set default headers
+        connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+        connection.setRequestProperty("User-Agent", "NemakiWare-Webhook/1.0");
+
+        // Set custom headers
+        if (headers != null) {
+            for (Map.Entry<String, String> header : headers.entrySet()) {
+                if (header.getKey() != null && header.getValue() != null) {
+                    connection.setRequestProperty(header.getKey(), header.getValue());
+                }
+            }
+        }
+
+        // Write payload
+        byte[] payloadBytes = payload.getBytes(StandardCharsets.UTF_8);
+        connection.setRequestProperty("Content-Length", String.valueOf(payloadBytes.length));
+
+        try (OutputStream os = connection.getOutputStream()) {
+            os.write(payloadBytes);
+            os.flush();
+        }
+
+        return connection;
+    }
+
     /**
      * Read response body from connection with truncation.
      * Uses error stream for non-2xx responses, input stream for success.
@@ -353,95 +366,29 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
         result.setEventType("TEST");
         result.setAttemptNumber(1);
         result.setTimestamp(new java.util.GregorianCalendar());
-        
-        if (url == null || url.isEmpty()) {
-            result.setSuccess(false);
-            result.setStatusCode(0);
-            result.setResponseBody("Error: URL is null or empty");
-            return result;
-        }
-        
-        if (payload == null) {
-            result.setSuccess(false);
-            result.setStatusCode(0);
-            result.setResponseBody("Error: payload is null");
-            return result;
-        }
-        
+
         HttpURLConnection connection = null;
         try {
-            URL targetUrl = new URL(url);
-            
-            // Validate URL protocol
-            String protocol = targetUrl.getProtocol().toLowerCase();
-            if (!protocol.equals("http") && !protocol.equals("https")) {
-                result.setSuccess(false);
-                result.setStatusCode(0);
-                result.setResponseBody("Error: unsupported protocol " + protocol);
-                return result;
-            }
-            
-            // SSRF protection: resolve and validate hostname
-            InetAddress resolvedAddress = resolveAndValidateUrl(targetUrl);
-            if (resolvedAddress == null) {
-                result.setSuccess(false);
-                result.setStatusCode(0);
-                result.setResponseBody("Error: URL blocked for security reasons (SSRF protection)");
-                return result;
-            }
+            connection = openConnection(url, payload, headers);
 
-            // Build URL using resolved IP to prevent DNS rebinding
-            int port = targetUrl.getPort() != -1 ? targetUrl.getPort() : targetUrl.getDefaultPort();
-            URL resolvedUrl = new URL(protocol, resolvedAddress.getHostAddress(), port,
-                    targetUrl.getFile());
-
-            connection = (HttpURLConnection) resolvedUrl.openConnection();
-            connection.setRequestMethod("POST");
-            connection.setDoOutput(true);
-            connection.setConnectTimeout(connectTimeout);
-            connection.setReadTimeout(readTimeout);
-            connection.setInstanceFollowRedirects(false);
-
-            // Set Host header to original hostname (required for virtual hosting)
-            connection.setRequestProperty("Host", targetUrl.getHost() +
-                    (targetUrl.getPort() != -1 ? ":" + targetUrl.getPort() : ""));
-
-            // Set default headers
-            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-            connection.setRequestProperty("User-Agent", "NemakiWare-Webhook/1.0");
-
-            // Set custom headers
-            if (headers != null) {
-                for (Map.Entry<String, String> header : headers.entrySet()) {
-                    if (header.getKey() != null && header.getValue() != null) {
-                        connection.setRequestProperty(header.getKey(), header.getValue());
-                    }
-                }
-            }
-            
-            // Write payload
-            byte[] payloadBytes = payload.getBytes(StandardCharsets.UTF_8);
-            connection.setRequestProperty("Content-Length", String.valueOf(payloadBytes.length));
-            
-            try (OutputStream os = connection.getOutputStream()) {
-                os.write(payloadBytes);
-                os.flush();
-            }
-            
             // Get response
             int responseCode = connection.getResponseCode();
             String responseBody = readResponseBody(connection, responseCode);
-            
+
             result.setStatusCode(responseCode);
             result.setResponseBody(responseBody);
             result.setSuccess(responseCode >= 200 && responseCode < 300);
-            
+
             if (result.isSuccess()) {
                 log.info("Test webhook delivered successfully to " + url + " (HTTP " + responseCode + ")");
             } else {
                 log.warn("Test webhook delivery failed to " + url + " (HTTP " + responseCode + ")");
             }
-            
+
+        } catch (IllegalArgumentException e) {
+            result.setSuccess(false);
+            result.setStatusCode(0);
+            result.setResponseBody("Error: " + e.getMessage());
         } catch (MalformedURLException e) {
             result.setSuccess(false);
             result.setStatusCode(0);
@@ -455,7 +402,7 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
                 connection.disconnect();
             }
         }
-        
+
         return result;
     }
 }

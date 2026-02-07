@@ -160,7 +160,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     setUsersLoading(true);
     try {
       const result = await service.getUsers(repositoryId);
-      setUsers(result.users);
+      setUsers(result);
     } catch (error: unknown) {
       console.error('Failed to load users:', error);
     } finally {

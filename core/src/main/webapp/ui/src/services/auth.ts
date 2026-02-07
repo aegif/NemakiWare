@@ -1,185 +1,21 @@
 /**
  * Authentication Service for NemakiWare React UI
  *
- * Singleton service managing user authentication state and token lifecycle:
- * - XMLHttpRequest-based login with Basic authentication header
- * - Token-based authentication with localStorage persistence
- * - Custom event dispatching for AuthContext reactivity
- * - Automatic token restoration on page reload
- * - Singleton pattern for global authentication state
- * - Window exposure for debugging and test access
+ * Singleton service managing authentication state.
+ * Authentication tokens are stored as HttpOnly cookies by the server,
+ * NOT in JavaScript-accessible storage (XSS protection).
+ * localStorage stores only non-sensitive UI state (username, repositoryId, authMethod).
  *
- * Usage Examples:
- * ```typescript
- * const authService = AuthService.getInstance();
- *
- * // Login
- * const authToken = await authService.login('admin', 'password', 'bedroom');
- * console.log('Token:', authToken.token);
- *
- * // Get current auth
- * const currentAuth = authService.getCurrentAuth();
- * if (currentAuth) {
- *   console.log('Logged in as:', currentAuth.username);
- * }
- *
- * // Check authentication status
- * if (authService.isAuthenticated()) {
- *   console.log('User is authenticated');
- * }
- *
- * // Get auth headers for API requests
- * const headers = authService.getAuthHeaders();
- * // Returns: { 'AUTH_TOKEN': 'token_value' }
- *
- * // Logout
- * authService.logout();
- * ```
- *
- * IMPORTANT DESIGN DECISIONS:
- *
- * 1. XMLHttpRequest over Fetch API (Lines 43-87):
- *    - Uses XMLHttpRequest instead of modern fetch() API
- *    - onreadystatechange callback pattern for state monitoring
- *    - Manual JSON parsing of xhr.responseText
- *    - Rationale: Consistent with legacy codebase patterns
- *    - Implementation: Promise wrapper for async/await compatibility
- *    - Advantage: Explicit control over request lifecycle and error handling
- *
- * 2. Basic Authentication Header Required (Lines 49-51):
- *    - Login endpoint requires BOTH password in form data AND Basic auth header
- *    - Basic auth header format: `Basic ${btoa(username:password)}`
- *    - Form data contains password parameter
- *    - Rationale: NemakiWare auth endpoint expects Basic authentication header
- *    - Critical for success: Missing Basic auth causes 401 Unauthorized
- *    - Server validates credentials from Basic auth, returns token in response
- *
- * 3. Custom Event Dispatch for State Synchronization (Lines 65-66):
- *    - Dispatches 'authStateChanged' custom event after successful login
- *    - window.dispatchEvent(new CustomEvent('authStateChanged'))
- *    - Allows AuthContext to react to auth state changes immediately
- *    - Rationale: React Context can't detect localStorage changes automatically
- *    - Implementation: Custom event bridge between service and Context
- *    - Advantage: Immediate UI updates without polling localStorage
- *
- * 4. localStorage Persistence Strategy (Lines 19-31, 63-64, 100-101):
- *    - Stores auth token in localStorage with key 'nemakiware_auth'
- *    - JSON.stringify() for storage, JSON.parse() for retrieval
- *    - Constructor attempts to restore auth from localStorage on initialization
- *    - Try-catch around parse to handle corrupted localStorage data
- *    - localStorage.removeItem() on logout to clear persisted state
- *    - Rationale: Survives page reloads and browser refresh
- *    - Implementation: Single JSON object with token, repositoryId, username
- *    - Advantage: Users stay logged in across sessions
- *
- * 5. Singleton Pattern Implementation (Lines 9-17):
- *    - Private static instance property
- *    - Private constructor (implicitly via getInstance() pattern)
- *    - getInstance() returns existing instance or creates new one
- *    - Rationale: Global authentication state should be single source of truth
- *    - Implementation: Static method pattern with lazy initialization
- *    - Advantage: Consistent auth state across all components
- *
- * 6. Window Exposure for Debugging (Lines 33-36):
- *    - Exposes authService instance to window object IN DEVELOPMENT MODE ONLY
- *    - (window as any).authService = this (guarded by import.meta.env.DEV)
- *    - Available in browser console as window.authService during development
- *    - SECURITY: Disabled in production to prevent token exposure via console
- *    - Implementation: Type assertion (window as any) with DEV environment check
- *    - Advantage: Manual token inspection and state debugging in development
- *
- * 7. Response Status Validation Pattern (Lines 54-82):
- *    - Checks xhr.readyState === 4 (request complete)
- *    - Checks xhr.status === 200 (HTTP OK)
- *    - Parses JSON response and validates response.status === 'success'
- *    - Triple validation: HTTP status, JSON parse, API status field
- *    - Rationale: Server may return 200 with failure status in JSON
- *    - Implementation: Nested validation with specific error messages
- *    - Advantage: Clear error messages for different failure types
- *
- * 8. Logout with Server-side Cookie Clear (Lines 261-291):
- *    - Calls REST endpoint to logout and clear HttpOnly cookie on server
- *    - POST /core/rest/repo/{repositoryId}/authtoken/{username}/logout
- *    - Uses withCredentials=true to send cookies with the request
- *    - Includes auth headers from getAuthHeaders()
- *    - Clears local state regardless of server response (fire-and-forget)
- *    - Sets this.currentAuth = null and removes localStorage
- *    - Also clears OIDC and SAML session data from localStorage
- *    - Rationale: Server clears HttpOnly cookie that JavaScript cannot access
- *    - Implementation: XHR POST without waiting for response
- *    - Advantage: Local logout succeeds even if server request fails
- *
- * 9. Null-Safe Accessor Methods (Lines 104-124):
- *    - getAuthToken() uses optional chaining: this.currentAuth?.token || null
- *    - getCurrentAuth() returns this.currentAuth directly (may be null)
- *    - getAuthHeaders() returns empty object {} if no token
- *    - isAuthenticated() uses double negation: !!this.currentAuth
- *    - Rationale: Prevents TypeScript errors when auth is not set
- *    - Implementation: Consistent null handling across all accessors
- *    - Advantage: Safe to call methods before login without errors
- *
- * 10. Comprehensive Debug Logging (Lines 24, 26, 30, 35, 55, 60, 68, 71, 75, 79):
- *     - Constructor logs auth data restoration from localStorage
- *     - Constructor logs window exposure success
- *     - Login logs each phase: status, parsed response, success, errors
- *     - AUTH DEBUG prefix for easy filtering in console
- *     - Rationale: Authentication failures difficult to diagnose without visibility
- *     - Implementation: console.log() for success, console.error() for failures
- *     - Advantage: Production debugging without source maps or debugger
- *
- * Expected Results:
- * - login(): Returns AuthToken with token/repositoryId/username, stores in localStorage, dispatches event
- * - logout(): Calls server /logout endpoint, clears HttpOnly cookie, clears currentAuth, removes localStorage
- * - getAuthToken(): Returns token string or null if not authenticated
- * - getCurrentAuth(): Returns full AuthToken object or null
- * - getAuthHeaders(): Returns {'AUTH_TOKEN': token} object or {} if not authenticated
- * - isAuthenticated(): Returns true if currentAuth exists, false otherwise
- *
- * Performance Characteristics:
- * - login(): ~200-500ms network request to auth endpoint
- * - logout(): Instant local state clear, server logout in background
- * - getAuthToken(): Instant property access
- * - getCurrentAuth(): Instant property access
- * - getAuthHeaders(): Instant object creation
- * - isAuthenticated(): Instant boolean check
- * - Constructor restore: ~1-5ms localStorage read and JSON parse
- *
- * Debugging Features:
- * - window.authService access for manual inspection
- * - Comprehensive console logging at each auth phase
- * - AUTH DEBUG prefix for log filtering
- * - localStorage persistence allows manual token editing
- * - Response parsing logs full JSON response
- *
- * Known Limitations:
- * - XMLHttpRequest instead of modern fetch() API
- * - No automatic token refresh mechanism
- * - No token expiration checking (relies on server 401 responses)
- * - Fire-and-forget logout doesn't verify server cleared cookie
- * - Singleton pattern makes testing harder (global state)
- * - No CSRF protection (relies on same-origin policy)
- * - Token stored in localStorage (vulnerable to XSS, should use httpOnly cookie)
- * - No multi-tab synchronization (each tab has own AuthService instance)
- *
- * Relationships to Other Services:
- * - Used by CMISService for getAuthHeaders() in all API requests
- * - Used by AuthContext for login/logout operations
- * - AuthContext listens for 'authStateChanged' custom events
- * - Login component calls authService.login() directly
- * - All API services depend on authService.getAuthToken()
- *
- * Common Failure Scenarios:
- * - login() fails: Missing Basic auth header (401 Unauthorized)
- * - login() fails: Wrong password (invalid status in response)
- * - login() fails: Network error (xhr.onerror triggered)
- * - login() fails: Invalid JSON response (parse error)
- * - getAuthToken() returns null: User not logged in
- * - localStorage corrupt: Constructor catches parse error and clears data
- * - Server token invalid: Next API request returns 401, triggers re-login
+ * Key design:
+ * - login() sends credentials via XHR; server sets HttpOnly cookie in response
+ * - logout() calls server to clear the cookie; clears local UI state
+ * - getAuthHeaders() returns empty headers; cookie is sent automatically by browser
+ * - saveAuth() stores non-sensitive data for UI state restoration after page refresh
+ * - 'authStateChanged' custom event bridges service state to React AuthContext
  */
 
 export interface AuthToken {
-  token: string;
+  token?: string;
   repositoryId: string;
   username: string;
   /** Authentication method used */
@@ -201,7 +37,14 @@ export class AuthService {
     const authData = localStorage.getItem('nemakiware_auth');
     if (authData) {
       try {
-        this.currentAuth = JSON.parse(authData);
+        const parsed = JSON.parse(authData);
+        // Restore non-sensitive auth state only (token is NOT stored in localStorage)
+        // The HttpOnly cookie handles actual authentication
+        this.currentAuth = {
+          repositoryId: parsed.repositoryId,
+          username: parsed.username,
+          authMethod: parsed.authMethod,
+        };
       } catch (e) {
         // Failed to parse auth data - remove invalid data
         localStorage.removeItem('nemakiware_auth');
@@ -224,6 +67,7 @@ export class AuthService {
       xhr.open('POST', `/core/rest/repo/${repositoryId}/authtoken/${username}/login`, true);
       xhr.setRequestHeader('Accept', 'application/json');
       xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+      xhr.withCredentials = true; // Receive and store HttpOnly cookie from server
       
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
@@ -231,8 +75,9 @@ export class AuthService {
             try {
               const response = JSON.parse(xhr.responseText);
               if (response.status === 'success') {
-                const token = response.value.token;
-                this.currentAuth = { token, repositoryId, username, authMethod: 'basic' };
+                // Store non-sensitive auth state in memory and localStorage
+                // The actual token is stored as an HttpOnly cookie by the server
+                this.currentAuth = { repositoryId, username, authMethod: 'basic' };
                 localStorage.setItem('nemakiware_auth', JSON.stringify(this.currentAuth));
 
                 // Trigger custom event to notify AuthContext immediately
@@ -259,37 +104,36 @@ export class AuthService {
   logout(): void {
     if (this.currentAuth) {
       // Call server-side logout endpoint to clear HttpOnly cookie
-      // Using POST method as required by the new /logout endpoint
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `/core/rest/repo/${this.currentAuth.repositoryId}/authtoken/${this.currentAuth.username}/logout`, true);
-      xhr.withCredentials = true; // Send cookies with the request
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
+      xhr.withCredentials = true;
+      xhr.onerror = () => {
+        console.error('Logout request failed (network error)');
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 400) {
+          console.error(`Logout request failed: ${xhr.status} ${xhr.statusText}`);
+        }
+      };
       xhr.send();
     }
     this.currentAuth = null;
     localStorage.removeItem('nemakiware_auth');
 
-    // Clear all OIDC session data from localStorage
-    // oidc-client-ts stores user/state with keys like: oidc.user:*, oidc.*
+    // Clear OIDC session data from localStorage
     const oidcKeys = Object.keys(localStorage).filter(key => key.startsWith('oidc.'));
-    oidcKeys.forEach(key => {
-      localStorage.removeItem(key);
-    });
+    oidcKeys.forEach(key => localStorage.removeItem(key));
 
-    // Clear any SAML-related localStorage data if present
+    // Clear SAML session data from localStorage
     const samlKeys = Object.keys(localStorage).filter(key =>
       key.startsWith('saml.') || key.includes('saml') || key.includes('SAML')
     );
-    samlKeys.forEach(key => {
-      localStorage.removeItem(key);
-    });
+    samlKeys.forEach(key => localStorage.removeItem(key));
   }
 
+  /** @deprecated Token is no longer accessible to JavaScript. Use HttpOnly cookie instead. */
   getAuthToken(): string | null {
-    return this.currentAuth?.token || null;
+    return null;
   }
 
   getCurrentAuth(): AuthToken | null {
@@ -307,13 +151,8 @@ export class AuthService {
    * - Cross-origin requests where cookies may not be sent
    * - Non-browser clients
    */
+  /** Returns auth headers. HttpOnly cookie handles authentication automatically. */
   getAuthHeaders(): Record<string, string> {
-    const token = this.getAuthToken();
-    if (token) {
-      return { 
-        'Authorization': `Bearer ${token}`
-      };
-    }
     return {};
   }
 
@@ -327,7 +166,12 @@ export class AuthService {
    * Saves to localStorage and dispatches authStateChanged event.
    */
   saveAuth(auth: AuthToken): void {
-    this.currentAuth = auth;
+    // Store non-sensitive auth state only; actual token is in HttpOnly cookie
+    this.currentAuth = {
+      repositoryId: auth.repositoryId,
+      username: auth.username,
+      authMethod: auth.authMethod,
+    };
     localStorage.setItem('nemakiware_auth', JSON.stringify(this.currentAuth));
 
     // Trigger custom event to notify AuthContext immediately

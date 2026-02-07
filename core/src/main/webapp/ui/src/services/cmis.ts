@@ -273,7 +273,7 @@
  * - getContentStream() fails: Content not available or permission denied (reject with error)
  */
 
-import { AuthService } from './auth';
+// AuthService is no longer needed - authentication handled by HttpOnly cookie
 import { getCmisAuthHeaders } from './auth/CmisAuthHeaderProvider';
 import { CmisHttpClient } from './http';
 import { AtomPubClient } from './clients';
@@ -363,13 +363,11 @@ const MIGRATION_PROPERTY_TYPES: MigrationPropertyType[] = [
 export class CMISService {
   private baseUrl = '/core/browser';
   private restBaseUrl = '/core/rest/repo';  // REST API for type management operations
-  private authService: AuthService;
   private httpClient: CmisHttpClient;
   private atomPubClient: AtomPubClient;
   private onAuthError?: (error: any) => void;
 
   constructor(onAuthError?: (error: any) => void) {
-    this.authService = AuthService.getInstance();
     this.onAuthError = onAuthError;
     // Initialize HTTP client with auth header provider from dedicated module
     this.httpClient = new CmisHttpClient(getCmisAuthHeaders);
@@ -631,25 +629,9 @@ export class CMISService {
   }
 
   private getAuthHeaders(): Record<string, string> {
-    try {
-      const authData = localStorage.getItem('nemakiware_auth');
-
-      if (authData) {
-        const auth = JSON.parse(authData);
-
-        if (auth.username && auth.token) {
-          // Use Basic auth with username to provide username context
-          const credentials = btoa(`${auth.username}:dummy`);
-          return {
-            'Authorization': `Basic ${credentials}`,
-            'nemaki_auth_token': String(auth.token)
-          };
-        }
-      }
-    } catch (e) {
-      // localStorage access failed - return empty headers
-    }
-
+    // Authentication is handled by HttpOnly cookie (nemaki_auth_token)
+    // which is automatically sent by the browser for same-origin requests.
+    // No explicit auth headers needed.
     return {};
   }
 
@@ -2860,8 +2842,8 @@ export class CMISService {
   }
 
   getDownloadUrl(repositoryId: string, objectId: string): string {
-    const token = this.authService.getAuthToken();
-    return `${this.baseUrl}/${repositoryId}/node/${objectId}/content?token=${token}`;
+    // Authentication is handled by HttpOnly cookie, no token in URL needed
+    return `${this.baseUrl}/${repositoryId}/node/${objectId}/content`;
   }
 
   async getContentStream(repositoryId: string, objectId: string): Promise<ArrayBuffer> {
@@ -2995,8 +2977,8 @@ export class CMISService {
    * @deprecated Use getRenditionContent() instead for authenticated access
    */
   getRenditionUrl(repositoryId: string, objectId: string, streamId: string): string {
-    const token = this.authService.getAuthToken();
-    return `${this.baseUrl}/${repositoryId}?cmisselector=content&objectId=${objectId}&streamId=${streamId}&token=${token}`;
+    // Authentication is handled by HttpOnly cookie, no token in URL needed
+    return `${this.baseUrl}/${repositoryId}?cmisselector=content&objectId=${objectId}&streamId=${streamId}`;
   }
 
   // ============================================================
@@ -3329,6 +3311,7 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `/core/rest/repo/${repositoryId}/importexport/import/${folderId}`);
+      xhr.withCredentials = true; // Send HttpOnly cookie for authentication
 
       // Set auth headers
       Object.entries(headers).forEach(([key, value]) => {
@@ -3395,6 +3378,7 @@ export class CMISService {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', `/core/rest/repo/${repositoryId}/importexport/export/${folderId}`);
       xhr.responseType = 'blob';
+      xhr.withCredentials = true; // Send HttpOnly cookie for authentication
 
       // Set auth headers
       Object.entries(headers).forEach(([key, value]) => {

@@ -41,24 +41,10 @@ const { Text } = Typography;
  * Reads from localStorage to get the auth token.
  */
 const getAuthHeaders = (): Record<string, string> => {
-  try {
-    const authData = localStorage.getItem('nemakiware_auth');
-    if (authData) {
-      const auth = JSON.parse(authData);
-      if (auth.username && auth.token) {
-        const credentials = btoa(`${auth.username}:dummy`);
-        return {
-          'Content-Type': 'application/json',
-          'Authorization': `Basic ${credentials}`,
-          'nemaki_auth_token': String(auth.token)
-        };
-      }
-    }
-  } catch (e) {
-    console.error('Failed to get auth headers:', e);
-  }
+  // Authentication is handled by HttpOnly cookie (nemaki_auth_token)
+  // which is automatically sent by the browser for same-origin requests.
   return { 'Content-Type': 'application/json' };
-};
+};;
 
 interface FilesystemImportExportProps {
   repositoryId: string;

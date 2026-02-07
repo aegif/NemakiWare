@@ -250,8 +250,7 @@ import {
   Popconfirm,
   Select,
   Alert,
-  Collapse,
-  Typography
+  Collapse
 } from 'antd';
 import {
   DownloadOutlined,
@@ -267,7 +266,6 @@ import {
   InfoCircleOutlined,
   GoogleOutlined,
   WindowsOutlined,
-  CloudUploadOutlined,
   CloudDownloadOutlined,
   LinkOutlined
 } from '@ant-design/icons';
@@ -1323,32 +1321,37 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 </Button>
               )}
 
-              {!isCheckedOut ? (
+              {object.allowableActions?.canCheckOut && (
                 <Button
                   icon={<LockOutlined />}
                   onClick={handleCheckOut}
                 >
                   {t('documentViewer.checkout')}
                 </Button>
-              ) : (
-                <Space>
-                  <Button
-                    type="primary"
-                    icon={<UnlockOutlined />}
-                    onClick={() => setCheckoutModalVisible(true)}
-                  >
-                    {t('documentViewer.checkin')}
+              )}
+              {object.allowableActions?.canCheckIn && (
+                <Button
+                  type="primary"
+                  icon={<UnlockOutlined />}
+                  onClick={() => setCheckoutModalVisible(true)}
+                >
+                  {t('documentViewer.checkin')}
+                </Button>
+              )}
+              {object.allowableActions?.canCancelCheckOut && (
+                <Popconfirm
+                  title={t('documentViewer.cancelCheckout') + '?'}
+                  onConfirm={handleCancelCheckOut}
+                  okText={t('common.yes')}
+                  cancelText={t('common.no')}
+                >
+                  <Button danger>
+                    {t('common.cancel')}
                   </Button>
-                  <Popconfirm
-                    title={t('documentViewer.cancelCheckout') + '?'}
-                    onConfirm={handleCancelCheckOut}
-                    okText={t('common.yes')}
-                    cancelText={t('common.no')}
-                  >
-                    <Button danger>
-                      {t('common.cancel')}
-                    </Button>
-                  </Popconfirm>
+                </Popconfirm>
+              )}
+              {isCheckedOut && (
+                <>
                   {/* FEATURE: Show cloud edit button only for the login platform (2026-02-03)
                       - Google Drive button only shown if logged in via Google
                       - OneDrive button only shown if logged in via Microsoft
@@ -1392,7 +1395,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                       </Button>
                     </>
                   )}
-                </Space>
+                </>
               )}
 
               <Button

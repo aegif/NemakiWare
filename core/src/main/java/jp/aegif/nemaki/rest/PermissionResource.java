@@ -35,7 +35,6 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.common.ErrorCode;
 import jp.aegif.nemaki.model.Content;
@@ -44,6 +43,8 @@ import jp.aegif.nemaki.util.spring.SpringContext;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
@@ -201,9 +202,15 @@ public class PermissionResource extends ResourceBase {
 			
 			// Convert JSON to CMIS ACL
 			org.apache.chemistry.opencmis.commons.data.Acl cmisAcl = convertJsonToCmisAcl(inputJson, breakInheritance);
-			
-			// Apply ACL to the object using AclService
-			getAclServiceSafe().applyAcl(new SystemCallContext(repositoryId), repositoryId, objectId, cmisAcl, aclPropagation);
+
+			// SECURITY FIX: Use the actual user's CallContext instead of SystemCallContext.
+			// SystemCallContext bypassed AclServiceImpl.applyAcl's permissionDenied(CAN_APPLY_ACL_OBJECT) check,
+			// allowing any authenticated user to modify ACLs on any object (privilege escalation).
+			CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+			if (callContext == null) {
+				throw new CmisPermissionDeniedException("Authentication required");
+			}
+			getAclServiceSafe().applyAcl(callContext, repositoryId, objectId, cmisAcl, aclPropagation);
 			
 			result.put("status", "success");
 		} catch (ParseException e) {

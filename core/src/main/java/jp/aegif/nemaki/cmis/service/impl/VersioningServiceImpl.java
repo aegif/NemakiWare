@@ -194,8 +194,11 @@ public class VersioningServiceImpl implements VersioningService {
 
 			// Safe to access pwc.getId() now since objectNotFound throws if null
 			nemakiCachePool.get(repositoryId).removeCmisCache(pwc.getId());
+			// SECURITY FIX: Use CAN_CHECKIN_DOCUMENT instead of CAN_CANCEL_CHECKOUT_DOCUMENT.
+			// The previous key allowed users with cancel-checkout permission (but not write permission)
+			// to perform checkIn operations.
 			exceptionService.permissionDenied(callContext,
-					repositoryId, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, pwc);
+					repositoryId, PermissionMapping.CAN_CHECKIN_DOCUMENT, pwc);
 
 			// //////////////////
 			// Specific Exception

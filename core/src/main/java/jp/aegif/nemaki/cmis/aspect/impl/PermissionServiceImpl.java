@@ -350,21 +350,25 @@ public class PermissionServiceImpl implements PermissionService {
 			return readSource | readTarget;
 		}
 
-		//Update action
+		// SECURITY FIX: Update and Delete actions now require write-level permissions on source/target.
+		// Previously used CAN_GET_OBJECT_RELATIONSHIPS_OBJECT (read-level), which allowed users
+		// with only read permission to update/delete relationships (including parentChild links).
+
+		//Update action — require CAN_UPDATE_PROPERTIES_OBJECT on source or target
 		if(PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT.equals(key)){
 			boolean updateSource =
-					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source, userName, groups);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source, userName, groups);
 			boolean updateTarget =
-					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target, userName, groups);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target, userName, groups);
 			return updateSource | updateTarget;
 		}
 
-		//Delete action
+		//Delete action — require CAN_DELETE_OBJECT on source or target
 		if(PermissionMapping.CAN_DELETE_OBJECT.equals(key)){
 			boolean deleteSource =
-					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source, userName, groups);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_DELETE_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source, userName, groups);
 			boolean deleteTarget =
-					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target, userName, groups);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_DELETE_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target, userName, groups);
 			return deleteSource | deleteTarget;
 		}
 

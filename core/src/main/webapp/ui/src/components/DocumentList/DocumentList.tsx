@@ -617,8 +617,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               // Convert DatePicker dayjs objects to ISO 8601 format for CMIS
               // propertyDefinitions is an object keyed by propId, not an array
               const propDef = selectedDocumentTypeDefinition?.propertyDefinitions?.[key];
-              if (propDef?.propertyType === 'datetime' && value && typeof value === 'object' && value.toISOString) {
-                properties[key] = value.toISOString();
+              if (propDef?.propertyType === 'datetime' && value && typeof value === 'object' && (value as any).toISOString) {
+                properties[key] = (value as any).toISOString();
               } else if (propDef?.propertyType === 'datetime' && typeof value === 'string') {
                 properties[key] = new Date(value).toISOString();
               } else {
@@ -749,8 +749,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             // Convert DatePicker dayjs objects to ISO 8601 format for CMIS
             // propertyDefinitions is an object keyed by propId, not an array
             const propDef = selectedFolderTypeDefinition?.propertyDefinitions?.[key];
-            if (propDef?.propertyType === 'datetime' && value && typeof value === 'object' && value.toISOString) {
-              properties[key] = value.toISOString();
+            if (propDef?.propertyType === 'datetime' && value && typeof value === 'object' && (value as any).toISOString) {
+              properties[key] = (value as any).toISOString();
             } else if (propDef?.propertyType === 'datetime' && typeof value === 'string') {
               properties[key] = new Date(value).toISOString();
             } else {
@@ -1382,11 +1382,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       key: 'actions',
       width: 300,
       render: (_: any, record: CMISObject) => {
-        // Handle both boolean and string values (AtomPub returns strings, Browser binding returns booleans)
-        const isPrivateWorkingCopy = record.properties?.['cmis:isPrivateWorkingCopy'];
-        const isVersionSeriesCheckedOut = record.properties?.['cmis:isVersionSeriesCheckedOut'];
-        const isPWC = isPrivateWorkingCopy === true || isPrivateWorkingCopy === 'true' ||
-                      isVersionSeriesCheckedOut === true || isVersionSeriesCheckedOut === 'true';
         const isVersionable = record.baseType === 'cmis:document';
 
         return (
@@ -1420,7 +1415,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 />
               </Tooltip>
             )}
-            {isVersionable && !isPWC && (
+            {record.allowableActions?.canCheckOut && (
               <Tooltip title={t('documentList.actions.checkout')}>
                 <Button
                   icon={<EditOutlined />}
@@ -1429,24 +1424,24 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 />
               </Tooltip>
             )}
-            {isVersionable && isPWC && (
-              <>
-                <Tooltip title={t('documentList.actions.checkin')}>
-                  <Button
-                    icon={<CheckOutlined />}
-                    size="small"
-                    type="primary"
-                    onClick={() => handleCheckInClick(record.id)}
-                  />
-                </Tooltip>
-                <Tooltip title={t('documentList.actions.cancelCheckout')}>
-                  <Button
-                    icon={<CloseOutlined />}
-                    size="small"
-                    onClick={() => handleCancelCheckOut(record.id)}
-                  />
-                </Tooltip>
-              </>
+            {record.allowableActions?.canCheckIn && (
+              <Tooltip title={t('documentList.actions.checkin')}>
+                <Button
+                  icon={<CheckOutlined />}
+                  size="small"
+                  type="primary"
+                  onClick={() => handleCheckInClick(record.id)}
+                />
+              </Tooltip>
+            )}
+            {record.allowableActions?.canCancelCheckOut && (
+              <Tooltip title={t('documentList.actions.cancelCheckout')}>
+                <Button
+                  icon={<CloseOutlined />}
+                  size="small"
+                  onClick={() => handleCancelCheckOut(record.id)}
+                />
+              </Tooltip>
             )}
             {isVersionable && (
               <Tooltip title={t('documentList.actions.versionHistory')}>

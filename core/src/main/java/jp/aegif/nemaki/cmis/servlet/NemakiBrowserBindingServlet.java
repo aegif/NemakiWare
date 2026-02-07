@@ -3471,43 +3471,19 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             String resultObjectId = null;
 
             switch (cmisaction) {
-                case "checkOut":
-                    // CRITICAL TCK FIX: Use NemakiWare ContentService directly to ensure versioning properties are set correctly
-                    try {
-                        // Get NemakiWare ContentService from Spring context
-                        org.springframework.web.context.WebApplicationContext webAppContext =
-                            org.springframework.web.context.support.WebApplicationContextUtils.getWebApplicationContext(getServletContext());
+                case "checkOut": {
+                    // SECURITY FIX: Use cmisService.checkOut() which routes through VersioningServiceImpl
+                    // and performs permission check via exceptionService.permissionDenied(CAN_CHECKOUT_DOCUMENT).
+                    // Previous implementation bypassed permission checks by calling contentService.checkOut() directly.
+                    org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder =
+                        new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
+                    org.apache.chemistry.opencmis.commons.spi.Holder<Boolean> contentCopiedHolder =
+                        new org.apache.chemistry.opencmis.commons.spi.Holder<Boolean>();
 
-                        if (webAppContext != null) {
-                            jp.aegif.nemaki.businesslogic.ContentService contentService =
-                                webAppContext.getBean("contentService", jp.aegif.nemaki.businesslogic.ContentService.class);
-
-                            
-
-                            // Call NemakiWare's checkOut method which includes the versioning property fixes
-                            jp.aegif.nemaki.model.Document pwcDocument = contentService.checkOut(callContext, repositoryId, objectId, null);
-                            resultObjectId = pwcDocument.getId(); // PWC ID
-
-                            
-
-                        } else {
-                            
-
-                            // Fallback to standard OpenCMIS implementation
-                            org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder =
-                                new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
-                            org.apache.chemistry.opencmis.commons.spi.Holder<Boolean> contentCopiedHolder =
-                                new org.apache.chemistry.opencmis.commons.spi.Holder<Boolean>();
-
-                            cmisService.checkOut(repositoryId, objectIdHolder, null, contentCopiedHolder);
-                            resultObjectId = objectIdHolder.getValue(); // PWC ID
-                        }
-                    } catch (Exception e) {
-                        
-                        e.printStackTrace();
-                        throw e;
-                    }
+                    cmisService.checkOut(repositoryId, objectIdHolder, null, contentCopiedHolder);
+                    resultObjectId = objectIdHolder.getValue(); // PWC ID
                     break;
+                }
 
                 case "checkIn":
                     String checkinComment = request.getParameter("checkinComment");
