@@ -237,8 +237,13 @@ public class GroupItemResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+
 		//Validation
-		status = validateNewGroup(repositoryId, status, errMsg, groupId, name);
+		if (status) {
+			status = validateNewGroup(repositoryId, status, errMsg, groupId, name);
+		}
 
 		//Create a group
 		if(status){
@@ -331,6 +336,9 @@ public class GroupItemResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+
 		//Existing group
 		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
 		if (group == null) {
@@ -368,12 +376,15 @@ public class GroupItemResource extends ResourceBase{
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
 	public String delete(@PathParam("repositoryId") String repositoryId,
-			@PathParam("id") String groupId){
+			@PathParam("id") String groupId,
+			@Context HttpServletRequest httpRequest){
 
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
 
 		//Existing group
 		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
@@ -407,6 +418,9 @@ public class GroupItemResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
 
 		//Existing Group
 		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);

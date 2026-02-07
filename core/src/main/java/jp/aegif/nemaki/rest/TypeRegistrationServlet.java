@@ -85,10 +85,10 @@ public class TypeRegistrationServlet extends HttpServlet {
                 
                 if (contentType != null && contentType.toLowerCase().contains("application/json")) {
                     log.debug("Processing as JSON content");
-                    registrationResult = typeResource.registerJson(repositoryId, xmlData);
+                    registrationResult = typeResource.registerJson(repositoryId, xmlData, request);
                 } else {
                     log.debug("Processing as XML content");
-                    registrationResult = typeResource.registerSimple(repositoryId, xmlData);
+                    registrationResult = typeResource.registerSimple(repositoryId, xmlData, request);
                 }
                 
                 response.getWriter().write(registrationResult);

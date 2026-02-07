@@ -42,13 +42,19 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.util.spring.SpringContext;
+
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Spring @RestController for Object Type Migration API
@@ -70,6 +76,20 @@ import jp.aegif.nemaki.util.spring.SpringContext;
 public class TypeMigrationController {
 
     private static final Log log = LogFactory.getLog(TypeMigrationController.class);
+
+    @Autowired
+    private HttpServletRequest httpRequest;
+
+    private void checkAdminAuthorization() {
+        CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+        if (callContext == null) {
+            throw new RuntimeException("Authentication required for type migration operations");
+        }
+        Boolean isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
+        if (isAdmin == null || !isAdmin) {
+            throw new RuntimeException("Only administrators can perform type migration operations");
+        }
+    }
 
     private ContentService getContentService() {
         return SpringContext.getApplicationContext()
@@ -252,6 +272,8 @@ public class TypeMigrationController {
     public ResponseEntity<Map<String, Object>> migrateType(
             @PathVariable String repositoryId,
             @RequestBody TypeMigrationRequest request) {
+
+        checkAdminAuthorization();
 
         Map<String, Object> response = new HashMap<>();
 

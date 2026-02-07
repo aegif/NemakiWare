@@ -43,9 +43,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Content;
@@ -53,6 +56,9 @@ import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.util.constant.RenditionKind;
 import jp.aegif.nemaki.util.spring.SpringContext;
+
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Spring @RestController for Rendition API
@@ -64,6 +70,20 @@ import jp.aegif.nemaki.util.spring.SpringContext;
 public class RenditionController {
 
     private static final Log log = LogFactory.getLog(RenditionController.class);
+
+    @Autowired
+    private HttpServletRequest httpRequest;
+
+    private void checkAdminAuthorization() {
+        CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+        if (callContext == null) {
+            throw new RuntimeException("Authentication required for rendition management operations");
+        }
+        Boolean isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
+        if (isAdmin == null || !isAdmin) {
+            throw new RuntimeException("Only administrators can perform rendition management operations");
+        }
+    }
 
     // Supported MIME types for PDF conversion
     private static final List<String> SUPPORTED_MIME_TYPES = Arrays.asList(
@@ -175,6 +195,8 @@ public class RenditionController {
             @PathVariable("repositoryId") String repositoryId,
             @RequestParam("objectId") String objectId,
             @RequestParam(value = "force", required = false, defaultValue = "false") boolean force) {
+
+        checkAdminAuthorization();
 
         Map<String, Object> response = new HashMap<>();
 
@@ -326,6 +348,8 @@ public class RenditionController {
             @PathVariable("repositoryId") String repositoryId,
             @RequestParam("objectIds") List<String> objectIds,
             @RequestParam(value = "force", required = false, defaultValue = "false") boolean force) {
+
+        checkAdminAuthorization();
 
         Map<String, Object> response = new HashMap<>();
         List<Map<String, Object>> results = new ArrayList<>();

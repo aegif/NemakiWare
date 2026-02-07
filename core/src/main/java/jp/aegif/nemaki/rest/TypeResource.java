@@ -26,6 +26,7 @@ import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
@@ -34,6 +35,7 @@ import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.io.InputStream;
@@ -271,8 +273,18 @@ public class TypeResource extends ResourceBase {
 	@Consumes(MediaType.APPLICATION_JSON)
 	@Produces(MediaType.APPLICATION_JSON)
 	@SuppressWarnings("unchecked")
-	public Response create(@PathParam("repositoryId") String repositoryId, String jsonInput) {
+	public Response create(@PathParam("repositoryId") String repositoryId, String jsonInput,
+			@Context HttpServletRequest httpRequest) {
 		log.info("TypeResource.create() called for repository: " + repositoryId);
+
+		// Admin check
+		JSONArray adminErrMsg = new JSONArray();
+		if (!checkAdmin(adminErrMsg, httpRequest)) {
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("status", "error");
+			errorResult.put("message", "Only administrators can create type definitions");
+			return Response.status(Response.Status.FORBIDDEN).entity(errorResult.toJSONString()).build();
+		}
 
 		// Initialize services from Spring context if not already injected
 		ensureServicesInitialized();
@@ -343,9 +355,19 @@ public class TypeResource extends ResourceBase {
 	@Consumes(MediaType.APPLICATION_JSON)
 	@Produces(MediaType.APPLICATION_JSON)
 	@SuppressWarnings("unchecked")
-	public Response update(@PathParam("repositoryId") String repositoryId, @PathParam("typeId") String typeId, String jsonInput) {
+	public Response update(@PathParam("repositoryId") String repositoryId, @PathParam("typeId") String typeId, String jsonInput,
+			@Context HttpServletRequest httpRequest) {
 		log.info("TypeResource.update() called for repository: " + repositoryId + ", typeId: " + typeId);
 		log.warn("NOTE: Type update is a NemakiWare-specific operation that goes beyond CMIS standard compliance");
+
+		// Admin check
+		JSONArray adminErrMsg = new JSONArray();
+		if (!checkAdmin(adminErrMsg, httpRequest)) {
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("status", "error");
+			errorResult.put("message", "Only administrators can update type definitions");
+			return Response.status(Response.Status.FORBIDDEN).entity(errorResult.toJSONString()).build();
+		}
 
 		// Initialize services from Spring context if not already injected
 		ensureServicesInitialized();
@@ -432,9 +454,19 @@ public class TypeResource extends ResourceBase {
 	@Path("/delete/{typeId}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@SuppressWarnings("unchecked")
-	public Response delete(@PathParam("repositoryId") String repositoryId, @PathParam("typeId") String typeId) {
+	public Response delete(@PathParam("repositoryId") String repositoryId, @PathParam("typeId") String typeId,
+			@Context HttpServletRequest httpRequest) {
 		log.info("TypeResource.delete() called for repository: " + repositoryId + ", typeId: " + typeId);
 		log.warn("NOTE: Type deletion is a NemakiWare-specific operation that goes beyond CMIS standard compliance");
+
+		// Admin check
+		JSONArray adminErrMsg = new JSONArray();
+		if (!checkAdmin(adminErrMsg, httpRequest)) {
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("status", "error");
+			errorResult.put("message", "Only administrators can delete type definitions");
+			return Response.status(Response.Status.FORBIDDEN).entity(errorResult.toJSONString()).build();
+		}
 
 		// Initialize services from Spring context if not already injected
 		ensureServicesInitialized();
@@ -714,12 +746,19 @@ public class TypeResource extends ResourceBase {
 	@Path("/register-json")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_JSON)
-	public String registerJson(@PathParam("repositoryId") String repositoryId, String jsonData) {
+	public String registerJson(@PathParam("repositoryId") String repositoryId, String jsonData,
+			@Context HttpServletRequest httpRequest) {
 		log.info("registerJson method called for repository: " + repositoryId);
 		log.debug("JSON Data received: " + (jsonData != null ? jsonData.length() + " characters" : "null"));
 
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		if (!checkAdmin(errMsg, httpRequest)) {
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
 
 		try {
 			if (jsonData == null || jsonData.trim().isEmpty()) {
@@ -779,12 +818,19 @@ public class TypeResource extends ResourceBase {
 	@Path("/register-simple")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_XML)
-	public String registerSimple(@PathParam("repositoryId") String repositoryId, String xmlData) {
+	public String registerSimple(@PathParam("repositoryId") String repositoryId, String xmlData,
+			@Context HttpServletRequest httpRequest) {
 		log.info("registerSimple method called for repository: " + repositoryId);
 		log.debug("XML Data received: " + (xmlData != null ? xmlData.length() + " characters" : "null"));
 
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		if (!checkAdmin(errMsg, httpRequest)) {
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
 
 		try {
 			if (xmlData == null || xmlData.trim().isEmpty()) {
@@ -845,9 +891,16 @@ public class TypeResource extends ResourceBase {
 	@Path("/register")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.MULTIPART_FORM_DATA)
-	public String register(@PathParam("repositoryId") String repositoryId, @FormDataParam("data") InputStream is) {
+	public String register(@PathParam("repositoryId") String repositoryId, @FormDataParam("data") InputStream is,
+			@Context HttpServletRequest httpRequest) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		if (!checkAdmin(errMsg, httpRequest)) {
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
 
 		try {
 			// Initialize services from Spring context before checking

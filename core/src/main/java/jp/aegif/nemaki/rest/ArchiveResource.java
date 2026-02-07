@@ -26,6 +26,7 @@ import jp.aegif.nemaki.util.DateUtil;
 import java.text.SimpleDateFormat;
 import java.util.List;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.PUT;
@@ -33,6 +34,7 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
@@ -173,17 +175,23 @@ public class ArchiveResource extends ResourceBase {
 	@PUT
 	@Path("/restore/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String restore(@PathParam("repositoryId") String repositoryId, @PathParam("id") String id){
+	public String restore(@PathParam("repositoryId") String repositoryId, @PathParam("id") String id,
+			@Context HttpServletRequest httpRequest){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+
+		if (status) {
 		try{
 			getContentService().restoreArchive(repositoryId, id);
 		}catch(ParentNoLongerExistException e){
 			log.error(e, e);
 			status = false;
 			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_RESTORE_BECAUSE_PARENT_NO_LONGER_EXISTS);
+		}
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
@@ -192,17 +200,23 @@ public class ArchiveResource extends ResourceBase {
 	@DELETE
 	@Path("/destroy/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String destroy(@PathParam("repositoryId") String repositoryId, @PathParam("id") String id){
+	public String destroy(@PathParam("repositoryId") String repositoryId, @PathParam("id") String id,
+			@Context HttpServletRequest httpRequest){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		try{
-			getContentService().destroyArchive(repositoryId, id);
-		}catch(Exception e){
-			log.error(e, e);
-			status = false;
-			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_DESTROY);
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+
+		if (status) {
+			try{
+				getContentService().destroyArchive(repositoryId, id);
+			}catch(Exception e){
+				log.error(e, e);
+				status = false;
+				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_DESTROY);
+			}
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();

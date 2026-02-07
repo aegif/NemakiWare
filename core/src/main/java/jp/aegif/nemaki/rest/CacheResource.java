@@ -51,6 +51,13 @@ public class CacheResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			result = makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId);
 		try {
 			CacheService cache = nemakiCachePool.get(repositoryId);
@@ -100,7 +107,14 @@ public class CacheResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-				
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			result = makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
 		if(!nemakiCachePool.get(repositoryId).getTreeCache().isCacheEnabled()){
 			//do nothing when cache disabled
 			result.put("treeCacheEnabled", false);
@@ -154,7 +168,14 @@ public class CacheResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			result = makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
 		try {
 			logger.info("=== TYPE CACHE INVALIDATION REQUEST ===");
 			logger.info("Repository: " + repositoryId);

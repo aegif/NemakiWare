@@ -9,6 +9,7 @@ import org.apache.commons.logging.LogFactory;
 import org.json.JSONObject;
 import org.json.JSONArray;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.core.Response;
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
@@ -102,102 +103,96 @@ public class TypeResourceTests {
     }
     
     /**
-     * Test that create() returns 500 when TypeService is not available
+     * Test that create() returns 403 when no admin credentials provided
      */
     @Test
-    public void testCreateReturns500WhenTypeServiceNull() {
+    public void testCreateReturns403WhenNoAdmin() {
         String jsonInput = createValidTypeDefinitionJson().toString();
-        Response response = typeResource.create(TEST_REPOSITORY_ID, jsonInput);
-        
-        assertEquals("Should return 500 Internal Server Error", 
-            Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), 
+        Response response = typeResource.create(TEST_REPOSITORY_ID, jsonInput, createMockRequest());
+
+        assertEquals("Should return 403 Forbidden without admin credentials",
+            Response.Status.FORBIDDEN.getStatusCode(),
             response.getStatus());
-        
+
         String entity = (String) response.getEntity();
         assertNotNull("Response entity should not be null", entity);
         assertTrue("Response should contain 'error' status", entity.contains("\"status\":\"error\""));
-        
-        log.info("create() correctly returns 500 when TypeService is null");
+
+        log.info("create() correctly returns 403 when no admin credentials provided");
     }
-    
+
     /**
-     * Test that update() returns 500 when TypeService is not available
+     * Test that update() returns 403 when no admin credentials provided
      */
     @Test
-    public void testUpdateReturns500WhenTypeServiceNull() {
+    public void testUpdateReturns403WhenNoAdmin() {
         String jsonInput = createValidTypeDefinitionJson().toString();
-        Response response = typeResource.update(TEST_REPOSITORY_ID, TEST_TYPE_ID, jsonInput);
-        
-        assertEquals("Should return 500 Internal Server Error", 
-            Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), 
+        Response response = typeResource.update(TEST_REPOSITORY_ID, TEST_TYPE_ID, jsonInput, createMockRequest());
+
+        assertEquals("Should return 403 Forbidden without admin credentials",
+            Response.Status.FORBIDDEN.getStatusCode(),
             response.getStatus());
-        
+
         String entity = (String) response.getEntity();
         assertNotNull("Response entity should not be null", entity);
         assertTrue("Response should contain 'error' status", entity.contains("\"status\":\"error\""));
-        
-        log.info("update() correctly returns 500 when TypeService is null");
+
+        log.info("update() correctly returns 403 when no admin credentials provided");
     }
-    
+
     /**
-     * Test that delete() returns 500 when TypeService is not available
+     * Test that delete() returns 403 when no admin credentials provided
      */
     @Test
-    public void testDeleteReturns500WhenTypeServiceNull() {
-        Response response = typeResource.delete(TEST_REPOSITORY_ID, TEST_TYPE_ID);
-        
-        assertEquals("Should return 500 Internal Server Error", 
-            Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), 
+    public void testDeleteReturns403WhenNoAdmin() {
+        Response response = typeResource.delete(TEST_REPOSITORY_ID, TEST_TYPE_ID, createMockRequest());
+
+        assertEquals("Should return 403 Forbidden without admin credentials",
+            Response.Status.FORBIDDEN.getStatusCode(),
             response.getStatus());
-        
+
         String entity = (String) response.getEntity();
         assertNotNull("Response entity should not be null", entity);
         assertTrue("Response should contain 'error' status", entity.contains("\"status\":\"error\""));
-        
-        log.info("delete() correctly returns 500 when TypeService is null");
+
+        log.info("delete() correctly returns 403 when no admin credentials provided");
     }
-    
+
     /**
-     * Test that update() returns 400 for base type modification attempt
+     * Test that update() returns 403 for base type modification attempt (without admin)
      */
     @Test
-    public void testUpdateRejectsBaseTypeModification() {
+    public void testUpdateRejectsWithoutAdmin() {
         // Inject a mock TypeService that returns a type definition
         TypeService mockTypeService = createMockTypeServiceForBaseTypeTest();
         typeResource.setTypeService(mockTypeService);
-        
+
         String jsonInput = createValidTypeDefinitionJson().toString();
-        Response response = typeResource.update(TEST_REPOSITORY_ID, "cmis:document", jsonInput);
-        
-        assertEquals("Should return 400 Bad Request for base type", 
-            Response.Status.BAD_REQUEST.getStatusCode(), 
+        Response response = typeResource.update(TEST_REPOSITORY_ID, "cmis:document", jsonInput, createMockRequest());
+
+        assertEquals("Should return 403 Forbidden without admin credentials",
+            Response.Status.FORBIDDEN.getStatusCode(),
             response.getStatus());
-        
-        String entity = (String) response.getEntity();
-        assertTrue("Response should mention base type", entity.contains("base type"));
-        
-        log.info("update() correctly rejects base type modification");
+
+        log.info("update() correctly rejects without admin credentials");
     }
-    
+
     /**
-     * Test that delete() returns 400 for base type deletion attempt
+     * Test that delete() returns 403 for base type deletion attempt (without admin)
      */
     @Test
-    public void testDeleteRejectsBaseTypeDeletion() {
+    public void testDeleteRejectsWithoutAdmin() {
         // Inject a mock TypeService
         TypeService mockTypeService = createMockTypeServiceForBaseTypeTest();
         typeResource.setTypeService(mockTypeService);
-        
-        Response response = typeResource.delete(TEST_REPOSITORY_ID, "cmis:document");
-        
-        assertEquals("Should return 400 Bad Request for base type", 
-            Response.Status.BAD_REQUEST.getStatusCode(), 
+
+        Response response = typeResource.delete(TEST_REPOSITORY_ID, "cmis:document", createMockRequest());
+
+        assertEquals("Should return 403 Forbidden without admin credentials",
+            Response.Status.FORBIDDEN.getStatusCode(),
             response.getStatus());
-        
-        String entity = (String) response.getEntity();
-        assertTrue("Response should mention base type", entity.contains("base type"));
-        
-        log.info("delete() correctly rejects base type deletion");
+
+        log.info("delete() correctly rejects without admin credentials");
     }
     
     /**
@@ -732,6 +727,26 @@ public class TypeResourceTests {
     // Helper Methods
     // ========================================
     
+    /**
+     * Create a mock HttpServletRequest that returns null for CallContext attribute
+     * (simulating a non-admin or unauthenticated request)
+     */
+    private HttpServletRequest createMockRequest() {
+        return (HttpServletRequest) java.lang.reflect.Proxy.newProxyInstance(
+            HttpServletRequest.class.getClassLoader(),
+            new Class<?>[]{HttpServletRequest.class},
+            (proxy, method, args) -> {
+                if ("getAttribute".equals(method.getName())) {
+                    return null; // No CallContext = not authenticated
+                }
+                if ("getMethod".equals(method.getName())) {
+                    return "POST";
+                }
+                return null;
+            }
+        );
+    }
+
     private JSONObject createValidTypeDefinitionJson() {
         JSONObject json = new JSONObject();
         json.put("id", TEST_TYPE_ID);

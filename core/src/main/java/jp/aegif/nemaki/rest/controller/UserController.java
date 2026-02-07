@@ -40,8 +40,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.common.ErrorCode;
 import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.model.Content;
@@ -49,6 +52,8 @@ import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.DateUtil;
+
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
@@ -68,8 +73,30 @@ import org.mindrot.jbcrypt.BCrypt;
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class UserController {
 
+    @Autowired
+    private HttpServletRequest httpRequest;
+
     private ContentService contentService;
-    
+
+    private void checkAdminAuthorization() {
+        CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+        if (callContext == null) {
+            throw new RuntimeException("Authentication required for user management operations");
+        }
+        Boolean isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
+        if (isAdmin == null || !isAdmin) {
+            throw new RuntimeException("Only administrators can perform user management operations");
+        }
+    }
+
+    private String getAuthenticatedUsername() {
+        CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+        if (callContext != null) {
+            return callContext.getUsername();
+        }
+        return "system";
+    }
+
     private ContentService getContentService() {
         if (contentService != null) {
             return contentService;
@@ -153,10 +180,12 @@ public class UserController {
             @RequestParam(required = false) String firstName,
             @RequestParam(required = false) String lastName,
             @RequestParam(required = false) String email) {
-        
+
+        checkAdminAuthorization();
+
         Map<String, Object> response = new HashMap<>();
         List<String> errors = new ArrayList<>();
-        
+
         // Validation
         if (StringUtils.isBlank(userId)) {
             errors.add("User ID is required");
@@ -210,8 +239,9 @@ public class UserController {
             user.setSubTypeProperties(properties);
             
             // Set creation metadata
-            user.setCreator("system");
-            user.setModifier("system");
+            String username = getAuthenticatedUsername();
+            user.setCreator(username);
+            user.setModifier(username);
             GregorianCalendar now = new GregorianCalendar();
             user.setCreated(now);
             user.setModified(now);
@@ -245,9 +275,11 @@ public class UserController {
             @RequestParam(required = false) String lastName,
             @RequestParam(required = false) String email,
             @RequestParam(required = false) String password) {
-        
+
+        checkAdminAuthorization();
+
         Map<String, Object> response = new HashMap<>();
-        
+
         try {
             UserItem user = getContentService().getUserItemById(repositoryId, userId);
             
@@ -285,9 +317,9 @@ public class UserController {
             }
             
             // Set modification metadata
-            user.setModifier("system");
+            user.setModifier(getAuthenticatedUsername());
             user.setModified(new GregorianCalendar());
-            
+
             // Update user in repository
             getContentService().update(new SystemCallContext(repositoryId), repositoryId, user);
             
@@ -312,9 +344,11 @@ public class UserController {
     public ResponseEntity<Map<String, Object>> deleteUser(
             @PathVariable String repositoryId,
             @PathVariable String userId) {
-        
+
+        checkAdminAuthorization();
+
         Map<String, Object> response = new HashMap<>();
-        
+
         try {
             UserItem user = getContentService().getUserItemById(repositoryId, userId);
             

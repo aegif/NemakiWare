@@ -39,6 +39,13 @@ public class ConfigResource extends ResourceBase{
 		JSONArray configs = new JSONArray();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			result = makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
 		try {
 			Set<String> keys = propertyManager.getKeys();
 			for(String configKey : keys){
@@ -60,10 +67,19 @@ public class ConfigResource extends ResourceBase{
 	@GET
 	@Path("/show/{key}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("key") String configKey) {
+	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("key") String configKey,
+			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			result = makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
 		JSONObject config = createConfig(repositoryId, configKey);
 		result.put("configuration", config);
 		result = makeResult(status, result, errMsg);
@@ -89,6 +105,13 @@ public class ConfigResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			result = makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
 
 		Lock lock = threadLockService.getWriteLock(repositoryId, "configuration");
 		lock.lock();

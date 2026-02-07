@@ -287,14 +287,17 @@ public class ImportExportResource extends ResourceBase {
                         .entity(result.toJSONString()).build();
             }
 
-            // Create CallContext and verify authentication (fix: no admin fallback)
-            CallContext callContext = createCallContext(request, repositoryId);
-            if (callContext.getUsername() == null) {
+            // Admin check - import requires admin privileges
+            JSONArray adminErrMsg = new JSONArray();
+            if (!checkAdmin(adminErrMsg, request)) {
                 result.put("status", "error");
-                result.put("message", "Authentication required");
-                return Response.status(Response.Status.UNAUTHORIZED)
+                result.put("message", "Admin access required for import operations");
+                return Response.status(Response.Status.FORBIDDEN)
                         .entity(result.toJSONString()).build();
             }
+
+            // Create CallContext
+            CallContext callContext = createCallContext(request, repositoryId);
 
             // Stream ZIP to temp file instead of memory (fix: OOM risk)
             tempFile = Files.createTempFile("nemaki-import-", ".zip").toFile();
@@ -395,6 +398,15 @@ public class ImportExportResource extends ResourceBase {
         log.info("Export request received for repository: " + repositoryId + ", folder: " + folderId);
 
         try {
+            // Admin check - export requires admin privileges
+            JSONArray adminErrMsg = new JSONArray();
+            if (!checkAdmin(adminErrMsg, request)) {
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity("{\"status\":\"error\",\"message\":\"Admin access required for export operations\"}")
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
+
             ContentService cs = getContentService();
             if (cs == null) {
                 return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
@@ -1891,23 +1903,17 @@ public class ImportExportResource extends ResourceBase {
         JSONObject response = new JSONObject();
 
         try {
-            // Admin-only check
-            CallContext callContext = createCallContext(request, repositoryId);
-            String username = callContext.getUsername();
-            if (username == null || username.isEmpty()) {
-                response.put("status", "error");
-                response.put("message", "Authentication required");
-                return Response.status(Response.Status.UNAUTHORIZED)
-                        .entity(response.toJSONString())
-                        .build();
-            }
-            if (!"admin".equals(username)) {
+            // Admin-only check (using CallContextKey.IS_ADMIN)
+            JSONArray adminErrMsg = new JSONArray();
+            if (!checkAdmin(adminErrMsg, request)) {
                 response.put("status", "error");
                 response.put("message", "Admin access required for filesystem operations");
                 return Response.status(Response.Status.FORBIDDEN)
                         .entity(response.toJSONString())
                         .build();
             }
+
+            CallContext callContext = createCallContext(request, repositoryId);
 
             // Check for null request body (MEDIUM 4)
             if (requestBody == null) {
@@ -2015,23 +2021,17 @@ public class ImportExportResource extends ResourceBase {
         JSONObject response = new JSONObject();
 
         try {
-            // Admin-only check
-            CallContext callContext = createCallContext(request, repositoryId);
-            String username = callContext.getUsername();
-            if (username == null || username.isEmpty()) {
-                response.put("status", "error");
-                response.put("message", "Authentication required");
-                return Response.status(Response.Status.UNAUTHORIZED)
-                        .entity(response.toJSONString())
-                        .build();
-            }
-            if (!"admin".equals(username)) {
+            // Admin-only check (using CallContextKey.IS_ADMIN)
+            JSONArray adminErrMsg = new JSONArray();
+            if (!checkAdmin(adminErrMsg, request)) {
                 response.put("status", "error");
                 response.put("message", "Admin access required for filesystem operations");
                 return Response.status(Response.Status.FORBIDDEN)
                         .entity(response.toJSONString())
                         .build();
             }
+
+            CallContext callContext = createCallContext(request, repositoryId);
 
             // Check for null request body (MEDIUM 4)
             if (requestBody == null) {

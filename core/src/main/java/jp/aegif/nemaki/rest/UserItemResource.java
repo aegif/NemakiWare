@@ -393,8 +393,13 @@ private ContentService getContentServiceSafe() {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+
 		// Validation
-		status = validateNewUser(status, errMsg, userId, name, firstName, lastName, password, repositoryId);
+		if (status) {
+			status = validateNewUser(status, errMsg, userId, name, firstName, lastName, password, repositoryId);
+		}
 
 		// Create a user
 		if (status) {
@@ -462,6 +467,9 @@ private ContentService getContentServiceSafe() {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+
 		try {
 			// Parse JSON input
 			JSONParser parser = new JSONParser();
@@ -475,7 +483,9 @@ private ContentService getContentServiceSafe() {
 
 			// Validation
 			log.info("[" + userId + "] Starting validation");
-			status = validateNewUser(status, errMsg, userId, name, firstName, lastName, password, repositoryId);
+			if (status) {
+				status = validateNewUser(status, errMsg, userId, name, firstName, lastName, password, repositoryId);
+			}
 			log.info("[" + userId + "] Validation complete: status=" + status);
 
 			// Create a user
@@ -976,15 +986,18 @@ private ContentService getContentServiceSafe() {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		// Existing user
-		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
-		if (user == null) {
-			status = false;
-			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
-		}
+		// Admin check - only admins can delete users
+		status = checkAdmin(errMsg, httpRequest);
 
-		// Validation
-		status = checkAuthorityForUser(status, errMsg, httpRequest, userId, repositoryId);
+		// Existing user
+		UserItem user = null;
+		if (status) {
+			user = getContentServiceSafe().getUserItemById(repositoryId, userId);
+			if (user == null) {
+				status = false;
+				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
+			}
+		}
 
 		// Delete a user
 		if (status) {
