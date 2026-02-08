@@ -105,6 +105,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       setPendingArchives(pending);
     } catch (error) {
       console.error('Failed to load pending archives:', error);
+      message.error(t('archiveManagement.messages.pendingLoadError'));
     } finally {
       setPendingLoading(false);
     }
@@ -136,7 +137,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       loadPendingArchives();
       loadArchives();
     } catch (error) {
-      message.error(t('archiveManagement.messages.restoreError'));
+      message.error(t('archiveManagement.messages.forceArchiveError'));
     }
   };
 
@@ -151,7 +152,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       setExtendDate(null);
       loadPendingArchives();
     } catch (error) {
-      message.error(t('archiveManagement.messages.restoreError'));
+      message.error(t('archiveManagement.messages.extendExpirationError'));
     }
   };
 
