@@ -220,3 +220,35 @@ export interface ActionExecutionResult {
   message: string;
   data?: any;
 }
+
+export interface RetentionSettings {
+  enabled: boolean;
+  coldAfterDays: string;
+  cronExpression: string;
+  storageType: string;
+  storageConnected: boolean;
+  keepLocalCopy: boolean;
+  localArchiveAfterDays: string;
+  localArchiveCron: string;
+}
+
+export interface PendingArchive {
+  id: string;
+  name: string;
+  parentId?: string;
+  expirationDate: string;
+  lastModifiedBy: string;
+}
+
+export interface MigrationLog {
+  id: string;
+  jobType: string;
+  repositoryId: string;
+  startedAt: number;
+  completedAt: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  status: string;
+  details: string;
+}

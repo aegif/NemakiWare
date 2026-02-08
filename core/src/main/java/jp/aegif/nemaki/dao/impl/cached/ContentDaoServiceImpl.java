@@ -1743,6 +1743,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<Archive> getArchivesByCreator(String repositoryId, String creator) {
+		return nonCachedContentDaoService.getArchivesByCreator(repositoryId, creator);
+	}
+
+	@Override
 	public Archive createArchive(String repositoryId, Archive archive, Boolean deletedWithParent) {
 		return nonCachedContentDaoService.createArchive(repositoryId, archive, deletedWithParent);
 	}
@@ -1810,6 +1815,43 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Long getAttachmentActualSize(String repositoryId, String attachmentId) {
 		// Delegate to non-cached implementation since this is metadata retrieval
 		return nonCachedContentDaoService.getAttachmentActualSize(repositoryId, attachmentId);
+	}
+
+	// Retention lifecycle - delegate to non-cached implementation
+	@Override
+	public List<Archive> getArchivesByState(String repositoryId, String state) {
+		return nonCachedContentDaoService.getArchivesByState(repositoryId, state);
+	}
+
+	@Override
+	public List<Archive> getArchivesForColdTransition(String repositoryId, GregorianCalendar beforeDate) {
+		return nonCachedContentDaoService.getArchivesForColdTransition(repositoryId, beforeDate);
+	}
+
+	@Override
+	public void updateArchiveState(String repositoryId, String archiveId,
+			String newState, Map<String, String> contentRef, GregorianCalendar coldArchivedAt) {
+		nonCachedContentDaoService.updateArchiveState(repositoryId, archiveId, newState, contentRef, coldArchivedAt);
+	}
+
+	@Override
+	public java.io.InputStream getArchiveContentStream(String repositoryId, Archive archive) {
+		return nonCachedContentDaoService.getArchiveContentStream(repositoryId, archive);
+	}
+
+	@Override
+	public boolean deleteArchiveContent(String repositoryId, Archive archive) {
+		return nonCachedContentDaoService.deleteArchiveContent(repositoryId, archive);
+	}
+
+	@Override
+	public List<String> getExpiredDocumentIds(String repositoryId, GregorianCalendar beforeDate) {
+		return nonCachedContentDaoService.getExpiredDocumentIds(repositoryId, beforeDate);
+	}
+
+	@Override
+	public void updateArchiveColdMoveMode(String repositoryId, String archiveId, String coldMoveMode) {
+		nonCachedContentDaoService.updateArchiveColdMoveMode(repositoryId, archiveId, coldMoveMode);
 	}
 
 }

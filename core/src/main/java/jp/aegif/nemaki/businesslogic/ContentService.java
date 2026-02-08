@@ -22,6 +22,7 @@ package jp.aegif.nemaki.businesslogic;
 
 import java.math.BigInteger;
 import java.util.Collection;
+import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -708,8 +709,16 @@ public interface ContentService {
 	 * @return
 	 */
 	List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc);
-	
-	
+
+	/**
+	 * Get archives created (deleted) by a specific user.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param creator the username of the user who deleted the documents
+	 * @return list of archives created by the specified user
+	 */
+	List<Archive> getArchivesByCreator(String repositoryId, String creator);
+
 	/**
 	 * Get an archive
 	 * @param repositoryId TODO
@@ -798,4 +807,79 @@ public interface ContentService {
 	 * @return Actual size in bytes from CouchDB attachment metadata, or null if not available
 	 */
 	Long getAttachmentActualSize(String repositoryId, String attachmentId);
+
+	// Retention lifecycle methods
+
+	/**
+	 * Get archives filtered by archive state.
+	 */
+	List<Archive> getArchivesByState(String repositoryId, String state);
+
+	/**
+	 * Get archives eligible for cold transition (archivedAt before given date).
+	 */
+	List<Archive> getArchivesForColdTransition(String repositoryId, GregorianCalendar beforeDate);
+
+	/**
+	 * Update archive state and related retention fields.
+	 */
+	void updateArchiveState(String repositoryId, String archiveId,
+			String newState, java.util.Map<String, String> contentRef, GregorianCalendar coldArchivedAt);
+
+	/**
+	 * Get the binary content stream for an archived document.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archiveId the archive ID
+	 * @return InputStream of the binary content, or null if not available
+	 */
+	java.io.InputStream getArchiveContentStream(String repositoryId, String archiveId);
+
+	/**
+	 * Delete the binary content from an archived document in the archive store.
+	 * Used in move mode (retention.cold.keep.local.copy=false) to remove the
+	 * local copy after successful cold storage write.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archiveId the archive ID
+	 * @return true if the content was deleted, false otherwise
+	 */
+	boolean deleteArchiveContent(String repositoryId, String archiveId);
+
+	/**
+	 * Get IDs of documents whose cmis:rm_expirationDate has passed.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param beforeDate expiration date cutoff
+	 * @return list of expired document IDs
+	 */
+	List<String> getExpiredDocumentIds(String repositoryId, java.util.GregorianCalendar beforeDate);
+
+	/**
+	 * Get Content objects for documents whose cmis:rm_expirationDate has passed
+	 * and are still in the live database (not yet archived).
+	 *
+	 * @param repositoryId the repository ID
+	 * @param beforeDate expiration date cutoff
+	 * @return list of expired Content objects
+	 */
+	List<Content> getExpiredDocuments(String repositoryId, java.util.GregorianCalendar beforeDate);
+
+	/**
+	 * Update the cmis:rm_expirationDate of a document.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param objectId the document ID
+	 * @param newDate the new expiration date
+	 */
+	void updateExpirationDate(String repositoryId, String objectId, java.util.GregorianCalendar newDate);
+
+	/**
+	 * Update the coldMoveMode field on an archive.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archiveId the archive ID
+	 * @param coldMoveMode "COPY" or "MOVE"
+	 */
+	void updateArchiveColdMoveMode(String repositoryId, String archiveId, String coldMoveMode);
 }

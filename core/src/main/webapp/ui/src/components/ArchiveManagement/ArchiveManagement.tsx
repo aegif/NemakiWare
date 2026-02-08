@@ -1,216 +1,3 @@
-/**
- * ArchiveManagement Component for NemakiWare React UI
- *
- * Archive browsing and restoration component providing read-only archive object management:
- * - Archive object list display with Ant Design Table component (6 columns: type icon, name, original path, archive date, size, actions)
- * - Object restoration via Popconfirm confirmation dialog (restore deleted objects back to repository)
- * - Detail view navigation to DocumentViewer for archived object inspection
- * - Download functionality for archived documents (folders cannot be downloaded)
- * - Icon-based type visualization (FolderOutlined blue vs FileOutlined green)
- * - Archive date rendering with Japanese locale formatting (toLocaleString('ja-JP'))
- * - Size rendering with KB conversion (Math.round(size / 1024))
- * - Conditional download button (documents only, folders excluded)
- * - window.open for download in new tab (_blank target)
- * - Fixed pagination at 20 items per page
- * - Read-only archive list (no create/edit/delete operations, only restore)
- * - Original path display with ellipsis truncation for long paths
- * - Japanese localized UI with error messages
- *
- * Component Architecture:
- * ArchiveManagement (stateful read-only manager)
- *   ├─ useState: archives (CMISObject[]), loading
- *   ├─ useEffect: loadArchives() on repositoryId change
- *   ├─ loadArchives(): CMISService.getArchives() → setArchives
- *   ├─ handleRestore(): Restore object via CMISService with confirmation
- *   ├─ handleDownload(): window.open() download URL in new tab
- *   └─ Render Structure:
- *       ├─ Card wrapper with header (title only, no action buttons)
- *       └─ Table (6 columns, fixed pagination 20 items)
- *           ├─ Type Icon Column (FolderOutlined or FileOutlined)
- *           ├─ Name Column (object name)
- *           ├─ Original Path Column (path before archival, ellipsis)
- *           ├─ Archive Date Column (lastModificationDate, Japanese locale)
- *           ├─ Size Column (contentStreamLength in KB)
- *           └─ Actions Column (詳細表示, ダウンロード*, 復元 with Popconfirm)
- *               * Download button only for documents (not folders)
- *
- * Usage Examples:
- * ```typescript
- * // App.tsx - Admin layout archive management route
- * <Route path="/archives" element={<ArchiveManagement repositoryId={repositoryId} />} />
- *
- * // Example: Load archives on component mount
- * useEffect(() => {
- *   loadArchives(); // Calls CMISService.getArchives(repositoryId)
- * }, [repositoryId]);
- * // Result: archives state populated with CMISObject array
- *
- * // Example: Restore archived object
- * handleRestore('7bc4f8e3-2a1d-4e9f-b3c5-8d6e9f1a2b3c');
- * // Calls: cmisService.restoreObject(repositoryId, objectId)
- * // Result: Object restored to original location, success message "オブジェクトを復元しました"
- *
- * // Example: Download archived document
- * handleDownload('7bc4f8e3-2a1d-4e9f-b3c5-8d6e9f1a2b3c');
- * // Gets download URL: cmisService.getDownloadUrl(repositoryId, objectId)
- * // Opens: window.open(url, '_blank') in new tab
- *
- * // Example: Navigate to archived object details
- * navigate(`/documents/${record.id}`);
- * // Navigates to DocumentViewer with archived object ID
- * // Allows viewing metadata, properties, preview of archived content
- *
- * // Example: Archive date rendering
- * const archivedDate = new Date('2024-01-15T10:30:00').toLocaleString('ja-JP');
- * // Renders: "2024/1/15 10:30:00" (Japanese locale format)
- *
- * // Example: Size rendering
- * const sizeKB = Math.round(153600 / 1024);
- * // Renders: "150 KB" (converted from bytes)
- * ```
- *
- * IMPORTANT DESIGN DECISIONS:
- *
- * 1. Read-Only Archive List with Restore-Only Operation (No Create/Edit/Delete) (Lines 40-60):
- *    - Archives are deleted objects, so only restoration is logical operation
- *    - No create button, no edit button, no delete button in UI
- *    - Rationale: Archives represent previously deleted objects, creating/editing archived objects is conceptually invalid
- *    - Implementation: loadArchives() + handleRestore() only, no handleCreate/handleEdit/handleDelete
- *    - Advantage: Simple UI, clear purpose (browse and restore deleted objects)
- *    - Trade-off: Cannot permanently delete archived objects from UI (may accumulate)
- *    - Pattern: Read-only list with single restore action
- *
- * 2. Icon-Based Type Visualization (Lines 73-77):
- *    - FolderOutlined blue (#1890ff) for folders, FileOutlined green (#52c41a) for documents
- *    - Rationale: Visual distinction between object types at a glance in mixed archive list
- *    - Implementation: Ternary operator in render() checking baseType === 'cmis:folder'
- *    - Advantage: Faster scanning of mixed archive results, color-coded type indicators
- *    - Trade-off: No support for other base types (relationship, policy)
- *    - Pattern: Icon-based type indicators with color coding
- *
- * 3. Original Path Display with Ellipsis Truncation (Lines 85-89):
- *    - Path column shows original location of object before archival
- *    - ellipsis: true automatically truncates long paths with "..." suffix
- *    - Rationale: Users need to know where object was located before deletion for restoration context
- *    - Implementation: dataIndex: 'path', ellipsis: true
- *    - Advantage: Essential context for restoration decision, compact display
- *    - Trade-off: Cannot see full path in table (tooltip on hover may be needed)
- *    - Pattern: Ellipsis truncation for long path strings
- *
- * 4. Archive Date Rendering with Japanese Locale (Lines 92-96):
- *    - new Date(date).toLocaleString('ja-JP') formats date to Japanese locale
- *    - Rationale: Users need to know when object was archived for sorting/filtering
- *    - Implementation: render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-'
- *    - Advantage: Localized date format (YYYY/M/D HH:MM:SS), familiar to Japanese users
- *    - Trade-off: Hard-coded locale, not internationalized for non-Japanese users
- *    - Pattern: Date locale formatting with null check
- *
- * 5. Size Rendering with KB Conversion (Lines 99-103):
- *    - Math.round(size / 1024) converts bytes to KB with rounding
- *    - Rationale: Bytes are too granular, KB is more readable for file sizes
- *    - Implementation: render: (size: number) => size ? `${Math.round(size / 1024)} KB` : '-'
- *    - Advantage: Compact size display, familiar unit
- *    - Trade-off: No support for MB/GB conversion for large files
- *    - Pattern: Unit conversion with null check and dash placeholder
- *
- * 6. Conditional Download Button for Documents Only (Lines 117-125):
- *    - Download button only rendered if record.baseType === 'cmis:document'
- *    - Rationale: Folders have no content stream, cannot be downloaded
- *    - Implementation: Conditional rendering with && operator
- *    - Advantage: Prevents confusing download button on folders, clear UI intent
- *    - Trade-off: No folder export functionality (e.g., zip all children)
- *    - Pattern: Conditional action button based on object type
- *
- * 7. Restore with Popconfirm Confirmation Dialog (Lines 126-141):
- *    - Popconfirm wraps restore Button with "このオブジェクトを復元しますか？" confirmation
- *    - Rationale: Restoration is significant operation, may overwrite existing objects
- *    - Implementation: Popconfirm with onConfirm={() => handleRestore(record.id)}
- *    - Advantage: Prevents accidental restoration, user-friendly confirmation
- *    - Trade-off: Extra click required for restore operation
- *    - Pattern: Popconfirm for significant non-destructive operations
- *
- * 8. Detail View Navigation to DocumentViewer (Lines 110-116):
- *    - EyeOutlined button navigates to `/documents/${record.id}` route
- *    - Rationale: Users may want to inspect archived object metadata/preview before restoring
- *    - Implementation: onClick={() => navigate(`/documents/${record.id}`)}
- *    - Advantage: Full inspection of archived content without restoring
- *    - Trade-off: DocumentViewer may not handle archived objects correctly (path-based operations may fail)
- *    - Pattern: Navigation to detail view with object ID
- *
- * 9. window.open for Download in New Tab (Lines 62-65):
- *    - window.open(url, '_blank') opens download URL in new tab
- *    - Rationale: Preserves archive management page state, prevents navigation away
- *    - Implementation: handleDownload() calls window.open() with _blank target
- *    - Advantage: User can continue browsing archives while download starts
- *    - Trade-off: Popup blocker may interfere (unlikely for user-initiated click)
- *    - Pattern: Secure download in new tab without losing current page
- *
- * 10. Fixed Pagination at 20 Items Per Page (Line 160):
- *     - pagination={{ pageSize: 20 }} sets fixed page size
- *     - Rationale: Performance optimization for large archive lists
- *     - Implementation: Hardcoded pageSize: 20 in Table pagination prop
- *     - Advantage: Prevents rendering thousands of rows, reduces memory usage
- *     - Trade-off: Fixed page size may not suit all user preferences (no user control)
- *     - Pattern: Fixed pagination for consistent performance
- *
- * Expected Results:
- * - ArchiveManagement: Renders archive list table with 6 columns, no action buttons in header
- * - Archive list: Shows all archived objects (deleted documents and folders) from repository
- * - Type icon: FolderOutlined blue for folders, FileOutlined green for documents
- * - Original path: Displays path before deletion with ellipsis for long paths
- * - Archive date: Japanese locale format (YYYY/M/D HH:MM:SS)
- * - Size: KB conversion for documents, "-" for folders (no content stream)
- * - Detail view button: Navigates to DocumentViewer for all objects
- * - Download button: Shown only for documents, opens download URL in new tab
- * - Restore button: Shows Popconfirm "このオブジェクトを復元しますか？" before restoration
- * - Success message: "オブジェクトを復元しました" after successful restoration
- * - Error messages: "アーカイブの読み込みに失敗しました" / "復元に失敗しました"
- *
- * Performance Characteristics:
- * - Initial render: <10ms (simple wrapper component)
- * - loadArchives() call: Varies by archive count (100 archives: ~500ms, 500 archives: ~2s)
- * - Table rendering: <50ms for 100 archives
- * - Restore operation: Varies by object type (document: ~500ms, folder: ~1s)
- * - Re-render on state change: <10ms (React reconciliation)
- *
- * Debugging Features:
- * - React DevTools: Inspect archives, loading state
- * - Console errors: Logged on loadArchives/handleRestore failures
- * - Table dataSource: Inspect archives array for loaded archive objects
- * - Network tab: See getArchives, restoreObject, getDownloadUrl requests
- *
- * Known Limitations:
- * - No permanent archive deletion: Cannot permanently delete archived objects from UI
- * - No archive filtering/search: Must scroll through full list to find specific archive
- * - No bulk restore: Can only restore one object at a time
- * - No folder download: Folders cannot be downloaded (no zip export)
- * - Fixed pagination: Page size hardcoded at 20, no user control
- * - Hard-coded Japanese locale: Date format not internationalized
- * - No MB/GB size conversion: Large files always shown in KB (may be unwieldy for GB files)
- * - DocumentViewer may not handle archives: Detail view navigation may fail for archived objects
- * - No archive age display: Cannot see how long ago object was archived (only date)
- * - No restore location control: Objects restored to original location only (no custom path)
- * - No restoration conflict handling: May overwrite existing objects at original path
- *
- * Relationships to Other Components:
- * - Used by: Admin layout routes (archive management page)
- * - Depends on: CMISService for getArchives, restoreObject, getDownloadUrl operations
- * - Depends on: AuthContext for handleAuthError callback
- * - Depends on: CMISObject type interface
- * - Depends on: useNavigate from react-router-dom for detail view navigation
- * - Renders: Ant Design Table, Button, Space, Popconfirm, Card, Tooltip components
- * - Integration: Operates independently, no parent component communication
- *
- * Common Failure Scenarios:
- * - loadArchives fails: Network error or authentication failure (message.error)
- * - Restore fails: Object not found (may have been permanently deleted), network error
- * - Restore conflict: Object at original path already exists (server should handle)
- * - Download fails: Archived document content may be missing or corrupted
- * - Detail view navigation fails: DocumentViewer may not handle archived object correctly
- * - Empty archive list: No archived objects to display (loadArchives returned empty array)
- * - Authentication failure: handleAuthError redirects to login page (401 error)
- */
-
 import React, { useState, useEffect } from 'react';
 import {
   Table,
@@ -219,7 +6,14 @@ import {
   message,
   Popconfirm,
   Card,
-  Tooltip
+  Tooltip,
+  Tabs,
+  Descriptions,
+  Badge,
+  Tag,
+  DatePicker,
+  Modal,
+  Empty
 } from 'antd';
 import {
   InboxOutlined,
@@ -227,11 +21,16 @@ import {
   FileOutlined,
   FolderOutlined,
   DownloadOutlined,
-  EyeOutlined
+  EyeOutlined,
+  SettingOutlined,
+  HistoryOutlined,
+  WarningOutlined,
+  DeleteOutlined,
+  CalendarOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
-import { CMISObject } from '../../types/cmis';
+import { CMISObject, RetentionSettings, MigrationLog, PendingArchive } from '../../types/cmis';
 import { useTranslation } from 'react-i18next';
 
 interface ArchiveManagementProps {
@@ -242,6 +41,16 @@ import { useAuth } from '../../contexts/AuthContext';
 export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repositoryId }) => {
   const [archives, setArchives] = useState<CMISObject[]>([]);
   const [loading, setLoading] = useState(false);
+  const [retentionSettings, setRetentionSettings] = useState<RetentionSettings | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [migrationLogs, setMigrationLogs] = useState<MigrationLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [pendingArchives, setPendingArchives] = useState<PendingArchive[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [isAdminUser, setIsAdminUser] = useState(true);
+  const [extendModalVisible, setExtendModalVisible] = useState(false);
+  const [extendTarget, setExtendTarget] = useState<PendingArchive | null>(null);
+  const [extendDate, setExtendDate] = useState<any>(null);
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
 
@@ -257,10 +66,47 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
     try {
       const archiveList = await cmisService.getArchives(repositoryId);
       setArchives(archiveList);
+      // The REST API now returns isAdmin flag
     } catch (error) {
       message.error(t('archiveManagement.messages.loadError'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadRetentionSettings = async () => {
+    setSettingsLoading(true);
+    try {
+      const settings = await cmisService.getRetentionSettings(repositoryId);
+      setRetentionSettings(settings);
+    } catch (error) {
+      message.error(t('archiveManagement.messages.settingsLoadError'));
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const loadMigrationLogs = async () => {
+    setLogsLoading(true);
+    try {
+      const logs = await cmisService.getMigrationLogs(repositoryId, 50);
+      setMigrationLogs(logs);
+    } catch (error) {
+      message.error(t('archiveManagement.messages.logsLoadError'));
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  const loadPendingArchives = async () => {
+    setPendingLoading(true);
+    try {
+      const pending = await cmisService.getPendingArchives(repositoryId);
+      setPendingArchives(pending);
+    } catch (error) {
+      console.error('Failed to load pending archives:', error);
+    } finally {
+      setPendingLoading(false);
     }
   };
 
@@ -270,7 +116,11 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       message.success(t('archiveManagement.messages.restoreSuccess'));
       loadArchives();
     } catch (error) {
-      message.error(t('archiveManagement.messages.restoreError'));
+      if (error instanceof Error && error.message === 'ERR_RESTORE_BECAUSE_PARENT_NO_LONGER_EXISTS') {
+        message.error(t('archiveManagement.messages.restoreErrorParentNotFound'));
+      } else {
+        message.error(t('archiveManagement.messages.restoreError'));
+      }
     }
   };
 
@@ -279,14 +129,50 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
     window.open(url, '_blank');
   };
 
-  const columns = [
+  const handleForceArchive = async (objectId: string) => {
+    try {
+      await cmisService.forceArchive(repositoryId, objectId);
+      message.success(t('archiveManagement.messages.forceArchiveSuccess'));
+      loadPendingArchives();
+      loadArchives();
+    } catch (error) {
+      message.error(t('archiveManagement.messages.restoreError'));
+    }
+  };
+
+  const handleExtendExpiration = async () => {
+    if (!extendTarget || !extendDate) return;
+    try {
+      const isoDate = extendDate.toISOString();
+      await cmisService.extendExpiration(repositoryId, extendTarget.id, isoDate);
+      message.success(t('archiveManagement.messages.extendExpirationSuccess'));
+      setExtendModalVisible(false);
+      setExtendTarget(null);
+      setExtendDate(null);
+      loadPendingArchives();
+    } catch (error) {
+      message.error(t('archiveManagement.messages.restoreError'));
+    }
+  };
+
+  const handleTabChange = (key: string) => {
+    if (key === 'settings' && !retentionSettings) {
+      loadRetentionSettings();
+    } else if (key === 'logs' && migrationLogs.length === 0) {
+      loadMigrationLogs();
+    } else if (key === 'pending' && pendingArchives.length === 0) {
+      loadPendingArchives();
+    }
+  };
+
+  const archiveColumns = [
     {
       title: t('archiveManagement.columns.type'),
       dataIndex: 'baseType',
       key: 'type',
       width: 60,
       render: (baseType: string) => (
-        baseType === 'cmis:folder' ? 
+        baseType === 'cmis:folder' ?
           <FolderOutlined style={{ color: '#1890ff', fontSize: '16px' }} /> :
           <FileOutlined style={{ color: '#52c41a', fontSize: '16px' }} />
       ),
@@ -303,11 +189,34 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       ellipsis: true,
     },
     {
-      title: t('archiveManagement.columns.archiveDate'),
-      dataIndex: 'lastModificationDate',
-      key: 'archived',
+      title: t('archiveManagement.columns.archiveState'),
+      dataIndex: 'archiveState',
+      key: 'archiveState',
+      width: 140,
+      render: (state: string) => {
+        let color = 'default';
+        if (state === 'ARCHIVED_LOCAL') color = 'green';
+        else if (state === 'ARCHIVED_COLD') color = 'blue';
+        else if (state === 'ARCHIVING' || state === 'COLD_MOVING') color = 'orange';
+        return <Tag color={color}>{state}</Tag>;
+      },
+    },
+    {
+      title: t('archiveManagement.columns.archivedAt'),
+      dataIndex: 'archivedAt',
+      key: 'archivedAt',
       width: 180,
       render: (date: string) => date ? new Date(date).toLocaleString(i18n.language === 'ja' ? 'ja-JP' : 'en-US') : '-',
+    },
+    {
+      title: t('archiveManagement.columns.coldMoveMode'),
+      dataIndex: 'coldMoveMode',
+      key: 'coldMoveMode',
+      width: 100,
+      render: (mode: string) => {
+        if (!mode) return '-';
+        return <Tag color={mode === 'COPY' ? 'blue' : 'orange'}>{mode}</Tag>;
+      },
     },
     {
       title: t('archiveManagement.columns.size'),
@@ -329,16 +238,16 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       render: (_: any, record: CMISObject) => (
         <Space>
           <Tooltip title={t('archiveManagement.viewDetails')}>
-            <Button 
-              icon={<EyeOutlined />} 
+            <Button
+              icon={<EyeOutlined />}
               size="small"
               onClick={() => navigate(`/documents/${record.id}`)}
             />
           </Tooltip>
           {record.baseType === 'cmis:document' && (
             <Tooltip title={t('common.download')}>
-              <Button 
-                icon={<DownloadOutlined />} 
+              <Button
+                icon={<DownloadOutlined />}
                 size="small"
                 onClick={() => handleDownload(record.id)}
               />
@@ -351,8 +260,8 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
             cancelText={t('common.no')}
           >
             <Tooltip title={t('archiveManagement.restore')}>
-              <Button 
-                icon={<ReloadOutlined />} 
+              <Button
+                icon={<ReloadOutlined />}
                 size="small"
                 type="primary"
               >
@@ -365,6 +274,266 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
     },
   ];
 
+  const pendingColumns = [
+    {
+      title: t('archiveManagement.columns.name'),
+      dataIndex: 'name',
+      key: 'name',
+    },
+    {
+      title: t('archiveManagement.pendingArchives.expirationDate'),
+      dataIndex: 'expirationDate',
+      key: 'expirationDate',
+      width: 180,
+      render: (date: string) => date ? new Date(date).toLocaleString(i18n.language === 'ja' ? 'ja-JP' : 'en-US') : '-',
+    },
+    {
+      title: t('archiveManagement.pendingArchives.lastModifiedBy'),
+      dataIndex: 'lastModifiedBy',
+      key: 'lastModifiedBy',
+      width: 150,
+    },
+    {
+      title: t('common.actions'),
+      key: 'actions',
+      width: 280,
+      render: (_: any, record: PendingArchive) => (
+        <Space>
+          <Popconfirm
+            title={t('archiveManagement.pendingArchives.forceArchive') + '?'}
+            onConfirm={() => handleForceArchive(record.id)}
+            okText={t('common.yes')}
+            cancelText={t('common.no')}
+          >
+            <Button
+              icon={<DeleteOutlined />}
+              size="small"
+              danger
+            >
+              {t('archiveManagement.pendingArchives.forceArchive')}
+            </Button>
+          </Popconfirm>
+          <Button
+            icon={<CalendarOutlined />}
+            size="small"
+            onClick={() => {
+              setExtendTarget(record);
+              setExtendModalVisible(true);
+            }}
+          >
+            {t('archiveManagement.pendingArchives.extendExpiration')}
+          </Button>
+        </Space>
+      ),
+    },
+  ];
+
+  const logColumns = [
+    {
+      title: t('archiveManagement.migrationLogs.startedAt'),
+      dataIndex: 'startedAt',
+      key: 'startedAt',
+      width: 180,
+      render: (ts: number) => ts ? new Date(ts).toLocaleString(i18n.language === 'ja' ? 'ja-JP' : 'en-US') : '-',
+    },
+    {
+      title: t('archiveManagement.migrationLogs.jobType'),
+      dataIndex: 'jobType',
+      key: 'jobType',
+      width: 120,
+    },
+    {
+      title: t('archiveManagement.migrationLogs.processed'),
+      dataIndex: 'processed',
+      key: 'processed',
+      width: 80,
+    },
+    {
+      title: t('archiveManagement.migrationLogs.succeeded'),
+      dataIndex: 'succeeded',
+      key: 'succeeded',
+      width: 80,
+    },
+    {
+      title: t('archiveManagement.migrationLogs.failed'),
+      dataIndex: 'failed',
+      key: 'failed',
+      width: 80,
+    },
+    {
+      title: t('archiveManagement.migrationLogs.status'),
+      dataIndex: 'status',
+      key: 'status',
+      width: 140,
+      render: (status: string) => {
+        let color = 'default';
+        if (status === 'SUCCESS') color = 'success';
+        else if (status === 'PARTIAL_FAILURE') color = 'warning';
+        else if (status === 'FAILURE') color = 'error';
+        return <Tag color={color}>{status}</Tag>;
+      },
+    },
+    {
+      title: t('archiveManagement.migrationLogs.duration'),
+      key: 'duration',
+      width: 100,
+      render: (_: any, record: MigrationLog) => {
+        if (record.startedAt && record.completedAt) {
+          const durationMs = record.completedAt - record.startedAt;
+          if (durationMs < 1000) return `${durationMs}ms`;
+          return `${(durationMs / 1000).toFixed(1)}s`;
+        }
+        return '-';
+      },
+    },
+  ];
+
+  const tabItems = [
+    {
+      key: 'archives',
+      label: (
+        <span>
+          <InboxOutlined /> {t('archiveManagement.tabs.archives')}
+        </span>
+      ),
+      children: (
+        <Table
+          columns={archiveColumns}
+          dataSource={archives}
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 20 }}
+        />
+      ),
+    },
+    ...(isAdminUser ? [
+      {
+        key: 'settings',
+        label: (
+          <span>
+            <SettingOutlined /> {t('archiveManagement.tabs.settings')}
+          </span>
+        ),
+        children: (
+          <div>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={loadRetentionSettings}
+              loading={settingsLoading}
+              style={{ marginBottom: 16 }}
+            >
+              {t('common.reload')}
+            </Button>
+            {retentionSettings && (
+              <Descriptions bordered column={1}>
+                <Descriptions.Item label={t('archiveManagement.settings.enabled')}>
+                  <Badge
+                    status={retentionSettings.enabled ? 'success' : 'default'}
+                    text={retentionSettings.enabled ? t('archiveManagement.settings.enabledYes') : t('archiveManagement.settings.enabledNo')}
+                  />
+                </Descriptions.Item>
+                <Descriptions.Item label={t('archiveManagement.settings.coldAfterDays')}>
+                  {retentionSettings.coldAfterDays} {t('archiveManagement.settings.days')}
+                </Descriptions.Item>
+                <Descriptions.Item label={t('archiveManagement.settings.cronExpression')}>
+                  <code>{retentionSettings.cronExpression || '-'}</code>
+                </Descriptions.Item>
+                <Descriptions.Item label={t('archiveManagement.settings.storageType')}>
+                  <Tag color={retentionSettings.storageType === 's3' ? 'blue' : 'green'}>
+                    {retentionSettings.storageType === 's3' ? 'S3' : t('archiveManagement.settings.filesystem')}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label={t('archiveManagement.settings.storageConnected')}>
+                  <Badge
+                    status={retentionSettings.storageConnected ? 'success' : 'error'}
+                    text={retentionSettings.storageConnected ? t('archiveManagement.settings.connected') : t('archiveManagement.settings.disconnected')}
+                  />
+                </Descriptions.Item>
+                <Descriptions.Item label={t('archiveManagement.settings.coldMoveMode')}>
+                  <Tag color={retentionSettings.keepLocalCopy ? 'blue' : 'orange'}>
+                    {retentionSettings.keepLocalCopy ? t('archiveManagement.settings.copyMode') : t('archiveManagement.settings.moveMode')}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label={t('archiveManagement.settings.localArchiveAfterDays')}>
+                  {retentionSettings.localArchiveAfterDays || '-'} {retentionSettings.localArchiveAfterDays ? t('archiveManagement.settings.days') : ''}
+                </Descriptions.Item>
+                <Descriptions.Item label={t('archiveManagement.settings.localArchiveCron')}>
+                  <code>{retentionSettings.localArchiveCron || '-'}</code>
+                </Descriptions.Item>
+              </Descriptions>
+            )}
+          </div>
+        ),
+      },
+      {
+        key: 'logs',
+        label: (
+          <span>
+            <HistoryOutlined /> {t('archiveManagement.tabs.migrationLogs')}
+          </span>
+        ),
+        children: (
+          <div>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={loadMigrationLogs}
+              loading={logsLoading}
+              style={{ marginBottom: 16 }}
+            >
+              {t('common.reload')}
+            </Button>
+            <Table
+              columns={logColumns}
+              dataSource={migrationLogs}
+              rowKey="id"
+              loading={logsLoading}
+              pagination={{ pageSize: 20 }}
+            />
+          </div>
+        ),
+      },
+      {
+        key: 'pending',
+        label: (
+          <span>
+            <WarningOutlined /> {t('archiveManagement.tabs.pendingArchives')}
+            {pendingArchives.length > 0 && (
+              <Badge count={pendingArchives.length} style={{ marginLeft: 8 }} />
+            )}
+          </span>
+        ),
+        children: (
+          <div>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={loadPendingArchives}
+              loading={pendingLoading}
+              style={{ marginBottom: 16 }}
+            >
+              {t('common.reload')}
+            </Button>
+            {pendingArchives.length > 0 ? (
+              <>
+                <div style={{ marginBottom: 16, color: '#faad14' }}>
+                  <WarningOutlined /> {pendingArchives.length} {t('archiveManagement.pendingArchives.alert')}
+                </div>
+                <Table
+                  columns={pendingColumns}
+                  dataSource={pendingArchives}
+                  rowKey="id"
+                  loading={pendingLoading}
+                  pagination={{ pageSize: 20 }}
+                />
+              </>
+            ) : (
+              <Empty description={t('archiveManagement.pendingArchives.noItems')} />
+            )}
+          </div>
+        ),
+      },
+    ] : []),
+  ];
+
   return (
     <Card>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -373,13 +542,35 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
         </h2>
       </div>
 
-      <Table
-        columns={columns}
-        dataSource={archives}
-        rowKey="id"
-        loading={loading}
-        pagination={{ pageSize: 20 }}
+      <Tabs
+        defaultActiveKey="archives"
+        items={tabItems}
+        onChange={handleTabChange}
       />
+
+      <Modal
+        title={t('archiveManagement.pendingArchives.extendExpiration')}
+        open={extendModalVisible}
+        onOk={handleExtendExpiration}
+        onCancel={() => {
+          setExtendModalVisible(false);
+          setExtendTarget(null);
+          setExtendDate(null);
+        }}
+        okButtonProps={{ disabled: !extendDate }}
+      >
+        {extendTarget && (
+          <div>
+            <p><strong>{extendTarget.name}</strong></p>
+            <p>{t('archiveManagement.pendingArchives.newExpirationDate')}:</p>
+            <DatePicker
+              showTime
+              style={{ width: '100%' }}
+              onChange={(date) => setExtendDate(date ? date.toDate() : null)}
+            />
+          </div>
+        )}
+      </Modal>
     </Card>
   );
 };

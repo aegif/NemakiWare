@@ -3925,6 +3925,41 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<Archive> getArchivesByCreator(String repositoryId, String creator) {
+		try {
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
+			Map<String, Object> queryParams = new HashMap<String, Object>();
+			queryParams.put("key", "\"" + creator + "\"");
+
+			ViewResult result = client.queryView("_repo", "byCreator", queryParams);
+			List<Archive> archives = new ArrayList<Archive>();
+
+			if (result.getRows() != null) {
+				for (ViewResultRow row : result.getRows()) {
+					Object docValue = row.getValue();
+					if (docValue != null) {
+						try {
+							ObjectMapper mapper = createConfiguredObjectMapper();
+							CouchArchive ca = mapper.convertValue(docValue, CouchArchive.class);
+							if (ca != null) {
+								archives.add(ca.convert());
+							}
+						} catch (Exception e) {
+							log.warn("Failed to convert archive document: " + e.getMessage());
+						}
+					}
+				}
+			}
+
+			return archives;
+		} catch (Exception e) {
+			log.error("Error getting archives by creator in repository: " + repositoryId, e);
+			return new ArrayList<Archive>();
+		}
+	}
+
+	@Override
 	public Archive createArchive(String repositoryId, Archive archive, Boolean deletedWithParent) {
 		String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
 
@@ -4221,6 +4256,182 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		} catch (Exception e) {
 			log.error("Error retrieving attachment size for " + attachmentId + ": " + e.getMessage(), e);
 			return null;
+		}
+	}
+
+	// ///////////////////////////////////////
+	// Retention lifecycle
+	// ///////////////////////////////////////
+	@Override
+	public List<Archive> getArchivesByState(String repositoryId, String state) {
+		try {
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
+			List<CouchArchive> couchArchives = client.queryView("_repo", "byArchiveState", state, CouchArchive.class);
+			List<Archive> archives = new ArrayList<Archive>();
+			if (couchArchives != null) {
+				for (CouchArchive ca : couchArchives) {
+					archives.add(ca.convert());
+				}
+			}
+			return archives;
+		} catch (Exception e) {
+			log.error("Error getting archives by state: " + state + " in repository: " + repositoryId, e);
+			return new ArrayList<Archive>();
+		}
+	}
+
+	@Override
+	public List<Archive> getArchivesForColdTransition(String repositoryId, GregorianCalendar beforeDate) {
+		try {
+			// Get all ARCHIVED_LOCAL archives and filter by archivedAt
+			List<Archive> localArchives = getArchivesByState(repositoryId, Archive.STATE_ARCHIVED_LOCAL);
+			List<Archive> candidates = new ArrayList<Archive>();
+			for (Archive a : localArchives) {
+				if (a.getArchivedAt() != null && a.getArchivedAt().before(beforeDate)) {
+					candidates.add(a);
+				}
+			}
+			return candidates;
+		} catch (Exception e) {
+			log.error("Error getting archives for cold transition in repository: " + repositoryId, e);
+			return new ArrayList<Archive>();
+		}
+	}
+
+	@Override
+	public void updateArchiveState(String repositoryId, String archiveId,
+			String newState, Map<String, String> contentRef, GregorianCalendar coldArchivedAt) {
+		try {
+			String archiveRepoId = repositoryInfoMap.getArchiveId(repositoryId);
+			CouchArchive ca = connectorPool.get(archiveRepoId).get(CouchArchive.class, archiveId);
+			if (ca == null) {
+				log.warn("Archive not found for state update: " + archiveId);
+				return;
+			}
+			ca.setArchiveState(newState);
+			if (contentRef != null) {
+				ca.setContentRef(contentRef);
+			}
+			if (coldArchivedAt != null) {
+				ca.setColdArchivedAt(coldArchivedAt);
+			}
+			connectorPool.get(archiveRepoId).update(ca);
+			log.info("Updated archive state: " + archiveId + " -> " + newState);
+		} catch (Exception e) {
+			log.error("Error updating archive state for " + archiveId + ": " + e.getMessage(), e);
+			throw new RuntimeException("Failed to update archive state", e);
+		}
+	}
+
+	@Override
+	public java.io.InputStream getArchiveContentStream(String repositoryId, Archive archive) {
+		try {
+			if (archive == null || !archive.isDocument()) {
+				return null;
+			}
+
+			// Get the attachment archive from the closet DB
+			Archive attachmentArchive = getAttachmentArchive(repositoryId, archive);
+			if (attachmentArchive == null) {
+				log.warn("No attachment archive found for archive: " + archive.getId());
+				return null;
+			}
+
+			// Get binary content from the closet DB CouchDB attachment
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper archiveClient = connectorPool.getClient(archiveRepositoryId);
+			Object streamObj = archiveClient.getAttachment(attachmentArchive.getId(), "content");
+			if (streamObj instanceof java.io.InputStream) {
+				return (java.io.InputStream) streamObj;
+			}
+
+			return null;
+		} catch (Exception e) {
+			log.error("Error getting archive content stream for: " + archive.getId() + " in repository: " + repositoryId, e);
+			return null;
+		}
+	}
+
+	@Override
+	public boolean deleteArchiveContent(String repositoryId, Archive archive) {
+		try {
+			if (archive == null || !archive.isDocument()) {
+				return false;
+			}
+
+			// Query for the CouchArchive directly (not converted) to preserve revision
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper archiveClient = connectorPool.getClient(archiveRepositoryId);
+			List<CouchArchive> couchArchives = archiveClient.queryView(
+					"_repo", "attachmentArchive", archive.getId(), CouchArchive.class);
+
+			if (couchArchives.isEmpty()) {
+				log.warn("No attachment archive found for archive: " + archive.getId());
+				return false;
+			}
+
+			CouchArchive attachmentArchive = couchArchives.get(0);
+			String docId = attachmentArchive.getId();
+			String revision = attachmentArchive.getRevision();
+
+			if (docId == null || revision == null) {
+				log.warn("Attachment archive missing id or revision for archive: " + archive.getId());
+				return false;
+			}
+
+			// Delete binary content attachment from the closet DB
+			archiveClient.deleteAttachment(docId, revision, "content");
+
+			log.info("Deleted archive content attachment for: " + archive.getId() + " in repository: " + repositoryId);
+			return true;
+		} catch (Exception e) {
+			log.error("Error deleting archive content for: " + archive.getId() + " in repository: " + repositoryId, e);
+			return false;
+		}
+	}
+
+	@Override
+	public List<String> getExpiredDocumentIds(String repositoryId, GregorianCalendar beforeDate) {
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			long endKey = beforeDate.getTimeInMillis();
+
+			Map<String, Object> params = new HashMap<String, Object>();
+			params.put("endkey", endKey);
+
+			com.ibm.cloud.cloudant.v1.model.ViewResult viewResult =
+					client.queryView("_repo", "documentsByExpirationDate", params);
+
+			List<String> ids = new ArrayList<String>();
+			if (viewResult != null && viewResult.getRows() != null) {
+				for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : viewResult.getRows()) {
+					if (row.getValue() != null) {
+						ids.add(row.getValue().toString().replace("\"", ""));
+					}
+				}
+			}
+			return ids;
+		} catch (Exception e) {
+			log.warn("Error querying documentsByExpirationDate view (may not exist yet): " + e.getMessage());
+			return new ArrayList<String>();
+		}
+	}
+
+	@Override
+	public void updateArchiveColdMoveMode(String repositoryId, String archiveId, String coldMoveMode) {
+		try {
+			String archiveRepoId = repositoryInfoMap.getArchiveId(repositoryId);
+			CouchArchive ca = connectorPool.get(archiveRepoId).get(CouchArchive.class, archiveId);
+			if (ca == null) {
+				log.warn("Archive not found for coldMoveMode update: " + archiveId);
+				return;
+			}
+			ca.setColdMoveMode(coldMoveMode);
+			connectorPool.get(archiveRepoId).update(ca);
+			log.info("Updated archive coldMoveMode: " + archiveId + " -> " + coldMoveMode);
+		} catch (Exception e) {
+			log.error("Error updating archive coldMoveMode for " + archiveId + ": " + e.getMessage(), e);
 		}
 	}
 }

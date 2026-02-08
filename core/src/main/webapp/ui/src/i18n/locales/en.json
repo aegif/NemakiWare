@@ -1233,6 +1233,8 @@
       "originalPath": "Original Path",
       "archiveDate": "Archived At",
       "archivedAt": "Archived At",
+      "archiveState": "State",
+      "coldMoveMode": "Transfer Mode",
       "size": "Size",
       "actions": "Actions"
     },
@@ -1242,10 +1244,57 @@
       "restore": "Restore"
     },
     "confirmRestore": "Restore this object?",
+    "tabs": {
+      "archives": "Archives",
+      "settings": "Retention Settings",
+      "migrationLogs": "Migration Logs",
+      "pendingArchives": "Pending Archives"
+    },
+    "settings": {
+      "enabled": "Retention",
+      "enabledYes": "Enabled",
+      "enabledNo": "Disabled",
+      "coldAfterDays": "Cold Transition Days",
+      "days": "days",
+      "cronExpression": "Schedule (Cron)",
+      "storageType": "Storage Type",
+      "filesystem": "Filesystem",
+      "storageConnected": "Storage Connection",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "coldMoveMode": "Cold Storage Transfer Mode",
+      "copyMode": "Copy Mode (keep local copy)",
+      "moveMode": "Move Mode (delete local copy)",
+      "localArchiveAfterDays": "Local Archive After Days (Fallback)",
+      "localArchiveCron": "Local Archive Schedule (Cron)"
+    },
+    "migrationLogs": {
+      "startedAt": "Started At",
+      "jobType": "Job Type",
+      "processed": "Processed",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "status": "Status",
+      "duration": "Duration"
+    },
+    "pendingArchives": {
+      "forceArchive": "Force Archive",
+      "extendExpiration": "Extend Expiration",
+      "noItems": "No pending archives",
+      "alert": "expired documents pending archive",
+      "expirationDate": "Expiration Date",
+      "lastModifiedBy": "Last Modified By",
+      "newExpirationDate": "New Expiration Date"
+    },
     "messages": {
       "loadError": "Failed to load archives",
       "restoreSuccess": "Object restored",
-      "restoreError": "Failed to restore"
+      "restoreError": "Failed to restore",
+      "settingsLoadError": "Failed to load retention settings",
+      "logsLoadError": "Failed to load migration logs",
+      "forceArchiveSuccess": "Force archive completed",
+      "extendExpirationSuccess": "Expiration extended",
+      "restoreErrorParentNotFound": "Cannot restore: destination folder no longer exists"
     }
   },
   "actions": {

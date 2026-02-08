@@ -1233,6 +1233,8 @@
       "originalPath": "オリジナルパス",
       "archiveDate": "アーカイブ日時",
       "archivedAt": "アーカイブ日時",
+      "archiveState": "状態",
+      "coldMoveMode": "移行モード",
       "size": "サイズ",
       "actions": "アクション"
     },
@@ -1242,10 +1244,57 @@
       "restore": "復元"
     },
     "confirmRestore": "このオブジェクトを復元しますか？",
+    "tabs": {
+      "archives": "アーカイブ一覧",
+      "settings": "リテンション設定",
+      "migrationLogs": "移行ログ",
+      "pendingArchives": "期限切れ未アーカイブ"
+    },
+    "settings": {
+      "enabled": "リテンション",
+      "enabledYes": "有効",
+      "enabledNo": "無効",
+      "coldAfterDays": "コールド移行日数",
+      "days": "日",
+      "cronExpression": "スケジュール (Cron式)",
+      "storageType": "ストレージ種別",
+      "filesystem": "ファイルシステム",
+      "storageConnected": "ストレージ接続",
+      "connected": "接続済み",
+      "disconnected": "未接続",
+      "coldMoveMode": "コールドストレージ移動モード",
+      "copyMode": "コピーモード (ローカルコピー保持)",
+      "moveMode": "移動モード (ローカルコピー削除)",
+      "localArchiveAfterDays": "ローカルアーカイブ日数 (フォールバック)",
+      "localArchiveCron": "ローカルアーカイブスケジュール (Cron式)"
+    },
+    "migrationLogs": {
+      "startedAt": "実行日時",
+      "jobType": "ジョブ種別",
+      "processed": "処理数",
+      "succeeded": "成功",
+      "failed": "失敗",
+      "status": "ステータス",
+      "duration": "所要時間"
+    },
+    "pendingArchives": {
+      "forceArchive": "強制アーカイブ",
+      "extendExpiration": "有効期限延長",
+      "noItems": "期限切れの未アーカイブドキュメントはありません",
+      "alert": "件の期限切れドキュメントが未アーカイブです",
+      "expirationDate": "有効期限",
+      "lastModifiedBy": "最終更新者",
+      "newExpirationDate": "新しい有効期限"
+    },
     "messages": {
       "loadError": "アーカイブの読み込みに失敗しました",
       "restoreSuccess": "オブジェクトを復元しました",
-      "restoreError": "復元に失敗しました"
+      "restoreError": "復元に失敗しました",
+      "settingsLoadError": "リテンション設定の読み込みに失敗しました",
+      "logsLoadError": "移行ログの読み込みに失敗しました",
+      "forceArchiveSuccess": "強制アーカイブが完了しました",
+      "extendExpirationSuccess": "有効期限を延長しました",
+      "restoreErrorParentNotFound": "復元先のフォルダが削除されているため復元できません"
     }
   },
   "actions": {

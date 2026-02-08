@@ -204,4 +204,16 @@ public class ResourceBase {
 		nodeBase.setModifier(callContext.getUsername());
 		nodeBase.setModified(millisToCalendar(System.currentTimeMillis()));
 	}
+
+	protected String getCallContextUsername(HttpServletRequest request) {
+		CallContext ctx = (CallContext) request.getAttribute("CallContext");
+		return ctx != null ? ctx.getUsername() : null;
+	}
+
+	protected boolean isAdmin(HttpServletRequest request) {
+		CallContext ctx = (CallContext) request.getAttribute("CallContext");
+		if (ctx == null) return false;
+		Boolean admin = (Boolean) ctx.get(CallContextKey.IS_ADMIN);
+		return admin != null && admin;
+	}
 }
