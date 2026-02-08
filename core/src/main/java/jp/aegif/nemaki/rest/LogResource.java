@@ -68,7 +68,9 @@ public class LogResource extends ResourceBase{
 
 		//check admin
 		if(!checkAdmin(errMsg, request)){
-			getMapper().writeValueAsString(makeResult(status, result, errMsg));
+			status = false;
+			result = makeResult(status, result, errMsg);
+			return getMapper().writeValueAsString(result);
 		}
 
 		//get config

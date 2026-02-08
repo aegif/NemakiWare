@@ -1769,7 +1769,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         if (deleteTypeCallContext == null) {
             throw new org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException("Authentication required for deleteType operation");
         }
-        Boolean isAdmin = (Boolean) deleteTypeCallContext.get("isAdmin");
+        Boolean isAdmin = (Boolean) deleteTypeCallContext.get("is_admin");
         if (isAdmin == null || !isAdmin) {
             throw new org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException("Admin privilege required for deleteType operation");
         }

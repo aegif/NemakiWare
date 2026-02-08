@@ -214,7 +214,16 @@
 		<filter-name>restAuthenticationFilter</filter-name>
 		<url-pattern>/rest/solr/*</url-pattern>
 	</filter-mapping>
-	<!-- Note: /rest/all/* paths bypass authentication by not having filter mapping -->
+	<!-- /rest/all/log/* and /rest/all/build-info require authentication for security -->
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/all/log/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/all/build-info</url-pattern>
+	</filter-mapping>
+	<!-- Note: /rest/all/repositories bypasses authentication (needed for login page) -->
 	
 	<!-- Apply authentication to /api/* endpoints (Spring MVC controllers) -->
 	<filter-mapping>

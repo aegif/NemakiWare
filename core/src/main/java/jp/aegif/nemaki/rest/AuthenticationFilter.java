@@ -103,22 +103,10 @@ public class AuthenticationFilter implements Filter {
 				return;
 			}
 
-			// Check various URI patterns for /all/ paths
-			if (requestURI != null && requestURI.contains("/rest/all/")) {
-				log.debug("Bypassing authentication for /rest/all/ URI: " + requestURI);
-				chain.doFilter(req, res);
-				return;
-			}
-
-			// For servlet mappings, pathInfo might be null, so check servletPath
-			if (servletPath != null && servletPath.contains("/all/")) {
-				log.debug("Bypassing authentication for /all/ servletPath: " + servletPath);
-				chain.doFilter(req, res);
-				return;
-			}
-
-			if (pathInfo != null && pathInfo.startsWith("/all/")) {
-				log.debug("Bypassing authentication for /all/ pathInfo: " + pathInfo);
+			// Bypass authentication only for /rest/all/repositories (needed for login page)
+			// Other /rest/all/* paths (log, build-info) require authentication
+			if (requestURI != null && requestURI.contains("/rest/all/repositories")) {
+				log.debug("Bypassing authentication for /rest/all/repositories URI: " + requestURI);
 				chain.doFilter(req, res);
 				return;
 			}

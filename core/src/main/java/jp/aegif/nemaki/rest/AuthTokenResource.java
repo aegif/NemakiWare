@@ -1520,7 +1520,7 @@ public class AuthTokenResource extends ResourceBase{
 			return true;
 		}
 		// Allow if admin
-		Boolean isAdmin = (Boolean) callContext.get("isAdmin");
+		Boolean isAdmin = (Boolean) callContext.get("is_admin");
 		return isAdmin != null && isAdmin;
 	}
 
