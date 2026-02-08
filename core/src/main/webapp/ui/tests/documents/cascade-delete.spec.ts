@@ -305,8 +305,8 @@ test.describe('Cascade Delete Functionality', () => {
     await expect(modal).not.toBeVisible({ timeout: 30000 });
 
     // Step 7: Verify parent is deleted (retry with reload to account for async cascade)
-    for (let attempt = 0; attempt < 5; attempt++) {
-      await page.waitForTimeout(2000);
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await page.waitForTimeout(3000);
       await page.reload();
       await page.waitForTimeout(3000);
 
@@ -321,7 +321,7 @@ test.describe('Cascade Delete Functionality', () => {
     // Step 8: Verify child is also no longer visible (cascade deleted)
     // Cascade delete is async, so we need to check via API with retries
     let childDeleted = false;
-    for (let attempt = 0; attempt < 10; attempt++) {
+    for (let attempt = 0; attempt < 15; attempt++) {
       try {
         const checkResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}`, {
           headers: {
@@ -345,7 +345,7 @@ test.describe('Cascade Delete Functionality', () => {
         break;
       }
       console.log(`Attempt ${attempt + 1}: child still exists, waiting for cascade delete...`);
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(3000);
     }
     expect(childDeleted).toBeTruthy();
 

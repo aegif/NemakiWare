@@ -240,44 +240,38 @@ run_test "Base Folder Type" "curl -s -u admin:admin 'http://localhost:8080/core/
 run_test "Type Children Query" "curl -s -u admin:admin 'http://localhost:8080/core/atom/bedroom/types?typeId=cmis:document' | grep -o '<cmisra:numItems>[0-9]*</cmisra:numItems>' | sed 's/<[^>]*>//g'" ""
 run_test "Type Descendants Query" "curl -s -u admin:admin 'http://localhost:8080/core/atom/bedroom/typedesc?typeId=cmis:document' | grep -c 'cmis:document'" ""
 
-# Test custom type registration (if TypeRegistrationServlet is available)
+# Test custom type registration via REST API
 echo -n "Testing: Custom Type Registration Support ... "
 total_tests=$((total_tests + 1))
-if curl -s -u admin:admin -o /dev/null -w "%{http_code}" "http://localhost:8080/core/rest/type-register/" | grep -q "200"; then
-    # Test JSON type definition structure
-    type_test_json='{
-        "id": "custom:testType",
-        "localName": "TestType",
-        "displayName": "Test Custom Type",
-        "description": "Test type for QA validation",
-        "baseId": "cmis:document",
-        "creatable": true,
-        "queryable": true,
-        "properties": {
-            "custom:testProperty": {
-                "id": "custom:testProperty",
-                "localName": "testProperty",
-                "displayName": "Test Property",
-                "description": "Test property for validation",
-                "propertyType": "string",
-                "cardinality": "single",
-                "required": false,
-                "queryable": true
-            }
-        }
-    }'
-    
-    # Test type registration endpoint availability
-    if curl -s -X POST -H "Content-Type: application/json" -u admin:admin \
-           -d "$type_test_json" \
-           "http://localhost:8080/core/rest/repo/bedroom/type/register-json" -o /dev/null -w "%{http_code}" | grep -q "200"; then
-        echo -e "${GREEN}PASSED${NC} (Type registration functional)"
-        success_count=$((success_count + 1))
-    else
-        echo -e "${RED}FAILED${NC} (Type registration not working)"
-    fi
+type_test_json='{
+    "id": "custom:testType",
+    "localName": "TestType",
+    "displayName": "Test Custom Type",
+    "description": "Test type for QA validation",
+    "baseId": "cmis:document",
+    "parentId": "cmis:document",
+    "propertyDefinitions": [{
+        "id": "custom:testProperty",
+        "localName": "custom:testProperty",
+        "displayName": "Test Property",
+        "propertyType": "string",
+        "cardinality": "single",
+        "updatability": "readwrite",
+        "required": false,
+        "queryable": true
+    }]
+}'
+
+# Test type registration via /rest/repo/{repoId}/type/register-json
+if curl -s -X POST -H "Content-Type: application/json" -u admin:admin \
+       -d "$type_test_json" \
+       "http://localhost:8080/core/rest/repo/bedroom/type/register-json" -o /dev/null -w "%{http_code}" | grep -q "200"; then
+    echo -e "${GREEN}PASSED${NC} (Type registration functional)"
+    success_count=$((success_count + 1))
+    # Cleanup: delete the test type
+    curl -s -X DELETE -u admin:admin "http://localhost:8080/core/rest/repo/bedroom/type/delete/custom:testType" -o /dev/null 2>/dev/null
 else
-    echo -e "${RED}FAILED${NC} (Type registration endpoint not available)"
+    echo -e "${RED}FAILED${NC} (Type registration not working)"
 fi
 
 if [[ "$TEST_MODE" == "full" ]] || [[ "$TEST_MODE" == "qa" ]]; then

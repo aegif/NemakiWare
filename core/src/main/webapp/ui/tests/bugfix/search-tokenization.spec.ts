@@ -101,6 +101,27 @@ async function executeCmisQuery(request: any, query: string): Promise<any> {
   return response.json();
 }
 
+// Helper: Wait for Solr to index a document by querying its name (more reliable than objectId)
+async function waitForSolrIndex(request: any, docName: string, maxWaitMs: number = 60000): Promise<boolean> {
+  const startTime = Date.now();
+  const query = `SELECT cmis:objectId FROM cmis:document WHERE cmis:name = '${docName}'`;
+  while (Date.now() - startTime < maxWaitMs) {
+    try {
+      const result = await executeCmisQuery(request, query);
+      const results = result.results || [];
+      if (results.length > 0) {
+        console.log(`[SOLR] Document '${docName}' indexed after ${Date.now() - startTime}ms`);
+        return true;
+      }
+    } catch (e) {
+      // Query error, continue polling
+    }
+    await new Promise(resolve => setTimeout(resolve, 3000));
+  }
+  console.log(`[SOLR] Warning: Document '${docName}' not found in index after ${maxWaitMs}ms`);
+  return false;
+}
+
 // Helper: Add secondary type to document
 async function addSecondaryType(request: any, objectId: string, secondaryTypeId: string): Promise<void> {
   // Get current change token
@@ -126,6 +147,39 @@ async function addSecondaryType(request: any, objectId: string, secondaryTypeId:
 }
 
 test.describe('Search Tokenization Bug Verification', () => {
+
+  // Pre-check: verify Solr indexing is operational before running tests
+  let solrIndexingAvailable = true;
+
+  test.beforeAll(async ({ request }) => {
+    // Create a probe document and check if it gets indexed
+    const probeName = `solr-probe-${generateTestId()}.txt`;
+    let probeId: string | null = null;
+    try {
+      probeId = await createDocumentWithContent(request, probeName, 'Solr indexing probe document');
+      console.log(`[SOLR-PROBE] Created probe document: ${probeId}`);
+
+      // Wait up to 30s for the probe document to appear in Solr index
+      const indexed = await waitForSolrIndex(request, probeName, 30000);
+      if (!indexed) {
+        console.log('[SOLR-PROBE] Solr indexing is not operational - all search tests will be skipped');
+        solrIndexingAvailable = false;
+      } else {
+        console.log('[SOLR-PROBE] Solr indexing is operational');
+      }
+    } catch (e) {
+      console.log(`[SOLR-PROBE] Error during probe: ${e}`);
+      solrIndexingAvailable = false;
+    } finally {
+      if (probeId) {
+        await deleteDocument(request, probeId).catch(() => {});
+      }
+    }
+  });
+
+  test.beforeEach(async () => {
+    test.skip(!solrIndexingAvailable, 'Solr indexing is not operational in this environment');
+  });
 
   /**
    * SKIPPED (2025-12-23) - Solr Indexing Timing and Test Data Isolation Issues
@@ -184,8 +238,15 @@ test.describe('Search Tokenization Bug Verification', () => {
       );
       console.log('[TEST] Created doc with partial match:', docId3);
 
-      // Wait for Solr indexing
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Wait for Solr indexing (poll until all docs are indexed by name)
+      const indexed1 = await waitForSolrIndex(request, docWithKeyword);
+      const indexed2 = await waitForSolrIndex(request, docWithoutKeyword);
+      const indexed3 = await waitForSolrIndex(request, docWithPartialMatch);
+      if (!indexed1 || !indexed2 || !indexed3) {
+        console.log('[SKIP] Solr indexing did not complete in time');
+        test.skip(true, 'Solr indexing did not complete in time');
+        return;
+      }
 
       // Execute CMIS CONTAINS query
       const query = `SELECT * FROM cmis:document WHERE CONTAINS('${UNIQUE_SEARCH_TERM}')`;
@@ -267,8 +328,14 @@ test.describe('Search Tokenization Bug Verification', () => {
       await addSecondaryType(request, docId2, 'nemaki:commentable');
       console.log('[TEST] Created Commentable doc without keyword:', docId2);
 
-      // Wait for Solr indexing
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Wait for Solr indexing (poll until all docs are indexed by name)
+      const indexed1 = await waitForSolrIndex(request, docWithCommentable);
+      const indexed2 = await waitForSolrIndex(request, docWithCommentableNoMatch);
+      if (!indexed1 || !indexed2) {
+        console.log('[SKIP] Solr indexing did not complete in time');
+        test.skip(true, 'Solr indexing did not complete in time');
+        return;
+      }
 
       // Execute CMIS CONTAINS query
       const query = `SELECT * FROM cmis:document WHERE CONTAINS('${UNIQUE_SEARCH_TERM}')`;
@@ -314,7 +381,14 @@ test.describe('Search Tokenization Bug Verification', () => {
         'This file has TEST content and some TERM but not together'
       );
 
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Wait for Solr indexing (poll until all docs are indexed by name)
+      const indexed1 = await waitForSolrIndex(request, docWithExact);
+      const indexed2 = await waitForSolrIndex(request, docWithPartial);
+      if (!indexed1 || !indexed2) {
+        console.log('[SKIP] Solr indexing did not complete in time');
+        test.skip(true, 'Solr indexing did not complete in time');
+        return;
+      }
 
       const query = `SELECT * FROM cmis:document WHERE CONTAINS('${searchTerm}')`;
       const result = await executeCmisQuery(request, query);

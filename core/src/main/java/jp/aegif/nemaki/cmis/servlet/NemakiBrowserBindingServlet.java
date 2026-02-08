@@ -1761,7 +1761,19 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      */
     private void handleDeleteTypeDirectly(HttpServletRequest request, HttpServletResponse response, String pathInfo) throws Exception {
         log.debug("=== DIRECT DELETE TYPE HANDLER START ===");
-        
+
+        // SECURITY FIX: Verify the requesting user is an admin.
+        // deleteType is a repository-level administrative operation per CMIS spec.
+        org.apache.chemistry.opencmis.commons.server.CallContext deleteTypeCallContext =
+            (org.apache.chemistry.opencmis.commons.server.CallContext) request.getAttribute("CallContext");
+        if (deleteTypeCallContext == null) {
+            throw new org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException("Authentication required for deleteType operation");
+        }
+        Boolean isAdmin = (Boolean) deleteTypeCallContext.get("isAdmin");
+        if (isAdmin == null || !isAdmin) {
+            throw new org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException("Admin privilege required for deleteType operation");
+        }
+
         // Extract repository ID from path
         String[] pathParts = pathInfo != null ? pathInfo.split("/") : new String[0];
         if (pathParts.length < 2) {

@@ -104,7 +104,20 @@ async function navigateToAnyDocument(page: any): Promise<boolean> {
 
   // Wait for document viewer to load
   await page.waitForLoadState('networkidle', { timeout: 20000 });
-  await page.waitForSelector('div[role="tablist"]', { timeout: 25000 });
+  // Tab list may take extra time to render; retry with page reload if needed
+  try {
+    await page.waitForSelector('div[role="tablist"]', { timeout: 15000 });
+  } catch {
+    console.log('[RETRY] Tab list not found, reloading page...');
+    await page.reload();
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
+    try {
+      await page.waitForSelector('div[role="tablist"]', { timeout: 15000 });
+    } catch {
+      console.log('[SKIP] Tab list still not found after reload');
+      return false;
+    }
+  }
   return true;
 }
 

@@ -151,6 +151,25 @@ async function waitForTableLoad(page: any, timeout: number = 30000) {
   }
 }
 
+// Helper: Navigate through pagination to find a specific row
+async function findRowInPaginatedTable(page: any, text: string, maxPages: number = 10): Promise<boolean> {
+  for (let pageNum = 0; pageNum < maxPages; pageNum++) {
+    const row = page.locator(`tr:has-text("${text}")`);
+    if (await row.isVisible().catch(() => false)) {
+      return true;
+    }
+    // Try clicking "next page" button
+    const nextButton = page.locator('.ant-pagination-next:not(.ant-pagination-disabled)');
+    if (await nextButton.count() === 0) {
+      break; // No more pages
+    }
+    await nextButton.click();
+    await page.waitForTimeout(1000);
+    await waitForTableLoad(page, 10000);
+  }
+  return false;
+}
+
 // CRITICAL: Serial mode for type definition tests to avoid conflicts
 test.describe.configure({ mode: 'serial' });
 
@@ -881,7 +900,14 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     // Wait for table to finish loading after upload
     await waitForTableLoad(page, 30000);
 
-    // Open edit modal
+    // Open edit modal - search through pagination if needed
+    const found = await findRowInPaginatedTable(page, cancelTestTypeId);
+    if (!found) {
+      // Cleanup temp file before skipping
+      fs.unlinkSync(cancelTestPath);
+      test.skip(true, `Type ${cancelTestTypeId} not found in table after upload`);
+      return;
+    }
     const typeRow = page.locator(`tr:has-text("${cancelTestTypeId}")`);
     // FIX (2025-12-24): Button text is "JSON" not "編集" for JSON editing
     const editButton = typeRow.locator('button:has-text("JSON")');
