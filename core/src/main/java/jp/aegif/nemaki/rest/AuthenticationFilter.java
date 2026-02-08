@@ -159,6 +159,15 @@ public class AuthenticationFilter implements Filter {
 			// The authenticated user's ID is used to complete the login, ensuring
 			// only the logged-in user can bind their identity to the MCP session
 
+			// Check if the target REST resource is disabled by configuration.
+			// Reject early to avoid wasting resources on authentication for disabled endpoints.
+			if (!checkResourceEnabled(hreq)) {
+				String resourceName = extractResourceName(pathInfo);
+				log.warn("REST resource disabled by configuration: " + resourceName + " (URI: " + requestURI + ")");
+				hres.sendError(HttpServletResponse.SC_FORBIDDEN, "Resource is disabled by server configuration");
+				return;
+			}
+
 			boolean auth = login(hreq, hres);
 			if(auth){
 				chain.doFilter(req, res);
@@ -434,32 +443,77 @@ public class AuthenticationFilter implements Filter {
 	}
 
 	private boolean checkResourceEnabled(HttpServletRequest request){
-		boolean enabled = true;
-
 		String pathInfo = request.getPathInfo();
-		if(pathInfo.startsWith("/user")){
-			String userResourceEnabled = propertyManager.readValue(PropertyKey.REST_USER_ENABLED);
-			enabled = TOKEN_FALSE.equals(userResourceEnabled) ? false : true;
-		}else if(pathInfo.startsWith("/group")){
-			String groupResourceEnabled = propertyManager.readValue(PropertyKey.REST_GROUP_ENABLED);
-			enabled = TOKEN_FALSE.equals(groupResourceEnabled) ? false : true;
-		}else if(pathInfo.startsWith("/type")){
-			String typeResourceEnabled = propertyManager.readValue(PropertyKey.REST_TYPE_ENABLED);
-			enabled = TOKEN_FALSE.equals(typeResourceEnabled) ? false : true;
-		}else if(pathInfo.startsWith("/archive")){
-			String archiveResourceEnabled = propertyManager.readValue(PropertyKey.REST_ARCHIVE_ENABLED);
-			enabled = TOKEN_FALSE.equals(archiveResourceEnabled) ? false : true;
-		}else if(pathInfo.startsWith("/search-engine")){
-			String solrResourceEnabled = propertyManager.readValue(PropertyKey.REST_SOLR_ENABLED);
-			enabled = TOKEN_FALSE.equals(solrResourceEnabled) ? false : true;
-		}else if(pathInfo.startsWith("/authtoken")){
-			String authtokenResourceEnabled = propertyManager.readValue(PropertyKey.REST_AUTHTOKEN_ENABLED);
-			enabled = TOKEN_FALSE.equals(authtokenResourceEnabled) ? false : true;
-		}else{
-			enabled = false;
+		String resourceName = extractResourceName(pathInfo);
+
+		// If we can't determine the resource name, allow the request through
+		// (defense in depth: individual endpoints have their own permission checks)
+		if (resourceName == null) {
+			return true;
 		}
 
-		return enabled;
+		String propertyKey = null;
+		switch (resourceName) {
+			case "user":
+				propertyKey = PropertyKey.REST_USER_ENABLED;
+				break;
+			case "group":
+				propertyKey = PropertyKey.REST_GROUP_ENABLED;
+				break;
+			case "type":
+				propertyKey = PropertyKey.REST_TYPE_ENABLED;
+				break;
+			case "archive":
+				propertyKey = PropertyKey.REST_ARCHIVE_ENABLED;
+				break;
+			case "search-engine":
+				propertyKey = PropertyKey.REST_SOLR_ENABLED;
+				break;
+			case "authtoken":
+				propertyKey = PropertyKey.REST_AUTHTOKEN_ENABLED;
+				break;
+			default:
+				// Resource not in the controlled list, allow by default
+				return true;
+		}
+
+		String value = propertyManager.readValue(propertyKey);
+		return !TOKEN_FALSE.equals(value);
+	}
+
+	/**
+	 * Extract the REST resource name from pathInfo.
+	 * Handles the following path patterns:
+	 *   /repo/{repositoryId}/{resource}/...  → resource
+	 *   /all/{resource}/...                  → resource
+	 *   /v1/repo/{repositoryId}/{resource}/... → resource
+	 *
+	 * @param pathInfo the servlet path info (may be null)
+	 * @return the resource name, or null if it cannot be determined
+	 */
+	private String extractResourceName(String pathInfo) {
+		if (pathInfo == null || pathInfo.isEmpty()) {
+			return null;
+		}
+		String p = pathInfo.startsWith("/") ? pathInfo.substring(1) : pathInfo;
+		String[] parts = p.split("/");
+		if (parts.length == 0) {
+			return null;
+		}
+
+		// /v1/repo/{id}/{resource}/...
+		if ("v1".equals(parts[0]) && parts.length > 3 && ApiType.REPO.equals(parts[1])) {
+			return parts[3];
+		}
+		// /repo/{id}/{resource}/...
+		if (ApiType.REPO.equals(parts[0]) && parts.length > 2) {
+			return parts[2];
+		}
+		// /all/{resource}/...
+		if (ApiType.ALL.equals(parts[0]) && parts.length > 1) {
+			return parts[1];
+		}
+		return null;
 	}
 
 	/**

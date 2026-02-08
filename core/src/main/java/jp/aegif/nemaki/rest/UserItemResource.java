@@ -851,9 +851,20 @@ private ContentService getContentServiceSafe() {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		UserItem userItem = getContentServiceSafe().getUserItemById(repositoryId, userId);
+		// SECURITY FIX: Check that the caller is the user themselves or an admin
+		status = checkAuthorityForUser(status, errMsg, httpRequest, userId, repositoryId);
+		if (!status) {
+			makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
 
-		//TODO checkAuthorityForUser
+		UserItem userItem = getContentServiceSafe().getUserItemById(repositoryId, userId);
+		if (userItem == null) {
+			status = false;
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
+			makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
 
 		//password match
 		if(AuthenticationUtil.passwordMatches(oldPassword, userItem.getPassowrd())){
