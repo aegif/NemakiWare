@@ -278,7 +278,7 @@ import { getCmisAuthHeaders } from './auth/CmisAuthHeaderProvider';
 import { CmisHttpClient } from './http';
 import { AtomPubClient } from './clients';
 import { ParsedAtomEntry } from './parsers';
-import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions, CoercionWarning } from '../types/cmis';
+import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions, CoercionWarning, RetentionSettings, MigrationLog, PendingArchive } from '../types/cmis';
 import { CompatibleType, MigrationPropertyDefinition, MigrationPropertyType } from '../types/typeMigration';
 
 /**
@@ -2756,6 +2756,52 @@ export class CMISService {
     }
   }
 
+  async getRetentionSettings(repositoryId: string): Promise<RetentionSettings> {
+    try {
+      const url = `/core/rest/repo/${repositoryId}/archive/retention-settings`;
+      const response = await this.httpClient.getJson(url);
+
+      if (response.status === 200) {
+        const data = JSON.parse(response.responseText);
+        if (data.status && data.settings) {
+          return data.settings as RetentionSettings;
+        }
+        throw new Error(data.errMsg?.[0]?.message || 'Failed to get retention settings');
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during retention settings retrieval');
+    }
+  }
+
+  async getMigrationLogs(repositoryId: string, limit: number = 50): Promise<MigrationLog[]> {
+    try {
+      const url = `/core/rest/repo/${repositoryId}/archive/migration-logs?limit=${limit}`;
+      const response = await this.httpClient.getJson(url);
+
+      if (response.status === 200) {
+        const data = JSON.parse(response.responseText);
+        if (data.status) {
+          return (data.logs || []) as MigrationLog[];
+        }
+        throw new Error(data.errMsg?.[0]?.message || 'Failed to get migration logs');
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during migration logs retrieval');
+    }
+  }
+
   async archiveObject(repositoryId: string, objectId: string): Promise<void> {
     try {
       const url = `${this.baseUrl}/${repositoryId}/archive/${objectId}`;
@@ -2789,6 +2835,29 @@ export class CMISService {
       });
 
       if (response.status === 200 || response.status === 204) {
+        // Check response body for error codes
+        if (response.responseText) {
+          try {
+            const data = JSON.parse(response.responseText);
+            if (data.status === 'failure' && data.error) {
+              const errors = Array.isArray(data.error) ? data.error : [data.error];
+              for (const err of errors) {
+                if (typeof err === 'object') {
+                  const values = Object.values(err);
+                  if (values.includes('errRestoreBecauseParentNoLongerExists')) {
+                    throw new Error('ERR_RESTORE_BECAUSE_PARENT_NO_LONGER_EXISTS');
+                  }
+                }
+              }
+              throw new Error(JSON.stringify(data.error));
+            }
+          } catch (parseError) {
+            if (parseError instanceof Error && parseError.message.startsWith('ERR_')) {
+              throw parseError;
+            }
+            // Ignore parse errors for non-JSON responses
+          }
+        }
         return;
       }
 
@@ -2799,6 +2868,82 @@ export class CMISService {
         throw error;
       }
       throw new Error('Network error during object restoration');
+    }
+  }
+
+  async getPendingArchives(repositoryId: string): Promise<PendingArchive[]> {
+    try {
+      const url = `/core/rest/repo/${repositoryId}/archive/pending-archives`;
+      const response = await this.httpClient.request({
+        method: 'GET',
+        url,
+        accept: 'application/json'
+      });
+
+      if (response.status === 200) {
+        const data = JSON.parse(response.responseText);
+        if (data.status === 'success' && data.pendingArchives) {
+          return data.pendingArchives;
+        }
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to get pending archives:', error);
+      return [];
+    }
+  }
+
+  async forceArchive(repositoryId: string, objectId: string): Promise<void> {
+    try {
+      const url = `/core/rest/repo/${repositoryId}/archive/force-archive/${objectId}`;
+      const response = await this.httpClient.request({
+        method: 'POST',
+        url,
+        body: JSON.stringify({}),
+        contentType: 'application/json',
+        accept: 'application/json'
+      });
+
+      if (response.status === 200) {
+        const data = JSON.parse(response.responseText);
+        if (data.status === 'failure') {
+          throw new Error('Force archive failed');
+        }
+        return;
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) throw error;
+      throw new Error('Network error during force archive');
+    }
+  }
+
+  async extendExpiration(repositoryId: string, objectId: string, newDate: string): Promise<void> {
+    try {
+      const url = `/core/rest/repo/${repositoryId}/archive/extend-expiration/${objectId}?newExpirationDate=${encodeURIComponent(newDate)}`;
+      const response = await this.httpClient.request({
+        method: 'PUT',
+        url,
+        body: JSON.stringify({}),
+        contentType: 'application/json',
+        accept: 'application/json'
+      });
+
+      if (response.status === 200) {
+        const data = JSON.parse(response.responseText);
+        if (data.status === 'failure') {
+          throw new Error('Extend expiration failed');
+        }
+        return;
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) throw error;
+      throw new Error('Network error during expiration extension');
     }
   }
 

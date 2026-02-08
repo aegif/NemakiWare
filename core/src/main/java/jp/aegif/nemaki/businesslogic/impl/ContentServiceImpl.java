@@ -3900,6 +3900,11 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public List<Archive> getArchivesByCreator(String repositoryId, String creator) {
+		return contentDaoService.getArchivesByCreator(repositoryId, creator);
+	}
+
+	@Override
 	public Archive getArchive(String repositoryId, String archiveId) {
 		return contentDaoService.getArchive(repositoryId, archiveId);
 	}
@@ -3924,6 +3929,20 @@ public class ContentServiceImpl implements ContentService {
 		a.setDeletedWithParent(deletedWithParent);
 		a.setParentId(content.getParentId());
 		setSignature(callContext, a);
+
+		// Set retention lifecycle fields
+		a.setArchiveState(Archive.STATE_ARCHIVED_LOCAL);
+		a.setArchivedAt(new GregorianCalendar());
+
+		// Snapshot ACL for archived content access control
+		try {
+			if (content.getAcl() != null) {
+				com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+				a.setAclSnapshot(mapper.writeValueAsString(content.getAcl()));
+			}
+		} catch (Exception e) {
+			log.warn("Failed to snapshot ACL for archive: {}", e.getMessage());
+		}
 
 		// Set path (calculate from folder hierarchy)
 		try {
@@ -3977,6 +3996,20 @@ public class ContentServiceImpl implements ContentService {
 		a.setDeletedWithParent(deletedWithParent);
 		a.setParentId(content.getParentId());
 		setSignature(callContext, a);
+
+		// Set retention lifecycle fields
+		a.setArchiveState(Archive.STATE_ARCHIVED_LOCAL);
+		a.setArchivedAt(new GregorianCalendar());
+
+		// Snapshot ACL
+		try {
+			if (content.getAcl() != null) {
+				com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+				a.setAclSnapshot(mapper.writeValueAsString(content.getAcl()));
+			}
+		} catch (Exception e) {
+			log.warn("Failed to snapshot ACL for archive: {}", e.getMessage());
+		}
 
 		// Set path (calculate from folder hierarchy)
 		try {
@@ -4321,6 +4354,97 @@ public class ContentServiceImpl implements ContentService {
 			return null;
 		}
 	}	
+
+	// Retention lifecycle methods
+
+	@Override
+	public List<Archive> getArchivesByState(String repositoryId, String state) {
+		return contentDaoService.getArchivesByState(repositoryId, state);
+	}
+
+	@Override
+	public List<Archive> getArchivesForColdTransition(String repositoryId, GregorianCalendar beforeDate) {
+		return contentDaoService.getArchivesForColdTransition(repositoryId, beforeDate);
+	}
+
+	@Override
+	public void updateArchiveState(String repositoryId, String archiveId,
+			String newState, Map<String, String> contentRef, GregorianCalendar coldArchivedAt) {
+		contentDaoService.updateArchiveState(repositoryId, archiveId, newState, contentRef, coldArchivedAt);
+	}
+
+	@Override
+	public java.io.InputStream getArchiveContentStream(String repositoryId, String archiveId) {
+		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
+		if (archive == null) {
+			return null;
+		}
+		return contentDaoService.getArchiveContentStream(repositoryId, archive);
+	}
+
+	@Override
+	public boolean deleteArchiveContent(String repositoryId, String archiveId) {
+		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
+		if (archive == null) {
+			return false;
+		}
+		return contentDaoService.deleteArchiveContent(repositoryId, archive);
+	}
+
+	@Override
+	public List<String> getExpiredDocumentIds(String repositoryId, GregorianCalendar beforeDate) {
+		return contentDaoService.getExpiredDocumentIds(repositoryId, beforeDate);
+	}
+
+	@Override
+	public List<Content> getExpiredDocuments(String repositoryId, GregorianCalendar beforeDate) {
+		List<String> ids = getExpiredDocumentIds(repositoryId, beforeDate);
+		List<Content> results = new java.util.ArrayList<>();
+		for (String id : ids) {
+			Content c = getContent(repositoryId, id);
+			if (c != null) {
+				results.add(c);
+			}
+		}
+		return results;
+	}
+
+	@Override
+	public void updateExpirationDate(String repositoryId, String objectId, GregorianCalendar newDate) {
+		Content content = getContent(repositoryId, objectId);
+		if (content == null) {
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException(
+					"Document not found: " + objectId);
+		}
+
+		List<jp.aegif.nemaki.model.Property> subTypeProps = content.getSubTypeProperties();
+		if (subTypeProps == null) {
+			subTypeProps = new java.util.ArrayList<>();
+		}
+
+		boolean found = false;
+		for (jp.aegif.nemaki.model.Property prop : subTypeProps) {
+			if ("cmis:rm_expirationDate".equals(prop.getKey())) {
+				prop.setValue(newDate.getTimeInMillis());
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			jp.aegif.nemaki.model.Property newProp = new jp.aegif.nemaki.model.Property();
+			newProp.setKey("cmis:rm_expirationDate");
+			newProp.setValue(newDate.getTimeInMillis());
+			subTypeProps.add(newProp);
+		}
+		content.setSubTypeProperties(subTypeProps);
+		contentDaoService.update(repositoryId, content);
+	}
+
+	@Override
+	public void updateArchiveColdMoveMode(String repositoryId, String archiveId, String coldMoveMode) {
+		contentDaoService.updateArchiveColdMoveMode(repositoryId, archiveId, coldMoveMode);
+	}
+
 	/**
 	 * ATOMIC OPERATIONS: Helper methods for atomic Document+Attachment operations
 	 * These methods ensure _rev consistency during compound CouchDB operations

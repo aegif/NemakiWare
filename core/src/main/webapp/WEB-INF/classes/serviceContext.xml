@@ -657,6 +657,11 @@
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
+        <property name="propertyManager" ref="propertyManager" />
+        <property name="retentionLogDaoService" ref="retentionLogDaoService" />
+        <property name="longTermStorageAdapterFactory" ref="longTermStorageAdapterFactory" />
+        <property name="threadLockService" ref="threadLockService" />
+        <property name="nemakiCachePool" ref="nemakiCachePool" />
     </bean>
 
 	<!-- Commented out - REST resources will handle Spring context lookup manually -->
@@ -907,6 +912,41 @@
     <bean id="webhookResource" class="jp.aegif.nemaki.rest.WebhookResource">
         <property name="webhookService" ref="WebhookService" />
         <property name="contentService" ref="ContentService" />
+    </bean>
+
+    <!-- Long-term Storage Adapter Factory -->
+    <bean id="longTermStorageAdapterFactory" class="jp.aegif.nemaki.archive.LongTermStorageAdapterFactory"
+          init-method="init">
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
+    <!-- Retention Migration Log DAO -->
+    <bean id="retentionLogDaoService" class="jp.aegif.nemaki.dao.impl.couch.RetentionLogDaoServiceImpl">
+        <property name="connectorPool" ref="connectorPool" />
+    </bean>
+
+    <!-- Retention Scheduler -->
+    <bean id="retentionScheduler" class="jp.aegif.nemaki.archive.RetentionScheduler"
+          init-method="init" destroy-method="destroy"
+          depends-on="ContentService,repositoryInfoMap,longTermStorageAdapterFactory">
+        <property name="contentService" ref="ContentService" />
+        <property name="propertyManager" ref="propertyManager" />
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+        <property name="longTermStorageAdapterFactory" ref="longTermStorageAdapterFactory" />
+        <property name="retentionLogDaoService" ref="retentionLogDaoService" />
+        <property name="threadLockService" ref="threadLockService" />
+        <property name="nemakiCachePool" ref="nemakiCachePool" />
+    </bean>
+
+    <!-- Archive Search Resource -->
+    <bean id="archiveSearchResource" class="jp.aegif.nemaki.rest.ArchiveSearchResource">
+        <property name="contentService" ref="ContentService" />
+    </bean>
+
+    <!-- Archive Download Resource -->
+    <bean id="archiveDownloadResource" class="jp.aegif.nemaki.rest.ArchiveDownloadResource">
+        <property name="contentService" ref="ContentService" />
+        <property name="longTermStorageAdapterFactory" ref="longTermStorageAdapterFactory" />
     </bean>
 
     <!-- API v1 Component Scanning -->

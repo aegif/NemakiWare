@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.dao;
 
+import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.Map;
 
@@ -783,6 +784,15 @@ public interface ContentDaoService {
 	List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc);
 
 	/**
+	 * Get archives created (deleted) by a specific user.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param creator the username of the user who deleted the documents
+	 * @return list of archives created by the specified user
+	 */
+	List<Archive> getArchivesByCreator(String repositoryId, String creator);
+
+	/**
 	 * Create an archive of a content
 	 * @param repositoryId TODO
 	 * @param archive
@@ -836,4 +846,62 @@ public interface ContentDaoService {
 	 * @return Actual size in bytes from CouchDB attachment metadata, or null if not available
 	 */
 	Long getAttachmentActualSize(String repositoryId, String attachmentId);
+
+	// Retention lifecycle methods
+
+	/**
+	 * Get archives filtered by archive state from CouchDB view.
+	 */
+	List<Archive> getArchivesByState(String repositoryId, String state);
+
+	/**
+	 * Get archives with archivedAt before given date (candidates for cold transition).
+	 */
+	List<Archive> getArchivesForColdTransition(String repositoryId, GregorianCalendar beforeDate);
+
+	/**
+	 * Update archive retention state and related fields.
+	 */
+	void updateArchiveState(String repositoryId, String archiveId,
+			String newState, java.util.Map<String, String> contentRef, GregorianCalendar coldArchivedAt);
+
+	/**
+	 * Get the binary content stream for an archived document.
+	 * Retrieves the CouchDB attachment from the attachment archive in the closet DB.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archive the archive whose content stream to retrieve
+	 * @return InputStream of the binary content, or null if not available
+	 */
+	java.io.InputStream getArchiveContentStream(String repositoryId, Archive archive);
+
+	/**
+	 * Delete the binary content (CouchDB attachment) from an archived document.
+	 * Used in move mode (retention.cold.keep.local.copy=false) to remove the
+	 * local copy after successful cold storage write.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archive the archive whose content to delete
+	 * @return true if the attachment was deleted, false if not found or failed
+	 */
+	boolean deleteArchiveContent(String repositoryId, Archive archive);
+
+	/**
+	 * Get IDs of documents whose cmis:rm_expirationDate is before the given date.
+	 * Uses the documentsByExpirationDate CouchDB view for efficient range query.
+	 *
+	 * @param repositoryId the repository ID (main DB, not closet)
+	 * @param beforeDate documents with expirationDate before this date are returned
+	 * @return list of document IDs whose retention has expired
+	 */
+	List<String> getExpiredDocumentIds(String repositoryId, GregorianCalendar beforeDate);
+
+	/**
+	 * Update the coldMoveMode field on an archive document.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archiveId the archive ID
+	 * @param coldMoveMode "COPY" or "MOVE"
+	 */
+	void updateArchiveColdMoveMode(String repositoryId, String archiveId, String coldMoveMode);
 }

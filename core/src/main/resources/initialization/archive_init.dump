@@ -27,6 +27,15 @@
       },
       "versionSeries" : {
         "map" : "function(doc) { if (doc.type == 'cmis:document')  emit(doc.versionSeriesId, doc) }"
+      },
+      "byArchiveState" : {
+        "map" : "function(doc) { if (doc.archiveState) emit(doc.archiveState, doc); else emit('ARCHIVED_LOCAL', doc); }"
+      },
+      "byArchivedAt" : {
+        "map" : "function(doc) { if (doc.archivedAt) emit(doc.archivedAt, doc); }"
+      },
+      "byCreator" : {
+        "map" : "function(doc) { if (doc.creator) emit(doc.creator, doc); }"
       }
     }
   },
