@@ -1293,7 +1293,10 @@
       "settingsLoadError": "Failed to load retention settings",
       "logsLoadError": "Failed to load migration logs",
       "forceArchiveSuccess": "Force archive completed",
+      "forceArchiveError": "Failed to force archive",
       "extendExpirationSuccess": "Expiration extended",
+      "extendExpirationError": "Failed to extend expiration",
+      "pendingLoadError": "Failed to load pending archives",
       "restoreErrorParentNotFound": "Cannot restore: destination folder no longer exists"
     }
   },

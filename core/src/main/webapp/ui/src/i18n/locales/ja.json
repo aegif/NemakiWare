@@ -1293,7 +1293,10 @@
       "settingsLoadError": "リテンション設定の読み込みに失敗しました",
       "logsLoadError": "移行ログの読み込みに失敗しました",
       "forceArchiveSuccess": "強制アーカイブが完了しました",
+      "forceArchiveError": "強制アーカイブに失敗しました",
       "extendExpirationSuccess": "有効期限を延長しました",
+      "extendExpirationError": "有効期限の延長に失敗しました",
+      "pendingLoadError": "期限切れ未アーカイブの読み込みに失敗しました",
       "restoreErrorParentNotFound": "復元先のフォルダが削除されているため復元できません"
     }
   },
