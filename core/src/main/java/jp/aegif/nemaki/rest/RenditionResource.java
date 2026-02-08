@@ -249,6 +249,17 @@ public class RenditionResource extends ResourceBase {
                 return Response.status(Response.Status.FORBIDDEN).entity(response).build();
             }
 
+            // SECURITY FIX: Check content-level read permission.
+            // Rendition generation reads the document content to convert it to PDF,
+            // so CAN_VIEW_CONTENT_OBJECT (canGetContentStream) permission is required.
+            try {
+                getExceptionService().permissionDenied(callContext, repositoryId, PermissionMapping.CAN_VIEW_CONTENT_OBJECT, content);
+            } catch (CmisPermissionDeniedException e) {
+                response.put("status", "error");
+                response.put("message", "Permission denied: content read access required");
+                return Response.status(Response.Status.FORBIDDEN).entity(response).build();
+            }
+
             if (!content.isDocument()) {
                 response.put("status", "error");
                 response.put("message", "Object is not a document");

@@ -352,53 +352,15 @@ public class AuthResource {
             @Parameter(description = "Repository ID", required = true, example = "bedroom")
             @PathParam("repositoryId") String repositoryId,
             Map<String, String> request) {
-        
-        logger.info("API v1: SAML authentication request for repository " + repositoryId);
-        
-        try {
-            String samlResponse = request.get("saml_response");
-            if (StringUtils.isBlank(samlResponse)) {
-                throw ApiException.invalidArgument("saml_response is required");
-            }
-            
-            String username = extractUserNameFromSAMLResponse(samlResponse);
-            if (StringUtils.isBlank(username)) {
-                throw ApiException.unauthorized("Could not extract username from SAML response");
-            }
-            
-            UserItem user = getOrCreateUser(repositoryId, username);
-            if (user == null) {
-                throw ApiException.internalError("Failed to create or find user");
-            }
 
-            // Check if cloud/SAML authentication is allowed for this user
-            if (authenticationService != null && !authenticationService.isAuthMethodAllowed(user, "cloud")) {
-                logger.info("API v1: SAML authentication denied for user " + username + " (not in allowedAuthMethods)");
-                throw ApiException.permissionDenied("Authentication method not allowed for this user");
-            }
-
-            if (tokenService == null) {
-                throw ApiException.internalError("Token service not available");
-            }
-
-            Token token = tokenService.setToken("", repositoryId, username);
-
-            AuthResponse response = new AuthResponse();
-            response.setToken(token.getToken());
-            response.setExpiresAt(token.getExpiration());
-            response.setRepositoryId(repositoryId);
-            response.setUser(convertToUserResponse(user, repositoryId));
-
-            logger.info("API v1: SAML authentication successful for user " + username);
-
-            return Response.ok(response).build();
-            
-        } catch (ApiException e) {
-            throw e;
-        } catch (Exception e) {
-            logger.severe("Error during SAML authentication: " + e.getMessage());
-            throw ApiException.internalError("SAML authentication failed: " + e.getMessage(), e);
-        }
+        // SECURITY FIX: SAML response signature verification is not implemented.
+        // Without signature verification, an attacker can forge arbitrary SAML responses
+        // and impersonate any user. This endpoint is disabled until proper SAML signature
+        // validation (e.g., via OpenSAML) is implemented.
+        logger.warning("API v1: SAML authentication rejected - signature verification not implemented");
+        throw ApiException.internalError(
+                "SAML authentication is not available. SAML response signature verification " +
+                "is not implemented. Use OIDC authentication instead.");
     }
     
     @POST
@@ -406,7 +368,7 @@ public class AuthResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Operation(
             summary = "OIDC authentication",
-            description = "Authenticates a user using OIDC user info and returns an access token"
+            description = "Authenticates a user using an OIDC access token verified server-side against the provider's UserInfo endpoint"
     )
     @ApiResponses(value = {
             @ApiResponse(
@@ -419,7 +381,7 @@ public class AuthResource {
             ),
             @ApiResponse(
                     responseCode = "401",
-                    description = "Invalid OIDC user info",
+                    description = "Invalid or expired access token",
                     content = @io.swagger.v3.oas.annotations.media.Content(
                             mediaType = "application/problem+json",
                             schema = @Schema(implementation = ProblemDetail.class)
@@ -430,19 +392,48 @@ public class AuthResource {
             @Parameter(description = "Repository ID", required = true, example = "bedroom")
             @PathParam("repositoryId") String repositoryId,
             Map<String, Object> request) {
-        
+
         logger.info("API v1: OIDC authentication request for repository " + repositoryId);
-        
+
         try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> userInfo = (Map<String, Object>) request.get("user_info");
-            if (userInfo == null) {
-                throw ApiException.invalidArgument("user_info is required");
+            // SECURITY FIX: Require access_token for server-side verification.
+            // Client-supplied user_info is no longer trusted.
+            String accessToken = (String) request.get("access_token");
+            if (StringUtils.isBlank(accessToken)) {
+                // Also accept oidc_token for backward compatibility
+                accessToken = (String) request.get("oidc_token");
             }
-            
-            String username = extractUserNameFromOIDCUserInfo(userInfo);
+            if (StringUtils.isBlank(accessToken)) {
+                throw ApiException.invalidArgument(
+                        "access_token is required. Client-supplied user_info is no longer accepted " +
+                        "for security reasons. Provide the OIDC access_token for server-side verification.");
+            }
+
+            // Determine UserInfo endpoint: from request or via OIDC Discovery
+            String userinfoEndpoint = (String) request.get("userinfo_endpoint");
+            if (StringUtils.isBlank(userinfoEndpoint)) {
+                userinfoEndpoint = discoverUserInfoEndpoint();
+            }
+            if (StringUtils.isBlank(userinfoEndpoint)) {
+                throw ApiException.invalidArgument(
+                        "userinfo_endpoint is required (or configure oidc.issuer for auto-discovery)");
+            }
+
+            // SSRF prevention: validate endpoint URL
+            if (!isAllowedUserInfoEndpoint(userinfoEndpoint)) {
+                logger.warning("OIDC UserInfo endpoint not allowed: " + userinfoEndpoint);
+                throw ApiException.invalidArgument("UserInfo endpoint not allowed: " + userinfoEndpoint);
+            }
+
+            // Server-side validation: call the provider's UserInfo endpoint
+            Map<String, Object> verifiedUserInfo = fetchUserInfoFromProvider(userinfoEndpoint, accessToken);
+            if (verifiedUserInfo == null) {
+                throw ApiException.unauthorized("Access token validation failed - UserInfo endpoint returned error");
+            }
+
+            String username = extractUserNameFromVerifiedUserInfo(verifiedUserInfo);
             if (StringUtils.isBlank(username)) {
-                throw ApiException.unauthorized("Could not extract username from OIDC user info");
+                throw ApiException.unauthorized("Could not extract username from verified OIDC user info");
             }
 
             UserItem user = getOrCreateUser(repositoryId, username);
@@ -461,17 +452,17 @@ public class AuthResource {
             }
 
             Token token = tokenService.setToken("", repositoryId, username);
-            
+
             AuthResponse response = new AuthResponse();
             response.setToken(token.getToken());
             response.setExpiresAt(token.getExpiration());
             response.setRepositoryId(repositoryId);
             response.setUser(convertToUserResponse(user, repositoryId));
-            
+
             logger.info("API v1: OIDC authentication successful for user " + username);
-            
+
             return Response.ok(response).build();
-            
+
         } catch (ApiException e) {
             throw e;
         } catch (Exception e) {
@@ -564,54 +555,228 @@ public class AuthResource {
     }
     
     /**
-     * SECURITY WARNING: This is a simplified SAML implementation for development/testing purposes only.
-     * It does NOT perform proper SAML signature verification, Issuer validation, or Condition checks.
-     * For production use, integrate a proper SAML library (e.g., OpenSAML) with full security validation.
-     * Using this implementation in production could allow arbitrary NameID injection attacks.
+     * Extract username from server-side verified OIDC UserInfo response.
+     * Priority: preferred_username → email → sub
      */
-    private String extractUserNameFromSAMLResponse(String samlResponse) {
-        try {
-            byte[] decodedBytes = Base64.getDecoder().decode(samlResponse);
-            String xml = new String(decodedBytes, java.nio.charset.StandardCharsets.UTF_8);
-            
-            int nameIdStart = xml.indexOf("<saml:NameID");
-            if (nameIdStart == -1) {
-                nameIdStart = xml.indexOf("<NameID");
-            }
-            if (nameIdStart != -1) {
-                int valueStart = xml.indexOf(">", nameIdStart) + 1;
-                int valueEnd = xml.indexOf("<", valueStart);
-                if (valueStart > 0 && valueEnd > valueStart) {
-                    return xml.substring(valueStart, valueEnd).trim();
-                }
-            }
-            
-            return null;
-        } catch (Exception e) {
-            logger.warning("Failed to extract username from SAML response: " + e.getMessage());
-            return null;
-        }
-    }
-    
-    /**
-     * SECURITY WARNING: This is a simplified OIDC implementation for development/testing purposes only.
-     * It does NOT perform proper ID token signature verification or access token validation.
-     * The user_info is accepted directly from the client without verification against the IdP.
-     * For production use, implement proper OIDC token validation with signature verification.
-     */
-    private String extractUserNameFromOIDCUserInfo(Map<String, Object> userInfo) {
+    private String extractUserNameFromVerifiedUserInfo(Map<String, Object> userInfo) {
         if (userInfo.containsKey("preferred_username")) {
-            return (String) userInfo.get("preferred_username");
+            Object val = userInfo.get("preferred_username");
+            if (val instanceof String && !((String) val).isEmpty()) return (String) val;
         }
         if (userInfo.containsKey("email")) {
-            return (String) userInfo.get("email");
+            Object val = userInfo.get("email");
+            if (val instanceof String && !((String) val).isEmpty()) return (String) val;
         }
         if (userInfo.containsKey("sub")) {
-            return (String) userInfo.get("sub");
+            Object val = userInfo.get("sub");
+            if (val instanceof String && !((String) val).isEmpty()) return (String) val;
+        }
+        // Microsoft-specific fields
+        if (userInfo.containsKey("userPrincipalName")) {
+            Object val = userInfo.get("userPrincipalName");
+            if (val instanceof String && !((String) val).isEmpty()) return (String) val;
+        }
+        if (userInfo.containsKey("mail")) {
+            Object val = userInfo.get("mail");
+            if (val instanceof String && !((String) val).isEmpty()) return (String) val;
         }
         return null;
     }
     
+    /**
+     * Allowed OIDC UserInfo endpoints for SSRF prevention.
+     * Maps host → allowed path prefixes. Validated via URI parsing.
+     */
+    private static final Map<String, List<String>> ALLOWED_USERINFO_HOSTS;
+    static {
+        Map<String, List<String>> m = new HashMap<>();
+        m.put("www.googleapis.com", List.of("/oauth2/"));
+        m.put("openidconnect.googleapis.com", List.of("/"));
+        m.put("graph.microsoft.com", List.of("/oidc/userinfo", "/v1.0/me"));
+        m.put("login.microsoftonline.com", List.of("/common/openid/userinfo", "/common/v2.0/"));
+        ALLOWED_USERINFO_HOSTS = Collections.unmodifiableMap(m);
+    }
+
+    /**
+     * Validate a UserInfo endpoint URL against the allowlist using URI parsing.
+     * Also dynamically allows the configured OIDC issuer host.
+     */
+    private boolean isAllowedUserInfoEndpoint(String url) {
+        if (url == null || url.isEmpty()) return false;
+        try {
+            java.net.URI uri = new java.net.URI(url).normalize();
+            if (uri.getUserInfo() != null) return false;
+            String scheme = uri.getScheme();
+            if (scheme == null) return false;
+            scheme = scheme.toLowerCase(java.util.Locale.ROOT);
+            String host = uri.getHost();
+            if (host == null) return false;
+            host = host.toLowerCase(java.util.Locale.ROOT);
+            int port = uri.getPort();
+
+            // Check raw path for encoded traversal
+            String rawPath = uri.getRawPath();
+            if (rawPath != null) {
+                String rawLower = rawPath.toLowerCase(java.util.Locale.ROOT);
+                if (rawLower.contains("%2f") || rawLower.contains("%2e") || rawLower.contains("%5c")) {
+                    return false;
+                }
+            }
+
+            String path = uri.getPath();
+            if (path == null) path = "/";
+
+            // Check static allowlist (HTTPS on default port)
+            if ("https".equals(scheme) && (port == -1 || port == 443)) {
+                List<String> allowedPaths = ALLOWED_USERINFO_HOSTS.get(host);
+                if (allowedPaths != null) {
+                    for (String ap : allowedPaths) {
+                        if (ap.endsWith("/") ? path.startsWith(ap) : path.equals(ap)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            // Check dynamic allowlist: configured OIDC issuer host
+            try {
+                jp.aegif.nemaki.util.PropertyManager pm = getPropertyManager();
+                if (pm != null) {
+                    String issuerUrl = pm.readValue(jp.aegif.nemaki.util.constant.PropertyKey.OIDC_ISSUER);
+                    if (issuerUrl != null && !issuerUrl.isEmpty()) {
+                        java.net.URI issuerUri = new java.net.URI(issuerUrl.trim());
+                        String issuerHost = issuerUri.getHost();
+                        String issuerScheme = issuerUri.getScheme();
+                        if (issuerHost != null && issuerScheme != null) {
+                            issuerHost = issuerHost.toLowerCase(java.util.Locale.ROOT);
+                            issuerScheme = issuerScheme.toLowerCase(java.util.Locale.ROOT);
+                            int issuerPort = issuerUri.getPort();
+                            int eff = port == -1 ? ("https".equals(scheme) ? 443 : 80) : port;
+                            int effIssuer = issuerPort == -1 ? ("https".equals(issuerScheme) ? 443 : 80) : issuerPort;
+                            if (host.equals(issuerHost) && scheme.equals(issuerScheme) && eff == effIssuer) {
+                                String issuerPath = issuerUri.getPath();
+                                if (issuerPath == null) issuerPath = "";
+                                if (issuerPath.endsWith("/")) issuerPath = issuerPath.substring(0, issuerPath.length() - 1);
+                                List<String> suffixes = List.of(
+                                        "/protocol/openid-connect/userinfo",
+                                        "/protocol/openid-connect/token",
+                                        "/.well-known/openid-configuration");
+                                for (String suffix : suffixes) {
+                                    if (path.equals(issuerPath + suffix)) return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+
+            return false;
+        } catch (java.net.URISyntaxException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Fetch user info from an OIDC provider's UserInfo endpoint.
+     * Provides server-side validation that the access token is valid.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> fetchUserInfoFromProvider(String userinfoEndpoint, String accessToken) {
+        String normalized = userinfoEndpoint.trim();
+        if (normalized.endsWith("/")) normalized = normalized.substring(0, normalized.length() - 1);
+        try {
+            java.net.URI uri = java.net.URI.create(normalized);
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) uri.toURL().openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Authorization", "Bearer " + accessToken);
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(10000);
+
+            int responseCode = conn.getResponseCode();
+            if (responseCode != 200) {
+                logger.warning("OIDC UserInfo endpoint returned HTTP " + responseCode);
+                return null;
+            }
+
+            try (java.io.InputStream is = conn.getInputStream();
+                 java.io.InputStreamReader reader = new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8)) {
+                // Parse JSON response into Map
+                StringBuilder sb = new StringBuilder();
+                char[] buf = new char[1024];
+                int n;
+                while ((n = reader.read(buf)) != -1) sb.append(buf, 0, n);
+                String json = sb.toString();
+                // Simple JSON parsing via Jackson/Gson would be cleaner, but we use
+                // the same approach as elsewhere in the codebase for consistency
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                return mapper.readValue(json, Map.class);
+            }
+        } catch (Exception e) {
+            logger.severe("Failed to fetch UserInfo from provider: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Discover the UserInfo endpoint from the configured OIDC issuer via OpenID Connect Discovery.
+     */
+    private String discoverUserInfoEndpoint() {
+        try {
+            jp.aegif.nemaki.util.PropertyManager pm = getPropertyManager();
+            if (pm == null) return null;
+            String issuerUrl = pm.readValue(jp.aegif.nemaki.util.constant.PropertyKey.OIDC_ISSUER);
+            if (issuerUrl == null || issuerUrl.trim().isEmpty()) return null;
+
+            String normalized = issuerUrl.trim();
+            if (normalized.endsWith("/")) normalized = normalized.substring(0, normalized.length() - 1);
+            String discoveryUrl = normalized + "/.well-known/openid-configuration";
+
+            if (!isAllowedUserInfoEndpoint(discoveryUrl)) return null;
+
+            java.net.URI uri = java.net.URI.create(discoveryUrl);
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) uri.toURL().openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(10000);
+
+            if (conn.getResponseCode() != 200) return null;
+
+            try (java.io.InputStream is = conn.getInputStream();
+                 java.io.InputStreamReader reader = new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8)) {
+                StringBuilder sb = new StringBuilder();
+                char[] buf = new char[1024];
+                int n;
+                while ((n = reader.read(buf)) != -1) sb.append(buf, 0, n);
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                @SuppressWarnings("unchecked")
+                Map<String, Object> config = mapper.readValue(sb.toString(), Map.class);
+                String endpoint = (String) config.get("userinfo_endpoint");
+                return (endpoint != null && !endpoint.trim().isEmpty()) ? endpoint.trim() : null;
+            }
+        } catch (Exception e) {
+            logger.warning("OIDC Discovery failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get PropertyManager from Spring context.
+     */
+    private jp.aegif.nemaki.util.PropertyManager getPropertyManager() {
+        try {
+            org.springframework.context.ApplicationContext ctx =
+                    jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
+            if (ctx != null) {
+                return ctx.getBean("propertyManager", jp.aegif.nemaki.util.PropertyManager.class);
+            }
+        } catch (Exception e) {
+            logger.warning("Failed to get PropertyManager: " + e.getMessage());
+        }
+        return null;
+    }
+
     private UserItem getOrCreateUser(String repositoryId, String userName) {
         try {
             UserItem userItem = contentService.getUserItemById(repositoryId, userName);

@@ -352,81 +352,17 @@ public class AuthTokenResource extends ResourceBase{
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_JSON)
 	public String convertSAMLToken(@PathParam("repositoryId") String repositoryId, String requestBody) {
-		boolean status = false;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		logger.info("=== SAML token conversion requested for repository: {} ===", repositoryId);
-
-		if (StringUtils.isBlank(repositoryId)) {
-			addErrMsg(errMsg, "repositoryId", "isNull");
-			return makeResult(false, result, errMsg).toString();
-		}
-
-		try {
-			JSONParser parser = new JSONParser();
-			JSONObject requestJson = (JSONObject) parser.parse(requestBody);
-			
-			String samlResponse = (String) requestJson.get("saml_response");
-			if (StringUtils.isBlank(samlResponse)) {
-				addErrMsg(errMsg, "saml_response", "isNull");
-				return makeResult(false, result, errMsg).toString();
-			}
-
-			String userName = extractUserNameFromSAMLResponse(samlResponse);
-			if (StringUtils.isBlank(userName)) {
-				addErrMsg(errMsg, "userName", "couldNotExtract");
-				return makeResult(false, result, errMsg).toString();
-			}
-
-			logger.info("SAML authentication successful for user: {}", userName);
-
-			UserItem userItem = getOrCreateUser(repositoryId, userName);
-			if (userItem == null) {
-				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
-				return makeResult(false, result, errMsg).toString();
-			}
-
-			// Check if cloud/SAML authentication is allowed for this user
-			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
-			if (authService != null && !authService.isAuthMethodAllowed(userItem, "cloud")) {
-				logger.info("SAML authentication denied for user {} (not in allowedAuthMethods)", userName);
-				addErrMsg(errMsg, "auth", "methodNotAllowed");
-				return makeResult(false, result, errMsg).toString();
-			}
-
-			TokenService tokenService = getTokenService();
-			if (tokenService == null) {
-				addErrMsg(errMsg, "tokenService", "notAvailable");
-				return makeResult(false, result, errMsg).toString();
-			}
-
-			String app = "";
-			Token token = tokenService.setToken(app, repositoryId, userName);
-
-			// Set HttpOnly cookie for secure token storage (same as login)
-			setAuthTokenCookie(token.getToken(), repositoryId);
-
-			JSONObject obj = new JSONObject();
-			obj.put("app", app);
-			obj.put("repositoryId", repositoryId);
-			obj.put("userName", userName);
-			obj.put("token", token.getToken());
-			obj.put("expiration", token.getExpiration());
-			result.put("value", obj);
-
-			status = true;
-			logger.info("=== SAML token conversion successful for user: {} ===", userName);
-
-		} catch (ParseException e) {
-			logger.error("Failed to parse SAML request body", e);
-			addErrMsg(errMsg, "requestBody", "invalidJson");
-		} catch (Exception e) {
-			logger.error("SAML token conversion failed", e);
-			addErrMsg(errMsg, "saml", "conversionFailed");
-		}
-
-		return makeResult(status, result, errMsg).toString();
+		// SECURITY FIX: SAML response signature verification is not implemented.
+		// Without signature verification, an attacker can forge arbitrary SAML responses
+		// and impersonate any user. This endpoint is disabled until proper SAML signature
+		// validation (e.g., via OpenSAML) is implemented.
+		logger.warn("SAML token conversion rejected - signature verification not implemented");
+		addErrMsg(errMsg, "saml", "SAML authentication is not available. " +
+				"SAML response signature verification is not implemented. Use OIDC authentication instead.");
+		return makeResult(false, result, errMsg).toString();
 	}
 
 	/**
