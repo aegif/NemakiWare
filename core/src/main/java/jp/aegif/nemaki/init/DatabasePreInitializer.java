@@ -179,8 +179,11 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
     private boolean isDatabasesAlreadyInitialized() {
         try {
             String[] requiredDatabases = {"bedroom", "bedroom_closet", "canopy", "canopy_closet", "nemaki_conf"};
-            // Databases that require design documents (closet databases don't need them)
-            String[] databasesWithDesignDocs = {"bedroom", "canopy", "nemaki_conf"};
+            // All databases require design documents
+            // bedroom/canopy: main repository views (38+)
+            // bedroom_closet/canopy_closet: archive views (8)
+            // nemaki_conf: configuration views
+            String[] databasesWithDesignDocs = {"bedroom", "bedroom_closet", "canopy", "canopy_closet", "nemaki_conf"};
             
             if (log.isDebugEnabled()) {
                 log.debug("CHECKING: Database initialization status");
@@ -208,7 +211,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                     return false;
                 }
                 
-                // Only check design documents for databases that require them (not closet databases)
+                // Check design documents for all databases
                 boolean needsDesignDoc = false;
                 for (String designDbName : databasesWithDesignDocs) {
                     if (designDbName.equals(dbName)) {
@@ -234,8 +237,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                         return false;
                     }
 
-                    // CRITICAL FIX: Verify design document has all required views (43 for bedroom/canopy)
-                    // Patch_StandardCmisViews only creates 5 views, which is incomplete!
+                    // Verify design document has all required views
                     java.io.BufferedReader designReader = new java.io.BufferedReader(
                         new java.io.InputStreamReader(designConn.getInputStream(), java.nio.charset.StandardCharsets.UTF_8));
                     String designResponseStr = designReader.lines().reduce("", (a, b) -> a + b);
@@ -248,8 +250,16 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                     if (designDoc.has("views")) {
                         int viewCount = designDoc.get("views").size();
                         // bedroom and canopy require 38 views from dump file
+                        // bedroom_closet and canopy_closet require 8 archive views
                         // Patch_StandardCmisViews only creates 5 views (incomplete)
-                        int requiredViews = ("bedroom".equals(dbName) || "canopy".equals(dbName)) ? 38 : 0;
+                        int requiredViews;
+                        if (dbName.endsWith("_closet")) {
+                            requiredViews = 8; // archive views: folders, all, allByCreated, documents, attachments, path, children, versionSeries
+                        } else if ("bedroom".equals(dbName) || "canopy".equals(dbName)) {
+                            requiredViews = 38;
+                        } else {
+                            requiredViews = 0;
+                        }
 
                         if (viewCount < requiredViews) {
                             if (log.isDebugEnabled()) {
@@ -272,11 +282,6 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                         log.info("CHECKING: Database " + dbName + " design document has no views, full initialization needed");
                         return false;
                     }
-                } else {
-                    if (log.isDebugEnabled()) {
-                        log.debug("CHECKING: Database " + dbName + " (closet) - design documents not required");
-                    }
-                    log.info("CHECKING: Database " + dbName + " (closet) - design documents not required");
                 }
             }
             
@@ -354,9 +359,12 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
         
         try {
             // Map of database names to their dump file paths
+            // Note: closet databases use archive_init.dump for design documents (views)
             String[][] dumpFiles = {
                 {"bedroom", "/docker/initializer/initial_import/bedroom_init.dump"},
+                {"bedroom_closet", "/docker/initializer/initial_import/archive_init.dump"},
                 {"canopy", "/docker/initializer/initial_import/canopy_init.dump"},
+                {"canopy_closet", "/docker/initializer/initial_import/archive_init.dump"},
                 {"nemaki_conf", "/docker/initializer/initial_import/nemaki_conf_init.dump"}
             };
             
@@ -366,7 +374,9 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                 
                 try {
                     // Try to load from classpath first
-                    String classpath = "/initialization/" + dbName + "_init.dump";
+                    // For closet databases, the classpath file is archive_init.dump
+                    String classpathFile = dbName.endsWith("_closet") ? "archive_init.dump" : dbName + "_init.dump";
+                    String classpath = "/initialization/" + classpathFile;
                     if (log.isDebugEnabled()) {
                         log.debug("Attempting to load from classpath: " + classpath);
                     }
