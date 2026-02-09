@@ -125,7 +125,7 @@ export const ConfigViewer: React.FC<ConfigViewerProps> = ({ repositoryId }) => {
       }
       extra={
         <Space>
-          <a onClick={loadProperties}><ReloadOutlined /> {t('common.actions.reload')}</a>
+          <a onClick={loadProperties}><ReloadOutlined /> {t('common.reload')}</a>
         </Space>
       }
     >

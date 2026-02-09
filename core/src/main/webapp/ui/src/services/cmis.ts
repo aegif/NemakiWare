@@ -3576,7 +3576,7 @@ export class CMISService {
 
       if (response.status === 200) {
         const data = JSON.parse(response.responseText);
-        if (data.status === true || data.status === 'true') {
+        if (data.status === 'success') {
           return (data.properties || []).map((p: Record<string, unknown>) => ({
             key: String(p.key || ''),
             value: String(p.value ?? ''),
