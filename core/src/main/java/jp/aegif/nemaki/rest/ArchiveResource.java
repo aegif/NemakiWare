@@ -209,7 +209,7 @@ public class ArchiveResource extends ResourceBase {
 
 		String username = getCallContextUsername(httpRequest);
 		if (username == null) {
-			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN);
+			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_NOTFOUND);
 			return makeResult(false, result, errMsg).toJSONString();
 		}
 
@@ -217,12 +217,11 @@ public class ArchiveResource extends ResourceBase {
 
 		try {
 			Archive archive = getContentService().getArchive(repositoryId, id);
-			if (archive == null) {
+			// Authorize before revealing existence — return ERR_NOTFOUND for
+			// both "not found" and "not authorized" to prevent ID enumeration.
+			if (archive == null || (!adminUser && !username.equals(archive.getCreator()))) {
 				status = false;
 				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_NOTFOUND);
-			} else if (!adminUser && !username.equals(archive.getCreator())) {
-				status = false;
-				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN);
 			} else {
 				JSONObject archiveJson = buildArchiveJson(archive);
 				if (archive.isDocument()) {
@@ -251,7 +250,7 @@ public class ArchiveResource extends ResourceBase {
 
 		String username = getCallContextUsername(httpRequest);
 		if (username == null) {
-			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN);
+			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_NOTFOUND);
 			return makeResult(false, result, errMsg).toJSONString();
 		}
 
@@ -259,16 +258,11 @@ public class ArchiveResource extends ResourceBase {
 
 		try{
 			Archive archiveToRestore = getContentService().getArchive(repositoryId, id);
-			if (archiveToRestore == null) {
+			// Authorize before revealing existence — return ERR_NOTFOUND for
+			// both "not found" and "not authorized" to prevent ID enumeration.
+			if (archiveToRestore == null || (!adminUser && !username.equals(archiveToRestore.getCreator()))) {
 				status = false;
 				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_NOTFOUND);
-				return makeResult(status, result, errMsg).toJSONString();
-			}
-
-			// Non-admin can only restore their own archives
-			if (!adminUser && !username.equals(archiveToRestore.getCreator())) {
-				status = false;
-				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN);
 				return makeResult(status, result, errMsg).toJSONString();
 			}
 
