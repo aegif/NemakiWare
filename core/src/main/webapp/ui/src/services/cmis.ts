@@ -3568,4 +3568,32 @@ export class CMISService {
       xhr.send();
     });
   }
+
+  async getConfigProperties(repositoryId: string): Promise<{ key: string; value: string; source: string; category: string }[]> {
+    try {
+      const url = `/core/rest/repo/${repositoryId}/config/properties`;
+      const response = await this.httpClient.getJson(url);
+
+      if (response.status === 200) {
+        const data = JSON.parse(response.responseText);
+        if (data.status === true || data.status === 'true') {
+          return (data.properties || []).map((p: Record<string, unknown>) => ({
+            key: String(p.key || ''),
+            value: String(p.value ?? ''),
+            source: String(p.source || 'default'),
+            category: String(p.category || 'General'),
+          }));
+        }
+        throw new Error('Failed to load config properties');
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during config properties retrieval');
+    }
+  }
 }

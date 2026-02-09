@@ -245,7 +245,8 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
               onClick={() => navigate(`/documents/${record.id}`)}
             />
           </Tooltip>
-          {record.baseType === 'cmis:document' && (
+          {record.baseType === 'cmis:document' &&
+            record.archiveState !== 'ARCHIVED_COLD' && (
             <Tooltip title={t('common.download')}>
               <Button
                 icon={<DownloadOutlined />}
@@ -254,22 +255,24 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
               />
             </Tooltip>
           )}
-          <Popconfirm
-            title={t('archiveManagement.confirmRestore')}
-            onConfirm={() => handleRestore(record.id)}
-            okText={t('common.yes')}
-            cancelText={t('common.no')}
-          >
-            <Tooltip title={t('archiveManagement.restore')}>
-              <Button
-                icon={<ReloadOutlined />}
-                size="small"
-                type="primary"
-              >
-                {t('archiveManagement.restore')}
-              </Button>
-            </Tooltip>
-          </Popconfirm>
+          {record.archiveState !== 'ARCHIVED_COLD' && (
+            <Popconfirm
+              title={t('archiveManagement.confirmRestore')}
+              onConfirm={() => handleRestore(record.id)}
+              okText={t('common.yes')}
+              cancelText={t('common.no')}
+            >
+              <Tooltip title={t('archiveManagement.restore')}>
+                <Button
+                  icon={<ReloadOutlined />}
+                  size="small"
+                  type="primary"
+                >
+                  {t('archiveManagement.restore')}
+                </Button>
+              </Tooltip>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },

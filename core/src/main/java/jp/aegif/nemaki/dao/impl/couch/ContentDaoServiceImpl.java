@@ -4294,6 +4294,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			List<Archive> localArchives = getArchivesByState(repositoryId, Archive.STATE_ARCHIVED_LOCAL);
 			List<Archive> candidates = new ArrayList<Archive>();
 			for (Archive a : localArchives) {
+				// Skip archives that have already been copied/moved to cold storage
+				if (a.getColdArchivedAt() != null) {
+					continue;
+				}
 				if (a.getArchivedAt() != null && a.getArchivedAt().before(beforeDate)) {
 					candidates.add(a);
 				}

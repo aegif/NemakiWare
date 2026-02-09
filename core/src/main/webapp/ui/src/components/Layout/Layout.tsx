@@ -226,7 +226,8 @@ import {
   SwapOutlined,
   SendOutlined,
   SyncOutlined,
-  KeyOutlined
+  KeyOutlined,
+  ControlOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -378,6 +379,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           key: '/cloud-directory-sync',
           icon: <SyncOutlined />,
           label: t('cloudSync.title'),
+        },
+        {
+          key: '/config-viewer',
+          icon: <ControlOutlined />,
+          label: t('navigation.configViewer'),
         },
       ],
     }] : []),

@@ -11,12 +11,14 @@ Google OIDC 認証（Keycloakなし）+ TEI/RAG セマンティック検索構�
 4. [Docker 環境セットアップ](#4-docker-環境セットアップ)
 5. [NemakiWare ビルド・デプロイ](#5-nemakiware-ビルドデプロイ)
 6. [RAG 検索 (TEI) 設定](#6-rag-検索-tei-設定)
-7. [Google OIDC 認証設定](#7-google-oidc-認証設定keycloakなし)
-8. [Google Workspace ディレクトリ同期設定](#8-google-workspace-ディレクトリ同期設定)
-9. [SSL/TLS + リバースプロキシ](#9-ssltls--リバースプロキシ)
-10. [データ永続化とバックアップ](#10-データ永続化とバックアップ)
-11. [運用・監視](#11-運用監視)
-12. [トラブルシューティング](#12-トラブルシューティング)
+7. [[BETA] RAG 検索 (Bedrock Embedding) 設定](#7-beta-rag-検索-bedrock-embedding-設定)
+8. [Google OIDC 認証設定](#8-google-oidc-認証設定keycloakなし)
+9. [Google Workspace ディレクトリ同期設定](#9-google-workspace-ディレクトリ同期設定)
+10. [SSL/TLS + リバースプロキシ](#10-ssltls--リバースプロキシ)
+11. [データ永続化とバックアップ](#11-データ永続化とバックアップ)
+12. [[BETA] S3 コールドストレージ設定](#12-beta-s3-コールドストレージ設定)
+13. [運用・監視](#13-運用監視)
+14. [トラブルシューティング](#14-トラブルシューティング)
 
 ---
 
@@ -414,11 +416,111 @@ deploy:
 
 ---
 
-## 7. Google OIDC 認証設定（Keycloakなし）
+## 7. [BETA] RAG 検索 (Bedrock Embedding) 設定
+
+> **Beta 機能**: この機能はベータ版です。本番環境での使用前に十分なテストを行ってください。
+
+### 7-1. 概要
+
+Amazon Bedrock の Embedding モデルを使用して、TEI の代わりにベクトル埋め込みを生成できます。
+AWS 環境で完結するため、TEI コンテナの運用が不要になります。
+
+| 項目 | TEI (セクション6) | Bedrock Embedding |
+|------|-------------------|-------------------|
+| **インフラ** | TEI コンテナ (CPU/GPU) | AWS Bedrock API |
+| **コスト** | EC2 メモリ/CPU 消費 | API 従量課金 |
+| **メモリ使用量** | 2-4GB | なし（API コール） |
+| **レイテンシ** | 低（ローカル推論） | 中（API コール） |
+| **モデル** | intfloat/multilingual-e5-large | amazon.titan-embed-text-v2:0 |
+| **ベクトル次元数** | 1024 | 1024 |
+| **多言語対応** | 100言語以上 | 100言語以上 |
+| **推奨ケース** | 大量ドキュメント、低レイテンシ重視 | AWS ネイティブ運用、コンテナ削減 |
+
+### 7-2. 前提条件
+
+1. **AWS アカウント**: Bedrock へのアクセス権限
+2. **モデルアクセスの有効化**: AWS Console → Amazon Bedrock → Model access で `Titan Text Embeddings V2` を有効化
+3. **IAM ロール/認証情報**: EC2 インスタンスロールまたはアクセスキー
+
+### 7-3. IAM ポリシー
+
+EC2 インスタンスロールに以下のポリシーをアタッチします:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "bedrock:InvokeModel"
+            ],
+            "Resource": [
+                "arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0"
+            ]
+        }
+    ]
+}
+```
+
+### 7-4. nemakiware.properties の設定
+
+```properties
+### RAG Embedding Provider
+# "tei"（デフォルト）または "bedrock"
+rag.embedding.provider=bedrock
+
+### Bedrock Embedding Settings
+rag.bedrock.region=ap-northeast-1
+rag.bedrock.model.id=amazon.titan-embed-text-v2:0
+rag.bedrock.batch.size=25
+rag.bedrock.max.input.chars=10000
+rag.bedrock.timeout.ms=30000
+rag.bedrock.vector.dimension=1024
+```
+
+### 7-5. Docker Compose での起動
+
+Bedrock を使用する場合、TEI サービスは不要です。`rag` プロファイルなしで起動できます:
+
+```bash
+cd /opt/nemakiware/docker
+
+# TEI なしで起動（Bedrock 使用時）
+docker compose -f docker-compose-simple.yml up -d --build --force-recreate
+```
+
+> **Note**: EC2 インスタンスロールを使用する場合、Docker コンテナから EC2 メタデータサービスにアクセスできる必要があります。`docker-compose-simple.yml` でネットワークモードが `bridge` の場合、IMDSv2 のホップ制限を `2` に設定してください:
+>
+> ```bash
+> aws ec2 modify-instance-metadata-options \
+>   --instance-id i-xxxxxxxx \
+>   --http-put-response-hop-limit 2
+> ```
+
+### 7-6. 動作確認
+
+```bash
+# RAG 検索が動作することを確認（ドキュメント登録後）
+curl -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmisselector=children"
+# ドキュメントが正常に返れば、Bedrock 経由の埋め込み生成が動作しています
+
+# Bedrock API の直接テスト（EC2 上で）
+aws bedrock-runtime invoke-model \
+  --model-id amazon.titan-embed-text-v2:0 \
+  --body '{"inputText": "テスト文書です"}' \
+  --region ap-northeast-1 \
+  /dev/stdout | jq '.embedding | length'
+# 1024 と表示されれば正常
+```
+
+---
+
+## 8. Google OIDC 認証設定（Keycloakなし）
 
 NemakiWare 3.1.0 では Keycloak を介さず、Google の OIDC エンドポイントに直接接続して認証できます。
 
-### 7-1. Google Cloud Console での設定
+### 8-1. Google Cloud Console での設定
 
 OAuth クライアント ID の作成手順は [CLOUD_INTEGRATION.md の「Google 統合設定」](CLOUD_INTEGRATION.md#google-統合設定) を参照してください。
 
@@ -428,7 +530,7 @@ OAuth クライアント ID の作成手順は [CLOUD_INTEGRATION.md の「Googl
 https://nemakiware.example.com/core/rest/repo/bedroom/authtoken/oidc/callback
 ```
 
-### 7-2. nemakiware.properties の設定
+### 8-2. nemakiware.properties の設定
 
 ```properties
 ### Cloud Authentication (Google direct OIDC)
@@ -441,7 +543,7 @@ cloud.auth.google.clientSecret=YOUR_CLIENT_SECRET
 sso.oidc.enabled=true
 ```
 
-### 7-3. Keycloak 関連設定の無効化
+### 8-3. Keycloak 関連設定の無効化
 
 Google 直接認証を使用する場合、Keycloak 経由の OIDC/SAML は無効にします:
 
@@ -454,7 +556,7 @@ saml.enabled=false
 sso.saml.enabled=false
 ```
 
-### 7-4. Docker 環境変数での設定
+### 8-4. Docker 環境変数での設定
 
 `docker-compose-simple.yml` の `CATALINA_OPTS` に以下を追加するか、`.env` ファイルで設定します:
 
@@ -468,15 +570,15 @@ CLOUD_AUTH_GOOGLE_CLIENT_ID=YOUR_CLIENT_ID.apps.googleusercontent.com
 
 ---
 
-## 8. Google Workspace ディレクトリ同期設定
+## 9. Google Workspace ディレクトリ同期設定
 
 Google Workspace のユーザー・グループを NemakiWare に自動同期します。
 
-### 8-1. 事前準備
+### 9-1. 事前準備
 
 サービスアカウントの作成とドメイン全体の委任設定は [CLOUD_INTEGRATION.md の Step 1〜5](CLOUD_INTEGRATION.md#3-ディレクトリ同期-google-workspace) を参照してください。
 
-### 8-2. nemakiware.properties の設定
+### 9-2. nemakiware.properties の設定
 
 ```properties
 ### Cloud Directory Sync Configuration
@@ -491,7 +593,7 @@ cloud.directory.sync.google.domain=your-domain.com
 cloud.directory.sync.google.adminEmail=admin@your-domain.com
 ```
 
-### 8-3. サービスアカウント JSON のボリュームマウント
+### 9-3. サービスアカウント JSON のボリュームマウント
 
 `docker-compose-simple.yml` では `./secrets` ディレクトリが `/usr/local/tomcat/secrets` にマウントされています:
 
@@ -507,7 +609,7 @@ cp google-service-account.json /opt/nemakiware/docker/secrets/
 chmod 600 /opt/nemakiware/docker/secrets/google-service-account.json
 ```
 
-### 8-4. 同期スケジュール
+### 9-4. 同期スケジュール
 
 | 設定 | 値 | 説明 |
 |------|------|------|
@@ -519,11 +621,11 @@ chmod 600 /opt/nemakiware/docker/secrets/google-service-account.json
 
 ---
 
-## 9. SSL/TLS + リバースプロキシ
+## 10. SSL/TLS + リバースプロキシ
 
 本番環境では HTTPS が必須です。以下の2パターンから選択してください。
 
-### 9-1. パターン A: ALB + ACM 証明書
+### 10-1. パターン A: ALB + ACM 証明書
 
 AWS のマネージドサービスを使用する最もシンプルな構成です。
 
@@ -537,7 +639,7 @@ Internet → ALB (:443, SSL終端) → EC2 (:8080, HTTP)
 
 この構成では EC2 上の Nginx は不要です。
 
-### 9-2. パターン B: Nginx + Let's Encrypt
+### 10-2. パターン B: Nginx + Let's Encrypt
 
 EC2 に直接アクセスする場合の構成です。
 
@@ -626,7 +728,7 @@ sudo systemctl enable nginx
 echo "0 0,12 * * * root certbot renew --quiet" | sudo tee /etc/cron.d/certbot-renew
 ```
 
-### 9-3. Google OIDC リダイレクト URI の更新
+### 10-3. Google OIDC リダイレクト URI の更新
 
 SSL 設定後、Google Cloud Console でリダイレクト URI を本番 URL に更新してください:
 
@@ -635,9 +737,9 @@ SSL 設定後、Google Cloud Console でリダイレクト URI を本番 URL に
 
 ---
 
-## 10. データ永続化とバックアップ
+## 11. データ永続化とバックアップ
 
-### 10-1. Docker Volume の EBS マッピング
+### 11-1. Docker Volume の EBS マッピング
 
 Docker Volume はデフォルトで `/var/lib/docker/volumes/` に保存されます。EBS ボリュームに配置されていることを確認してください。
 
@@ -652,7 +754,7 @@ docker volume ls
 docker volume inspect nemaki-network_couchdb_data
 ```
 
-### 10-2. CouchDB バックアップ
+### 11-2. CouchDB バックアップ
 
 CouchDB は NemakiWare の全データ（ドキュメント、メタデータ、ユーザー、権限）を保持する最重要コンポーネントです。
 
@@ -687,7 +789,7 @@ curl -X POST -u admin:password http://localhost:5984/_replicate \
   }'
 ```
 
-### 10-3. バックアップ優先度
+### 11-3. バックアップ優先度
 
 | データ | 優先度 | バックアップ方法 | 理由 |
 |--------|--------|------------------|------|
@@ -698,9 +800,190 @@ curl -X POST -u admin:password http://localhost:5984/_replicate \
 
 ---
 
-## 11. 運用・監視
+## 12. [BETA] S3 コールドストレージ設定
 
-### 11-1. ヘルスチェック
+> **Beta 機能**: この機能はベータ版です。本番環境での使用前に十分なテストを行ってください。
+
+### 12-1. 概要
+
+アーカイブされたドキュメントを Amazon S3 へコピーまたは移動し、長期保存できます。
+S3 Object Lock を使用して、コンプライアンス要件に対応した改ざん防止保存が可能です。
+
+#### COPY モードと MOVE モード
+
+| モード | ローカルコンテンツ | アーカイブ状態 | NemakiWare からのアクセス |
+|--------|-------------------|---------------|-------------------------|
+| **COPY** | 保持 | `ARCHIVED_LOCAL` のまま | ダウンロード可能 |
+| **MOVE** | 削除 | `ARCHIVED_COLD` に遷移 | メタデータのみ（コンテンツ不可） |
+
+**COPY モードの状態遷移**:
+```
+ARCHIVED_LOCAL → [S3コピー] → ARCHIVED_LOCAL（coldArchivedAt・contentRef 記録済み）
+```
+
+**MOVE モードの状態遷移**:
+```
+ARCHIVED_LOCAL → [S3移動] → ARCHIVED_COLD（メタデータのみ、ローカルコンテンツ削除済み）
+```
+
+#### S3 コンテンツの管理スコープ
+
+S3 に格納されたコンテンツは **NemakiWare の管理スコープ外** となります。
+コンテンツの閲覧・ダウンロード・廃棄（Disposition）は、すべて AWS 側で直接管理してください。
+
+- **コンテンツアクセス**: AWS S3 Console または AWS CLI で直接取得
+- **Disposition（廃棄）**: S3 Lifecycle Policy で自動削除を設定
+- **Object Lock**: S3 側で保持期間と削除保護を管理
+
+NemakiWare は S3 へのコンテンツの書き込み（put）と Object Lock の設定（enforceImmutability）のみを行い、
+書き込み後のコンテンツ管理には関与しません。
+
+### 12-2. S3 バケット作成
+
+```bash
+# バケット作成（Object Lock 対応）
+aws s3api create-bucket \
+  --bucket nemakiware-cold-storage \
+  --region ap-northeast-1 \
+  --create-bucket-configuration LocationConstraint=ap-northeast-1 \
+  --object-lock-enabled-for-bucket
+
+# バージョニング有効化（Object Lock 必須）
+aws s3api put-bucket-versioning \
+  --bucket nemakiware-cold-storage \
+  --versioning-configuration Status=Enabled
+
+# デフォルト Object Lock 設定（オプション）
+aws s3api put-object-lock-configuration \
+  --bucket nemakiware-cold-storage \
+  --object-lock-configuration '{
+    "ObjectLockEnabled": "Enabled",
+    "Rule": {
+      "DefaultRetention": {
+        "Mode": "GOVERNANCE",
+        "Days": 365
+      }
+    }
+  }'
+```
+
+### 12-3. IAM ポリシー
+
+EC2 インスタンスロールに以下のポリシーをアタッチします:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:PutObject",
+                "s3:HeadObject",
+                "s3:PutObjectRetention",
+                "s3:GetObjectRetention",
+                "s3:GetBucketVersioning"
+            ],
+            "Resource": [
+                "arn:aws:s3:::nemakiware-cold-storage",
+                "arn:aws:s3:::nemakiware-cold-storage/*"
+            ]
+        }
+    ]
+}
+```
+
+> **注意**: NemakiWare は S3 からの読み取り（`s3:GetObject`）を行いません。
+> S3 コンテンツへのアクセスが必要な場合は、AWS Console や CLI を使用する
+> ユーザー/ロールに別途 `s3:GetObject` 権限を付与してください。
+
+### 12-4. nemakiware.properties の設定
+
+```properties
+### Long-term Storage Configuration
+longterm.storage.type=s3
+
+### S3 Settings
+longterm.s3.bucket=nemakiware-cold-storage
+longterm.s3.region=ap-northeast-1
+longterm.s3.prefix=archives/
+
+### Retention Settings
+# リテンション期間（日数）- アーカイブからコールド移行までの待機日数
+retention.cold.move.after.days=30
+# ローカルコピーを保持するか（true=COPY, false=MOVE）
+retention.cold.keep.local.copy=false
+# Object Lock モード: COMPLIANCE（管理者でも削除不可） or GOVERNANCE（特権で削除可）
+retention.s3.object.lock.mode=GOVERNANCE
+# Object Lock リテンション期間（日数）
+retention.s3.object.lock.days=365
+```
+
+### 12-5. Object Lock モード
+
+| モード | 特徴 | 推奨用途 |
+|--------|------|----------|
+| **GOVERNANCE** | `s3:BypassGovernanceRetention` 権限で削除可能 | テスト環境、一般的な保存要件 |
+| **COMPLIANCE** | リテンション期間中は誰も削除不可 | 法令遵守、監査要件 |
+
+> **注意**: COMPLIANCE モードでは、設定した期間中はオブジェクトの削除やリテンションの短縮ができません。本番環境で設定する前に、GOVERNANCE モードでテストすることを推奨します。
+
+### 12-6. S3 Lifecycle Policy による廃棄（Disposition）
+
+ROT レコードの廃棄は S3 Lifecycle Policy で管理します。
+NemakiWare は廃棄処理を実装しません。
+
+```bash
+# Lifecycle Policy の設定例: 7年後に自動削除
+aws s3api put-bucket-lifecycle-configuration \
+  --bucket nemakiware-cold-storage \
+  --lifecycle-configuration '{
+    "Rules": [
+      {
+        "ID": "archive-disposition",
+        "Prefix": "archives/",
+        "Status": "Enabled",
+        "Expiration": {
+          "Days": 2555
+        }
+      }
+    ]
+  }'
+```
+
+> **注意**: Object Lock が COMPLIANCE モードの場合、Lifecycle Policy による削除は
+> リテンション期間が満了するまで実行されません。
+
+### 12-7. 動作確認
+
+```bash
+# 1. ドキュメントをアーカイブ
+curl -u admin:admin -X POST \
+  -F "cmisaction=deleteObject" \
+  -F "objectId=DOCUMENT_ID" \
+  "http://localhost:8080/core/browser/bedroom"
+
+# 2. アーカイブ一覧を確認
+curl -u admin:admin "http://localhost:8080/core/rest/repo/bedroom/archive/index"
+
+# 3. コールド移行は retention.cold.move.after.days 経過後に自動実行
+# 手動確認: S3 バケット内のオブジェクトを確認
+aws s3 ls s3://nemakiware-cold-storage/archives/ --recursive
+
+# 4. Object Lock リテンション確認
+aws s3api get-object-retention \
+  --bucket nemakiware-cold-storage \
+  --key archives/ARCHIVE_ID
+
+# 5. コンテンツを S3 から直接ダウンロード（NemakiWare 経由不可）
+aws s3 cp s3://nemakiware-cold-storage/archives/ARCHIVE_ID ./downloaded-file
+```
+
+---
+
+## 13. 運用・監視
+
+### 13-1. ヘルスチェック
 
 ```bash
 # Core CMIS サーバー
@@ -720,7 +1003,7 @@ curl -f http://localhost:8081/health
 # {"status":"ok"} → 正常
 ```
 
-### 11-2. ヘルスチェックスクリプト
+### 13-2. ヘルスチェックスクリプト
 
 ```bash
 #!/bin/bash
@@ -769,7 +1052,7 @@ echo "*/5 * * * * root /opt/nemakiware/healthcheck.sh >> /var/log/nemakiware-hea
   | sudo tee /etc/cron.d/nemakiware-health
 ```
 
-### 11-3. CloudWatch Agent でのログ転送
+### 13-3. CloudWatch Agent でのログ転送
 
 ```bash
 # CloudWatch Agent インストール
@@ -805,7 +1088,7 @@ sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
   -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
 ```
 
-### 11-4. ディスク容量監視
+### 13-4. ディスク容量監視
 
 ```bash
 # ディスク使用量チェック（cron で毎時実行）
@@ -813,7 +1096,7 @@ echo '0 * * * * root df -h / | tail -1 | awk "{if (\$5+0 > 80) print \"WARNING: 
   | sudo tee /etc/cron.d/disk-check
 ```
 
-### 11-5. 定期メンテナンス
+### 13-5. 定期メンテナンス
 
 #### CouchDB Compaction
 
@@ -848,7 +1131,7 @@ sudo systemctl restart docker
 
 ---
 
-## 12. トラブルシューティング
+## 14. トラブルシューティング
 
 ### TEI モデルダウンロード失敗
 

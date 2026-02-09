@@ -273,8 +273,13 @@ public class RetentionScheduler {
                         result.incrementProcessed();
 
                         try {
-                            moveToCold(repositoryId, archive, adapter);
-                            result.incrementSucceeded();
+                            boolean moved = moveToCold(repositoryId, archive, adapter);
+                            if (moved) {
+                                result.incrementSucceeded();
+                            } else {
+                                result.incrementSkipped();
+                                result.addSkippedDocumentId(archive.getId());
+                            }
                         } catch (Exception e) {
                             log.error("Failed to cold-move archive " + archive.getId() + ": " + e.getMessage(), e);
                             result.incrementFailed();
@@ -322,7 +327,7 @@ public class RetentionScheduler {
         }
     }
 
-    private void moveToCold(String repositoryId, Archive archive, LongTermStorageAdapter adapter) {
+    private boolean moveToCold(String repositoryId, Archive archive, LongTermStorageAdapter adapter) {
         String archiveId = archive.getId();
 
         // Set transitional state
@@ -334,11 +339,11 @@ public class RetentionScheduler {
             InputStream contentStream = contentService.getArchiveContentStream(repositoryId, archiveId);
 
             if (contentStream == null) {
-                log.error("No content stream available for archive: " + archiveId + " - skipping cold move");
+                log.warn("No content stream available for archive: " + archiveId + " - skipping cold move");
                 // Revert to ARCHIVED_LOCAL since we cannot move without content
                 contentService.updateArchiveState(repositoryId, archiveId,
                         Archive.STATE_ARCHIVED_LOCAL, null, null);
-                return;
+                return false;
             }
 
             try {
@@ -359,17 +364,27 @@ public class RetentionScheduler {
                 }
                 contentRef.put("type", propertyManager.readValue(PropertyKey.LONGTERM_STORAGE_TYPE));
 
-                // Update state to ARCHIVED_COLD
-                GregorianCalendar now = new GregorianCalendar();
-                contentService.updateArchiveState(repositoryId, archiveId,
-                        Archive.STATE_ARCHIVED_COLD, contentRef, now);
-
-                // Record cold move mode (COPY or MOVE)
+                // Determine cold move mode (COPY or MOVE)
                 boolean keepLocalCopy = propertyManager.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY);
                 String coldMoveMode = keepLocalCopy ? "COPY" : "MOVE";
+                GregorianCalendar now = new GregorianCalendar();
+
+                if (keepLocalCopy) {
+                    // COPY mode: S3 has independent copy, local content remains.
+                    // State stays ARCHIVED_LOCAL but coldArchivedAt and contentRef are recorded.
+                    contentService.updateArchiveState(repositoryId, archiveId,
+                            Archive.STATE_ARCHIVED_LOCAL, contentRef, now);
+                } else {
+                    // MOVE mode: Content is transferred to S3, local content will be deleted.
+                    // State becomes ARCHIVED_COLD (metadata-only record in NemakiWare).
+                    contentService.updateArchiveState(repositoryId, archiveId,
+                            Archive.STATE_ARCHIVED_COLD, contentRef, now);
+                }
+
+                // Record cold move mode
                 contentService.updateArchiveColdMoveMode(repositoryId, archiveId, coldMoveMode);
 
-                // Conditionally delete local archive content (move mode vs copy mode)
+                // Delete local content only in MOVE mode
                 if (!keepLocalCopy) {
                     boolean deleted = contentService.deleteArchiveContent(repositoryId, archiveId);
                     if (deleted) {
@@ -381,6 +396,7 @@ public class RetentionScheduler {
 
                 log.info("Successfully moved archive to cold storage: " + archiveId
                         + " (mode: " + coldMoveMode + ")");
+                return true;
             } finally {
                 contentStream.close();
             }

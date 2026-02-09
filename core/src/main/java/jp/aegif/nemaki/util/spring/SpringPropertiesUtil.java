@@ -5,8 +5,12 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.config.PropertyPlaceholderConfigurer;
+import org.springframework.core.io.Resource;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +23,8 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
 			.getLog(SpringPropertiesUtil.class);
 
     private Map<String, String> propertiesMap;
+    private Map<String, String> propertySourceMap = new HashMap<>();
+    private Resource[] locationResources;
     // Default as in PropertyPlaceholderConfigurer
     private int springSystemPropertiesMode = SYSTEM_PROPERTIES_MODE_FALLBACK;
 
@@ -26,6 +32,42 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
     public void setSystemPropertiesMode(int systemPropertiesMode) {
         super.setSystemPropertiesMode(systemPropertiesMode);
         springSystemPropertiesMode = systemPropertiesMode;
+    }
+
+    @Override
+    public void setLocations(Resource... locations) {
+        super.setLocations(locations);
+        this.locationResources = locations;
+    }
+
+    @Override
+    protected Properties mergeProperties() throws IOException {
+        Properties mergedProps = super.mergeProperties();
+
+        // Track which file each property came from
+        // Later files override earlier ones, so the last file defining a key is the "source"
+        if (locationResources != null) {
+            for (Resource resource : locationResources) {
+                if (!resource.exists()) {
+                    continue;
+                }
+                try (InputStream is = resource.getInputStream()) {
+                    Properties fileProps = new Properties();
+                    fileProps.load(is);
+                    String fileName = resource.getFilename();
+                    if (fileName == null) {
+                        fileName = resource.getDescription();
+                    }
+                    for (Object key : fileProps.keySet()) {
+                        propertySourceMap.put(key.toString(), fileName);
+                    }
+                } catch (IOException e) {
+                    log.debug("Could not load resource for source tracking: " + resource, e);
+                }
+            }
+        }
+
+        return mergedProps;
     }
 
     @Override
@@ -38,6 +80,23 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
             String valueStr = resolvePlaceholder(keyStr, props, springSystemPropertiesMode);
             propertiesMap.put(keyStr, valueStr);
         }
+    }
+
+    /**
+     * Returns the source file name for the given property key.
+     * @param key the property key
+     * @return the file name where the property was last defined, or null if unknown
+     */
+    public String getPropertySource(String key) {
+        return propertySourceMap.get(key);
+    }
+
+    /**
+     * Returns an unmodifiable view of the property source map.
+     * @return map of property key to source file name
+     */
+    public Map<String, String> getPropertySourceMap() {
+        return Collections.unmodifiableMap(propertySourceMap);
     }
 
     public String getValue(String key) {

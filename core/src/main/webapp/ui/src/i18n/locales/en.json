@@ -91,8 +91,32 @@
       "solr": "Solr Index",
       "auditDashboard": "Audit Log",
       "apiDocs": "API Docs",
-      "filesystemImportExport": "Filesystem Import/Export"
+      "filesystemImportExport": "Filesystem Import/Export",
+      "configViewer": "Config Viewer"
     },
+  "configViewer": {
+    "title": "Configuration Properties",
+    "columns": {
+      "category": "Category",
+      "key": "Property Key",
+      "value": "Value",
+      "source": "Source"
+    },
+    "sources": {
+      "systemProperty": "System Property",
+      "environment": "Environment Variable",
+      "couchdbDynamic": "CouchDB Dynamic",
+      "default": "Default"
+    },
+    "filters": {
+      "searchPlaceholder": "Search by property key...",
+      "categoryPlaceholder": "Filter by category"
+    },
+    "messages": {
+      "loadError": "Failed to load configuration properties",
+      "totalItems": "{{count}} items total"
+    }
+  },
   "typeManagement": {
     "title": "Type Management",
     "customTypes": "Custom Types",

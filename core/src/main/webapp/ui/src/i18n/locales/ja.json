@@ -91,8 +91,32 @@
       "solr": "Solrインデックス",
       "auditDashboard": "監査ログ",
       "apiDocs": "API仕様",
-      "filesystemImportExport": "ファイルシステム インポート/エクスポート"
+      "filesystemImportExport": "ファイルシステム インポート/エクスポート",
+      "configViewer": "設定ビューア"
     },
+  "configViewer": {
+    "title": "設定プロパティ一覧",
+    "columns": {
+      "category": "カテゴリー",
+      "key": "プロパティキー",
+      "value": "値",
+      "source": "取得元"
+    },
+    "sources": {
+      "systemProperty": "システムプロパティ",
+      "environment": "環境変数",
+      "couchdbDynamic": "CouchDB動的設定",
+      "default": "デフォルト値"
+    },
+    "filters": {
+      "searchPlaceholder": "プロパティキーで検索...",
+      "categoryPlaceholder": "カテゴリーで絞り込み"
+    },
+    "messages": {
+      "loadError": "設定プロパティの読み込みに失敗しました",
+      "totalItems": "全 {{count}} 件"
+    }
+  },
   "typeManagement": {
     "title": "タイプ管理",
     "customTypes": "カスタムタイプ",

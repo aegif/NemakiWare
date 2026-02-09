@@ -217,6 +217,7 @@ import { FilesystemImportExport } from './components/FilesystemImportExport/File
 import { WebhookManagement } from './components/WebhookManagement/WebhookManagement';
 import { CloudDirectorySync } from './components/CloudDirectorySync/CloudDirectorySync';
 import { ApiKeyManagement } from './components/ApiKeyManagement/ApiKeyManagement';
+import { ConfigViewer } from './components/ConfigViewer/ConfigViewer';
 import { McpCloudLogin } from './components/McpCloudLogin/McpCloudLogin';
 import { Login } from './components/Login/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -376,6 +377,13 @@ function AppRoutes() {
             <ProtectedRoute>
               <AdminRoute>
                 <WebhookManagement repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/config-viewer" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <ConfigViewer repositoryId={authToken.repositoryId} />
               </AdminRoute>
             </ProtectedRoute>
           } />

@@ -152,40 +152,14 @@ public class ArchiveDownloadResource extends ResourceBase {
     }
 
     /**
-     * Download content from cold storage (S3, etc.).
-     * Accessible by Admin or System only — cold storage is not a self-service tier.
+     * Cold storage content is outside NemakiWare's management scope.
+     * Access cold-stored content directly via the storage provider (e.g. AWS S3 Console/CLI).
      */
     private Response downloadFromColdStorage(String repositoryId, Archive archive, boolean adminUser) {
-        if (!adminUser) {
-            return Response.status(Response.Status.FORBIDDEN)
-                    .entity("{\"status\":\"failure\",\"error\":\"Admin access required for cold storage content\"}")
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
-        }
-
-        LongTermStorageAdapterFactory factory = getAdapterFactory();
-        if (factory == null || factory.getAdapter() == null) {
-            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
-                    .entity("{\"status\":\"failure\",\"error\":\"Long-term storage not configured\"}")
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
-        }
-
-        LongTermStorageAdapter adapter = factory.getAdapter();
-        InputStream contentStream = adapter.get(repositoryId, archive.getOriginalId());
-
-        if (contentStream == null) {
-            return Response.status(Response.Status.NOT_FOUND)
-                    .entity("{\"status\":\"failure\",\"error\":\"Content not found in cold storage\"}")
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
-        }
-
-        String mimeType = archive.getMimeType() != null ? archive.getMimeType() : "application/octet-stream";
-        String fileName = sanitizeFileName(archive.getName());
-
-        return Response.ok(contentStream, mimeType)
-                .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
+        return Response.status(Response.Status.GONE)
+                .entity("{\"status\":\"failure\",\"error\":\"Cold storage content is managed outside NemakiWare. " +
+                        "Access content directly via the storage provider (e.g. AWS S3 Console/CLI).\"}")
+                .type(MediaType.APPLICATION_JSON)
                 .build();
     }
 }
