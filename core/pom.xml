@@ -26,6 +26,7 @@
 		<org.apache.chemistry.opencmis.version>1.1.0-nemakiware</org.apache.chemistry.opencmis.version>
 		<jersey.version>3.1.10</jersey.version>
 		<org.apache.chemistry.opencmis.version.14>0.14.0</org.apache.chemistry.opencmis.version.14>
+		<aws.sdk.version>2.25.60</aws.sdk.version>
 	</properties>
 
 	<repositories>
@@ -911,6 +912,13 @@
 			<version>v1-rev20250325-2.0.0</version>
 		</dependency>
 
+		<!-- AWS SDK v2 S3 for long-term archive storage -->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+			<version>${aws.sdk.version}</version>
+		</dependency>
+
 		<!-- Microsoft Graph SDK (for OneDrive + directory sync) -->
 		<dependency>
 			<groupId>com.microsoft.graph</groupId>
@@ -921,6 +929,23 @@
 			<groupId>com.azure</groupId>
 			<artifactId>azure-identity</artifactId>
 			<version>1.12.1</version>
+		</dependency>
+
+		<!-- AWS SDK (Bedrock Runtime) for embedding generation -->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>bedrockruntime</artifactId>
+			<version>${aws.sdk.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>regions</artifactId>
+			<version>${aws.sdk.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>auth</artifactId>
+			<version>${aws.sdk.version}</version>
 		</dependency>
 	</dependencies>
 

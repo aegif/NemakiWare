@@ -26,4 +26,5 @@ public class ErrorCode {
 	public 	static final String ERR_RESTORE_BECAUSE_PARENT_NO_LONGER_EXISTS = "failToRestoreBecauseParentNoLongerExists";
 	public 	static final String ERR_DESTROY = "failToDestroy";
 	public 	static final String ERR_ONLY_ALLOWED_FOR_ADMIN = "onlyAllowedForAdmin";
+	public 	static final String ERR_RESTORE_FROM_COLD_STORAGE = "failToRestoreFromColdStorage";
 }

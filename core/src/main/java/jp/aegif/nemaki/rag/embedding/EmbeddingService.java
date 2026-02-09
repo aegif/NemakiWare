@@ -6,7 +6,7 @@ import java.util.List;
  * Service interface for generating text embeddings.
  *
  * Embeddings are dense vector representations of text that capture semantic meaning.
- * This service abstracts the embedding provider (TEI, OpenAI, etc.) to allow
+ * This service abstracts the embedding provider (TEI, Bedrock, etc.) to allow
  * for provider fallback and testing.
  *
  * The default implementation uses Hugging Face's Text Embeddings Inference (TEI)
@@ -17,7 +17,7 @@ import java.util.List;
 public interface EmbeddingService {
 
     /**
-     * Vector dimension for E5 multilingual-large model.
+     * Default vector dimension for E5 multilingual-large model (TEI).
      */
     int VECTOR_DIMENSION = 1024;
 
@@ -37,7 +37,7 @@ public interface EmbeddingService {
      *
      * @param text The text to embed
      * @param isQuery If true, prepends "query: " prefix; if false, prepends "passage: "
-     * @return Vector embedding as float array (1024 dimensions for E5)
+     * @return Vector embedding as float array
      * @throws EmbeddingException if embedding generation fails
      */
     float[] embed(String text, boolean isQuery) throws EmbeddingException;
@@ -87,7 +87,7 @@ public interface EmbeddingService {
     /**
      * Get the vector dimension of embeddings produced by this service.
      *
-     * @return Vector dimension (1024 for E5 multilingual-large)
+     * @return Vector dimension for the active provider
      */
     default int getVectorDimension() {
         return VECTOR_DIMENSION;

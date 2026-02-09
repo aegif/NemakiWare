@@ -371,7 +371,7 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
     private float[] generateDocumentEmbedding(Document document, List<TextChunk> chunks, List<float[]> chunkEmbeddings) {
         // Use average of first 3 chunk embeddings as document embedding
         int numChunks = Math.min(3, chunkEmbeddings.size());
-        int dimension = EmbeddingService.VECTOR_DIMENSION;
+        int dimension = embeddingService.getVectorDimension();
         float[] avgEmbedding = new float[dimension];
 
         for (int i = 0; i < numChunks; i++) {

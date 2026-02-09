@@ -52,6 +52,15 @@ public class CouchArchive extends CouchNodeBase{
 	private String mimeType;
 	private Long contentStreamLength;
 
+	// Retention lifecycle fields
+	private String archiveState;
+	private GregorianCalendar archivedAt;
+	private GregorianCalendar coldArchivedAt;
+	private Map<String, String> contentRef;
+	private String coldMoveMode;
+	private String aclSnapshot;
+	private String propsSnapshot;
+
 	public CouchArchive(){
 		super();
 	}
@@ -70,6 +79,13 @@ public class CouchArchive extends CouchNodeBase{
 		setLatestVersion(a.isLatestVersion());
 		setMimeType(a.getMimeType());
 		setContentStreamLength(a.getContentStreamLength());
+		setArchiveState(a.getArchiveState());
+		setArchivedAt(a.getArchivedAt());
+		setColdArchivedAt(a.getColdArchivedAt());
+		setContentRef(a.getContentRef());
+		setColdMoveMode(a.getColdMoveMode());
+		setAclSnapshot(a.getAclSnapshot());
+		setPropsSnapshot(a.getPropsSnapshot());
 	}
 
 	/**
@@ -172,6 +188,62 @@ public class CouchArchive extends CouchNodeBase{
 		this.contentStreamLength = contentStreamLength;
 	}
 
+	public String getArchiveState() {
+		return archiveState;
+	}
+
+	public void setArchiveState(String archiveState) {
+		this.archiveState = archiveState;
+	}
+
+	public GregorianCalendar getArchivedAt() {
+		return archivedAt;
+	}
+
+	public void setArchivedAt(GregorianCalendar archivedAt) {
+		this.archivedAt = archivedAt;
+	}
+
+	public GregorianCalendar getColdArchivedAt() {
+		return coldArchivedAt;
+	}
+
+	public void setColdArchivedAt(GregorianCalendar coldArchivedAt) {
+		this.coldArchivedAt = coldArchivedAt;
+	}
+
+	public Map<String, String> getContentRef() {
+		return contentRef;
+	}
+
+	public void setContentRef(Map<String, String> contentRef) {
+		this.contentRef = contentRef;
+	}
+
+	public String getAclSnapshot() {
+		return aclSnapshot;
+	}
+
+	public void setAclSnapshot(String aclSnapshot) {
+		this.aclSnapshot = aclSnapshot;
+	}
+
+	public String getPropsSnapshot() {
+		return propsSnapshot;
+	}
+
+	public void setPropsSnapshot(String propsSnapshot) {
+		this.propsSnapshot = propsSnapshot;
+	}
+
+	public String getColdMoveMode() {
+		return coldMoveMode;
+	}
+
+	public void setColdMoveMode(String coldMoveMode) {
+		this.coldMoveMode = coldMoveMode;
+	}
+
 	@Override
 	public String toString() {
 		Map<String, Object> m = new HashMap<String, Object>();
@@ -244,6 +316,13 @@ public class CouchArchive extends CouchNodeBase{
 		a.setIsLatestVersion(isLatestVersion());
 		a.setMimeType(getMimeType());
 		a.setContentStreamLength(getContentStreamLength());
+		a.setArchiveState(getArchiveState());
+		a.setArchivedAt(getArchivedAt());
+		a.setColdArchivedAt(getColdArchivedAt());
+		a.setContentRef(getContentRef());
+		a.setColdMoveMode(getColdMoveMode());
+		a.setAclSnapshot(getAclSnapshot());
+		a.setPropsSnapshot(getPropsSnapshot());
 
 		return a;
 	}

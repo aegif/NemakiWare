@@ -21,9 +21,16 @@ public class RAGConfig {
     public void init() {
         log.info("=== RAGConfig initialized ===");
         log.info("RAG enabled: {}", enabled);
+        log.info("Embedding provider: {}", embeddingProvider);
         log.info("TEI URL: {}", teiUrl);
         log.info("TEI connect timeout: {}", teiConnectTimeout);
         log.info("TEI read timeout: {}", teiReadTimeout);
+        if ("bedrock".equalsIgnoreCase(embeddingProvider)) {
+            log.info("Bedrock region: {}", bedrockRegion);
+            log.info("Bedrock model id: {}", bedrockModelId);
+            log.info("Bedrock batch size: {}", bedrockBatchSize);
+            log.info("Bedrock vector dimension: {}", bedrockVectorDimension);
+        }
 
         // Validate boost values (0.0 to 1.0 range)
         if (propertyBoost < 0.0f || propertyBoost > 1.0f) {
@@ -61,6 +68,39 @@ public class RAGConfig {
 
     @Value("${rag.enabled:false}")
     private boolean enabled;
+
+    // ========================================
+    // Embedding Provider Settings
+    // ========================================
+
+    /**
+     * Embedding provider selection.
+     * Supported: tei, bedrock
+     */
+    @Value("${rag.embedding.provider:tei}")
+    private String embeddingProvider;
+
+    // ========================================
+    // Bedrock Embedding Settings
+    // ========================================
+
+    @Value("${rag.bedrock.region:}")
+    private String bedrockRegion;
+
+    @Value("${rag.bedrock.model.id:}")
+    private String bedrockModelId;
+
+    @Value("${rag.bedrock.batch.size:32}")
+    private int bedrockBatchSize;
+
+    @Value("${rag.bedrock.max.input.chars:8000}")
+    private int bedrockMaxInputChars;
+
+    @Value("${rag.bedrock.timeout.ms:30000}")
+    private int bedrockTimeoutMs;
+
+    @Value("${rag.bedrock.vector.dimension:1536}")
+    private int bedrockVectorDimension;
 
     // ========================================
     // TEI (Text Embeddings Inference) Settings
@@ -249,6 +289,10 @@ public class RAGConfig {
         return enabled;
     }
 
+    public String getEmbeddingProvider() {
+        return embeddingProvider;
+    }
+
     public String getTeiUrl() {
         return teiUrl;
     }
@@ -271,6 +315,30 @@ public class RAGConfig {
 
     public int getTeiRetryDelay() {
         return teiRetryDelay;
+    }
+
+    public String getBedrockRegion() {
+        return bedrockRegion;
+    }
+
+    public String getBedrockModelId() {
+        return bedrockModelId;
+    }
+
+    public int getBedrockBatchSize() {
+        return bedrockBatchSize;
+    }
+
+    public int getBedrockMaxInputChars() {
+        return bedrockMaxInputChars;
+    }
+
+    public int getBedrockTimeoutMs() {
+        return bedrockTimeoutMs;
+    }
+
+    public int getBedrockVectorDimension() {
+        return bedrockVectorDimension;
     }
 
     public int getChunkingMaxTokens() {

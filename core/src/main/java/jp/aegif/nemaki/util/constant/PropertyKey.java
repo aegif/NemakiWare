@@ -313,6 +313,26 @@ public interface PropertyKey {
 	//Archive
 	final String ARCHIVE_CREATE_ENABLED = "archive.create.enabled";
 
+	//Retention
+	final String RETENTION_ENABLED = "retention.enabled";
+	final String RETENTION_ARCHIVE_LOCAL_AFTER_DAYS = "retention.archive.local.after.days";
+	final String RETENTION_ARCHIVE_COLD_AFTER_DAYS = "retention.archive.cold.after.days";
+	final String RETENTION_SCHEDULE_ARCHIVE_LOCAL = "retention.schedule.archive.local";
+	final String RETENTION_SCHEDULE_ARCHIVE_COLD = "retention.schedule.archive.cold";
+	/** If true, keep local copy in archive store after cold storage write (copy mode).
+	 *  If false, delete local copy after cold storage write (move mode). Default: true */
+	final String RETENTION_COLD_KEEP_LOCAL_COPY = "retention.cold.keep.local.copy";
+
+	//Long-term storage
+	final String LONGTERM_STORAGE_TYPE = "longterm.storage.type";
+	final String LONGTERM_S3_BUCKET = "longterm.s3.bucket";
+	final String LONGTERM_S3_REGION = "longterm.s3.region";
+	final String LONGTERM_S3_ENDPOINT = "longterm.s3.endpoint";
+	final String LONGTERM_S3_ACCESS_KEY = "longterm.s3.accessKey";
+	final String LONGTERM_S3_SECRET_KEY = "longterm.s3.secretKey";
+	final String LONGTERM_S3_OBJECT_LOCK_MODE = "longterm.s3.objectLockMode";
+	final String LONGTERM_FS_PATH = "longterm.fs.path";
+
 	//Deletion
 	final String DELETION_VERIFY_ENABLED = "deletion.verify.enabled";
 

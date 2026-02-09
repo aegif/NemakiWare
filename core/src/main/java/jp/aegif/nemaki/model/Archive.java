@@ -37,11 +37,26 @@ import jp.aegif.nemaki.util.constant.NodeType;
 import jp.aegif.nemaki.util.constant.SystemConst;
 
 /**
+ * Archive state constants for retention lifecycle.
+ * <ul>
+ *   <li>ARCHIVED_LOCAL – stored in CouchDB closet (default for legacy archives)</li>
+ *   <li>ARCHIVING – transitional state while being archived</li>
+ *   <li>COLD_MOVING – transitional state while moving to cold storage</li>
+ *   <li>ARCHIVED_COLD – stored in long-term (S3/filesystem) storage</li>
+ * </ul>
+ */
+
+/**
  * As of now, this class holds the minimum data to create ChangeEvent of a
  * DELETED object.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Archive extends NodeBase {
+
+	public static final String STATE_ARCHIVED_LOCAL = "ARCHIVED_LOCAL";
+	public static final String STATE_ARCHIVING = "ARCHIVING";
+	public static final String STATE_COLD_MOVING = "COLD_MOVING";
+	public static final String STATE_ARCHIVED_COLD = "ARCHIVED_COLD";
 
 	private String originalId;
 	private String lastRevision;
@@ -55,6 +70,15 @@ public class Archive extends NodeBase {
 	private String mimeType;
 	private String path;
 	private Long contentStreamLength;
+
+	// Retention lifecycle fields
+	private String archiveState;
+	private GregorianCalendar archivedAt;
+	private GregorianCalendar coldArchivedAt;
+	private Map<String, String> contentRef;
+	private String coldMoveMode;
+	private String aclSnapshot;
+	private String propsSnapshot;
 
 
 	public Archive() {
@@ -189,6 +213,71 @@ public class Archive extends NodeBase {
 		this.contentStreamLength = contentStreamLength;
 	}
 
+	/**
+	 * Returns the archive state. Defaults to ARCHIVED_LOCAL for legacy archives
+	 * that do not have this field set.
+	 */
+	@JsonIgnore
+	public String getEffectiveArchiveState() {
+		return archiveState != null ? archiveState : STATE_ARCHIVED_LOCAL;
+	}
+
+	public String getArchiveState() {
+		return archiveState;
+	}
+
+	public void setArchiveState(String archiveState) {
+		this.archiveState = archiveState;
+	}
+
+	public GregorianCalendar getArchivedAt() {
+		return archivedAt;
+	}
+
+	public void setArchivedAt(GregorianCalendar archivedAt) {
+		this.archivedAt = archivedAt;
+	}
+
+	public GregorianCalendar getColdArchivedAt() {
+		return coldArchivedAt;
+	}
+
+	public void setColdArchivedAt(GregorianCalendar coldArchivedAt) {
+		this.coldArchivedAt = coldArchivedAt;
+	}
+
+	public Map<String, String> getContentRef() {
+		return contentRef;
+	}
+
+	public void setContentRef(Map<String, String> contentRef) {
+		this.contentRef = contentRef;
+	}
+
+	public String getAclSnapshot() {
+		return aclSnapshot;
+	}
+
+	public void setAclSnapshot(String aclSnapshot) {
+		this.aclSnapshot = aclSnapshot;
+	}
+
+	public String getPropsSnapshot() {
+		return propsSnapshot;
+	}
+
+	public void setPropsSnapshot(String propsSnapshot) {
+		this.propsSnapshot = propsSnapshot;
+	}
+
+	public String getColdMoveMode() {
+		return coldMoveMode;
+	}
+
+	public void setColdMoveMode(String coldMoveMode) {
+		this.coldMoveMode = coldMoveMode;
+	}
+
 	@Override
 	public String toString() {
 		Map<String, Object> m = new HashMap<String, Object>();
@@ -203,6 +292,10 @@ public class Archive extends NodeBase {
 		if(isLatestVersion() != null) m.put("isLatestVersion", isLatestVersion());
 		if(getCreated() != null) m.put("created", DataUtil.convertToDateFormat(getCreated()));
 		if(getCreator() != null) m.put("creator", getCreator());
+		if(getArchiveState() != null) m.put("archiveState", getArchiveState());
+		if(getArchivedAt() != null) m.put("archivedAt", DataUtil.convertToDateFormat(getArchivedAt()));
+		if(getColdArchivedAt() != null) m.put("coldArchivedAt", DataUtil.convertToDateFormat(getColdArchivedAt()));
+		if(getColdMoveMode() != null) m.put("coldMoveMode", getColdMoveMode());
 		return m.toString();
 	}
 
