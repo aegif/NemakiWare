@@ -1259,6 +1259,7 @@
       "cronExpression": "スケジュール (Cron式)",
       "storageType": "ストレージ種別",
       "filesystem": "ファイルシステム",
+      "beta": "ベータ",
       "storageConnected": "ストレージ接続",
       "connected": "接続済み",
       "disconnected": "未接続",

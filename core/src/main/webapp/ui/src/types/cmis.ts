@@ -168,6 +168,12 @@ export interface CMISObject {
   targetId?: string;
   /** Change token for optimistic locking (CMIS 1.1) */
   changeToken?: string;
+  /** Archive lifecycle state (ARCHIVED_LOCAL, ARCHIVED_COLD, etc.) */
+  archiveState?: string;
+  /** Timestamp when the object was archived */
+  archivedAt?: string;
+  /** Cold storage transfer mode (COPY or MOVE) */
+  coldMoveMode?: string;
 }
 
 export interface SearchResult {

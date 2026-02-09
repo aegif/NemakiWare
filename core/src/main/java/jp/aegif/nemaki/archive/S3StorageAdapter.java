@@ -68,19 +68,30 @@ public class S3StorageAdapter implements LongTermStorageAdapter {
             requestBuilder.metadata(metadata);
         }
 
+        // Use temp file to avoid buffering entire content in memory (OOM risk for large files)
+        java.nio.file.Path tempFile = null;
         try {
-            // Read content into byte array since S3 SDK needs content length
-            byte[] bytes = content.readAllBytes();
+            tempFile = java.nio.file.Files.createTempFile("nemaki-s3-", ".tmp");
+            long size = java.nio.file.Files.copy(content, tempFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
             PutObjectResponse response = s3Client.putObject(
                     requestBuilder.build(),
-                    RequestBody.fromBytes(bytes));
+                    RequestBody.fromFile(tempFile));
 
             String versionId = response.versionId();
             log.info("Stored object in S3: key=" + key + ", versionId=" + versionId
-                    + ", size=" + bytes.length);
+                    + ", size=" + size);
             return versionId != null ? versionId : key;
         } catch (Exception e) {
             throw new RuntimeException("Failed to store object in S3: " + key, e);
+        } finally {
+            if (tempFile != null) {
+                try {
+                    java.nio.file.Files.deleteIfExists(tempFile);
+                } catch (Exception ignored) {
+                    log.warn("Failed to delete temp file: " + tempFile);
+                }
+            }
         }
     }
 

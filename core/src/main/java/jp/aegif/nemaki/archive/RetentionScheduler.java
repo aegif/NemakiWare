@@ -166,7 +166,8 @@ public class RetentionScheduler {
                         }
                         try {
                             CallContext systemContext = new SystemCallContext(repositoryId);
-                            contentService.delete(systemContext, repositoryId, documentId, false);
+                            // Use deleteDocument to properly handle attachments, renditions, and version series
+                            contentService.deleteDocument(systemContext, repositoryId, documentId, true, false);
                             nemakiCachePool.get(repositoryId).removeCmisCache(documentId);
                             result.incrementSucceeded();
                             log.info("Archived expired document: " + documentId);
@@ -332,48 +333,57 @@ public class RetentionScheduler {
             // Get content stream via ContentService (delegates to DAO which reads from closet DB)
             InputStream contentStream = contentService.getArchiveContentStream(repositoryId, archiveId);
 
-            // Build metadata
-            Map<String, String> metadata = new HashMap<>();
-            metadata.put("name", archive.getName() != null ? archive.getName() : "");
-            metadata.put("mimeType", archive.getMimeType() != null ? archive.getMimeType() : "");
-            metadata.put("originalId", archive.getOriginalId() != null ? archive.getOriginalId() : "");
+            if (contentStream == null) {
+                log.error("No content stream available for archive: " + archiveId + " - skipping cold move");
+                // Revert to ARCHIVED_LOCAL since we cannot move without content
+                contentService.updateArchiveState(repositoryId, archiveId,
+                        Archive.STATE_ARCHIVED_LOCAL, null, null);
+                return;
+            }
 
-            // Store in cold storage
-            String storageRef = null;
-            if (contentStream != null) {
-                storageRef = adapter.put(repositoryId, archive.getOriginalId(), contentStream, metadata);
+            try {
+                // Build metadata
+                Map<String, String> metadata = new HashMap<>();
+                metadata.put("name", archive.getName() != null ? archive.getName() : "");
+                metadata.put("mimeType", archive.getMimeType() != null ? archive.getMimeType() : "");
+                metadata.put("originalId", archive.getOriginalId() != null ? archive.getOriginalId() : "");
+
+                // Store in cold storage
+                String storageRef = adapter.put(repositoryId, archive.getOriginalId(), contentStream, metadata);
                 adapter.enforceImmutability(repositoryId, archive.getOriginalId());
-            }
 
-            // Build contentRef
-            Map<String, String> contentRef = new HashMap<>();
-            if (storageRef != null) {
-                contentRef.put("ref", storageRef);
-            }
-            contentRef.put("type", propertyManager.readValue(PropertyKey.LONGTERM_STORAGE_TYPE));
-
-            // Update state to ARCHIVED_COLD
-            GregorianCalendar now = new GregorianCalendar();
-            contentService.updateArchiveState(repositoryId, archiveId,
-                    Archive.STATE_ARCHIVED_COLD, contentRef, now);
-
-            // Record cold move mode (COPY or MOVE)
-            boolean keepLocalCopy = propertyManager.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY);
-            String coldMoveMode = keepLocalCopy ? "COPY" : "MOVE";
-            contentService.updateArchiveColdMoveMode(repositoryId, archiveId, coldMoveMode);
-
-            // Conditionally delete local archive content (move mode vs copy mode)
-            if (!keepLocalCopy) {
-                boolean deleted = contentService.deleteArchiveContent(repositoryId, archiveId);
-                if (deleted) {
-                    log.info("Move mode: deleted local archive content after cold storage write: " + archiveId);
-                } else {
-                    log.warn("Move mode: failed to delete local archive content: " + archiveId);
+                // Build contentRef
+                Map<String, String> contentRef = new HashMap<>();
+                if (storageRef != null) {
+                    contentRef.put("ref", storageRef);
                 }
-            }
+                contentRef.put("type", propertyManager.readValue(PropertyKey.LONGTERM_STORAGE_TYPE));
 
-            log.info("Successfully moved archive to cold storage: " + archiveId
-                    + " (mode: " + coldMoveMode + ")");
+                // Update state to ARCHIVED_COLD
+                GregorianCalendar now = new GregorianCalendar();
+                contentService.updateArchiveState(repositoryId, archiveId,
+                        Archive.STATE_ARCHIVED_COLD, contentRef, now);
+
+                // Record cold move mode (COPY or MOVE)
+                boolean keepLocalCopy = propertyManager.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY);
+                String coldMoveMode = keepLocalCopy ? "COPY" : "MOVE";
+                contentService.updateArchiveColdMoveMode(repositoryId, archiveId, coldMoveMode);
+
+                // Conditionally delete local archive content (move mode vs copy mode)
+                if (!keepLocalCopy) {
+                    boolean deleted = contentService.deleteArchiveContent(repositoryId, archiveId);
+                    if (deleted) {
+                        log.info("Move mode: deleted local archive content after cold storage write: " + archiveId);
+                    } else {
+                        log.warn("Move mode: failed to delete local archive content: " + archiveId);
+                    }
+                }
+
+                log.info("Successfully moved archive to cold storage: " + archiveId
+                        + " (mode: " + coldMoveMode + ")");
+            } finally {
+                contentStream.close();
+            }
 
         } catch (Exception e) {
             // Revert to ARCHIVED_LOCAL on failure
@@ -383,7 +393,7 @@ public class RetentionScheduler {
             } catch (Exception revertEx) {
                 log.error("Failed to revert archive state after cold-move failure: " + revertEx.getMessage());
             }
-            throw e;
+            throw new RuntimeException("Cold move failed for archive: " + archiveId, e);
         }
     }
 

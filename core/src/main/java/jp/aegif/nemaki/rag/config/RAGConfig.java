@@ -26,6 +26,7 @@ public class RAGConfig {
         log.info("TEI connect timeout: {}", teiConnectTimeout);
         log.info("TEI read timeout: {}", teiReadTimeout);
         if ("bedrock".equalsIgnoreCase(embeddingProvider)) {
+            log.warn("[BETA] Bedrock embedding provider is beta - requires AWS subscription");
             log.info("Bedrock region: {}", bedrockRegion);
             log.info("Bedrock model id: {}", bedrockModelId);
             log.info("Bedrock batch size: {}", bedrockBatchSize);

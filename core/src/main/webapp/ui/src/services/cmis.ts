@@ -2715,7 +2715,7 @@ export class CMISService {
     }
   }
 
-  async getArchives(repositoryId: string): Promise<CMISObject[]> {
+  async getArchives(repositoryId: string): Promise<{ archives: CMISObject[], isAdmin: boolean }> {
     try {
       // Use correct REST endpoint for archive index
       const url = `/core/rest/repo/${repositoryId}/archive/index`;
@@ -2729,7 +2729,8 @@ export class CMISService {
           // REST API returns: {id, originalId, name, type, parentId, creator, created, mimeType, ...}
           // UI expects CMISObject with: {id, name, baseType, objectType, ...}
           // id: archive ID (used for restore/download operations on the archive)
-          return archives.map((archive: Record<string, unknown>) => ({
+          const isAdmin = data.isAdmin === true;
+          const mappedArchives = archives.map((archive: Record<string, unknown>) => ({
             id: String(archive.id || ''),
             name: String(archive.name || 'Unknown'),
             baseType: normalizeArchiveBaseType(String(archive.type || 'cmis:document')),
@@ -2740,7 +2741,11 @@ export class CMISService {
             lastModificationDate: archive.created as string | undefined,
             contentStreamLength: archive.contentLength as number | undefined,
             contentStreamMimeType: archive.mimeType as string | undefined,
+            archiveState: archive.archiveState as string | undefined,
+            archivedAt: archive.archivedAt as string | undefined,
+            coldMoveMode: archive.coldMoveMode as string | undefined,
           } as CMISObject));
+          return { archives: mappedArchives, isAdmin };
         } catch (e) {
           throw new Error('Invalid response format');
         }
@@ -2989,6 +2994,10 @@ export class CMISService {
   getDownloadUrl(repositoryId: string, objectId: string): string {
     // Authentication is handled by HttpOnly cookie, no token in URL needed
     return `${this.baseUrl}/${repositoryId}/node/${objectId}/content`;
+  }
+
+  getArchiveDownloadUrl(repositoryId: string, archiveId: string): string {
+    return `/core/rest/repo/${repositoryId}/archive/${archiveId}/content`;
   }
 
   async getContentStream(repositoryId: string, objectId: string): Promise<ArrayBuffer> {

@@ -185,6 +185,8 @@ SimpleQueryTest.*
 !core/src/test/java/jp/aegif/nemaki/sync/service/Cloud*Test.java
 !core/src/test/java/jp/aegif/nemaki/businesslogic/impl/CloudDriveServiceImplTest.java
 !core/src/test/java/jp/aegif/nemaki/rest/Cloud*IT.java
+# Exception: Keep archive unit test files
+!core/src/test/java/jp/aegif/nemaki/archive/*Test.java
 
 # Runtime logs and configuration
 jetty-*.log

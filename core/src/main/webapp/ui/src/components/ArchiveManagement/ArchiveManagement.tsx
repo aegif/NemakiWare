@@ -64,9 +64,9 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
   const loadArchives = async () => {
     setLoading(true);
     try {
-      const archiveList = await cmisService.getArchives(repositoryId);
-      setArchives(archiveList);
-      // The REST API now returns isAdmin flag
+      const result = await cmisService.getArchives(repositoryId);
+      setArchives(result.archives);
+      setIsAdminUser(result.isAdmin);
     } catch (error) {
       message.error(t('archiveManagement.messages.loadError'));
     } finally {
@@ -125,8 +125,8 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
     }
   };
 
-  const handleDownload = (objectId: string) => {
-    const url = cmisService.getDownloadUrl(repositoryId, objectId);
+  const handleDownload = (archiveId: string) => {
+    const url = cmisService.getArchiveDownloadUrl(repositoryId, archiveId);
     window.open(url, '_blank');
   };
 
@@ -443,6 +443,9 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
                   <Tag color={retentionSettings.storageType === 's3' ? 'blue' : 'green'}>
                     {retentionSettings.storageType === 's3' ? 'S3' : t('archiveManagement.settings.filesystem')}
                   </Tag>
+                  {retentionSettings.storageType === 's3' && (
+                    <Tag color="orange" style={{ marginLeft: 4 }}>{t('archiveManagement.settings.beta')}</Tag>
+                  )}
                 </Descriptions.Item>
                 <Descriptions.Item label={t('archiveManagement.settings.storageConnected')}>
                   <Badge

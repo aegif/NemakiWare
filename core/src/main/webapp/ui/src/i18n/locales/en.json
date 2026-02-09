@@ -1259,6 +1259,7 @@
       "cronExpression": "Schedule (Cron)",
       "storageType": "Storage Type",
       "filesystem": "Filesystem",
+      "beta": "Beta",
       "storageConnected": "Storage Connection",
       "connected": "Connected",
       "disconnected": "Disconnected",

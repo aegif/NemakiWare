@@ -3794,14 +3794,20 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Archive getAttachmentArchive(String repositoryId, Archive archive) {
 		try {
-			// Query attachmentArchive view with archive ID
-			// CRITICAL FIX: Use archive repository, not main repository
+			// Use the archive's attachmentNodeId to find the attachment archive.
+			// The "attachments" view emits by originalId, and attachmentNodeId is
+			// the originalId of the attachment that was archived alongside the document.
+			String attachmentNodeId = archive.getAttachmentNodeId();
+			if (attachmentNodeId == null || attachmentNodeId.isEmpty()) {
+				log.warn("No attachmentNodeId on archive: " + archive.getId());
+				return null;
+			}
+
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "attachmentArchive", archive.getId(), CouchArchive.class);
+			List<CouchArchive> couchArchives = client.queryView("_repo", "attachments", attachmentNodeId, CouchArchive.class);
 			
 			if (!couchArchives.isEmpty()) {
-				// Return the first attachment archive
 				return couchArchives.get(0).convert();
 			}
 			
@@ -4360,14 +4366,21 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				return false;
 			}
 
-			// Query for the CouchArchive directly (not converted) to preserve revision
+			// Use attachmentNodeId to find the attachment archive via "attachments" view
+			String attachmentNodeId = archive.getAttachmentNodeId();
+			if (attachmentNodeId == null || attachmentNodeId.isEmpty()) {
+				log.warn("No attachmentNodeId on archive: " + archive.getId());
+				return false;
+			}
+
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper archiveClient = connectorPool.getClient(archiveRepositoryId);
 			List<CouchArchive> couchArchives = archiveClient.queryView(
-					"_repo", "attachmentArchive", archive.getId(), CouchArchive.class);
+					"_repo", "attachments", attachmentNodeId, CouchArchive.class);
 
 			if (couchArchives.isEmpty()) {
-				log.warn("No attachment archive found for archive: " + archive.getId());
+				log.warn("No attachment archive found for archive: " + archive.getId()
+						+ " (attachmentNodeId=" + attachmentNodeId + ")");
 				return false;
 			}
 

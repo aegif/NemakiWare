@@ -34,7 +34,10 @@ public class LongTermStorageAdapterFactory {
             }
 
             adapter = new S3StorageAdapter(bucket, region, endpoint, accessKey, secretKey, objectLockMode);
-            log.info("Long-term storage adapter initialized: S3 (bucket=" + bucket + ")");
+            log.info("[BETA] Long-term storage adapter initialized: S3 (bucket=" + bucket + ")");
+        } else if ("inmemory".equalsIgnoreCase(storageType)) {
+            adapter = new InMemoryStorageAdapter();
+            log.info("Long-term storage adapter initialized: in-memory (testing only)");
         } else {
             // Default to filesystem
             String path = propertyManager.readValue(PropertyKey.LONGTERM_FS_PATH);
