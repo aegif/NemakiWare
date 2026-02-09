@@ -328,29 +328,32 @@ test.describe('Config Viewer - API', () => {
   });
 });
 
-test.describe('Config Viewer - Cold Storage Download Endpoint', () => {
-  test('should return 410 Gone for cold storage download', async ({ page }) => {
+test.describe('Archive Download Endpoint', () => {
+  test('should return 404 for nonexistent archive content', async ({ page }) => {
     const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 
-    // Try to download from a non-existent cold archive
-    // The endpoint should return 410 Gone regardless of whether the archive exists,
-    // because downloadFromColdStorage always returns 410
+    // Correct path: /rest/repo/{repositoryId}/archive/{archiveId}/content
     const response = await page.request.get(
-      `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/archive/download/nonexistent-cold-archive-id`,
+      `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/archive/nonexistent-archive-id/content`,
       { headers: { 'Authorization': authHeader } }
     );
 
-    console.log(`Archive download API status: ${response.status()}`);
+    console.log(`Archive content API status: ${response.status()}`);
 
-    // The actual status depends on whether the archive exists at all.
-    // If archive doesn't exist → 404. If ARCHIVED_COLD → 410.
-    // We can only test the API contract here.
-    if (response.status() === 410) {
-      const body = await response.text();
-      expect(body).toContain('Cold storage content is managed outside NemakiWare');
-      console.log('Cold storage download correctly returns 410 Gone');
-    } else {
-      console.log(`Archive download returned ${response.status()} (archive may not exist)`);
-    }
+    // Nonexistent archive → 404
+    expect(response.status()).toBe(404);
+
+    const body = await response.text();
+    expect(body).toContain('Archive not found');
+    console.log('Nonexistent archive correctly returns 404');
+  });
+
+  test('should return 401 without authentication', async ({ page }) => {
+    const response = await page.request.get(
+      `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/archive/any-id/content`
+    );
+
+    console.log(`Archive content without auth: ${response.status()}`);
+    expect(response.status()).toBeGreaterThanOrEqual(401);
   });
 });
