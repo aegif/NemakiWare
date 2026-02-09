@@ -102,13 +102,13 @@ public class ArchiveDownloadResource extends ResourceBase {
             }
 
             String state = archive.getEffectiveArchiveState();
-            boolean adminUser = isAdmin(httpRequest);
 
             if (Archive.STATE_ARCHIVED_COLD.equals(state)) {
-                // Cold storage: Admin/System only
-                return downloadFromColdStorage(repositoryId, archive, adminUser);
+                // Cold storage content is outside NemakiWare's scope
+                return downloadFromColdStorage(repositoryId, archive);
             } else {
                 // Archive store (ARCHIVED_LOCAL): Admin/System or Owner
+                boolean adminUser = isAdmin(httpRequest);
                 return downloadFromArchiveStore(repositoryId, archive, adminUser, username);
             }
 
@@ -153,9 +153,9 @@ public class ArchiveDownloadResource extends ResourceBase {
 
     /**
      * Cold storage content is outside NemakiWare's management scope.
-     * Access cold-stored content directly via the storage provider (e.g. AWS S3 Console/CLI).
+     * Always returns 410 Gone — access content directly via S3 Console/CLI.
      */
-    private Response downloadFromColdStorage(String repositoryId, Archive archive, boolean adminUser) {
+    private Response downloadFromColdStorage(String repositoryId, Archive archive) {
         return Response.status(Response.Status.GONE)
                 .entity("{\"status\":\"failure\",\"error\":\"Cold storage content is managed outside NemakiWare. " +
                         "Access content directly via the storage provider (e.g. AWS S3 Console/CLI).\"}")

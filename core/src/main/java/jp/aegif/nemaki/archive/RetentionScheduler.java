@@ -314,7 +314,7 @@ public class RetentionScheduler {
             migrationLog.setStatus(migrationLog.computeStatus());
 
             if (!result.getSkippedDocumentIds().isEmpty()) {
-                migrationLog.setDetails("Skipped document IDs (lock not acquired): "
+                migrationLog.setDetails("Skipped document IDs: "
                         + String.join(", ", result.getSkippedDocumentIds()));
             }
 
