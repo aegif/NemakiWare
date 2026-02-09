@@ -3930,6 +3930,12 @@ public class ContentServiceImpl implements ContentService {
 		a.setParentId(content.getParentId());
 		setSignature(callContext, a);
 
+		// Preserve the original document creator as the archive owner.
+		// This is critical for retention-triggered archives (SystemCallContext)
+		// where callContext.getUsername() is "system" — without this override,
+		// the original creator would lose access to their archived content.
+		a.setCreator(content.getCreator());
+
 		// Set retention lifecycle fields
 		a.setArchiveState(Archive.STATE_ARCHIVED_LOCAL);
 		a.setArchivedAt(new GregorianCalendar());
@@ -3996,6 +4002,12 @@ public class ContentServiceImpl implements ContentService {
 		a.setDeletedWithParent(deletedWithParent);
 		a.setParentId(content.getParentId());
 		setSignature(callContext, a);
+
+		// Preserve the original document creator as the archive owner.
+		// This is critical for retention-triggered archives (SystemCallContext)
+		// where callContext.getUsername() is "system" — without this override,
+		// the original creator would lose access to their archived content.
+		a.setCreator(content.getCreator());
 
 		// Set retention lifecycle fields
 		a.setArchiveState(Archive.STATE_ARCHIVED_LOCAL);
