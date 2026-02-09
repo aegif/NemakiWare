@@ -175,8 +175,10 @@ MinimalTckTest.*
 QueryTckRunnerNoPolicyHang.*
 SimpleQueryTest.*
 
-# Exception: Keep important unit test files for Solr index maintenance
+# Exception: Keep important unit test files
 !core/src/test/java/jp/aegif/nemaki/businesslogic/impl/SolrIndexMaintenanceServiceImpl*Test.java
+!core/src/test/java/jp/aegif/nemaki/archive/*Test.java
+!core/src/test/java/jp/aegif/nemaki/rest/*Test.java
 
 # Exception: Keep RAG unit test files
 !core/src/test/java/jp/aegif/nemaki/rag/**/*Test.java
