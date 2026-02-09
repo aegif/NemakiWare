@@ -39,8 +39,6 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.StreamingOutput;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 
@@ -665,61 +663,6 @@ public class ArchiveResource extends ResourceBase {
 		return makeResult(status, result, errMsg).toJSONString();
 	}
 
-
-	/**
-	 * Download archive content stream.
-	 */
-	@GET
-	@Path("/{archiveId}/content")
-	public Response downloadContent(
-			@PathParam("repositoryId") String repositoryId,
-			@PathParam("archiveId") String archiveId,
-			@Context HttpServletRequest httpRequest) {
-
-		String username = getCallContextUsername(httpRequest);
-		if (username == null) {
-			return Response.status(Response.Status.UNAUTHORIZED).build();
-		}
-
-		try {
-			Archive archive = getContentService().getArchive(repositoryId, archiveId);
-			if (archive == null) {
-				return Response.status(Response.Status.NOT_FOUND).build();
-			}
-
-			// Non-admin can only download their own archives
-			boolean adminUser = isAdmin(httpRequest);
-			if (!adminUser && !username.equals(archive.getCreator())) {
-				return Response.status(Response.Status.FORBIDDEN).build();
-			}
-
-			java.io.InputStream contentStream = getContentService().getArchiveContentStream(repositoryId, archiveId);
-			if (contentStream == null) {
-				return Response.status(Response.Status.NOT_FOUND).entity("Archive content not found").build();
-			}
-
-			String mimeType = archive.getMimeType() != null ? archive.getMimeType() : "application/octet-stream";
-			String fileName = archive.getName() != null ? archive.getName() : "archive-content";
-
-			StreamingOutput streamingOutput = output -> {
-				try (java.io.InputStream is = contentStream) {
-					byte[] buffer = new byte[8192];
-					int bytesRead;
-					while ((bytesRead = is.read(buffer)) != -1) {
-						output.write(buffer, 0, bytesRead);
-					}
-					output.flush();
-				}
-			};
-
-			return Response.ok(streamingOutput, mimeType)
-					.header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
-					.build();
-		} catch (Exception e) {
-			log.error("Failed to download archive content: " + archiveId, e);
-			return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
-		}
-	}
 
 	@SuppressWarnings({ "unchecked" })
 	private JSONObject buildArchiveJson(Archive archive){

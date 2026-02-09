@@ -23,7 +23,12 @@ import jp.aegif.nemaki.util.spring.SpringContext;
 
 /**
  * REST resource for downloading archived content.
- * Routes to CouchDB closet DB for ARCHIVED_LOCAL or to long-term storage for ARCHIVED_COLD.
+ *
+ * Access policy:
+ * - ARCHIVED_LOCAL (archive store): Admin, System, or Owner (creator) can download.
+ *   This is a recoverable area — content can be restored to live.
+ * - ARCHIVED_COLD (cold storage): Admin or System only.
+ *   Cold storage is a long-term retention tier, not intended for self-service retrieval.
  */
 @Path("/repo/{repositoryId}/archive/{archiveId}/content")
 public class ArchiveDownloadResource extends ResourceBase {
@@ -79,11 +84,10 @@ public class ArchiveDownloadResource extends ResourceBase {
             @PathParam("archiveId") String archiveId,
             @Context HttpServletRequest httpRequest) {
 
-        // Admin check
-        JSONArray errMsg = new JSONArray();
-        if (!checkAdmin(errMsg, httpRequest)) {
-            return Response.status(Response.Status.FORBIDDEN)
-                    .entity("{\"status\":\"failure\",\"error\":\"Admin access required\"}")
+        String username = getCallContextUsername(httpRequest);
+        if (username == null) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"status\":\"failure\",\"error\":\"Authentication required\"}")
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         }
@@ -98,39 +102,15 @@ public class ArchiveDownloadResource extends ResourceBase {
             }
 
             String state = archive.getEffectiveArchiveState();
-            String mimeType = archive.getMimeType() != null ? archive.getMimeType() : "application/octet-stream";
-            String fileName = sanitizeFileName(archive.getName());
-
-            InputStream contentStream = null;
+            boolean adminUser = isAdmin(httpRequest);
 
             if (Archive.STATE_ARCHIVED_COLD.equals(state)) {
-                // Retrieve from long-term storage
-                LongTermStorageAdapterFactory factory = getAdapterFactory();
-                if (factory == null || factory.getAdapter() == null) {
-                    return Response.status(Response.Status.SERVICE_UNAVAILABLE)
-                            .entity("{\"status\":\"failure\",\"error\":\"Long-term storage not configured\"}")
-                            .type(MediaType.APPLICATION_JSON)
-                            .build();
-                }
-
-                LongTermStorageAdapter adapter = factory.getAdapter();
-                contentStream = adapter.get(repositoryId, archive.getOriginalId());
-
+                // Cold storage: Admin/System only
+                return downloadFromColdStorage(repositoryId, archive, adminUser);
             } else {
-                // ARCHIVED_LOCAL - retrieve from CouchDB closet DB via ContentService
-                contentStream = getContentService().getArchiveContentStream(repositoryId, archiveId);
+                // Archive store (ARCHIVED_LOCAL): Admin/System or Owner
+                return downloadFromArchiveStore(repositoryId, archive, adminUser, username);
             }
-
-            if (contentStream == null) {
-                return Response.status(Response.Status.NOT_FOUND)
-                        .entity("{\"status\":\"failure\",\"error\":\"Content stream not available\"}")
-                        .type(MediaType.APPLICATION_JSON)
-                        .build();
-            }
-
-            return Response.ok(contentStream, mimeType)
-                    .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
-                    .build();
 
         } catch (Exception e) {
             log.error("Error downloading archive content: " + archiveId, e);
@@ -139,5 +119,73 @@ public class ArchiveDownloadResource extends ResourceBase {
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         }
+    }
+
+    /**
+     * Download content from the archive store (CouchDB closet DB).
+     * Accessible by Admin, System, or the archive's creator (owner).
+     */
+    private Response downloadFromArchiveStore(String repositoryId, Archive archive,
+                                               boolean adminUser, String username) {
+        // Admin/System or Owner check
+        if (!adminUser && !username.equals(archive.getCreator())) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("{\"status\":\"failure\",\"error\":\"Access denied: only admin or archive owner can download\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
+        InputStream contentStream = getContentService().getArchiveContentStream(repositoryId, archive.getId());
+        if (contentStream == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("{\"status\":\"failure\",\"error\":\"Content stream not available\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
+        String mimeType = archive.getMimeType() != null ? archive.getMimeType() : "application/octet-stream";
+        String fileName = sanitizeFileName(archive.getName());
+
+        return Response.ok(contentStream, mimeType)
+                .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
+                .build();
+    }
+
+    /**
+     * Download content from cold storage (S3, etc.).
+     * Accessible by Admin or System only — cold storage is not a self-service tier.
+     */
+    private Response downloadFromColdStorage(String repositoryId, Archive archive, boolean adminUser) {
+        if (!adminUser) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("{\"status\":\"failure\",\"error\":\"Admin access required for cold storage content\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
+        LongTermStorageAdapterFactory factory = getAdapterFactory();
+        if (factory == null || factory.getAdapter() == null) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity("{\"status\":\"failure\",\"error\":\"Long-term storage not configured\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
+        LongTermStorageAdapter adapter = factory.getAdapter();
+        InputStream contentStream = adapter.get(repositoryId, archive.getOriginalId());
+
+        if (contentStream == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("{\"status\":\"failure\",\"error\":\"Content not found in cold storage\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
+        String mimeType = archive.getMimeType() != null ? archive.getMimeType() : "application/octet-stream";
+        String fileName = sanitizeFileName(archive.getName());
+
+        return Response.ok(contentStream, mimeType)
+                .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
+                .build();
     }
 }
