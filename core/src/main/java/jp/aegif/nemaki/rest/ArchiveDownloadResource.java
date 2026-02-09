@@ -27,8 +27,10 @@ import jp.aegif.nemaki.util.spring.SpringContext;
  * Access policy:
  * - ARCHIVED_LOCAL (archive store): Admin, System, or Owner (creator) can download.
  *   This is a recoverable area — content can be restored to live.
- * - ARCHIVED_COLD (cold storage): Admin or System only.
- *   Cold storage is a long-term retention tier, not intended for self-service retrieval.
+ * - ARCHIVED_COLD (cold storage): Always returns 410 Gone.
+ *   Cold storage content is managed outside NemakiWare (e.g. AWS S3).
+ *   Admin/Owner check is performed before returning 410 to prevent
+ *   information leakage (existence of specific archive IDs).
  */
 @Path("/repo/{repositoryId}/archive/{archiveId}/content")
 public class ArchiveDownloadResource extends ResourceBase {
@@ -101,15 +103,25 @@ public class ArchiveDownloadResource extends ResourceBase {
                         .build();
             }
 
+            // Authorize before revealing any state information.
+            // Admin/System or Owner (creator) can access; others get 404
+            // to avoid leaking archive existence.
+            boolean adminUser = isAdmin(httpRequest);
+            if (!adminUser && !username.equals(archive.getCreator())) {
+                return Response.status(Response.Status.NOT_FOUND)
+                        .entity("{\"status\":\"failure\",\"error\":\"Archive not found\"}")
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
+
             String state = archive.getEffectiveArchiveState();
 
             if (Archive.STATE_ARCHIVED_COLD.equals(state)) {
                 // Cold storage content is outside NemakiWare's scope
                 return downloadFromColdStorage(repositoryId, archive);
             } else {
-                // Archive store (ARCHIVED_LOCAL): Admin/System or Owner
-                boolean adminUser = isAdmin(httpRequest);
-                return downloadFromArchiveStore(repositoryId, archive, adminUser, username);
+                // Archive store (ARCHIVED_LOCAL): already authorized above
+                return downloadFromArchiveStore(repositoryId, archive);
             }
 
         } catch (Exception e) {
@@ -123,18 +135,9 @@ public class ArchiveDownloadResource extends ResourceBase {
 
     /**
      * Download content from the archive store (CouchDB closet DB).
-     * Accessible by Admin, System, or the archive's creator (owner).
+     * Caller has already been authorized (admin or owner).
      */
-    private Response downloadFromArchiveStore(String repositoryId, Archive archive,
-                                               boolean adminUser, String username) {
-        // Admin/System or Owner check
-        if (!adminUser && !username.equals(archive.getCreator())) {
-            return Response.status(Response.Status.FORBIDDEN)
-                    .entity("{\"status\":\"failure\",\"error\":\"Access denied: only admin or archive owner can download\"}")
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
-        }
-
+    private Response downloadFromArchiveStore(String repositoryId, Archive archive) {
         InputStream contentStream = getContentService().getArchiveContentStream(repositoryId, archive.getId());
         if (contentStream == null) {
             return Response.status(Response.Status.NOT_FOUND)
@@ -154,6 +157,7 @@ public class ArchiveDownloadResource extends ResourceBase {
     /**
      * Cold storage content is outside NemakiWare's management scope.
      * Always returns 410 Gone — access content directly via S3 Console/CLI.
+     * Caller has already been authorized (admin or owner).
      */
     private Response downloadFromColdStorage(String repositoryId, Archive archive) {
         return Response.status(Response.Status.GONE)

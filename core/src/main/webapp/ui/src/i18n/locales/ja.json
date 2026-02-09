@@ -1268,6 +1268,12 @@
       "restore": "復元"
     },
     "confirmRestore": "このオブジェクトを復元しますか？",
+    "details": {
+      "title": "アーカイブ詳細",
+      "creator": "作成者",
+      "mimeType": "MIMEタイプ",
+      "archiveId": "アーカイブID"
+    },
     "tabs": {
       "archives": "アーカイブ一覧",
       "settings": "リテンション設定",

@@ -1268,6 +1268,12 @@
       "restore": "Restore"
     },
     "confirmRestore": "Restore this object?",
+    "details": {
+      "title": "Archive Details",
+      "creator": "Creator",
+      "mimeType": "MIME Type",
+      "archiveId": "Archive ID"
+    },
     "tabs": {
       "archives": "Archives",
       "settings": "Retention Settings",

@@ -13,7 +13,8 @@ import {
   Tag,
   DatePicker,
   Modal,
-  Empty
+  Empty,
+  Drawer
 } from 'antd';
 import {
   InboxOutlined,
@@ -28,7 +29,6 @@ import {
   DeleteOutlined,
   CalendarOutlined
 } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
 import { CMISObject, RetentionSettings, MigrationLog, PendingArchive } from '../../types/cmis';
 import { useTranslation } from 'react-i18next';
@@ -51,7 +51,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
   const [extendModalVisible, setExtendModalVisible] = useState(false);
   const [extendTarget, setExtendTarget] = useState<PendingArchive | null>(null);
   const [extendDate, setExtendDate] = useState<any>(null);
-  const navigate = useNavigate();
+  const [selectedArchive, setSelectedArchive] = useState<CMISObject | null>(null);
   const { t, i18n } = useTranslation();
 
   const { handleAuthError } = useAuth();
@@ -242,7 +242,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
             <Button
               icon={<EyeOutlined />}
               size="small"
-              onClick={() => navigate(`/documents/${record.id}`)}
+              onClick={() => setSelectedArchive(record)}
             />
           </Tooltip>
           {record.baseType === 'cmis:document' &&
@@ -578,6 +578,66 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
           </div>
         )}
       </Modal>
+
+      <Drawer
+        title={t('archiveManagement.details.title')}
+        open={!!selectedArchive}
+        onClose={() => setSelectedArchive(null)}
+        width={480}
+      >
+        {selectedArchive && (
+          <Descriptions bordered column={1} size="small">
+            <Descriptions.Item label={t('archiveManagement.columns.name')}>
+              {selectedArchive.name}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('archiveManagement.columns.type')}>
+              <Tag>{selectedArchive.objectType}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label={t('archiveManagement.columns.originalPath')}>
+              {selectedArchive.path || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('archiveManagement.details.creator')}>
+              {selectedArchive.createdBy || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('archiveManagement.columns.archivedAt')}>
+              {selectedArchive.archivedAt
+                ? new Date(selectedArchive.archivedAt).toLocaleString(i18n.language === 'ja' ? 'ja-JP' : 'en-US')
+                : '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('archiveManagement.columns.archiveState')}>
+              {(() => {
+                const state = selectedArchive.archiveState;
+                let color = 'default';
+                if (state === 'ARCHIVED_LOCAL') color = 'green';
+                else if (state === 'ARCHIVED_COLD') color = 'blue';
+                else if (state === 'ARCHIVING' || state === 'COLD_MOVING') color = 'orange';
+                return <Tag color={color}>{state || '-'}</Tag>;
+              })()}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('archiveManagement.columns.coldMoveMode')}>
+              {selectedArchive.coldMoveMode
+                ? <Tag color={selectedArchive.coldMoveMode === 'COPY' ? 'blue' : 'orange'}>{selectedArchive.coldMoveMode}</Tag>
+                : '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('archiveManagement.details.mimeType')}>
+              {selectedArchive.contentStreamMimeType || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('archiveManagement.columns.size')}>
+              {(() => {
+                const size = selectedArchive.contentStreamLength;
+                if (size == null || size < 0) return '-';
+                if (size === 0) return '0 B';
+                if (size < 1024) return `${size} B`;
+                if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+                return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+              })()}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('archiveManagement.details.archiveId')}>
+              <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{selectedArchive.id}</span>
+            </Descriptions.Item>
+          </Descriptions>
+        )}
+      </Drawer>
     </Card>
   );
 };
