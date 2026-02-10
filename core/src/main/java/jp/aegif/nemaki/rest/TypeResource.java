@@ -760,6 +760,9 @@ public class TypeResource extends ResourceBase {
 			return result.toJSONString();
 		}
 
+		// Initialize services from Spring context if not already injected
+		ensureServicesInitialized();
+
 		try {
 			if (jsonData == null || jsonData.trim().isEmpty()) {
 				log.error("JSON data is null or empty");
@@ -831,6 +834,9 @@ public class TypeResource extends ResourceBase {
 			result = makeResult(false, result, errMsg);
 			return result.toJSONString();
 		}
+
+		// Initialize services from Spring context if not already injected
+		ensureServicesInitialized();
 
 		try {
 			if (xmlData == null || xmlData.trim().isEmpty()) {

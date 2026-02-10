@@ -32,6 +32,9 @@ public class ArchiveSearchResource extends ResourceBase {
 
     private static final Log log = LogFactory.getLog(ArchiveSearchResource.class);
 
+    /** Safety cap to prevent OOM when the archive DB is very large */
+    private static final int MAX_SEARCH_RESULTS = 5000;
+
     private ContentService contentService;
 
     public void setContentService(ContentService contentService) {
@@ -72,59 +75,108 @@ public class ArchiveSearchResource extends ResourceBase {
         }
 
         try {
+            boolean hasNameFilter = (name != null && !name.isEmpty());
+            boolean hasMimeTypeFilter = (mimeType != null && !mimeType.isEmpty());
+            boolean hasStateFilter = (state != null && !state.isEmpty());
+
             List<Archive> archives;
+            long totalViewRows;
+            boolean truncated = false;
 
-            if (state != null && !state.isEmpty()) {
-                archives = getContentService().getArchivesByState(repositoryId, state);
+            if (!hasNameFilter && !hasMimeTypeFilter) {
+                // No substring filters — full DB-level pagination is possible.
+                int s = (skip != null && skip > 0) ? skip : 0;
+                int l = (limit != null && limit > 0) ? limit : 0;
+
+                if (hasStateFilter) {
+                    // State filter: use searchableArchives view (composite key [state, archivedAt])
+                    archives = getContentService().getSearchableArchivesByStatePaged(
+                            repositoryId, state, s, l, true);
+                    totalViewRows = getContentService().getSearchableArchivesByStateCount(
+                            repositoryId, state);
+                } else {
+                    // No state filter: use archivesByArchivedAt view for chronological order
+                    archives = getContentService().getSearchableArchivesPaged(
+                            repositoryId, s, l, true);
+                    totalViewRows = getContentService().getSearchableArchivesCount(repositoryId);
+                }
+
+                // With DB-level pagination, all matching rows are reachable via skip/limit.
+                for (Archive a : archives) {
+                    JSONObject o = buildSearchResultJson(a);
+                    list.add(o);
+                }
+
+                result.put("archives", list);
+                result.put("totalCount", totalViewRows);
+                result.put("totalArchives", totalViewRows);
             } else {
-                // Default: get all archives
-                archives = getContentService().getAllArchives(repositoryId);
-            }
-
-            if (archives == null) {
-                archives = new ArrayList<>();
-            }
-
-            // Filter
-            List<Archive> filtered = new ArrayList<>();
-            for (Archive a : archives) {
-                // Skip attachments and non-latest versions
-                if (NodeType.ATTACHMENT.value().equals(a.getType())) continue;
-                if (NodeType.CMIS_DOCUMENT.value().equals(a.getType())) {
-                    boolean ilv = (a.isLatestVersion() != null) ? a.isLatestVersion() : false;
-                    if (!ilv) continue;
-                }
-
-                // Name filter
-                if (name != null && !name.isEmpty()) {
-                    if (a.getName() == null || !a.getName().toLowerCase().contains(name.toLowerCase())) {
-                        continue;
+                // Name or mimeType filter requires in-memory substring matching.
+                // CouchDB views cannot perform substring/contains queries.
+                // Strategy: use state filter at DB level to narrow the dataset,
+                // then apply name/mimeType filters in memory.
+                //
+                // Known limitation: when no state filter is specified with name/mimeType,
+                // only the newest MAX_SEARCH_RESULTS archives are searched.
+                // This is acceptable because name/mimeType search without state filter
+                // targets recent archives (the primary use case is finding items to restore).
+                if (hasStateFilter) {
+                    // State narrows at DB level — load all matching that state
+                    // (typically much smaller than total archives)
+                    archives = getContentService().getSearchableArchivesByStatePaged(
+                            repositoryId, state, 0, 0, true);
+                    totalViewRows = getContentService().getSearchableArchivesByStateCount(
+                            repositoryId, state);
+                } else {
+                    // No state filter — cap to newest MAX_SEARCH_RESULTS to prevent OOM
+                    archives = getContentService().getSearchableArchivesPaged(
+                            repositoryId, 0, MAX_SEARCH_RESULTS, true);
+                    totalViewRows = getContentService().getSearchableArchivesCount(repositoryId);
+                    if (totalViewRows > MAX_SEARCH_RESULTS) {
+                        truncated = true;
                     }
                 }
 
-                // MimeType filter
-                if (mimeType != null && !mimeType.isEmpty()) {
-                    if (a.getMimeType() == null || !a.getMimeType().equals(mimeType)) {
-                        continue;
+                // Apply name/mimeType filters in memory
+                List<Archive> filtered = new ArrayList<>();
+                for (Archive a : archives) {
+                    if (hasNameFilter) {
+                        if (a.getName() == null || !a.getName().toLowerCase().contains(name.toLowerCase())) {
+                            continue;
+                        }
+                    }
+                    if (hasMimeTypeFilter) {
+                        if (a.getMimeType() == null || !a.getMimeType().equals(mimeType)) {
+                            continue;
+                        }
+                    }
+                    filtered.add(a);
+                }
+
+                // Already sorted by archivedAt descending from DB view; no in-memory sort needed.
+
+                // Pagination on filtered results
+                int totalCount = filtered.size();
+                int startIdx = (skip != null && skip > 0) ? skip : 0;
+                int maxItems = (limit != null && limit > 0) ? limit : totalCount;
+                int endIdx = Math.min(startIdx + maxItems, totalCount);
+
+                if (startIdx < totalCount) {
+                    for (int i = startIdx; i < endIdx; i++) {
+                        Archive a = filtered.get(i);
+                        JSONObject o = buildSearchResultJson(a);
+                        list.add(o);
                     }
                 }
 
-                filtered.add(a);
+                result.put("archives", list);
+                result.put("totalCount", totalCount);
+                result.put("totalArchives", totalViewRows);
+                if (truncated) {
+                    result.put("truncated", true);
+                    result.put("maxResults", MAX_SEARCH_RESULTS);
+                }
             }
-
-            // Pagination
-            int startIdx = (skip != null && skip > 0) ? skip : 0;
-            int maxItems = (limit != null && limit > 0) ? limit : filtered.size();
-            int endIdx = Math.min(startIdx + maxItems, filtered.size());
-
-            for (int i = startIdx; i < endIdx; i++) {
-                Archive a = filtered.get(i);
-                JSONObject o = buildSearchResultJson(a);
-                list.add(o);
-            }
-
-            result.put("archives", list);
-            result.put("totalCount", filtered.size());
         } catch (Exception e) {
             log.error("Error searching archives: " + e.getMessage(), e);
             status = false;

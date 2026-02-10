@@ -8,7 +8,11 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.request.UpdateRequest;
+import org.apache.solr.client.solrj.response.QueryResponse;
+import org.apache.solr.common.SolrDocument;
+import org.apache.solr.common.SolrDocumentList;
 import org.apache.solr.common.SolrInputDocument;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -44,6 +48,22 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
 
     private static final String DOC_TYPE_DOCUMENT = "document";
     private static final String DOC_TYPE_CHUNK = "chunk";
+
+    /** Prefix for RAG document IDs to avoid collision with normal Solr index documents */
+    public static final String RAG_ID_PREFIX = "rag:";
+
+    /** Convert a CMIS object ID to a RAG Solr document ID */
+    public static String toRagId(String objectId) {
+        return RAG_ID_PREFIX + objectId;
+    }
+
+    /** Extract the original CMIS object ID from a RAG Solr document ID */
+    public static String fromRagId(String ragId) {
+        if (ragId != null && ragId.startsWith(RAG_ID_PREFIX)) {
+            return ragId.substring(RAG_ID_PREFIX.length());
+        }
+        return ragId;
+    }
 
     private final RAGConfig ragConfig;
     private final EmbeddingService embeddingService;
@@ -157,13 +177,12 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
 
         try {
             SolrClient solrClient = solrClientProvider.getClient();
-            // Sanitize documentId to prevent Solr query injection
-            String sanitizedDocId = SolrQuerySanitizer.escape(documentId);
-            // Delete parent document and all children using Block Join delete
-            // Delete by query: delete all documents where _root_ = documentId (parent and children)
-            solrClient.deleteByQuery("nemaki", "_root_:" + sanitizedDocId);
+            String ragId = toRagId(documentId);
+            String sanitizedRagId = SolrQuerySanitizer.escape(ragId);
+            // Delete RAG parent document and all children using Block Join delete
+            solrClient.deleteByQuery("nemaki", "_root_:" + sanitizedRagId);
             solrClient.commit("nemaki");
-            log.info("RAG deleted document and chunks: " + documentId);
+            log.info("RAG deleted document and chunks: {} (ragId={})", documentId, ragId);
         } catch (Exception e) {
             throw new RAGIndexingException("Failed to delete document from RAG index: " + documentId, e);
         }
@@ -177,14 +196,54 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
 
         try {
             SolrClient solrClient = solrClientProvider.getClient();
-            // Update readers field using atomic update
-            SolrInputDocument updateDoc = new SolrInputDocument();
-            updateDoc.addField("id", documentId);
-            updateDoc.addField("readers", java.util.Collections.singletonMap("set", readers));
+            String ragId = toRagId(documentId);
+            String sanitizedRagId = SolrQuerySanitizer.escape(ragId);
 
-            solrClient.add("nemaki", updateDoc);
+            List<SolrInputDocument> updates = new ArrayList<>();
+
+            // Update RAG parent document's readers
+            SolrInputDocument parentUpdate = new SolrInputDocument();
+            parentUpdate.addField("id", ragId);
+            parentUpdate.addField("readers", java.util.Collections.singletonMap("set", readers));
+            updates.add(parentUpdate);
+
+            // Find all chunk documents and update their readers too.
+            // Intentional limit: documents with more chunks than aclChunkUpdateLimit
+            // (default 10k ≈ 5M tokens) will have partial ACL updates.
+            int chunkLimit = ragConfig.getAclChunkUpdateLimit();
+            SolrQuery chunkQuery = new SolrQuery();
+            chunkQuery.setQuery("_root_:" + sanitizedRagId);
+            chunkQuery.addFilterQuery("doc_type:" + DOC_TYPE_CHUNK);
+            chunkQuery.setFields("id");
+            chunkQuery.setRows(chunkLimit);
+
+            QueryResponse response = solrClient.query("nemaki", chunkQuery);
+            SolrDocumentList chunkDocs = response.getResults();
+
+            if (chunkDocs != null) {
+                long totalChunks = chunkDocs.getNumFound();
+                if (totalChunks > chunkLimit) {
+                    log.warn("RAG ACL update: document {} has {} chunks but only {} will be updated (limit={}). "
+                            + "Chunks beyond the limit will retain stale ACLs. "
+                            + "Adjust rag.acl.chunk.update.limit if needed.",
+                            documentId, totalChunks, chunkLimit, chunkLimit);
+                }
+
+                for (SolrDocument chunkDoc : chunkDocs) {
+                    String chunkId = (String) chunkDoc.getFieldValue("id");
+                    if (chunkId != null) {
+                        SolrInputDocument chunkUpdate = new SolrInputDocument();
+                        chunkUpdate.addField("id", chunkId);
+                        chunkUpdate.addField("readers", java.util.Collections.singletonMap("set", readers));
+                        updates.add(chunkUpdate);
+                    }
+                }
+            }
+
+            solrClient.add("nemaki", updates);
             solrClient.commit("nemaki");
-            log.info("RAG updated ACL for document: " + documentId);
+            log.info("RAG updated ACL for document and {} chunks: {} (ragId={})",
+                    updates.size() - 1, documentId, ragId);
         } catch (Exception e) {
             throw new RAGIndexingException("Failed to update ACL for document: " + documentId, e);
         }
@@ -400,6 +459,8 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         SolrClient solrClient = solrClientProvider.getClient();
         int commitWithinMs = ragConfig.getSolrCommitWithinMs();
 
+        String ragId = toRagId(document.getId());
+
         // Create chunk (child) documents
         List<SolrInputDocument> childDocs = new ArrayList<>();
         for (int i = 0; i < chunks.size(); i++) {
@@ -418,7 +479,7 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             chunkDoc.addField("chunk_text", chunk.getText());
             chunkDoc.addField("chunk_vector", floatArrayToList(embedding));
             chunkDoc.addField("repository_id", repositoryId);
-            chunkDoc.addField("_root_", document.getId());
+            chunkDoc.addField("_root_", ragId);
 
             // Copy readers to chunk for filtering
             for (String reader : readers) {
@@ -430,13 +491,19 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
 
         // Create parent document
         SolrInputDocument parentDoc = new SolrInputDocument();
-        parentDoc.addField("id", document.getId());
+        parentDoc.addField("id", ragId);
         parentDoc.addField("doc_type", DOC_TYPE_DOCUMENT);
         parentDoc.addField("repository_id", repositoryId);
         parentDoc.addField("object_id", document.getId());
         parentDoc.addField("name", document.getName());
         parentDoc.addField("document_vector", floatArrayToList(documentEmbedding));
-        parentDoc.addField("_root_", document.getId());
+        parentDoc.addField("_root_", ragId);
+
+        // Add document path for navigation/display
+        String path = contentService.calculatePath(repositoryId, document);
+        if (path != null && !path.isEmpty()) {
+            parentDoc.addField("path", path);
+        }
 
         // Add property embedding and text for weighted search
         if (propertyEmbedding != null) {
@@ -462,10 +529,10 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         parentDoc.addChildDocuments(childDocs);
 
         try {
-            // Step 1: Delete existing document and its chunks
-            String sanitizedDocId = SolrQuerySanitizer.escape(document.getId());
+            // Step 1: Delete existing RAG document and its chunks
+            String sanitizedRagId = SolrQuerySanitizer.escape(ragId);
             UpdateRequest deleteRequest = new UpdateRequest();
-            deleteRequest.deleteByQuery("_root_:" + sanitizedDocId);
+            deleteRequest.deleteByQuery("_root_:" + sanitizedRagId);
             deleteRequest.process(solrClient, "nemaki");
 
             // Step 2: Add parent document with child chunks (Block Join)
@@ -478,8 +545,8 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 addRequest.setCommitWithin(commitWithinMs);
             }
 
-            log.info("[RAG SOLR] Sending add request for document: {} with {} chunks, commitWithin={}",
-                    document.getId(), childDocs.size(), commitWithinMs);
+            log.info("[RAG SOLR] Sending add request for document: {} (ragId={}) with {} chunks, commitWithin={}",
+                    document.getId(), ragId, childDocs.size(), commitWithinMs);
             var response = addRequest.process(solrClient, "nemaki");
             log.info("[RAG SOLR] Add response status: {} for document: {}",
                     response.getStatus(), document.getId());

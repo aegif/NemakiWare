@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Card, Tag, Button, Space, Alert, Typography, Tooltip, message, Descriptions } from 'antd';
 import { CopyOutlined, CheckOutlined, WarningOutlined, CloudOutlined, ApiOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { formatServerDate } from '../../utils/dateUtils';
 
 const { Text, Title } = Typography;
 
@@ -39,16 +40,15 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
   sourceId,
   updatedAt,
 }) => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
-  // Format date with validation and i18n locale support
+  // Format date with validation, Safari-safe parsing, and i18n locale support.
+  // Uses formatServerDate to handle the backend's +0900 offset format safely.
   const formatDate = (dateString: string | null): string | null => {
     if (!dateString) return null;
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return null; // Invalid date
-    const locale = i18n.language === 'ja' ? 'ja-JP' : 'en-US';
-    return date.toLocaleString(locale);
+    const formatted = formatServerDate(dateString);
+    return formatted === '-' ? null : formatted;
   };
 
   // Parse and format JSON

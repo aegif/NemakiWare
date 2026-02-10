@@ -133,16 +133,24 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                     return;
                 }
 
-                // Count total documents first
-                AtomicLong totalCount = new AtomicLong(0);
+                // Count total documents (root + all descendants)
+                AtomicLong totalCount = new AtomicLong(1); // root folder itself
                 countDocumentsRecursive(repositoryId, rootFolder.getId(), totalCount);
                 status.setTotalDocuments(totalCount.get());
 
                 // Clear existing index
                 clearIndex(repositoryId);
 
-                // Reindex all documents
+                // Reindex all descendants
                 AtomicLong indexedCount = new AtomicLong(0);
+
+                // Index root folder itself
+                try {
+                    solrUtil.indexDocument(repositoryId, rootFolder, true);
+                    indexedCount.incrementAndGet();
+                } catch (Exception e) {
+                    log.warn("Failed to index root folder: " + e.getMessage());
+                }
                 AtomicLong errorCount = new AtomicLong(0);
                 AtomicLong silentDropCount = new AtomicLong(0);
                 AtomicLong reindexedSuccessCount = new AtomicLong(0);
@@ -613,19 +621,19 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
 
         SolrClient solrClient = null;
         try {
-            // Get Solr document count (only cmis:document and cmis:folder)
-            // Exclude RAG documents, cmis:item (users/groups), and other non-tree objects
+            // Get Solr document count (cmis:document, cmis:folder, cmis:item)
+            // Exclude RAG documents (doc_type:document/chunk)
             solrClient = solrUtil.getSolrClient();
             if (solrClient != null) {
                 SolrQuery query = new SolrQuery("repository_id:" + ClientUtils.escapeQueryChars(repositoryId));
                 query.addFilterQuery("-doc_type:document -doc_type:chunk");
-                query.addFilterQuery("basetype:(cmis\\:document OR cmis\\:folder)");
+                query.addFilterQuery("basetype:(cmis\\:document OR cmis\\:folder OR cmis\\:item)");
                 query.setRows(0);
                 QueryResponse response = solrClient.query(query);
                 health.setSolrDocumentCount(response.getResults().getNumFound());
             }
 
-            // Get CouchDB document count by counting from root folder (including root itself)
+            // Get CouchDB document count: root folder + all descendants
             Folder rootFolder = contentService.getFolder(repositoryId,
                 repositoryInfoMap.get(repositoryId).getRootFolderId());
             if (rootFolder != null) {
@@ -684,13 +692,13 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 collectDocumentIds(repositoryId, rootFolder.getId(), couchIds);
             }
 
-            // 2. Collect all Solr document IDs with name (only cmis:document and cmis:folder)
+            // 2. Collect all Solr document IDs (cmis:document, cmis:folder, cmis:item)
             Map<String, String> solrIdToName = new HashMap<>();
             solrClient = solrUtil.getSolrClient();
             if (solrClient != null) {
                 SolrQuery query = new SolrQuery("repository_id:" + ClientUtils.escapeQueryChars(repositoryId));
                 query.addFilterQuery("-doc_type:document -doc_type:chunk");
-                query.addFilterQuery("basetype:(cmis\\:document OR cmis\\:folder)");
+                query.addFilterQuery("basetype:(cmis\\:document OR cmis\\:folder OR cmis\\:item)");
                 query.setFields("object_id", "name");
                 query.setRows(500);
                 query.addSort("id", SolrQuery.ORDER.asc);

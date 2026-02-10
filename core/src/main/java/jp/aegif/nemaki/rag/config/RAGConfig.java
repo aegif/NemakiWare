@@ -31,6 +31,11 @@ public class RAGConfig {
             log.info("Bedrock model id: {}", bedrockModelId);
             log.info("Bedrock batch size: {}", bedrockBatchSize);
             log.info("Bedrock vector dimension: {}", bedrockVectorDimension);
+            if (bedrockVectorDimension != 1024) {
+                log.warn("Bedrock vector dimension ({}) does not match Solr schema knn_vector_1024 (1024). " +
+                        "Ensure a matching fieldType is defined in schema.xml or indexing will fail.",
+                        bedrockVectorDimension);
+            }
         }
 
         // Validate boost values (0.0 to 1.0 range)
@@ -100,7 +105,7 @@ public class RAGConfig {
     @Value("${rag.bedrock.timeout.ms:30000}")
     private int bedrockTimeoutMs;
 
-    @Value("${rag.bedrock.vector.dimension:1536}")
+    @Value("${rag.bedrock.vector.dimension:1024}")
     private int bedrockVectorDimension;
 
     // ========================================
@@ -282,6 +287,14 @@ public class RAGConfig {
     @Value("${rag.search.property.topk.multiplier:2}")
     private int propertySearchTopKMultiplier;
 
+    /**
+     * Maximum number of chunks to update in a single ACL update operation.
+     * Documents exceeding this limit will have partial ACL updates with a WARN log.
+     * Default 10000 (~5M tokens at 512 tokens/chunk).
+     */
+    @Value("${rag.acl.chunk.update.limit:10000}")
+    private int aclChunkUpdateLimit;
+
     // ========================================
     // Getters
     // ========================================
@@ -444,5 +457,9 @@ public class RAGConfig {
 
     public int getPropertySearchTopKMultiplier() {
         return propertySearchTopKMultiplier;
+    }
+
+    public int getAclChunkUpdateLimit() {
+        return aclChunkUpdateLimit;
     }
 }

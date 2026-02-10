@@ -793,6 +793,15 @@ public interface ContentDaoService {
 	List<Archive> getArchivesByCreator(String repositoryId, String creator);
 
 	/**
+	 * Get archives where the specified user performed the deletion.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archivedBy the username of the user who deleted the documents
+	 * @return list of archives deleted by the specified user
+	 */
+	List<Archive> getArchivesByArchivedBy(String repositoryId, String archivedBy);
+
+	/**
 	 * Create an archive of a content
 	 * @param repositoryId TODO
 	 * @param archive
@@ -853,6 +862,40 @@ public interface ContentDaoService {
 	 * Get archives filtered by archive state from CouchDB view.
 	 */
 	List<Archive> getArchivesByState(String repositoryId, String state);
+
+	/**
+	 * Get searchable archives (non-attachment, latest-version only) from CouchDB view.
+	 * Optionally filtered by archive state. Pre-filtered at DB level for scalability.
+	 */
+	List<Archive> getSearchableArchives(String repositoryId, String state);
+
+	/**
+	 * Get searchable archives with DB-level chronological pagination.
+	 * Uses archivesByArchivedAt view for efficient skip/limit without loading all rows.
+	 *
+	 * @return archives for the requested page, never null
+	 */
+	List<Archive> getSearchableArchivesPaged(String repositoryId, int skip, int limit, boolean descending);
+
+	/**
+	 * Get total count of searchable archives (non-attachment, latest-version).
+	 */
+	long getSearchableArchivesCount(String repositoryId);
+
+	/**
+	 * Get searchable archives filtered by state with DB-level pagination.
+	 * Uses searchableArchives view (keyed by archiveState) with skip/limit.
+	 * When state is null, returns all searchable archives (equivalent to no state filter).
+	 *
+	 * @return archives for the requested page, never null
+	 */
+	List<Archive> getSearchableArchivesByStatePaged(String repositoryId, String state, int skip, int limit, boolean descending);
+
+	/**
+	 * Get count of searchable archives filtered by state.
+	 * When state is null, returns total count of all searchable archives.
+	 */
+	long getSearchableArchivesByStateCount(String repositoryId, String state);
 
 	/**
 	 * Get archives with archivedAt before given date (candidates for cold transition).

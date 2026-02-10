@@ -17,6 +17,7 @@ import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.util.spring.SpringContext;
 
 /**
  * Legacy REST Resource for repository management
@@ -50,12 +51,12 @@ public class RepositoriesLegacyResource extends ResourceBase {
 
             List<RepositoryInfo> allRepositories = new ArrayList<>();
 
-            for (String repositoryId : repositoryInfoMap.keys()) {
+            for (String repositoryId : getRepositoryInfoMap().keys()) {
                 if ("canopy".equals(repositoryId)) {
                     continue;
                 }
 
-                RepositoryInfo repoInfo = repositoryInfoMap.get(repositoryId);
+                RepositoryInfo repoInfo = getRepositoryInfoMap().get(repositoryId);
                 if (repoInfo != null) {
                     allRepositories.add(repoInfo);
                 }
@@ -73,5 +74,10 @@ public class RepositoriesLegacyResource extends ResourceBase {
 
     public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
         this.repositoryInfoMap = repositoryInfoMap;
+    }
+
+    private RepositoryInfoMap getRepositoryInfoMap() {
+        if (repositoryInfoMap != null) return repositoryInfoMap;
+        return SpringContext.getApplicationContext().getBean("repositoryInfoMap", RepositoryInfoMap.class);
     }
 }

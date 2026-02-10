@@ -104,10 +104,11 @@ public class ArchiveDownloadResource extends ResourceBase {
             }
 
             // Authorize before revealing any state information.
-            // Admin/System or Owner (creator) can access; others get 404
-            // to avoid leaking archive existence.
+            // Admin, original creator, or deleting user (archivedBy) can access;
+            // others get 404 to avoid leaking archive existence.
             boolean adminUser = isAdmin(httpRequest);
-            if (!adminUser && !username.equals(archive.getCreator())) {
+            if (!adminUser && !username.equals(archive.getCreator())
+                    && !username.equals(archive.getArchivedBy())) {
                 return Response.status(Response.Status.NOT_FOUND)
                         .entity("{\"status\":\"failure\",\"error\":\"Archive not found\"}")
                         .type(MediaType.APPLICATION_JSON)

@@ -174,6 +174,8 @@ export interface CMISObject {
   archivedAt?: string;
   /** Cold storage transfer mode (COPY or MOVE) */
   coldMoveMode?: string;
+  /** User who performed the deletion (may differ from creator/owner) */
+  archivedBy?: string;
 }
 
 export interface SearchResult {

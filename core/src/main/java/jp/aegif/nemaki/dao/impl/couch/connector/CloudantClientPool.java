@@ -243,30 +243,33 @@ public class CloudantClientPool {
 		}
 		log.info("Initializing system configuration database: nemaki_conf");
 		CloudantClientWrapper nemakiConfWrapper = new CloudantClientWrapper(cloudantClient, "nemaki_conf", couchdbObjectMapper);
+		if (authEnabled) nemakiConfWrapper.setAuthCredentials(authUserName, authPassword);
 		pool.put("nemaki_conf", nemakiConfWrapper);
 		verifyDatabase(nemakiConfWrapper, "nemaki_conf");
-		
+
 		// Initialize CMIS repositories from repositoryInfoMap
 		if (repositoryInfoMap != null) {
 			java.util.Set<String> repositoryIdSet = repositoryInfoMap.keys();
 			List<String> repositoryIds = new ArrayList<String>(repositoryIdSet);
-			
+
 			if (CollectionUtils.isNotEmpty(repositoryIds)) {
 				for (String repositoryId : repositoryIds) {
 					log.info("Initializing repository: " + repositoryId);
-					
+
 					// Create wrapper for this repository with unified ObjectMapper
 					CloudantClientWrapper wrapper = new CloudantClientWrapper(cloudantClient, repositoryId, couchdbObjectMapper);
+					if (authEnabled) wrapper.setAuthCredentials(authUserName, authPassword);
 					pool.put(repositoryId, wrapper);
-					
+
 					// Verify database exists
 					verifyDatabase(wrapper, repositoryId);
-					
+
 					// Also initialize archive repository if it exists
 					String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
 					if (archiveId != null && !archiveId.equals(repositoryId)) {
 						log.info("Initializing archive repository: " + archiveId);
 						CloudantClientWrapper archiveWrapper = new CloudantClientWrapper(cloudantClient, archiveId, couchdbObjectMapper);
+						if (authEnabled) archiveWrapper.setAuthCredentials(authUserName, authPassword);
 						pool.put(archiveId, archiveWrapper);
 						verifyDatabase(archiveWrapper, archiveId);
 					}

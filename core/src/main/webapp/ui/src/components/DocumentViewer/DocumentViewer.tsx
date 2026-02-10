@@ -285,6 +285,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { fetchCloudAuthConfig, CloudAuthConfig } from '../../services/cloud-auth';
 import { pushToCloud, pullFromCloud, getCloudUrl, getGoogleDriveAccessToken, getOneDriveAccessToken } from '../../services/cloud-drive';
 import { getSafeArrayValue, getSafeStringValue, getSafeBooleanValue } from '../../utils/cmisPropertyUtils';
+import { formatServerDate } from '../../utils/dateUtils';
 import { useSearchParams } from 'react-router-dom';
 
 interface DocumentViewerProps {
@@ -912,7 +913,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       title: t('documentViewer.createdAt'),
       dataIndex: 'creationDate',
       key: 'creationDate',
-      render: (date: string) => new Date(date).toLocaleString('ja-JP'),
+      render: (date: string) => formatServerDate(date),
     },
     {
       title: t('documentViewer.comment'),
@@ -1427,11 +1428,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             </Descriptions.Item>
             <Descriptions.Item label={t('documentViewer.createdBy')}>{object.createdBy}</Descriptions.Item>
             <Descriptions.Item label={t('documentViewer.createdAt')}>
-              {object.creationDate ? new Date(object.creationDate).toLocaleString('ja-JP') : '-'}
+              {formatServerDate(object.creationDate)}
             </Descriptions.Item>
             <Descriptions.Item label={t('documentViewer.lastModifiedBy')}>{object.lastModifiedBy}</Descriptions.Item>
             <Descriptions.Item label={t('documentViewer.lastModifiedAt')}>
-              {object.lastModificationDate ? new Date(object.lastModificationDate).toLocaleString('ja-JP') : '-'}
+              {formatServerDate(object.lastModificationDate)}
             </Descriptions.Item>
             <Descriptions.Item label={t('documentViewer.size')}>
               {object.contentStreamLength != null && object.contentStreamLength >= 0
@@ -1731,13 +1732,13 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               {selectedVersion.createdBy || '-'}
             </Descriptions.Item>
             <Descriptions.Item label={t('documentViewer.createdAt')}>
-              {selectedVersion.creationDate ? new Date(selectedVersion.creationDate).toLocaleString('ja-JP') : '-'}
+              {formatServerDate(selectedVersion.creationDate)}
             </Descriptions.Item>
             <Descriptions.Item label={t('documentViewer.versionDetail.lastModifiedBy')}>
               {selectedVersion.lastModifiedBy || '-'}
             </Descriptions.Item>
             <Descriptions.Item label={t('documentViewer.versionDetail.lastModifiedDate')}>
-              {selectedVersion.lastModificationDate ? new Date(selectedVersion.lastModificationDate).toLocaleString('ja-JP') : '-'}
+              {formatServerDate(selectedVersion.lastModificationDate)}
             </Descriptions.Item>
             <Descriptions.Item label={t('documentViewer.comment')}>
               {selectedVersion.properties?.['cmis:checkinComment'] || '-'}

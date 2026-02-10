@@ -77,7 +77,9 @@
       "details": "Details: {{details}}"
     },
     "confirmDelete": "Delete this {{item}}?",
-    "totalItems": "Total {{total}} items"
+    "totalItems": "Total {{total}} items",
+    "copyFailed": "Copy failed",
+    "noData": "No data"
   },
     "navigation": {
       "home": "Home",
@@ -529,6 +531,8 @@
       "checkinError": "Failed to check in",
       "cloudPushSuccess": "Uploaded to cloud drive",
       "cloudPushError": "Failed to upload to cloud drive",
+      "cloudPullSuccess": "Content pulled from cloud",
+      "cloudPullError": "Failed to pull content from cloud",
       "cancelCheckoutSuccess": "Check out cancelled",
       "cancelCheckoutError": "Failed to cancel check out",
       "selectTargetFirst": "Please select a target object first",
@@ -775,17 +779,23 @@
     "unsupportedType": "{{mimeType}} is not supported",
     "previewError": "Preview Error",
     "previewErrorDesc": "An error occurred while displaying the preview",
+    "errorOccurred": "An error occurred while displaying the preview",
     "cannotPreview": "Cannot preview",
     "image": {
       "loading": "Loading image...",
-      "loadError": "Failed to load image: {{error}}"
+      "loadError": "Failed to load image: {{error}}",
+      "missingInfo": "Missing information required to display the image",
+      "fetchError": "Failed to fetch image: {{error}}"
     },
     "video": {
       "loading": "Loading video...",
-      "loadError": "Failed to load video: {{error}}"
+      "loadError": "Failed to load video: {{error}}",
+      "missingInfo": "Missing information required to display the video",
+      "fetchError": "Failed to fetch video: {{error}}"
     },
     "text": {
-      "loadError": "Failed to load file"
+      "loadError": "Failed to load file",
+      "missingInfo": "Missing information required to display the text"
     },
     "pdf": {
       "loading": "Loading PDF...",
@@ -1272,7 +1282,8 @@
       "title": "Archive Details",
       "creator": "Creator",
       "mimeType": "MIME Type",
-      "archiveId": "Archive ID"
+      "archiveId": "Archive ID",
+      "archivedBy": "Deleted By"
     },
     "tabs": {
       "archives": "Archives",
@@ -1491,6 +1502,28 @@
       "optimizeError": "Failed to optimize index",
       "queryError": "Failed to execute query",
       "cmisQueryError": "Failed to execute CMIS query"
+    },
+    "discrepancy": {
+      "loadError": "Failed to load discrepancy data",
+      "reindexSuccess": "Reindexed {{objectId}}",
+      "reindexError": "Failed to reindex",
+      "deleteSuccess": "Deleted {{objectId}} from index",
+      "deleteError": "Failed to delete from index",
+      "bulkReindexComplete": "Bulk reindex completed",
+      "bulkDeleteComplete": "Bulk delete completed",
+      "showDetails": "Show Details",
+      "missingTitle": "Documents Missing from Solr",
+      "orphanedTitle": "Orphaned Documents (not in CouchDB)",
+      "bulkReindexConfirm": "Reindex all items?",
+      "bulkReindex": "Bulk Reindex",
+      "bulkDeleteConfirm": "Delete all items from index?",
+      "bulkDelete": "Bulk Delete",
+      "objectId": "Object ID",
+      "name": "Name",
+      "objectType": "Object Type",
+      "reindex": "Reindex",
+      "deleteConfirm": "Delete this document from the index?",
+      "deleteFromIndex": "Delete from Index"
     }
   },
   "semanticSearch": {
@@ -1962,6 +1995,11 @@
       "title": "Login Failed",
       "retry": "Try Again"
     },
+    "loginInstructions": "Use your normal NemakiWare login",
+    "loginSteps": "1. Click the button below to open the login page in a new tab",
+    "loginSteps2": "2. After logging in, return to this page and click 'Done'",
+    "openLoginPage": "Open login page in new tab",
+    "checkLogin": "Check login / Done",
     "errors": {
       "completionFailed": "Failed to complete login",
       "networkError": "A network error occurred"

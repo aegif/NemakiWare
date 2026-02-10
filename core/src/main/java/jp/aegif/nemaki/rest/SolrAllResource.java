@@ -22,6 +22,7 @@ import org.json.simple.JSONObject;
 import org.w3c.dom.Node;
 
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
+import jp.aegif.nemaki.util.spring.SpringContext;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -51,7 +52,7 @@ public class SolrAllResource extends ResourceBase {
 			return makeResult(false, result, errMsg).toJSONString();
 		}
 
-		String solrUrl = solrUtil.getSolrUrl();
+		String solrUrl = getSolrUtil().getSolrUrl();
 
 		result.put("url", solrUrl);
 
@@ -75,7 +76,7 @@ public class SolrAllResource extends ResourceBase {
 		
 		//Call Solr
 		HttpClient httpClient = HttpClientBuilder.create().build();
-		String solrUrl = solrUtil.getSolrUrl();
+		String solrUrl = getSolrUtil().getSolrUrl();
 		String url = solrUrl + "admin/cores?core=nemaki&action=init";
 		HttpGet httpGet = new HttpGet(url);
 		try {
@@ -126,7 +127,7 @@ public class SolrAllResource extends ResourceBase {
 			// Clear existing Solr index first
 			try {
 				HttpClient httpClient = HttpClientBuilder.create().build();
-				String solrUrl = solrUtil.getSolrUrl();
+				String solrUrl = getSolrUtil().getSolrUrl();
 				String clearUrl = solrUrl + "/update?commit=true";
 				org.apache.hc.client5.http.classic.methods.HttpPost clearPost = new org.apache.hc.client5.http.classic.methods.HttpPost(clearUrl);
 				clearPost.setEntity(new org.apache.hc.core5.http.io.entity.StringEntity("<delete><query>*:*</query></delete>", java.nio.charset.StandardCharsets.UTF_8));
@@ -184,6 +185,11 @@ public class SolrAllResource extends ResourceBase {
 	
 	public void setSolrUtil(SolrUtil solrUtil) {
 		this.solrUtil = solrUtil;
+	}
+
+	private SolrUtil getSolrUtil() {
+		if (solrUtil != null) return solrUtil;
+		return SpringContext.getApplicationContext().getBean("solrUtil", SolrUtil.class);
 	}
 	
 }

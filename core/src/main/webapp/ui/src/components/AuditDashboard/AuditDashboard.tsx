@@ -34,6 +34,7 @@ import {
   AuditEntry,
   AuditEntriesResponse
 } from '../../services/auditMetrics';
+import { formatServerDate } from '../../utils/dateUtils';
 
 const { Text } = Typography;
 
@@ -138,7 +139,7 @@ export const AuditDashboard: React.FC = () => {
       dataIndex: 'timestamp',
       key: 'timestamp',
       width: 180,
-      render: (val: string) => val ? new Date(val).toLocaleString() : '-',
+      render: (val: string) => formatServerDate(val),
       sorter: (a: AuditEntry, b: AuditEntry) => (a.timestamp || '').localeCompare(b.timestamp || ''),
       defaultSortOrder: 'descend' as const,
     },

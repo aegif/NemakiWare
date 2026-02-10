@@ -1748,6 +1748,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<Archive> getArchivesByArchivedBy(String repositoryId, String archivedBy) {
+		return nonCachedContentDaoService.getArchivesByArchivedBy(repositoryId, archivedBy);
+	}
+
+	@Override
 	public Archive createArchive(String repositoryId, Archive archive, Boolean deletedWithParent) {
 		return nonCachedContentDaoService.createArchive(repositoryId, archive, deletedWithParent);
 	}
@@ -1821,6 +1826,31 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Archive> getArchivesByState(String repositoryId, String state) {
 		return nonCachedContentDaoService.getArchivesByState(repositoryId, state);
+	}
+
+	@Override
+	public List<Archive> getSearchableArchives(String repositoryId, String state) {
+		return nonCachedContentDaoService.getSearchableArchives(repositoryId, state);
+	}
+
+	@Override
+	public List<Archive> getSearchableArchivesPaged(String repositoryId, int skip, int limit, boolean descending) {
+		return nonCachedContentDaoService.getSearchableArchivesPaged(repositoryId, skip, limit, descending);
+	}
+
+	@Override
+	public long getSearchableArchivesCount(String repositoryId) {
+		return nonCachedContentDaoService.getSearchableArchivesCount(repositoryId);
+	}
+
+	@Override
+	public List<Archive> getSearchableArchivesByStatePaged(String repositoryId, String state, int skip, int limit, boolean descending) {
+		return nonCachedContentDaoService.getSearchableArchivesByStatePaged(repositoryId, state, skip, limit, descending);
+	}
+
+	@Override
+	public long getSearchableArchivesByStateCount(String repositoryId, String state) {
+		return nonCachedContentDaoService.getSearchableArchivesByStateCount(repositoryId, state);
 	}
 
 	@Override

@@ -268,8 +268,9 @@ interface SearchResultsProps {
 }
 
 import { useAuth } from '../../contexts/AuthContext';
+import { formatServerDate } from '../../utils/dateUtils';
 export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -678,7 +679,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       dataIndex: 'creationDate',
       key: 'created',
       width: 180,
-      render: (date: string) => date ? new Date(date).toLocaleString(i18n.language === 'ja' ? 'ja-JP' : 'en-US') : '-',
+      render: (date: string) => formatServerDate(date),
     },
     {
       title: t('searchResults.columns.createdBy'),

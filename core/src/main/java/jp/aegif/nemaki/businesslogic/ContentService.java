@@ -720,6 +720,15 @@ public interface ContentService {
 	List<Archive> getArchivesByCreator(String repositoryId, String creator);
 
 	/**
+	 * Get archives where the specified user performed the deletion.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archivedBy the username of the user who deleted the documents
+	 * @return list of archives deleted by the specified user
+	 */
+	List<Archive> getArchivesByArchivedBy(String repositoryId, String archivedBy);
+
+	/**
 	 * Get an archive
 	 * @param repositoryId TODO
 	 * @param archiveId
@@ -814,6 +823,34 @@ public interface ContentService {
 	 * Get archives filtered by archive state.
 	 */
 	List<Archive> getArchivesByState(String repositoryId, String state);
+
+	/**
+	 * Get searchable archives (pre-filtered: non-attachment, latest-version only).
+	 * Optionally filtered by archive state.
+	 */
+	List<Archive> getSearchableArchives(String repositoryId, String state);
+
+	/**
+	 * Get searchable archives with DB-level chronological pagination.
+	 */
+	List<Archive> getSearchableArchivesPaged(String repositoryId, int skip, int limit, boolean descending);
+
+	/**
+	 * Get total count of searchable archives.
+	 */
+	long getSearchableArchivesCount(String repositoryId);
+
+	/**
+	 * Get searchable archives filtered by state with DB-level pagination.
+	 * When state is null, returns all searchable archives.
+	 */
+	List<Archive> getSearchableArchivesByStatePaged(String repositoryId, String state, int skip, int limit, boolean descending);
+
+	/**
+	 * Get count of searchable archives filtered by state.
+	 * When state is null, returns total count.
+	 */
+	long getSearchableArchivesByStateCount(String repositoryId, String state);
 
 	/**
 	 * Get archives eligible for cold transition (archivedAt before given date).

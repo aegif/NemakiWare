@@ -77,7 +77,9 @@
       "details": "詳細: {{details}}"
     },
     "confirmDelete": "この{{item}}を削除しますか？",
-    "totalItems": "全 {{total}} 件"
+    "totalItems": "全 {{total}} 件",
+    "copyFailed": "コピーに失敗しました",
+    "noData": "データがありません"
   },
     "navigation": {
       "home": "ホーム",
@@ -529,6 +531,8 @@
       "checkinError": "チェックインに失敗しました",
       "cloudPushSuccess": "クラウドドライブにアップロードしました",
       "cloudPushError": "クラウドドライブへのアップロードに失敗しました",
+      "cloudPullSuccess": "クラウドからコンテンツを取得しました",
+      "cloudPullError": "クラウドからの取得に失敗しました",
       "cancelCheckoutSuccess": "チェックアウトをキャンセルしました",
       "cancelCheckoutError": "チェックアウトのキャンセルに失敗しました",
       "selectTargetFirst": "ターゲットオブジェクトを選択してください",
@@ -775,17 +779,23 @@
     "unsupportedType": "{{mimeType}} はサポートされていません",
     "previewError": "プレビューエラー",
     "previewErrorDesc": "プレビューの表示中にエラーが発生しました",
+    "errorOccurred": "プレビューの表示中にエラーが発生しました",
     "cannotPreview": "プレビューできません",
     "image": {
       "loading": "画像を取得しています...",
-      "loadError": "画像の取得に失敗しました: {{error}}"
+      "loadError": "画像の取得に失敗しました: {{error}}",
+      "missingInfo": "画像表示に必要な情報が不足しています",
+      "fetchError": "画像の取得に失敗しました: {{error}}"
     },
     "video": {
       "loading": "動画を取得しています...",
-      "loadError": "動画の取得に失敗しました: {{error}}"
+      "loadError": "動画の取得に失敗しました: {{error}}",
+      "missingInfo": "動画表示に必要な情報が不足しています",
+      "fetchError": "動画の取得に失敗しました: {{error}}"
     },
     "text": {
-      "loadError": "ファイルの読み込みに失敗しました"
+      "loadError": "ファイルの読み込みに失敗しました",
+      "missingInfo": "テキスト表示に必要な情報が不足しています"
     },
     "pdf": {
       "loading": "PDFを取得しています...",
@@ -1272,7 +1282,8 @@
       "title": "アーカイブ詳細",
       "creator": "作成者",
       "mimeType": "MIMEタイプ",
-      "archiveId": "アーカイブID"
+      "archiveId": "アーカイブID",
+      "archivedBy": "削除実行者"
     },
     "tabs": {
       "archives": "アーカイブ一覧",
@@ -1491,6 +1502,28 @@
       "optimizeError": "インデックスの最適化に失敗しました",
       "queryError": "クエリの実行に失敗しました",
       "cmisQueryError": "CMISクエリの実行に失敗しました"
+    },
+    "discrepancy": {
+      "loadError": "不整合データの読み込みに失敗しました",
+      "reindexSuccess": "{{objectId}} を再インデックスしました",
+      "reindexError": "再インデックスに失敗しました",
+      "deleteSuccess": "{{objectId}} をインデックスから削除しました",
+      "deleteError": "インデックスからの削除に失敗しました",
+      "bulkReindexComplete": "一括再インデックスが完了しました",
+      "bulkDeleteComplete": "一括削除が完了しました",
+      "showDetails": "詳細を表示",
+      "missingTitle": "Solrに未登録のドキュメント",
+      "orphanedTitle": "孤立ドキュメント（CouchDBに存在しない）",
+      "bulkReindexConfirm": "全件を再インデックスしますか？",
+      "bulkReindex": "一括再インデックス",
+      "bulkDeleteConfirm": "全件をインデックスから削除しますか？",
+      "bulkDelete": "一括削除",
+      "objectId": "オブジェクトID",
+      "name": "名前",
+      "objectType": "オブジェクトタイプ",
+      "reindex": "再インデックス",
+      "deleteConfirm": "このドキュメントをインデックスから削除しますか？",
+      "deleteFromIndex": "インデックスから削除"
     }
   },
   "semanticSearch": {
@@ -1962,6 +1995,11 @@
       "title": "ログインに失敗しました",
       "retry": "やり直す"
     },
+    "loginInstructions": "通常のNemakiWareログインを使用してください",
+    "loginSteps": "1. 下のボタンで新しいタブでログインページを開きます",
+    "loginSteps2": "2. ログイン後、このページに戻って「完了」をクリックしてください",
+    "openLoginPage": "ログインページを新しいタブで開く",
+    "checkLogin": "ログイン確認・完了",
     "errors": {
       "completionFailed": "ログインの完了に失敗しました",
       "networkError": "ネットワークエラーが発生しました"

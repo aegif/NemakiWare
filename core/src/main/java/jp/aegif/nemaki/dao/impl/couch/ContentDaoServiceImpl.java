@@ -1827,13 +1827,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Policy> getAppliedPolicies(String repositoryId, String objectId) {
 		try {
-			// Query appliedPolicies view with objectId
+			// Query policiesByAppliedObject view with objectId
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			List<CouchPolicy> couchPolicies = client.queryView("_repo", "appliedPolicies", objectId, CouchPolicy.class);
+			List<CouchPolicy> couchPolicies = client.queryView("_repo", "policiesByAppliedObject", objectId, CouchPolicy.class);
 			
 			// CRITICAL FIX: Handle null result from queryView to prevent NullPointerException
 			if (couchPolicies == null) {
-				log.warn("queryView returned null for appliedPolicies - objectId: " + objectId + ", repository: " + repositoryId);
+				log.warn("queryView returned null for policiesByAppliedObject - objectId: " + objectId + ", repository: " + repositoryId);
 				return new ArrayList<Policy>();
 			}
 			
@@ -3773,13 +3773,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Archive getArchiveByOriginalId(String repositoryId, String originalId) {
 		try {
-			// Query archiveByOriginalId view with originalId
-			// CRITICAL FIX: Use archive repository, not main repository
+			// Query 'all' view with originalId (all view emits doc.originalId as key)
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "archiveByOriginalId", originalId, CouchArchive.class);
+			List<CouchArchive> couchArchives = client.queryView("_repo", "all", originalId, CouchArchive.class);
 			
-			if (!couchArchives.isEmpty()) {
+			if (couchArchives != null && !couchArchives.isEmpty()) {
 				// Return the first (and should be only) result
 				return couchArchives.get(0).convert();
 			}
@@ -3821,15 +3820,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Archive> getChildArchives(String repositoryId, Archive archive) {
 		try {
-			// Query childArchives view with archive ID
-			// CRITICAL FIX: Use archive repository, not main repository
+			// Query 'children' view with archive ID (children view emits doc.parentId as key)
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "childArchives", archive.getId(), CouchArchive.class);
+			List<CouchArchive> couchArchives = client.queryView("_repo", "children", archive.getId(), CouchArchive.class);
 			
 			List<Archive> archives = new ArrayList<Archive>();
-			for (CouchArchive couchArchive : couchArchives) {
-				archives.add(couchArchive.convert());
+			if (couchArchives != null) {
+				for (CouchArchive couchArchive : couchArchives) {
+					archives.add(couchArchive.convert());
+				}
 			}
 			
 			return archives;
@@ -3842,15 +3842,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Archive> getArchivesOfVersionSeries(String repositoryId, String versionSeriesId) {
 		try {
-			// Query archivesOfVersionSeries view with versionSeriesId
-			// CRITICAL FIX: Use archive repository, not main repository
+			// Query 'versionSeries' view with versionSeriesId (versionSeries view emits doc.versionSeriesId as key)
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "archivesOfVersionSeries", versionSeriesId, CouchArchive.class);
+			List<CouchArchive> couchArchives = client.queryView("_repo", "versionSeries", versionSeriesId, CouchArchive.class);
 			
 			List<Archive> archives = new ArrayList<Archive>();
-			for (CouchArchive couchArchive : couchArchives) {
-				archives.add(couchArchive.convert());
+			if (couchArchives != null) {
+				for (CouchArchive couchArchive : couchArchives) {
+					archives.add(couchArchive.convert());
+				}
 			}
 			
 			return archives;
@@ -3863,15 +3864,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Archive> getAllArchives(String repositoryId) {
 		try {
-			// Query allArchives view to get all archives
-			// CRITICAL FIX: Use archive repository, not main repository
+			// Query 'all' view without key to get all archives (all view emits doc.originalId as key)
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "allArchives", null, CouchArchive.class);
+			List<CouchArchive> couchArchives = client.queryView("_repo", "all", null, CouchArchive.class);
 			
 			List<Archive> archives = new ArrayList<Archive>();
-			for (CouchArchive couchArchive : couchArchives) {
-				archives.add(couchArchive.convert());
+			if (couchArchives != null) {
+				for (CouchArchive couchArchive : couchArchives) {
+					archives.add(couchArchive.convert());
+				}
 			}
 			
 			return archives;
@@ -3961,6 +3963,41 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting archives by creator in repository: " + repositoryId, e);
+			return new ArrayList<Archive>();
+		}
+	}
+
+	@Override
+	public List<Archive> getArchivesByArchivedBy(String repositoryId, String archivedBy) {
+		try {
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
+			Map<String, Object> queryParams = new HashMap<String, Object>();
+			queryParams.put("key", "\"" + archivedBy + "\"");
+
+			ViewResult result = client.queryView("_repo", "byArchivedBy", queryParams);
+			List<Archive> archives = new ArrayList<Archive>();
+
+			if (result.getRows() != null) {
+				for (ViewResultRow row : result.getRows()) {
+					Object docValue = row.getValue();
+					if (docValue != null) {
+						try {
+							ObjectMapper mapper = createConfiguredObjectMapper();
+							CouchArchive ca = mapper.convertValue(docValue, CouchArchive.class);
+							if (ca != null) {
+								archives.add(ca.convert());
+							}
+						} catch (Exception e) {
+							log.warn("Failed to convert archive document: " + e.getMessage());
+						}
+					}
+				}
+			}
+
+			return archives;
+		} catch (Exception e) {
+			log.error("Error getting archives by archivedBy in repository: " + repositoryId, e);
 			return new ArrayList<Archive>();
 		}
 	}
@@ -4075,6 +4112,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			String archiveId = archive.getId();
 			String originalId = archive.getOriginalId();
 			
+			log.info("restoreContent: archiveId=" + archiveId + ", originalId=" + originalId + ", repositoryId=" + repositoryId);
+			
 			// Get the archive repository
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper archiveClient = connectorPool.getClient(archiveRepositoryId);
@@ -4093,35 +4132,23 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			docMap.put("_id", originalId); // Set restored ID
 			// Skip _rev to let CouchDB assign new revision
 			
-			// Copy all custom fields from Document using direct access
-			String type = (String) archivedDoc.get("type");
-			String objectType = (String) archivedDoc.get("objectType");
-			String name = (String) archivedDoc.get("name");
-			String creator = (String) archivedDoc.get("creator");
-			String modifier = (String) archivedDoc.get("modifier");
-			String created = (String) archivedDoc.get("created");
-			String modified = (String) archivedDoc.get("modified");
-			String changeToken = (String) archivedDoc.get("changeToken");
-			
-			// Add all accessible fields to the map (excluding archive-specific ones)
-			if (type != null) docMap.put("type", type);
-			if (objectType != null) docMap.put("objectType", objectType);
-			if (name != null) docMap.put("name", name);
-			if (creator != null) docMap.put("creator", creator);
-			if (modifier != null) docMap.put("modifier", modifier);
-			if (created != null) docMap.put("created", created);
-			if (modified != null) docMap.put("modified", modified);
-			if (changeToken != null) docMap.put("changeToken", changeToken);
-			
-			// Also try to get additional fields using getProperties() as fallback
+			// CRITICAL FIX (2026-02-09): Copy all custom fields from Document using getProperties()
+			// Previously cast created/modified to String, but they are stored as Numbers (timestamps)
+			// LazilyParsedNumber cannot be cast to String, causing ClassCastException
 			try {
 				Map<String, Object> properties = archivedDoc.getProperties();
 				if (properties != null && !properties.isEmpty()) {
+					log.info("restoreContent: Copying " + properties.size() + " properties from archived doc");
 					for (Map.Entry<String, Object> entry : properties.entrySet()) {
 						String key = entry.getKey();
-						// Skip archive-specific and already processed fields
-						if (!"isArchive".equals(key) && !"originalId".equals(key) && !"_rev".equals(key) && !"_id".equals(key) && 
-							!docMap.containsKey(key)) {
+						// Skip archive-specific fields and document metadata
+						if (!"isArchive".equals(key) && !"originalId".equals(key) &&
+							!"_rev".equals(key) && !"_id".equals(key) &&
+							!"archiveState".equals(key) && !"archivedAt".equals(key) &&
+							!"archivedBy".equals(key) && !"coldArchivedAt".equals(key) &&
+							!"coldMoveMode".equals(key) && !"contentRef".equals(key) &&
+							!"aclSnapshot".equals(key) && !"propsSnapshot".equals(key) &&
+							!"deletedWithParent".equals(key) && !"lastRevision".equals(key)) {
 							docMap.put(key, entry.getValue());
 						}
 					}
@@ -4130,10 +4157,20 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				log.warn("CLOUDANT FIX: Error accessing getProperties() during restore: " + e.getMessage());
 			}
 			
-			// Create the restored document in the main repository
-			client.create(originalId, docMap);
+			log.info("restoreContent: docMap keys=" + docMap.keySet() + ", about to purge tombstone for " + originalId);
 			
-			log.debug("Content restored from archive: " + archiveId + " to original ID: " + originalId);
+			// CRITICAL FIX (2026-02-09): Handle CouchDB tombstone for deleted documents
+			// CouchDB keeps tombstones (_deleted=true) for deleted documents.
+			// PUT with the same ID fails with 409 Conflict even with tombstone _rev.
+			// Must purge the tombstone first, then create the document fresh.
+			boolean purged = client.purgeTombstone(originalId);
+			log.info("restoreContent: purgeTombstone result=" + purged + " for " + originalId);
+
+			// Create the restored document in the main repository
+			com.ibm.cloud.cloudant.v1.model.DocumentResult createResult = client.create(originalId, docMap);
+			log.info("restoreContent: create result=" + (createResult != null ? "id=" + createResult.getId() + ",ok=" + createResult.isOk() : "null") + " for " + originalId);
+			
+			log.info("Content restored from archive: " + archiveId + " to original ID: " + originalId);
 			
 		} catch (Exception e) {
 			log.error("Error restoring content from archive: " + archive.getId() + " in repository: " + repositoryId, e);
@@ -4150,6 +4187,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			String archiveId = archive.getId();
 			String originalId = archive.getOriginalId();
 			
+			log.info("restoreAttachment: archiveId=" + archiveId + ", originalId=" + originalId);
+			
 			// Get the archive repository
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper archiveClient = connectorPool.getClient(archiveRepositoryId);
@@ -4165,11 +4204,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			archivedAttachment.setId(originalId);
 			archivedAttachment.setRevision(null);
 			
+			// Purge tombstone if exists (same issue as restoreContent)
+			boolean purged = client.purgeTombstone(originalId);
+			log.info("restoreAttachment: purgeTombstone result=" + purged + " for " + originalId);
+
 			// Create the restored attachment document in the main repository
 			ObjectMapper mapper = createConfiguredObjectMapper();
 			@SuppressWarnings("unchecked")
 			Map<String, Object> documentMap = mapper.convertValue(archivedAttachment, Map.class);
-			client.create(originalId, documentMap);
+			com.ibm.cloud.cloudant.v1.model.DocumentResult createResult = client.create(originalId, documentMap);
+			log.info("restoreAttachment: create result=" + (createResult != null ? "id=" + createResult.getId() + ",ok=" + createResult.isOk() : "null") + " for " + originalId);
 			
 			// Also try to restore any binary attachments
 			try {
@@ -4183,13 +4227,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					client.createAttachment(originalId, revision, "content", 
 						(java.io.InputStream) attachmentData, archivedAttachment.getMimeType());
 					
-					log.debug("Binary attachment restored for: " + originalId);
+					log.info("Binary attachment restored for: " + originalId);
 				}
 			} catch (Exception attachmentError) {
 				log.warn("Failed to restore binary attachment for: " + originalId + ". Metadata restored only.", attachmentError);
 			}
 			
-			log.debug("Attachment restored from archive: " + archiveId + " to original ID: " + originalId);
+			log.info("Attachment restored from archive: " + archiveId + " to original ID: " + originalId);
 			
 		} catch (Exception e) {
 			log.error("Error restoring attachment from archive: " + archive.getId() + " in repository: " + repositoryId, e);
@@ -4284,6 +4328,73 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		} catch (Exception e) {
 			log.error("Error getting archives by state: " + state + " in repository: " + repositoryId, e);
 			return new ArrayList<Archive>();
+		}
+	}
+
+	@Override
+	public List<Archive> getSearchableArchives(String repositoryId, String state) {
+		// Delegate to paged version with no skip/limit (returns all matching rows)
+		return getSearchableArchivesByStatePaged(repositoryId, state, 0, 0, true);
+	}
+
+	@Override
+	public List<Archive> getSearchableArchivesPaged(String repositoryId, int skip, int limit, boolean descending) {
+		try {
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
+			CloudantClientWrapper.PagedViewResult<CouchArchive> paged =
+					client.queryViewPaged("_repo", "archivesByArchivedAt", CouchArchive.class, skip, limit, descending);
+			List<Archive> archives = new ArrayList<Archive>();
+			for (CouchArchive ca : paged.items) {
+				archives.add(ca.convert());
+			}
+			return archives;
+		} catch (Exception e) {
+			log.error("Error getting paged archives in repository: " + repositoryId, e);
+			return new ArrayList<Archive>();
+		}
+	}
+
+	@Override
+	public long getSearchableArchivesCount(String repositoryId) {
+		try {
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
+			// Count-only query: includeDocs=false, limit=0, returns only total_rows
+			return client.queryViewCount("_repo", "archivesByArchivedAt");
+		} catch (Exception e) {
+			log.error("Error getting archive count in repository: " + repositoryId, e);
+			return 0;
+		}
+	}
+
+	@Override
+	public List<Archive> getSearchableArchivesByStatePaged(String repositoryId, String state, int skip, int limit, boolean descending) {
+		try {
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
+			CloudantClientWrapper.PagedViewResult<CouchArchive> paged =
+					client.queryViewPagedWithKey("_repo", "searchableArchives", state, CouchArchive.class, skip, limit, descending);
+			List<Archive> archives = new ArrayList<Archive>();
+			for (CouchArchive ca : paged.items) {
+				archives.add(ca.convert());
+			}
+			return archives;
+		} catch (Exception e) {
+			log.error("Error getting paged archives by state" + (state != null ? " (state=" + state + ")" : "") + " in repository: " + repositoryId, e);
+			return new ArrayList<Archive>();
+		}
+	}
+
+	@Override
+	public long getSearchableArchivesByStateCount(String repositoryId, String state) {
+		try {
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
+			return client.queryViewCountByKey("_repo", "searchableArchives", state);
+		} catch (Exception e) {
+			log.error("Error getting archive count by state" + (state != null ? " (state=" + state + ")" : "") + " in repository: " + repositoryId, e);
+			return 0;
 		}
 	}
 

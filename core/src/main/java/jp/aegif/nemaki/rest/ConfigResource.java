@@ -17,6 +17,7 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
+import jp.aegif.nemaki.util.spring.SpringContext;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Map;
@@ -50,7 +51,7 @@ public class ConfigResource extends ResourceBase{
 		}
 
 		try {
-			Set<String> keys = propertyManager.getKeys();
+			Set<String> keys = getPropertyManager().getKeys();
 			for(String configKey : keys){
 				JSONObject config = createConfig(repositoryId, configKey);
 				configs.add(config);
@@ -92,7 +93,7 @@ public class ConfigResource extends ResourceBase{
 	private JSONObject createConfig(String repositoryId, String configKey) {
 		JSONObject config = new JSONObject();
 
-		Object configValue = propertyManager.readValue(repositoryId, configKey);
+		Object configValue = getPropertyManager().readValue(repositoryId, configKey);
 		config.put("key", configKey);
 		config.put("value", configValue);
 		config.put("isDefault", false);
@@ -116,14 +117,14 @@ public class ConfigResource extends ResourceBase{
 			return result.toJSONString();
 		}
 
-		Lock lock = threadLockService.getWriteLock(repositoryId, "configuration");
+		Lock lock = getThreadLockService().getWriteLock(repositoryId, "configuration");
 		lock.lock();
 		try{
-			Configuration conf = contentDaoService.getConfiguration(repositoryId);
+			Configuration conf = getContentDaoService().getConfiguration(repositoryId);
 			Map<String, Object> map = conf.getConfiguration();
 			map.put(key, value);
 			conf.setConfiguration(map);
-			contentDaoService.update(repositoryId, conf);
+			getContentDaoService().update(repositoryId, conf);
 		}catch(Exception e){
 			status = false;
 			e.printStackTrace();
@@ -162,13 +163,14 @@ public class ConfigResource extends ResourceBase{
 		}
 
 		try {
-			Set<String> keys = new TreeSet<>(propertyManager.getKeys());
+			PropertyManager pm = getPropertyManager();
+			Set<String> keys = new TreeSet<>(pm.getKeys());
 			for (String key : keys) {
 				JSONObject prop = new JSONObject();
 				prop.put("key", key);
 
 				// Get resolved value
-				String value = propertyManager.readValue(repositoryId, key);
+				String value = pm.readValue(repositoryId, key);
 				// Mask sensitive values
 				if (isSensitiveKey(key)) {
 					prop.put("value", "***");
@@ -219,11 +221,12 @@ public class ConfigResource extends ResourceBase{
 
 		// Check CouchDB dynamic configuration (repository-specific and system-wide)
 		try {
-			Configuration repoConf = contentDaoService.getConfiguration(repositoryId);
+			ContentDaoService dao = getContentDaoService();
+			Configuration repoConf = dao.getConfiguration(repositoryId);
 			if (repoConf != null && repoConf.getConfiguration().get(key) != null) {
 				return "couchdb_dynamic";
 			}
-			Configuration sysConf = contentDaoService.getConfiguration("nemaki_conf");
+			Configuration sysConf = dao.getConfiguration("nemaki_conf");
 			if (sysConf != null && sysConf.getConfiguration().get(key) != null) {
 				return "couchdb_dynamic";
 			}
@@ -232,7 +235,7 @@ public class ConfigResource extends ResourceBase{
 		}
 
 		// Check property file source
-		String fileSource = propertyManager.getPropertySource(key);
+		String fileSource = getPropertyManager().getPropertySource(key);
 		if (fileSource != null) {
 			return fileSource;
 		}
@@ -254,6 +257,24 @@ public class ConfigResource extends ResourceBase{
 		if (key.startsWith("cache.")) return "Cache";
 		if (key.startsWith("server.")) return "Server";
 		return "General";
+	}
+
+	// Fallback getters: Jersey package scanning may create a new instance
+	// instead of using the Spring-configured bean, so fields may be null.
+	// Fall back to SpringContext.getApplicationContext().getBean() in that case.
+	private PropertyManager getPropertyManager() {
+		if (propertyManager != null) return propertyManager;
+		return SpringContext.getApplicationContext().getBean("propertyManager", PropertyManager.class);
+	}
+
+	private ContentDaoService getContentDaoService() {
+		if (contentDaoService != null) return contentDaoService;
+		return SpringContext.getApplicationContext().getBean("ContentDaoService", ContentDaoService.class);
+	}
+
+	private ThreadLockService getThreadLockService() {
+		if (threadLockService != null) return threadLockService;
+		return SpringContext.getApplicationContext().getBean("ThreadLockService", ThreadLockService.class);
 	}
 
 	public void setContentDaoService(ContentDaoService contentDaoService) {

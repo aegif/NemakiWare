@@ -60,6 +60,7 @@ public class CouchArchive extends CouchNodeBase{
 	private String coldMoveMode;
 	private String aclSnapshot;
 	private String propsSnapshot;
+	private String archivedBy;
 
 	public CouchArchive(){
 		super();
@@ -86,6 +87,7 @@ public class CouchArchive extends CouchNodeBase{
 		setColdMoveMode(a.getColdMoveMode());
 		setAclSnapshot(a.getAclSnapshot());
 		setPropsSnapshot(a.getPropsSnapshot());
+		setArchivedBy(a.getArchivedBy());
 	}
 
 	/**
@@ -244,6 +246,14 @@ public class CouchArchive extends CouchNodeBase{
 		this.coldMoveMode = coldMoveMode;
 	}
 
+	public String getArchivedBy() {
+		return archivedBy;
+	}
+
+	public void setArchivedBy(String archivedBy) {
+		this.archivedBy = archivedBy;
+	}
+
 	@Override
 	public String toString() {
 		Map<String, Object> m = new HashMap<String, Object>();
@@ -323,6 +333,7 @@ public class CouchArchive extends CouchNodeBase{
 		a.setColdMoveMode(getColdMoveMode());
 		a.setAclSnapshot(getAclSnapshot());
 		a.setPropsSnapshot(getPropsSnapshot());
+		a.setArchivedBy(getArchivedBy());
 
 		return a;
 	}

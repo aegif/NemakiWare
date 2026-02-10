@@ -65,6 +65,11 @@ public class BedrockEmbeddingService implements EmbeddingService {
         if (StringUtils.isBlank(text)) {
             throw EmbeddingException.invalidInput("Text cannot be null or empty");
         }
+        // Note: isQuery is intentionally unused. Amazon Titan Embedding models
+        // (e.g. amazon.titan-embed-text-v1/v2) do not distinguish between query
+        // and passage inputs, unlike some other embedding models (e.g. E5).
+        // The parameter is kept for interface compatibility with TEI and other
+        // providers that may use it.
         return embedSingle(text);
     }
 
@@ -73,6 +78,8 @@ public class BedrockEmbeddingService implements EmbeddingService {
         if (texts == null || texts.isEmpty()) {
             throw EmbeddingException.invalidInput("Texts list cannot be null or empty");
         }
+
+        // Note: isQuery is intentionally unused — see embed() for rationale.
 
         int batchSize = ragConfig.getBedrockBatchSize();
         if (batchSize <= 0) {
@@ -191,7 +198,14 @@ public class BedrockEmbeddingService implements EmbeddingService {
                 .overrideConfiguration(overrideConfiguration)
                 .build();
 
-        clientRef.compareAndSet(null, created);
+        if (!clientRef.compareAndSet(null, created)) {
+            // Another thread won the race; close the client we just created
+            try {
+                created.close();
+            } catch (Exception e) {
+                log.warn("Failed to close redundant BedrockRuntimeClient", e);
+            }
+        }
         return clientRef.get();
     }
 }

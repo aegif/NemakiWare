@@ -33,12 +33,12 @@ public class S3StorageAdapter implements LongTermStorageAdapter {
 
     private final S3Client s3Client;
     private final String bucket;
-    private final String objectLockMode;
+    private final boolean objectLockEnabled;
 
     public S3StorageAdapter(String bucket, String region, String endpoint,
                             String accessKey, String secretKey, String objectLockMode) {
         this.bucket = bucket;
-        this.objectLockMode = objectLockMode;
+        this.objectLockEnabled = (objectLockMode != null && !objectLockMode.isEmpty());
 
         S3ClientBuilder builder = S3Client.builder()
                 .credentialsProvider(StaticCredentialsProvider.create(
@@ -53,7 +53,8 @@ public class S3StorageAdapter implements LongTermStorageAdapter {
         }
 
         this.s3Client = builder.build();
-        log.info("S3StorageAdapter initialized: bucket=" + bucket + ", region=" + region);
+        log.info("S3StorageAdapter initialized: bucket=" + bucket + ", region=" + region
+                + ", objectLockEnabled=" + objectLockEnabled);
     }
 
     @Override
@@ -144,8 +145,8 @@ public class S3StorageAdapter implements LongTermStorageAdapter {
 
     @Override
     public void enforceImmutability(String repositoryId, String objectId) {
-        if (objectLockMode == null || objectLockMode.isEmpty()) {
-            log.debug("Object Lock mode not configured, skipping immutability enforcement");
+        if (!objectLockEnabled) {
+            log.debug("Object Lock not enabled, skipping immutability enforcement");
             return;
         }
 

@@ -260,7 +260,7 @@ export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId
         case 'office':
           return <OfficePreview url={contentUrl} fileName={object.name} mimeType={object.contentStreamMimeType!} repositoryId={repositoryId} objectId={effectiveObjectId} lastModified={object.lastModificationDate} />;
         default:
-          return <Alert message={t('preview.cannotPreview')} description={t('preview.unsupportedMimeType', { mimeType: object.contentStreamMimeType })} type="warning" />;
+          return <Alert message={t('preview.cannotPreview')} description={t('preview.unsupportedType', { mimeType: object.contentStreamMimeType })} type="warning" />;
       }
     } catch (err) {
       return <Alert message={t('preview.previewError')} description={t('preview.errorOccurred')} type="error" />;

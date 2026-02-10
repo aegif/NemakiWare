@@ -212,7 +212,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
         alignItems: 'center',
         height: '100vh'
       }}>
-        <Spin size="large" tip={t('auth.checkingAuth')} />
+        <Spin size="large" tip={t('auth.checkingStatus')} />
       </div>
     );
   }
@@ -283,9 +283,9 @@ class ErrorBoundary extends React.Component<
           height: '100vh',
           padding: '20px'
         }}>
-          <h2>{i18n.t('common.errors.errorOccurred')}</h2>
+          <h2>{i18n.t('auth.errorOccurred')}</h2>
           <p style={{ color: '#666', marginBottom: '20px' }}>
-            {this.state.errorMessage || i18n.t('common.errors.pageLoadError')}
+            {this.state.errorMessage || i18n.t('auth.pageLoadError')}
           </p>
           <button
             onClick={() => window.location.reload()}

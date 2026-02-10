@@ -132,6 +132,24 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Archive byArchivedBy view for listing archives by the deleting user -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ArchiveByArchivedByView">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Searchable archives view for efficient archive/search queries -->
+				<bean class="jp.aegif.nemaki.patch.Patch_SearchableArchivesView">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Archives by archivedAt view for DB-level chronological pagination -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ArchivesByArchivedAtView">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- Cloud Drive Metadata secondary type for Google Drive / OneDrive integration -->
 				<bean class="jp.aegif.nemaki.patch.Patch_CloudDriveMetadataSecondaryType">
 					<property name="patchUtil">
@@ -236,6 +254,24 @@
 	</bean>
 
 	<bean id="patch_ArchiveByCreatorView" class="jp.aegif.nemaki.patch.Patch_ArchiveByCreatorView">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_ArchiveByArchivedByView" class="jp.aegif.nemaki.patch.Patch_ArchiveByArchivedByView">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_SearchableArchivesView" class="jp.aegif.nemaki.patch.Patch_SearchableArchivesView">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_ArchivesByArchivedAtView" class="jp.aegif.nemaki.patch.Patch_ArchivesByArchivedAtView">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

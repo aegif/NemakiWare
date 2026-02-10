@@ -3905,6 +3905,11 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public List<Archive> getArchivesByArchivedBy(String repositoryId, String archivedBy) {
+		return contentDaoService.getArchivesByArchivedBy(repositoryId, archivedBy);
+	}
+
+	@Override
 	public Archive getArchive(String repositoryId, String archiveId) {
 		return contentDaoService.getArchive(repositoryId, archiveId);
 	}
@@ -3935,6 +3940,10 @@ public class ContentServiceImpl implements ContentService {
 		// where callContext.getUsername() is "system" — without this override,
 		// the original creator would lose access to their archived content.
 		a.setCreator(content.getCreator());
+
+		// Record who actually performed the deletion.
+		// Both creator and archivedBy can access the archive.
+		a.setArchivedBy(callContext.getUsername());
 
 		// Set retention lifecycle fields
 		a.setArchiveState(Archive.STATE_ARCHIVED_LOCAL);
@@ -4008,6 +4017,10 @@ public class ContentServiceImpl implements ContentService {
 		// where callContext.getUsername() is "system" — without this override,
 		// the original creator would lose access to their archived content.
 		a.setCreator(content.getCreator());
+
+		// Record who actually performed the deletion.
+		// Both creator and archivedBy can access the archive.
+		a.setArchivedBy(callContext.getUsername());
 
 		// Set retention lifecycle fields
 		a.setArchiveState(Archive.STATE_ARCHIVED_LOCAL);
@@ -4372,6 +4385,31 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public List<Archive> getArchivesByState(String repositoryId, String state) {
 		return contentDaoService.getArchivesByState(repositoryId, state);
+	}
+
+	@Override
+	public List<Archive> getSearchableArchives(String repositoryId, String state) {
+		return contentDaoService.getSearchableArchives(repositoryId, state);
+	}
+
+	@Override
+	public List<Archive> getSearchableArchivesPaged(String repositoryId, int skip, int limit, boolean descending) {
+		return contentDaoService.getSearchableArchivesPaged(repositoryId, skip, limit, descending);
+	}
+
+	@Override
+	public long getSearchableArchivesCount(String repositoryId) {
+		return contentDaoService.getSearchableArchivesCount(repositoryId);
+	}
+
+	@Override
+	public List<Archive> getSearchableArchivesByStatePaged(String repositoryId, String state, int skip, int limit, boolean descending) {
+		return contentDaoService.getSearchableArchivesByStatePaged(repositoryId, state, skip, limit, descending);
+	}
+
+	@Override
+	public long getSearchableArchivesByStateCount(String repositoryId, String state) {
+		return contentDaoService.getSearchableArchivesByStateCount(repositoryId, state);
 	}
 
 	@Override

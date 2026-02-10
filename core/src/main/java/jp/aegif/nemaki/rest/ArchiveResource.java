@@ -138,7 +138,6 @@ public class ArchiveResource extends ResourceBase {
 		return null;
 	}
 
-	//FIXME Attachment should always be got out of the output on this layer
 	@SuppressWarnings("unchecked")
 	@GET
 	@Path("/index")
@@ -161,33 +160,104 @@ public class ArchiveResource extends ResourceBase {
 		}
 
 		boolean adminUser = isAdmin(httpRequest);
+		// Default to descending (newest-first)
+		boolean descending = (desc == null) ? true : desc;
 
 		try{
-			List<Archive> archives;
 			if (adminUser) {
-				archives = getContentService().getArchives(repositoryId, skip, limit, desc);
+				// DB-level pagination via archivesByArchivedAt view:
+				// CouchDB handles skip/limit/descending natively.
+				// When limit is not provided (0), CouchDB returns all rows — this
+				// preserves backward compatibility for clients that don't paginate.
+				int s = (skip != null && skip > 0) ? skip : 0;
+				int l = (limit != null && limit > 0) ? limit : 0;
+				long totalItems = getContentService().getSearchableArchivesCount(repositoryId);
+				List<Archive> archives = getContentService().getSearchableArchivesPaged(
+						repositoryId, s, l, descending);
+
+				for (Archive a : archives) {
+					JSONObject o = buildArchiveJson(a);
+					if (a.isDocument()) {
+						o.put("mimeType", a.getMimeType());
+					}
+					list.add(o);
+				}
+
+				result.put("archives", list);
+				result.put("totalItems", totalItems);
+				result.put("isAdmin", adminUser);
 			} else {
-				archives = getContentService().getArchivesByCreator(repositoryId, username);
-			}
-			for(Archive a : archives){
-				//Filter out Attachment & old Versions
-				if (NodeType.ATTACHMENT.value().equals(a.getType())){
-					continue;
-				}else if (NodeType.CMIS_DOCUMENT.value().equals(a.getType())){
-					boolean ilv = (a.isLatestVersion() != null) ? a.isLatestVersion() : false;
-					if (!ilv) continue;
+				// Non-admin in-memory pagination:
+				// byCreator and byArchivedBy views are merged and filtered in memory.
+				// DB-level pagination is not applied here because:
+				// 1. Non-admin users only see their own archives (created or deleted by them),
+				//    which is typically a small set (tens to hundreds, not thousands).
+				// 2. Merging two CouchDB views with dedup requires loading both result sets;
+				//    DB-level skip/limit on individual views would produce incorrect page boundaries.
+				// 3. A combined view would need a compound key (user + archivedAt) and would not
+				//    handle the creator-OR-archivedBy union without duplicating data.
+				// If per-user archive counts grow significantly, consider a dedicated combined view.
+				List<Archive> byCreator = getContentService().getArchivesByCreator(repositoryId, username);
+				List<Archive> byArchivedBy = getContentService().getArchivesByArchivedBy(repositoryId, username);
+				java.util.Set<String> seenIds = new java.util.HashSet<>();
+				List<Archive> archives = new java.util.ArrayList<>();
+				for (Archive a : byCreator) {
+					if (seenIds.add(a.getId())) {
+						archives.add(a);
+					}
+				}
+				for (Archive a : byArchivedBy) {
+					if (seenIds.add(a.getId())) {
+						archives.add(a);
+					}
 				}
 
-				JSONObject o = buildArchiveJson(a);
+				// Non-admin views don't pre-filter; apply in-memory filter
+				List<JSONObject> filtered = new java.util.ArrayList<>();
+				for (Archive a : archives) {
+					if (NodeType.ATTACHMENT.value().equals(a.getType())) {
+						continue;
+					} else if (NodeType.CMIS_DOCUMENT.value().equals(a.getType())) {
+						boolean ilv = (a.isLatestVersion() != null) ? a.isLatestVersion() : false;
+						if (!ilv) continue;
+					}
 
-				if(a.isDocument()){
-					o.put("mimeType", a.getMimeType());
+					JSONObject o = buildArchiveJson(a);
+					if (a.isDocument()) {
+						o.put("mimeType", a.getMimeType());
+					}
+					filtered.add(o);
 				}
 
-				list.add(o);
+				// Sort by archivedAt for stable pagination order
+				filtered.sort((a, b) -> {
+					String aDate = (String) a.get("archivedAt");
+					String bDate = (String) b.get("archivedAt");
+					if (aDate == null && bDate == null) return 0;
+					if (aDate == null) return descending ? 1 : -1;
+					if (bDate == null) return descending ? -1 : 1;
+					int cmp = aDate.compareTo(bDate);
+					return descending ? -cmp : cmp;
+				});
+
+				// Apply pagination after filter + sort
+				int totalFiltered = filtered.size();
+				int s = (skip != null && skip > 0) ? skip : 0;
+				int l = (limit != null && limit > 0) ? limit : totalFiltered;
+				int end = Math.min(s + l, totalFiltered);
+				if (s < totalFiltered) {
+					filtered = filtered.subList(s, end);
+				} else {
+					filtered = java.util.Collections.emptyList();
+				}
+
+				for (JSONObject o : filtered) {
+					list.add(o);
+				}
+				result.put("archives", list);
+				result.put("totalItems", totalFiltered);
+				result.put("isAdmin", adminUser);
 			}
-			result.put("archives", list);
-			result.put("isAdmin", adminUser);
 		}catch(Exception e){
 			e.printStackTrace();
 			status = false;
@@ -219,7 +289,8 @@ public class ArchiveResource extends ResourceBase {
 			Archive archive = getContentService().getArchive(repositoryId, id);
 			// Authorize before revealing existence — return ERR_NOTFOUND for
 			// both "not found" and "not authorized" to prevent ID enumeration.
-			if (archive == null || (!adminUser && !username.equals(archive.getCreator()))) {
+			// Both the original document creator and the deleting user can access.
+			if (archive == null || (!adminUser && !isArchiveAccessible(username, archive))) {
 				status = false;
 				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_NOTFOUND);
 			} else {
@@ -260,7 +331,8 @@ public class ArchiveResource extends ResourceBase {
 			Archive archiveToRestore = getContentService().getArchive(repositoryId, id);
 			// Authorize before revealing existence — return ERR_NOTFOUND for
 			// both "not found" and "not authorized" to prevent ID enumeration.
-			if (archiveToRestore == null || (!adminUser && !username.equals(archiveToRestore.getCreator()))) {
+			// Both the original document creator and the deleting user can access.
+			if (archiveToRestore == null || (!adminUser && !isArchiveAccessible(username, archiveToRestore))) {
 				status = false;
 				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_NOTFOUND);
 				return makeResult(status, result, errMsg).toJSONString();
@@ -588,7 +660,20 @@ public class ArchiveResource extends ResourceBase {
 		}
 
 		Lock lock = lockService.getWriteLock(repositoryId, objectId);
-		lock.lock();
+		boolean acquired = false;
+		try {
+			acquired = lock.tryLock(10, java.util.concurrent.TimeUnit.SECONDS);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			status = false;
+			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_DESTROY);
+			return makeResult(status, result, errMsg).toJSONString();
+		}
+		if (!acquired) {
+			status = false;
+			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_DESTROY);
+			return makeResult(status, result, errMsg).toJSONString();
+		}
 		try {
 			CallContext systemContext = new SystemCallContext(repositoryId);
 			// Use deleteDocument to properly handle attachments, renditions, and version series
@@ -658,6 +743,17 @@ public class ArchiveResource extends ResourceBase {
 	}
 
 
+
+	/**
+	 * Check if a non-admin user can access the given archive.
+	 * Access is granted if the user is either the original document creator
+	 * or the user who performed the deletion (archivedBy).
+	 */
+	private boolean isArchiveAccessible(String username, Archive archive) {
+		return username.equals(archive.getCreator())
+				|| username.equals(archive.getArchivedBy());
+	}
+
 	@SuppressWarnings({ "unchecked" })
 	private JSONObject buildArchiveJson(Archive archive){
 
@@ -675,6 +771,9 @@ public class ArchiveResource extends ResourceBase {
 			log.warn(String.format("Archive(%s) 'created' property is broken.", archive.getId()));
 		}
 		archiveJson.put("creator", archive.getCreator());
+		if (archive.getArchivedBy() != null) {
+			archiveJson.put("archivedBy", archive.getArchivedBy());
+		}
 		// Additional fields for UI display
 		if (archive.getPath() != null) {
 			archiveJson.put("path", archive.getPath());

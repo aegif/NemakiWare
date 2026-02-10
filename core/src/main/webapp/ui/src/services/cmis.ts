@@ -2715,10 +2715,19 @@ export class CMISService {
     }
   }
 
-  async getArchives(repositoryId: string): Promise<{ archives: CMISObject[], isAdmin: boolean }> {
+  async getArchives(repositoryId: string, options?: {
+    skip?: number;
+    limit?: number;
+    desc?: boolean;
+  }): Promise<{ archives: CMISObject[], isAdmin: boolean, totalItems: number }> {
     try {
       // Use correct REST endpoint for archive index
-      const url = `/core/rest/repo/${repositoryId}/archive/index`;
+      const params = new URLSearchParams();
+      if (options?.skip != null) params.set('skip', String(options.skip));
+      if (options?.limit != null) params.set('limit', String(options.limit));
+      if (options?.desc != null) params.set('desc', String(options.desc));
+      const qs = params.toString();
+      const url = `/core/rest/repo/${repositoryId}/archive/index${qs ? '?' + qs : ''}`;
       const response = await this.httpClient.getJson(url);
 
       if (response.status === 200) {
@@ -2730,6 +2739,7 @@ export class CMISService {
           // UI expects CMISObject with: {id, name, baseType, objectType, ...}
           // id: archive ID (used for restore/download operations on the archive)
           const isAdmin = data.isAdmin === true;
+          const totalItems = typeof data.totalItems === 'number' ? data.totalItems : archives.length;
           const mappedArchives = archives.map((archive: Record<string, unknown>) => ({
             id: String(archive.id || ''),
             name: String(archive.name || 'Unknown'),
@@ -2744,8 +2754,9 @@ export class CMISService {
             archiveState: archive.archiveState as string | undefined,
             archivedAt: archive.archivedAt as string | undefined,
             coldMoveMode: archive.coldMoveMode as string | undefined,
+            archivedBy: archive.archivedBy as string | undefined,
           } as CMISObject));
-          return { archives: mappedArchives, isAdmin };
+          return { archives: mappedArchives, isAdmin, totalItems };
         } catch (e) {
           throw new Error('Invalid response format');
         }

@@ -26,12 +26,15 @@ public class CloudantClientWrapper {
 	private final Cloudant client;
 	private final String databaseName;
 	private final ObjectMapper objectMapper;
+	// CouchDB credentials for direct HTTP calls (e.g., _purge API)
+	private String authUserName;
+	private String authPassword;
 
 	private static final Logger log = LoggerFactory.getLogger(CloudantClientWrapper.class);
 
 	/**
 	 * Constructor with Spring dependency injection for unified ObjectMapper
-	 * 
+	 *
 	 * @param client Cloudant client instance
 	 * @param databaseName Database name
 	 * @param objectMapper Unified ObjectMapper from JacksonConfig (couchdbObjectMapper bean)
@@ -41,6 +44,11 @@ public class CloudantClientWrapper {
 		this.databaseName = databaseName;
 		this.objectMapper = objectMapper;
 		log.info("CloudantClientWrapper initialized with unified ObjectMapper for database: " + databaseName);
+	}
+
+	public void setAuthCredentials(String userName, String password) {
+		this.authUserName = userName;
+		this.authPassword = password;
 	}
 
 	/**
@@ -417,6 +425,105 @@ public class CloudantClientWrapper {
 		} catch (Exception e) {
 			log.warn("Error creating document with ID '" + id + "' in database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
 			return null;
+		}
+	}
+
+	/**
+	 * Purge a tombstone (deleted document) from CouchDB.
+	 * CouchDB keeps tombstones for deleted documents, preventing re-creation with the same ID.
+	 * This method uses _all_docs to find the tombstone revision, then _purge to remove it,
+	 * allowing the ID to be reused (e.g., during archive restore).
+	 *
+	 * @param id the document ID to purge
+	 * @return true if a tombstone was found and purged, false otherwise
+	 */
+	public boolean purgeTombstone(String id) {
+		try {
+			log.info("purgeTombstone called for id: " + id + " in database: " + databaseName);
+			
+			// Step 1: Find tombstone revision via _all_docs
+			com.ibm.cloud.cloudant.v1.model.PostAllDocsOptions allDocsOptions =
+				new com.ibm.cloud.cloudant.v1.model.PostAllDocsOptions.Builder()
+					.db(databaseName)
+					.keys(java.util.Arrays.asList(id))
+					.build();
+			com.ibm.cloud.cloudant.v1.model.AllDocsResult allDocsResult =
+				client.postAllDocs(allDocsOptions).execute().getResult();
+
+			String tombstoneRev = null;
+			if (allDocsResult != null && allDocsResult.getRows() != null) {
+				for (com.ibm.cloud.cloudant.v1.model.DocsResultRow row : allDocsResult.getRows()) {
+					log.info("purgeTombstone _all_docs row: id=" + row.getId() + 
+						", value=" + (row.getValue() != null ? "rev=" + row.getValue().getRev() + ",deleted=" + row.getValue().isDeleted() : "null") +
+						", error=" + row.getError());
+					if (row.getValue() != null && row.getValue().getRev() != null) {
+						Boolean deleted = row.getValue().isDeleted();
+						if (Boolean.TRUE.equals(deleted)) {
+							tombstoneRev = row.getValue().getRev();
+							break;
+						}
+					}
+				}
+			}
+
+			if (tombstoneRev == null) {
+				log.info("No tombstone found for " + id + " in " + databaseName);
+				return false;
+			}
+
+			// Step 2: Purge the tombstone using CouchDB _purge API via direct HTTP
+			log.info("Purging tombstone for " + id + " with rev: " + tombstoneRev);
+
+			String purgeUrl = client.getServiceUrl() + "/" + databaseName + "/_purge";
+			log.info("Purge URL: " + purgeUrl + " (auth: " + (authUserName != null ? authUserName : "null") + ")");
+			
+			ObjectMapper mapper = getObjectMapper();
+			Map<String, Object> purgeRequest = new HashMap<>();
+			purgeRequest.put(id, java.util.Arrays.asList(tombstoneRev));
+			String purgeJson = mapper.writeValueAsString(purgeRequest);
+
+			java.net.URL httpUrl = new java.net.URL(purgeUrl);
+			java.net.HttpURLConnection conn = (java.net.HttpURLConnection) httpUrl.openConnection();
+			conn.setRequestMethod("POST");
+			conn.setRequestProperty("Content-Type", "application/json");
+			// Use credentials stored in this wrapper
+			if (authUserName != null && authPassword != null) {
+				String credentials = authUserName + ":" + authPassword;
+				String encoded = java.util.Base64.getEncoder().encodeToString(
+					credentials.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+				conn.setRequestProperty("Authorization", "Basic " + encoded);
+			} else {
+				log.warn("purgeTombstone: No auth credentials set on wrapper! Purge will likely fail with 401.");
+			}
+			conn.setDoOutput(true);
+			try (java.io.OutputStream os = conn.getOutputStream()) {
+				os.write(purgeJson.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			}
+			int responseCode = conn.getResponseCode();
+			
+			// Read response body for debugging
+			String responseBody = "";
+			try {
+				java.io.InputStream is = (responseCode >= 200 && responseCode < 300) ? 
+					conn.getInputStream() : conn.getErrorStream();
+				if (is != null) {
+					responseBody = new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+				}
+			} catch (Exception readEx) {
+				// ignore
+			}
+			conn.disconnect();
+
+			if (responseCode == 201 || responseCode == 200) {
+				log.info("Successfully purged tombstone for " + id + " (HTTP " + responseCode + "): " + responseBody);
+				return true;
+			} else {
+				log.warn("Purge returned HTTP " + responseCode + " for " + id + ": " + responseBody);
+				return false;
+			}
+		} catch (Exception e) {
+			log.error("Error purging tombstone for " + id + ": " + e.getMessage(), e);
+			return false;
 		}
 	}
 
@@ -1090,6 +1197,295 @@ public class CloudantClientWrapper {
 	}
 
 	/**
+	 * Result of a paged view query, including items and total row count.
+	 */
+	public static class PagedViewResult<T> {
+		public final List<T> items;
+		public final long totalRows;
+
+		public PagedViewResult(List<T> items, long totalRows) {
+			this.items = items;
+			this.totalRows = totalRows;
+		}
+	}
+
+	/**
+	 * Query a CouchDB view with DB-level pagination (skip/limit/descending).
+	 * Returns the deserialized items and the total row count from the view.
+	 *
+	 * @param designDoc   Design document name (e.g. "_repo")
+	 * @param viewName    View name
+	 * @param clazz       Target class for deserialization
+	 * @param skip        Number of rows to skip (0 for none)
+	 * @param limit       Maximum rows to return (0 for unlimited)
+	 * @param descending  If true, reverse the view key order
+	 * @return PagedViewResult with items and totalRows, or null on error
+	 */
+	public <T> PagedViewResult<T> queryViewPaged(String designDoc, String viewName,
+			Class<T> clazz, long skip, long limit, boolean descending) {
+		log.debug("CLOUDANT ENTRY: queryViewPaged called with designDoc=" + designDoc
+				+ ", viewName=" + viewName + ", skip=" + skip + ", limit=" + limit
+				+ ", descending=" + descending + ", class=" + clazz.getSimpleName());
+		try {
+			PostViewOptions.Builder builder = new PostViewOptions.Builder()
+				.db(databaseName)
+				.ddoc(designDoc.replace("_design/", ""))
+				.view(viewName)
+				.includeDocs(true)
+				.descending(descending);
+
+			if (skip > 0) {
+				builder.skip(skip);
+			}
+			if (limit > 0) {
+				builder.limit(limit);
+			}
+
+			ViewResult result = client.postView(builder.build()).execute().getResult();
+			long totalRows = (result.getTotalRows() != null) ? result.getTotalRows() : 0;
+
+			List<T> objects = new ArrayList<T>();
+			ObjectMapper mapper = getObjectMapper();
+
+			for (ViewResultRow row : result.getRows()) {
+				if (row.getDoc() != null) {
+					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+					Map<String, Object> docMap = doc.getProperties();
+
+					if (docMap != null) {
+						if (!docMap.containsKey("_id") && doc.getId() != null) {
+							docMap.put("_id", doc.getId());
+						}
+						if (!docMap.containsKey("_rev") && doc.getRev() != null) {
+							docMap.put("_rev", doc.getRev());
+						}
+
+						String jsonString = mapper.writeValueAsString(docMap);
+						T obj = mapper.readValue(jsonString, clazz);
+
+						if (obj instanceof jp.aegif.nemaki.model.couch.CouchNodeBase) {
+							jp.aegif.nemaki.model.couch.CouchNodeBase nodeBase = (jp.aegif.nemaki.model.couch.CouchNodeBase) obj;
+							if (nodeBase.getId() == null && docMap.get("_id") != null) {
+								nodeBase.setId((String) docMap.get("_id"));
+							}
+							if (nodeBase.getRevision() == null && docMap.get("_rev") != null) {
+								nodeBase.setRevision((String) docMap.get("_rev"));
+							}
+						}
+
+						objects.add(obj);
+					}
+				}
+			}
+
+			log.debug("queryViewPaged: Retrieved " + objects.size() + " of " + totalRows
+					+ " total rows from " + designDoc + "/" + viewName);
+			return new PagedViewResult<>(objects, totalRows);
+
+		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found");
+			return new PagedViewResult<>(new ArrayList<>(), 0);
+		} catch (Exception e) {
+			log.error("Error in queryViewPaged " + designDoc + "/" + viewName + ": " + e.getMessage(), e);
+			return new PagedViewResult<>(new ArrayList<>(), 0);
+		}
+	}
+
+	/**
+	 * Query a CouchDB view that uses a composite key [filterValue, sortValue]
+	 * with DB-level pagination and chronological ordering.
+	 *
+	 * When filterKey is non-null, uses startkey/endkey to restrict results to
+	 * rows where the first key element matches filterKey, while preserving
+	 * the sort order of the second key element (e.g. archivedAt timestamp).
+	 *
+	 * When filterKey is null, returns all rows (no key restriction).
+	 *
+	 * CouchDB note: with descending=true, startkey and endkey are swapped
+	 * because the view is traversed in reverse order.
+	 *
+	 * @param designDoc   Design document name (e.g. "_repo")
+	 * @param viewName    View name with composite key [filter, sort]
+	 * @param filterKey   First element of composite key to filter by, or null for all
+	 * @param clazz       Target class for deserialization
+	 * @param skip        Number of rows to skip (0 for none)
+	 * @param limit       Maximum rows to return (0 for unlimited)
+	 * @param descending  If true, reverse the view key order
+	 * @return PagedViewResult with items and totalRows, or empty result on error
+	 */
+	public <T> PagedViewResult<T> queryViewPagedWithKey(String designDoc, String viewName,
+			Object filterKey, Class<T> clazz, long skip, long limit, boolean descending) {
+		log.debug("CLOUDANT ENTRY: queryViewPagedWithKey called with designDoc=" + designDoc
+				+ ", viewName=" + viewName + ", filterKey=" + filterKey + ", skip=" + skip + ", limit=" + limit
+				+ ", descending=" + descending + ", class=" + clazz.getSimpleName());
+		try {
+			PostViewOptions.Builder builder = new PostViewOptions.Builder()
+				.db(databaseName)
+				.ddoc(designDoc.replace("_design/", ""))
+				.view(viewName)
+				.includeDocs(true)
+				.reduce(false)
+				.descending(descending);
+
+			if (filterKey != null) {
+				// Composite key range: [filterKey] to [filterKey, {}]
+				// {} (empty object) sorts higher than any other JSON value in CouchDB.
+				// For descending, start/end are swapped because the view is traversed in reverse.
+				java.util.List<Object> lowKey = java.util.Arrays.asList(filterKey);
+				java.util.List<Object> highKey = java.util.Arrays.asList(filterKey, java.util.Collections.emptyMap());
+
+				if (descending) {
+					builder.startKey(highKey);
+					builder.endKey(lowKey);
+				} else {
+					builder.startKey(lowKey);
+					builder.endKey(highKey);
+				}
+			}
+			if (skip > 0) {
+				builder.skip(skip);
+			}
+			if (limit > 0) {
+				builder.limit(limit);
+			}
+
+			ViewResult result = client.postView(builder.build()).execute().getResult();
+			long totalRows = (result.getTotalRows() != null) ? result.getTotalRows() : 0;
+
+			List<T> objects = new ArrayList<T>();
+			ObjectMapper mapper = getObjectMapper();
+
+			for (ViewResultRow row : result.getRows()) {
+				if (row.getDoc() != null) {
+					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+					Map<String, Object> docMap = doc.getProperties();
+
+					if (docMap != null) {
+						if (!docMap.containsKey("_id") && doc.getId() != null) {
+							docMap.put("_id", doc.getId());
+						}
+						if (!docMap.containsKey("_rev") && doc.getRev() != null) {
+							docMap.put("_rev", doc.getRev());
+						}
+
+						String jsonString = mapper.writeValueAsString(docMap);
+						T obj = mapper.readValue(jsonString, clazz);
+
+						if (obj instanceof jp.aegif.nemaki.model.couch.CouchNodeBase) {
+							jp.aegif.nemaki.model.couch.CouchNodeBase nodeBase = (jp.aegif.nemaki.model.couch.CouchNodeBase) obj;
+							if (nodeBase.getId() == null && docMap.get("_id") != null) {
+								nodeBase.setId((String) docMap.get("_id"));
+							}
+							if (nodeBase.getRevision() == null && docMap.get("_rev") != null) {
+								nodeBase.setRevision((String) docMap.get("_rev"));
+							}
+						}
+
+						objects.add(obj);
+					}
+				}
+			}
+
+			log.debug("queryViewPagedWithKey: Retrieved " + objects.size() + " of " + totalRows
+					+ " total rows from " + designDoc + "/" + viewName + " (filterKey=" + filterKey + ")");
+			return new PagedViewResult<>(objects, totalRows);
+
+		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found");
+			return new PagedViewResult<>(new ArrayList<>(), 0);
+		} catch (Exception e) {
+			log.error("Error in queryViewPagedWithKey " + designDoc + "/" + viewName + ": " + e.getMessage(), e);
+			return new PagedViewResult<>(new ArrayList<>(), 0);
+		}
+	}
+
+	/**
+	 * Get the total row count of a CouchDB view without loading any documents.
+	 * Uses limit=0 and includeDocs=false to minimize data transfer.
+	 *
+	 * @param designDoc Design document name
+	 * @param viewName  View name
+	 * @return total number of rows in the view, or 0 on error
+	 */
+	public long queryViewCount(String designDoc, String viewName) {
+		try {
+			PostViewOptions options = new PostViewOptions.Builder()
+				.db(databaseName)
+				.ddoc(designDoc.replace("_design/", ""))
+				.view(viewName)
+				.includeDocs(false)
+				.limit(0)
+				.build();
+
+			ViewResult result = client.postView(options).execute().getResult();
+			return (result.getTotalRows() != null) ? result.getTotalRows() : 0;
+		} catch (Exception e) {
+			log.error("Error getting view count for " + designDoc + "/" + viewName + ": " + e.getMessage(), e);
+			return 0;
+		}
+	}
+
+	/**
+	 * Get the row count of a CouchDB view filtered by a specific composite key prefix.
+	 * Uses the view's _count reduce function with group_level=1 for accurate per-key counts.
+	 *
+	 * For a view with composite key [state, archivedAt] and _count reduce:
+	 *   - key="ARCHIVED_LOCAL" → count of ARCHIVED_LOCAL rows only
+	 *   - key=null → total count across all states (sum of all groups)
+	 *
+	 * @param designDoc Design document name
+	 * @param viewName  View name (must have _count reduce)
+	 * @param key       First element of composite key to filter by, or null for total
+	 * @return number of rows matching the key, or total rows if key is null
+	 */
+	public long queryViewCountByKey(String designDoc, String viewName, Object key) {
+		try {
+			PostViewOptions.Builder builder = new PostViewOptions.Builder()
+				.db(databaseName)
+				.ddoc(designDoc.replace("_design/", ""))
+				.view(viewName)
+				.includeDocs(false)
+				.reduce(true)
+				.groupLevel(1);
+
+			if (key != null) {
+				java.util.List<Object> lowKey = java.util.Arrays.asList(key);
+				java.util.List<Object> highKey = java.util.Arrays.asList(key, java.util.Collections.emptyMap());
+				builder.startKey(lowKey);
+				builder.endKey(highKey);
+			}
+
+			ViewResult result = client.postView(builder.build()).execute().getResult();
+
+			if (key != null) {
+				// With key filter + group_level=1, expect at most one row with the count
+				if (result.getRows() != null && !result.getRows().isEmpty()) {
+					Object value = result.getRows().get(0).getValue();
+					if (value instanceof Number) {
+						return ((Number) value).longValue();
+					}
+				}
+				return 0;
+			} else {
+				// No key filter: sum all group counts
+				long total = 0;
+				if (result.getRows() != null) {
+					for (ViewResultRow row : result.getRows()) {
+						Object value = row.getValue();
+						if (value instanceof Number) {
+							total += ((Number) value).longValue();
+						}
+					}
+				}
+				return total;
+			}
+		} catch (Exception e) {
+			log.error("Error getting view count by key for " + designDoc + "/" + viewName + " (key=" + key + "): " + e.getMessage(), e);
+			return 0;
+		}
+	}
+
+	/**
 	 * Create document (compatible with Ektorp create method)
 	 */
 	public void create(Object document) {
@@ -1644,6 +2040,48 @@ public class CloudantClientWrapper {
 					return result;
 				} catch (Exception deserEx) {
 					log.warn("Error deserializing CouchNodeBase: " + deserEx.getMessage());
+					throw deserEx;
+				}
+			}
+		}
+
+		// CRITICAL FIX (2026-02-09): For CouchArchive, use Document.getProperties() to get actual CouchDB fields
+		// Same issue as CouchNodeBase: the default path nests custom fields under "properties" key
+		// which prevents Jackson from mapping name, parentId, originalId, etc.
+		if (clazz.getSimpleName().equals("CouchArchive")) {
+			Map<String, Object> properties = doc.getProperties();
+			if (properties != null) {
+				Map<String, Object> completeMap = new HashMap<>();
+
+				// Add standard document fields
+				completeMap.put("_id", doc.getId());
+				completeMap.put("_rev", doc.getRev());
+
+				// Add all properties from CouchDB document with timestamp conversion
+				for (Map.Entry<String, Object> entry : properties.entrySet()) {
+					String key = entry.getKey();
+					Object value = entry.getValue();
+
+					// Convert timestamp fields from Number to GregorianCalendar
+					// CouchArchive has: created, modified (inherited), archivedAt, coldArchivedAt
+					if (("created".equals(key) || "modified".equals(key) ||
+						 "archivedAt".equals(key) || "coldArchivedAt".equals(key)) && value instanceof Number) {
+						long timestamp = ((Number) value).longValue();
+						java.util.GregorianCalendar calendar = new java.util.GregorianCalendar();
+						calendar.setTimeInMillis(timestamp);
+						completeMap.put(key, calendar);
+					} else {
+						completeMap.put(key, value);
+					}
+				}
+
+				log.debug("CouchArchive deserialization - _id: {}, name: {}", doc.getId(), completeMap.get("name"));
+
+				try {
+					T result = mapper.convertValue(completeMap, clazz);
+					return result;
+				} catch (Exception deserEx) {
+					log.warn("Error deserializing CouchArchive: " + deserEx.getMessage());
 					throw deserEx;
 				}
 			}

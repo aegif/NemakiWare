@@ -101,6 +101,7 @@ import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.service.RelationshipService;
+import jp.aegif.nemaki.util.spring.SpringContext;
 
 @Path("/repo/{repositoryId}/bulkCheckIn")
 public class BulkCheckInResource extends ResourceBase {
@@ -131,6 +132,32 @@ public class BulkCheckInResource extends ResourceBase {
 
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
+	}
+
+	// Fallback getters for Jersey-Spring DI mismatch
+	private ContentService getContentService() {
+		if (contentService != null) return contentService;
+		return SpringContext.getApplicationContext().getBean("ContentService", ContentService.class);
+	}
+	private VersioningService getVersioningService() {
+		if (versioningService != null) return versioningService;
+		return SpringContext.getApplicationContext().getBean("VersioningService", VersioningService.class);
+	}
+	private RelationshipService getRelationshipService() {
+		if (relationshipService != null) return relationshipService;
+		return SpringContext.getApplicationContext().getBean("RelationshipService", RelationshipService.class);
+	}
+	private TypeService getTypeService() {
+		if (typeService != null) return typeService;
+		return SpringContext.getApplicationContext().getBean("TypeService", TypeService.class);
+	}
+	private TypeManager getTypeManager() {
+		if (typeManager != null) return typeManager;
+		return SpringContext.getApplicationContext().getBean("typeManager", TypeManager.class);
+	}
+	private CompileService getCompileService() {
+		if (compileService != null) return compileService;
+		return SpringContext.getApplicationContext().getBean("CompileService", CompileService.class);
 	}
 
 	
@@ -174,9 +201,9 @@ public class BulkCheckInResource extends ResourceBase {
 		// Declare properties variable
 		PropertiesImpl properties = new PropertiesImpl();
 
-		Document firstdoc = contentService.getDocument(repositoryId, objectIds.get(0));
+		Document firstdoc = getContentService().getDocument(repositoryId, objectIds.get(0));
 		String typeId = firstdoc.getObjectType();
-		TypeDefinition typeDef = typeManager.getTypeByQueryName(repositoryId, typeId);
+		TypeDefinition typeDef = getTypeManager().getTypeByQueryName(repositoryId, typeId);
 
 		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
 
@@ -217,25 +244,25 @@ public class BulkCheckInResource extends ResourceBase {
 
 		for(int i = 0; i < objectIds.size() ;++i){
 			String objectId = objectIds.get(i);
-			Document doc = contentService.getDocument(repositoryId, objectId);
-			VersionSeries vs = contentService.getVersionSeries(repositoryId, doc);
+			Document doc = getContentService().getDocument(repositoryId, objectId);
+			VersionSeries vs = getContentService().getVersionSeries(repositoryId, doc);
 			Holder<String> docIdHolder = new Holder<String>(objectId);
 			typeId = doc.getObjectType();
 			// TCK FIX: Null-safe version series checked out check
 			Boolean isCheckedOut = vs.isVersionSeriesCheckedOut();
 			if (force && (isCheckedOut == null || !isCheckedOut.booleanValue())){
-				versioningService.checkOut(callContext, repositoryId, docIdHolder , new Holder<Boolean>(true), null);
+				getVersioningService().checkOut(callContext, repositoryId, docIdHolder , new Holder<Boolean>(true), null);
 			}
 			// Check in with the property set and comment
 			if (!doc.isPrivateWorkingCopy()){
 				String pwcId = vs.getVersionSeriesCheckedOutId();
 				docIdHolder = new Holder<String>(pwcId);
 			}
-			versioningService.checkIn(callContext, repositoryId, docIdHolder, true, properties, null, comment, null, null, null, null);
-			Document newDoc = contentService.getDocumentOfLatestVersion(repositoryId, doc.getVersionSeriesId());
+			getVersioningService().checkIn(callContext, repositoryId, docIdHolder, true, properties, null, comment, null, null, null, null);
+			Document newDoc = getContentService().getDocumentOfLatestVersion(repositoryId, doc.getVersionSeriesId());
 			// get relationships if exists
 			if (copyRelations){
-				List<Relationship> relList = contentService.getRelationsipsOfObject(repositoryId, objectId, RelationshipDirection.SOURCE);
+				List<Relationship> relList = getContentService().getRelationsipsOfObject(repositoryId, objectId, RelationshipDirection.SOURCE);
 				// copy relationships
 				for(Relationship rel:relList){
 					PropertiesImpl newProps = new PropertiesImpl();
@@ -243,7 +270,7 @@ public class BulkCheckInResource extends ResourceBase {
 					newProps.addProperty(new PropertyIdImpl(PropertyIds.TARGET_ID,rel.getTargetId()));
 					newProps.addProperty(new PropertyIdImpl(PropertyIds.SOURCE_ID,newDoc.getId()));
 					newProps.addProperty(new PropertyStringImpl(PropertyIds.NAME,rel.getName()));
-					Relationship newRel = contentService.createRelationship(callContext, repositoryId, newProps, null, null, null, null);
+					Relationship newRel = getContentService().createRelationship(callContext, repositoryId, newProps, null, null, null, null);
 					newRel.setModifier("bulkCheckInService");
 				}
 			}
@@ -284,7 +311,7 @@ public class BulkCheckInResource extends ResourceBase {
 
 			JSONArray items = (JSONArray)propsJson.get("items");
 
-			Folder parentFolder = contentService.getFolder(repositoryId, parentFolderId);
+			Folder parentFolder = getContentService().getFolder(repositoryId, parentFolderId);
 			if ( parentFolder == null) {
 				log.warn("folder not found:" + parentFolderId);
 				return "";
@@ -349,7 +376,7 @@ public class BulkCheckInResource extends ResourceBase {
 				ContentStream contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(tempFile.length()), "binary/octet-stream", new FileInputStream(tempFile));
 
 				if ( docName != null) {
-					List<Content> children = contentService.getChildren(repositoryId, parentFolder.getId());
+					List<Content> children = getContentService().getChildren(repositoryId, parentFolder.getId());
 					if (CollectionUtils.isNotEmpty(children)){
 						for(Content content : children) {
 							if ( content instanceof Document){
@@ -364,7 +391,7 @@ public class BulkCheckInResource extends ResourceBase {
 				}
 				if ( prevDoc == null) {
 					//first create document
-					firstDoc = contentService.createDocument(context, repositoryId,
+					firstDoc = getContentService().createDocument(context, repositoryId,
 							properties, parentFolder, contentStream, VersioningState.MAJOR, null, null, null);
 
 					JSONObject elm = new JSONObject();
@@ -375,11 +402,11 @@ public class BulkCheckInResource extends ResourceBase {
 
 					if ( items.size() > 1) {
 						//create versionSeries
-						versionSeries = contentService.getVersionSeries(repositoryId, firstDoc);
+						versionSeries = getContentService().getVersionSeries(repositoryId, firstDoc);
 						prevDoc = firstDoc;
 					}
 				} else { //i > 0
-					prevDoc = contentService.updateWithoutCheckInOut(context, repositoryId, isMajor, properties, contentStream, checkInComment, prevDoc, versionSeries);
+					prevDoc = getContentService().updateWithoutCheckInOut(context, repositoryId, isMajor, properties, contentStream, checkInComment, prevDoc, versionSeries);
 
 					JSONObject elm = new JSONObject();
 					elm.put("version", (String)propJson.get("cmis:versionLabel"));

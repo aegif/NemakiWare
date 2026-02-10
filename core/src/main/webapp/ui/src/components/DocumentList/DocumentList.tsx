@@ -267,6 +267,7 @@ import {
   GoogleDriveFile,
   OneDriveFile
 } from '../../services/cloud-drive';
+import { formatServerDate } from '../../utils/dateUtils';
 
 interface DocumentListProps {
   repositoryId: string;
@@ -1347,7 +1348,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         dataIndex: 'creationDate',
         key: 'creationDate',
         width: 150,
-        render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+        render: (date: string) => formatServerDate(date),
       },
     ] : []),
     {
@@ -1369,7 +1370,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       dataIndex: 'lastModificationDate',
       key: 'modified',
       width: 180,
-      render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+      render: (date: string) => formatServerDate(date),
     },
     {
       title: t('documentList.columns.modifiedBy'),
@@ -2042,7 +2043,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               dataIndex: 'lastModificationDate',
               key: 'date',
               width: 180,
-              render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+              render: (date: string) => formatServerDate(date),
             },
             {
               title: t('documentList.columns.modifiedBy'),
@@ -2326,7 +2327,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   const date =
                     (record as GoogleDriveFile).modifiedTime ||
                     (record as OneDriveFile).lastModifiedDateTime;
-                  return date ? new Date(date).toLocaleString('ja-JP') : '-';
+                  return formatServerDate(date);
                 },
               },
               {

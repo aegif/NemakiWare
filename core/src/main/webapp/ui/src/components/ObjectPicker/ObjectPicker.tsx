@@ -29,6 +29,7 @@ import { FolderOutlined, FileOutlined, SearchOutlined } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { CMISObject } from '../../types/cmis';
+import { formatServerDate } from '../../utils/dateUtils';
 
 interface ObjectPickerProps {
   repositoryId: string;
@@ -97,7 +98,7 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
       const children = await cmisService.getChildren(repositoryId, rootFolder.id);
       setCurrentFolderChildren(filterChildren(children));
     } catch (error) {
-      message.error(t('objectPicker.messages.rootFolderLoadError'));
+      message.error(t('objectPicker.messages.rootLoadError'));
     } finally {
       setTreeLoading(false);
     }
@@ -154,14 +155,14 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
         const children = await cmisService.getChildren(repositoryId, folderId);
         setCurrentFolderChildren(filterChildren(children));
       } catch (error) {
-        message.error(t('objectPicker.messages.folderContentsError'));
+        message.error(t('objectPicker.messages.contentsLoadError'));
       }
     }
   };
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
-      message.warning(t('objectPicker.messages.enterSearchKeyword'));
+      message.warning(t('objectPicker.messages.searchKeywordRequired'));
       return;
     }
 
@@ -210,10 +211,10 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
       key: 'objectType',
     },
     {
-      title: t('objectPicker.columns.lastModified'),
+      title: t('objectPicker.columns.updatedAt'),
       dataIndex: 'lastModificationDate',
       key: 'lastModificationDate',
-      render: (date: string) => date ? new Date(date).toLocaleString() : '-',
+      render: (date: string) => formatServerDate(date),
     },
   ];
 
@@ -323,7 +324,7 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
     >
       {selectedObject && (
         <div style={{ marginBottom: '16px', padding: '8px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
-          <strong>{t('objectPicker.selected')}: </strong>
+          <strong>{t('objectPicker.selectedObject')}: </strong>
           {selectedObject.baseType === 'cmis:folder' ? <FolderOutlined /> : <FileOutlined />}
           {' '}{selectedObject.name} (ID: {selectedObject.id})
         </div>

@@ -79,6 +79,7 @@ public class Archive extends NodeBase {
 	private String coldMoveMode;
 	private String aclSnapshot;
 	private String propsSnapshot;
+	private String archivedBy;
 
 
 	public Archive() {
@@ -278,6 +279,14 @@ public class Archive extends NodeBase {
 		this.coldMoveMode = coldMoveMode;
 	}
 
+	public String getArchivedBy() {
+		return archivedBy;
+	}
+
+	public void setArchivedBy(String archivedBy) {
+		this.archivedBy = archivedBy;
+	}
+
 	@Override
 	public String toString() {
 		Map<String, Object> m = new HashMap<String, Object>();
@@ -292,6 +301,7 @@ public class Archive extends NodeBase {
 		if(isLatestVersion() != null) m.put("isLatestVersion", isLatestVersion());
 		if(getCreated() != null) m.put("created", DataUtil.convertToDateFormat(getCreated()));
 		if(getCreator() != null) m.put("creator", getCreator());
+		if(getArchivedBy() != null) m.put("archivedBy", getArchivedBy());
 		if(getArchiveState() != null) m.put("archiveState", getArchiveState());
 		if(getArchivedAt() != null) m.put("archivedAt", DataUtil.convertToDateFormat(getArchivedAt()));
 		if(getColdArchivedAt() != null) m.put("coldArchivedAt", DataUtil.convertToDateFormat(getColdArchivedAt()));

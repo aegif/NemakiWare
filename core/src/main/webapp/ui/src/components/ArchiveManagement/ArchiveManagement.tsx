@@ -32,6 +32,7 @@ import {
 import { CMISService } from '../../services/cmis';
 import { CMISObject, RetentionSettings, MigrationLog, PendingArchive } from '../../types/cmis';
 import { useTranslation } from 'react-i18next';
+import { formatServerDate } from '../../utils/dateUtils';
 
 interface ArchiveManagementProps {
   repositoryId: string;
@@ -52,21 +53,31 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
   const [extendTarget, setExtendTarget] = useState<PendingArchive | null>(null);
   const [extendDate, setExtendDate] = useState<any>(null);
   const [selectedArchive, setSelectedArchive] = useState<CMISObject | null>(null);
+  // Server-side pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalItems, setTotalItems] = useState(0);
   const { t, i18n } = useTranslation();
 
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
 
   useEffect(() => {
-    loadArchives();
+    loadArchives(1, pageSize);
   }, [repositoryId]);
 
-  const loadArchives = async () => {
+  const loadArchives = async (page: number, size: number) => {
     setLoading(true);
     try {
-      const result = await cmisService.getArchives(repositoryId);
+      const skip = (page - 1) * size;
+      const result = await cmisService.getArchives(repositoryId, {
+        skip, limit: size, desc: true,
+      });
       setArchives(result.archives);
       setIsAdminUser(result.isAdmin);
+      setTotalItems(result.totalItems);
+      setCurrentPage(page);
+      setPageSize(size);
     } catch (error) {
       message.error(t('archiveManagement.messages.loadError'));
     } finally {
@@ -115,7 +126,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
     try {
       await cmisService.restoreObject(repositoryId, objectId);
       message.success(t('archiveManagement.messages.restoreSuccess'));
-      loadArchives();
+      loadArchives(currentPage, pageSize);
     } catch (error) {
       if (error instanceof Error && error.message === 'ERR_RESTORE_BECAUSE_PARENT_NO_LONGER_EXISTS') {
         message.error(t('archiveManagement.messages.restoreErrorParentNotFound'));
@@ -135,7 +146,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       await cmisService.forceArchive(repositoryId, objectId);
       message.success(t('archiveManagement.messages.forceArchiveSuccess'));
       loadPendingArchives();
-      loadArchives();
+      loadArchives(currentPage, pageSize);
     } catch (error) {
       message.error(t('archiveManagement.messages.forceArchiveError'));
     }
@@ -207,7 +218,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       dataIndex: 'archivedAt',
       key: 'archivedAt',
       width: 180,
-      render: (date: string) => date ? new Date(date).toLocaleString(i18n.language === 'ja' ? 'ja-JP' : 'en-US') : '-',
+      render: (date: string) => formatServerDate(date),
     },
     {
       title: t('archiveManagement.columns.coldMoveMode'),
@@ -289,7 +300,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       dataIndex: 'expirationDate',
       key: 'expirationDate',
       width: 180,
-      render: (date: string) => date ? new Date(date).toLocaleString(i18n.language === 'ja' ? 'ja-JP' : 'en-US') : '-',
+      render: (date: string) => formatServerDate(date),
     },
     {
       title: t('archiveManagement.pendingArchives.lastModifiedBy'),
@@ -338,7 +349,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       dataIndex: 'startedAt',
       key: 'startedAt',
       width: 180,
-      render: (ts: number) => ts ? new Date(ts).toLocaleString(i18n.language === 'ja' ? 'ja-JP' : 'en-US') : '-',
+      render: (ts: number) => ts ? new Date(ts).toLocaleString(i18n.language || navigator.language) : '-',
     },
     {
       title: t('archiveManagement.migrationLogs.jobType'),
@@ -406,7 +417,14 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
           dataSource={archives}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 20 }}
+          pagination={{
+            current: currentPage,
+            pageSize: pageSize,
+            total: totalItems,
+            showSizeChanger: true,
+            pageSizeOptions: ['20', '50', '100'],
+            onChange: (page, size) => loadArchives(page, size),
+          }}
         />
       ),
     },
@@ -599,10 +617,11 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
             <Descriptions.Item label={t('archiveManagement.details.creator')}>
               {selectedArchive.createdBy || '-'}
             </Descriptions.Item>
+            <Descriptions.Item label={t('archiveManagement.details.archivedBy')}>
+              {selectedArchive.archivedBy || '-'}
+            </Descriptions.Item>
             <Descriptions.Item label={t('archiveManagement.columns.archivedAt')}>
-              {selectedArchive.archivedAt
-                ? new Date(selectedArchive.archivedAt).toLocaleString(i18n.language === 'ja' ? 'ja-JP' : 'en-US')
-                : '-'}
+              {formatServerDate(selectedArchive.archivedAt)}
             </Descriptions.Item>
             <Descriptions.Item label={t('archiveManagement.columns.archiveState')}>
               {(() => {

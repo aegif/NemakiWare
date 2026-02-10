@@ -23,6 +23,7 @@ import jp.aegif.nemaki.rag.config.RAGConfig;
 import jp.aegif.nemaki.rag.config.SolrClientProvider;
 import jp.aegif.nemaki.rag.embedding.EmbeddingException;
 import jp.aegif.nemaki.rag.embedding.EmbeddingService;
+import jp.aegif.nemaki.rag.indexing.RAGIndexingServiceImpl;
 import jp.aegif.nemaki.rag.util.SolrQuerySanitizer;
 
 /**
@@ -133,7 +134,8 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             String aclFilter = aclExpander.buildReaderFilterQuery(repositoryId, userId);
 
             // Build folder filter (using Block Join to parent)
-            String folderFilter = "{!parent which='doc_type:document'}parent_id:" + folderId;
+            String sanitizedFolderId = SolrQuerySanitizer.escape(folderId);
+            String folderFilter = "{!parent which='doc_type:document'}parent_id:" + sanitizedFolderId;
 
             // Execute weighted KNN search
             return executeWeightedKnnSearch(repositoryId, queryVector, aclFilter, folderFilter, topK,
@@ -208,13 +210,14 @@ public class VectorSearchServiceImpl implements VectorSearchService {
      * Retrieve the document_vector for a specific document from Solr.
      *
      * @param solrClient Solr client
-     * @param documentId Document ID
+     * @param documentId Document ID (raw CMIS object ID)
      * @return document_vector as float array, or null if not found
      */
     private float[] getDocumentVector(SolrClient solrClient, String documentId) throws Exception {
         SolrQuery query = new SolrQuery();
-        // SECURITY: Sanitize documentId to prevent Solr query injection
-        String sanitizedId = SolrQuerySanitizer.escape(documentId);
+        // Convert to RAG id prefix and sanitize to prevent Solr query injection
+        String ragId = RAGIndexingServiceImpl.toRagId(documentId);
+        String sanitizedId = SolrQuerySanitizer.escape(ragId);
         query.setQuery("id:" + sanitizedId);
         query.addFilterQuery("doc_type:document");
         query.setFields("id", "document_vector");
@@ -301,7 +304,8 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             }
 
             VectorSearchResult result = new VectorSearchResult();
-            result.setDocumentId(getStringField(doc, "id"));
+            // Convert RAG id back to raw CMIS object ID
+            result.setDocumentId(RAGIndexingServiceImpl.fromRagId(getStringField(doc, "id")));
             result.setDocumentName(getStringField(doc, "name"));
             result.setPath(getStringField(doc, "path"));
             result.setObjectType(getStringField(doc, "objecttype"));
@@ -576,7 +580,8 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         }
 
         for (SolrDocument doc : docs) {
-            String documentId = getStringField(doc, "id");
+            // Convert RAG id back to raw CMIS object ID
+            String documentId = RAGIndexingServiceImpl.fromRagId(getStringField(doc, "id"));
             if (documentId == null) continue;
 
             float score = doc.getFieldValue("score") != null ?
@@ -623,15 +628,15 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                 return;
             }
 
-            // Build a single query for all documents
+            // Build a single query for all documents using RAG id prefix
             // SECURITY: Sanitize each document ID to prevent Solr query injection
             StringBuilder queryBuilder = new StringBuilder("id:(");
             for (int i = 0; i < documentIds.size(); i++) {
                 if (i > 0) {
                     queryBuilder.append(" OR ");
                 }
-                // Escape special characters in document IDs
-                queryBuilder.append(SolrQuerySanitizer.escape(documentIds.get(i)));
+                // Convert raw CMIS ID to RAG id for Solr query
+                queryBuilder.append(SolrQuerySanitizer.escape(RAGIndexingServiceImpl.toRagId(documentIds.get(i))));
             }
             queryBuilder.append(")");
 
@@ -644,11 +649,11 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             QueryResponse response = solrClient.query("nemaki", batchQuery);
             SolrDocumentList docs = response.getResults();
 
-            // Build a map for quick lookup
+            // Build a map for quick lookup (key = raw CMIS object ID)
             Map<String, SolrDocument> parentDocs = new HashMap<>();
             if (docs != null) {
                 for (SolrDocument doc : docs) {
-                    String id = getStringField(doc, "id");
+                    String id = RAGIndexingServiceImpl.fromRagId(getStringField(doc, "id"));
                     if (id != null) {
                         parentDocs.put(id, doc);
                     }

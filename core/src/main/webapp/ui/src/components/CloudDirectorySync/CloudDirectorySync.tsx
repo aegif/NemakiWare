@@ -41,6 +41,7 @@ import {
   testLdapConnection,
   getLdapConfig
 } from '../../services/cloudDirectorySync';
+import { formatServerDate } from '../../utils/dateUtils';
 
 const { Text } = Typography;
 
@@ -233,10 +234,10 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
             {status.syncMode === 'DELTA' ? t('cloudSync.modeDelta') : t('cloudSync.modeFull')}
           </Descriptions.Item>
           <Descriptions.Item label={t('cloudSync.startTime')}>
-            {status.startTime ? new Date(status.startTime).toLocaleString() : '-'}
+            {formatServerDate(status.startTime)}
           </Descriptions.Item>
           <Descriptions.Item label={t('cloudSync.endTime')}>
-            {status.endTime ? new Date(status.endTime).toLocaleString() : '-'}
+            {formatServerDate(status.endTime)}
           </Descriptions.Item>
           {showPageInfo && (
             <Descriptions.Item label={t('cloudSync.currentPage')}>

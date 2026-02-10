@@ -36,6 +36,16 @@
       },
       "byCreator" : {
         "map" : "function(doc) { if (doc.creator) emit(doc.creator, doc); }"
+      },
+      "byArchivedBy" : {
+        "map" : "function(doc) { if (doc.archivedBy) emit(doc.archivedBy, doc); }"
+      },
+      "archivesByArchivedAt" : {
+        "map" : "function(doc) { if (doc.type === 'attachment') return; if (doc.type === 'cmis:document' && doc.latestVersion !== true) return; var ts = doc.archivedAt || 0; emit(ts, null); }"
+      },
+      "searchableArchives" : {
+        "map" : "function(doc) { if (doc.type === 'attachment') return; if (doc.type === 'cmis:document' && doc.latestVersion !== true) return; var state = doc.archiveState || 'ARCHIVED_LOCAL'; var ts = doc.archivedAt || 0; emit([state, ts], null); }",
+        "reduce" : "_count"
       }
     }
   },

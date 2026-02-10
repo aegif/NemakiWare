@@ -75,7 +75,7 @@ public class LogResource extends ResourceBase{
 
 		//get config
 		try{
-			JsonNode config = jsonLogger.getJsonConfiguration();
+			JsonNode config = getJsonLogger().getJsonConfiguration();
 			result.set("config", config);
 
 		}catch(Exception e){
@@ -103,7 +103,7 @@ public class LogResource extends ResourceBase{
 
 		//udpate config
 		try{
-			jsonLogger.updateJsonConfiguration(parseBody(request));
+			getJsonLogger().updateJsonConfiguration(parseBody(request));
 		}catch(Exception e){
 			addErrMsg(errMsg, "error", e.getMessage());
 			log.error(e.getMessage(), e);
@@ -128,7 +128,7 @@ public class LogResource extends ResourceBase{
 
 		//reload config
 		try{
-			jsonLogger.reloadJsonConfiguration();
+			getJsonLogger().reloadJsonConfiguration();
 		}catch(Exception e){
 			addErrMsg(errMsg, "error", e.getMessage());
 			log.error(e.getMessage(), e);
@@ -163,4 +163,8 @@ public class LogResource extends ResourceBase{
 		this.jsonLogger = jsonLogger;
 	}
 
+	private JsonLogger getJsonLogger() {
+		if (jsonLogger != null) return jsonLogger;
+		return jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext().getBean("jsonLogger", JsonLogger.class);
+	}
 }
