@@ -1643,13 +1643,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Policy> getAppliedPolicies(String repositoryId, String objectId) {
 		try {
-			// Query appliedPolicies view with objectId
+			// Query policiesByAppliedObject view with objectId
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			List<CouchPolicy> couchPolicies = client.queryView("_repo", "appliedPolicies", objectId, CouchPolicy.class);
+			List<CouchPolicy> couchPolicies = client.queryView("_repo", "policiesByAppliedObject", objectId, CouchPolicy.class);
 			
 			// CRITICAL FIX: Handle null result from queryView to prevent NullPointerException
 			if (couchPolicies == null) {
-				log.warn("queryView returned null for appliedPolicies - objectId: " + objectId + ", repository: " + repositoryId);
+				log.warn("queryView returned null for policiesByAppliedObject - objectId: " + objectId + ", repository: " + repositoryId);
 				return new ArrayList<Policy>();
 			}
 			
@@ -3450,11 +3450,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Archive getArchiveByOriginalId(String repositoryId, String originalId) {
 		try {
-			// Query archiveByOriginalId view with originalId
+			// Query 'all' view with originalId (was incorrectly 'archiveByOriginalId')
 			// CRITICAL FIX: Use archive repository, not main repository
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "archiveByOriginalId", originalId, CouchArchive.class);
+			List<CouchArchive> couchArchives = client.queryView("_repo", "all", originalId, CouchArchive.class);
 			
 			if (!couchArchives.isEmpty()) {
 				// Return the first (and should be only) result
@@ -3471,11 +3471,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Archive getAttachmentArchive(String repositoryId, Archive archive) {
 		try {
-			// Query attachmentArchive view with archive ID
+			// Query 'attachments' view with attachmentNodeId (was incorrectly 'attachmentArchive' with archive.getId())
+			// The "attachments" view emits by originalId, and attachmentNodeId is
+			// the originalId of the attachment that was archived alongside the document.
+			String attachmentNodeId = archive.getAttachmentNodeId();
+			if (attachmentNodeId == null || attachmentNodeId.isEmpty()) {
+				log.warn("No attachmentNodeId on archive: " + archive.getId());
+				return null;
+			}
 			// CRITICAL FIX: Use archive repository, not main repository
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "attachmentArchive", archive.getId(), CouchArchive.class);
+			List<CouchArchive> couchArchives = client.queryView("_repo", "attachments", attachmentNodeId, CouchArchive.class);
 			
 			if (!couchArchives.isEmpty()) {
 				// Return the first attachment archive
@@ -3492,11 +3499,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Archive> getChildArchives(String repositoryId, Archive archive) {
 		try {
-			// Query childArchives view with archive ID
+			// Query 'children' view with archive ID (was incorrectly 'childArchives')
 			// CRITICAL FIX: Use archive repository, not main repository
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "childArchives", archive.getId(), CouchArchive.class);
+			List<CouchArchive> couchArchives = client.queryView("_repo", "children", archive.getId(), CouchArchive.class);
 			
 			List<Archive> archives = new ArrayList<Archive>();
 			for (CouchArchive couchArchive : couchArchives) {
@@ -3513,11 +3520,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Archive> getArchivesOfVersionSeries(String repositoryId, String versionSeriesId) {
 		try {
-			// Query archivesOfVersionSeries view with versionSeriesId
+			// Query 'versionSeries' view with versionSeriesId (was incorrectly 'archivesOfVersionSeries')
 			// CRITICAL FIX: Use archive repository, not main repository
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "archivesOfVersionSeries", versionSeriesId, CouchArchive.class);
+			List<CouchArchive> couchArchives = client.queryView("_repo", "versionSeries", versionSeriesId, CouchArchive.class);
 			
 			List<Archive> archives = new ArrayList<Archive>();
 			for (CouchArchive couchArchive : couchArchives) {
@@ -3534,11 +3541,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Archive> getAllArchives(String repositoryId) {
 		try {
-			// Query allArchives view to get all archives
+			// Query 'all' view to get all archives (was incorrectly 'allArchives')
 			// CRITICAL FIX: Use archive repository, not main repository
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "allArchives", null, CouchArchive.class);
+			List<CouchArchive> couchArchives = client.queryView("_repo", "all", null, CouchArchive.class);
 			
 			List<Archive> archives = new ArrayList<Archive>();
 			for (CouchArchive couchArchive : couchArchives) {
