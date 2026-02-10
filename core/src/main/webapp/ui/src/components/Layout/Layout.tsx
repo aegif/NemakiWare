@@ -289,7 +289,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   useEffect(() => {
     const fetchCoreBuildInfo = async () => {
       try {
-        const response = await fetch('/core/rest/all/build-info');
+        const response = await fetch('/core/rest/all/build-info', { credentials: 'include' });
         if (response.ok) {
           const data = await response.json();
           if (data.core) {
@@ -324,6 +324,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
       icon: <SearchOutlined />,
       label: t('navigation.search'),
     },
+    {
+      key: '/archive',
+      icon: <InboxOutlined />,
+      label: t('navigation.archive'),
+    },
     // Only include admin menu for admin users
     ...(isAdmin ? [{
       key: 'admin',
@@ -344,11 +349,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           key: '/types',
           icon: <FileOutlined />,
           label: t('typeManagement.title'),
-        },
-        {
-          key: '/archive',
-          icon: <InboxOutlined />,
-          label: t('navigation.archive'),
         },
         {
           key: '/solr',

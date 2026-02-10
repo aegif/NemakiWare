@@ -871,9 +871,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
     try {
       setLoading(true);
+      // Find the target object to get its changeToken for optimistic locking
+      const targetObject = objects.find(obj => obj.id === renameTargetId);
+      const changeToken = targetObject?.changeToken;
       await cmisService.updateProperties(repositoryId, renameTargetId, {
         'cmis:name': values.newName.trim()
-      });
+      }, changeToken);
       message.success(t('documentList.messages.renameSuccess'));
       setRenameModalVisible(false);
       renameForm.resetFields();
@@ -886,7 +889,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setRenameTargetId('');
       setRenameTargetName('');
     }
-  };
+  };;
 
   const handleRenameCancel = () => {
     setRenameModalVisible(false);
@@ -1400,13 +1403,15 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 }}
               />
             </Tooltip>
-            <Tooltip title={t('documentList.actions.rename')}>
-              <Button
-                icon={<FormOutlined />}
-                size="small"
-                onClick={() => handleRenameClick(record.id, record.name)}
-              />
-            </Tooltip>
+            {record.allowableActions?.canUpdateProperties && (
+              <Tooltip title={t('documentList.actions.rename')}>
+                <Button
+                  icon={<FormOutlined />}
+                  size="small"
+                  onClick={() => handleRenameClick(record.id, record.name)}
+                />
+              </Tooltip>
+            )}
             {record.baseType === 'cmis:document' && (
               <Tooltip title={t('common.download')}>
                 <Button
@@ -1453,27 +1458,31 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 />
               </Tooltip>
             )}
-            <Tooltip title={t('documentList.actions.permissionManagement')}>
-              <Button
-                icon={<LockOutlined />}
-                size="small"
-                onClick={() => {
-                  // CRITICAL FIX (2025-12-23): Preserve folderId when navigating to PermissionManagement
-                  const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
-                  navigate(`/permissions/${record.id}?folderId=${effectiveFolderId}`);
-                }}
-              >
-                {t('documentList.actions.permissionManagement')}
-              </Button>
-            </Tooltip>
-            <Tooltip title={t('common.delete')}>
-              <Button
-                icon={<DeleteOutlined />}
-                size="small"
-                danger
-                onClick={() => handleDeleteClick(record.id, record.name)}
-              />
-            </Tooltip>
+            {record.allowableActions?.canGetACL && (
+              <Tooltip title={t('documentList.actions.permissionManagement')}>
+                <Button
+                  icon={<LockOutlined />}
+                  size="small"
+                  onClick={() => {
+                    // CRITICAL FIX (2025-12-23): Preserve folderId when navigating to PermissionManagement
+                    const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
+                    navigate(`/permissions/${record.id}?folderId=${effectiveFolderId}`);
+                  }}
+                >
+                  {t('documentList.actions.permissionManagement')}
+                </Button>
+              </Tooltip>
+            )}
+            {record.allowableActions?.canDeleteObject && (
+              <Tooltip title={t('common.delete')}>
+                <Button
+                  icon={<DeleteOutlined />}
+                  size="small"
+                  danger
+                  onClick={() => handleDeleteClick(record.id, record.name)}
+                />
+              </Tooltip>
+            )}
           </Space>
         );
       },

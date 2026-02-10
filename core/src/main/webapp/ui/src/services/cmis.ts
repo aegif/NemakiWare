@@ -330,6 +330,7 @@ function convertParsedEntryToCmisObject(entry: ParsedAtomEntry): CMISObject {
     versionLabel: props['cmis:versionLabel'] as string | undefined,
     isLatestVersion: props['cmis:isLatestVersion'] as boolean | undefined,
     isLatestMajorVersion: props['cmis:isLatestMajorVersion'] as boolean | undefined,
+    changeToken: props['cmis:changeToken'] as string | undefined,
     coercionWarnings: coercionWarnings.length > 0 ? coercionWarnings : undefined
   };
 }
@@ -820,7 +821,7 @@ export class CMISService {
 
       // Convert ParsedAtomEntry[] to CMISObject[]
       const children: CMISObject[] = result.data?.entries.map(convertParsedEntryToCmisObject) || [];
-      
+
       return children;
     } catch (error) {
       // Re-throw errors to preserve existing behavior
@@ -1157,8 +1158,18 @@ export class CMISService {
 
       // CRITICAL FIX (2025-11-17): Include change token for optimistic locking
       // The CMIS server requires the change token to prevent concurrent update conflicts (HTTP 409)
-      if (changeToken) {
-        formData.append('changeToken', changeToken);
+      // If no changeToken provided, fetch the current object to get it
+      let token = changeToken;
+      if (!token) {
+        try {
+          const currentObject = await this.getObject(repositoryId, objectId);
+          token = currentObject?.changeToken;
+        } catch (e) {
+          console.warn('Could not fetch changeToken, proceeding without it:', e);
+        }
+      }
+      if (token) {
+        formData.append('changeToken', token);
       }
 
       let propertyIndex = 0;

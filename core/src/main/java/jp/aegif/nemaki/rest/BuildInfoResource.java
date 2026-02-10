@@ -20,10 +20,11 @@ import java.util.TimeZone;
 /**
  * REST endpoint for build information.
  * Provides version and build timestamp for deployment verification.
+ * This endpoint bypasses authentication (configured in AuthenticationFilter).
  *
  * Security:
- * - Unauthenticated: returns version only (for UI display)
- * - Authenticated admin: returns version, buildTime, and gitCommit
+ * - All users (including unauthenticated): returns version and buildTime
+ * - Authenticated admin: additionally returns gitCommit
  *
  * Endpoints:
  * - GET /rest/all/build-info - Returns JSON with core version and build timestamp
@@ -61,11 +62,12 @@ public class BuildInfoResource {
             json.append("\"core\":{");
             json.append("\"version\":\"").append(VERSION).append("\"");
 
-            // Only expose buildTime and gitCommit to admin users
-            if (isAdmin) {
-                String buildTimestamp = getBuildTimestamp();
-                json.append(",\"buildTime\":\"").append(buildTimestamp).append("\"");
+            // buildTime is non-sensitive metadata, available to all users
+            String buildTimestamp = getBuildTimestamp();
+            json.append(",\"buildTime\":\"").append(buildTimestamp).append("\"");
 
+            // Only expose gitCommit to admin users
+            if (isAdmin) {
                 String gitCommit = getGitCommit();
                 if (gitCommit != null && !gitCommit.isEmpty()) {
                     json.append(",\"gitCommit\":\"").append(gitCommit).append("\"");

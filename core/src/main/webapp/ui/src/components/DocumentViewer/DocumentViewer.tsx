@@ -894,6 +894,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const isCheckedOut = isPrivateWorkingCopy || isVersionSeriesCheckedOut;
   const checkedOutBy = getSafeStringValue(object.properties?.['cmis:versionSeriesCheckedOutBy']);
   const isReadOnlyCheckout = Boolean(isCheckedOut && checkedOutBy && checkedOutBy !== object.createdBy);
+  const isReadOnly = isReadOnlyCheckout || !object.allowableActions?.canUpdateProperties;
 
   // Get current folder ID from URL params for back button navigation
   const currentFolderId = searchParams.get('folderId');
@@ -1122,7 +1123,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           object={object}
           propertyDefinitions={typeDefinition.propertyDefinitions}
           onSave={handleUpdateProperties}
-          readOnly={isReadOnlyCheckout}
+          readOnly={isReadOnly}
         />
       ),
     },
@@ -1134,7 +1135,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           repositoryId={repositoryId}
           object={object}
           onUpdate={handleSecondaryTypeUpdate}
-          readOnly={isReadOnlyCheckout}
+          readOnly={isReadOnly}
         />
       ),
     },
@@ -1150,7 +1151,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         />
       ),
     }] : []),
-    {
+    ...(object.baseType === 'cmis:document' ? [{
       key: 'versions',
       label: t('documentViewer.versionHistory'),
       children: (
@@ -1162,7 +1163,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           pagination={false}
         />
       ),
-    },
+    }] : []),
     {
       key: 'relationships',
       label: t('documentViewer.relationships'),
@@ -1399,23 +1400,27 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 </>
               )}
 
-              <Button
-                icon={<SwapOutlined />}
-                onClick={() => setTypeMigrationModalVisible(true)}
-              >
-                {t('documentViewer.changeType')}
-              </Button>
+              {object.allowableActions?.canUpdateProperties && (
+                <Button
+                  icon={<SwapOutlined />}
+                  onClick={() => setTypeMigrationModalVisible(true)}
+                >
+                  {t('documentViewer.changeType')}
+                </Button>
+              )}
 
-              <Button
-                icon={<EditOutlined />}
-                onClick={() => {
-                  // CRITICAL FIX (2025-12-23): Preserve folderId when navigating to PermissionManagement
-                  const folderIdParam = currentFolderId ? `?folderId=${currentFolderId}` : '';
-                  navigate(`/permissions/${object.id}${folderIdParam}`);
-                }}
-              >
-                {t('documentViewer.permissionManagement')}
-              </Button>
+              {object.allowableActions?.canGetACL && (
+                <Button
+                  icon={<EditOutlined />}
+                  onClick={() => {
+                    // CRITICAL FIX (2025-12-23): Preserve folderId when navigating to PermissionManagement
+                    const folderIdParam = currentFolderId ? `?folderId=${currentFolderId}` : '';
+                    navigate(`/permissions/${object.id}${folderIdParam}`);
+                  }}
+                >
+                  {t('documentViewer.permissionManagement')}
+                </Button>
+              )}
             </Space>
           </div>
 
