@@ -112,7 +112,7 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 			case "google":
 				return pushToGoogleDrive(contentStream, accessToken, existingCloudFileId);
 			case "microsoft":
-				return pushToOneDrive(contentStream, accessToken);
+				return pushToOneDrive(contentStream, accessToken, existingCloudFileId);
 			default:
 				throw new IllegalArgumentException("Unknown cloud provider: " + provider);
 		}
@@ -727,17 +727,24 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 
 	// ---- OneDrive operations (via Microsoft Graph REST API) ----
 
-	private String pushToOneDrive(ContentStream contentStream, String accessToken) {
+	private String pushToOneDrive(ContentStream contentStream, String accessToken, String existingCloudFileId) {
 		try {
-			String fileName = contentStream.getFileName();
-
-			// SECURITY: URL-encode the filename to prevent path traversal and injection attacks
-			String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8)
-				.replace("+", "%20"); // Space should be %20, not +
-
 			java.net.http.HttpClient httpClient = java.net.http.HttpClient.newHttpClient();
+
+			// Determine upload URL: ID-based update if existingCloudFileId is available, otherwise filename-based
+			String uploadUrl;
+			if (existingCloudFileId != null && !existingCloudFileId.isEmpty()) {
+				uploadUrl = "https://graph.microsoft.com/v1.0/me/drive/items/" + existingCloudFileId + "/content";
+			} else {
+				String fileName = contentStream.getFileName();
+				// SECURITY: URL-encode the filename to prevent path traversal and injection attacks
+				String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8)
+					.replace("+", "%20"); // Space should be %20, not +
+				uploadUrl = "https://graph.microsoft.com/v1.0/me/drive/root:/" + encodedFileName + ":/content";
+			}
+
 			java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-				.uri(java.net.URI.create("https://graph.microsoft.com/v1.0/me/drive/root:/" + encodedFileName + ":/content"))
+				.uri(java.net.URI.create(uploadUrl))
 				.header("Authorization", "Bearer " + accessToken)
 				.header("Content-Type", contentStream.getMimeType())
 				.PUT(java.net.http.HttpRequest.BodyPublishers.ofInputStream(contentStream::getStream))
@@ -764,7 +771,7 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 				} else if (statusCode == 403) {
 					throw new RuntimeException("Access denied to OneDrive. Please check permissions.");
 				} else if (statusCode == 404) {
-					throw new RuntimeException("OneDrive path not found.");
+					throw new RuntimeException("Cloud file not found. It may have been deleted.");
 				} else if (statusCode == 429) {
 					throw new RuntimeException("OneDrive rate limit exceeded. Please try again later.");
 				} else if (statusCode == 507) {
@@ -810,7 +817,15 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 			} else {
 				// For error responses, we need to read the body for the error message
 				try (InputStream errorStream = response.body()) {
-					throw new RuntimeException("OneDrive download failed: HTTP " + response.statusCode());
+					int statusCode = response.statusCode();
+					if (statusCode == 404) {
+						throw new RuntimeException("Cloud file not found. It may have been deleted.");
+					} else if (statusCode == 401) {
+						throw new RuntimeException("OneDrive authentication failed. Please re-authenticate.");
+					} else if (statusCode == 403) {
+						throw new RuntimeException("Access denied to OneDrive file. Please check permissions.");
+					}
+					throw new RuntimeException("OneDrive download failed: HTTP " + statusCode);
 				}
 			}
 

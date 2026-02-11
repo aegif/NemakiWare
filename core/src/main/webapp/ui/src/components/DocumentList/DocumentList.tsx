@@ -298,7 +298,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // Initialize synchronously from URL to show correct folder contents on return from DocumentViewer
   const [selectedFolderId, setSelectedFolderId] = useState<string>(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('folderId') || '';
+    const fromUrl = urlParams.get('folderId');
+    if (fromUrl) return fromUrl;
+    if (repositoryId) {
+      return sessionStorage.getItem(`nemakiware_selectedFolderId_${repositoryId}`) || '';
+    }
+    return '';
   });
   // currentFolderId: The tree pivot point - ancestors are calculated from this folder
   // Only changes when clicking an already-selected folder (second click)
@@ -335,6 +340,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       sessionStorage.setItem(`nemakiware_currentFolderId_${repositoryId}`, currentFolderId);
     }
   }, [currentFolderId, repositoryId, currentFolderIdIsUserSet]);
+
+  // Persist selectedFolderId to sessionStorage for restoration after page navigation
+  useEffect(() => {
+    if (selectedFolderId && repositoryId) {
+      sessionStorage.setItem(`nemakiware_selectedFolderId_${repositoryId}`, selectedFolderId);
+    }
+  }, [selectedFolderId, repositoryId]);
 
   // CRITICAL FIX (2025-12-30): Rehydrate currentFolderId when repositoryId changes
   // This handles the case where repositoryId was not available during initial render
@@ -1001,8 +1013,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
   };
 
-  const handleCheckInClick = (objectId: string) => {
-    setCurrentDocumentId(objectId);
+  const handleCheckInClick = (objectId: string, record?: CMISObject) => {
+    // PWCでない元ドキュメントの場合、PWC IDに解決
+    const pwcId = record?.properties?.['cmis:versionSeriesCheckedOutId'];
+    const isPWC = record?.properties?.['cmis:isPrivateWorkingCopy'] === true ||
+                  record?.properties?.['cmis:isPrivateWorkingCopy'] === 'true';
+    const effectiveId = (!isPWC && pwcId) ? String(pwcId) : objectId;
+    setCurrentDocumentId(effectiveId);
     setCheckInModalVisible(true);
   };
 
@@ -1035,10 +1052,15 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
   };
 
-  const handleCancelCheckOut = async (objectId: string) => {
+  const handleCancelCheckOut = async (objectId: string, record?: CMISObject) => {
+    // PWCでない元ドキュメントの場合、PWC IDに解決
+    const pwcId = record?.properties?.['cmis:versionSeriesCheckedOutId'];
+    const isPWC = record?.properties?.['cmis:isPrivateWorkingCopy'] === true ||
+                  record?.properties?.['cmis:isPrivateWorkingCopy'] === 'true';
+    const effectiveId = (!isPWC && pwcId) ? String(pwcId) : objectId;
     try {
       setLoading(true);
-      await cmisService.cancelCheckOut(repositoryId, objectId);
+      await cmisService.cancelCheckOut(repositoryId, effectiveId);
       message.success(t('documentList.messages.cancelCheckoutSuccess'));
       await loadObjects();
     } catch (error) {
@@ -1387,6 +1409,15 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       width: 300,
       render: (_: any, record: CMISObject) => {
         const isVersionable = record.baseType === 'cmis:document';
+        // チェックアウト状態の判定（PWCでない元ドキュメントでも検出）
+        const isCheckedOut = record.properties?.['cmis:isVersionSeriesCheckedOut'] === true ||
+                             record.properties?.['cmis:isVersionSeriesCheckedOut'] === 'true';
+        // canCheckIn/canCancelCheckOut のフォールバック条件:
+        // 元ドキュメントがチェックアウト済み（isCheckedOut）かつ canCheckOut が false（= 既にチェックアウト済み）
+        // かつ自分がチェックアウトしたドキュメントのみ表示
+        const checkedOutBy = record.properties?.['cmis:versionSeriesCheckedOutBy'];
+        const showCheckInFallback = isVersionable && isCheckedOut && !record.allowableActions?.canCheckOut &&
+          checkedOutBy != null && String(checkedOutBy) === authToken?.username;
 
         return (
           <Space>
@@ -1397,7 +1428,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 onClick={() => {
                   // CRITICAL FIX (2025-12-16): Use selectedFolderId with URL fallback for back button navigation
                   const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
-                  const folderParam = `?folderId=${effectiveFolderId}`;
+                  const currentFolderParam = currentFolderId ? `&currentFolderId=${currentFolderId}` : '';
+                  const folderParam = `?folderId=${effectiveFolderId}${currentFolderParam}`;
                   const targetUrl = `/documents/${record.id}${folderParam}`;
                   navigate(targetUrl);
                 }}
@@ -1430,22 +1462,22 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 />
               </Tooltip>
             )}
-            {record.allowableActions?.canCheckIn && (
+            {(record.allowableActions?.canCheckIn || showCheckInFallback) && (
               <Tooltip title={t('documentList.actions.checkin')}>
                 <Button
                   icon={<CheckOutlined />}
                   size="small"
                   type="primary"
-                  onClick={() => handleCheckInClick(record.id)}
+                  onClick={() => handleCheckInClick(record.id, record)}
                 />
               </Tooltip>
             )}
-            {record.allowableActions?.canCancelCheckOut && (
+            {(record.allowableActions?.canCancelCheckOut || showCheckInFallback) && (
               <Tooltip title={t('documentList.actions.cancelCheckout')}>
                 <Button
                   icon={<CloseOutlined />}
                   size="small"
-                  onClick={() => handleCancelCheckOut(record.id)}
+                  onClick={() => handleCancelCheckOut(record.id, record)}
                 />
               </Tooltip>
             )}
@@ -1593,90 +1625,91 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         <Col span={18}>
           <Card>
             <Space direction="vertical" style={{ width: '100%' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Space>
+              {/* 1段目: ナビゲーション + 検索 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, minHeight: 32 }}>
+                <Button
+                  icon={<UpOutlined />}
+                  onClick={handleGoToParent}
+                  disabled={isInRootFolder}
+                  title={t('documentList.goToParent')}
+                  style={{ flexShrink: 0 }}
+                >
+                  {t('documentList.up')}
+                </Button>
+                <Breadcrumb items={breadcrumbItems} style={{ flex: 1, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }} />
+                <Input
+                  placeholder={t('documentList.searchPlaceholder')}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onPressEnter={handleSearch}
+                  style={{ width: 200, flexShrink: 0, marginLeft: 'auto' }}
+                  className="search-input"
+                />
+                <Button onClick={handleSearch} className="search-button" style={{ flexShrink: 0 }}>{t('common.search')}</Button>
+                {isSearchMode && (
+                  <Button onClick={handleClearSearch} style={{ flexShrink: 0 }}>{t('common.clear')}</Button>
+                )}
+              </div>
+              {/* 2段目: アクションボタン */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8, justifyContent: 'flex-end' }}>
+                {canCreateDoc && (
                   <Button
-                    icon={<UpOutlined />}
-                    onClick={handleGoToParent}
-                    disabled={isInRootFolder}
-                    title={t('documentList.goToParent')}
+                    type="primary"
+                    icon={<UploadOutlined />}
+                    onClick={() => setUploadModalVisible(true)}
                   >
-                    {t('documentList.up')}
+                    {t('documentList.uploadFile')}
                   </Button>
-                  <Breadcrumb items={breadcrumbItems} />
-                </Space>
-                <Space>
-                  <Input
-                    placeholder={t('documentList.searchPlaceholder')}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onPressEnter={handleSearch}
-                    style={{ width: 200 }}
-                    className="search-input"
-                  />
-                  <Button onClick={handleSearch} className="search-button">{t('common.search')}</Button>
-                  {isSearchMode && (
-                    <Button onClick={handleClearSearch}>{t('common.clear')}</Button>
-                  )}
-                  {canCreateDoc && (
-                    <Button
-                      type="primary"
-                      icon={<UploadOutlined />}
-                      onClick={() => setUploadModalVisible(true)}
-                    >
-                      {t('documentList.uploadFile')}
-                    </Button>
-                  )}
-                  {/* Cloud import buttons - only shown for the logged-in platform (2026-02-03) */}
-                  {canCreateDoc && cloudAuthConfig?.googleEnabled && authToken?.authMethod === 'google' && (
-                    <Button
-                      icon={<GoogleOutlined />}
-                      onClick={() => handleOpenCloudImport('google')}
-                    >
-                      {t('cloudDrive.importFromGoogleDrive')}
-                    </Button>
-                  )}
-                  {canCreateDoc && cloudAuthConfig?.microsoftEnabled && authToken?.authMethod === 'microsoft' && (
-                    <Button
-                      icon={<WindowsOutlined />}
-                      onClick={() => handleOpenCloudImport('microsoft')}
-                    >
-                      {t('cloudDrive.importFromOneDrive')}
-                    </Button>
-                  )}
-                  {canCreateFld && (
-                    <Button
-                      icon={<PlusOutlined />}
-                      onClick={() => setFolderModalVisible(true)}
-                    >
-                      {t('documentList.createFolder')}
-                    </Button>
-                  )}
-                  {canCreateDoc && (
-                    <Button
-                      icon={<ImportOutlined />}
-                      onClick={() => setImportModalVisible(true)}
-                    >
-                      {t('importExport.import')}
-                    </Button>
-                  )}
+                )}
+                {/* Cloud import buttons - only shown for the logged-in platform (2026-02-03) */}
+                {canCreateDoc && cloudAuthConfig?.googleEnabled && authToken?.authMethod === 'google' && (
                   <Button
-                    icon={<ExportOutlined />}
-                    onClick={handleExport}
-                    loading={isExporting}
+                    icon={<GoogleOutlined />}
+                    onClick={() => handleOpenCloudImport('google')}
                   >
-                    {t('importExport.export')}
+                    {t('cloudDrive.importFromGoogleDrive')}
                   </Button>
-                  {selectedRowKeys.length > 0 && (
-                    <Button
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => setBulkDeleteModalVisible(true)}
-                    >
-                      {t('documentList.bulkDelete', { count: selectedRowKeys.length })}
-                    </Button>
-                  )}
-                </Space>
+                )}
+                {canCreateDoc && cloudAuthConfig?.microsoftEnabled && authToken?.authMethod === 'microsoft' && (
+                  <Button
+                    icon={<WindowsOutlined />}
+                    onClick={() => handleOpenCloudImport('microsoft')}
+                  >
+                    {t('cloudDrive.importFromOneDrive')}
+                  </Button>
+                )}
+                {canCreateFld && (
+                  <Button
+                    icon={<PlusOutlined />}
+                    onClick={() => setFolderModalVisible(true)}
+                  >
+                    {t('documentList.createFolder')}
+                  </Button>
+                )}
+                {canCreateDoc && (
+                  <Button
+                    icon={<ImportOutlined />}
+                    onClick={() => setImportModalVisible(true)}
+                  >
+                    {t('importExport.import')}
+                  </Button>
+                )}
+                <Button
+                  icon={<ExportOutlined />}
+                  onClick={handleExport}
+                  loading={isExporting}
+                >
+                  {t('importExport.export')}
+                </Button>
+                {selectedRowKeys.length > 0 && (
+                  <Button
+                    danger
+                    icon={<DeleteOutlined />}
+                    onClick={() => setBulkDeleteModalVisible(true)}
+                  >
+                    {t('documentList.bulkDelete', { count: selectedRowKeys.length })}
+                  </Button>
+                )}
               </div>
               
               <Table

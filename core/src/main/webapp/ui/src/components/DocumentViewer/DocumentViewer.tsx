@@ -283,7 +283,7 @@ import { ExternalContextTab } from './ExternalContextTab';
 import { canPreview } from '../../utils/previewUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchCloudAuthConfig, CloudAuthConfig } from '../../services/cloud-auth';
-import { pushToCloud, pullFromCloud, getCloudUrl, getGoogleDriveAccessToken, getOneDriveAccessToken } from '../../services/cloud-drive';
+import { pushToCloud, pushToCloudForceNew, pullFromCloud, getCloudUrl, unlinkCloud, getGoogleDriveAccessToken, getOneDriveAccessToken } from '../../services/cloud-drive';
 import { getSafeArrayValue, getSafeStringValue, getSafeBooleanValue } from '../../utils/cmisPropertyUtils';
 import { formatServerDate } from '../../utils/dateUtils';
 import { useSearchParams } from 'react-router-dom';
@@ -371,14 +371,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   useEffect(() => {
     if (objectId) {
       loadObject();
-      loadVersionHistory();
       loadRelationships();
     }
   }, [objectId, repositoryId]);
 
-  // Check RAG health and load similar documents
+  // Load version history only for documents (folders are not versionable in CMIS)
+  // Also check RAG health and load similar documents for documents only
   useEffect(() => {
     if (objectId && object?.baseType === 'cmis:document') {
+      loadVersionHistory();
       checkRagHealthAndLoadSimilar();
     }
   }, [objectId, object?.baseType]);
@@ -622,7 +623,65 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       }
     } catch (error) {
       console.error('Cloud push failed:', error);
-      message.error(t('documentViewer.messages.cloudPushError'));
+      const errorMsg = error instanceof Error ? error.message : '';
+      if (errorMsg.includes('CLOUD_FILE_NOT_FOUND')) {
+        // クラウドファイルが削除されている場合、リカバリモーダルを表示
+        Modal.confirm({
+          title: t('documentViewer.messages.cloudFileNotFoundTitle'),
+          content: t('documentViewer.messages.cloudFileNotFoundMessage'),
+          okText: t('documentViewer.messages.cloudFileNotFoundReCreate'),
+          cancelText: t('common.cancel'),
+          onOk: async () => {
+            // 新規登録: forceNew=true で再アップロード
+            try {
+              let newAccessToken: string;
+              if (provider === 'google') {
+                const authData = localStorage.getItem('nemakiware_auth');
+                const loginHint = authData ? JSON.parse(authData).username : undefined;
+                newAccessToken = await getGoogleDriveAccessToken(cloudAuthConfig!.googleClientId!, loginHint);
+              } else {
+                newAccessToken = await getOneDriveAccessToken(
+                  cloudAuthConfig!.microsoftClientId!,
+                  cloudAuthConfig!.microsoftTenantId!
+                );
+              }
+              const result = await pushToCloudForceNew(repositoryId, object!.id, provider, newAccessToken);
+              setCloudMetadata({ provider, cloudFileId: result.cloudFileId, cloudFileUrl: result.cloudFileUrl });
+              message.success(t('documentViewer.messages.cloudFileRecoverySuccess'));
+              if (result.cloudFileUrl) {
+                window.open(result.cloudFileUrl, '_blank');
+              }
+            } catch (retryError) {
+              console.error('Cloud push force new failed:', retryError);
+              message.error(t('documentViewer.messages.cloudPushError'));
+            }
+          },
+          footer: (_, { OkBtn, CancelBtn }) => (
+            <>
+              <CancelBtn />
+              <Button
+                onClick={async () => {
+                  // 同期解除
+                  Modal.destroyAll();
+                  try {
+                    await unlinkCloud(repositoryId, object!.id);
+                    setCloudMetadata(null);
+                    message.success(t('documentViewer.messages.cloudUnlinkSuccess'));
+                  } catch (unlinkError) {
+                    console.error('Cloud unlink failed:', unlinkError);
+                    message.error(t('documentViewer.messages.cloudUnlinkError'));
+                  }
+                }}
+              >
+                {t('documentViewer.messages.cloudFileNotFoundUnlink')}
+              </Button>
+              <OkBtn />
+            </>
+          ),
+        });
+      } else {
+        message.error(t('documentViewer.messages.cloudPushError'));
+      }
     } finally {
       setCloudPushLoading(false);
     }
@@ -1331,7 +1390,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                   {t('documentViewer.checkout')}
                 </Button>
               )}
-              {object.allowableActions?.canCheckIn && (
+              {(object.allowableActions?.canCheckIn ||
+                (object.baseType === 'cmis:document' && isCheckedOut && !object.allowableActions?.canCheckOut &&
+                 checkedOutBy != null && checkedOutBy === authToken?.username)) && (
                 <Button
                   type="primary"
                   icon={<UnlockOutlined />}
@@ -1340,7 +1401,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                   {t('documentViewer.checkin')}
                 </Button>
               )}
-              {object.allowableActions?.canCancelCheckOut && (
+              {(object.allowableActions?.canCancelCheckOut ||
+                (object.baseType === 'cmis:document' && isCheckedOut && !object.allowableActions?.canCheckOut &&
+                 checkedOutBy != null && checkedOutBy === authToken?.username)) && (
                 <Popconfirm
                   title={t('documentViewer.cancelCheckout') + '?'}
                   onConfirm={handleCancelCheckOut}

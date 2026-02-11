@@ -65,6 +65,53 @@ export async function pushToCloud(
 }
 
 /**
+ * Push a document to cloud drive as a new file (ignore existing cloudFileId).
+ * Used for recovery when the cloud file has been deleted.
+ */
+export async function pushToCloudForceNew(
+  repositoryId: string,
+  objectId: string,
+  provider: 'google' | 'microsoft',
+  accessToken: string
+): Promise<CloudDrivePushResult> {
+  const response = await fetch(`/core/rest/repo/${repositoryId}/cloud-drive/push/${objectId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider, accessToken, forceNew: true }),
+  });
+
+  const result = await response.json();
+  if (result.status !== 'success') {
+    const errorMsg = Array.isArray(result.error) && result.error.length > 0
+      ? result.error[0]
+      : 'Failed to push to cloud';
+    throw new Error(errorMsg);
+  }
+  return result;
+}
+
+/**
+ * Unlink a document from cloud drive (remove cloud metadata).
+ * The document remains in NemakiWare but is no longer associated with any cloud file.
+ */
+export async function unlinkCloud(
+  repositoryId: string,
+  objectId: string
+): Promise<void> {
+  const response = await fetch(`/core/rest/repo/${repositoryId}/cloud-drive/unlink/${objectId}`, {
+    method: 'POST',
+  });
+
+  const result = await response.json();
+  if (result.status !== 'success') {
+    const errorMsg = Array.isArray(result.error) && result.error.length > 0
+      ? result.error[0]
+      : 'Failed to unlink from cloud';
+    throw new Error(errorMsg);
+  }
+}
+
+/**
  * Pull a document from cloud drive.
  */
 export async function pullFromCloud(

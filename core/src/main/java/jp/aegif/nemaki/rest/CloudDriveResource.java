@@ -314,23 +314,28 @@ public class CloudDriveResource extends ResourceBase {
 				return result.toJSONString();
 			}
 
+			// forceNew=true の場合は既存のcloudFileIdを無視して新規ファイルとして登録
+			Boolean forceNew = (Boolean) body.get("forceNew");
+
 			// Check for existing cloud file ID to update instead of creating a new file
 			String existingCloudFileId = null;
-			try {
-				ContentService cs = getContentService();
-				if (cs != null) {
-					Content content = cs.getContent(repositoryId, objectId);
-					if (content != null) {
-						existingCloudFileId = getSecondaryProperty(content, "nemaki:cloudFileId");
-						String existingProvider = getSecondaryProperty(content, "nemaki:cloudProvider");
-						// Only reuse if same provider
-						if (existingCloudFileId != null && !provider.equals(existingProvider)) {
-							existingCloudFileId = null;
+			if (forceNew == null || !forceNew) {
+				try {
+					ContentService cs = getContentService();
+					if (cs != null) {
+						Content content = cs.getContent(repositoryId, objectId);
+						if (content != null) {
+							existingCloudFileId = getSecondaryProperty(content, "nemaki:cloudFileId");
+							String existingProvider = getSecondaryProperty(content, "nemaki:cloudProvider");
+							// Only reuse if same provider
+							if (existingCloudFileId != null && !provider.equals(existingProvider)) {
+								existingCloudFileId = null;
+							}
 						}
 					}
+				} catch (Exception e) {
+					log.warn("Could not check existing cloud metadata: " + e.getMessage());
 				}
-			} catch (Exception e) {
-				log.warn("Could not check existing cloud metadata: " + e.getMessage());
 			}
 
 			// SECURITY: Pass user's CallContext to enforce ACL checks
@@ -353,7 +358,11 @@ public class CloudDriveResource extends ResourceBase {
 		} catch (Exception e) {
 			log.error("Error pushing to cloud: " + e.getMessage(), e);
 			status = false;
-			addErrMsg(errMsg, "push", "Failed to push to cloud: " + e.getMessage());
+			if (e.getMessage() != null && e.getMessage().contains("Cloud file not found")) {
+				addErrMsg(errMsg, "push", "CLOUD_FILE_NOT_FOUND:" + e.getMessage());
+			} else {
+				addErrMsg(errMsg, "push", "Failed to push to cloud: " + e.getMessage());
+			}
 		}
 
 		result = makeResult(status, result, errMsg);
@@ -1158,5 +1167,109 @@ public class CloudDriveResource extends ResourceBase {
 
 		saveExternalContext(callContext, repositoryId, objectId, commentsJson, "cloud_sync",
 			cloudProvider != null ? cloudProvider : "unknown");
+	}
+
+	/**
+	 * Remove cloud drive metadata from a CMIS object (unlink from cloud).
+	 * Removes the nemaki:cloudDriveMetadata secondary type and its properties.
+	 * SECURITY: Requires authenticated CallContext for proper permission checks.
+	 */
+	private void removeCloudMetadata(org.apache.chemistry.opencmis.commons.server.CallContext callContext,
+			String repositoryId, String objectId) {
+		if (callContext == null) {
+			throw new IllegalArgumentException("CallContext is required for permission enforcement");
+		}
+
+		ContentService cs = getContentService();
+		if (cs == null) return;
+
+		Content content = cs.getContent(repositoryId, objectId);
+		if (content == null) return;
+
+		// Remove secondary type ID
+		java.util.List<String> secondaryTypeIds = content.getSecondaryIds();
+		if (secondaryTypeIds != null) {
+			secondaryTypeIds.remove("nemaki:cloudDriveMetadata");
+			content.setSecondaryIds(secondaryTypeIds);
+		}
+
+		// Remove the cloudDriveMetadata aspect
+		java.util.List<jp.aegif.nemaki.model.Aspect> aspects = content.getAspects();
+		if (aspects != null) {
+			aspects.removeIf(a -> "nemaki:cloudDriveMetadata".equals(a.getName()));
+			content.setAspects(aspects);
+		}
+
+		// Remove legacy subTypeProperties for cloud metadata
+		java.util.List<jp.aegif.nemaki.model.Property> subTypeProps = content.getSubTypeProperties();
+		if (subTypeProps != null) {
+			java.util.Set<String> cloudPropKeys = java.util.Set.of(
+				"nemaki:cloudProvider", "nemaki:cloudFileId",
+				"nemaki:cloudFileUrl", "nemaki:cloudLastSyncedAt");
+			subTypeProps.removeIf(p -> cloudPropKeys.contains(p.getKey()));
+			content.setSubTypeProperties(subTypeProps);
+		}
+
+		cs.update(callContext, repositoryId, content);
+
+		// Invalidate caches
+		try {
+			jp.aegif.nemaki.util.cache.NemakiCachePool cachePool =
+				SpringContext.getApplicationContext().getBean("nemakiCachePool",
+					jp.aegif.nemaki.util.cache.NemakiCachePool.class);
+			cachePool.get(repositoryId).removeCmisAndContentCache(objectId);
+		} catch (Exception e) {
+			log.warn("Failed to invalidate cache for object " + objectId + ": " + e.getMessage());
+		}
+		log.info("Removed cloud metadata for object " + objectId);
+	}
+
+	/**
+	 * Unlink a document from cloud drive (remove cloud metadata).
+	 * The document remains in NemakiWare but is no longer associated with any cloud file.
+	 *
+	 * POST /rest/repo/{repositoryId}/cloud-drive/unlink/{objectId}
+	 */
+	@SuppressWarnings("unchecked")
+	@POST
+	@Path("/unlink/{objectId}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String unlinkCloud(
+			@PathParam("repositoryId") String repositoryId,
+			@PathParam("objectId") String objectId,
+			@Context HttpServletRequest request) {
+
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		// SECURITY: CSRF protection
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
+
+		try {
+			org.apache.chemistry.opencmis.commons.server.CallContext callContext =
+				(org.apache.chemistry.opencmis.commons.server.CallContext) request.getAttribute("CallContext");
+			if (callContext == null) {
+				addErrMsg(errMsg, "authentication", "User authentication required");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+
+			removeCloudMetadata(callContext, repositoryId, objectId);
+			result.put("unlinked", true);
+
+		} catch (Exception e) {
+			log.error("Error unlinking from cloud: " + e.getMessage(), e);
+			status = false;
+			addErrMsg(errMsg, "unlink", "Failed to unlink from cloud: " + e.getMessage());
+		}
+
+		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
 	}
 }
