@@ -333,9 +333,7 @@ function AppRoutes() {
           } />
           <Route path="/archive" element={
             <ProtectedRoute>
-              <AdminRoute>
-                <ArchiveManagement repositoryId={authToken.repositoryId} />
-              </AdminRoute>
+              <ArchiveManagement repositoryId={authToken.repositoryId} />
             </ProtectedRoute>
           } />
           <Route path="/solr" element={
