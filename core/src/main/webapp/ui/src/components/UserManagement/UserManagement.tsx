@@ -254,13 +254,16 @@ import {
   Popconfirm,
   Card,
   Tag,
-  Select
+  Select,
+  Switch,
+  Divider
 } from 'antd';
 import {
   UserOutlined,
   PlusOutlined,
   EditOutlined,
-  DeleteOutlined
+  DeleteOutlined,
+  CrownOutlined
 } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
 import { User, Group } from '../../types/cmis';
@@ -271,6 +274,7 @@ interface UserManagementProps {
 }
 
 import { useAuth } from '../../contexts/AuthContext';
+
 export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -281,10 +285,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
   const [totalCount, setTotalCount] = useState(0);
+  const [resetPasswordForm] = Form.useForm();
+  const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
   const [form] = Form.useForm();
   const { t } = useTranslation();
 
-  const { handleAuthError } = useAuth();
+  const { handleAuthError, authToken } = useAuth();
   const cmisService = new CMISService(handleAuthError);
   const searchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -382,7 +388,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
 
   const handleEdit = (user: User) => {
     setEditingUser(user);
-    form.setFieldsValue(user);
+    form.setFieldsValue({
+      ...user,
+      isAdmin: user.isAdmin === true,
+    });
     setModalVisible(true);
   };
 
@@ -416,6 +425,25 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
     setModalVisible(false);
     setEditingUser(null);
     form.resetFields();
+    resetPasswordForm.resetFields();
+  };
+
+  const handleResetPassword = async (values: { newPassword: string; confirmPassword: string }) => {
+    if (!editingUser) return;
+    if (values.newPassword !== values.confirmPassword) {
+      message.error(t('accountSettings.passwordMismatch'));
+      return;
+    }
+    setResetPasswordLoading(true);
+    try {
+      await cmisService.changePassword(repositoryId, editingUser.id, '', values.newPassword);
+      message.success(t('userManagement.messages.passwordResetSuccess'));
+      resetPasswordForm.resetFields();
+    } catch (error: any) {
+      message.error(error.message || t('userManagement.messages.passwordResetError'));
+    } finally {
+      setResetPasswordLoading(false);
+    }
   };
 
   // Users are now filtered server-side via query parameter
@@ -458,6 +486,18 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       dataIndex: 'email',
       key: 'email',
       render: (email: string) => email && email.trim() !== '' ? email : '-',
+    },
+    {
+      title: t('userManagement.columns.admin'),
+      dataIndex: 'isAdmin',
+      key: 'isAdmin',
+      width: 100,
+      render: (isAdmin: boolean) => {
+        if (isAdmin) {
+          return <Tag icon={<CrownOutlined />} color="gold">{t('userManagement.adminBadge')}</Tag>;
+        }
+        return '-';
+      },
     },
     {
       title: t('userManagement.columns.groups'),
@@ -676,6 +716,22 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
             />
           </Form.Item>
 
+          {editingUser && (
+            <Form.Item
+              name="isAdmin"
+              label={t('userManagement.columns.admin')}
+              valuePropName="checked"
+              tooltip={editingUser?.id === authToken?.username
+                ? t('userManagement.cannotRevokeOwnAdmin')
+                : t('userManagement.adminToggleTooltip')}
+            >
+              <Switch
+                disabled={editingUser?.id === authToken?.username}
+                checkedChildren={<CrownOutlined />}
+              />
+            </Form.Item>
+          )}
+
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
@@ -687,6 +743,55 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
             </Space>
           </Form.Item>
         </Form>
+
+        {editingUser && (() => {
+          const allowedAuth = editingUser.allowedAuthMethods;
+          const passwordAllowed = !allowedAuth || allowedAuth === '' || allowedAuth === 'disabled'
+            ? allowedAuth !== 'disabled'
+            : allowedAuth.split(',').map(m => m.trim()).includes('password');
+          return passwordAllowed ? (
+            <>
+              <Divider>{t('userManagement.passwordReset')}</Divider>
+              <Form
+                form={resetPasswordForm}
+                onFinish={handleResetPassword}
+                layout="vertical"
+              >
+                <Form.Item
+                  name="newPassword"
+                  label={t('userManagement.newPassword')}
+                  rules={[
+                    { required: true, message: t('userManagement.validation.passwordRequired') },
+                    { min: 8, message: t('userManagement.validation.passwordMinLength8') }
+                  ]}
+                >
+                  <Input.Password placeholder={t('userManagement.placeholders.newPassword')} />
+                </Form.Item>
+
+                <Form.Item
+                  name="confirmPassword"
+                  label={t('userManagement.confirmNewPassword')}
+                  rules={[
+                    { required: true, message: t('userManagement.validation.confirmPasswordRequired') },
+                  ]}
+                >
+                  <Input.Password placeholder={t('userManagement.placeholders.confirmPassword')} />
+                </Form.Item>
+
+                <Form.Item>
+                  <Button type="primary" htmlType="submit" loading={resetPasswordLoading}>
+                    {t('userManagement.resetPassword')}
+                  </Button>
+                </Form.Item>
+              </Form>
+            </>
+          ) : (
+            <>
+              <Divider>{t('userManagement.passwordReset')}</Divider>
+              <p style={{ color: '#999' }}>{t('userManagement.cloudOnlyNoPasswordReset')}</p>
+            </>
+          );
+        })()}
       </Modal>
     </Card>
   );

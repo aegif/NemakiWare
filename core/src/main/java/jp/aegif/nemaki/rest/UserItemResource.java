@@ -350,6 +350,50 @@ private ContentService getContentServiceSafe() {
 	}
 
 	/**
+	 * Get current authenticated user's information including isAdmin flag.
+	 * This endpoint allows any authenticated user to retrieve their own info.
+	 */
+	@SuppressWarnings("unchecked")
+	@GET
+	@Path("/me")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String me(@PathParam("repositoryId") String repositoryId,
+			@Context HttpServletRequest httpRequest) {
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+		if (callContext == null) {
+			result.put(ITEM_STATUS, FAILURE);
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTAUTHENTICATED);
+			result.put(ITEM_ERROR, errMsg);
+			return result.toJSONString();
+		}
+
+		String userId = callContext.getUsername();
+		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
+
+		if (user == null) {
+			result.put(ITEM_STATUS, FAILURE);
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
+			result.put(ITEM_ERROR, errMsg);
+			return result.toJSONString();
+		}
+
+		// Build user JSON with isAdmin from CallContext
+		Boolean isAdminFlag = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
+		boolean isAdmin = (isAdminFlag != null && isAdminFlag);
+
+		JSONObject userJSON = convertUserToJson(user, repositoryId);
+		// Override isAdmin with CallContext flag (authoritative source)
+		userJSON.put(ITEM_IS_ADMIN, isAdmin);
+
+		result.put("user", userJSON);
+		result = makeResult(true, result, errMsg);
+		return result.toJSONString();
+	}
+
+	/**
 	 * Search user by id TODO Use Solr
 	 *
 	 * @param query
@@ -866,8 +910,48 @@ private ContentService getContentServiceSafe() {
 			return result.toJSONString();
 		}
 
-		//password match
-		if(AuthenticationUtil.passwordMatches(oldPassword, userItem.getPassowrd())){
+		// Check allowedAuthMethods: reject if password auth is not allowed for this user
+		Map<String, Object> authKvMap = new HashMap<>();
+		for (Property p : userItem.getSubTypeProperties()) authKvMap.put(p.getKey(), p.getValue());
+		String allowedAuthMethods = (String) authKvMap.get("nemaki:allowedAuthMethods");
+		if (!isPasswordAuthAllowed(allowedAuthMethods)) {
+			status = false;
+			addErrMsg(errMsg, ITEM_USER, "Password authentication is not allowed for this user");
+			makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
+		// Password minimum length validation (8 characters)
+		if (newPassword == null || newPassword.length() < 8) {
+			status = false;
+			addErrMsg(errMsg, ITEM_USER, "Password must be at least 8 characters");
+			makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
+		// Determine if caller is admin changing another user's password
+		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+		Boolean isAdminFlag = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
+		boolean isCallerAdmin = isAdminFlag != null && isAdminFlag;
+		boolean isSelfChange = userId.equals(callContext.getUsername());
+
+		if (isSelfChange || !isCallerAdmin) {
+			// Self-service change or non-admin: require old password verification
+			if(AuthenticationUtil.passwordMatches(oldPassword, userItem.getPassowrd())){
+				String hash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
+				userItem.setPassowrd(hash);
+				try{
+					getContentService().update(new SystemCallContext(repositoryId), repositoryId, userItem);
+				}catch(Exception e){
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
+				}
+			}else{
+				// wrong previous password!
+				status = false;
+				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_WRONGPASSWORD);
+			}
+		} else {
+			// Admin resetting another user's password: skip old password verification
 			String hash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
 			userItem.setPassowrd(hash);
 			try{
@@ -875,14 +959,29 @@ private ContentService getContentServiceSafe() {
 			}catch(Exception e){
 				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
 			}
-		}else{
-			// wrong previous password!
-			status = false;
-			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_WRONGPASSWORD);
 		}
 
 		makeResult(status, result, errMsg);
 		return result.toJSONString();
+	}
+
+	/**
+	 * Check if password authentication is allowed for a user based on allowedAuthMethods.
+	 * null/empty = all methods allowed (backward compatibility), "disabled" = none allowed.
+	 */
+	private boolean isPasswordAuthAllowed(String allowedAuthMethods) {
+		if (allowedAuthMethods == null || allowedAuthMethods.isEmpty()) {
+			return true;
+		}
+		if ("disabled".equals(allowedAuthMethods)) {
+			return false;
+		}
+		for (String method : allowedAuthMethods.split(",")) {
+			if ("password".equals(method.trim())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@PUT
@@ -895,6 +994,7 @@ private ContentService getContentServiceSafe() {
 			@FormParam("addFavorites") String addFavorites, @FormParam("removeFavorites") String removeFavorites,
 			@FormParam(FORM_PASSWORD) String password, @FormParam("groups") String groupsJson,
 			@FormParam("allowedAuthMethods") String allowedAuthMethods,
+			@FormParam("isAdmin") String isAdminStr,
 			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
@@ -914,6 +1014,33 @@ private ContentService getContentServiceSafe() {
 		// Edit & Update
 		if (status) {
 			ContentService service = getContentService();
+
+			// Handle isAdmin flag change (admin-only operation)
+			if (isAdminStr != null) {
+				CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+				Boolean callerIsAdminFlag = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
+				boolean callerIsAdmin = callerIsAdminFlag != null && callerIsAdminFlag;
+
+				if (!callerIsAdmin) {
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN);
+					makeResult(status, result, errMsg);
+					return result.toJSONString();
+				}
+
+				boolean newIsAdmin = "true".equalsIgnoreCase(isAdminStr);
+				boolean currentIsAdmin = user.isAdmin() != null && user.isAdmin();
+
+				// Prevent removing own admin privilege
+				if (!newIsAdmin && currentIsAdmin && userId.equals(callContext.getUsername())) {
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, "Cannot revoke your own admin privilege");
+					makeResult(status, result, errMsg);
+					return result.toJSONString();
+				}
+
+				user.setAdmin(newIsAdmin);
+			}
 
 			// edit
 			if (userId != null)

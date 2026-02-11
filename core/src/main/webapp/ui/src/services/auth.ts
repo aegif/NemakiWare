@@ -20,6 +20,12 @@ export interface AuthToken {
   username: string;
   /** Authentication method used */
   authMethod?: 'basic' | 'oidc' | 'saml' | 'google' | 'microsoft';
+  /** Whether this user has admin privileges */
+  isAdmin?: boolean;
+  /** Allowed authentication methods for this user (e.g. "password", "cloud", "password,cloud").
+   *  null = fetched from server but not set (all methods allowed).
+   *  undefined = not yet fetched from server. */
+  allowedAuthMethods?: string | null;
 }
 
 export class AuthService {
@@ -44,6 +50,8 @@ export class AuthService {
           repositoryId: parsed.repositoryId,
           username: parsed.username,
           authMethod: parsed.authMethod,
+          isAdmin: parsed.isAdmin,
+          allowedAuthMethods: parsed.allowedAuthMethods,
         };
       } catch (e) {
         // Failed to parse auth data - remove invalid data
@@ -171,6 +179,8 @@ export class AuthService {
       repositoryId: auth.repositoryId,
       username: auth.username,
       authMethod: auth.authMethod,
+      isAdmin: auth.isAdmin,
+      allowedAuthMethods: auth.allowedAuthMethods,
     };
     localStorage.setItem('nemakiware_auth', JSON.stringify(this.currentAuth));
 

@@ -94,7 +94,8 @@
       "auditDashboard": "Audit Log",
       "apiDocs": "API Docs",
       "filesystemImportExport": "Filesystem Import/Export",
-      "configViewer": "Config Viewer"
+      "configViewer": "Config Viewer",
+      "accountSettings": "Account Settings"
     },
   "configViewer": {
     "title": "Configuration Properties",
@@ -636,9 +637,17 @@
       "firstName": "First Name",
       "lastName": "Last Name",
       "email": "Email",
+      "admin": "Administrator",
       "groups": "Groups",
       "authMethods": "Auth Methods"
     },
+    "adminBadge": "Admin",
+    "adminToggleTooltip": "Grant or revoke admin privileges for this user",
+    "cannotRevokeOwnAdmin": "You cannot revoke your own admin privileges",
+    "passwordReset": "Password Reset",
+    "resetPassword": "Reset Password",
+    "newPassword": "New Password",
+    "confirmNewPassword": "Confirm New Password",
     "authMethods": {
       "all": "All Allowed",
       "password": "Password Only",
@@ -655,13 +664,17 @@
       "email": "Enter email",
       "password": "Enter password",
       "groups": "Select groups",
-      "authMethods": "Select auth methods"
+      "authMethods": "Select auth methods",
+      "newPassword": "Enter new password",
+      "confirmPassword": "Re-enter password"
     },
     "validation": {
       "userIdRequired": "Please enter a user ID",
       "userNameRequired": "Please enter a user name",
       "passwordRequired": "Please enter a password",
-      "passwordMinLength": "Password must be at least 6 characters"
+      "passwordMinLength": "Password must be at least 6 characters",
+      "passwordMinLength8": "Password must be at least 8 characters",
+      "confirmPasswordRequired": "Please confirm the password"
     },
     "messages": {
       "loadError": "Failed to load users",
@@ -672,8 +685,11 @@
       "updateError": "Failed to update user",
       "deleteError": "Failed to delete user",
       "permissionError": "Permission error: You do not have permission to manage users",
-      "deletePermissionError": "Permission error: You do not have permission to delete users"
-    }
+      "deletePermissionError": "Permission error: You do not have permission to delete users",
+      "passwordResetSuccess": "Password has been reset",
+      "passwordResetError": "Failed to reset password"
+    },
+    "cloudOnlyNoPasswordReset": "This user uses cloud authentication only. Password reset is not available."
   },
   "groupManagement": {
     "title": "Group Management",
@@ -880,6 +896,7 @@
     "samlLogin": "Login with SAML",
     "googleLogin": "Sign in with Google",
     "microsoftLogin": "Sign in with Microsoft",
+    "passkeyLogin": "Sign in with Passkey",
     "selectRepository": "Select Repository",
     "messages": {
       "loginFailed": "Login failed. Please check your username, password, and repository ID.",
@@ -889,7 +906,8 @@
       "samlResponseNotFound": "SAML authentication response not found.",
       "samlProcessFailed": "Failed to process SAML authentication: {{error}}",
       "googleFailed": "Google authentication failed: {{error}}",
-      "microsoftFailed": "Microsoft authentication failed: {{error}}"
+      "microsoftFailed": "Microsoft authentication failed: {{error}}",
+      "passkeyFailed": "Passkey authentication failed: {{error}}"
     },
     "validation": {
       "repositoryRequired": "Please select a repository",
@@ -1915,6 +1933,74 @@
     "dryRun": "Dry Run",
     "userSearchBase": "User Search Base",
     "groupSearchBase": "Group Search Base"
+  },
+  "accountSettings": {
+    "title": "Account Settings",
+    "userId": "User ID",
+    "tabs": {
+      "profile": "Profile",
+      "password": "Password",
+      "passkey": "Passkey"
+    },
+    "tabDisabled": "N/A",
+    "profile": {
+      "userId": "User ID",
+      "userName": "Display Name",
+      "firstName": "First Name",
+      "lastName": "Last Name",
+      "email": "Email",
+      "role": "Role",
+      "admin": "Admin",
+      "user": "User",
+      "authMethods": "Auth Methods",
+      "authMethodAll": "All allowed",
+      "authMethodDisabled": "Disabled",
+      "authMethodPassword": "Password",
+      "authMethodCloud": "Cloud (Google / Microsoft)"
+    },
+    "changePassword": "Change Password",
+    "currentPassword": "Current Password",
+    "newPassword": "New Password",
+    "confirmPassword": "Confirm New Password",
+    "currentPasswordRequired": "Please enter your current password",
+    "newPasswordRequired": "Please enter a new password",
+    "confirmPasswordRequired": "Please confirm your new password",
+    "passwordMinLength": "Password must be at least 8 characters",
+    "passwordMismatch": "Passwords do not match",
+    "passwordChanged": "Password changed successfully",
+    "passwordChangeError": "Failed to change password",
+    "changePasswordButton": "Change Password",
+    "currentPasswordPlaceholder": "Enter current password",
+    "newPasswordPlaceholder": "Enter new password",
+    "confirmPasswordPlaceholder": "Re-enter new password",
+    "cloudOnlyAccount": "This account uses cloud authentication (Google / Microsoft) only. Password and passkey settings are not available."
+  },
+  "passkey": {
+    "title": "Passkeys",
+    "register": "Register Passkey",
+    "notSupported": "This browser does not support passkeys",
+    "noCredentials": "No passkeys registered",
+    "confirmDelete": "Are you sure you want to delete this passkey?",
+    "columns": {
+      "name": "Name",
+      "createdAt": "Created",
+      "transports": "Transports",
+      "actions": "Actions"
+    },
+    "registerModal": {
+      "title": "Register Passkey",
+      "description": "Register a passkey using your device's biometric authentication or security key.",
+      "displayNamePlaceholder": "Passkey name (e.g., MacBook Pro)",
+      "ok": "Start Registration"
+    },
+    "messages": {
+      "loadError": "Failed to load passkeys",
+      "registerSuccess": "Passkey registered successfully",
+      "registerError": "Failed to register passkey",
+      "deleteSuccess": "Passkey deleted successfully",
+      "deleteError": "Failed to delete passkey",
+      "cancelled": "Passkey operation was cancelled"
+    }
   },
   "apiKeyManagement": {
     "title": "API Key Management",

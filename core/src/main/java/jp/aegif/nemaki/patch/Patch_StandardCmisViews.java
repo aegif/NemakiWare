@@ -128,7 +128,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
 
             addViewIfMissing(views, "configuration", "function(doc) { if (doc.type == 'configuration')  emit(doc._id, doc) }", null, repositoryId);
 
-            addViewIfMissing(views, "userItemsById", "function(doc) { if (doc.type == 'cmis:item' && doc.userId)  emit(doc.userId, doc) }", null, repositoryId);
+            addOrUpdateView(views, "userItemsById", "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:user' && doc.userId)  emit(doc.userId, doc) }", null, repositoryId);
 
             addViewIfMissing(views, "groupItemsById", "function(doc) { if (doc.type == 'cmis:item' && doc.groupId)  emit(doc.groupId, doc) }", null, repositoryId);
 
@@ -141,6 +141,10 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
             addViewIfMissing(views, "dupVersionSeries", "function(doc) { if(doc.baseType == 'cmis:document')  emit([doc.name,doc.versionSeriesId],1)}", "function(keys, values) {return sum(values)}", repositoryId);
 
             addViewIfMissing(views, "dupLatestVersion", "function(doc) { if (doc.baseType == 'cmis:document' && doc.latestVersion )  emit([doc.name,doc.versionSeriesId],1) }", "function(keys, values) { return sum(values) }", repositoryId);
+
+            // WebAuthn credential views
+            addViewIfMissing(views, "webauthnCredentialsByUserId", "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:webauthnCredential') emit(doc.userId, doc) }", null, repositoryId);
+            addViewIfMissing(views, "webauthnCredentialsByCredentialId", "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:webauthnCredential') emit(doc.credentialId, doc) }", null, repositoryId);
 
             // Update the design document
             client.update(updatedDoc);
@@ -167,6 +171,28 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
             if (log.isDebugEnabled()) {
                 log.debug("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] View already exists: " + viewName);
             }
+        }
+    }
+
+    /**
+     * Add or update a view. If the view exists but has a different map function, update it.
+     */
+    private void addOrUpdateView(ObjectNode views, String viewName, String mapFunction, String reduceFunction, String repositoryId) {
+        ObjectMapper mapper = new ObjectMapper();
+        if (views.has(viewName)) {
+            JsonNode existing = views.get(viewName);
+            String existingMap = existing.has("map") ? existing.get("map").asText() : "";
+            if (!existingMap.equals(mapFunction)) {
+                ObjectNode viewDef = mapper.createObjectNode();
+                viewDef.put("map", mapFunction);
+                if (reduceFunction != null && !reduceFunction.isEmpty()) {
+                    viewDef.put("reduce", reduceFunction);
+                }
+                views.set(viewName, viewDef);
+                log.info("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Updated view: " + viewName);
+            }
+        } else {
+            addViewIfMissing(views, viewName, mapFunction, reduceFunction, repositoryId);
         }
     }
 

@@ -1672,6 +1672,83 @@ export class CMISService {
     }
   }
 
+  /**
+   * Get the current authenticated user's information including isAdmin flag.
+   */
+  async getCurrentUser(repositoryId: string): Promise<{
+    userId: string;
+    userName: string;
+    isAdmin: boolean;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    allowedAuthMethods?: string | null;
+  }> {
+    const url = `/core/rest/repo/${repositoryId}/user/me`;
+    const response = await this.httpClient.getJson(url);
+
+    if (response.status === 200) {
+      const data = JSON.parse(response.responseText);
+      if (data.status === true || data.status === 'success') {
+        const user = data.user;
+        return {
+          userId: user.userId,
+          userName: user.userName,
+          isAdmin: user.isAdmin === true,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          // Preserve null vs undefined distinction:
+          // null = server returned null (field not set in DB)
+          // undefined = not fetched yet
+          allowedAuthMethods: user.allowedAuthMethods != null ? user.allowedAuthMethods : null,
+        };
+      }
+      throw new Error('Failed to get current user');
+    }
+
+    const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+    throw error;
+  }
+
+  /**
+   * Change a user's password.
+   * - Self-service: requires oldPassword
+   * - Admin resetting another user: oldPassword can be empty
+   */
+  async changePassword(repositoryId: string, userId: string, oldPassword: string, newPassword: string): Promise<void> {
+    const url = `${this.restBaseUrl}/${repositoryId}/user/changePassword/${userId}`;
+
+    const formData = new URLSearchParams();
+    if (oldPassword) {
+      formData.append('oldPassword', oldPassword);
+    }
+    formData.append('newPassword', newPassword);
+
+    const response = await this.httpClient.request({
+      method: 'PUT',
+      url,
+      body: formData.toString(),
+      contentType: 'application/x-www-form-urlencoded',
+      accept: 'application/json'
+    });
+
+    if (response.status === 200) {
+      const data = JSON.parse(response.responseText);
+      if (data.status === false || data.status === 'failure' || data.status === 'error') {
+        const errMessages = data.errMsg || data.error || [];
+        const errText = Array.isArray(errMessages)
+          ? errMessages.map((e: any) => typeof e === 'string' ? e : JSON.stringify(e)).join(', ')
+          : String(errMessages);
+        throw new Error(errText || 'Password change failed');
+      }
+      return;
+    }
+
+    const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+    throw error;
+  }
+
   async getUsers(repositoryId: string, params?: {
     offset?: number; limit?: number; query?: string;
   }): Promise<{ users: User[]; totalCount: number }> {
@@ -1696,7 +1773,8 @@ export class CMISService {
             lastName: user.lastName,
             email: user.email,
             groups: user.groups || [],
-            allowedAuthMethods: user.allowedAuthMethods
+            allowedAuthMethods: user.allowedAuthMethods,
+            isAdmin: user.isAdmin === true
           }));
 
           return {
@@ -1754,8 +1832,19 @@ export class CMISService {
       if (response.status === 200) {
         try {
           const data = JSON.parse(response.responseText);
+          // Check legacy API status field - server returns HTTP 200 even on failure
+          if (data.status === false || data.status === 'failure' || data.status === 'error') {
+            const errMessages = data.errMsg || data.error || data.errors || [];
+            const errText = Array.isArray(errMessages)
+              ? errMessages.map((e: any) => typeof e === 'string' ? e : JSON.stringify(e)).join(', ')
+              : String(errMessages);
+            throw new Error(errText || 'User creation failed');
+          }
           return data;
         } catch (e) {
+          if (e instanceof Error && e.message !== 'Invalid response format') {
+            throw e;
+          }
           throw new Error('Invalid response format');
         }
       }
@@ -1788,6 +1877,10 @@ export class CMISService {
       if (user.allowedAuthMethods !== undefined) {
         formData.append('allowedAuthMethods', user.allowedAuthMethods || '');
       }
+      // Add isAdmin parameter
+      if (user.isAdmin !== undefined) {
+        formData.append('isAdmin', String(user.isAdmin));
+      }
 
       // Use PUT method via httpClient.request()
       const response = await this.httpClient.request({
@@ -1802,8 +1895,9 @@ export class CMISService {
         try {
           const data = JSON.parse(response.responseText);
           // Check legacy API status field - server returns HTTP 200 even on failure
-          if (data.status === false || data.status === 'error') {
-            const errMessages = data.errMsg || data.errors || [];
+          // Server uses status: "failure" (string), not false (boolean)
+          if (data.status === false || data.status === 'failure' || data.status === 'error') {
+            const errMessages = data.errMsg || data.error || data.errors || [];
             const errText = Array.isArray(errMessages)
               ? errMessages.map((e: any) => typeof e === 'string' ? e : JSON.stringify(e)).join(', ')
               : String(errMessages);
@@ -1840,6 +1934,21 @@ export class CMISService {
       });
 
       if (response.status === 200 || response.status === 204) {
+        if (response.status === 200 && response.responseText) {
+          let data: any;
+          try {
+            data = JSON.parse(response.responseText);
+          } catch {
+            // JSON parse error - response is not JSON, treat as success
+          }
+          if (data && (data.status === false || data.status === 'failure' || data.status === 'error')) {
+            const errMessages = data.errMsg || data.error || data.errors || [];
+            const errText = Array.isArray(errMessages)
+              ? errMessages.map((e: any) => typeof e === 'string' ? e : JSON.stringify(e)).join(', ')
+              : String(errMessages);
+            throw new Error(errText || 'User deletion failed');
+          }
+        }
         return;
       }
 
@@ -2742,40 +2851,41 @@ export class CMISService {
       const response = await this.httpClient.getJson(url);
 
       if (response.status === 200) {
+        let data: Record<string, unknown>;
         try {
-          const data = JSON.parse(response.responseText);
-          // Check REST API status field - server may return HTTP 200 with failure status
-          if (data.status === 'failure') {
-            console.error('Archive API returned failure:', data.error);
-            throw new Error('Archive API error: ' + JSON.stringify(data.error));
-          }
-          const archives = data.archives || [];
-          // Map REST API archive format to CMISObject format
-          // REST API returns: {id, originalId, name, type, parentId, creator, created, mimeType, ...}
-          // UI expects CMISObject with: {id, name, baseType, objectType, ...}
-          // id: archive ID (used for restore/download operations on the archive)
-          const isAdmin = data.isAdmin === true;
-          const totalItems = typeof data.totalItems === 'number' ? data.totalItems : archives.length;
-          const mappedArchives = archives.map((archive: Record<string, unknown>) => ({
-            id: String(archive.id || ''),
-            name: String(archive.name || 'Unknown'),
-            baseType: normalizeArchiveBaseType(String(archive.type || 'cmis:document')),
-            objectType: String(archive.type || 'cmis:document'),
-            properties: {},
-            path: archive.path as string | undefined,
-            createdBy: archive.creator as string | undefined,
-            lastModificationDate: archive.created as string | undefined,
-            contentStreamLength: archive.contentLength as number | undefined,
-            contentStreamMimeType: archive.mimeType as string | undefined,
-            archiveState: archive.archiveState as string | undefined,
-            archivedAt: archive.archivedAt as string | undefined,
-            coldMoveMode: archive.coldMoveMode as string | undefined,
-            archivedBy: archive.archivedBy as string | undefined,
-          } as CMISObject));
-          return { archives: mappedArchives, isAdmin, totalItems };
+          data = JSON.parse(response.responseText);
         } catch (e) {
           throw new Error('Invalid response format');
         }
+        // Check REST API status field - server may return HTTP 200 with failure status
+        if (data.status === 'failure') {
+          console.error('Archive API returned failure:', data.error);
+          throw new Error('Archive API error: ' + JSON.stringify(data.error));
+        }
+        const archives = (data.archives || []) as Record<string, unknown>[];
+        // Map REST API archive format to CMISObject format
+        // REST API returns: {id, originalId, name, type, parentId, creator, created, mimeType, ...}
+        // UI expects CMISObject with: {id, name, baseType, objectType, ...}
+        // id: archive ID (used for restore/download operations on the archive)
+        const isAdmin = data.isAdmin === true;
+        const totalItems = typeof data.totalItems === 'number' ? data.totalItems : archives.length;
+        const mappedArchives = archives.map((archive: Record<string, unknown>) => ({
+          id: String(archive.id || ''),
+          name: String(archive.name || 'Unknown'),
+          baseType: normalizeArchiveBaseType(String(archive.type || 'cmis:document')),
+          objectType: String(archive.type || 'cmis:document'),
+          properties: {},
+          path: archive.path as string | undefined,
+          createdBy: archive.creator as string | undefined,
+          lastModificationDate: archive.created as string | undefined,
+          contentStreamLength: archive.contentLength as number | undefined,
+          contentStreamMimeType: archive.mimeType as string | undefined,
+          archiveState: archive.archiveState as string | undefined,
+          archivedAt: archive.archivedAt as string | undefined,
+          coldMoveMode: archive.coldMoveMode as string | undefined,
+          archivedBy: archive.archivedBy as string | undefined,
+        } as CMISObject));
+        return { archives: mappedArchives, isAdmin, totalItems };
       }
 
       const error = this.handleHttpError(response.status, response.statusText, response.responseURL);

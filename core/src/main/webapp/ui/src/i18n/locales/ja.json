@@ -94,7 +94,8 @@
       "auditDashboard": "監査ログ",
       "apiDocs": "API仕様",
       "filesystemImportExport": "ファイルシステム インポート/エクスポート",
-      "configViewer": "設定ビューア"
+      "configViewer": "設定ビューア",
+      "accountSettings": "アカウント設定"
     },
   "configViewer": {
     "title": "設定プロパティ一覧",
@@ -636,9 +637,17 @@
       "firstName": "名",
       "lastName": "姓",
       "email": "メールアドレス",
+      "admin": "管理者",
       "groups": "所属グループ",
       "authMethods": "認証方式"
     },
+    "adminBadge": "管理者",
+    "adminToggleTooltip": "このユーザーに管理者権限を付与/剥奪します",
+    "cannotRevokeOwnAdmin": "自分自身の管理者権限は削除できません",
+    "passwordReset": "パスワードリセット",
+    "resetPassword": "パスワードをリセット",
+    "newPassword": "新しいパスワード",
+    "confirmNewPassword": "新しいパスワード（確認）",
     "authMethods": {
       "all": "すべて許可",
       "password": "パスワードのみ",
@@ -655,13 +664,17 @@
       "email": "メールアドレスを入力",
       "password": "パスワードを入力",
       "groups": "グループを選択",
-      "authMethods": "認証方式を選択"
+      "authMethods": "認証方式を選択",
+      "newPassword": "新しいパスワードを入力",
+      "confirmPassword": "パスワードを再入力"
     },
     "validation": {
       "userIdRequired": "ユーザーIDを入力してください",
       "userNameRequired": "ユーザー名を入力してください",
       "passwordRequired": "パスワードを入力してください",
-      "passwordMinLength": "パスワードは6文字以上で入力してください"
+      "passwordMinLength": "パスワードは6文字以上で入力してください",
+      "passwordMinLength8": "パスワードは8文字以上で入力してください",
+      "confirmPasswordRequired": "パスワードの確認を入力してください"
     },
     "messages": {
       "loadError": "ユーザーの読み込みに失敗しました",
@@ -672,8 +685,11 @@
       "updateError": "ユーザーの更新に失敗しました",
       "deleteError": "ユーザーの削除に失敗しました",
       "permissionError": "権限エラー: ユーザー管理の権限がありません",
-      "deletePermissionError": "権限エラー: ユーザー削除の権限がありません"
-    }
+      "deletePermissionError": "権限エラー: ユーザー削除の権限がありません",
+      "passwordResetSuccess": "パスワードをリセットしました",
+      "passwordResetError": "パスワードのリセットに失敗しました"
+    },
+    "cloudOnlyNoPasswordReset": "このユーザーはクラウド認証のみのため、パスワードリセットはできません。"
   },
   "groupManagement": {
     "title": "グループ管理",
@@ -880,6 +896,7 @@
     "samlLogin": "SAML認証でログイン",
     "googleLogin": "Googleアカウントでログイン",
     "microsoftLogin": "Microsoftアカウントでログイン",
+    "passkeyLogin": "パスキーでログイン",
     "selectRepository": "リポジトリを選択",
     "messages": {
       "loginFailed": "ログインに失敗しました。ユーザー名、パスワード、リポジトリIDを確認してください。",
@@ -889,7 +906,8 @@
       "samlResponseNotFound": "SAML認証レスポンスが見つかりません。",
       "samlProcessFailed": "SAML認証の処理に失敗しました: {{error}}",
       "googleFailed": "Googleアカウント認証に失敗しました: {{error}}",
-      "microsoftFailed": "Microsoftアカウント認証に失敗しました: {{error}}"
+      "microsoftFailed": "Microsoftアカウント認証に失敗しました: {{error}}",
+      "passkeyFailed": "パスキー認証に失敗しました: {{error}}"
     },
     "validation": {
       "repositoryRequired": "リポジトリを選択してください",
@@ -1915,6 +1933,74 @@
     "dryRun": "Dry Run",
     "userSearchBase": "ユーザー検索ベース",
     "groupSearchBase": "グループ検索ベース"
+  },
+  "accountSettings": {
+    "title": "アカウント設定",
+    "userId": "ユーザーID",
+    "tabs": {
+      "profile": "プロフィール",
+      "password": "パスワード",
+      "passkey": "パスキー"
+    },
+    "tabDisabled": "無効",
+    "profile": {
+      "userId": "ユーザーID",
+      "userName": "表示名",
+      "firstName": "名",
+      "lastName": "姓",
+      "email": "メールアドレス",
+      "role": "権限",
+      "admin": "管理者",
+      "user": "一般ユーザー",
+      "authMethods": "認証方式",
+      "authMethodAll": "すべて許可",
+      "authMethodDisabled": "無効",
+      "authMethodPassword": "パスワード",
+      "authMethodCloud": "クラウド（Google / Microsoft）"
+    },
+    "changePassword": "パスワード変更",
+    "currentPassword": "現在のパスワード",
+    "newPassword": "新しいパスワード",
+    "confirmPassword": "新しいパスワード（確認）",
+    "currentPasswordRequired": "現在のパスワードを入力してください",
+    "newPasswordRequired": "新しいパスワードを入力してください",
+    "confirmPasswordRequired": "パスワードの確認を入力してください",
+    "passwordMinLength": "パスワードは8文字以上で入力してください",
+    "passwordMismatch": "パスワードが一致しません",
+    "passwordChanged": "パスワードを変更しました",
+    "passwordChangeError": "パスワードの変更に失敗しました",
+    "changePasswordButton": "パスワードを変更",
+    "currentPasswordPlaceholder": "現在のパスワードを入力",
+    "newPasswordPlaceholder": "新しいパスワードを入力",
+    "confirmPasswordPlaceholder": "新しいパスワードを再入力",
+    "cloudOnlyAccount": "このアカウントはクラウド認証（Google / Microsoft）のみで利用できます。パスワードやパスキーの設定はできません。"
+  },
+  "passkey": {
+    "title": "パスキー",
+    "register": "パスキーを登録",
+    "notSupported": "このブラウザはパスキーに対応していません",
+    "noCredentials": "登録されたパスキーはありません",
+    "confirmDelete": "このパスキーを削除しますか？",
+    "columns": {
+      "name": "名前",
+      "createdAt": "登録日",
+      "transports": "トランスポート",
+      "actions": "操作"
+    },
+    "registerModal": {
+      "title": "パスキーを登録",
+      "description": "デバイスの生体認証やセキュリティキーを使用してパスキーを登録します。",
+      "displayNamePlaceholder": "パスキーの名前（例：MacBook Pro）",
+      "ok": "登録開始"
+    },
+    "messages": {
+      "loadError": "パスキーの読み込みに失敗しました",
+      "registerSuccess": "パスキーを登録しました",
+      "registerError": "パスキーの登録に失敗しました",
+      "deleteSuccess": "パスキーを削除しました",
+      "deleteError": "パスキーの削除に失敗しました",
+      "cancelled": "パスキーの操作がキャンセルされました"
+    }
   },
   "apiKeyManagement": {
     "title": "APIキー管理",
