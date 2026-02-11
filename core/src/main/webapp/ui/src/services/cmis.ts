@@ -2744,6 +2744,11 @@ export class CMISService {
       if (response.status === 200) {
         try {
           const data = JSON.parse(response.responseText);
+          // Check REST API status field - server may return HTTP 200 with failure status
+          if (data.status === 'failure') {
+            console.error('Archive API returned failure:', data.error);
+            throw new Error('Archive API error: ' + JSON.stringify(data.error));
+          }
           const archives = data.archives || [];
           // Map REST API archive format to CMISObject format
           // REST API returns: {id, originalId, name, type, parentId, creator, created, mimeType, ...}

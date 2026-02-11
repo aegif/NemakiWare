@@ -79,6 +79,7 @@ import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.UnfileObject;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisContentAlreadyExistsException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
@@ -1439,6 +1440,14 @@ public class ContentServiceImpl implements ContentService {
 
 		if (log.isDebugEnabled()) {
 			log.debug("Document found: id={}, name={}, isPWC={}", pwc.getId(), pwc.getName(), pwc.isPrivateWorkingCopy());
+		}
+
+		// CRITICAL: Verify the document is actually a PWC before deleting
+		if (!pwc.isPrivateWorkingCopy()) {
+			log.error("cancelCheckOut called on non-PWC document: id={}, name={}, versionLabel={}",
+				pwc.getId(), pwc.getName(), pwc.getVersionLabel());
+			throw new CmisConstraintException(
+				"Cannot cancel checkout: document " + objectId + " is not a Private Working Copy");
 		}
 
 		writeChangeEvent(callContext, repositoryId, pwc, ChangeType.DELETED);
@@ -4122,12 +4131,49 @@ public class ContentServiceImpl implements ContentService {
 	private Document restoreDocument(String repositoryId, Archive archive) {
 		try {
 			// Get archives of the same version series
+			String versionSeriesId = archive.getVersionSeriesId();
 			List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId,
-					archive.getVersionSeriesId());
+					versionSeriesId);
+
+			// Restore VersionSeries if it was deleted along with the document
+			VersionSeries vs = contentDaoService.getVersionSeries(repositoryId, versionSeriesId);
+			if (vs == null && versionSeriesId != null) {
+				log.info("restoreDocument: VersionSeries {} not found, recreating it", versionSeriesId);
+				contentDaoService.restoreVersionSeries(repositoryId, versionSeriesId);
+				vs = contentDaoService.getVersionSeries(repositoryId, versionSeriesId);
+			}
+
 			for (Archive version : versions) {
 				contentDaoService.restoreDocumentWithArchive(repositoryId, version);
 				// delete archives
 				contentDaoService.deleteDocumentArchive(repositoryId, version.getId());
+			}
+
+			// After restoring all versions, clean up checkout state
+			if (versionSeriesId != null) {
+				List<Document> restoredVersions = contentDaoService.getAllVersions(repositoryId, versionSeriesId);
+				if (CollectionUtils.isNotEmpty(restoredVersions)) {
+					for (Document version : restoredVersions) {
+						if (version.isPrivateWorkingCopy()) {
+							// PWC is meaningless after restore (checkout context is lost)
+							contentDaoService.delete(repositoryId, version.getAttachmentNodeId());
+							contentDaoService.delete(repositoryId, version.getId());
+						} else if (version.isVersionSeriesCheckedOut()) {
+							// Clear checkout flags on normal versions
+							version.setVersionSeriesCheckedOut(false);
+							version.setVersionSeriesCheckedOutBy(null);
+							version.setVersionSeriesCheckedOutId(null);
+							contentDaoService.update(repositoryId, version);
+						}
+					}
+				}
+				// Clear checkout state on VersionSeries itself
+				if (vs != null && vs.isVersionSeriesCheckedOut()) {
+					vs.setVersionSeriesCheckedOut(false);
+					vs.setVersionSeriesCheckedOutBy(null);
+					vs.setVersionSeriesCheckedOutId(null);
+					contentDaoService.update(repositoryId, vs);
+				}
 			}
 		} catch (Exception e) {
 			log.error("fail to restore a document", e);
@@ -4576,3 +4622,4 @@ public class ContentServiceImpl implements ContentService {
 
 	////////////////////////////////////////////
 }
+

@@ -849,6 +849,15 @@ public interface ContentDaoService {
 	void restoreDocumentWithArchive(String repositoryId, Archive archive);
 
 	/**
+	 * Restore a VersionSeries document by purging its tombstone and recreating it.
+	 * Used when restoring archived documents whose VersionSeries was deleted.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param versionSeriesId the ID of the VersionSeries to restore
+	 */
+	void restoreVersionSeries(String repositoryId, String versionSeriesId);
+
+	/**
 	 * Get the actual attachment size from CouchDB _attachments metadata
 	 * @param repositoryId Repository ID
 	 * @param attachmentId Attachment node ID

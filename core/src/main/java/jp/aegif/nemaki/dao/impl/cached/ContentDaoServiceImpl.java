@@ -1797,6 +1797,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 	}
 
+	@Override
+	public void restoreVersionSeries(String repositoryId, String versionSeriesId) {
+		nonCachedContentDaoService.restoreVersionSeries(repositoryId, versionSeriesId);
+	}
+
 	// //////////////////////////////////////////////////////////////////////////////
 	// Cache management
 	// //////////////////////////////////////////////////////////////////////////////
