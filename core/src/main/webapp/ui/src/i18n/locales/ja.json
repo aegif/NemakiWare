@@ -1940,7 +1940,8 @@
     "tabs": {
       "profile": "プロフィール",
       "password": "パスワード",
-      "passkey": "パスキー"
+      "passkey": "パスキー",
+      "apiKey": "APIキー"
     },
     "tabDisabled": "無効",
     "profile": {

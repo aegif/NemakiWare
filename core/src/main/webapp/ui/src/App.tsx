@@ -216,8 +216,8 @@ import { ApiDocs } from './components/ApiDocs/ApiDocs';
 import { FilesystemImportExport } from './components/FilesystemImportExport/FilesystemImportExport';
 import { WebhookManagement } from './components/WebhookManagement/WebhookManagement';
 import { CloudDirectorySync } from './components/CloudDirectorySync/CloudDirectorySync';
-import { ApiKeyManagement } from './components/ApiKeyManagement/ApiKeyManagement';
 import { ConfigViewer } from './components/ConfigViewer/ConfigViewer';
+import { AccountSettings } from './components/AccountSettings/AccountSettings';
 import { McpCloudLogin } from './components/McpCloudLogin/McpCloudLogin';
 import { Login } from './components/Login/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -298,10 +298,10 @@ function AppRoutes() {
               <SearchResults repositoryId={authToken.repositoryId} />
             </ProtectedRoute>
           } />
-          {/* API Key Management - available to all authenticated users */}
-          <Route path="/api-keys" element={
+          {/* Account Settings - available to all authenticated users */}
+          <Route path="/account" element={
             <ProtectedRoute>
-              <ApiKeyManagement repositoryId={authToken.repositoryId} />
+              <AccountSettings repositoryId={authToken.repositoryId} />
             </ProtectedRoute>
           } />
           {/* Admin-only routes - require admin role */}

@@ -10,7 +10,6 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  Card,
   Table,
   Button,
   Space,
@@ -251,11 +250,11 @@ export const ApiKeyManagement: React.FC<ApiKeyManagementProps> = ({
   ];
 
   return (
-    <Card>
+    <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h2 style={{ margin: 0 }}>
+        <h3 style={{ margin: 0 }}>
           <KeyOutlined /> {t('apiKeyManagement.title')}
-        </h2>
+        </h3>
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -410,7 +409,7 @@ export const ApiKeyManagement: React.FC<ApiKeyManagementProps> = ({
           </div>
         )}
       </Modal>
-    </Card>
+    </div>
   );
 };
 

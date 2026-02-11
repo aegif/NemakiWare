@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Form, Input, Button, message, Alert, Spin, Tabs, Descriptions, Tag, Tooltip } from 'antd';
-import { UserOutlined, LockOutlined, KeyOutlined, CloudOutlined } from '@ant-design/icons';
+import { UserOutlined, LockOutlined, SafetyOutlined, CloudOutlined, ApiOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { CMISService } from '../../services/cmis';
 import PasskeyManagement from '../PasskeyManagement/PasskeyManagement';
+import { ApiKeyManagement } from '../ApiKeyManagement/ApiKeyManagement';
 
 interface AccountSettingsProps {
   repositoryId: string;
@@ -249,12 +250,17 @@ export const AccountSettings: React.FC<AccountSettingsProps> = ({ repositoryId }
       label: (
         <Tooltip title={!passwordAllowed ? t('accountSettings.cloudOnlyAccount') : undefined}>
           <span style={!passwordAllowed ? { color: 'rgba(0,0,0,0.25)' } : undefined}>
-            <KeyOutlined /> {t('accountSettings.tabs.passkey')}{disabledSuffix}
+            <SafetyOutlined /> {t('accountSettings.tabs.passkey')}{disabledSuffix}
           </span>
         </Tooltip>
       ),
       children: passkeyTab,
       disabled: !passwordAllowed,
+    },
+    {
+      key: 'apikey',
+      label: <span><ApiOutlined /> {t('accountSettings.tabs.apiKey')}</span>,
+      children: <ApiKeyManagement repositoryId={repositoryId} />,
     },
   ];
 

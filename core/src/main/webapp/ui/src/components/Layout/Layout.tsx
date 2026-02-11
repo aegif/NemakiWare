@@ -226,7 +226,6 @@ import {
   SwapOutlined,
   SendOutlined,
   SyncOutlined,
-  KeyOutlined,
   ControlOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -307,10 +306,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   const uiBuildTime = typeof __UI_BUILD_TIME__ !== 'undefined' ? __UI_BUILD_TIME__ : 'dev';
   const uiVersion = typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '3.1.0';
 
-  // Check if current user is admin
-  // For basic auth: username === 'admin'
-  // For OIDC/SAML: check if 'admin' role is present (username typically matches)
-  const isAdmin = authToken?.username === 'admin';
+  // Check if current user is admin via isAdmin flag from /me endpoint
+  // Falls back to username === 'admin' for backward compatibility
+  const isAdmin = authToken?.isAdmin === true || authToken?.username === 'admin';
 
   // Build menu items - admin submenu only shown to admin users
   const menuItems = [
@@ -401,10 +399,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
 
   const userMenuItems = [
     {
-      key: 'api-keys',
-      icon: <KeyOutlined />,
-      label: t('apiKeyManagement.myApiKeys'),
-      onClick: () => navigate('/api-keys'),
+      key: 'account',
+      icon: <SettingOutlined />,
+      label: t('navigation.accountSettings'),
+      onClick: () => navigate('/account'),
     },
     {
       type: 'divider' as const,

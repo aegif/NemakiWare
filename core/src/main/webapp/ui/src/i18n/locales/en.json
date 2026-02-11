@@ -1940,7 +1940,8 @@
     "tabs": {
       "profile": "Profile",
       "password": "Password",
-      "passkey": "Passkey"
+      "passkey": "Passkey",
+      "apiKey": "API Key"
     },
     "tabDisabled": "N/A",
     "profile": {
