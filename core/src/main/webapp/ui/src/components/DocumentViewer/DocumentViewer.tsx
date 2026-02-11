@@ -656,9 +656,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               message.error(t('documentViewer.messages.cloudPushError'));
             }
           },
-          footer: (_, { OkBtn, CancelBtn }) => (
+          footer: (_, { OkBtn }) => (
             <>
-              <CancelBtn />
+              <OkBtn />
               <Button
                 onClick={async () => {
                   // 同期解除
@@ -675,7 +675,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               >
                 {t('documentViewer.messages.cloudFileNotFoundUnlink')}
               </Button>
-              <OkBtn />
+              <Button onClick={() => Modal.destroyAll()}>
+                {t('common.cancel')}
+              </Button>
             </>
           ),
         });
