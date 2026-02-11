@@ -109,6 +109,7 @@ export async function unlinkCloud(
 ): Promise<void> {
   const response = await fetch(`/core/rest/repo/${repositoryId}/cloud-drive/unlink/${objectId}`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
   });
 
   const result = await response.json();
