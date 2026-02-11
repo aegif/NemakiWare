@@ -39,6 +39,21 @@ export interface CloudDriveUrlResult {
 }
 
 /**
+ * Extract error message from NemakiWare REST API error array.
+ * The server returns errors as [{key: "message"}, ...] objects via addErrMsg().
+ */
+function extractErrorMessage(error: unknown[], fallback: string): string {
+  if (!error || error.length === 0) return fallback;
+  const first = error[0];
+  if (typeof first === 'string') return first;
+  if (typeof first === 'object' && first !== null) {
+    const values = Object.values(first);
+    if (values.length > 0 && typeof values[0] === 'string') return values[0];
+  }
+  return fallback;
+}
+
+/**
  * Push a document to cloud drive.
  */
 export async function pushToCloud(
@@ -56,10 +71,7 @@ export async function pushToCloud(
   const result = await response.json();
   // Server returns status: "success" | "failure" (string), and error: [...] array
   if (result.status !== 'success') {
-    const errorMsg = Array.isArray(result.error) && result.error.length > 0
-      ? result.error[0]
-      : 'Failed to push to cloud';
-    throw new Error(errorMsg);
+    throw new Error(extractErrorMessage(result.error, 'Failed to push to cloud'));
   }
   return result;
 }
@@ -82,10 +94,7 @@ export async function pushToCloudForceNew(
 
   const result = await response.json();
   if (result.status !== 'success') {
-    const errorMsg = Array.isArray(result.error) && result.error.length > 0
-      ? result.error[0]
-      : 'Failed to push to cloud';
-    throw new Error(errorMsg);
+    throw new Error(extractErrorMessage(result.error, 'Failed to push to cloud'));
   }
   return result;
 }
@@ -104,10 +113,7 @@ export async function unlinkCloud(
 
   const result = await response.json();
   if (result.status !== 'success') {
-    const errorMsg = Array.isArray(result.error) && result.error.length > 0
-      ? result.error[0]
-      : 'Failed to unlink from cloud';
-    throw new Error(errorMsg);
+    throw new Error(extractErrorMessage(result.error, 'Failed to unlink from cloud'));
   }
 }
 
@@ -130,10 +136,7 @@ export async function pullFromCloud(
   const result = await response.json();
   // Server returns status: "success" | "failure" (string), and error: [...] array
   if (result.status !== 'success') {
-    const errorMsg = Array.isArray(result.error) && result.error.length > 0
-      ? result.error[0]
-      : 'Failed to pull from cloud';
-    throw new Error(errorMsg);
+    throw new Error(extractErrorMessage(result.error, 'Failed to pull from cloud'));
   }
   return result;
 }
@@ -476,9 +479,7 @@ export async function importFromGoogleDrive(
 
   // Server returns status: "success" | "failure" (string), and error: [...] array
   if (result.status !== 'success') {
-    const errorMsg = Array.isArray(result.error) && result.error.length > 0
-      ? result.error[0]
-      : 'Failed to import from Google Drive';
+    const errorMsg = extractErrorMessage(result.error, 'Failed to import from Google Drive');
     console.error('[CloudDrive] Import failed:', errorMsg, result.error);
     throw new Error(errorMsg);
   }
@@ -546,9 +547,7 @@ export async function importFromOneDrive(
 
   // Server returns status: "success" | "failure" (string), and error: [...] array
   if (result.status !== 'success') {
-    const errorMsg = Array.isArray(result.error) && result.error.length > 0
-      ? result.error[0]
-      : 'Failed to import from OneDrive';
+    const errorMsg = extractErrorMessage(result.error, 'Failed to import from OneDrive');
     console.error('[CloudDrive] Import failed:', errorMsg, result.error);
     throw new Error(errorMsg);
   }
