@@ -599,13 +599,17 @@ private ContentService getContentServiceSafe() {
 					service.createUserItem(new SystemCallContext(repositoryId), repositoryId, user);
 					log.info("[" + userId + "] User creation completed successfully");
 
-					// CRITICAL FIX (2025-10-13): Process groups assignment (was missing in createJson)
-					// Extract groups array from JSON input
+					// Process groups assignment
 					JSONArray groups = (JSONArray) userJson.get("groups");
-							if (groups != null && !groups.isEmpty()) {
-									updateUserGroups(repositoryId, userId, groups, service);
-								} else {
-								}
+					if (groups != null && !groups.isEmpty()) {
+						try {
+							updateUserGroups(repositoryId, userId, groups, service);
+						} catch (Exception e) {
+							log.warn("User " + userId + " created but group assignment failed: " + e.getMessage(), e);
+							status = false;
+							addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATEMEMBERS);
+						}
+					}
 				}
 			}
 		} catch (ParseException e) {
