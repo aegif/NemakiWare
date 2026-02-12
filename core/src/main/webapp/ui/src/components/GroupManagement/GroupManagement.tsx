@@ -464,7 +464,9 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
         title={editingGroup ? t('groupManagement.editGroup') : t('groupManagement.createGroup')}
         open={modalVisible}
         onCancel={handleCancel}
-        footer={null}
+        onOk={() => form.submit()}
+        okText={editingGroup ? t('common.save') : t('common.create')}
+        cancelText={t('common.cancel')}
         width={700}
         maskClosable={false}
       >
@@ -559,17 +561,6 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
               }
               options={getAvailableGroupsForSelection}
             />
-          </Form.Item>
-
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                {editingGroup ? t('common.update') : t('common.create')}
-              </Button>
-              <Button onClick={handleCancel}>
-                {t('common.cancel')}
-              </Button>
-            </Space>
           </Form.Item>
         </Form>
       </Modal>

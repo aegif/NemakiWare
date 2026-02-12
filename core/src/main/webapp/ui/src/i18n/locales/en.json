@@ -1957,7 +1957,8 @@
       "authMethodAll": "All allowed",
       "authMethodDisabled": "Disabled",
       "authMethodPassword": "Password",
-      "authMethodCloud": "Cloud (Google / Microsoft)"
+      "authMethodCloud": "Cloud (Google / Microsoft)",
+      "groups": "Groups"
     },
     "changePassword": "Change Password",
     "currentPassword": "Current Password",

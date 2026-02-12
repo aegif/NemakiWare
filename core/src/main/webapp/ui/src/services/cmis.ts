@@ -1251,12 +1251,21 @@ export class CMISService {
    * @param objectId Object ID to delete
    * @returns Promise resolving when deletion is complete
    */
-  async deleteObject(repositoryId: string, objectId: string): Promise<void> {
+  async deleteObject(repositoryId: string, objectId: string, isFolder: boolean = false): Promise<void> {
     try {
       const url = `${this.baseUrl}/${repositoryId}`;
       const params = new URLSearchParams();
-      params.append('cmisaction', 'deleteObject');
-      params.append('objectId', objectId);
+
+      if (isFolder) {
+        // Use deleteTree for folders to handle contained objects
+        params.append('cmisaction', 'deleteTree');
+        params.append('folderId', objectId);
+        params.append('allVersions', 'true');
+        params.append('continueOnFailure', 'false');
+      } else {
+        params.append('cmisaction', 'deleteObject');
+        params.append('objectId', objectId);
+      }
 
       const response = await this.httpClient.postUrlEncoded(url, params);
 
@@ -1682,6 +1691,7 @@ export class CMISService {
     firstName?: string;
     lastName?: string;
     email?: string;
+    groups?: string[];
     allowedAuthMethods?: string | null;
   }> {
     const url = `/core/rest/repo/${repositoryId}/user/me`;
@@ -1698,6 +1708,7 @@ export class CMISService {
           firstName: user.firstName,
           lastName: user.lastName,
           email: user.email,
+          groups: Array.isArray(user.groups) ? user.groups : [],
           // Preserve null vs undefined distinction:
           // null = server returned null (field not set in DB)
           // undefined = not fetched yet
@@ -1874,8 +1885,9 @@ export class CMISService {
         formData.append('groups', JSON.stringify(user.groups));
       }
       // Add allowedAuthMethods parameter (empty string clears it)
-      if (user.allowedAuthMethods !== undefined) {
-        formData.append('allowedAuthMethods', user.allowedAuthMethods || '');
+      // Only send when explicitly set to a string value; skip null/undefined to preserve server-side value
+      if (user.allowedAuthMethods !== undefined && user.allowedAuthMethods !== null) {
+        formData.append('allowedAuthMethods', user.allowedAuthMethods);
       }
       // Add isAdmin parameter
       if (user.isAdmin !== undefined) {
@@ -2726,7 +2738,8 @@ export class CMISService {
   async deleteObjectWithCascade(
     repositoryId: string,
     objectId: string,
-    cascadeParentChild: boolean = true
+    cascadeParentChild: boolean = true,
+    isFolder: boolean = false
   ): Promise<{
     deletedCount: number;
     failedIds: string[];
@@ -2755,9 +2768,9 @@ export class CMISService {
       }
     }
 
-    // Finally delete the root object
+    // Finally delete the root object (use deleteTree for folders)
     try {
-      await this.deleteObject(repositoryId, objectId);
+      await this.deleteObject(repositoryId, objectId, isFolder);
       rootDeleted = true;
     } catch (error) {
       console.warn(`[CASCADE DELETE] Failed to delete root object ${objectId}:`, error);

@@ -705,7 +705,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
           >
             <Select
               placeholder={t('userManagement.placeholders.authMethods')}
-              allowClear
               options={[
                 { label: t('userManagement.authMethods.all'), value: '' },
                 { label: t('userManagement.authMethods.password'), value: 'password' },
@@ -735,7 +734,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
-                {editingUser ? t('common.update') : t('common.create')}
+                {editingUser ? t('common.save') : t('common.create')}
               </Button>
               <Button onClick={handleCancel}>
                 {t('common.cancel')}

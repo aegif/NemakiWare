@@ -1957,7 +1957,8 @@
       "authMethodAll": "すべて許可",
       "authMethodDisabled": "無効",
       "authMethodPassword": "パスワード",
-      "authMethodCloud": "クラウド（Google / Microsoft）"
+      "authMethodCloud": "クラウド（Google / Microsoft）",
+      "groups": "所属グループ"
     },
     "changePassword": "パスワード変更",
     "currentPassword": "現在のパスワード",

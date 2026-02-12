@@ -381,6 +381,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string>('');
   const [deleteTargetName, setDeleteTargetName] = useState<string>('');
+  const [deleteTargetIsFolder, setDeleteTargetIsFolder] = useState(false);
   const [deleteDescendantCount, setDeleteDescendantCount] = useState(0);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -793,9 +794,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
    * Show delete confirmation modal with cascade deletion info.
    * Checks for parentChildRelationship descendants before deletion.
    */
-  const handleDeleteClick = async (objectId: string, objectName: string) => {
+  const handleDeleteClick = async (objectId: string, objectName: string, baseType?: string) => {
     setDeleteTargetId(objectId);
     setDeleteTargetName(objectName);
+    setDeleteTargetIsFolder(baseType === 'cmis:folder');
     setDeleteLoading(true);
     setDeleteModalVisible(true);
 
@@ -825,7 +827,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
       // NemakiWare-specific: Use cascade deletion for parentChildRelationship
       // This will delete all descendant objects linked via nemaki:parentChildRelationship
-      const result = await cmisService.deleteObjectWithCascade(repositoryId, deleteTargetId);
+      const result = await cmisService.deleteObjectWithCascade(repositoryId, deleteTargetId, true, deleteTargetIsFolder);
 
       // Reload objects from server after deletion attempt
       await loadObjects();
@@ -854,6 +856,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setLoading(false);
       setDeleteTargetId('');
       setDeleteTargetName('');
+      setDeleteTargetIsFolder(false);
       setDeleteDescendantCount(0);
     }
   };
@@ -862,6 +865,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     setDeleteModalVisible(false);
     setDeleteTargetId('');
     setDeleteTargetName('');
+    setDeleteTargetIsFolder(false);
     setDeleteDescendantCount(0);
   };
 
@@ -936,7 +940,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       for (let i = 0; i < objectIds.length; i += CONCURRENCY_LIMIT) {
         const batch = objectIds.slice(i, i + CONCURRENCY_LIMIT);
         const results = await Promise.allSettled(
-          batch.map(objectId => cmisService.deleteObjectWithCascade(repositoryId, objectId))
+          batch.map(objectId => {
+            const obj = objects.find(o => o.id === objectId);
+            const isFolder = obj?.baseType === 'cmis:folder';
+            return cmisService.deleteObjectWithCascade(repositoryId, objectId, true, isFolder);
+          })
         );
 
         results.forEach((result, index) => {
@@ -1511,7 +1519,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   icon={<DeleteOutlined />}
                   size="small"
                   danger
-                  onClick={() => handleDeleteClick(record.id, record.name)}
+                  onClick={() => handleDeleteClick(record.id, record.name, record.baseType)}
                 />
               </Tooltip>
             )}

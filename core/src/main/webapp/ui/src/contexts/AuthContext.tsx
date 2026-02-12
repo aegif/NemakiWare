@@ -399,8 +399,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Update localStorage with isAdmin and allowedAuthMethods
         authService.saveAuth(auth);
       } catch (meError) {
-        console.warn('AuthContext: Failed to fetch /me, defaulting isAdmin to false:', meError);
-        auth.isAdmin = false;
+        console.warn('AuthContext: Failed to fetch /me, preserving existing auth state:', meError);
+        // Do not override isAdmin on /me failure - preserve whatever value was obtained during login
+        // to avoid downgrading real admins due to transient network issues
       }
 
       setAuthToken(auth);

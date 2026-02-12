@@ -18,6 +18,7 @@ interface MeInfo {
   firstName?: string;
   lastName?: string;
   email?: string;
+  groups?: string[];
   allowedAuthMethods?: string | null;
 }
 
@@ -60,6 +61,7 @@ export const AccountSettings: React.FC<AccountSettingsProps> = ({ repositoryId }
             userId: authToken.username,
             userName: authToken.username,
             isAdmin: authToken.isAdmin ?? false,
+            groups: [],
             allowedAuthMethods: authToken.allowedAuthMethods ?? null,
           });
         }
@@ -119,39 +121,38 @@ export const AccountSettings: React.FC<AccountSettingsProps> = ({ repositoryId }
     }).join(', ');
   };
 
+  const profileItems: { label: string; children: React.ReactNode }[] = [
+    { label: t('accountSettings.profile.userId'), children: meInfo?.userId },
+    { label: t('accountSettings.profile.userName'), children: meInfo?.userName || '-' },
+    { label: t('accountSettings.profile.firstName'), children: meInfo?.firstName || '-' },
+    { label: t('accountSettings.profile.lastName'), children: meInfo?.lastName || '-' },
+    { label: t('accountSettings.profile.email'), children: meInfo?.email || '-' },
+    {
+      label: t('accountSettings.profile.role'),
+      children: meInfo?.isAdmin
+        ? <Tag color="red">{t('accountSettings.profile.admin')}</Tag>
+        : <Tag>{t('accountSettings.profile.user')}</Tag>,
+    },
+    {
+      label: t('accountSettings.profile.groups'),
+      children: meInfo?.groups && meInfo.groups.length > 0
+        ? <span>{meInfo.groups.map(g => <Tag key={g}>{g}</Tag>)}</span>
+        : '-',
+    },
+    {
+      label: t('accountSettings.profile.authMethods'),
+      children: authMethodLabel(meInfo?.allowedAuthMethods),
+    },
+  ];
+
   const profileTab = (
-    <Descriptions column={1} bordered size="small">
-      <Descriptions.Item label={t('accountSettings.profile.userId')}>
-        {meInfo?.userId}
-      </Descriptions.Item>
-      <Descriptions.Item label={t('accountSettings.profile.userName')}>
-        {meInfo?.userName || '-'}
-      </Descriptions.Item>
-      {meInfo?.firstName && (
-        <Descriptions.Item label={t('accountSettings.profile.firstName')}>
-          {meInfo.firstName}
-        </Descriptions.Item>
-      )}
-      {meInfo?.lastName && (
-        <Descriptions.Item label={t('accountSettings.profile.lastName')}>
-          {meInfo.lastName}
-        </Descriptions.Item>
-      )}
-      {meInfo?.email && (
-        <Descriptions.Item label={t('accountSettings.profile.email')}>
-          {meInfo.email}
-        </Descriptions.Item>
-      )}
-      <Descriptions.Item label={t('accountSettings.profile.role')}>
-        {meInfo?.isAdmin
-          ? <Tag color="red">{t('accountSettings.profile.admin')}</Tag>
-          : <Tag>{t('accountSettings.profile.user')}</Tag>
-        }
-      </Descriptions.Item>
-      <Descriptions.Item label={t('accountSettings.profile.authMethods')}>
-        {authMethodLabel(meInfo?.allowedAuthMethods)}
-      </Descriptions.Item>
-    </Descriptions>
+    <Descriptions
+      column={1}
+      bordered
+      size="small"
+      labelStyle={{ width: 160, whiteSpace: 'nowrap' }}
+      items={profileItems}
+    />
   );
 
   const passwordTab = passwordAllowed ? (

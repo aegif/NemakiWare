@@ -1091,32 +1091,13 @@ private ContentService getContentServiceSafe() {
 			for(Map.Entry<String, Object> entry : map.entrySet()) properties.add(new Property(entry.getKey(), entry.getValue()));
 			user.setSubTypeProperties(properties);
 
-
-			// update
+			// Set password if provided (on the same user object to preserve subTypeProperties)
 			if (StringUtils.isNotBlank(password)) {
-				user = getContentServiceSafe().getUserItemById(repositoryId, userId);
-				if (user == null) {
-					status = false;
-					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
-					return makeResult(status, result, errMsg).toJSONString();
-				}
-
-				// Edit & Update
-				if (status) {
-					// Edit the user info
-					String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-					user.setPassowrd(passwordHash);
-					setModifiedSignature(httpRequest, user);
-
-					try {
-						service.update(new SystemCallContext(repositoryId), repositoryId, user);
-					} catch (Exception e) {
-						e.printStackTrace();
-						status = false;
-						addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
-					}
-				}
+				String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
+				user.setPassowrd(passwordHash);
 			}
+
+			// Single update call to persist all changes (properties + password if any)
 			setModifiedSignature(httpRequest, user);
 
 			try {
@@ -1134,6 +1115,8 @@ private ContentService getContentServiceSafe() {
 					updateUserGroups(repositoryId, userId, groups, service);
 				} catch (Exception e) {
 					log.warn("Failed to parse or apply groups for user " + userId + ": " + e.getMessage());
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATEMEMBERS);
 				}
 			}
 		}
@@ -1367,25 +1350,37 @@ private ContentService getContentServiceSafe() {
 		Boolean isAdminFlag = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
 		boolean isAdmin = (isAdminFlag != null && isAdminFlag);
 
-		if (!userId.equals(resoureId) && !isAdmin && !isAdminOperaiton(repositoryId, userId, password) && !isSystemUser(repositoryId, resoureId)) {
+		// System users (admin, solr) can only be modified by admins
+		if (isSystemUser(repositoryId, resoureId) && !isAdmin) {
 			status = false;
-			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTAUTHENTICATED);
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN);
+			return status;
+		}
+
+		// Non-admin users can only modify themselves
+		if (!userId.equals(resoureId) && !isAdmin && !isAdminOperaiton(repositoryId, userId, password)) {
+			status = false;
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN);
 		}
 		return status;
 	}
 
 	private boolean isSystemUser(String repositoryId, String userId){
-		boolean result = false;
 		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
+		if (user == null) {
+			return false;
+		}
 
-		result = user.isAdmin();
-		if(result) return true;
+		if (user.isAdmin() != null && user.isAdmin()) {
+			return true;
+		}
 
 		String solrUserId = getPropertyManager().readValue(PropertyKey.SOLR_NEMAKI_USERID);
-		result = user.getUserId().equals(solrUserId);
-		if(result) return true;
+		if (solrUserId != null && solrUserId.equals(user.getUserId())) {
+			return true;
+		}
 
-		return result;
+		return false;
 	}
 
 	private boolean isAdminOperaiton(String repositoryId, String userId, String password) {
@@ -1394,12 +1389,18 @@ private ContentService getContentServiceSafe() {
 		}
 
 		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
-		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
+		if (user == null) {
+			return false;
+		}
+		boolean isAdmin = user.isAdmin() != null && user.isAdmin();
 		if (isAdmin) {
 			// password check
-			boolean match = BCrypt.checkpw(password, user.getPassowrd());
-			if (match)
-				return true;
+			String storedPassword = user.getPassowrd();
+			if (storedPassword != null) {
+				boolean match = BCrypt.checkpw(password, storedPassword);
+				if (match)
+					return true;
+			}
 		}
 		return false;
 	}

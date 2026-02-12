@@ -59,7 +59,7 @@ export class WebAuthnService {
     });
     const data = await res.json();
     if (data.status !== 'success') {
-      throw new Error(data.errMsg?.[0]?.value || 'Registration begin failed');
+      throw new Error(data.errMsg?.[0] ? Object.values(data.errMsg[0])[0] as string : undefined || 'Registration begin failed');
     }
 
     const options = data.options;
@@ -129,7 +129,7 @@ export class WebAuthnService {
     });
     const data = await res.json();
     if (data.status !== 'success') {
-      throw new Error(data.errMsg?.[0]?.value || 'Registration complete failed');
+      throw new Error(data.errMsg?.[0] ? Object.values(data.errMsg[0])[0] as string : undefined || 'Registration complete failed');
     }
     return { credentialId: data.credentialId, displayName: data.displayName };
   }
@@ -144,7 +144,7 @@ export class WebAuthnService {
     });
     const data = await res.json();
     if (data.status !== 'success') {
-      throw new Error(data.errMsg?.[0]?.value || 'Authentication begin failed');
+      throw new Error(data.errMsg?.[0] ? Object.values(data.errMsg[0])[0] as string : undefined || 'Authentication begin failed');
     }
 
     const options = data.options;
@@ -213,7 +213,7 @@ export class WebAuthnService {
     });
     const data = await res.json();
     if (data.status !== 'success') {
-      throw new Error(data.errMsg?.[0]?.value || 'Authentication failed');
+      throw new Error(data.errMsg?.[0] ? Object.values(data.errMsg[0])[0] as string : undefined || 'Authentication failed');
     }
     return data.value;
   }
@@ -228,7 +228,7 @@ export class WebAuthnService {
     });
     const data = await res.json();
     if (data.status !== 'success') {
-      throw new Error(data.errMsg?.[0]?.value || 'Failed to list credentials');
+      throw new Error(data.errMsg?.[0] ? Object.values(data.errMsg[0])[0] as string : undefined || 'Failed to list credentials');
     }
     return data.credentials || [];
   }
@@ -243,7 +243,7 @@ export class WebAuthnService {
     });
     const data = await res.json();
     if (data.status !== 'success') {
-      throw new Error(data.errMsg?.[0]?.value || 'Failed to delete credential');
+      throw new Error(data.errMsg?.[0] ? Object.values(data.errMsg[0])[0] as string : undefined || 'Failed to delete credential');
     }
   }
 }
