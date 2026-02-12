@@ -97,6 +97,8 @@ import jp.aegif.nemaki.model.couch.CouchRendition;
 import jp.aegif.nemaki.model.couch.CouchTypeDefinition;
 import jp.aegif.nemaki.model.couch.CouchUserItem;
 import jp.aegif.nemaki.model.couch.CouchVersionSeries;
+import jp.aegif.nemaki.model.couch.CouchWebAuthnCredential;
+import jp.aegif.nemaki.model.WebAuthnCredential;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.util.spring.SpringContext;
 
@@ -1895,14 +1897,29 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
 				log.info("Found " + result.getRows().size() + " matching user documents");
 				
-				ViewResultRow firstRow = result.getRows().get(0);
-				Object rawDoc = firstRow.getValue(); // Use getValue() not getDoc()
-				
-				log.info("Raw document class: " + rawDoc.getClass().getName());
-				
-				if (rawDoc instanceof Map) {
+				// Iterate through all rows to find the actual user document (nemaki:user),
+				// skipping other document types like nemaki:webauthnCredential that also
+				// have userId field and match the view.
+				for (ViewResultRow row : result.getRows()) {
+					Object rawDoc = row.getValue(); // Use getValue() not getDoc()
+					
+					if (!(rawDoc instanceof Map)) {
+						log.error("Raw document is not a Map: " + rawDoc.getClass().getName());
+						continue;
+					}
+					
 					@SuppressWarnings("unchecked")
 					Map<String, Object> docMap = (Map<String, Object>) rawDoc;
+					
+					// Skip non-user documents (e.g., WebAuthn credentials)
+					String objectType = (String) docMap.get("objectType");
+					if (!"nemaki:user".equals(objectType)) {
+						if (log.isDebugEnabled()) {
+							log.debug("Skipping non-user document with objectType: " + objectType);
+						}
+						continue;
+					}
+					
 					log.info("Document contains userId: " + docMap.get("userId") + ", admin: " + docMap.get("admin"));
 					
 					// SECURITY FIX: Validate that returned user actually matches requested userId
@@ -1926,10 +1943,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 							", id: " + cui.getId() + ", type: " + cui.getType());
 						return null;
 					}
-				} else {
-					log.error("Raw document is not a Map: " + rawDoc.getClass().getName());
-					return null;
 				}
+				
+				log.warn("No nemaki:user document found among " + result.getRows().size() + " results for userId: " + userId);
 			} else {
 				log.warn("No user found with userId: " + userId + " in repository: " + repositoryId);
 			}
@@ -4030,36 +4046,133 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Archive createArchive(String repositoryId, Archive archive, Boolean deletedWithParent) {
 		String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
+		CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+		CloudantClientWrapper archiveClient = connectorPool.get(archiveId);
 
-		CouchNodeBase cnb = connectorPool.getClient(repositoryId).get(CouchNodeBase.class, archive.getOriginalId());
+		// Read the full raw CouchDB document to preserve ALL fields
+		// (versionLabel, majorVersion, secondaryIds, aspects, subTypeProperties, etc.)
+		com.ibm.cloud.cloudant.v1.model.Document rawDoc = client.get(archive.getOriginalId());
+		String lastRevision = rawDoc != null ? rawDoc.getRev() : null;
+
+		// Build archive document from raw properties + archive metadata
+		Map<String, Object> archiveMap = new HashMap<>();
+
+		// Copy all original document properties (preserves versionLabel, secondaryIds, etc.)
+		if (rawDoc != null) {
+			Map<String, Object> originalProps = rawDoc.getProperties();
+			if (originalProps != null) {
+				archiveMap.putAll(originalProps);
+			}
+		}
+
+		// Add archive-specific metadata (overwriting any conflicts)
+		archiveMap.put("originalId", archive.getOriginalId());
+		archiveMap.put("lastRevision", lastRevision);
+		archiveMap.put("deletedWithParent", deletedWithParent);
+
+		// Copy fields from the Archive model (set by ContentServiceImpl)
+		if (archive.getName() != null) archiveMap.put("name", archive.getName());
+		if (archive.getType() != null) archiveMap.put("type", archive.getType());
+		if (archive.getParentId() != null) archiveMap.put("parentId", archive.getParentId());
+		if (archive.getPath() != null) archiveMap.put("path", archive.getPath());
+		if (archive.getAttachmentNodeId() != null) archiveMap.put("attachmentNodeId", archive.getAttachmentNodeId());
+		if (archive.getVersionSeriesId() != null) archiveMap.put("versionSeriesId", archive.getVersionSeriesId());
+		archiveMap.put("latestVersion", archive.isLatestVersion());
+		if (archive.getMimeType() != null) archiveMap.put("mimeType", archive.getMimeType());
+		archiveMap.put("contentStreamLength", archive.getContentStreamLength());
+		if (archive.getCreator() != null) archiveMap.put("creator", archive.getCreator());
+		if (archive.getModifier() != null) archiveMap.put("modifier", archive.getModifier());
+		if (archive.getAclSnapshot() != null) archiveMap.put("aclSnapshot", archive.getAclSnapshot());
+		if (archive.getArchiveState() != null) archiveMap.put("archiveState", archive.getArchiveState());
+		if (archive.getArchivedAt() != null) archiveMap.put("archivedAt", archive.getArchivedAt().getTimeInMillis());
+		if (archive.getArchivedBy() != null) archiveMap.put("archivedBy", archive.getArchivedBy());
+
+		// Remove CouchDB internal fields (new doc will get its own _id/_rev)
+		archiveMap.remove("_id");
+		archiveMap.remove("_rev");
+		archiveMap.remove("_attachments");
+
+		// Write to archive DB
+		archiveClient.create(archiveMap);
+
+		// Return the archive model for caller
 		CouchArchive ca = new CouchArchive(archive);
-		ca.setLastRevision(cnb.getRevision());
-
-		// Write to DB
-		connectorPool.get(archiveId).create(ca);
+		ca.setLastRevision(lastRevision);
 		return ca.convert();
 	}
 
 	@Override
 	public Archive createAttachmentArchive(String repositoryId, Archive archive) {
 		String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
+		CloudantClientWrapper sourceClient = connectorPool.getClient(repositoryId);
+		CloudantClientWrapper archiveClient = connectorPool.get(archiveId);
 
-		CouchArchive ca = new CouchArchive(archive);
-		CouchNodeBase cnb = connectorPool.getClient(repositoryId).get(CouchNodeBase.class, archive.getOriginalId());
+		// Read the full raw CouchDB attachment node to preserve ALL fields
+		// (name, mimeType, length, actualLength, etc.)
+		com.ibm.cloud.cloudant.v1.model.Document rawDoc = sourceClient.get(archive.getOriginalId());
 
-		// CRITICAL TCK FIX: Handle case where attachment was already deleted
-		// This can happen when multiple versions reference the same attachment
-		if (cnb == null) {
+		// Handle case where attachment was already deleted
+		if (rawDoc == null) {
 			log.warn(buildLogMsg(archive.getOriginalId(),
 					"attachment no longer exists (may have been deleted by another version)"));
-			// Return archive without lastRevision set
-			connectorPool.get(archiveId).create(ca);
+			CouchArchive ca = new CouchArchive(archive);
+			archiveClient.create(ca);
 			return ca.convert();
 		}
 
-		ca.setLastRevision(cnb.getRevision());
+		String lastRevision = rawDoc.getRev();
 
-		connectorPool.get(archiveId).create(ca);
+		// Build archive document from raw properties + archive metadata
+		Map<String, Object> archiveMap = new HashMap<>();
+
+		// Copy all original attachment node properties (preserves name, mimeType, length, etc.)
+		Map<String, Object> originalProps = rawDoc.getProperties();
+		if (originalProps != null) {
+			archiveMap.putAll(originalProps);
+		}
+
+		// Add archive-specific metadata
+		archiveMap.put("originalId", archive.getOriginalId());
+		archiveMap.put("lastRevision", lastRevision);
+		archiveMap.put("deletedWithParent", archive.isDeletedWithParent());
+		if (archive.getName() != null) archiveMap.put("name", archive.getName());
+		if (archive.getType() != null) archiveMap.put("type", archive.getType());
+		if (archive.getParentId() != null) archiveMap.put("parentId", archive.getParentId());
+
+		// Remove CouchDB internal fields
+		archiveMap.remove("_id");
+		archiveMap.remove("_rev");
+		archiveMap.remove("_attachments");
+
+		// Write to archive DB
+		com.ibm.cloud.cloudant.v1.model.DocumentResult createResult = archiveClient.create(archiveMap);
+		String archiveDocId = createResult != null ? createResult.getId() : null;
+
+		// Copy binary content (_attachments) from source to archive
+		boolean hasBinary = originalProps != null && originalProps.containsKey("_attachments");
+		try {
+			Object binaryContent = sourceClient.getAttachment(archive.getOriginalId(), "content");
+			if (binaryContent instanceof java.io.InputStream && archiveDocId != null) {
+				com.ibm.cloud.cloudant.v1.model.Document archiveDoc = archiveClient.get(archiveDocId);
+				String archiveRev = archiveDoc != null ? archiveDoc.getRev() : null;
+				// Use the original mimeType from the raw document
+				Object mimeTypeObj = originalProps != null ? originalProps.get("mimeType") : null;
+				String mimeType = mimeTypeObj instanceof String ? (String) mimeTypeObj : "application/octet-stream";
+				if (mimeType.isEmpty()) mimeType = "application/octet-stream";
+				archiveClient.createAttachment(archiveDocId, archiveRev, "content",
+					(java.io.InputStream) binaryContent, mimeType);
+				log.info("createAttachmentArchive: binary content copied to archive for " + archive.getOriginalId());
+			}
+		} catch (Exception e) {
+			if (hasBinary) {
+				throw new RuntimeException("createAttachmentArchive: failed to copy binary content for "
+					+ archive.getOriginalId() + " (binary exists in source)", e);
+			}
+			log.info("createAttachmentArchive: no binary content to copy for " + archive.getOriginalId());
+		}
+
+		CouchArchive ca = new CouchArchive(archive);
+		ca.setLastRevision(lastRevision);
 		return ca.convert();
 	}
 
@@ -4182,6 +4295,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				log.warn("CLOUDANT FIX: Error accessing getProperties() during restore: " + e.getMessage());
 			}
 			
+			// FIX (2026-02-11): CouchArchive does not store 'objectType' field.
+			// Normal documents have 'objectType' (e.g. "cmis:document") which is required
+			// for CMIS operations like checkOut. Restore it from the archive's 'type' field.
+			if (!docMap.containsKey("objectType") && docMap.containsKey("type")) {
+				docMap.put("objectType", docMap.get("type"));
+				log.info("restoreContent: restored objectType from type field: " + docMap.get("type"));
+			}
+			
 			log.info("restoreContent: docMap keys=" + docMap.keySet() + ", about to purge tombstone for " + originalId);
 			
 			// CRITICAL FIX (2026-02-09): Handle CouchDB tombstone for deleted documents
@@ -4207,59 +4328,106 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public void restoreAttachment(String repositoryId, Archive archive) {
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			
-			// Get the archived attachment document
 			String archiveId = archive.getId();
 			String originalId = archive.getOriginalId();
-			
+
 			log.info("restoreAttachment: archiveId=" + archiveId + ", originalId=" + originalId);
-			
-			// Get the archive repository
+
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper archiveClient = connectorPool.getClient(archiveRepositoryId);
-			
-			// Retrieve the archived attachment document
-			CouchAttachmentNode archivedAttachment = archiveClient.get(CouchAttachmentNode.class, archiveId);
-			if (archivedAttachment == null) {
+
+			// Read the raw archive document to preserve ALL fields
+			com.ibm.cloud.cloudant.v1.model.Document archivedDoc = archiveClient.get(archiveId);
+			if (archivedDoc == null) {
 				log.warn("Archive attachment document not found: " + archiveId);
 				return;
 			}
-			
-			// Reset fields for restoration
-			archivedAttachment.setId(originalId);
-			archivedAttachment.setRevision(null);
-			
-			// Purge tombstone if exists (same issue as restoreContent)
+
+			// Build restored document from raw properties
+			Map<String, Object> docMap = new HashMap<>();
+			docMap.put("_id", originalId);
+			// Copy all custom fields from archive
+			Map<String, Object> properties = archivedDoc.getProperties();
+			if (properties != null) {
+				for (Map.Entry<String, Object> entry : properties.entrySet()) {
+					String key = entry.getKey();
+					// Skip archive-specific and CouchDB internal fields
+					if (!"originalId".equals(key) && !"_rev".equals(key) && !"_id".equals(key) &&
+						!"lastRevision".equals(key) && !"archiveState".equals(key) &&
+						!"archivedAt".equals(key) && !"archivedBy".equals(key) &&
+						!"deletedWithParent".equals(key) && !"aclSnapshot".equals(key) &&
+						!"propsSnapshot".equals(key) && !"coldArchivedAt".equals(key) &&
+						!"coldMoveMode".equals(key) && !"contentRef".equals(key)) {
+						docMap.put(key, entry.getValue());
+					}
+				}
+			}
+
+			// Purge tombstone
 			boolean purged = client.purgeTombstone(originalId);
 			log.info("restoreAttachment: purgeTombstone result=" + purged + " for " + originalId);
 
-			// Create the restored attachment document in the main repository
-			ObjectMapper mapper = createConfiguredObjectMapper();
-			@SuppressWarnings("unchecked")
-			Map<String, Object> documentMap = mapper.convertValue(archivedAttachment, Map.class);
-			com.ibm.cloud.cloudant.v1.model.DocumentResult createResult = client.create(originalId, documentMap);
-			log.info("restoreAttachment: create result=" + (createResult != null ? "id=" + createResult.getId() + ",ok=" + createResult.isOk() : "null") + " for " + originalId);
-			
-			// Also try to restore any binary attachments
+			// Create the restored attachment document
+			client.create(originalId, docMap);
+
+			// Restore binary attachment from archive
+			boolean archiveHasBinary = properties != null && properties.containsKey("_attachments");
 			try {
 				Object attachmentData = archiveClient.getAttachment(archiveId, "content");
-				if (attachmentData != null && attachmentData instanceof java.io.InputStream) {
-					// Get current document revision
+				if (attachmentData instanceof java.io.InputStream) {
 					com.ibm.cloud.cloudant.v1.model.Document doc = client.get(originalId);
 					String revision = doc != null ? doc.getRev() : null;
-					
-					// Restore binary attachment
-					client.createAttachment(originalId, revision, "content", 
-						(java.io.InputStream) attachmentData, archivedAttachment.getMimeType());
-					
+
+					// Get mimeType from the restored document properties
+					String mimeType = docMap.get("mimeType") instanceof String
+						? (String) docMap.get("mimeType") : "application/octet-stream";
+					if (mimeType.isEmpty()) mimeType = "application/octet-stream";
+
+					client.createAttachment(originalId, revision, "content",
+						(java.io.InputStream) attachmentData, mimeType);
+
+					// Update length metadata, preserving _attachments stubs
+					com.ibm.cloud.cloudant.v1.model.Document updatedDoc = client.get(originalId);
+					if (updatedDoc != null) {
+						Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> atts = updatedDoc.getAttachments();
+						if (atts != null && atts.get("content") != null) {
+							long actualLength = atts.get("content").length();
+							Map<String, Object> updateMap = new HashMap<>();
+							updateMap.put("_id", originalId);
+							updateMap.put("_rev", updatedDoc.getRev());
+							Map<String, Object> props = updatedDoc.getProperties();
+							if (props != null) {
+								updateMap.putAll(props);
+							}
+							updateMap.put("length", actualLength);
+							updateMap.put("actualLength", actualLength);
+							// Include _attachments stubs to preserve binary
+							Map<String, Object> attachmentsStubs = new HashMap<>();
+							for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Attachment> entry : atts.entrySet()) {
+								Map<String, Object> stub = new HashMap<>();
+								stub.put("stub", true);
+								stub.put("content_type", entry.getValue().contentType());
+								stub.put("length", entry.getValue().length());
+								attachmentsStubs.put(entry.getKey(), stub);
+							}
+							updateMap.put("_attachments", attachmentsStubs);
+							client.update(updateMap);
+							log.info("restoreAttachment: updated length to " + actualLength + " for " + originalId);
+						}
+					}
+
 					log.info("Binary attachment restored for: " + originalId);
 				}
 			} catch (Exception attachmentError) {
-				log.warn("Failed to restore binary attachment for: " + originalId + ". Metadata restored only.", attachmentError);
+				if (archiveHasBinary) {
+					throw new RuntimeException("Failed to restore binary attachment for: " + originalId
+						+ " (binary exists in archive)", attachmentError);
+				}
+				log.info("restoreAttachment: no binary content in archive for " + originalId);
 			}
-			
+
 			log.info("Attachment restored from archive: " + archiveId + " to original ID: " + originalId);
-			
+
 		} catch (Exception e) {
 			log.error("Error restoring attachment from archive: " + archive.getId() + " in repository: " + repositoryId, e);
 			throw new RuntimeException("Failed to restore attachment from archive", e);
@@ -4272,6 +4440,61 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		// Restore its attachment
 		Archive attachmentArchive = getAttachmentArchive(repositoryId, contentArchive);
 		restoreAttachment(repositoryId, attachmentArchive);
+
+		// DEFENSIVE FIX: After both document and attachment are restored,
+		// ensure the document's mimeType is set correctly.
+		// Old archives (created with CouchArchive model) may have lost the mimeType field,
+		// causing contentStreamMimeType to be null/application/octet-stream after restore.
+		// In this case, read the mimeType from the restored attachment node.
+		try {
+			String originalId = contentArchive.getOriginalId();
+			String attachmentNodeId = contentArchive.getAttachmentNodeId();
+			if (originalId != null && attachmentNodeId != null) {
+				CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+				com.ibm.cloud.cloudant.v1.model.Document docNode = client.get(originalId);
+				if (docNode != null) {
+					Map<String, Object> docProps = docNode.getProperties();
+					Object currentMimeType = docProps != null ? docProps.get("mimeType") : null;
+					// If mimeType is missing or is the generic octet-stream fallback
+					if (currentMimeType == null || "application/octet-stream".equals(currentMimeType)) {
+						com.ibm.cloud.cloudant.v1.model.Document attNode = client.get(attachmentNodeId);
+						if (attNode != null) {
+							Map<String, Object> attProps = attNode.getProperties();
+							Object attMimeType = attProps != null ? attProps.get("mimeType") : null;
+							if (attMimeType instanceof String && !((String) attMimeType).isEmpty()
+									&& !"application/octet-stream".equals(attMimeType)) {
+								// Update the document with the correct mimeType from attachment
+								Map<String, Object> updateMap = new HashMap<>();
+								updateMap.put("_id", originalId);
+								updateMap.put("_rev", docNode.getRev());
+								if (docProps != null) {
+									updateMap.putAll(docProps);
+								}
+								updateMap.put("mimeType", attMimeType);
+								// Preserve _attachments stubs if any
+								Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> atts = docNode.getAttachments();
+								if (atts != null && !atts.isEmpty()) {
+									Map<String, Object> stubs = new HashMap<>();
+									for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Attachment> e : atts.entrySet()) {
+										Map<String, Object> stub = new HashMap<>();
+										stub.put("stub", true);
+										stub.put("content_type", e.getValue().contentType());
+										stub.put("length", e.getValue().length());
+										stubs.put(e.getKey(), stub);
+									}
+									updateMap.put("_attachments", stubs);
+								}
+								client.update(updateMap);
+								log.info("restoreDocumentWithArchive: Fixed mimeType from attachment node: "
+										+ currentMimeType + " -> " + attMimeType + " for " + originalId);
+							}
+						}
+					}
+				}
+			}
+		} catch (Exception e) {
+			log.warn("restoreDocumentWithArchive: Failed to fix mimeType from attachment node: " + e.getMessage());
+		}
 	}
 
 	@Override
@@ -4616,5 +4839,85 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		} catch (Exception e) {
 			log.error("Error updating archive coldMoveMode for " + archiveId + ": " + e.getMessage(), e);
 		}
+	}
+
+	// ==========================================
+	// WebAuthn Credential methods
+	// ==========================================
+
+	@Override
+	public List<WebAuthnCredential> getWebAuthnCredentialsByUserId(String repositoryId, String userId) {
+		List<WebAuthnCredential> credentials = new ArrayList<>();
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			ViewResult result = client.queryView("_repo", "webauthnCredentialsByUserId", userId);
+
+			if (result != null && result.getRows() != null) {
+				for (ViewResultRow row : result.getRows()) {
+					try {
+						Object rawDoc = row.getValue();
+						if (rawDoc instanceof Map) {
+							@SuppressWarnings("unchecked")
+							Map<String, Object> docMap = (Map<String, Object>) rawDoc;
+							CouchWebAuthnCredential cwac = new CouchWebAuthnCredential(docMap);
+							if (cwac.getCredentialId() != null && cwac.getId() != null) {
+								credentials.add(cwac.convert());
+							}
+						}
+					} catch (Exception e) {
+						log.error("Error converting WebAuthn credential document", e);
+					}
+				}
+			}
+		} catch (Exception e) {
+			log.error("Error getting WebAuthn credentials for userId: " + userId + " in repository: " + repositoryId, e);
+		}
+		return credentials;
+	}
+
+	@Override
+	public WebAuthnCredential getWebAuthnCredentialByCredentialId(String repositoryId, String credentialId) {
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			ViewResult result = client.queryView("_repo", "webauthnCredentialsByCredentialId", credentialId);
+
+			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
+				ViewResultRow firstRow = result.getRows().get(0);
+				Object rawDoc = firstRow.getValue();
+				if (rawDoc instanceof Map) {
+					@SuppressWarnings("unchecked")
+					Map<String, Object> docMap = (Map<String, Object>) rawDoc;
+					CouchWebAuthnCredential cwac = new CouchWebAuthnCredential(docMap);
+					if (cwac.getCredentialId() != null && cwac.getId() != null) {
+						return cwac.convert();
+					}
+				}
+			}
+		} catch (Exception e) {
+			log.error("Error getting WebAuthn credential by credentialId: " + credentialId + " in repository: " + repositoryId, e);
+		}
+		return null;
+	}
+
+	@Override
+	public WebAuthnCredential createWebAuthnCredential(String repositoryId, WebAuthnCredential credential) {
+		CouchWebAuthnCredential cwac = new CouchWebAuthnCredential(credential);
+		connectorPool.getClient(repositoryId).create(cwac);
+		return cwac.convert();
+	}
+
+	@Override
+	public WebAuthnCredential updateWebAuthnCredential(String repositoryId, WebAuthnCredential credential) {
+		CouchWebAuthnCredential update = new CouchWebAuthnCredential(credential);
+		if (update.getRevision() == null || update.getRevision().isEmpty()) {
+			throw new IllegalArgumentException("WebAuthnCredential " + credential.getId() + " has no revision");
+		}
+		connectorPool.getClient(repositoryId).update(update);
+		return update.convert();
+	}
+
+	@Override
+	public void deleteWebAuthnCredential(String repositoryId, String id) {
+		delete(repositoryId, id);
 	}
 }

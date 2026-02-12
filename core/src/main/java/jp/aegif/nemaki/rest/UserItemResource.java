@@ -976,7 +976,7 @@ private ContentService getContentServiceSafe() {
 	 * null/empty = all methods allowed (backward compatibility), "disabled" = none allowed.
 	 */
 	private boolean isPasswordAuthAllowed(String allowedAuthMethods) {
-		if (allowedAuthMethods == null || allowedAuthMethods.isEmpty()) {
+		if (allowedAuthMethods == null || allowedAuthMethods.isEmpty() || "null".equals(allowedAuthMethods)) {
 			return true;
 		}
 		if ("disabled".equals(allowedAuthMethods)) {
@@ -1107,19 +1107,21 @@ private ContentService getContentServiceSafe() {
 				user.setPassowrd(passwordHash);
 			}
 
-			// Single update call to persist all changes (properties + password if any)
-			setModifiedSignature(httpRequest, user);
+			// Persist changes only if all validation passed
+			if (status) {
+				setModifiedSignature(httpRequest, user);
 
-			try {
-				service.update(new SystemCallContext(repositoryId), repositoryId, user);
-			} catch (Exception e) {
-				e.printStackTrace();
-				status = false;
-				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
+				try {
+					service.update(new SystemCallContext(repositoryId), repositoryId, user);
+				} catch (Exception e) {
+					log.error("Failed to update user " + userId + ": " + e.getMessage(), e);
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
+				}
 			}
 
-			// Process groups assignment
-			if (groupsJson != null) {
+			// Process groups assignment only if main update succeeded
+			if (status && groupsJson != null) {
 				try {
 					JSONArray groups = (JSONArray) parser.parse(groupsJson);
 					updateUserGroups(repositoryId, userId, groups, service);

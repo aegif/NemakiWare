@@ -207,7 +207,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, Card, Alert, Select, Divider } from 'antd';
-import { UserOutlined, LockOutlined, DatabaseOutlined, LoginOutlined, GoogleOutlined, WindowsOutlined } from '@ant-design/icons';
+import { UserOutlined, LockOutlined, DatabaseOutlined, LoginOutlined, GoogleOutlined, WindowsOutlined, KeyOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { AuthService, AuthToken } from '../../services/auth';
 import { CMISService } from '../../services/cmis';
@@ -217,6 +217,7 @@ import { SAMLService } from '../../services/saml';
 import { getSAMLConfig, isSAMLEnabled } from '../../config/saml';
 import { DEFAULT_REPOSITORY_ID } from '../../config/app';
 import { CloudAuthConfig, fetchCloudAuthConfig, signInWithGoogle, signInWithMicrosoft } from '../../services/cloud-auth';
+import { WebAuthnService } from '../../services/webauthn';
 
 interface LoginProps {
   onLogin: (auth: AuthToken) => void;
@@ -245,6 +246,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   // Cloud authentication (Google / Microsoft direct OIDC)
   const [cloudAuthConfig, setCloudAuthConfig] = useState<CloudAuthConfig | null>(null);
+
+  // WebAuthn (Passkey) authentication
+  const webauthnService = new WebAuthnService();
+  const webauthnSupported = webauthnService.isSupported();
 
   // Load SSO configuration from backend
   useEffect(() => {
@@ -542,8 +547,53 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     }
   };
 
+  const handlePasskeyLogin = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const repositoryId = form.getFieldValue('repositoryId') || (repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID);
+
+      // Step 1: Get authentication options from server
+      const options = await webauthnService.authenticateBegin(repositoryId);
+
+      // Step 2: Get credential via browser WebAuthn API
+      const credential = await navigator.credentials.get({
+        publicKey: options,
+      }) as PublicKeyCredential;
+
+      if (!credential) {
+        throw new Error('Passkey authentication cancelled');
+      }
+
+      // Step 3: Send credential to server for verification and token issuance
+      const authResult = await webauthnService.authenticateComplete(repositoryId, credential);
+
+      const auth: AuthToken = {
+        token: authResult.token,
+        username: authResult.userName,
+        repositoryId: authResult.repositoryId,
+      };
+      authService.saveAuth(auth);
+      performCleanup();
+      onLogin(auth);
+      setTimeout(performCleanup, 100);
+    } catch (err: any) {
+      if (err.name === 'NotAllowedError') {
+        // User cancelled - don't show error
+        setError(null);
+      } else {
+        console.error('Passkey login error:', err);
+        setError(t('login.messages.passkeyFailed', { error: err.message || String(err) }));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const hasAnySsoMethod = oidcEnabled || samlEnabled
-    || cloudAuthConfig?.googleEnabled || cloudAuthConfig?.microsoftEnabled;
+    || cloudAuthConfig?.googleEnabled || cloudAuthConfig?.microsoftEnabled
+    || webauthnSupported;
 
   return (
     <div style={{
@@ -683,9 +733,22 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     icon={<LoginOutlined />}
                     onClick={handleSAMLLogin}
                     loading={loading}
-                    style={{ width: '100%', height: 40 }}
+                    style={{ width: '100%', height: 40, marginBottom: 8 }}
                   >
                     {t('login.samlLogin')}
+                  </Button>
+                </Form.Item>
+              )}
+              {webauthnSupported && (
+                <Form.Item>
+                  <Button
+                    type="default"
+                    icon={<KeyOutlined />}
+                    onClick={handlePasskeyLogin}
+                    loading={loading}
+                    style={{ width: '100%', height: 40 }}
+                  >
+                    {t('login.passkeyLogin')}
                   </Button>
                 </Form.Item>
               )}
