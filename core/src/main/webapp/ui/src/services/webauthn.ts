@@ -35,6 +35,19 @@ export interface PasskeyCredential {
   transports: string[] | null;
 }
 
+/**
+ * Extract error message from server response.
+ * Server format: { status: "failure", error: [{"key": "message"}] }
+ */
+function extractServerError(data: any, fallback: string): string {
+  const errArr = data.error || data.errMsg;
+  if (Array.isArray(errArr) && errArr.length > 0 && typeof errArr[0] === 'object') {
+    const firstValue = Object.values(errArr[0])[0];
+    if (typeof firstValue === 'string') return firstValue;
+  }
+  return fallback;
+}
+
 export class WebAuthnService {
   private baseUrl: string;
 
@@ -59,7 +72,7 @@ export class WebAuthnService {
     });
     const data = await res.json();
     if (data.status !== 'success') {
-      throw new Error(data.errMsg?.[0] ? Object.values(data.errMsg[0])[0] as string : undefined || 'Registration begin failed');
+      throw new Error(extractServerError(data, 'Registration begin failed'));
     }
 
     const options = data.options;
@@ -129,7 +142,7 @@ export class WebAuthnService {
     });
     const data = await res.json();
     if (data.status !== 'success') {
-      throw new Error(data.errMsg?.[0] ? Object.values(data.errMsg[0])[0] as string : undefined || 'Registration complete failed');
+      throw new Error(extractServerError(data, 'Registration complete failed'));
     }
     return { credentialId: data.credentialId, displayName: data.displayName };
   }
@@ -144,7 +157,7 @@ export class WebAuthnService {
     });
     const data = await res.json();
     if (data.status !== 'success') {
-      throw new Error(data.errMsg?.[0] ? Object.values(data.errMsg[0])[0] as string : undefined || 'Authentication begin failed');
+      throw new Error(extractServerError(data, 'Authentication begin failed'));
     }
 
     const options = data.options;
@@ -213,7 +226,7 @@ export class WebAuthnService {
     });
     const data = await res.json();
     if (data.status !== 'success') {
-      throw new Error(data.errMsg?.[0] ? Object.values(data.errMsg[0])[0] as string : undefined || 'Authentication failed');
+      throw new Error(extractServerError(data, 'Authentication failed'));
     }
     return data.value;
   }
@@ -228,7 +241,7 @@ export class WebAuthnService {
     });
     const data = await res.json();
     if (data.status !== 'success') {
-      throw new Error(data.errMsg?.[0] ? Object.values(data.errMsg[0])[0] as string : undefined || 'Failed to list credentials');
+      throw new Error(extractServerError(data, 'Failed to list credentials'));
     }
     return data.credentials || [];
   }
@@ -243,7 +256,7 @@ export class WebAuthnService {
     });
     const data = await res.json();
     if (data.status !== 'success') {
-      throw new Error(data.errMsg?.[0] ? Object.values(data.errMsg[0])[0] as string : undefined || 'Failed to delete credential');
+      throw new Error(extractServerError(data, 'Failed to delete credential'));
     }
   }
 }

@@ -511,6 +511,8 @@ private ContentService getContentServiceSafe() {
 						log.info("Finished updateUserGroups for user " + userId);
 					} catch (Exception e) {
 						log.error("Failed to parse or apply groups for user " + userId + ": " + e.getMessage(), e);
+						status = false;
+						addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATEMEMBERS);
 					}
 				} else {
 					log.info("Groups parameter is blank, skipping group assignment");
@@ -1073,7 +1075,9 @@ private ContentService getContentServiceSafe() {
 					((List)favs).addAll(adds);
 					map.put("nemaki:favorites", favs);
 				} catch (ParseException e) {
-					e.printStackTrace();
+					log.warn("Failed to parse addFavorites for user " + userId + ": " + e.getMessage());
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, "Invalid addFavorites JSON format");
 				}
 			}
 			if (removeFavorites != null) {
@@ -1084,7 +1088,9 @@ private ContentService getContentServiceSafe() {
 					((List)favs).removeAll(removes);
 					map.put("nemaki:favorites", favs);
 				} catch (ParseException e) {
-					e.printStackTrace();
+					log.warn("Failed to parse removeFavorites for user " + userId + ": " + e.getMessage());
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, "Invalid removeFavorites JSON format");
 				}
 			}
 			List<Property> properties = new ArrayList<>();
@@ -1480,6 +1486,7 @@ private ContentService getContentServiceSafe() {
 			}
 		} catch (Exception e) {
 			log.error("Failed to update groups for user " + userId + ": " + e.getMessage(), e);
+			throw e;
 		}
 	}
 
@@ -1586,6 +1593,7 @@ private ContentService getContentServiceSafe() {
 			String action = addMember ? "add" : "remove";
 			log.error("Failed to " + action + " user " + userId + " " + (addMember ? "to" : "from") +
 					  " group " + groupId + " after all retries: " + e.getMessage(), e);
+			throw e;
 		} finally {
 			lock.unlock();
 		}
