@@ -595,7 +595,7 @@ test.describe('Archive Management - Non-Admin User', () => {
     const testHelper = new TestHelper(page);
 
     try {
-      await authHelper.login(testUserId, testPassword, 'bedroom');
+      await authHelper.login(testUserId, testPassword);
     } catch (error) {
       console.log(`Failed to login as ${testUserId}: ${error}`);
       return;

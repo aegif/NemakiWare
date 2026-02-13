@@ -237,201 +237,69 @@ test.describe('Group Management CRUD Operations', () => {
   });
 
   test('should create new group', async ({ page, browserName }) => {
-    // Detect mobile browsers
     const isMobile = testHelper.isMobile(browserName);
 
-    // CRITICAL DEBUG: Monitor network requests to verify API calls
-    const apiRequests: string[] = [];
-    const apiResponses: string[] = [];
-    page.on('request', request => {
-      if (request.url().includes('/rest/')) {
-        apiRequests.push(`${request.method()} ${request.url()}`);
-      }
-    });
-    page.on('response', response => {
-      if (response.url().includes('/rest/')) {
-        apiResponses.push(`${response.status()} ${response.url()}`);
-      }
-    });
-
-    // DEBUG: Log current page state to diagnose button visibility issue
-    console.log('[DEBUG] Current URL:', page.url());
-    console.log('[DEBUG] Page title:', await page.title());
-
-    // DEBUG: Take screenshot to see what's rendered (write to test-results dir, not source tree)
-    const debugScreenshotPath = 'test-results/debug-group-management-page.png';
-    await page.screenshot({ path: debugScreenshotPath, fullPage: true });
-    console.log(`[DEBUG] Screenshot saved to ${debugScreenshotPath}`);
-
-    // DEBUG: Log all buttons on page
-    const allButtons = await page.locator('button').all();
-    console.log('[DEBUG] Total buttons found:', allButtons.length);
-    for (let i = 0; i < Math.min(allButtons.length, 10); i++) {
-      const buttonText = await allButtons[i].textContent();
-      console.log(`[DEBUG] Button ${i}:`, buttonText?.trim() || '(no text)');
-    }
-
-    // DEBUG: Check console for errors
-    const consoleMessages: string[] = [];
-    page.on('console', msg => {
-      if (msg.type() === 'error') {
-        consoleMessages.push(msg.text());
-      }
-    });
-    if (consoleMessages.length > 0) {
-      console.log('[DEBUG] Browser console errors:', consoleMessages);
-    }
-
-    // Look for create button (actual text: "作成" from t('common.create'))
-    const createButton = page.locator('button').filter({
-      hasText: /作成|Create/i
-    });
-
-    // Wait for create button to appear (page may still be loading)
+    // Click create button
+    const createButton = page.locator('button').filter({ hasText: /作成|Create/i });
     await expect(createButton.first()).toBeVisible({ timeout: 10000 });
-    console.log('[DEBUG] Clicking create button...');
     await createButton.first().click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
-    console.log('[DEBUG] Button clicked, waiting for modal...');
 
-    // Wait for modal or form
+    // Wait for modal
     const modal = page.locator('.ant-modal, .ant-drawer');
     await expect(modal).toBeVisible({ timeout: 5000 });
-    console.log('[DEBUG] Modal appeared successfully');
 
     {
-
-      // DEBUG: Log modal content to see what's in it
-      const modalHTML = await modal.innerHTML();
-      console.log('[DEBUG] Modal HTML length:', modalHTML.length);
-      const modalButtons = await modal.locator('button').all();
-      console.log('[DEBUG] Buttons in modal:', modalButtons.length);
-
-      // DEBUG: Log all input fields in modal to see what's available
-      const allInputs = await modal.locator('input').all();
-      console.log('[DEBUG] Total inputs in modal:', allInputs.length);
-      for (let i = 0; i < allInputs.length; i++) {
-        const inputType = await allInputs[i].getAttribute('type');
-        const inputName = await allInputs[i].getAttribute('name');
-        const inputId = await allInputs[i].getAttribute('id');
-        const inputPlaceholder = await allInputs[i].getAttribute('placeholder');
-        console.log(`[DEBUG] Input ${i}: type="${inputType}" name="${inputName}" id="${inputId}" placeholder="${inputPlaceholder}"`);
-      }
-
-      // Fill group details
-      // CRITICAL FIX (2025-11-10): Ant Design sets id attribute, not name attribute on input elements
-      // Debug showed: input has id="id" but name="null"
-      // GroupManagement.tsx Form.Item name="id" creates input with id="id", not name="id"
+      // Fill group ID and name (Ant Design Form.Item name="id" creates input with id="id")
       const groupIdInput = page.locator('input[id="id"]');
-      const groupIdInputCount = await groupIdInput.count();
-      console.log('[DEBUG] Group ID input count (by id):', groupIdInputCount);
+      if (await groupIdInput.count() === 0) {
+        test.skip(true, 'Group ID input field not found - form structure may have changed');
+      }
+      await groupIdInput.first().fill(TEST_GROUP_NAME);
 
-      if (groupIdInputCount > 0) {
-        console.log('[DEBUG] Filling group ID:', TEST_GROUP_NAME);
-        await groupIdInput.first().fill(TEST_GROUP_NAME);
-        console.log('[DEBUG] Group ID filled successfully');
-
-        // Also fill group name field (required)
-        const groupNameInput = page.locator('input[id="name"]');
-        if (await groupNameInput.count() > 0) {
-          console.log('[DEBUG] Filling group name:', TEST_GROUP_NAME);
-          await groupNameInput.first().fill(TEST_GROUP_NAME);
-          console.log('[DEBUG] Group name filled successfully');
-        }
-      } else {
-        console.log('[DEBUG] Group ID input NOT found - skipping test');
-        test.skip('Group ID input field not found - form structure may have changed');
+      const groupNameInput = page.locator('input[id="name"]');
+      if (await groupNameInput.count() > 0) {
+        await groupNameInput.first().fill(TEST_GROUP_NAME);
       }
 
       // Note: Description field does not exist in current GroupManagement form implementation
       // Form only has: id (グループID), name (グループ名), members (メンバー)
 
-      // Submit form via Modal OK button with API response tracking
-      let createdViaUI = false;
-      try {
-        const okButton = page.locator('.ant-modal-footer .ant-btn-primary');
-        if (await okButton.count() > 0) {
-          // Wait for API response alongside button click
-          const responsePromise = page.waitForResponse(
-            resp => resp.url().includes('/group/create/') && resp.status() === 200,
-            { timeout: 15000 }
-          ).catch(() => null);
+      // Submit form via Modal OK button - UI create must succeed
+      const okButton = page.locator('.ant-modal-footer .ant-btn-primary');
+      await expect(okButton).toBeVisible({ timeout: 5000 });
 
-          await okButton.click();
-          console.log('[DEBUG] Form submitted via Modal OK button');
-          const response = await responsePromise;
+      // Wait for API response alongside button click
+      const responsePromise = page.waitForResponse(
+        resp => resp.url().includes('/group/create/') && resp.status() === 200,
+        { timeout: 15000 }
+      );
 
-          if (response) {
-            console.log('[DEBUG] API response received');
-            // Wait for modal to close
-            if (await modal.count() > 0) {
-              await page.waitForSelector('.ant-modal', { state: 'hidden', timeout: 5000 }).catch(() => {});
-            }
-            createdViaUI = true;
-          }
-        }
-      } catch (e) {
-        console.log('[DEBUG] UI submission error:', (e as Error).message);
-      }
+      await okButton.click();
+      console.log('[DEBUG] Form submitted via Modal OK button');
+      const response = await responsePromise;
+      expect(response).toBeTruthy();
+      console.log('[DEBUG] API response received - group created via UI');
 
-      // Fallback: create via API if UI failed
-      if (!createdViaUI) {
-        console.log('[FALLBACK] Creating group via API');
-        // Close modal if still open
-        await page.locator('.ant-modal button:has-text("キャンセル")').click().catch(() => {});
-        await page.waitForTimeout(500);
+      // Wait for modal to close
+      await page.waitForSelector('.ant-modal', { state: 'hidden', timeout: 5000 }).catch(() => {});
+      console.log('[DEBUG] Test 1: UI create completed successfully');
 
-        await page.request.post(
-          `http://localhost:8080/core/rest/repo/bedroom/group/create/${TEST_GROUP_NAME}`,
-          {
-            headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}` },
-            form: { name: TEST_GROUP_NAME }
-          }
-        );
-        await page.reload();
-        await page.waitForSelector('.ant-table', { timeout: 10000 });
-      }
-      console.log('[DEBUG] Test 1: Form submitted successfully');
-
-      // CRITICAL FIX (2025-11-10): Wait for table to refresh after group creation
-      // React state update may take time, wait for network request to complete
+      // Wait for table to refresh after group creation
       await page.waitForTimeout(3000);
-
-      // Wait for any loading spinners to disappear
       await page.waitForSelector('.ant-table', { state: 'attached', timeout: 5000 });
       await page.waitForTimeout(1000);
-      console.log('[DEBUG] Test 1: Table ready, looking for group:', TEST_GROUP_NAME);
 
-      // CRITICAL FIX (2025-11-10): Use search to filter for specific group
-      // Table may be paginated with many old test groups, new group may be on page 2/3
+      // Use search to filter for the created group (table may be paginated)
       const searchBox = page.locator('.ant-input-search input[type="search"], input[placeholder*="グループを検索"]');
       if (await searchBox.count() > 0) {
-        console.log('[DEBUG] Test 1: Using search to filter for group');
         await searchBox.first().fill(TEST_GROUP_NAME);
-        await page.waitForTimeout(1000); // Wait for search filter to apply
+        await page.waitForTimeout(1000);
       }
 
       // Verify group appears in list
-      // CRITICAL FIX (2025-11-10): Group name appears in both ID and name columns
-      // Use table row locator instead of generic text search to avoid strict mode violation
-      // Increased timeout from 15s to 30s to handle slower React state updates when multiple tests run
       const groupRow = page.locator('tr').filter({ hasText: TEST_GROUP_NAME });
-
-      // CRITICAL DEBUG: Log API activity before visibility check
-      console.log('[DEBUG] Test 1: API Requests captured:', apiRequests.length);
-      apiRequests.forEach((req, i) => console.log(`  [${i}]`, req));
-      console.log('[DEBUG] Test 1: API Responses captured:', apiResponses.length);
-      apiResponses.forEach((res, i) => console.log(`  [${i}]`, res));
-
-      try {
-        await expect(groupRow).toBeVisible({ timeout: 30000 });
-        console.log('[DEBUG] Test 1: Group row became visible successfully!');
-      } catch (error) {
-        console.log('[DEBUG] Test 1: Group row did NOT become visible. Final API state:');
-        console.log('[DEBUG] Test 1: Total requests:', apiRequests.length);
-        console.log('[DEBUG] Test 1: Total responses:', apiResponses.length);
-        throw error;
-      }
+      await expect(groupRow).toBeVisible({ timeout: 30000 });
     }
   });
 

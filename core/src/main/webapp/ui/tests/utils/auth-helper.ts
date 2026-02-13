@@ -3,7 +3,6 @@ import { Page, expect } from '@playwright/test';
 export interface LoginCredentials {
   username: string;
   password: string;
-  repository?: string;
 }
 
 /**
@@ -27,10 +26,10 @@ export interface LoginCredentials {
  * await authHelper.login();
  *
  * // Pattern 2: Individual parameters
- * await authHelper.login('testuser', 'password', 'bedroom');
+ * await authHelper.login('testuser', 'password');
  *
  * // Pattern 3: Credentials object
- * await authHelper.login({ username: 'admin', password: 'admin', repository: 'bedroom' });
+ * await authHelper.login({ username: 'admin', password: 'admin' });
  *
  * // Logout
  * await authHelper.logout();
@@ -45,9 +44,9 @@ export interface LoginCredentials {
  * IMPORTANT DESIGN DECISIONS:
  *
  * 1. Method Overload Pattern with 3 Calling Patterns (Lines 25-58):
- *    - Pattern A: login() - uses DEFAULT_CREDENTIALS (admin:admin:bedroom)
- *    - Pattern B: login('username', 'password', 'repository') - individual parameters
- *    - Pattern C: login({ username, password, repository }) - credentials object
+ *    - Pattern A: login() - uses DEFAULT_CREDENTIALS (admin:admin)
+ *    - Pattern B: login('username', 'password') - individual parameters
+ *    - Pattern C: login({ username, password }) - credentials object
  *    - Implementation uses typeof check and parameter parsing (Lines 42-58)
  *    - Rationale: Supports both legacy test code (Pattern B) and modern test code (Pattern C)
  *    - TypeScript overload signatures (Lines 25-32) provide proper type safety
@@ -108,14 +107,10 @@ export interface LoginCredentials {
  *    - Code review feedback: Slower CI environments need generous timeouts
  *    - Implementation: waitForFunction for accurate DOM state check
  *
- * 7. Repository Dropdown Interaction Pattern (Lines 140-160):
- *    - Click .ant-select to open dropdown
- *    - Wait for .ant-select-dropdown:not(.ant-select-dropdown-hidden) visible
- *    - Find option by text filter (hasText: credentials.repository)
- *    - Scroll option into view with scrollIntoViewIfNeeded()
- *    - Wait 300ms after scrolling before clicking
- *    - Rationale: Ant Design Select dropdown requires explicit open/scroll/click sequence
- *    - Implementation: Defensive programming with count() check and 5s timeout
+ * 7. Repository Selection:
+ *    - Login form defaults to the first repository ('bedroom')
+ *    - Repository selection is not performed by this helper
+ *    - For multi-repository testing, use direct API calls or page interaction
  *    - Advantage: Works with dropdowns that have many options requiring scrolling
  *
  * 8. Logout Hard Navigation Detection (Lines 292-371):
@@ -170,12 +165,11 @@ export interface LoginCredentials {
  *
  * Known Limitations:
  * - Japanese text hardcoded (placeholder="ユーザー名", "パスワード", "ログイン", "ログアウト")
- * - Default repository hardcoded to 'bedroom'
+ * - Login always uses the form's default repository (typically 'bedroom')
  * - Logout assumes user menu text contains 'admin' (fallback to avatar selector)
  * - Authentication detection assumes specific Ant Design class names
  * - Hard navigation for logout may not work if logout implementation changes to SPA routing
  * - Multiple selector fallback assumes at least one selector will match
- * - Repository dropdown assumes .ant-select pattern (may break with custom dropdown)
  * - 30s timeouts may be too long for fast local development (optimized for CI/CD)
  *
  * Relationships to Other Utilities:
@@ -204,13 +198,12 @@ export class AuthHelper {
   static readonly DEFAULT_CREDENTIALS: LoginCredentials = {
     username: 'admin',
     password: 'admin',
-    repository: 'bedroom',
   };
 
   /**
    * Perform login with specified credentials (method overload - individual parameters)
    */
-  async login(username: string, password: string, repository?: string): Promise<void>;
+  async login(username: string, password: string): Promise<void>;
 
   /**
    * Perform login with specified credentials (method overload - credentials object)
@@ -220,26 +213,25 @@ export class AuthHelper {
   /**
    * Perform login with specified credentials (implementation)
    * Supports both calling patterns:
-   * - login('username', 'password', 'repository')
-   * - login({ username: 'user', password: 'pass', repository: 'repo' })
+   * - login('username', 'password')
+   * - login({ username: 'user', password: 'pass' })
    * - login() - uses default admin credentials
    */
-  async login(usernameOrCredentials?: string | LoginCredentials, password?: string, repository?: string): Promise<void> {
+  async login(usernameOrCredentials?: string | LoginCredentials, password?: string): Promise<void> {
     // Parse parameters to determine credentials
     let credentials: LoginCredentials;
 
     if (typeof usernameOrCredentials === 'string') {
-      // Called with individual parameters: login('username', 'password', 'repository')
+      // Called with individual parameters: login('username', 'password')
       credentials = {
         username: usernameOrCredentials,
         password: password!,
-        repository: repository || 'bedroom',
       };
     } else if (usernameOrCredentials === undefined) {
       // Called with no parameters: login() - use defaults
       credentials = AuthHelper.DEFAULT_CREDENTIALS;
     } else {
-      // Called with credentials object: login({ username, password, repository })
+      // Called with credentials object: login({ username, password })
       credentials = usernameOrCredentials;
     }
 
