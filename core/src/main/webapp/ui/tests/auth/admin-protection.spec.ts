@@ -8,7 +8,7 @@
  *
  * Prerequisites:
  * - NemakiWare core running
- * - api-e2e-testuser account with password 'test' (non-admin role)
+ * - api-e2e-testuser account with password 'testtest' (non-admin role)
  *   NOTE: api-e2e-testuser is automatically created by global-setup.ts with BCrypt password
  */
 
@@ -51,7 +51,7 @@ test.describe('Admin Route Protection', () => {
   test.describe('Non-admin user (api-e2e-testuser)', () => {
     test.beforeEach(async ({ page }) => {
       // Login as non-admin user
-      await loginAsUser(page, 'api-e2e-testuser', 'test');
+      await loginAsUser(page, 'api-e2e-testuser', 'testtest');
     });
 
     test('should not see admin menu in sidebar', async ({ page }) => {
@@ -93,10 +93,11 @@ test.describe('Admin Route Protection', () => {
       expect(page.url()).toContain('/documents');
     });
 
-    test('should be redirected when accessing /archive directly', async ({ page }) => {
+    test('should be able to access /archive (open to all users)', async ({ page }) => {
       await page.goto(`${BASE_URL}/#/archive`);
-      await page.waitForURL(/\/#\/documents/, { timeout: 10000 });
-      expect(page.url()).toContain('/documents');
+      // Archive is accessible to all authenticated users (not admin-only)
+      await page.waitForTimeout(3000);
+      expect(page.url()).toContain('/archive');
     });
   });
 
@@ -236,7 +237,7 @@ test.describe('Permission Management Access', () => {
       expect(aclResponse.status()).toBe(200);
 
       // 3. Login as api-e2e-testuser
-      await loginAsUser(page, 'api-e2e-testuser', 'test');
+      await loginAsUser(page, 'api-e2e-testuser', 'testtest');
 
       // 4. Navigate to permission page for the document
       await page.goto(`${BASE_URL}/#/permissions/${testDocumentId}`);

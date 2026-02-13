@@ -271,7 +271,7 @@ test.describe('Webhook API Tests', () => {
 
     test('W15: Non-admin user cannot access delivery logs', async ({ request }) => {
       // Test user auth (api-e2e-testuser created by global setup)
-      const testUserAuth = 'Basic ' + Buffer.from('api-e2e-testuser:test').toString('base64');
+      const testUserAuth = 'Basic ' + Buffer.from('api-e2e-testuser:testtest').toString('base64');
 
       const res = await request.get(
         `${BASE_URL}/rest/repo/${REPOSITORY_ID}/webhook/deliveries`,
@@ -284,7 +284,7 @@ test.describe('Webhook API Tests', () => {
     });
 
     test('W16: Non-admin user cannot test webhooks', async ({ request }) => {
-      const testUserAuth = 'Basic ' + Buffer.from('api-e2e-testuser:test').toString('base64');
+      const testUserAuth = 'Basic ' + Buffer.from('api-e2e-testuser:testtest').toString('base64');
 
       const res = await request.post(
         `${BASE_URL}/rest/repo/${REPOSITORY_ID}/webhook/test`,
@@ -299,7 +299,7 @@ test.describe('Webhook API Tests', () => {
     });
 
     test('W17: Non-admin user cannot access webhook config', async ({ request }) => {
-      const testUserAuth = 'Basic ' + Buffer.from('api-e2e-testuser:test').toString('base64');
+      const testUserAuth = 'Basic ' + Buffer.from('api-e2e-testuser:testtest').toString('base64');
       const uuid = generateTestId();
       const docId = await createTestDocument(request, `webhook-sec-test-${uuid}.txt`);
 

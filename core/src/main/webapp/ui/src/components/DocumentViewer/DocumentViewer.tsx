@@ -283,7 +283,7 @@ import { ExternalContextTab } from './ExternalContextTab';
 import { canPreview } from '../../utils/previewUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchCloudAuthConfig, CloudAuthConfig } from '../../services/cloud-auth';
-import { pushToCloud, pushToCloudForceNew, pullFromCloud, getCloudUrl, unlinkCloud, getGoogleDriveAccessToken, getOneDriveAccessToken } from '../../services/cloud-drive';
+import { pushToCloud, pushToCloudForceNew, pullFromCloud, getCloudUrl, unlinkCloud, getGoogleDriveAccessToken, getOneDriveAccessToken, resolveOneDriveWebUrl } from '../../services/cloud-drive';
 import { getSafeArrayValue, getSafeStringValue, getSafeBooleanValue } from '../../utils/cmisPropertyUtils';
 import { formatServerDate } from '../../utils/dateUtils';
 import { useSearchParams } from 'react-router-dom';
@@ -421,6 +421,20 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     setLoadError(null);
     try {
       const obj = await cmisService.getObject(repositoryId, objectId);
+
+      // For documents, cmis:path doesn't exist (CMIS spec: only folders have paths).
+      // Resolve the document's effective path from its parent folder.
+      if (obj.baseType === 'cmis:document' && !obj.path) {
+        try {
+          const parents = await cmisService.getObjectParents(repositoryId, objectId);
+          if (parents.length > 0 && parents[0].path) {
+            obj.path = parents[0].path + '/' + obj.name;
+          }
+        } catch (e) {
+          console.warn('[DocumentViewer] Failed to resolve document path from parents:', e);
+        }
+      }
+
       setObject(obj);
 
       // Get primary type definition
@@ -493,7 +507,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     } finally {
       setLoading(false);
     }
-  };
+  };;
 
   const loadVersionHistory = async () => {
     if (!objectId) return;
@@ -1456,7 +1470,29 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                       </Button>
                       <Button
                         icon={<LinkOutlined />}
-                        onClick={() => window.open(cloudMetadata.cloudFileUrl, '_blank')}
+                        onClick={async () => {
+                          let url = cloudMetadata.cloudFileUrl;
+                          // The server-side fallback URL (onedrive.live.com/edit?id=...) only works
+                          // for personal OneDrive, not for Microsoft 365/Entra ID org accounts.
+                          // Resolve the real webUrl from Graph API when we detect the fallback pattern.
+                          if (cloudMetadata.provider === 'microsoft' && url && url.includes('onedrive.live.com')) {
+                            try {
+                              const accessToken = await getOneDriveAccessToken(
+                                cloudAuthConfig!.microsoftClientId!,
+                                cloudAuthConfig!.microsoftTenantId!
+                              );
+                              const resolvedUrl = await resolveOneDriveWebUrl(cloudMetadata.cloudFileId, accessToken);
+                              if (resolvedUrl) {
+                                url = resolvedUrl;
+                                // Update cloudMetadata state with the resolved URL for future clicks
+                                setCloudMetadata({ ...cloudMetadata, cloudFileUrl: resolvedUrl });
+                              }
+                            } catch (e) {
+                              console.warn('[CloudDrive] Failed to resolve OneDrive URL, using stored URL:', e);
+                            }
+                          }
+                          window.open(url, '_blank');
+                        }}
                       >
                         {t('documentViewer.openInCloud', 'クラウドで開く')}
                       </Button>

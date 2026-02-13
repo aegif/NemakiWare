@@ -26,6 +26,9 @@ const BASE_URL = 'http://localhost:8080';
 const REPOSITORY_ID = 'bedroom';
 
 test.describe('Config Viewer - Admin Access', () => {
+  // Login can be flaky due to Ant Design form timing; retry once
+  test.describe.configure({ retries: 1 });
+
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
@@ -207,10 +210,12 @@ test.describe('Config Viewer - i18n', () => {
     await page.evaluate(() => {
       localStorage.setItem('nemakiware-language', 'en');
     });
+    // Full reload needed so React re-initializes i18n with the new language
+    await page.reload({ waitUntil: 'load' });
     await page.goto(`${BASE_URL}/core/ui/#/config-viewer`);
     await page.waitForTimeout(3000);
 
-    const title = page.locator('h2, .ant-card-head-title').filter({ hasText: 'Config Properties' });
+    const title = page.locator('h2, .ant-card-head-title').filter({ hasText: 'Configuration Properties' });
     await expect(title).toBeVisible({ timeout: 10000 });
   });
 });

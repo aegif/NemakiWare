@@ -45,6 +45,7 @@ import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.model.WebAuthnCredential;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 
@@ -956,4 +957,33 @@ public interface ContentDaoService {
 	 * @param coldMoveMode "COPY" or "MOVE"
 	 */
 	void updateArchiveColdMoveMode(String repositoryId, String archiveId, String coldMoveMode);
+
+	// ==========================================
+	// WebAuthn Credential methods
+	// ==========================================
+
+	/**
+	 * Get all WebAuthn credentials for a user.
+	 */
+	List<WebAuthnCredential> getWebAuthnCredentialsByUserId(String repositoryId, String userId);
+
+	/**
+	 * Get a WebAuthn credential by its credential ID (Base64url encoded).
+	 */
+	WebAuthnCredential getWebAuthnCredentialByCredentialId(String repositoryId, String credentialId);
+
+	/**
+	 * Create a new WebAuthn credential.
+	 */
+	WebAuthnCredential createWebAuthnCredential(String repositoryId, WebAuthnCredential credential);
+
+	/**
+	 * Update an existing WebAuthn credential (e.g. signCount).
+	 */
+	WebAuthnCredential updateWebAuthnCredential(String repositoryId, WebAuthnCredential credential);
+
+	/**
+	 * Delete a WebAuthn credential by its document ID.
+	 */
+	void deleteWebAuthnCredential(String repositoryId, String id);
 }

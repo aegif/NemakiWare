@@ -307,8 +307,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   const uiVersion = typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '3.1.0';
 
   // Check if current user is admin via isAdmin flag from /me endpoint
-  // Falls back to username === 'admin' for backward compatibility
-  const isAdmin = authToken?.isAdmin === true || authToken?.username === 'admin';
+  const isAdmin = authToken?.isAdmin === true;
 
   // Build menu items - admin submenu only shown to admin users
   const menuItems = [

@@ -807,6 +807,11 @@ public class AuthResource {
             newUser.setModifier(userName);
             newUser.setCreated(new java.util.GregorianCalendar());
             newUser.setModified(new java.util.GregorianCalendar());
+
+            // Set allowedAuthMethods to "cloud" for SSO-provisioned users
+            List<jp.aegif.nemaki.model.Property> subTypeProperties = new java.util.ArrayList<>();
+            subTypeProperties.add(new jp.aegif.nemaki.model.Property("nemaki:allowedAuthMethods", "cloud"));
+            newUser.setSubTypeProperties(subTypeProperties);
             
             contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, newUser);
             

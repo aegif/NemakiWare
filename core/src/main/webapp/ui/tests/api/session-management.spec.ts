@@ -200,7 +200,7 @@ test.describe('Session Management - Concurrent Traditional Sessions', () => {
     expect(adminToken).not.toBeNull();
 
     // Login as test user (created by global setup)
-    const testUserToken = await traditionalLogin(request, 'api-e2e-testuser', 'test');
+    const testUserToken = await traditionalLogin(request, 'api-e2e-testuser', 'testtest');
     expect(testUserToken).not.toBeNull();
 
     // Both tokens should be different

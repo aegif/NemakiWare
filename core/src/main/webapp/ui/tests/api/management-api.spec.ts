@@ -62,8 +62,8 @@ function getAdminAuthHeader(): string {
 /** Generate Basic Authentication header for a non-admin user */
 function getNonAdminAuthHeader(): string {
   // Using a unique test user that won't conflict with Keycloak SSO users
-  // NOTE: api-e2e-testuser is created by global-setup.ts with BCrypt hash of 'test'
-  return `Basic ${Buffer.from('api-e2e-testuser:test').toString('base64')}`;
+  // NOTE: api-e2e-testuser is created by global-setup.ts with BCrypt hash of 'testtest'
+  return `Basic ${Buffer.from('api-e2e-testuser:testtest').toString('base64')}`;
 }
 
 /** Helper to make authenticated API requests with admin credentials */

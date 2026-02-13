@@ -168,8 +168,8 @@ test.describe('Archive Management Enhanced', () => {
       const title = page.locator('h2').filter({ hasText: 'Archive Management' });
       await expect(title).toBeVisible({ timeout: 10000 });
 
-      // Verify tabs
-      const archivesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'Archives' });
+      // Verify tabs (use data-node-key to avoid matching "Pending Archives" with "Archives")
+      const archivesTab = page.locator('.ant-tabs-tab[data-node-key="archives"]');
       await expect(archivesTab).toBeVisible();
 
       const settingsTab = page.locator('.ant-tabs-tab').filter({ hasText: 'Retention Settings' });
@@ -759,8 +759,9 @@ test.describe('Archive Management - REST API Edge Cases', () => {
 
     console.log(`Force archive non-existent object: ${response.status()}`);
 
-    // Should return an error (404 or 500)
-    expect(response.status()).toBeGreaterThanOrEqual(400);
+    // NemakiWare REST API returns HTTP 200 with error in JSON body
+    const body = await response.json();
+    expect(body.status).toBe('failure');
     console.log('Force archive correctly handles non-existent object');
   });
 
@@ -774,8 +775,9 @@ test.describe('Archive Management - REST API Edge Cases', () => {
 
     console.log(`Extend expiration with invalid date: ${response.status()}`);
 
-    // Should return an error (400 or 500)
-    expect(response.status()).toBeGreaterThanOrEqual(400);
+    // NemakiWare REST API returns HTTP 200 with error in JSON body
+    const body = await response.json();
+    expect(body.status).toBe('failure');
     console.log('Extend expiration correctly rejects invalid date');
   });
 
@@ -789,8 +791,9 @@ test.describe('Archive Management - REST API Edge Cases', () => {
 
     console.log(`Extend expiration without date: ${response.status()}`);
 
-    // Should return an error (400)
-    expect(response.status()).toBeGreaterThanOrEqual(400);
+    // NemakiWare REST API returns HTTP 200 with error in JSON body
+    const body = await response.json();
+    expect(body.status).toBe('failure');
     console.log('Extend expiration correctly rejects missing date parameter');
   });
 });

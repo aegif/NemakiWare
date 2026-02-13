@@ -4149,7 +4149,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		String archiveDocId = createResult != null ? createResult.getId() : null;
 
 		// Copy binary content (_attachments) from source to archive
-		boolean hasBinary = originalProps != null && originalProps.containsKey("_attachments");
+		// Use getAttachments() (not getProperties()) - Cloudant SDK extracts _attachments separately
+		Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> sourceAttachments = rawDoc.getAttachments();
+		boolean hasBinary = sourceAttachments != null && !sourceAttachments.isEmpty();
 		try {
 			Object binaryContent = sourceClient.getAttachment(archive.getOriginalId(), "content");
 			if (binaryContent instanceof java.io.InputStream && archiveDocId != null) {
@@ -4371,7 +4373,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			client.create(originalId, docMap);
 
 			// Restore binary attachment from archive
-			boolean archiveHasBinary = properties != null && properties.containsKey("_attachments");
+			// Use getAttachments() (not getProperties()) - Cloudant SDK extracts _attachments separately
+			Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> archiveAttachments = archivedDoc.getAttachments();
+			boolean archiveHasBinary = archiveAttachments != null && !archiveAttachments.isEmpty();
 			try {
 				Object attachmentData = archiveClient.getAttachment(archiveId, "content");
 				if (attachmentData instanceof java.io.InputStream) {

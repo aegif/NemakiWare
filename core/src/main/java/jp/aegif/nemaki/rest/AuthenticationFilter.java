@@ -120,6 +120,14 @@ public class AuthenticationFilter implements Filter {
 				return;
 			}
 
+			// Bypass authentication for WebAuthn authentication endpoints (passkey login)
+			if (requestURI != null && (requestURI.contains("/webauthn/authenticate/begin")
+					|| requestURI.contains("/webauthn/authenticate/complete"))) {
+				log.debug("Bypassing authentication for WebAuthn authentication endpoint: " + requestURI);
+				chain.doFilter(req, res);
+				return;
+			}
+
 			// Bypass authentication for OpenAPI specification endpoints (allow public access to API docs)
 			// Note: API v1 CMIS endpoints are at /api/v1/cmis/* to avoid conflict with legacy /api/v1/repo/* endpoints
 			if (requestURI != null && (requestURI.contains("/api/v1/cmis/openapi.json") || requestURI.contains("/api/v1/cmis/openapi.yaml"))) {

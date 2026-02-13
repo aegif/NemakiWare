@@ -189,10 +189,27 @@
 			<artifactId>jackson-databind</artifactId>
 			<version>2.20.1</version>
 		</dependency>
+		<!-- WebAuthn (Passkey) support -->
+		<dependency>
+			<groupId>com.yubico</groupId>
+			<artifactId>webauthn-server-core</artifactId>
+			<version>2.5.3</version>
+			<exclusions>
+				<exclusion>
+					<groupId>org.apache.httpcomponents.client5</groupId>
+					<artifactId>httpclient5</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-annotations</artifactId>
 			<version>2.20</version>
+		</dependency>
+		<dependency>
+			<groupId>com.fasterxml.jackson.datatype</groupId>
+			<artifactId>jackson-datatype-jdk8</artifactId>
+			<version>2.20.1</version>
 		</dependency>
 		<!-- SECURITY UPDATE (2025-11-19): Updated Jackson from 2.17.1 to 2.20.x for security fixes -->
 		<!-- NOTE: jackson-annotations 2.20+ uses major.minor versioning only (no patch version) -->

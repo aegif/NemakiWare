@@ -64,6 +64,8 @@ export interface User {
    * - "disabled": Authentication disabled (account locked)
    */
   allowedAuthMethods?: string;
+  /** Whether this user has admin privileges */
+  isAdmin?: boolean;
 }
 
 export interface Group {

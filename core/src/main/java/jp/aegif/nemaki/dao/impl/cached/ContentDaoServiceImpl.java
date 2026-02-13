@@ -61,6 +61,7 @@ import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.model.WebAuthnCredential;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.cache.model.NemakiCache;
 import jp.aegif.nemaki.util.cache.model.Tree;
@@ -1887,6 +1888,32 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public void updateArchiveColdMoveMode(String repositoryId, String archiveId, String coldMoveMode) {
 		nonCachedContentDaoService.updateArchiveColdMoveMode(repositoryId, archiveId, coldMoveMode);
+	}
+
+	// WebAuthn credential methods - delegate to non-cached service (no caching needed)
+	@Override
+	public List<WebAuthnCredential> getWebAuthnCredentialsByUserId(String repositoryId, String userId) {
+		return nonCachedContentDaoService.getWebAuthnCredentialsByUserId(repositoryId, userId);
+	}
+
+	@Override
+	public WebAuthnCredential getWebAuthnCredentialByCredentialId(String repositoryId, String credentialId) {
+		return nonCachedContentDaoService.getWebAuthnCredentialByCredentialId(repositoryId, credentialId);
+	}
+
+	@Override
+	public WebAuthnCredential createWebAuthnCredential(String repositoryId, WebAuthnCredential credential) {
+		return nonCachedContentDaoService.createWebAuthnCredential(repositoryId, credential);
+	}
+
+	@Override
+	public WebAuthnCredential updateWebAuthnCredential(String repositoryId, WebAuthnCredential credential) {
+		return nonCachedContentDaoService.updateWebAuthnCredential(repositoryId, credential);
+	}
+
+	@Override
+	public void deleteWebAuthnCredential(String repositoryId, String id) {
+		nonCachedContentDaoService.deleteWebAuthnCredential(repositoryId, id);
 	}
 
 }

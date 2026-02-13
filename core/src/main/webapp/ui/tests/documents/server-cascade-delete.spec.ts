@@ -20,7 +20,7 @@ const REPOSITORY_ID = 'bedroom';
 const BASE_URL = 'http://localhost:8080/core';
 const AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 const TEST_USER = 'api-e2e-testuser';
-const TEST_USER_PASS = 'test';
+const TEST_USER_PASS = 'testtest';
 const TEST_USER_AUTH = 'Basic ' + Buffer.from(`${TEST_USER}:${TEST_USER_PASS}`).toString('base64');
 
 async function getRootFolderId(request: any, authHeader: string = AUTH_HEADER): Promise<string> {

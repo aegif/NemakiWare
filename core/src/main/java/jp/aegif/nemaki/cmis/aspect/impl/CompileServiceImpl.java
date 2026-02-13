@@ -1143,6 +1143,7 @@ public class CompileServiceImpl implements CompileService {
 		List<Rendition> _renditions = contentService.getRenditions(repositoryId, content.getId());
 		if (CollectionUtils.isNotEmpty(_renditions)) {
 			for (Rendition _rd : _renditions) {
+				if (_rd == null) continue;
 				RenditionDataImpl rd = new RenditionDataImpl();
 				rd.setStreamId(_rd.getId());
 				rd.setMimeType(_rd.getMimetype());

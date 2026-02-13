@@ -98,7 +98,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
 
             addViewIfMissing(views, "propertyDefinitionDetails", "function(doc) { if (doc.type == 'propertyDefinitionDetail')  emit(doc._id, doc) }", null, repositoryId);
 
-            addViewIfMissing(views, "admin", "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:user' && doc.admin === true) emit(doc.userId, doc) }", null, repositoryId);
+            addOrUpdateView(views, "admin", "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:user' && doc.admin === true) emit(doc.userId, doc) }", null, repositoryId);
 
             addViewIfMissing(views, "items", "function(doc) { if (doc.type == 'cmis:item')  emit(doc._id, doc) }", null, repositoryId);
 
@@ -156,6 +156,8 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
             throw new RuntimeException("Failed to apply standard CMIS views patch", e);
         }
     }
+
+
 
     private void addViewIfMissing(ObjectNode views, String viewName, String mapFunction, String reduceFunction, String repositoryId) {
         if (!views.has(viewName)) {

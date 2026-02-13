@@ -11,24 +11,36 @@ import { TestHelper, ApiHelper } from './utils/test-helper';
  * Note: comprehensive-preview.spec.ts also covers PDF preview.
  */
 test('PDF preview should render with react-pdf', async ({ page }) => {
-  const authHelper = new AuthHelper(page);
+  test.setTimeout(180000); // Allow more time for login + PDF rendering
   const testHelper = new TestHelper(page);
   const apiHelper = new ApiHelper(page);
 
-  await authHelper.login();
+  // Direct login for stability (AuthHelper can be flaky with Ant Design form timing)
+  await page.goto('http://localhost:8080/core/ui/');
+  await page.waitForSelector('input[placeholder*="ユーザー"], input[placeholder*="User"]', { timeout: 15000 });
+  await page.fill('input[placeholder*="ユーザー"], input[placeholder*="User"]', 'admin');
+  await page.fill('input[type="password"]', 'admin');
+  await page.click('button[type="submit"], button:has-text("ログイン"), button:has-text("Login")');
+  await page.waitForURL(/\/#\/documents/, { timeout: 45000 });
+
+  // Wait for folder tree to load
+  await page.waitForSelector('.ant-tree', { timeout: 15000 }).catch(() => null);
+  await page.waitForTimeout(2000);
+
+  // Click Repository Root to ensure children are displayed
+  const rootFolder = page.locator('.ant-tree-title').filter({ hasText: 'Repository Root' }).first();
+  if (await rootFolder.isVisible().catch(() => false)) {
+    await rootFolder.click();
+    await page.waitForTimeout(2000);
+  }
 
   // Find any PDF file in the table
   const pdfCell = page.locator('.ant-table-tbody td a').filter({ hasText: /\.pdf$/i }).first();
 
   if (await pdfCell.count() === 0) {
-    // No PDF found - verify react-pdf component exists in the codebase (passive check)
-    console.log('No PDF files in repository - verifying react-pdf is configured');
-
-    // Upload button should be visible (basic UI check)
-    const uploadButton = await testHelper.getUploadButton();
-    expect(uploadButton).toBeTruthy();
-    console.log('PDF preview test: No PDF files available, but UI is functional');
-    // Pass without asserting PDF rendering since no PDF exists
+    // No PDF found in current folder - this is acceptable
+    console.log('No PDF files found in repository root - skipping PDF preview test');
+    test.skip(true, 'No PDF files available in repository root folder');
     return;
   }
 

@@ -98,11 +98,11 @@ public class PrincipalDaoServiceImpl implements
 	@Override
 	public List<User> getAdmins(String repositoryId) {
 		List<User> admins = new ArrayList<User>();
-		
+
 		try {
 			// Use proper design document view query (restored from migration)
 			List<CouchUser> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "admin", CouchUser.class);
-			
+
 			for (CouchUser c : l) {
 				User u = c.convert();
 				admins.add(u);
@@ -118,16 +118,16 @@ public class PrincipalDaoServiceImpl implements
 			adminUser.setEmail("admin@localhost");
 			adminUser.setAdmin(true);
 			adminUser.setType("user");
-			
+
 			// Set basic timestamps
 			adminUser.setCreated(new GregorianCalendar());
 			adminUser.setModified(new GregorianCalendar());
 			adminUser.setCreator("system");
 			adminUser.setModifier("system");
-			
+
 			admins.add(adminUser);
 		}
-		
+
 		return admins;
 	}
 
@@ -198,36 +198,51 @@ public class PrincipalDaoServiceImpl implements
 
 	@Override
 	public User updateUser(String repositoryId, User user) {
-		CouchUser update = new CouchUser(user);
-		// Ektorp-style: trust the object's revision state completely
-		if (update.getRevision() == null || update.getRevision().isEmpty()) {
-			// Only fetch if revision is missing (non-Ektorp behavior)
-			CouchUser cd = connectorPool.getClient(repositoryId).get(CouchUser.class, user.getId());
-			if (cd != null) {
-				update.setRevision(cd.getRevision());
-			}
+		// Read the existing document first to preserve all fields.
+		// CouchNodeBase's @JsonAnySetter captures fields not modeled by CouchUser
+		// (e.g., objectType, subTypeProperties, acl from UserItem documents)
+		// into additionalProperties, and @JsonAnyGetter writes them back.
+		// This prevents cross-contamination when a UserItem document is updated
+		// through this principal DAO path.
+		CouchUser existing = connectorPool.getClient(repositoryId).get(CouchUser.class, user.getId());
+		if (existing == null) {
+			return null;
 		}
 
-		connectorPool.getClient(repositoryId).update(update);
-		User u = update.convert();
+		// Merge only User-specific fields onto the existing document
+		existing.setUserId(user.getUserId());
+		existing.setName(user.getName());
+		existing.setFirstName(user.getFirstName());
+		existing.setLastName(user.getLastName());
+		existing.setEmail(user.getEmail());
+		if (user.getPasswordHash() != null) {
+			existing.setPasswordHash(user.getPasswordHash());
+		}
+		existing.setAdmin(user.isAdmin());
+		existing.setFavorites(user.getFavorites());
+
+		connectorPool.getClient(repositoryId).update(existing);
+		User u = existing.convert();
 
 		return u;
 	}
 
 	@Override
 	public Group updateGroup(String repositoryId, Group group) {
-		CouchGroup update = new CouchGroup(group);
-		// Ektorp-style: trust the object's revision state completely
-		if (update.getRevision() == null || update.getRevision().isEmpty()) {
-			// Only fetch if revision is missing (non-Ektorp behavior)
-			CouchGroup cd = connectorPool.getClient(repositoryId).get(CouchGroup.class, group.getId());
-			if (cd != null) {
-				update.setRevision(cd.getRevision());
-			}
+		// Same merge-update pattern as updateUser to preserve all existing fields.
+		CouchGroup existing = connectorPool.getClient(repositoryId).get(CouchGroup.class, group.getId());
+		if (existing == null) {
+			return null;
 		}
 
-		connectorPool.getClient(repositoryId).update(update);
-		Group g = update.convert();
+		// Merge only Group-specific fields onto the existing document
+		existing.setGroupId(group.getGroupId());
+		existing.setName(group.getName());
+		existing.setUsers(group.getUsers());
+		existing.setGroups(group.getGroups());
+
+		connectorPool.getClient(repositoryId).update(existing);
+		Group g = existing.convert();
 
 		return g;
 	}

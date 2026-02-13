@@ -399,6 +399,13 @@ test.describe('PDF Preview Functionality (Partial WIP)', () => {
       return;
     }
 
+    // Check if document has content stream (mimeType and contentStreamLength)
+    if (!apiResponse.mimeType || apiResponse.contentStreamLength == null || apiResponse.contentStreamLength <= 0) {
+      console.log(`⚠️ PDF document exists (ID: ${apiResponse.documentId}) but has no content stream (mimeType: ${apiResponse.mimeType}, length: ${apiResponse.contentStreamLength})`);
+      test.skip(true, 'PDF document exists but has no content stream - file content needs to be uploaded');
+      return;
+    }
+
     // Verify PDF document properties
     expect(apiResponse.documentId).toBeTruthy();
     console.log(`✅ PDF document ID: ${apiResponse.documentId}`);

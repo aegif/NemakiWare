@@ -243,265 +243,66 @@ export class AuthHelper {
       credentials = usernameOrCredentials;
     }
 
-    // Navigate to login page
-    // CRITICAL FIX (2025-11-13): Use 'domcontentloaded' instead of 'networkidle'
-    await this.page.goto('/core/ui/index.html', { waitUntil: 'domcontentloaded' });
+    // CRITICAL FIX (2026-02-13): Simplified login flow using proven loginAsUser pattern
+    // The original complex flow had intermittent issues with Ant Design form state management
+    let loginSucceeded = false;
+    const maxLoginAttempts = 3;
+    for (let attempt = 1; attempt <= maxLoginAttempts; attempt++) {
+      console.log(`AuthHelper: Login attempt ${attempt}/${maxLoginAttempts} for user: ${credentials.username}`);
 
-    // CRITICAL FIX (2025-11-13): Check if already authenticated via BASIC auth
-    // Check for authenticated layout elements before attempting to fill login form
-    try {
-      const alreadyAuthenticated = await this.page.waitForFunction(
-        () => {
-          const hasSider = document.querySelector('.ant-layout-sider') !== null;
-          const hasLayout = document.querySelector('.ant-layout') !== null;
-          return hasSider && hasLayout;
-        },
-        { timeout: 3000 }
-      );
-      
-      if (alreadyAuthenticated) {
-        console.log('AuthHelper: Already authenticated via BASIC auth, skipping login form');
-        return;
-      }
-    } catch (e) {
-    }
+      // Navigate to login page
+      await this.page.goto('/core/ui/', { timeout: 30000 });
 
-    // CRITICAL FIX (2025-10-22): Wait for React SPA to initialize before looking for form fields
-    // The React app needs time to mount and render the Login component
-    // Timeout increased to 30000ms per code review - 10000ms was too aggressive for slower systems
-    await this.page.waitForFunction(
-      () => {
-        // Check if React root div has children (app is rendered)
-        const root = document.getElementById('root');
-        return root && root.children.length > 0;
-      },
-      { timeout: 30000 }
-    );
-
-    // Additional wait for Ant Design components to fully render
-    await this.page.waitForTimeout(1000);
-
-    // Wait for login form to be visible - try multiple selectors
-    const usernameFieldSelectors = [
-      'input[placeholder="ユーザー名"]',
-      'input[name="username"]',
-      'input[type="text"]',
-    ];
-
-    let usernameField;
-    for (const selector of usernameFieldSelectors) {
-      const field = this.page.locator(selector).first();
+      // Check if already authenticated
       try {
-        await field.waitFor({ state: 'visible', timeout: 30000 });
-        usernameField = field;
+        await this.page.waitForURL(/\/#\/documents/, { timeout: 3000 });
+        console.log('AuthHelper: Already authenticated, skipping login form');
+        loginSucceeded = true;
         break;
       } catch (e) {
-        // Try next selector
-        continue;
+        // Not authenticated yet, proceed with login
       }
-    }
 
-    if (!usernameField) {
-      // Enhanced error message with page state debugging
-      const bodyHtml = await this.page.locator('body').innerHTML();
-      const rootHtml = await this.page.locator('#root').innerHTML().catch(() => 'No #root element');
-      console.error('AuthHelper: Username field not found');
-      console.error('AuthHelper: Current URL:', this.page.url());
-      console.error('AuthHelper: Body HTML length:', bodyHtml?.length);
-      console.error('AuthHelper: Root HTML:', rootHtml?.substring(0, 500));
-      throw new Error('Username field not found - Login page may not have loaded properly');
-    }
+      // Wait for username field to appear
+      await this.page.waitForSelector('input[placeholder*="ユーザー"], input[placeholder*="User"]', { timeout: 15000 });
 
-    // Fill username
-    await usernameField.fill(credentials.username);
+      // CRITICAL FIX (2026-02-13): Use keyboard input for reliable Ant Design form interaction
+      // page.fill() can fail silently with Ant Design's controlled form components
+      const usernameInput = this.page.locator('input[placeholder*="ユーザー"], input[placeholder*="User"]');
+      await usernameInput.click();
+      await this.page.keyboard.press('Control+a');
+      await this.page.keyboard.type(credentials.username);
+      const passwordInput = this.page.locator('input[type="password"]');
+      await passwordInput.click();
+      await this.page.keyboard.press('Control+a');
+      await this.page.keyboard.type(credentials.password);
 
-    // Fill password - try multiple selectors
-    const passwordFieldSelectors = [
-      'input[placeholder="パスワード"]',
-      'input[name="password"]',
-      'input[type="password"]',
-    ];
+      // Submit via Enter key (more reliable than button click with Ant Design forms)
+      await this.page.keyboard.press('Enter');
+      console.log(`AuthHelper: Submitted login for user: ${credentials.username}`);
 
-    let passwordField;
-    for (const selector of passwordFieldSelectors) {
-      const field = this.page.locator(selector).first();
+      // Wait for URL to change to documents page (most reliable login success indicator)
       try {
-        await field.waitFor({ state: 'visible', timeout: 30000 });
-        passwordField = field;
+        await this.page.waitForURL(/\/#\/documents/, { timeout: 45000 });
+        console.log('AuthHelper: Login successful, redirected to documents page');
+        loginSucceeded = true;
         break;
       } catch (e) {
-        // Try next selector
-        continue;
-      }
-    }
-
-    if (!passwordField) {
-      console.error('AuthHelper: Password field not found');
-      console.error('AuthHelper: Current URL:', this.page.url());
-      throw new Error('Password field not found - Login page may not have loaded properly');
-    }
-
-    await passwordField.fill(credentials.password);
-
-    // Select repository if dropdown exists
-    if (credentials.repository) {
-      const repositorySelect = this.page.locator('.ant-select').first();
-      if (await repositorySelect.count() > 0) {
-        await repositorySelect.click();
-
-        // Wait for dropdown to be fully opened
-        await this.page.waitForSelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)', { timeout: 5000 });
-
-        // Find the option and scroll it into view before clicking
-        const option = this.page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: credentials.repository }).first();
-
-        // Wait for the option to be present
-        await option.waitFor({ state: 'attached', timeout: 3000 });
-
-        // Scroll into view and click
-        await option.scrollIntoViewIfNeeded();
-        await this.page.waitForTimeout(300); // Brief wait after scrolling
-        await option.click();
-      }
-    }
-
-    // Click login button - try multiple selectors
-    const loginButtonSelectors = [
-      'button[type="submit"]:has-text("ログイン")',
-      'button:has-text("ログイン")',
-      'button.ant-btn-primary',
-    ];
-
-    let loginButton;
-    for (const selector of loginButtonSelectors) {
-      const button = this.page.locator(selector).first();
-      try {
-        await button.waitFor({ state: 'visible', timeout: 30000 });
-        loginButton = button;
-        break;
-      } catch (e) {
-        // Try next selector
-        continue;
-      }
-    }
-
-    if (!loginButton) {
-      console.error('AuthHelper: Login button not found');
-      console.error('AuthHelper: Current URL:', this.page.url());
-      throw new Error('Login button not found - Login page may not have loaded properly');
-    }
-
-    await loginButton.click();
-    console.log(`AuthHelper: Clicked login button for user: ${credentials.username}`);
-
-    // Wait for the login request to process - increased for stability
-    await this.page.waitForTimeout(2000);
-    console.log('AuthHelper: Waiting for authentication...');
-
-    // Check for login error messages
-    const errorMessage = await this.page.locator('body').textContent();
-    if (errorMessage?.includes('ログインに失敗しました')) {
-      console.log('AuthHelper: Login failed message detected on page');
-      throw new Error('Login failed - incorrect credentials or user not found');
-    }
-
-    // Wait for successful login by checking for authenticated elements
-    // Increased timeout for mobile browsers and non-admin users
-    // CRITICAL FIX (2025-10-21): Extended timeout to 30s to prevent flaky test failures
-    // CRITICAL FIX (2025-10-26): Extended timeout to 60s for test users with permission delays
-    // CRITICAL FIX (2026-01-21): Extended timeout to 60s for all users due to Docker environment latency
-    // Add retry logic for authentication race conditions
-    let authRetries = 0;
-    // Increase retry count for all users to handle Docker environment delays
-    const maxAuthRetries = credentials.username === 'admin' ? 5 : 7;
-
-    while (authRetries < maxAuthRetries) {
-      try {
-        console.log(`AuthHelper: Waiting for authenticated page elements (attempt ${authRetries + 1}/${maxAuthRetries})...`);
-        // Increase timeout for all users to allow for Docker environment latency
-        const authTimeout = credentials.username === 'admin' ? 60000 : 90000;
-        await this.page.waitForFunction(
-          () => {
-            // Check if login form is gone (password field not visible)
-            const passwordFields = document.querySelectorAll('input[type="password"]');
-            const passwordVisible = Array.from(passwordFields).some(field => field.offsetParent !== null);
-            if (passwordVisible) {
-              return false; // Still on login page
-            }
-
-            // Check for main application elements
-            const mainElements = [
-              '.ant-layout-sider', // Sidebar
-              '.ant-layout-content', // Main content
-              '.ant-table', // Document table
-            ];
-
-            return mainElements.some(selector => {
-              const element = document.querySelector(selector);
-              return element && element.offsetParent !== null;
-            });
-          },
-          { timeout: authTimeout }  // 30s for admin, 60s for test users
-        );
-        // Success - break retry loop
-        break;
-      } catch (error) {
-        authRetries++;
-
-        // Debug: Log current page state if timeout occurs
-        console.log('AuthHelper: Login timeout on attempt', authRetries);
-        console.log('AuthHelper: Current URL:', this.page.url());
-        const bodyText = await this.page.locator('body').textContent();
-        console.log('AuthHelper: Body text (first 200 chars):', bodyText?.substring(0, 200));
-
-        // If this was the last retry, throw the error
-        if (authRetries >= maxAuthRetries) {
-          console.error('AuthHelper: All authentication retries exhausted');
-          throw error;
+        if (attempt < maxLoginAttempts) {
+          console.log(`AuthHelper: Login attempt ${attempt} failed (URL did not change), retrying...`);
+          continue;
         }
-
-        // Wait before retrying
-        console.log('AuthHelper: Waiting 2 seconds before retry...');
-        await this.page.waitForTimeout(2000);
+        console.log('AuthHelper: All login attempts via waitForURL failed');
+        throw new Error(`Login failed after ${maxLoginAttempts} attempts for user: ${credentials.username}`);
       }
     }
 
-    // Additional verification: ensure we're not on login page anymore
-    await expect(passwordField).not.toBeVisible({ timeout: 5000 });
-
-    // CRITICAL FIX: Wait for automatic redirect to documents page after successful login
-    // The React app automatically redirects authenticated users from / to /documents
-    try {
-      await this.page.waitForURL('**/documents', { timeout: 5000 });
-    } catch (e) {
-      // If redirect didn't happen automatically, navigate manually
-      // Mobile browsers use 'load' instead of 'networkidle' to avoid timeout issues after route handler tests
-      const isMobile = this.page.viewportSize() && this.page.viewportSize()!.width <= 414;
-      await this.page.goto('/core/ui/index.html', {
-        waitUntil: isMobile ? 'load' : 'networkidle',
-        timeout: isMobile ? 45000 : 30000  // Extra timeout for mobile
-      });
-      // Click documents menu item to navigate
-      const documentsMenuItem = this.page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-      if (await documentsMenuItem.count() > 0) {
-        await documentsMenuItem.click();
-        await this.page.waitForTimeout(2000);
-      }
+    if (!loginSucceeded) {
+      throw new Error(`Login failed for user: ${credentials.username}`);
     }
 
-    // Wait for documents page to fully load with Ant Design components
-    // CRITICAL FIX (2025-10-21): Extended timeout to 30s for slow CI environments
-    // CRITICAL FIX (2026-01-21): Extended timeout to 60s for Docker environment latency
-    await this.page.waitForFunction(
-      () => {
-        // Check for key elements that indicate successful navigation to documents
-        const hasLayout = document.querySelector('.ant-layout') !== null;
-        const hasSider = document.querySelector('.ant-layout-sider') !== null;
-        const hasContent = document.querySelector('.ant-layout-content') !== null;
-        return hasLayout && hasSider && hasContent;
-      },
-      { timeout: 60000 }  // Increased from 30000ms to 60000ms for Docker environment
-    );
+    // Wait for page to stabilize after login
+    await this.page.waitForTimeout(1000);
 
     // Wait for table to appear and finish loading (documents page)
     try {

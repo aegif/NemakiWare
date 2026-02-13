@@ -3629,7 +3629,13 @@ public class ContentServiceImpl implements ContentService {
 		List<Rendition> renditions = new ArrayList<Rendition>();
 		if (CollectionUtils.isNotEmpty(ids)) {
 			for (String id : ids) {
-				renditions.add(contentDaoService.getRendition(repositoryId, id));
+				Rendition r = contentDaoService.getRendition(repositoryId, id);
+				if (r != null) {
+					renditions.add(r);
+				} else {
+					log.warn("Rendition not found for id: " + id + " referenced by object: " + objectId
+							+ " - skipping (rendition may have been deleted)");
+				}
 			}
 		}
 
@@ -4106,18 +4112,20 @@ public class ContentServiceImpl implements ContentService {
 		Content restored = null;
 		if (archive.isFolder()) {
 			restored = restoreFolder(repositoryId, archive);
-			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
 		} else if (archive.isDocument()) {
 			restored = restoreDocument(repositoryId, archive);
-			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
 		} else if (archive.isAttachment()) {
 			log.error("Attachment can't be restored alone");
 		} else {
 			log.error("Only document or folder is supported for restoration");
 		}
 
-		// Solr indexing for restored content (failure won't affect main operation)
+		// Write change event (restored may be null if the archive was a PWC
+		// that was deleted during checkout state cleanup)
 		if (restored != null) {
+			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
+
+			// Solr indexing for restored content (failure won't affect main operation)
 			try {
 				if (solrUtil != null) {
 					solrUtil.indexDocument(repositoryId, restored);

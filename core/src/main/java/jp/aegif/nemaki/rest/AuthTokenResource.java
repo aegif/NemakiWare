@@ -1150,6 +1150,7 @@ public class AuthTokenResource extends ResourceBase{
 	 * - password: random UUID hash (SSO users don't use password authentication)
 	 * - admin: false (non-admin by default)
 	 * - parentId: users folder under system folder
+	 * - allowedAuthMethods: "cloud" (cloud-only authentication)
 	 *
 	 * @param repositoryId Repository ID
 	 * @param userName User name extracted from SSO token
@@ -1201,6 +1202,11 @@ public class AuthTokenResource extends ResourceBase{
 			newUser.setCreated(new java.util.GregorianCalendar());
 			newUser.setModified(new java.util.GregorianCalendar());
 
+			// Set allowedAuthMethods to "cloud" for SSO-provisioned users
+			java.util.List<jp.aegif.nemaki.model.Property> subTypeProperties = new java.util.ArrayList<>();
+			subTypeProperties.add(new jp.aegif.nemaki.model.Property("nemaki:allowedAuthMethods", "cloud"));
+			newUser.setSubTypeProperties(subTypeProperties);
+
 			// Create user in repository
 			UserItem createdUser = contentService.createUserItem(
 				new SystemCallContext(repositoryId),
@@ -1209,7 +1215,7 @@ public class AuthTokenResource extends ResourceBase{
 			);
 
 			if (createdUser != null) {
-				logger.info("Successfully created SSO user: {} (id: {})", userName, createdUser.getId());
+				logger.info("Successfully created SSO user: {} (id: {}, allowedAuthMethods: cloud)", userName, createdUser.getId());
 				return createdUser;
 			} else {
 				logger.error("Failed to create SSO user: {} - createUserItem returned null", userName);

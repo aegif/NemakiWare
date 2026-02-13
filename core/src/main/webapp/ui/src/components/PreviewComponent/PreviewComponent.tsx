@@ -244,7 +244,10 @@ export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId
   // Use PWC ID for content/renditions when document is checked out
   const effectiveObjectId = pwcObjectId || object.id;
   const fileType = getFileType(object.contentStreamMimeType);
-  const contentUrl = cmisService.getDownloadUrl(repositoryId, effectiveObjectId);
+  // Append lastModificationDate as cache-buster to force browser to fetch fresh content
+  // after cloud pull or content update (otherwise browser HTTP cache serves stale content)
+  const cacheBuster = object.lastModificationDate ? `?t=${encodeURIComponent(object.lastModificationDate)}` : '';
+  const contentUrl = cmisService.getDownloadUrl(repositoryId, effectiveObjectId) + cacheBuster;
 
   const renderPreview = () => {
     try {
@@ -265,7 +268,7 @@ export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId
     } catch (err) {
       return <Alert message={t('preview.previewError')} description={t('preview.errorOccurred')} type="error" />;
     }
-  };
+  };;
 
   return (
     <Card>

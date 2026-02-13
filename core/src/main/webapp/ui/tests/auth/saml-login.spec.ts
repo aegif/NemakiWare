@@ -114,7 +114,7 @@ test.describe('NemakiWare SAML Authentication', () => {
     expect(page.url()).toContain('8080');
   });
 
-  test('should handle SAML token conversion endpoint with valid response', async ({ request }) => {
+  test('should reject SAML token conversion (signature verification not implemented)', async ({ request }) => {
     const samlResponse = Buffer.from(
       '<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">' +
       '<saml:Assertion><saml:NameID>testuser</saml:NameID></saml:Assertion>' +
@@ -132,13 +132,11 @@ test.describe('NemakiWare SAML Authentication', () => {
     });
 
     expect(response.ok()).toBeTruthy();
-    
+
+    // SAML token conversion is disabled for security (no signature verification)
     const result = await response.json();
-    expect(result.status).toBe('success');
-    expect(result.value).toBeDefined();
-    expect(result.value.userName).toBe('testuser');
-    expect(result.value.token).toBeDefined();
-    expect(result.value.repositoryId).toBe('bedroom');
+    expect(result.status).toBe('failure');
+    expect(result.error).toBeDefined();
   });
 
   test('should reject SAML token conversion without saml_response', async ({ request }) => {
@@ -154,8 +152,8 @@ test.describe('NemakiWare SAML Authentication', () => {
     expect(result.error).toBeDefined();
   });
 
-  test('should auto-create user from SAML response with email attribute (auto-provisioning enabled)', async ({ request }) => {
-    // With saml.isAutoCreateUser=true, users are auto-provisioned on first SAML login
+  test('should reject SAML auto-provisioning (endpoint disabled)', async ({ request }) => {
+    // SAML token conversion is disabled - signature verification not implemented
     const samlResponse = Buffer.from(
       '<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">' +
       '<saml:Assertion>' +
@@ -177,16 +175,13 @@ test.describe('NemakiWare SAML Authentication', () => {
       }
     });
 
-    // With auto-provisioning enabled, user should be auto-created
     const result = await response.json();
-    expect(result.status).toBe('success');
-    expect(result.value).toBeDefined();
-    expect(result.value.userName).toBe('nonexistent@example.com');
-    expect(result.value.token).toBeDefined();
+    expect(result.status).toBe('failure');
+    expect(result.error).toBeDefined();
   });
 
-  test('should extract username from SAML response with email attribute for existing user', async ({ request }) => {
-    // This test uses 'testuser' which exists in both Keycloak and NemakiWare (created via previous tests)
+  test('should reject SAML token with NameID (endpoint disabled)', async ({ request }) => {
+    // SAML token conversion is disabled - signature verification not implemented
     const samlResponse = Buffer.from(
       '<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">' +
       '<saml:Assertion>' +
@@ -212,8 +207,7 @@ test.describe('NemakiWare SAML Authentication', () => {
     expect(response.ok()).toBeTruthy();
 
     const result = await response.json();
-    expect(result.status).toBe('success');
-    // NameID takes precedence over email attribute
-    expect(result.value.userName).toBe('testuser');
+    expect(result.status).toBe('failure');
+    expect(result.error).toBeDefined();
   });
 });

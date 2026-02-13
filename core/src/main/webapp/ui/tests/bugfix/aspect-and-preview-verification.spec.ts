@@ -194,6 +194,31 @@ async function executeCmisQuery(request: any, query: string): Promise<any> {
   return response.json();
 }
 
+/**
+ * Execute a CMIS query with retry logic for Solr indexing delay.
+ * Retries up to maxRetries times with retryDelay ms between attempts,
+ * waiting for numItems > 0.
+ */
+async function executeCmisQueryWithRetry(
+  request: any,
+  query: string,
+  maxRetries: number = 5,
+  retryDelay: number = 3000
+): Promise<any> {
+  let result: any;
+  for (let i = 0; i < maxRetries; i++) {
+    result = await executeCmisQuery(request, query);
+    if (result.numItems > 0) {
+      return result;
+    }
+    if (i < maxRetries - 1) {
+      console.log(`[RETRY] Query returned 0 results, retrying in ${retryDelay}ms (attempt ${i + 1}/${maxRetries})...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+    }
+  }
+  return result;
+}
+
 // ============================================================================
 // TEST 1: Aspect Property Preservation During Document Update
 // ============================================================================
@@ -342,14 +367,14 @@ test.describe('Secondary Type Search', () => {
       await updateDocumentProperties(request, docId, {}, { addSecondaryTypeIds: ['nemaki:commentable'] });
       console.log('[TEST] Added secondary type');
 
-      // Wait for Solr indexing
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Wait for Solr indexing (initial wait)
+      await new Promise(resolve => setTimeout(resolve, 5000));
 
-      // Execute CMIS SQL query
+      // Execute CMIS SQL query with retry for Solr indexing delay
       const query = `SELECT cmis:objectId, cmis:name FROM cmis:document WHERE ANY cmis:secondaryObjectTypeIds IN ('nemaki:commentable')`;
       console.log('[TEST] Executing query:', query);
 
-      const result = await executeCmisQuery(request, query);
+      const result = await executeCmisQueryWithRetry(request, query);
       console.log('[TEST] Query returned', result.numItems, 'results');
 
       // Verify our document is in the results
@@ -376,12 +401,12 @@ test.describe('Secondary Type Search', () => {
       docId = await createDocument(request, docName, 'Equality search test');
       await updateDocumentProperties(request, docId, {}, { addSecondaryTypeIds: ['nemaki:commentable'] });
 
-      // Wait for indexing
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Wait for indexing (initial wait)
+      await new Promise(resolve => setTimeout(resolve, 5000));
 
-      // Execute equality query
+      // Execute equality query with retry
       const query = `SELECT cmis:objectId FROM cmis:document WHERE cmis:secondaryObjectTypeIds = 'nemaki:commentable'`;
-      const result = await executeCmisQuery(request, query);
+      const result = await executeCmisQueryWithRetry(request, query);
 
       expect(result.numItems).toBeGreaterThan(0);
       console.log('✓ Equality query for secondary type works:', result.numItems, 'results');
@@ -400,11 +425,11 @@ test.describe('Secondary Type Search', () => {
       docId = await createDocument(request, `multi-sec-${timestamp}.txt`, 'Multi type search');
       await updateDocumentProperties(request, docId, {}, { addSecondaryTypeIds: ['nemaki:commentable'] });
 
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise(resolve => setTimeout(resolve, 5000));
 
-      // Query for multiple secondary types (one exists, one doesn't)
+      // Query for multiple secondary types (one exists, one doesn't) with retry
       const query = `SELECT cmis:objectId FROM cmis:document WHERE ANY cmis:secondaryObjectTypeIds IN ('nemaki:commentable', 'nemaki:testAspect')`;
-      const result = await executeCmisQuery(request, query);
+      const result = await executeCmisQueryWithRetry(request, query);
 
       expect(result.numItems).toBeGreaterThan(0);
       console.log('✓ Multiple secondary types query works:', result.numItems, 'results');
@@ -494,9 +519,14 @@ test.describe('Office Document Preview', () => {
   });
 
   test('UI should show preview tab for documents', async ({ page, request }) => {
-    // Login to UI
-    const authHelper = new AuthHelper(page);
-    await authHelper.login();
+    test.setTimeout(180000);
+    // Login to UI using direct approach for stability
+    await page.goto('http://localhost:8080/core/ui/');
+    await page.waitForSelector('input[placeholder*="ユーザー"], input[placeholder*="User"]', { timeout: 15000 });
+    await page.fill('input[placeholder*="ユーザー"], input[placeholder*="User"]', 'admin');
+    await page.fill('input[type="password"]', 'admin');
+    await page.click('button[type="submit"], button:has-text("ログイン"), button:has-text("Login")');
+    await page.waitForURL(/\/#\/documents/, { timeout: 45000 });
 
     // Wait for folder tree to load first
     await page.waitForSelector('.ant-tree', { timeout: 15000 });

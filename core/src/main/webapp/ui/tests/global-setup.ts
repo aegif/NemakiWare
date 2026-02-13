@@ -63,106 +63,69 @@ async function isBackendRunning(baseURL: string): Promise<boolean> {
  * Ensure testuser exists in CouchDB with BCrypt password
  * This is required for non-admin user tests
  */
-async function ensureTestUserExists(): Promise<void> {
-  const couchdbUrl = process.env.COUCHDB_URL || 'http://localhost:5984';
-  const couchdbUser = process.env.COUCHDB_USER || 'admin';
-  const couchdbPass = process.env.COUCHDB_PASS || 'password';
-  const couchdbAuth = 'Basic ' + Buffer.from(`${couchdbUser}:${couchdbPass}`).toString('base64');
-
-  // Use unique test user name to avoid conflict with Keycloak SSO users
-  const testUserId = 'api-e2e-testuser';
+/**
+ * Ensure a test user exists via NemakiWare REST API.
+ * Uses the REST API instead of direct CouchDB manipulation to avoid
+ * cache inconsistencies and revision conflicts.
+ */
+async function ensureTestUser(baseURL: string, userId: string, password: string): Promise<void> {
+  const adminAuth = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+  const restBase = `${baseURL}/core/rest/repo/bedroom`;
 
   try {
-    // Check if test user already exists
-    const checkResponse = await fetch(`${couchdbUrl}/bedroom/_find`, {
-      method: 'POST',
-      headers: {
-        'Authorization': couchdbAuth,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        selector: { type: 'user', userId: testUserId },
-        limit: 1
-      }),
-      signal: AbortSignal.timeout(10000)
+    // Check if user exists by trying to show it
+    const checkRes = await fetch(`${restBase}/user/show/${userId}`, {
+      headers: { 'Authorization': adminAuth },
+      signal: AbortSignal.timeout(10000),
     });
 
-    if (!checkResponse.ok) {
-      console.log(`⚠️ Could not query CouchDB for ${testUserId}`);
-      return;
-    }
-
-    const result = await checkResponse.json();
-
-    if (result.docs && result.docs.length > 0) {
-      const existingUser = result.docs[0];
-      // Check if password is already BCrypt hashed
-      if (existingUser.password && existingUser.password.startsWith('$2')) {
-        console.log(`✅ ${testUserId} already exists with BCrypt password`);
+    if (checkRes.ok) {
+      const checkData = await checkRes.json();
+      if (checkData.status === 'success' && checkData.user) {
+        // User exists - reset password via REST API (admin can bypass old password)
+        console.log(`🔐 Resetting ${userId} password...`);
+        const resetRes = await fetch(`${restBase}/user/changePassword/${userId}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': adminAuth,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({ newPassword: password }).toString(),
+          signal: AbortSignal.timeout(10000),
+        });
+        const resetData = await resetRes.json();
+        if (resetData.status === 'success') {
+          console.log(`✅ ${userId} password reset to default`);
+        } else {
+          throw new Error(`Failed to reset password for required test user ${userId}: ${JSON.stringify(resetData)}`);
+        }
         return;
       }
+    }
 
-      // Update existing user with BCrypt password
-      console.log(`🔐 Updating ${testUserId} with BCrypt password...`);
-      existingUser.password = '$2a$12$WOlW7Yk7vFYz7kjFCz/GpeJ7B4kzWhnSMXH2UcN/iMAuiMcYC/Cie'; // BCrypt hash of 'test'
+    // User doesn't exist - create via REST API
+    console.log(`👤 Creating ${userId}...`);
+    const createRes = await fetch(`${restBase}/user/create/${userId}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': adminAuth,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ name: userId, password }).toString(),
+      signal: AbortSignal.timeout(10000),
+    });
 
-      const updateResponse = await fetch(`${couchdbUrl}/bedroom/${existingUser._id}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': couchdbAuth,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(existingUser),
-        signal: AbortSignal.timeout(10000)
-      });
-
-      if (updateResponse.ok) {
-        console.log(`✅ ${testUserId} password updated to BCrypt`);
-      } else {
-        console.log(`⚠️ Failed to update ${testUserId} password`);
-      }
+    const createData = await createRes.json();
+    if (createData.status === 'success') {
+      console.log(`✅ ${userId} created successfully`);
     } else {
-      // Create new test user (unique name to avoid conflict with SSO users)
-      // Document format must match NemakiWare's nemaki:user structure
-      console.log(`👤 Creating ${testUserId}...`);
-      const newUser = {
-        type: 'cmis:item',
-        objectType: 'nemaki:user',
-        userId: testUserId,
-        password: '$2a$12$WOlW7Yk7vFYz7kjFCz/GpeJ7B4kzWhnSMXH2UcN/iMAuiMcYC/Cie', // BCrypt hash of 'test'
-        admin: false,
-        creator: 'system',
-        modifier: 'system',
-        document: false,
-        content: false,
-        folder: false,
-        attachment: false,
-        relationship: false,
-        policy: false,
-        aspects: [],
-        acl: { entries: [] },
-        secondaryIds: [],
-        subTypeProperties: []
-      };
-
-      const createResponse = await fetch(`${couchdbUrl}/bedroom`, {
-        method: 'POST',
-        headers: {
-          'Authorization': couchdbAuth,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(newUser),
-        signal: AbortSignal.timeout(10000)
-      });
-
-      if (createResponse.ok) {
-        console.log(`✅ ${testUserId} created successfully`);
-      } else {
-        console.log(`⚠️ Failed to create ${testUserId}:`, await createResponse.text());
-      }
+      throw new Error(`Failed to create required test user ${userId}: ${JSON.stringify(createData)}`);
     }
   } catch (error) {
-    console.log(`⚠️ Could not ensure ${testUserId} exists:`, error);
+    if (error instanceof Error && error.message.startsWith('Failed to create required test user')) {
+      throw error; // Re-throw provisioning failures to stop the test run early
+    }
+    throw new Error(`Could not ensure required test user ${userId} exists: ${error}`);
   }
 }
 
@@ -231,6 +194,7 @@ async function ensureTestPdfExists(baseURL: string): Promise<void> {
 
   try {
     // Get root folder ID first (needed for both check and upload)
+    // Note: repositoryInfo response is nested under the repository ID key
     const repoInfoResponse = await fetch(
       `${baseURL}/core/browser/bedroom?cmisselector=repositoryInfo`,
       {
@@ -238,7 +202,8 @@ async function ensureTestPdfExists(baseURL: string): Promise<void> {
         signal: AbortSignal.timeout(10000)
       }
     );
-    const repoInfo = await repoInfoResponse.json();
+    const repoInfoWrapper = await repoInfoResponse.json();
+    const repoInfo = repoInfoWrapper.bedroom || repoInfoWrapper;
     const rootFolderId = repoInfo.rootFolderId;
 
     // Check if PDF already exists by searching children of root folder
@@ -273,11 +238,11 @@ async function ensureTestPdfExists(baseURL: string): Promise<void> {
     formData.append('propertyValue[0]', 'cmis:document');
     formData.append('propertyId[1]', 'cmis:name');
     formData.append('propertyValue[1]', pdfName);
-    formData.append('objectId', rootFolderId);
 
     console.log(`📄 Creating ${pdfName} for search tests...`);
+    // POST to the root folder URL for createDocument
     const createResponse = await fetch(
-      `${baseURL}/core/browser/bedroom`,
+      `${baseURL}/core/browser/bedroom/root`,
       {
         method: 'POST',
         headers: {
@@ -368,11 +333,11 @@ async function ensureTestPdfExists(baseURL: string): Promise<void> {
       jpFormData.append('propertyValue[0]', 'cmis:document');
       jpFormData.append('propertyId[1]', 'cmis:name');
       jpFormData.append('propertyValue[1]', jpPdfName);
-      jpFormData.append('objectId', rootFolderId);
 
       console.log(`📄 Creating ${jpPdfName} for Japanese search tests...`);
+      // POST to the root folder URL for createDocument
       const jpCreateResponse = await fetch(
-        `${baseURL}/core/browser/bedroom`,
+        `${baseURL}/core/browser/bedroom/root`,
         {
           method: 'POST',
           headers: {
@@ -471,20 +436,9 @@ async function ensureTestDataExists(baseURL: string): Promise<void> {
       formData.append('propertyId[1]', 'cmis:name');
       formData.append('propertyValue[1]', 'Sites');
 
-      const rootIdResponse = await fetch(
-        `${baseURL}/core/browser/bedroom?cmisselector=repositoryInfo`,
-        {
-          headers: { 'Authorization': authHeader },
-          signal: AbortSignal.timeout(10000)
-        }
-      );
-      const repoInfo = await rootIdResponse.json();
-      const rootFolderId = repoInfo.rootFolderId;
-
-      formData.append('objectId', rootFolderId);
-
+      // POST to root folder URL for createFolder
       const createResponse = await fetch(
-        `${baseURL}/core/browser/bedroom`,
+        `${baseURL}/core/browser/bedroom/root`,
         {
           method: 'POST',
           headers: {
@@ -662,7 +616,8 @@ async function globalSetup(config: FullConfig) {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('Step 3: Test User Setup');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  await ensureTestUserExists();
+  await ensureTestUser(baseURL, 'api-e2e-testuser', 'testtest');
+  await ensureTestUser(baseURL, 'api-e2e-admintest', 'testtest');
 
   // Step 4: Ensure test data exists (folders for navigation tests)
   console.log('');

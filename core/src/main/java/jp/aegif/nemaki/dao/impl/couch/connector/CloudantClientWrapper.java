@@ -1857,58 +1857,53 @@ public class CloudantClientWrapper {
 					}
 				}
 				
-				// CRITICAL FIX: For CouchAttachmentNode, use Document.getProperties() to get actual CouchDB fields
+				// For CouchAttachmentNode, use Document.getProperties() to get actual CouchDB fields
 				if (clazz.getSimpleName().equals("CouchAttachmentNode")) {
-					log.error("=== ENHANCED ATTACHMENT DESERIALIZATION ===");
-					log.error("Document ID: " + id);
-					
-					// Get the properties Map which contains the actual CouchDB document fields
 					Map<String, Object> properties = doc.getProperties();
 					if (properties != null) {
-						log.error("Properties map keys: " + properties.keySet());
-						log.error("Properties 'name': " + properties.get("name"));
-						log.error("Properties 'length': " + properties.get("length"));
-						log.error("Properties 'mimeType': " + properties.get("mimeType"));
-						log.error("Properties '_attachments': " + (properties.get("_attachments") != null ? "PRESENT" : "NULL"));
-						
-						// Create complete map with both document metadata and properties
 						Map<String, Object> completeMap = new HashMap<>();
-						
-						// Add standard document fields
 						completeMap.put("_id", doc.getId());
 						completeMap.put("_rev", doc.getRev());
-						
-						// Add all properties from CouchDB document with timestamp conversion
+
 						for (Map.Entry<String, Object> entry : properties.entrySet()) {
 							String key = entry.getKey();
 							Object value = entry.getValue();
-							
-							// CRITICAL FIX: Convert timestamp fields from floating-point to GregorianCalendar
 							if (("created".equals(key) || "modified".equals(key)) && value instanceof Number) {
 								long timestamp = ((Number) value).longValue();
 								java.util.GregorianCalendar calendar = new java.util.GregorianCalendar();
 								calendar.setTimeInMillis(timestamp);
 								completeMap.put(key, calendar);
-								
-								log.error("Converted timestamp field '" + key + "': " + value + " -> " + calendar.getTime());
 							} else {
 								completeMap.put(key, value);
 							}
 						}
-						
-						log.error("Complete map keys: " + completeMap.keySet());
-						
+
+						// CRITICAL: doc.getProperties() does NOT include _attachments.
+						// Use doc.getAttachments() to get CouchDB _attachments metadata
+						// for accurate file size and MIME type.
+						Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> docAttachments = doc.getAttachments();
+						if (docAttachments != null && !docAttachments.isEmpty()) {
+							Map<String, Map<String, Object>> attachmentsMap = new HashMap<>();
+							for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Attachment> attEntry : docAttachments.entrySet()) {
+								Map<String, Object> attInfo = new HashMap<>();
+								com.ibm.cloud.cloudant.v1.model.Attachment att = attEntry.getValue();
+								attInfo.put("content_type", att.contentType());
+								attInfo.put("length", att.length());
+								attInfo.put("digest", att.digest());
+								attInfo.put("revpos", att.revpos());
+								attInfo.put("stub", att.stub());
+								attachmentsMap.put(attEntry.getKey(), attInfo);
+							}
+							completeMap.put("_attachments", attachmentsMap);
+						}
+
 						try {
 							T result = mapper.convertValue(completeMap, clazz);
-							log.error("ENHANCED deserialization SUCCESS for attachment: " + id);
 							return result;
 						} catch (Exception deserEx) {
-							log.error("ENHANCED deserialization FAILED for attachment: " + id);
-							log.error("Error details: " + deserEx.getMessage());
+							log.error("CouchAttachmentNode deserialization failed for: " + id + " - " + deserEx.getMessage());
 							throw deserEx;
 						}
-					} else {
-						log.error("Document properties is NULL for attachment: " + id);
 					}
 				}
 

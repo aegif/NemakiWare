@@ -173,6 +173,32 @@ public class CloudDriveResource extends ResourceBase {
 				("localhost".equals(host2) || "127.0.0.1".equals(host2)));
 	}
 
+	/**
+	 * Validate that a client-provided cloud file URL belongs to an allowed host for the given provider.
+	 * Only HTTPS URLs from known cloud provider domains are accepted.
+	 */
+	private static boolean isAllowedCloudUrl(String provider, String url) {
+		if (url == null || url.isEmpty()) return false;
+		try {
+			java.net.URI uri = new java.net.URI(url);
+			String scheme = uri.getScheme();
+			if (!"https".equalsIgnoreCase(scheme)) return false;
+			String host = uri.getHost();
+			if (host == null) return false;
+			host = host.toLowerCase();
+			if ("google".equals(provider)) {
+				return host.endsWith(".google.com") || host.equals("google.com");
+			} else if ("microsoft".equals(provider)) {
+				return host.endsWith(".live.com") || host.endsWith(".sharepoint.com")
+					|| host.endsWith(".office.com") || host.endsWith(".microsoft.com")
+					|| host.endsWith(".officeapps.live.com");
+			}
+			return false;
+		} catch (Exception e) {
+			return false;
+		}
+	}
+
 	private CloudDriveService cloudDriveService;
 	private ContentService contentService;
 	private jp.aegif.nemaki.util.PropertyManager propertyManager;
@@ -541,6 +567,7 @@ public class CloudDriveResource extends ResourceBase {
 	 *   - cloudFileId: file ID in cloud provider
 	 *   - accessToken: OAuth access token for fetching comments
 	 *   - fileName: (optional) filename override
+	 *   - cloudFileUrl: (optional) web URL from cloud provider (e.g. Graph API webUrl)
 	 */
 	@SuppressWarnings("unchecked")
 	@POST
@@ -556,6 +583,7 @@ public class CloudDriveResource extends ResourceBase {
 			@FormDataParam("cloudFileId") String cloudFileId,
 			@FormDataParam("accessToken") String accessToken,
 			@FormDataParam("fileName") String fileName,
+			@FormDataParam("cloudFileUrl") String clientCloudFileUrl,
 			@Context HttpServletRequest request) {
 
 		boolean status = true;
@@ -721,8 +749,27 @@ public class CloudDriveResource extends ResourceBase {
 			}
 
 			// Save cloud metadata as secondary properties
+			// Prefer client-provided webUrl (from Graph API) over server-generated fallback URL
+			// The server-side fallback (onedrive.live.com/edit?id=...) only works for personal OneDrive,
+			// not for Microsoft 365/Entra ID org accounts
 			CloudDriveService service = getCloudDriveService();
-			String cloudFileUrl = (service != null) ? service.getCloudFileUrl(provider, cloudFileId) : null;
+			String cloudFileUrl;
+			if (clientCloudFileUrl != null && !clientCloudFileUrl.isEmpty()
+					&& isAllowedCloudUrl(provider, clientCloudFileUrl)) {
+				cloudFileUrl = clientCloudFileUrl;
+			} else {
+				if (clientCloudFileUrl != null && !clientCloudFileUrl.isEmpty()) {
+					// Log host only - URL query may contain tokens or shared keys
+					String rejectedHost = "(unparseable)";
+					try {
+						java.net.URI u = new java.net.URI(clientCloudFileUrl);
+						rejectedHost = u.getScheme() + "://" + u.getHost();
+					} catch (Exception ignored) {}
+					log.warn("Rejected client-provided cloudFileUrl (not in allowed hosts for provider '"
+						+ provider + "'): " + rejectedHost);
+				}
+				cloudFileUrl = (service != null) ? service.getCloudFileUrl(provider, cloudFileId) : null;
+			}
 			saveCloudMetadata(callContext, repositoryId, newObjectId, provider, cloudFileId, cloudFileUrl);
 
 			// Fetch and save comments from cloud file (if access token provided)
@@ -845,14 +892,23 @@ public class CloudDriveResource extends ResourceBase {
 				return result.toJSONString();
 			}
 
-			CloudDriveService service = getCloudDriveService();
-			if (service == null) {
-				addErrMsg(errMsg, "service", "CloudDriveService not available");
-				result = makeResult(false, result, errMsg);
-				return result.toJSONString();
+			// Prefer the stored cloudFileUrl (from Graph API webUrl during import/push)
+			// over the dynamically generated fallback URL, which only works for personal OneDrive
+			// Re-validate stored URL against allowed hosts (may contain legacy/tampered data)
+			String storedCloudFileUrl = getSecondaryProperty(content, "nemaki:cloudFileUrl");
+			String url;
+			if (storedCloudFileUrl != null && !storedCloudFileUrl.isEmpty()
+					&& isAllowedCloudUrl(provider, storedCloudFileUrl)) {
+				url = storedCloudFileUrl;
+			} else {
+				CloudDriveService service = getCloudDriveService();
+				if (service == null) {
+					addErrMsg(errMsg, "service", "CloudDriveService not available");
+					result = makeResult(false, result, errMsg);
+					return result.toJSONString();
+				}
+				url = service.getCloudFileUrl(provider, cloudFileId);
 			}
-
-			String url = service.getCloudFileUrl(provider, cloudFileId);
 			result.put("cloudFileUrl", url);
 			result.put("provider", provider);
 			result.put("cloudFileId", cloudFileId);

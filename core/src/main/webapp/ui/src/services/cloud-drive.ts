@@ -19,6 +19,7 @@ export interface OneDriveFile {
   mimeType?: string;
   lastModifiedDateTime?: string;
   size?: number;
+  webUrl?: string;
 }
 
 export interface CloudDrivePushResult {
@@ -156,6 +157,31 @@ export async function getCloudUrl(
     return null;
   }
   return result;
+}
+
+/**
+ * Resolve the real web URL for a OneDrive file from Graph API.
+ * The server-side fallback URL (onedrive.live.com/edit?id=...) only works for personal OneDrive,
+ * not for Microsoft 365/Entra ID org accounts. This function fetches the correct webUrl from Graph API.
+ */
+export async function resolveOneDriveWebUrl(cloudFileId: string, accessToken: string): Promise<string | null> {
+  try {
+    const response = await fetch(
+      `https://graph.microsoft.com/v1.0/me/drive/items/${cloudFileId}?$select=webUrl`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+    if (!response.ok) {
+      console.warn('[CloudDrive] Failed to resolve OneDrive webUrl:', response.status);
+      return null;
+    }
+    const data = await response.json();
+    return data.webUrl || null;
+  } catch (e) {
+    console.warn('[CloudDrive] Error resolving OneDrive webUrl:', e);
+    return null;
+  }
 }
 
 // Session cache for Google Drive access token (avoids repeated OAuth2 popups)
@@ -361,7 +387,7 @@ export async function listOneDriveFiles(accessToken: string): Promise<OneDriveFi
   const response = await fetch(
     'https://graph.microsoft.com/v1.0/me/drive/root/children?' +
     new URLSearchParams({
-      $select: 'id,name,file,lastModifiedDateTime,size',
+      $select: 'id,name,file,lastModifiedDateTime,size,webUrl',
       $orderby: 'lastModifiedDateTime desc',
       $top: '100',
     }),
@@ -385,6 +411,7 @@ export async function listOneDriveFiles(accessToken: string): Promise<OneDriveFi
       mimeType: item.file?.mimeType,
       lastModifiedDateTime: item.lastModifiedDateTime,
       size: item.size,
+      webUrl: item.webUrl,
     }));
 }
 
@@ -537,6 +564,11 @@ export async function importFromOneDrive(
   formData.append('cloudFileId', file.id);
   formData.append('accessToken', accessToken);
   formData.append('fileName', file.name);
+  // Send the Graph API webUrl for the cloud file so it can be stored in metadata
+  // (the server-side fallback URL only works for personal OneDrive, not org accounts)
+  if (file.webUrl) {
+    formData.append('cloudFileUrl', file.webUrl);
+  }
 
   const uploadResponse = await fetch(`/core/rest/repo/${repositoryId}/cloud-drive/import/${folderId}`, {
     method: 'POST',

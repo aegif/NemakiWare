@@ -772,6 +772,8 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 					throw new RuntimeException("Access denied to OneDrive. Please check permissions.");
 				} else if (statusCode == 404) {
 					throw new RuntimeException("Cloud file not found. It may have been deleted.");
+				} else if (statusCode == 423) {
+					throw new RuntimeException("OneDrive file is locked. It may be open for editing in another session. Please close it and try again.");
 				} else if (statusCode == 429) {
 					throw new RuntimeException("OneDrive rate limit exceeded. Please try again later.");
 				} else if (statusCode == 507) {
