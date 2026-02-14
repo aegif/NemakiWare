@@ -818,12 +818,24 @@ public class ImportExportResource extends ResourceBase {
                 }
                 
                 if (!entry.isDirectory() && name.endsWith(".xml") && !name.contains("/")) {
+                    // Enforce size limit on ACP package XML (same as metadata)
+                    long entrySize = entry.getSize();
+                    if (entrySize > MAX_METADATA_SIZE) {
+                        result.errors.add("ACP package XML too large: " + name + " (size: " + entrySize + ", limit: " + MAX_METADATA_SIZE + ")");
+                        return result;
+                    }
                     packageXmlName = name;
                     try (InputStream is = zf.getInputStream(entry)) {
                         ByteArrayOutputStream baos = new ByteArrayOutputStream();
                         byte[] buffer = new byte[8192];
                         int len;
+                        long totalRead = 0;
                         while ((len = is.read(buffer)) != -1) {
+                            totalRead += len;
+                            if (totalRead > MAX_METADATA_SIZE) {
+                                result.errors.add("ACP package XML exceeds size limit during read: " + name);
+                                return result;
+                            }
                             baos.write(buffer, 0, len);
                         }
                         xmlData = baos.toByteArray();
