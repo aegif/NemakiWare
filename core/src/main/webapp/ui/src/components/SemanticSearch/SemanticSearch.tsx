@@ -111,7 +111,7 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
         contentBoost,
         simulateAsUserId
       });
-      setResults(response.results);
+      setResults(response.results || []);
     } catch (err) {
       console.error('Semantic search failed:', err);
       setError(err instanceof Error ? err.message : t('semanticSearch.searchFailed'));
@@ -119,7 +119,7 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [baseUrl, repositoryId, topK, minScore, folderId, propertyBoost, contentBoost, simulateAsUserId, t]);
+  }, [baseUrl, repositoryId, topK, minScore, folderId, propertyBoost, contentBoost, simulateAsUserId, t]);;
 
   const handleDocumentClick = (documentId: string) => {
     if (onDocumentClick) {
@@ -279,7 +279,7 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
           <div style={{ textAlign: 'center', padding: 40 }}>
             <Spin tip={t('semanticSearch.searching')} />
           </div>
-        ) : results.length > 0 ? (
+        ) : results && results.length > 0 ? (
           <>
             <Text type="secondary" style={{ marginBottom: 8, display: 'block' }}>
               {t('semanticSearch.resultsCount', { count: results.length })}
