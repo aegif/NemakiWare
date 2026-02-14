@@ -16,7 +16,8 @@ ADMIN_USER="${2:-admin}"
 ADMIN_PASSWORD="${3:-admin}"
 
 MCP_SERVICE_USER="mcp-service"
-MCP_SERVICE_PASSWORD="mcp-secure-token-2026"
+# Generate a random password for the MCP service account
+MCP_SERVICE_PASSWORD="${4:-$(openssl rand -base64 24)}"
 
 echo "=== NemakiWare MCP Service Account Setup ==="
 echo "NemakiWare URL: $NEMAKIWARE_URL"
