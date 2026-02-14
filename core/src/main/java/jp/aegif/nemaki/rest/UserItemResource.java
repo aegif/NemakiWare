@@ -971,7 +971,7 @@ private ContentService getContentServiceSafe() {
 				}catch(Exception e){
 					log.error("Failed to update password for user: " + userId, e);
 					status = false;
-					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATEPASSWORD);
 				}
 			}else{
 				// wrong previous password!
@@ -987,7 +987,7 @@ private ContentService getContentServiceSafe() {
 			}catch(Exception e){
 				log.error("Failed to reset password for user: " + userId, e);
 				status = false;
-				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
+				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATEPASSWORD);
 			}
 		}
 
