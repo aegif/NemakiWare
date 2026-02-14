@@ -265,7 +265,7 @@ public class AuthTokenResource extends ResourceBase{
 					JSONParser parser = new JSONParser();
 					JSONObject bodyJson = (JSONObject) parser.parse(requestBody);
 					password = (String) bodyJson.get("password");
-				} catch (Exception e) {
+				} catch (ParseException e) {
 					logger.warn("Failed to parse JSON request body for login");
 				}
 			} else {

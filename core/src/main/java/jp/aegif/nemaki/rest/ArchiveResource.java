@@ -346,13 +346,13 @@ public class ArchiveResource extends ResourceBase {
 			}
 			getContentService().restoreArchive(repositoryId, id);
 		}catch(ParentNoLongerExistException e){
-			log.error(e, e);
+			log.error("Failed to restore archive " + id + ": parent no longer exists", e);
 			status = false;
 			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_RESTORE_BECAUSE_PARENT_NO_LONGER_EXISTS);
 		}catch(Exception e){
-			log.error(e, e);
+			log.error("Failed to restore archive: " + id, e);
 			status = false;
-			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_DESTROY);
+			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_RESTORE);
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
@@ -374,7 +374,7 @@ public class ArchiveResource extends ResourceBase {
 			try{
 				getContentService().destroyArchive(repositoryId, id);
 			}catch(Exception e){
-				log.error(e, e);
+				log.error("Failed to destroy archive: " + id, e);
 				status = false;
 				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_DESTROY);
 			}

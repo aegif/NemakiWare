@@ -1320,7 +1320,8 @@ public class ObjectServiceImpl implements ObjectService {
 					try {
 						childrenService.getService().awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
 					} catch (InterruptedException e) {
-						log.error(e, e);
+						log.error("Interrupted while waiting for children service to terminate", e);
+						Thread.currentThread().interrupt();
 					}
 
 					// Lastly, delete self
