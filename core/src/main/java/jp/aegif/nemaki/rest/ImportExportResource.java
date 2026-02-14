@@ -141,9 +141,9 @@ public class ImportExportResource extends ResourceBase {
         BASE_TYPE_IDS.add("cmis:secondary");
     }
 
-    // Size limits for import (prevent OOM)
-    private static final long MAX_UPLOAD_SIZE = 500 * 1024 * 1024; // 500MB max upload
-    private static final long MAX_SINGLE_FILE_SIZE = 100 * 1024 * 1024; // 100MB max per file
+    // Size limits for import (prevent OOM). For ZIPs larger than 2GB, use filesystem import.
+    private static final long MAX_UPLOAD_SIZE = 2L * 1024 * 1024 * 1024; // 2GB max upload
+    private static final long MAX_SINGLE_FILE_SIZE = 2L * 1024 * 1024 * 1024; // 2GB max per file in ZIP
 
     // Allowed filesystem root paths for import/export (sandbox protection)
     // Configure via system property: nemakiware.filesystem.allowed.roots
