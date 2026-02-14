@@ -969,6 +969,8 @@ private ContentService getContentServiceSafe() {
 				try{
 					getContentService().update(new SystemCallContext(repositoryId), repositoryId, userItem);
 				}catch(Exception e){
+					log.error("Failed to update password for user: " + userId, e);
+					status = false;
 					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
 				}
 			}else{
@@ -983,6 +985,8 @@ private ContentService getContentServiceSafe() {
 			try{
 				getContentService().update(new SystemCallContext(repositoryId), repositoryId, userItem);
 			}catch(Exception e){
+				log.error("Failed to reset password for user: " + userId, e);
+				status = false;
 				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
 			}
 		}

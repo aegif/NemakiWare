@@ -32,6 +32,8 @@ import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.DateUtil;
 import jp.aegif.nemaki.util.constant.SystemConst;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
@@ -278,6 +280,14 @@ public class GroupItemResource extends ResourceBase{
 				setFirstSignature(httpRequest, group);
 
 				getContentService().createGroupItem(new SystemCallContext(repositoryId), repositoryId, group);
+			}catch(CmisObjectNotFoundException ex){
+				log.warn("Object not found while creating group: " + groupId, ex);
+				status = false;
+				addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
+			}catch(CmisPermissionDeniedException ex){
+				log.warn("Permission denied while creating group: " + groupId, ex);
+				status = false;
+				addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_PERMISSIONDENIED);
 			}catch(Exception ex){
 				log.error("Failed to create group: " + groupId, ex);
 				status = false;
@@ -381,6 +391,14 @@ public class GroupItemResource extends ResourceBase{
 
 			try{
 				getContentService().update(new SystemCallContext(repositoryId), repositoryId, group);
+			}catch(CmisObjectNotFoundException ex){
+				log.warn("Object not found while updating group: " + groupId, ex);
+				status = false;
+				addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
+			}catch(CmisPermissionDeniedException ex){
+				log.warn("Permission denied while updating group: " + groupId, ex);
+				status = false;
+				addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_PERMISSIONDENIED);
 			}catch(Exception ex){
 				log.error("Failed to update group: " + groupId, ex);
 				status = false;
@@ -417,7 +435,17 @@ public class GroupItemResource extends ResourceBase{
 		if(status){
 			try{
 				getContentService().delete(new SystemCallContext(repositoryId), repositoryId, group.getId(), false);
+			}catch(CmisObjectNotFoundException ex){
+				log.warn("Object not found while deleting group: " + groupId, ex);
+				status = false;
+				addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
+			}catch(CmisPermissionDeniedException ex){
+				log.warn("Permission denied while deleting group: " + groupId, ex);
+				status = false;
+				addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_PERMISSIONDENIED);
 			}catch(Exception ex){
+				log.error("Failed to delete group: " + groupId, ex);
+				status = false;
 				addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_DELETE);
 			}
 		}
@@ -469,6 +497,14 @@ public class GroupItemResource extends ResourceBase{
 			if(apiType.equals(API_ADD)){
 				try{
 					getContentService().update(new SystemCallContext(repositoryId), repositoryId, group);
+				}catch(CmisObjectNotFoundException ex){
+					log.warn("Object not found while adding members to group: " + groupId, ex);
+					status = false;
+					addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
+				}catch(CmisPermissionDeniedException ex){
+					log.warn("Permission denied while adding members to group: " + groupId, ex);
+					status = false;
+					addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_PERMISSIONDENIED);
 				}catch(Exception ex){
 					log.error("Failed to add members to group: " + groupId, ex);
 					status = false;
@@ -477,6 +513,14 @@ public class GroupItemResource extends ResourceBase{
 			}else if(apiType.equals(API_REMOVE)){
 				try{
 					getContentService().update(new SystemCallContext(repositoryId), repositoryId, group);
+				}catch(CmisObjectNotFoundException ex){
+					log.warn("Object not found while removing members from group: " + groupId, ex);
+					status = false;
+					addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
+				}catch(CmisPermissionDeniedException ex){
+					log.warn("Permission denied while removing members from group: " + groupId, ex);
+					status = false;
+					addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_PERMISSIONDENIED);
 				}catch(Exception ex){
 					log.error("Failed to remove members from group: " + groupId, ex);
 					status = false;
