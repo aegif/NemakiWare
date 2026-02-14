@@ -1448,10 +1448,11 @@ private ContentService getContentServiceSafe() {
 
 	/**
 	 * Update user's group memberships
-	 * Adds user to specified groups and removes from groups not in the list
+	 * Only processes the diff: adds user to new groups and removes from dropped groups.
 	 *
-	 * CRITICAL FIX: Fetches each group individually to get proper _rev field for CouchDB updates
-	 * RETRY LOGIC: Handles CouchDB optimistic locking conflicts with automatic retry
+	 * PERFORMANCE FIX: Instead of iterating all groups in the system (which can be 100+),
+	 * computes the diff between current memberships and desired memberships,
+	 * then only touches groups that actually need changing.
 	 */
 	@SuppressWarnings("unchecked")
 	private void updateUserGroups(String repositoryId, String userId, JSONArray newGroupIds, ContentService service) {
@@ -1461,51 +1462,46 @@ private ContentService getContentServiceSafe() {
 		}
 
 		try {
-			// Get all groups (for group IDs only)
-			List<jp.aegif.nemaki.model.GroupItem> allGroups = service.getGroupItems(repositoryId);
+			// Get current user to find existing group memberships
+			UserItem currentUser = service.getUserItemById(repositoryId, userId);
+			Set<String> currentGroupSet = new java.util.HashSet<>();
+			if (currentUser != null) {
+				// Collect groups this user currently belongs to
+				List<jp.aegif.nemaki.model.GroupItem> allGroups = service.getGroupItems(repositoryId);
+				for (jp.aegif.nemaki.model.GroupItem group : allGroups) {
+					List<String> members = group.getUsers();
+					if (members != null && members.contains(userId)) {
+						currentGroupSet.add(group.getGroupId());
+					}
+				}
+			}
 
-			// Convert JSONArray to Set for easier comparison
+			// Convert desired groups JSONArray to Set
 			Set<String> newGroupSet = new java.util.HashSet<>();
 			for (Object groupId : newGroupIds) {
 				newGroupSet.add(groupId.toString());
 			}
 
-			// Process each group
-			for (jp.aegif.nemaki.model.GroupItem groupListItem : allGroups) {
-				String groupId = groupListItem.getGroupId();
-				boolean shouldBeMember = newGroupSet.contains(groupId);
+			// Compute diff: groups to add and groups to remove
+			Set<String> toAdd = new java.util.HashSet<>(newGroupSet);
+			toAdd.removeAll(currentGroupSet);
 
-				// CRITICAL FIX: Fetch group individually to get proper _rev field
-				jp.aegif.nemaki.model.GroupItem group = service.getGroupItemById(repositoryId, groupId);
-				log.info("Fetched group '" + groupId + "' for user " + userId + ": " +
-					(group != null ?
-						"ID=" + group.getId() + ", Revision=" + group.getRevision() :
-						"NULL"));
+			Set<String> toRemove = new java.util.HashSet<>(currentGroupSet);
+			toRemove.removeAll(newGroupSet);
 
-				if (group == null) {
-					log.warn("Group " + groupId + " not found, skipping");
-					continue;
-				}
+			if (toAdd.isEmpty() && toRemove.isEmpty()) {
+				log.info("No group membership changes needed for user " + userId);
+				return;
+			}
 
-				if (group.getId() == null || group.getRevision() == null) {
-					log.error("Group " + groupId + " has null ID or revision - ID=" + group.getId() + ", revision=" + group.getRevision());
-					continue;
-				}
+			log.info("User " + userId + " group membership diff: adding " + toAdd.size() + ", removing " + toRemove.size());
 
-				List<String> currentMembers = group.getUsers();
-				if (currentMembers == null) {
-					currentMembers = new ArrayList<>();
-				}
-
-				boolean isCurrentlyMember = currentMembers.contains(userId);
-
-				if (shouldBeMember && !isCurrentlyMember) {
-					// Add user to group with retry logic
-					updateGroupMembershipWithRetry(repositoryId, userId, groupId, true, service);
-				} else if (!shouldBeMember && isCurrentlyMember) {
-					// Remove user from group with retry logic
-					updateGroupMembershipWithRetry(repositoryId, userId, groupId, false, service);
-				}
+			// Process only changed groups
+			for (String groupId : toAdd) {
+				updateGroupMembershipWithRetry(repositoryId, userId, groupId, true, service);
+			}
+			for (String groupId : toRemove) {
+				updateGroupMembershipWithRetry(repositoryId, userId, groupId, false, service);
 			}
 		} catch (Exception e) {
 			log.error("Failed to update groups for user " + userId + ": " + e.getMessage(), e);
