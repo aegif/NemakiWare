@@ -383,33 +383,38 @@ public class GroupController {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
             }
 
-            // Add users
+            // Add users (pre-fetch all user IDs once for validation)
             if (users != null) {
                 List<String> newUsers = parseJsonArray(users);
                 List<String> currentUsers = new ArrayList<>(group.getUsers());
+
+                java.util.Set<String> allUserIds = new java.util.HashSet<>();
+                for (UserItem u : getContentService().getUserItems(repositoryId)) {
+                    allUserIds.add(u.getUserId());
+                }
+
                 for (String userId : newUsers) {
-                    if (!currentUsers.contains(userId)) {
-                        // Validate user exists
-                        UserItem user = getContentService().getUserItemById(repositoryId, userId);
-                        if (user != null) {
-                            currentUsers.add(userId);
-                        }
+                    if (!currentUsers.contains(userId) && allUserIds.contains(userId)) {
+                        currentUsers.add(userId);
                     }
                 }
                 group.setUsers(currentUsers);
             }
             
-            // Add groups
+            // Add groups (pre-fetch all group IDs once for validation)
             if (groups != null) {
                 List<String> newGroups = parseJsonArray(groups);
                 List<String> currentGroups = new ArrayList<>(group.getGroups());
+
+                java.util.Set<String> allGroupIds = new java.util.HashSet<>();
+                for (GroupItem g : getContentService().getGroupItems(repositoryId)) {
+                    allGroupIds.add(g.getGroupId());
+                }
+
                 for (String newGroupId : newGroups) {
-                    if (!currentGroups.contains(newGroupId) && !newGroupId.equals(groupId)) {
-                        // Validate group exists
-                        GroupItem targetGroup = getContentService().getGroupItemById(repositoryId, newGroupId);
-                        if (targetGroup != null) {
-                            currentGroups.add(newGroupId);
-                        }
+                    if (!currentGroups.contains(newGroupId) && !newGroupId.equals(groupId)
+                            && allGroupIds.contains(newGroupId)) {
+                        currentGroups.add(newGroupId);
                     }
                 }
                 group.setGroups(currentGroups);

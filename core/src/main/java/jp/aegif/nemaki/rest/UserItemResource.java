@@ -421,6 +421,9 @@ private ContentService getContentServiceSafe() {
 			return makeResult(status, result, errMsg).toJSONString();
 		}
 
+		// Pre-fetch all groups once for efficient user-to-groups mapping (N+1 fix)
+		List<jp.aegif.nemaki.model.GroupItem> allGroups = getContentServiceSafe().getGroupItems(repositoryId);
+
 		JSONArray queriedUsers = new JSONArray();
 		List<UserItem> users = ObjectUtils.defaultIfNull(
 				getContentServiceSafe().getUserItems(repositoryId), Collections.emptyList());
@@ -430,7 +433,7 @@ private ContentService getContentServiceSafe() {
 			boolean matches = (StringUtils.isNotEmpty(userId) && userId.contains(query)) ||
 			                  (StringUtils.isNotEmpty(userName) && userName.contains(query));
 			if (matches) {
-				JSONObject userJSON = convertUserToJson(user, repositoryId);
+				JSONObject userJSON = convertUserToJsonWithGroups(user, allGroups);
 				if(queriedUsers.size() < 50){
 					queriedUsers.add(userJSON);
 				}else{

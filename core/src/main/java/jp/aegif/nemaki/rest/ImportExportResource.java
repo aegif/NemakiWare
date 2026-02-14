@@ -144,6 +144,7 @@ public class ImportExportResource extends ResourceBase {
     // Size limits for import (prevent OOM). For ZIPs larger than 2GB, use filesystem import.
     private static final long MAX_UPLOAD_SIZE = 2L * 1024 * 1024 * 1024; // 2GB max upload
     private static final long MAX_SINGLE_FILE_SIZE = 2L * 1024 * 1024 * 1024; // 2GB max per file in ZIP
+    private static final long MAX_METADATA_SIZE = 10L * 1024 * 1024; // 10MB max for JSON metadata files
 
     // Allowed filesystem root paths for import/export (sandbox protection)
     // Configure via system property: nemakiware.filesystem.allowed.roots
@@ -955,16 +956,9 @@ public class ImportExportResource extends ResourceBase {
 
                     // Find content stream reference
                     String contentRef = getAcpContentReference(child);
-                    byte[] content = null;
                     String mimeType = "application/octet-stream";
 
                     if (contentRef != null) {
-                        // Read file content on-demand from open ZipFile (fix: OOM + performance)
-                        String filePath = packageName + "/" + contentRef;
-                        content = readZipEntry(zf, filePath);
-                        if (content == null) {
-                            content = readZipEntry(zf, contentRef);
-                        }
                         mimeType = guessMimeType(contentRef);
                     }
 
@@ -976,10 +970,14 @@ public class ImportExportResource extends ResourceBase {
                     // Add custom properties from XML
                     addAcpProperties(child, props);
 
+                    // Stream content directly from ZIP (no full materialization into memory)
                     ContentStream contentStream = null;
-                    if (content != null) {
-                        contentStream = new ContentStreamImpl(name, BigInteger.valueOf(content.length),
-                                mimeType, new ByteArrayInputStream(content));
+                    if (contentRef != null) {
+                        String filePath = packageName + "/" + contentRef;
+                        contentStream = createContentStreamFromZip(zf, filePath, name, mimeType);
+                        if (contentStream == null) {
+                            contentStream = createContentStreamFromZip(zf, contentRef, name, mimeType);
+                        }
                     }
 
                     Folder parentFolder = cs.getFolder(repositoryId, parentFolderId);
@@ -1003,16 +1001,17 @@ public class ImportExportResource extends ResourceBase {
     }
 
     /**
-     * Read a single entry from an already-open ZipFile.
-     * This avoids reopening the ZipFile for each entry (fix: performance).
-     * Also monitors stream size when entry.getSize() returns -1 (fix: size -1 handling).
+     * Read a small entry (metadata/JSON) from an already-open ZipFile into memory.
+     * Limited to MAX_METADATA_SIZE (10MB) to prevent OOM with large content files.
+     * For document content, use createContentStreamFromZip() instead.
      */
     private byte[] readZipEntry(ZipFile zf, String entryName) {
-        return readZipEntryWithLimit(zf, entryName, MAX_SINGLE_FILE_SIZE);
+        return readZipEntryWithLimit(zf, entryName, MAX_METADATA_SIZE);
     }
 
     /**
      * Read a single entry from an already-open ZipFile with a custom size limit.
+     * Only use for metadata/JSON files. For large content files, use streaming.
      * Package-private for testing purposes.
      */
     byte[] readZipEntryWithLimit(ZipFile zf, String entryName, long maxSize) {
@@ -1045,6 +1044,34 @@ public class ImportExportResource extends ResourceBase {
             }
         } catch (IOException e) {
             log.warn("Failed to read ZIP entry: " + entryName, e);
+            return null;
+        }
+    }
+
+    /**
+     * Create a ContentStream directly from a ZIP entry without loading the entire file into memory.
+     * This streams content from the ZipFile to the CMIS API, supporting files up to MAX_SINGLE_FILE_SIZE (2GB).
+     * The caller must NOT close the ZipFile while the returned ContentStream is in use.
+     *
+     * @return ContentStream or null if entry not found/too large
+     */
+    private ContentStream createContentStreamFromZip(ZipFile zf, String entryName, String fileName, String mimeType) {
+        try {
+            ZipEntry entry = zf.getEntry(entryName);
+            if (entry == null || entry.isDirectory()) {
+                return null;
+            }
+            long entrySize = entry.getSize();
+            if (entrySize > MAX_SINGLE_FILE_SIZE) {
+                log.warn("Skipping file exceeding size limit: " + entryName + " (size: " + entrySize + ")");
+                return null;
+            }
+            InputStream is = zf.getInputStream(entry);
+            // entrySize may be -1 (unknown); ContentStreamImpl accepts null for length
+            BigInteger length = (entrySize >= 0) ? BigInteger.valueOf(entrySize) : null;
+            return new ContentStreamImpl(fileName, length, mimeType, is);
+        } catch (IOException e) {
+            log.warn("Failed to open ZIP entry stream: " + entryName, e);
             return null;
         }
     }
@@ -1298,24 +1325,26 @@ public class ImportExportResource extends ResourceBase {
                     // Check for version files
                     List<String> versionPaths = findVersionFilesFor(path, zf);
 
-                    // Determine initial content: use .v1 if versions exist, otherwise main file
-                    byte[] initialContent;
+                    String mimeType = guessMimeType(fileName);
+
+                    // Determine initial content source: use .v1 if versions exist, otherwise main file
+                    // Uses streaming to avoid loading entire file into memory (OOM prevention)
+                    String contentEntryPath;
                     if (!versionPaths.isEmpty()) {
-                        String v1Path = versionPaths.get(0); // oldest version
-                        initialContent = readZipEntry(zf, v1Path);
-                        if (initialContent == null) {
-                            // Fallback to main file if .v1 can't be read
-                            initialContent = readZipEntry(zf, path);
+                        contentEntryPath = versionPaths.get(0); // oldest version
+                        // Verify entry exists; fallback to main file
+                        if (zf.getEntry(contentEntryPath) == null) {
+                            contentEntryPath = path;
                         }
                     } else {
-                        initialContent = readZipEntry(zf, path);
+                        contentEntryPath = path;
                     }
 
-                    if (initialContent == null) {
+                    ContentStream contentStream = createContentStreamFromZip(zf, contentEntryPath, fileName, mimeType);
+                    if (contentStream == null) {
                         result.warnings.add("Could not read file content: " + path);
                         continue;
                     }
-                    String mimeType = guessMimeType(fileName);
 
                     // Determine object type from metadata (use custom type if available)
                     String objectTypeId = "cmis:document";
@@ -1344,9 +1373,6 @@ public class ImportExportResource extends ResourceBase {
                     if (metadata != null) {
                         applyCustomProperties(metadata, props, objectTypeId, repositoryId);
                     }
-
-                    ContentStream contentStream = new ContentStreamImpl(fileName,
-                            BigInteger.valueOf(initialContent.length), mimeType, new ByteArrayInputStream(initialContent));
 
                     Folder parentFolder = cs.getFolder(repositoryId, parentFolderId);
                     Document newDoc = cs.createDocument(callContext, repositoryId, props, parentFolder,
@@ -1953,6 +1979,7 @@ public class ImportExportResource extends ResourceBase {
      * Import version history using checkOut/checkIn cycles.
      * Version files (.v1, .v2, ...) represent older versions; main file is the latest.
      * Document was already created with .v1 content (or main file if no versions).
+     * Uses streaming to avoid loading large files into memory.
      */
     private void importVersionHistory(String repositoryId, String basePath,
             ZipFile zf, Document document, CallContext callContext, ImportResult result,
@@ -1978,13 +2005,15 @@ public class ImportExportResource extends ResourceBase {
             // Start from .v2 (skip .v1 which was used for initial creation)
             for (int i = 1; i < versionPaths.size(); i++) {
                 String versionPath = versionPaths.get(i);
-                byte[] versionContent = readZipEntry(zf, versionPath);
-                if (versionContent == null) {
+
+                // Stream version content directly from ZIP (no full materialization)
+                ContentStream versionStream = createContentStreamFromZip(zf, versionPath, fileName, mimeType);
+                if (versionStream == null) {
                     result.warnings.add("Could not read version file: " + versionPath);
                     continue;
                 }
 
-                // Read version metadata
+                // Read version metadata (small JSON, safe to load into memory)
                 JSONObject versionMeta = null;
                 String versionMetaPath = versionPath + META_SUFFIX;
                 byte[] metaBytes = readZipEntry(zf, versionMetaPath);
@@ -2011,11 +2040,6 @@ public class ImportExportResource extends ResourceBase {
                 Document pwc = cs.checkOut(callContext, repositoryId, document.getId(), null);
                 String pwcId = pwc.getId();
 
-                // checkIn with version content
-                ContentStream versionStream = new ContentStreamImpl(fileName,
-                        BigInteger.valueOf(versionContent.length), mimeType,
-                        new ByteArrayInputStream(versionContent));
-
                 Holder<String> objectIdHolder = new Holder<>(pwcId);
                 Document checkedIn = cs.checkIn(callContext, repositoryId, objectIdHolder, isMajor,
                         null, versionStream, checkinComment, null, null, null, null);
@@ -2025,8 +2049,8 @@ public class ImportExportResource extends ResourceBase {
             }
 
             // Finally, checkIn the main file content as the latest version
-            byte[] mainContent = readZipEntry(zf, basePath);
-            if (mainContent != null) {
+            ContentStream mainStream = createContentStreamFromZip(zf, basePath, fileName, mimeType);
+            if (mainStream != null) {
                 // Read main file metadata for version info
                 JSONObject mainMeta = metadataMap.get(basePath);
                 boolean isMajor = true;
@@ -2045,10 +2069,6 @@ public class ImportExportResource extends ResourceBase {
                 // checkOut
                 Document pwc = cs.checkOut(callContext, repositoryId, document.getId(), null);
                 String pwcId = pwc.getId();
-
-                ContentStream mainStream = new ContentStreamImpl(fileName,
-                        BigInteger.valueOf(mainContent.length), mimeType,
-                        new ByteArrayInputStream(mainContent));
 
                 Holder<String> objectIdHolder = new Holder<>(pwcId);
                 cs.checkIn(callContext, repositoryId, objectIdHolder, isMajor,

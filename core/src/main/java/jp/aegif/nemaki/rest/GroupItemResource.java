@@ -523,14 +523,23 @@ public class GroupItemResource extends ResourceBase{
 		List<String> ul = group.getUsers();
 		if(ul != null) usersList = ul;
 
+		// Pre-fetch all user IDs once for existence validation (avoid N+1 queries)
+		java.util.Set<String> allUserIds = null;
+		if(apiType.equals(API_ADD)){
+			List<jp.aegif.nemaki.model.UserItem> allUsers = getContentServiceSafe().getUserItems(repositoryId);
+			allUserIds = new java.util.HashSet<>();
+			for(jp.aegif.nemaki.model.UserItem u : allUsers){
+				allUserIds.add(u.getUserId());
+			}
+		}
+
 		for (int i = 0; i < targetUserIds.size(); i++) {
 			String userId = targetUserIds.get(i).toString();
 			boolean notSkip = true;
 
-			//check only when "add" API
+			//check only when "add" API using pre-fetched set
 			if(apiType.equals(API_ADD)){
-				UserItem existingUser = getContentService().getUserItemById(repositoryId, userId);
-				if(existingUser == null){
+				if(!allUserIds.contains(userId)){
 					notSkip = false;
 					addErrMsg(errMsg, ITEM_USER + ":" + userId, ErrorCode.ERR_NOTFOUND);
 				}
@@ -574,19 +583,19 @@ public class GroupItemResource extends ResourceBase{
 		List<String> gl = group.getGroups();
 		if(gl != null) groupsList = gl;
 
+		// Fetch all groups once and build lookup set for existence checks
 		List<GroupItem> allGroupsList = getContentService().getGroupItems(repositoryId);
-		List<String> allGroupsStringList = new ArrayList<String>();
+		java.util.Set<String> allGroupIds = new java.util.HashSet<>();
 		for(final GroupItem g : allGroupsList){
-			allGroupsStringList.add(g.getId());
+			allGroupIds.add(g.getGroupId());
 		}
 
 		for (int i = 0; i < targetGroupIds.size(); i++) {
 			String groupId = targetGroupIds.get(i).toString();
 			boolean notSkip = true;
 
-			//Existance check
-			GroupItem g = getContentService().getGroupItemById(repositoryId, groupId);
-			if(g == null && apiType.equals(API_ADD)){
+			// Existence check using pre-fetched set (no individual DB query)
+			if(apiType.equals(API_ADD) && !allGroupIds.contains(groupId)){
 				notSkip = false;
 				addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ErrorCode.ERR_NOTFOUND);
 			}
