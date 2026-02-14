@@ -1,7 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { AuthHelper } from './utils/auth-helper';
-import { TestHelper } from './utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from './utils/test-helper';
+
 
 /**
  * Bug Fix Verification E2E Tests
@@ -217,7 +217,7 @@ test.describe('Bug Fix Verification Tests', () => {
       return;
     }
 
-    const uniqueId = randomUUID().substring(0, 8);
+    const uniqueId = generateTestId();
     const parentFolderName = `test-back-parent-${uniqueId}`;
     const childFolderName = `test-back-child-${uniqueId}`;
 
@@ -330,8 +330,8 @@ test.describe('Bug Fix Verification Tests', () => {
    * This appears to be a CouchDB view sync issue in the test environment.
    * The relationship feature itself works correctly when documents are visible.
    */
-  test.skip('relationships should be visible on both source and target documents', async ({ page }) => {
-    const uniqueId = randomUUID().substring(0, 8);
+  test('relationships should be visible on both source and target documents', async ({ page }) => {
+    const uniqueId = generateTestId();
     const sourceDocName = `test-rel-source-${uniqueId}.txt`;
     const targetDocName = `test-rel-target-${uniqueId}.txt`;
 
@@ -353,7 +353,7 @@ test.describe('Bug Fix Verification Tests', () => {
       'propertyId[0]': 'cmis:objectTypeId',
       'propertyValue[0]': 'nemaki:bidirectionalRelationship',
       'propertyId[1]': 'cmis:name',
-      'propertyValue[1]': `rel-${Date.now()}`,
+      'propertyValue[1]': `rel-${generateTestId()}`,
       'propertyId[2]': 'cmis:sourceId',
       'propertyValue[2]': sourceDocId,
       'propertyId[3]': 'cmis:targetId',
@@ -382,20 +382,31 @@ test.describe('Bug Fix Verification Tests', () => {
     console.log('Table loaded, looking for target document...');
 
     // Debug: log what's visible in the table
-    const tableRows = await page.locator('.ant-table-row').count();
+    let tableRows = await page.locator('.ant-table-row').count();
     console.log(`Table rows visible: ${tableRows}`);
 
     // Step 4: Open target document viewer
     console.log(`Opening target document viewer for: ${targetDocName}`);
     // Wait for the specific target document we created via API
     const targetRow = page.locator('tr').filter({ hasText: targetDocName });
+
+    // If not visible, reload page to pick up newly created documents
+    if (await targetRow.count() === 0) {
+      console.log('Target document not visible, reloading...');
+      await page.reload();
+      await page.waitForSelector('.ant-table', { timeout: 15000 });
+      await page.waitForTimeout(2000);
+      tableRows = await page.locator('.ant-table-row').count();
+      console.log(`Table rows after reload: ${tableRows}`);
+    }
+
     await expect(targetRow).toBeVisible({ timeout: 30000 });
     await targetRow.click();
     await page.waitForTimeout(1000);
 
     // Step 5: Click on relationship tab
     console.log('Clicking on relationship tab...');
-    const relationshipTab = page.locator('.ant-tabs-tab').filter({ hasText: /関連|Relationship/i });
+    const relationshipTab = page.locator('.ant-tabs-tab').filter({ hasText: /リレーションシップ|Relationships|関連|Relationship/i });
 
     if (await relationshipTab.count() > 0) {
       await relationshipTab.click();
@@ -448,7 +459,7 @@ test.describe('Bug Fix Verification Tests', () => {
    * 4. VERIFY: The comment property value should be correctly returned
    */
   test('secondary type properties should be saved and retrieved correctly', async ({ page }) => {
-    const uniqueId = randomUUID().substring(0, 8);
+    const uniqueId = generateTestId();
     const docName = `test-secondary-${uniqueId}.txt`;
     const commentValue = `Test comment ${uniqueId}`;
 
@@ -535,7 +546,7 @@ test.describe('Bug Fix Verification Tests', () => {
    * Solution: Add waitForTimeout after operations to ensure state propagation.
    */
   test('checkout and cancel checkout should work correctly with PWC ID', async ({ page }) => {
-    const uniqueId = randomUUID().substring(0, 8);
+    const uniqueId = generateTestId();
     const docName = `test-checkout-${uniqueId}.txt`;
 
     // Step 1: Create test document via API with content
@@ -645,7 +656,7 @@ test.describe('Bug Fix Verification Tests', () => {
    * Solution: Add waitForTimeout after checkin to ensure version propagation.
    */
   test('checkin should create new version correctly', async ({ page }) => {
-    const uniqueId = randomUUID().substring(0, 8);
+    const uniqueId = generateTestId();
     const docName = `test-checkin-${uniqueId}.txt`;
 
     // Step 1: Create test document with content

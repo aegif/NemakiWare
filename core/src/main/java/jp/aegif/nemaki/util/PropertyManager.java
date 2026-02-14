@@ -213,6 +213,15 @@ public class PropertyManager{
 		return result;
 	}
 
+	/**
+	 * Returns the source file name for the given property key.
+	 * @param key the property key
+	 * @return the file name where the property was last defined, or null if unknown
+	 */
+	public String getPropertySource(String key) {
+		return propertyConfigurer.getPropertySource(key);
+	}
+
 	public void setPropertyConfigurer(SpringPropertiesUtil propertyConfigurer) {
 		this.propertyConfigurer = propertyConfigurer;
 	}

@@ -17,8 +17,12 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
+import jp.aegif.nemaki.util.spring.SpringContext;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.locks.Lock;
 
 @Path("/repo/{repositoryId}/config")
@@ -39,8 +43,15 @@ public class ConfigResource extends ResourceBase{
 		JSONArray configs = new JSONArray();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			result = makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
 		try {
-			Set<String> keys = propertyManager.getKeys();
+			Set<String> keys = getPropertyManager().getKeys();
 			for(String configKey : keys){
 				JSONObject config = createConfig(repositoryId, configKey);
 				configs.add(config);
@@ -60,10 +71,19 @@ public class ConfigResource extends ResourceBase{
 	@GET
 	@Path("/show/{key}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("key") String configKey) {
+	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("key") String configKey,
+			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			result = makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
 		JSONObject config = createConfig(repositoryId, configKey);
 		result.put("configuration", config);
 		result = makeResult(status, result, errMsg);
@@ -73,7 +93,7 @@ public class ConfigResource extends ResourceBase{
 	private JSONObject createConfig(String repositoryId, String configKey) {
 		JSONObject config = new JSONObject();
 
-		Object configValue = propertyManager.readValue(repositoryId, configKey);
+		Object configValue = getPropertyManager().readValue(repositoryId, configKey);
 		config.put("key", configKey);
 		config.put("value", configValue);
 		config.put("isDefault", false);
@@ -90,14 +110,21 @@ public class ConfigResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		Lock lock = threadLockService.getWriteLock(repositoryId, "configuration");
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			result = makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
+		Lock lock = getThreadLockService().getWriteLock(repositoryId, "configuration");
 		lock.lock();
 		try{
-			Configuration conf = contentDaoService.getConfiguration(repositoryId);
+			Configuration conf = getContentDaoService().getConfiguration(repositoryId);
 			Map<String, Object> map = conf.getConfiguration();
 			map.put(key, value);
 			conf.setConfiguration(map);
-			contentDaoService.update(repositoryId, conf);
+			getContentDaoService().update(repositoryId, conf);
 		}catch(Exception e){
 			status = false;
 			e.printStackTrace();
@@ -110,6 +137,144 @@ public class ConfigResource extends ResourceBase{
 		result.put("configuration", config);
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
+	}
+
+	private static final Set<String> SENSITIVE_KEYWORDS = new HashSet<>(Arrays.asList(
+		"password", "secret", "accesskey", "secretkey", "clientsecret", "serviceaccountkey"
+	));
+
+	@SuppressWarnings("unchecked")
+	@GET
+	@Path("/properties")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String properties(@PathParam("repositoryId") String repositoryId,
+			@Context HttpServletRequest httpRequest) {
+
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray properties = new JSONArray();
+		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			result = makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
+		try {
+			PropertyManager pm = getPropertyManager();
+			Set<String> keys = new TreeSet<>(pm.getKeys());
+			for (String key : keys) {
+				JSONObject prop = new JSONObject();
+				prop.put("key", key);
+
+				// Get resolved value
+				String value = pm.readValue(repositoryId, key);
+				// Mask sensitive values
+				if (isSensitiveKey(key)) {
+					prop.put("value", "***");
+				} else {
+					prop.put("value", value);
+				}
+
+				// Determine source
+				prop.put("source", determineSource(repositoryId, key));
+
+				// Determine category
+				prop.put("category", determineCategory(key));
+
+				properties.add(prop);
+			}
+			result.put("properties", properties);
+		} catch (Exception e) {
+			status = false;
+			e.printStackTrace();
+			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_LIST);
+		}
+
+		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
+	}
+
+	private boolean isSensitiveKey(String key) {
+		String lower = key.toLowerCase().replace(".", "").replace("_", "");
+		for (String keyword : SENSITIVE_KEYWORDS) {
+			if (lower.contains(keyword)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private String determineSource(String repositoryId, String key) {
+		// Check system property
+		if (System.getProperty(key) != null) {
+			return "system_property";
+		}
+
+		// Check environment variable
+		String envKey = key.toUpperCase().replace('.', '_');
+		if (System.getenv(envKey) != null) {
+			return "environment";
+		}
+
+		// Check CouchDB dynamic configuration (repository-specific and system-wide)
+		try {
+			ContentDaoService dao = getContentDaoService();
+			Configuration repoConf = dao.getConfiguration(repositoryId);
+			if (repoConf != null && repoConf.getConfiguration().get(key) != null) {
+				return "couchdb_dynamic";
+			}
+			Configuration sysConf = dao.getConfiguration("nemaki_conf");
+			if (sysConf != null && sysConf.getConfiguration().get(key) != null) {
+				return "couchdb_dynamic";
+			}
+		} catch (Exception e) {
+			// ignore - fall through to property file check
+		}
+
+		// Check property file source
+		String fileSource = getPropertyManager().getPropertySource(key);
+		if (fileSource != null) {
+			return fileSource;
+		}
+
+		return "default";
+	}
+
+	private String determineCategory(String key) {
+		if (key.startsWith("db.")) return "DB";
+		if (key.startsWith("rag.")) return "RAG";
+		if (key.startsWith("solr.")) return "Solr";
+		if (key.startsWith("cloud.")) return "Cloud";
+		if (key.startsWith("oidc.") || key.startsWith("saml.") || key.startsWith("sso.")) return "SSO";
+		if (key.startsWith("cmis.")) return "CMIS";
+		if (key.startsWith("longterm.") || key.startsWith("retention.")) return "Archive";
+		if (key.startsWith("capability.")) return "Capability";
+		if (key.startsWith("property.")) return "Property";
+		if (key.startsWith("basetype.")) return "BaseType";
+		if (key.startsWith("cache.")) return "Cache";
+		if (key.startsWith("server.")) return "Server";
+		return "General";
+	}
+
+	// Fallback getters: Jersey package scanning may create a new instance
+	// instead of using the Spring-configured bean, so fields may be null.
+	// Fall back to SpringContext.getApplicationContext().getBean() in that case.
+	private PropertyManager getPropertyManager() {
+		if (propertyManager != null) return propertyManager;
+		return SpringContext.getApplicationContext().getBean("propertyManager", PropertyManager.class);
+	}
+
+	private ContentDaoService getContentDaoService() {
+		if (contentDaoService != null) return contentDaoService;
+		return SpringContext.getApplicationContext().getBean("ContentDaoService", ContentDaoService.class);
+	}
+
+	private ThreadLockService getThreadLockService() {
+		if (threadLockService != null) return threadLockService;
+		return SpringContext.getApplicationContext().getBean("ThreadLockService", ThreadLockService.class);
 	}
 
 	public void setContentDaoService(ContentDaoService contentDaoService) {

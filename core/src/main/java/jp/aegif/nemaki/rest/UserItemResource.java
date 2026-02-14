@@ -34,6 +34,7 @@ import java.util.concurrent.locks.Lock;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.FormParam;
 import jakarta.ws.rs.GET;
@@ -182,9 +183,16 @@ private ContentService getContentServiceSafe() {
 	@GET
 	@Path("/debug-systemfolder")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response debugSystemFolder(@PathParam("repositoryId") String repositoryId) {
+	public Response debugSystemFolder(@PathParam("repositoryId") String repositoryId,
+			@Context HttpServletRequest httpRequest) {
 		JSONObject result = new JSONObject();
-		
+		JSONArray adminErrMsg = new JSONArray();
+		if (!checkAdmin(adminErrMsg, httpRequest)) {
+			result.put("status", "error");
+			result.put("message", "Admin access required");
+			return Response.status(Response.Status.FORBIDDEN).entity(result.toJSONString()).build();
+		}
+
 		try {
 			// Test PropertyManager
 			PropertyManager pm = getPropertyManager();
@@ -220,16 +228,25 @@ private ContentService getContentServiceSafe() {
 	@GET
 	@Path("/list")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response list(@PathParam("repositoryId") String repositoryId) {
+	public Response list(@PathParam("repositoryId") String repositoryId,
+						 @QueryParam("offset") @DefaultValue("-1") int offset,
+						 @QueryParam("limit") @DefaultValue("-1") int limit,
+						 @QueryParam("query") @DefaultValue("") String query,
+						 @Context HttpServletRequest httpRequest) {
 		log.debug("UserItemResource.list() called for repository: " + repositoryId);
-		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray listJSON = new JSONArray();
-		JSONArray errMsg = new JSONArray();
 
-		// Get ContentService from Spring context
+		// Admin check
+		JSONArray adminErrMsg = new JSONArray();
+		if (!checkAdmin(adminErrMsg, httpRequest)) {
+			result.put("status", "error");
+			result.put("message", "Admin access required");
+			return Response.status(Response.Status.FORBIDDEN).entity(result.toJSONString()).build();
+		}
+
 		ContentService contentService = getContentService();
-		
+
 		if (contentService == null) {
 			log.error("ContentService not found in Spring context");
 			JSONObject errorResult = new JSONObject();
@@ -239,32 +256,61 @@ private ContentService getContentServiceSafe() {
 					.entity(errorResult.toJSONString()).build();
 		}
 
-		// Get all users list
-		List<UserItem> userList;
 		try {
-			log.debug("About to call contentService.getUserItems()");
-			userList = contentService.getUserItems(repositoryId);
-			log.debug("contentService.getUserItems() returned " + userList.size() + " users");
-			for (UserItem user : userList) {
-				log.debug("Processing user: " + user.getUserId());
-				JSONObject userJSON = convertUserToJson(user, repositoryId);
-				listJSON.add(userJSON);
+			boolean paginated = offset >= 0 && limit > 0;
+			boolean hasQuery = query != null && !query.trim().isEmpty();
+			int totalCount;
+
+			// Performance optimization: Fetch all groups once instead of per-user (N+1 query fix)
+			List<jp.aegif.nemaki.model.GroupItem> allGroups = contentService.getGroupItems(repositoryId);
+
+			if (hasQuery) {
+				// Server-side search: fetch all, filter, then paginate
+				String queryLower = query.trim().toLowerCase();
+				List<UserItem> allUsers = contentService.getUserItems(repositoryId);
+				List<UserItem> filtered = new java.util.ArrayList<>();
+				for (UserItem user : allUsers) {
+					if (matchesQuery(user, queryLower)) {
+						filtered.add(user);
+					}
+				}
+				totalCount = filtered.size();
+
+				int start = paginated ? Math.min(offset, totalCount) : 0;
+				int end = paginated ? Math.min(start + limit, totalCount) : totalCount;
+				for (int i = start; i < end; i++) {
+					listJSON.add(convertUserToJsonWithGroups(filtered.get(i), allGroups));
+				}
+			} else if (paginated) {
+				// No query, paginated: use CouchDB skip/limit
+				totalCount = contentService.getUserItemCount(repositoryId);
+				List<UserItem> userList = contentService.getUserItems(repositoryId, offset, limit);
+				for (UserItem user : userList) {
+					listJSON.add(convertUserToJsonWithGroups(user, allGroups));
+				}
+			} else {
+				// No query, no pagination: return all (backward compatible)
+				List<UserItem> userList = contentService.getUserItems(repositoryId);
+				totalCount = userList.size();
+				for (UserItem user : userList) {
+					listJSON.add(convertUserToJsonWithGroups(user, allGroups));
+				}
 			}
+
 			result.put("users", listJSON);
 			result.put("status", "success");
-			log.info("Returning result with " + listJSON.size() + " users");
+			result.put("totalCount", totalCount);
+			if (paginated) {
+				result.put("offset", offset);
+				result.put("limit", limit);
+			}
 			return Response.ok(result.toJSONString()).build();
 		} catch (Exception e) {
 			log.error("Exception occurred: " + e.getClass().getName() + ": " + e.getMessage(), e);
-			
-			// エラー情報をJSONで返す
 			JSONObject errorResult = new JSONObject();
 			errorResult.put("status", "error");
 			errorResult.put("message", "Failed to retrieve user list");
 			errorResult.put("error", e.getMessage());
-			errorResult.put("errorType", e.getClass().getName());
-			
-			// HTTP 500 Internal Server Error を返す
 			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
 					.entity(errorResult.toJSONString())
 					.type(MediaType.APPLICATION_JSON)
@@ -276,18 +322,22 @@ private ContentService getContentServiceSafe() {
 	@GET
 	@Path("/show/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("id") String userId) {
+	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("id") String userId,
+			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Authorization: admin or self only
+		status = checkAuthorityForUser(status, errMsg, httpRequest, userId, repositoryId);
+
 		// Validation
-		if (StringUtils.isBlank(userId)) {
+		if (status && StringUtils.isBlank(userId)) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USERID, ErrorCode.ERR_MANDATORY);
 		}
 
-		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
+		UserItem user = status ? getContentServiceSafe().getUserItemById(repositoryId, userId) : null;
 
 		if (user == null) {
 			status = false;
@@ -296,6 +346,50 @@ private ContentService getContentServiceSafe() {
 			result.put("user", convertUserToJson(user, repositoryId));
 		}
 		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
+	}
+
+	/**
+	 * Get current authenticated user's information including isAdmin flag.
+	 * This endpoint allows any authenticated user to retrieve their own info.
+	 */
+	@SuppressWarnings("unchecked")
+	@GET
+	@Path("/me")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String me(@PathParam("repositoryId") String repositoryId,
+			@Context HttpServletRequest httpRequest) {
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+		if (callContext == null) {
+			result.put(ITEM_STATUS, FAILURE);
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTAUTHENTICATED);
+			result.put(ITEM_ERROR, errMsg);
+			return result.toJSONString();
+		}
+
+		String userId = callContext.getUsername();
+		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
+
+		if (user == null) {
+			result.put(ITEM_STATUS, FAILURE);
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
+			result.put(ITEM_ERROR, errMsg);
+			return result.toJSONString();
+		}
+
+		// Build user JSON with isAdmin from CallContext
+		Boolean isAdminFlag = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
+		boolean isAdmin = (isAdminFlag != null && isAdminFlag);
+
+		JSONObject userJSON = convertUserToJson(user, repositoryId);
+		// Override isAdmin with CallContext flag (authoritative source)
+		userJSON.put(ITEM_IS_ADMIN, isAdmin);
+
+		result.put("user", userJSON);
+		result = makeResult(true, result, errMsg);
 		return result.toJSONString();
 	}
 
@@ -309,16 +403,26 @@ private ContentService getContentServiceSafe() {
 	@GET
 	@Path("/search")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String search(@PathParam("repositoryId") String repositoryId, @QueryParam("query") String query) {
+	public String search(@PathParam("repositoryId") String repositoryId, @QueryParam("query") String query,
+			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			return makeResult(status, result, errMsg).toJSONString();
+		}
 
 		if (StringUtils.isBlank(query)) {
 			status = false;
 			addErrMsg(errMsg, "query", ErrorCode.ERR_MANDATORY);
 			return makeResult(status, result, errMsg).toJSONString();
 		}
+
+		// Pre-fetch all groups once for efficient user-to-groups mapping (N+1 fix)
+		List<jp.aegif.nemaki.model.GroupItem> allGroups = getContentServiceSafe().getGroupItems(repositoryId);
 
 		JSONArray queriedUsers = new JSONArray();
 		List<UserItem> users = ObjectUtils.defaultIfNull(
@@ -329,7 +433,7 @@ private ContentService getContentServiceSafe() {
 			boolean matches = (StringUtils.isNotEmpty(userId) && userId.contains(query)) ||
 			                  (StringUtils.isNotEmpty(userName) && userName.contains(query));
 			if (matches) {
-				JSONObject userJSON = convertUserToJson(user, repositoryId);
+				JSONObject userJSON = convertUserToJsonWithGroups(user, allGroups);
 				if(queriedUsers.size() < 50){
 					queriedUsers.add(userJSON);
 				}else{
@@ -363,8 +467,13 @@ private ContentService getContentServiceSafe() {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+
 		// Validation
-		status = validateNewUser(status, errMsg, userId, name, firstName, lastName, password, repositoryId);
+		if (status) {
+			status = validateNewUser(status, errMsg, userId, name, firstName, lastName, password, repositoryId);
+		}
 
 		// Create a user
 		if (status) {
@@ -386,7 +495,7 @@ private ContentService getContentServiceSafe() {
 				if (lastName != null) map.put("nemaki:lastName", lastName);
 				if (email != null) map.put("nemaki:email", email);
 				List<Property> properties = new ArrayList<>();
-				for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
+				for(Map.Entry<String, Object> entry : map.entrySet()) properties.add(new Property(entry.getKey(), entry.getValue()));
 				user.setSubTypeProperties(properties);
 
 				setFirstSignature(httpRequest, user);
@@ -405,6 +514,8 @@ private ContentService getContentServiceSafe() {
 						log.info("Finished updateUserGroups for user " + userId);
 					} catch (Exception e) {
 						log.error("Failed to parse or apply groups for user " + userId + ": " + e.getMessage(), e);
+						status = false;
+						addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATEMEMBERS);
 					}
 				} else {
 					log.info("Groups parameter is blank, skipping group assignment");
@@ -432,6 +543,9 @@ private ContentService getContentServiceSafe() {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+
 		try {
 			// Parse JSON input
 			JSONParser parser = new JSONParser();
@@ -445,7 +559,9 @@ private ContentService getContentServiceSafe() {
 
 			// Validation
 			log.info("[" + userId + "] Starting validation");
-			status = validateNewUser(status, errMsg, userId, name, firstName, lastName, password, repositoryId);
+			if (status) {
+				status = validateNewUser(status, errMsg, userId, name, firstName, lastName, password, repositoryId);
+			}
 			log.info("[" + userId + "] Validation complete: status=" + status);
 
 			// Create a user
@@ -463,6 +579,12 @@ private ContentService getContentServiceSafe() {
 					log.info("[" + userId + "] Getting users folder");
 					final Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
 					log.info("[" + userId + "] Users folder: " + (usersFolder != null ? usersFolder.getId() : "NULL"));
+					if (usersFolder == null) {
+						status = false;
+						addErrMsg(errMsg, ITEM_USERID, "system users folder not found");
+						result = makeResult(status, result, errMsg);
+						return result.toJSONString();
+					}
 
 					UserItem user = new UserItem(null, NemakiObjectType.nemakiUser, userId, name, passwordHash, false, usersFolder.getId());
 
@@ -471,7 +593,7 @@ private ContentService getContentServiceSafe() {
 					if (lastName != null) map.put("nemaki:lastName", lastName);
 					if (email != null) map.put("nemaki:email", email);
 					List<Property> properties = new ArrayList<>();
-					for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
+					for(Map.Entry<String, Object> entry : map.entrySet()) properties.add(new Property(entry.getKey(), entry.getValue()));
 					user.setSubTypeProperties(properties);
 
 					setFirstSignature(httpRequest, user);
@@ -480,13 +602,17 @@ private ContentService getContentServiceSafe() {
 					service.createUserItem(new SystemCallContext(repositoryId), repositoryId, user);
 					log.info("[" + userId + "] User creation completed successfully");
 
-					// CRITICAL FIX (2025-10-13): Process groups assignment (was missing in createJson)
-					// Extract groups array from JSON input
+					// Process groups assignment
 					JSONArray groups = (JSONArray) userJson.get("groups");
-							if (groups != null && !groups.isEmpty()) {
-									updateUserGroups(repositoryId, userId, groups, service);
-								} else {
-								}
+					if (groups != null && !groups.isEmpty()) {
+						try {
+							updateUserGroups(repositoryId, userId, groups, service);
+						} catch (Exception e) {
+							log.warn("User " + userId + " created but group assignment failed: " + e.getMessage(), e);
+							status = false;
+							addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATEMEMBERS);
+						}
+					}
 				}
 			}
 		} catch (ParseException e) {
@@ -559,9 +685,9 @@ private ContentService getContentServiceSafe() {
 						map.put("nemaki:lastName", lastName);
 					if (email != null)
 						map.put("nemaki:email", email);
-						
+
 					List<Property> properties = new ArrayList<>();
-					for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
+					for(Map.Entry<String, Object> entry : map.entrySet()) properties.add(new Property(entry.getKey(), entry.getValue()));
 					user.setSubTypeProperties(properties);
 
 					// Update password if provided
@@ -751,11 +877,28 @@ private ContentService getContentServiceSafe() {
 	}
 
 	/**
-	 * Get root folder ID for the specified repository
-	 * Centralizes repository-specific root folder ID mapping
+	 * Get root folder ID for the specified repository.
+	 * Uses RepositoryInfoMap for dynamic lookup with hardcoded fallback.
 	 */
 	private String getRootFolderIdForRepository(String repositoryId) {
-		// Known root folder IDs for supported repositories
+		// Dynamic lookup via RepositoryInfoMap (works regardless of DB re-initialization)
+		try {
+			jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repoInfoMap =
+				jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+					.getBean("repositoryInfoMap", jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+			if (repoInfoMap != null) {
+				org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = repoInfoMap.get(repositoryId);
+				if (repoInfo != null && repoInfo.getRootFolderId() != null) {
+					log.debug("Root folder ID from RepositoryInfoMap: " + repoInfo.getRootFolderId() + " for repository: " + repositoryId);
+					return repoInfo.getRootFolderId();
+				}
+			}
+		} catch (Exception e) {
+			log.warn("Failed to get root folder ID from RepositoryInfoMap for repository: " + repositoryId + ", falling back to hardcoded IDs");
+		}
+
+		// Fallback: hardcoded IDs from default CouchDB initialization
+		// These may become stale if the database is re-initialized
 		switch (repositoryId) {
 			case "bedroom":
 				return "e02f784f8360a02cc14d1314c10038ff";
@@ -778,12 +921,63 @@ private ContentService getContentServiceSafe() {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// SECURITY FIX: Check that the caller is the user themselves or an admin
+		status = checkAuthorityForUser(status, errMsg, httpRequest, userId, repositoryId);
+		if (!status) {
+			makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
 		UserItem userItem = getContentServiceSafe().getUserItemById(repositoryId, userId);
+		if (userItem == null) {
+			status = false;
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
+			makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
 
-		//TODO checkAuthorityForUser
+		// Check allowedAuthMethods: reject if password auth is not allowed for this user
+		Map<String, Object> authKvMap = new HashMap<>();
+		for (Property p : userItem.getSubTypeProperties()) authKvMap.put(p.getKey(), p.getValue());
+		String allowedAuthMethods = (String) authKvMap.get("nemaki:allowedAuthMethods");
+		if (!isPasswordAuthAllowed(allowedAuthMethods)) {
+			status = false;
+			addErrMsg(errMsg, ITEM_USER, "Password authentication is not allowed for this user");
+			makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
 
-		//password match
-		if(AuthenticationUtil.passwordMatches(oldPassword, userItem.getPassowrd())){
+		// Password minimum length validation (8 characters)
+		if (newPassword == null || newPassword.length() < 8) {
+			status = false;
+			addErrMsg(errMsg, ITEM_USER, "Password must be at least 8 characters");
+			makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
+		// Determine if caller is admin changing another user's password
+		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+		Boolean isAdminFlag = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
+		boolean isCallerAdmin = isAdminFlag != null && isAdminFlag;
+		boolean isSelfChange = userId.equals(callContext.getUsername());
+
+		if (isSelfChange || !isCallerAdmin) {
+			// Self-service change or non-admin: require old password verification
+			if(AuthenticationUtil.passwordMatches(oldPassword, userItem.getPassowrd())){
+				String hash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
+				userItem.setPassowrd(hash);
+				try{
+					getContentService().update(new SystemCallContext(repositoryId), repositoryId, userItem);
+				}catch(Exception e){
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
+				}
+			}else{
+				// wrong previous password!
+				status = false;
+				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_WRONGPASSWORD);
+			}
+		} else {
+			// Admin resetting another user's password: skip old password verification
 			String hash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
 			userItem.setPassowrd(hash);
 			try{
@@ -791,14 +985,29 @@ private ContentService getContentServiceSafe() {
 			}catch(Exception e){
 				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
 			}
-		}else{
-			// wrong previous password!
-			status = false;
-			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_WRONGPASSWORD);
 		}
 
 		makeResult(status, result, errMsg);
 		return result.toJSONString();
+	}
+
+	/**
+	 * Check if password authentication is allowed for a user based on allowedAuthMethods.
+	 * null/empty = all methods allowed (backward compatibility), "disabled" = none allowed.
+	 */
+	private boolean isPasswordAuthAllowed(String allowedAuthMethods) {
+		if (allowedAuthMethods == null || allowedAuthMethods.isEmpty() || "null".equals(allowedAuthMethods)) {
+			return true;
+		}
+		if ("disabled".equals(allowedAuthMethods)) {
+			return false;
+		}
+		for (String method : allowedAuthMethods.split(",")) {
+			if ("password".equals(method.trim())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@PUT
@@ -810,6 +1019,8 @@ private ContentService getContentServiceSafe() {
 			@FormParam(FORM_LASTNAME) String lastName, @FormParam(FORM_EMAIL) String email,
 			@FormParam("addFavorites") String addFavorites, @FormParam("removeFavorites") String removeFavorites,
 			@FormParam(FORM_PASSWORD) String password, @FormParam("groups") String groupsJson,
+			@FormParam("allowedAuthMethods") String allowedAuthMethods,
+			@FormParam("isAdmin") String isAdminStr,
 			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
@@ -830,6 +1041,33 @@ private ContentService getContentServiceSafe() {
 		if (status) {
 			ContentService service = getContentService();
 
+			// Handle isAdmin flag change (admin-only operation)
+			if (isAdminStr != null) {
+				CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+				Boolean callerIsAdminFlag = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
+				boolean callerIsAdmin = callerIsAdminFlag != null && callerIsAdminFlag;
+
+				if (!callerIsAdmin) {
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN);
+					makeResult(status, result, errMsg);
+					return result.toJSONString();
+				}
+
+				boolean newIsAdmin = "true".equalsIgnoreCase(isAdminStr);
+				boolean currentIsAdmin = user.isAdmin() != null && user.isAdmin();
+
+				// Prevent removing own admin privilege
+				if (!newIsAdmin && currentIsAdmin && userId.equals(callContext.getUsername())) {
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, "Cannot revoke your own admin privilege");
+					makeResult(status, result, errMsg);
+					return result.toJSONString();
+				}
+
+				user.setAdmin(newIsAdmin);
+			}
+
 			// edit
 			if (userId != null)
 				user.setUserId(userId);
@@ -845,6 +1083,14 @@ private ContentService getContentServiceSafe() {
 				map.put("nemaki:lastName", lastName);
 			if (email != null)
 				map.put("nemaki:email", email);
+			// Handle allowedAuthMethods (empty string clears it)
+			if (allowedAuthMethods != null) {
+				if (allowedAuthMethods.isEmpty()) {
+					map.remove("nemaki:allowedAuthMethods");
+				} else {
+					map.put("nemaki:allowedAuthMethods", allowedAuthMethods);
+				}
+			}
 			if (addFavorites != null) {
 				try {
 					JSONArray adds = (JSONArray) (parser.parse(addFavorites));
@@ -853,7 +1099,9 @@ private ContentService getContentServiceSafe() {
 					((List)favs).addAll(adds);
 					map.put("nemaki:favorites", favs);
 				} catch (ParseException e) {
-					e.printStackTrace();
+					log.warn("Failed to parse addFavorites for user " + userId + ": " + e.getMessage());
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, "Invalid addFavorites JSON format");
 				}
 			}
 			if (removeFavorites != null) {
@@ -864,56 +1112,43 @@ private ContentService getContentServiceSafe() {
 					((List)favs).removeAll(removes);
 					map.put("nemaki:favorites", favs);
 				} catch (ParseException e) {
-					e.printStackTrace();
+					log.warn("Failed to parse removeFavorites for user " + userId + ": " + e.getMessage());
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, "Invalid removeFavorites JSON format");
 				}
 			}
 			List<Property> properties = new ArrayList<>();
-			for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
+			for(Map.Entry<String, Object> entry : map.entrySet()) properties.add(new Property(entry.getKey(), entry.getValue()));
 			user.setSubTypeProperties(properties);
 
-
-			// update
+			// Set password if provided (on the same user object to preserve subTypeProperties)
 			if (StringUtils.isNotBlank(password)) {
-				user = getContentServiceSafe().getUserItemById(repositoryId, userId);
-				if (user == null) {
+				String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
+				user.setPassowrd(passwordHash);
+			}
+
+			// Persist changes only if all validation passed
+			if (status) {
+				setModifiedSignature(httpRequest, user);
+
+				try {
+					service.update(new SystemCallContext(repositoryId), repositoryId, user);
+				} catch (Exception e) {
+					log.error("Failed to update user " + userId + ": " + e.getMessage(), e);
 					status = false;
-					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
-					return makeResult(status, result, errMsg).toJSONString();
-				}
-
-				// Edit & Update
-				if (status) {
-					// Edit the user info
-					String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-					user.setPassowrd(passwordHash);
-					setModifiedSignature(httpRequest, user);
-
-					try {
-						service.update(new SystemCallContext(repositoryId), repositoryId, user);
-					} catch (Exception e) {
-						e.printStackTrace();
-						status = false;
-						addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
-					}
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
 				}
 			}
-			setModifiedSignature(httpRequest, user);
 
-			try {
-				service.update(new SystemCallContext(repositoryId), repositoryId, user);
-			} catch (Exception e) {
-				e.printStackTrace();
-				status = false;
-				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
-			}
-
-			// Process groups assignment
-			if (groupsJson != null) {
+			// Process groups assignment only if main update succeeded
+			if (status && groupsJson != null) {
 				try {
 					JSONArray groups = (JSONArray) parser.parse(groupsJson);
 					updateUserGroups(repositoryId, userId, groups, service);
 				} catch (Exception e) {
 					log.warn("Failed to parse or apply groups for user " + userId + ": " + e.getMessage());
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATEMEMBERS);
 				}
 			}
 		}
@@ -931,15 +1166,18 @@ private ContentService getContentServiceSafe() {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		// Existing user
-		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
-		if (user == null) {
-			status = false;
-			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
-		}
+		// Admin check - only admins can delete users
+		status = checkAdmin(errMsg, httpRequest);
 
-		// Validation
-		status = checkAuthorityForUser(status, errMsg, httpRequest, userId, repositoryId);
+		// Existing user
+		UserItem user = null;
+		if (status) {
+			user = getContentServiceSafe().getUserItemById(repositoryId, userId);
+			if (user == null) {
+				status = false;
+				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
+			}
+		}
 
 		// Delete a user
 		if (status) {
@@ -1005,6 +1243,16 @@ private ContentService getContentServiceSafe() {
 		return status;
 	}
 
+
+	/**
+	 * Checks if a user matches the given search query (case-insensitive).
+	 */
+	private boolean matchesQuery(UserItem user, String queryLower) {
+		if (user.getUserId() != null && user.getUserId().toLowerCase().contains(queryLower)) return true;
+		if (user.getName() != null && user.getName().toLowerCase().contains(queryLower)) return true;
+		return false;
+	}
+
 	@SuppressWarnings("unchecked")
 	private JSONObject convertUserToJson(UserItem user, String repositoryId) {
 		String created = new String();
@@ -1040,6 +1288,7 @@ private ContentService getContentServiceSafe() {
 		userJSON.put(ITEM_LASTNAME, MapUtils.getObject(kvMap, "nemaki:lastName", ""));
 		userJSON.put(ITEM_EMAIL, MapUtils.getObject(kvMap, "nemaki:email", ""));
 		userJSON.put("favorites", MapUtils.getObject(kvMap, "nemaki:favorites", new JSONArray()));
+		userJSON.put("allowedAuthMethods", kvMap.get("nemaki:allowedAuthMethods"));
 
 		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
 		userJSON.put(ITEM_IS_ADMIN, isAdmin);
@@ -1064,31 +1313,106 @@ private ContentService getContentServiceSafe() {
 		return userJSON;
 	}
 
+	/**
+	 * Optimized version of convertUserToJson that accepts pre-fetched groups list.
+	 * This avoids N+1 query problem when listing multiple users.
+	 */
+	@SuppressWarnings("unchecked")
+	private JSONObject convertUserToJsonWithGroups(UserItem user, List<jp.aegif.nemaki.model.GroupItem> allGroups) {
+		String created = new String();
+		try {
+			if (user.getCreated() != null) {
+				created = DateUtil.formatSystemDateTime(user.getCreated());
+			}
+		} catch (Exception ex) {
+			log.warn("Failed to format created date for user " + user.getUserId());
+		}
+		String modified = new String();
+		try {
+			if (user.getModified() != null) {
+				modified = DateUtil.formatSystemDateTime(user.getModified());
+			}
+		} catch (Exception ex) {
+			log.warn("Failed to format modified date for user " + user.getUserId());
+		}
+		JSONObject userJSON = new JSONObject();
+		userJSON.put(ITEM_USERID, user.getUserId());
+		userJSON.put(ITEM_USERNAME, user.getName());
+		userJSON.put(ITEM_TYPE, user.getType());
+		userJSON.put(ITEM_CREATOR, user.getCreator());
+		userJSON.put(ITEM_CREATED, created);
+		userJSON.put(ITEM_MODIFIER, user.getModifier());
+		userJSON.put(ITEM_MODIFIED, modified);
+
+		Map<String, Object> kvMap = new HashMap<>();
+		for(Property p : user.getSubTypeProperties()) kvMap.put(p.getKey(), p.getValue());
+
+		userJSON.put(ITEM_FIRSTNAME, MapUtils.getObject(kvMap, "nemaki:firstName", ""));
+		userJSON.put(ITEM_LASTNAME, MapUtils.getObject(kvMap, "nemaki:lastName", ""));
+		userJSON.put(ITEM_EMAIL, MapUtils.getObject(kvMap, "nemaki:email", ""));
+		userJSON.put("favorites", MapUtils.getObject(kvMap, "nemaki:favorites", new JSONArray()));
+		userJSON.put("allowedAuthMethods", kvMap.get("nemaki:allowedAuthMethods"));
+
+		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
+		userJSON.put(ITEM_IS_ADMIN, isAdmin);
+
+		// Add user's groups using pre-fetched list (no additional DB query)
+		JSONArray userGroups = new JSONArray();
+		if (allGroups != null) {
+			for (jp.aegif.nemaki.model.GroupItem group : allGroups) {
+				List<String> members = group.getUsers();
+				if (members != null && members.contains(user.getUserId())) {
+					userGroups.add(group.getGroupId());
+				}
+			}
+		}
+		userJSON.put("groups", userGroups);
+
+		return userJSON;
+	}
+
 	private boolean checkAuthorityForUser(boolean status, JSONArray errMsg, HttpServletRequest httpRequest,
 			String resoureId, String repositoryId) {
 		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
 
 		String userId = callContext.getUsername();
 		String password = callContext.getPassword();
-		if (!userId.equals(resoureId) && !isAdminOperaiton(repositoryId, userId, password) && !isSystemUser(repositoryId, resoureId)) {
+
+		// Check if user is admin via CallContext flag (set by AuthenticationFilter for both Basic and Bearer auth)
+		Boolean isAdminFlag = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
+		boolean isAdmin = (isAdminFlag != null && isAdminFlag);
+
+		// System users (admin, solr) can only be modified by admins
+		if (isSystemUser(repositoryId, resoureId) && !isAdmin) {
 			status = false;
-			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTAUTHENTICATED);
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN);
+			return status;
+		}
+
+		// Non-admin users can only modify themselves
+		if (!userId.equals(resoureId) && !isAdmin && !isAdminOperaiton(repositoryId, userId, password)) {
+			status = false;
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN);
 		}
 		return status;
 	}
 
 	private boolean isSystemUser(String repositoryId, String userId){
-		boolean result = false;
 		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
+		if (user == null) {
+			return false;
+		}
 
-		result = user.isAdmin();
-		if(result) return true;
+		if (user.isAdmin() != null && user.isAdmin()) {
+			return true;
+		}
 
 		String solrUserId = getPropertyManager().readValue(PropertyKey.SOLR_NEMAKI_USERID);
-		result = user.getUserId().equals(solrUserId);
-		if(result) return true;
+		if (solrUserId != null && solrUserId.equals(user.getUserId())) {
+			return true;
+		}
 
-		return result;
+		return false;
 	}
 
 	private boolean isAdminOperaiton(String repositoryId, String userId, String password) {
@@ -1097,12 +1421,18 @@ private ContentService getContentServiceSafe() {
 		}
 
 		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
-		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
+		if (user == null) {
+			return false;
+		}
+		boolean isAdmin = user.isAdmin() != null && user.isAdmin();
 		if (isAdmin) {
 			// password check
-			boolean match = BCrypt.checkpw(password, user.getPassowrd());
-			if (match)
-				return true;
+			String storedPassword = user.getPassowrd();
+			if (storedPassword != null) {
+				boolean match = BCrypt.checkpw(password, storedPassword);
+				if (match)
+					return true;
+			}
 		}
 		return false;
 	}
@@ -1121,10 +1451,11 @@ private ContentService getContentServiceSafe() {
 
 	/**
 	 * Update user's group memberships
-	 * Adds user to specified groups and removes from groups not in the list
+	 * Only processes the diff: adds user to new groups and removes from dropped groups.
 	 *
-	 * CRITICAL FIX: Fetches each group individually to get proper _rev field for CouchDB updates
-	 * RETRY LOGIC: Handles CouchDB optimistic locking conflicts with automatic retry
+	 * PERFORMANCE FIX: Instead of iterating all groups in the system (which can be 100+),
+	 * computes the diff between current memberships and desired memberships,
+	 * then only touches groups that actually need changing.
 	 */
 	@SuppressWarnings("unchecked")
 	private void updateUserGroups(String repositoryId, String userId, JSONArray newGroupIds, ContentService service) {
@@ -1134,54 +1465,50 @@ private ContentService getContentServiceSafe() {
 		}
 
 		try {
-			// Get all groups (for group IDs only)
-			List<jp.aegif.nemaki.model.GroupItem> allGroups = service.getGroupItems(repositoryId);
+			// Get current user to find existing group memberships
+			UserItem currentUser = service.getUserItemById(repositoryId, userId);
+			Set<String> currentGroupSet = new java.util.HashSet<>();
+			if (currentUser != null) {
+				// Collect groups this user currently belongs to
+				List<jp.aegif.nemaki.model.GroupItem> allGroups = service.getGroupItems(repositoryId);
+				for (jp.aegif.nemaki.model.GroupItem group : allGroups) {
+					List<String> members = group.getUsers();
+					if (members != null && members.contains(userId)) {
+						currentGroupSet.add(group.getGroupId());
+					}
+				}
+			}
 
-			// Convert JSONArray to Set for easier comparison
+			// Convert desired groups JSONArray to Set
 			Set<String> newGroupSet = new java.util.HashSet<>();
 			for (Object groupId : newGroupIds) {
 				newGroupSet.add(groupId.toString());
 			}
 
-			// Process each group
-			for (jp.aegif.nemaki.model.GroupItem groupListItem : allGroups) {
-				String groupId = groupListItem.getGroupId();
-				boolean shouldBeMember = newGroupSet.contains(groupId);
+			// Compute diff: groups to add and groups to remove
+			Set<String> toAdd = new java.util.HashSet<>(newGroupSet);
+			toAdd.removeAll(currentGroupSet);
 
-				// CRITICAL FIX: Fetch group individually to get proper _rev field
-				jp.aegif.nemaki.model.GroupItem group = service.getGroupItemById(repositoryId, groupId);
-				log.info("Fetched group '" + groupId + "' for user " + userId + ": " +
-					(group != null ?
-						"ID=" + group.getId() + ", Revision=" + group.getRevision() :
-						"NULL"));
+			Set<String> toRemove = new java.util.HashSet<>(currentGroupSet);
+			toRemove.removeAll(newGroupSet);
 
-				if (group == null) {
-					log.warn("Group " + groupId + " not found, skipping");
-					continue;
-				}
+			if (toAdd.isEmpty() && toRemove.isEmpty()) {
+				log.info("No group membership changes needed for user " + userId);
+				return;
+			}
 
-				if (group.getId() == null || group.getRevision() == null) {
-					log.error("Group " + groupId + " has null ID or revision - ID=" + group.getId() + ", revision=" + group.getRevision());
-					continue;
-				}
+			log.info("User " + userId + " group membership diff: adding " + toAdd.size() + ", removing " + toRemove.size());
 
-				List<String> currentMembers = group.getUsers();
-				if (currentMembers == null) {
-					currentMembers = new ArrayList<>();
-				}
-
-				boolean isCurrentlyMember = currentMembers.contains(userId);
-
-				if (shouldBeMember && !isCurrentlyMember) {
-					// Add user to group with retry logic
-					updateGroupMembershipWithRetry(repositoryId, userId, groupId, true, service);
-				} else if (!shouldBeMember && isCurrentlyMember) {
-					// Remove user from group with retry logic
-					updateGroupMembershipWithRetry(repositoryId, userId, groupId, false, service);
-				}
+			// Process only changed groups
+			for (String groupId : toAdd) {
+				updateGroupMembershipWithRetry(repositoryId, userId, groupId, true, service);
+			}
+			for (String groupId : toRemove) {
+				updateGroupMembershipWithRetry(repositoryId, userId, groupId, false, service);
 			}
 		} catch (Exception e) {
 			log.error("Failed to update groups for user " + userId + ": " + e.getMessage(), e);
+			throw e;
 		}
 	}
 
@@ -1288,6 +1615,7 @@ private ContentService getContentServiceSafe() {
 			String action = addMember ? "add" : "remove";
 			log.error("Failed to " + action + " user " + userId + " " + (addMember ? "to" : "from") +
 					  " group " + groupId + " after all retries: " + e.getMessage(), e);
+			throw e;
 		} finally {
 			lock.unlock();
 		}

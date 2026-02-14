@@ -21,7 +21,10 @@
 package jp.aegif.nemaki.businesslogic;
 
 import java.math.BigInteger;
+import java.util.Collection;
+import java.util.GregorianCalendar;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import jp.aegif.nemaki.model.Acl;
@@ -215,6 +218,16 @@ public interface ContentService {
 			String objectId, RelationshipDirection relationshipDirection);
 
 	/**
+	 * Get object IDs of children linked via nemaki:parentChildRelationship (or its subtypes).
+	 * Used for server-side cascade delete so child deletion goes through permission/lock/cache.
+	 *
+	 * @param repositoryId repository identifier
+	 * @param parentObjectId object ID that is the source (parent) of parentChild relationships
+	 * @return list of target (child) object IDs, never null
+	 */
+	List<String> getParentChildChildIds(String repositoryId, String parentObjectId);
+
+	/**
 	 * Get a policy
 	 * @param repositoryId TODO
 	 * @param objectId
@@ -234,7 +247,9 @@ public interface ContentService {
 	UserItem getUserItem(String repositoryId, String objectId);
 	UserItem getUserItemById(String repositoryId, String userId);
 	List<UserItem> getUserItems(String repositoryId);
-	
+	List<UserItem> getUserItems(String repositoryId, int skip, int limit);
+	int getUserItemCount(String repositoryId);
+
 	GroupItem getGroupItem(String repositoryId, String objectId);
 	GroupItem getGroupItemById(String repositoryId, String groupId);
 
@@ -249,7 +264,9 @@ public interface ContentService {
 	GroupItem getGroupItemByIdFresh(String repositoryId, String groupId);
 
 	List<GroupItem> getGroupItems(String repositoryId);
-	
+	List<GroupItem> getGroupItems(String repositoryId, int skip, int limit);
+	int getGroupItemCount(String repositoryId);
+
 	Set<String> getGroupIdsContainingUser(String repositoryId, String userId);
 	String getAnonymous(String repositoryId);
 	String getAnyone(String repositoryId);
@@ -612,6 +629,25 @@ public interface ContentService {
 	// ///////////////////////////////////////
 	public Acl calculateAcl(String repositoryId, Content content);
 
+	/**
+	 * Get multiple contents by their IDs in a single batch operation.
+	 * 
+	 * @param repositoryId the repository identifier
+	 * @param objectIds list of object IDs to retrieve
+	 * @return map of objectId to Content (missing/inaccessible objects are omitted)
+	 */
+	public Map<String, Content> getContentsByIds(String repositoryId, List<String> objectIds);
+
+	/**
+	 * Calculate ACLs for multiple contents in a batch operation.
+	 * Uses cache where available, calculates and caches missing entries.
+	 * 
+	 * @param repositoryId the repository identifier
+	 * @param contents collection of Content objects
+	 * @return map of objectId to calculated Acl
+	 */
+	public Map<String, Acl> calculateAcls(String repositoryId, Collection<Content> contents);
+
 	public Boolean getAclInheritedWithDefault(String repositoryId, Content content);
 	
 	// ///////////////////////////////////////
@@ -673,8 +709,25 @@ public interface ContentService {
 	 * @return
 	 */
 	List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc);
-	
-	
+
+	/**
+	 * Get archives created (deleted) by a specific user.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param creator the username of the user who deleted the documents
+	 * @return list of archives created by the specified user
+	 */
+	List<Archive> getArchivesByCreator(String repositoryId, String creator);
+
+	/**
+	 * Get archives where the specified user performed the deletion.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archivedBy the username of the user who deleted the documents
+	 * @return list of archives deleted by the specified user
+	 */
+	List<Archive> getArchivesByArchivedBy(String repositoryId, String archivedBy);
+
 	/**
 	 * Get an archive
 	 * @param repositoryId TODO
@@ -763,4 +816,107 @@ public interface ContentService {
 	 * @return Actual size in bytes from CouchDB attachment metadata, or null if not available
 	 */
 	Long getAttachmentActualSize(String repositoryId, String attachmentId);
+
+	// Retention lifecycle methods
+
+	/**
+	 * Get archives filtered by archive state.
+	 */
+	List<Archive> getArchivesByState(String repositoryId, String state);
+
+	/**
+	 * Get searchable archives (pre-filtered: non-attachment, latest-version only).
+	 * Optionally filtered by archive state.
+	 */
+	List<Archive> getSearchableArchives(String repositoryId, String state);
+
+	/**
+	 * Get searchable archives with DB-level chronological pagination.
+	 */
+	List<Archive> getSearchableArchivesPaged(String repositoryId, int skip, int limit, boolean descending);
+
+	/**
+	 * Get total count of searchable archives.
+	 */
+	long getSearchableArchivesCount(String repositoryId);
+
+	/**
+	 * Get searchable archives filtered by state with DB-level pagination.
+	 * When state is null, returns all searchable archives.
+	 */
+	List<Archive> getSearchableArchivesByStatePaged(String repositoryId, String state, int skip, int limit, boolean descending);
+
+	/**
+	 * Get count of searchable archives filtered by state.
+	 * When state is null, returns total count.
+	 */
+	long getSearchableArchivesByStateCount(String repositoryId, String state);
+
+	/**
+	 * Get archives eligible for cold transition (archivedAt before given date).
+	 */
+	List<Archive> getArchivesForColdTransition(String repositoryId, GregorianCalendar beforeDate);
+
+	/**
+	 * Update archive state and related retention fields.
+	 */
+	void updateArchiveState(String repositoryId, String archiveId,
+			String newState, java.util.Map<String, String> contentRef, GregorianCalendar coldArchivedAt);
+
+	/**
+	 * Get the binary content stream for an archived document.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archiveId the archive ID
+	 * @return InputStream of the binary content, or null if not available
+	 */
+	java.io.InputStream getArchiveContentStream(String repositoryId, String archiveId);
+
+	/**
+	 * Delete the binary content from an archived document in the archive store.
+	 * Used in move mode (retention.cold.keep.local.copy=false) to remove the
+	 * local copy after successful cold storage write.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archiveId the archive ID
+	 * @return true if the content was deleted, false otherwise
+	 */
+	boolean deleteArchiveContent(String repositoryId, String archiveId);
+
+	/**
+	 * Get IDs of documents whose cmis:rm_expirationDate has passed.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param beforeDate expiration date cutoff
+	 * @return list of expired document IDs
+	 */
+	List<String> getExpiredDocumentIds(String repositoryId, java.util.GregorianCalendar beforeDate);
+
+	/**
+	 * Get Content objects for documents whose cmis:rm_expirationDate has passed
+	 * and are still in the live database (not yet archived).
+	 *
+	 * @param repositoryId the repository ID
+	 * @param beforeDate expiration date cutoff
+	 * @return list of expired Content objects
+	 */
+	List<Content> getExpiredDocuments(String repositoryId, java.util.GregorianCalendar beforeDate);
+
+	/**
+	 * Update the cmis:rm_expirationDate of a document.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param objectId the document ID
+	 * @param newDate the new expiration date
+	 */
+	void updateExpirationDate(String repositoryId, String objectId, java.util.GregorianCalendar newDate);
+
+	/**
+	 * Update the coldMoveMode field on an archive.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archiveId the archive ID
+	 * @param coldMoveMode "COPY" or "MOVE"
+	 */
+	void updateArchiveColdMoveMode(String repositoryId, String archiveId, String coldMoveMode);
 }

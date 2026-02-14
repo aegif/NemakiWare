@@ -115,6 +115,53 @@ public interface SolrIndexMaintenanceService {
     }
 
     /**
+     * A single document entry in the discrepancy result
+     */
+    public static class DiscrepancyDocumentInfo {
+        private String objectId;
+        private String name;
+        private String objectType;
+
+        public DiscrepancyDocumentInfo() {}
+        public DiscrepancyDocumentInfo(String objectId, String name, String objectType) {
+            this.objectId = objectId;
+            this.name = name;
+            this.objectType = objectType;
+        }
+
+        public String getObjectId() { return objectId; }
+        public void setObjectId(String objectId) { this.objectId = objectId; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getObjectType() { return objectType; }
+        public void setObjectType(String objectType) { this.objectType = objectType; }
+    }
+
+    /**
+     * Result of index discrepancy analysis
+     */
+    public static class IndexDiscrepancyResult {
+        private String repositoryId;
+        private List<DiscrepancyDocumentInfo> missingInSolr;
+        private List<DiscrepancyDocumentInfo> orphanedInSolr;
+        private long checkTime;
+
+        public IndexDiscrepancyResult() {
+            this.missingInSolr = new java.util.ArrayList<>();
+            this.orphanedInSolr = new java.util.ArrayList<>();
+        }
+
+        public String getRepositoryId() { return repositoryId; }
+        public void setRepositoryId(String repositoryId) { this.repositoryId = repositoryId; }
+        public List<DiscrepancyDocumentInfo> getMissingInSolr() { return missingInSolr; }
+        public void setMissingInSolr(List<DiscrepancyDocumentInfo> missingInSolr) { this.missingInSolr = missingInSolr; }
+        public List<DiscrepancyDocumentInfo> getOrphanedInSolr() { return orphanedInSolr; }
+        public void setOrphanedInSolr(List<DiscrepancyDocumentInfo> orphanedInSolr) { this.orphanedInSolr = orphanedInSolr; }
+        public long getCheckTime() { return checkTime; }
+        public void setCheckTime(long checkTime) { this.checkTime = checkTime; }
+    }
+
+    /**
      * Result of a Solr query execution
      */
     public static class SolrQueryResult {
@@ -185,6 +232,15 @@ public interface SolrIndexMaintenanceService {
      * @return the health check result
      */
     IndexHealthStatus checkIndexHealth(String repositoryId);
+
+    /**
+     * Get detailed discrepancy information between Solr and CouchDB.
+     * Returns lists of specific documents that are missing from Solr or orphaned in Solr.
+     *
+     * @param repositoryId the repository ID
+     * @return the discrepancy details
+     */
+    IndexDiscrepancyResult getIndexDiscrepancies(String repositoryId);
 
     /**
      * Execute a raw Solr query.

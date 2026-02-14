@@ -29,6 +29,7 @@ import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.cmis.factory.auth.ApiKeyService;
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
@@ -52,6 +53,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private ContentDaoService contentDaoService;
 	private PrincipalService principalService;
 	private TokenService tokenService;
+	private ApiKeyService apiKeyService;
 	private PropertyManager propertyManager;
 	private RepositoryInfoMap repositoryInfoMap;
 
@@ -69,6 +71,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		// SSO
 		if (loginWithExternalAuth(callContext)) {
+			return true;
+		}
+
+		// API Key authentication (for MCP clients and cloud-only users)
+		if (loginWithApiKey(callContext)) {
 			return true;
 		}
 
@@ -102,6 +109,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 					return false;
 				}
 			} else {
+				// Check if cloud/external authentication is allowed for this user
+				if (!isAuthMethodAllowed(userItem, "cloud")) {
+					log.info("External/cloud authentication denied for user " + proxyUserId + " (not in allowedAuthMethods)");
+					return false;
+				}
 				boolean isAdmin = userItem.isAdmin() == null ? false : true;
 				setAdminFlagInContext(callContext, isAdmin);
 			}
@@ -123,6 +135,21 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		}
 		Object _app = callContext.get(CallContextKey.AUTH_TOKEN_APP);
 		String app = (_app == null) ? "" : (String) _app;
+
+		// If username is not set (e.g., token-only authentication from SSO/cloud auth),
+		// resolve the username from the token via reverse lookup
+		if (StringUtils.isBlank(userName)) {
+			String resolvedUser = tokenService.validateToken(app, callContext.getRepositoryId(), token);
+			if (resolvedUser != null) {
+				userName = resolvedUser;
+				// Set the username in the call context so downstream code can use it
+				((CallContextImpl) callContext).put(CallContext.USERNAME, userName);
+				log.info("Token-only auth: resolved username '" + userName + "' from token for repository: " + callContext.getRepositoryId());
+			} else {
+				log.warn("Token-only auth: could not resolve username from token for repository: " + callContext.getRepositoryId());
+				return false;
+			}
+		}
 
 		if (authenticateUserByToken(app, callContext.getRepositoryId(), userName, token)) {
 			if (authenticateAdminByToken(callContext.getRepositoryId(), userName)) {
@@ -149,6 +176,49 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		boolean isAdmin = user.isAdmin() == null ? false : true;
 		setAdminFlagInContext(callContext, isAdmin);
+		return true;
+	}
+
+	/**
+	 * Authenticate using an API key.
+	 * API keys bypass allowedAuthMethods restrictions, allowing cloud-only users
+	 * to authenticate via MCP clients and other programmatic access.
+	 */
+	private boolean loginWithApiKey(CallContext callContext) {
+		if (apiKeyService == null) {
+			return false;
+		}
+
+		String repositoryId = callContext.getRepositoryId();
+		Object apiKeyObj = callContext.get(CallContextKey.API_KEY);
+
+		if (apiKeyObj == null) {
+			return false;
+		}
+
+		String apiKey = (String) apiKeyObj;
+		if (StringUtils.isBlank(apiKey)) {
+			return false;
+		}
+
+		// Validate the API key
+		String userId = apiKeyService.validateApiKey(repositoryId, apiKey);
+		if (userId == null) {
+			log.debug("API key authentication failed for repository: " + repositoryId);
+			return false;
+		}
+
+		// Set the username in the call context
+		((CallContextImpl) callContext).put(CallContext.USERNAME, userId);
+
+		// Get user info and set admin flag
+		UserItem user = contentService.getUserItemById(repositoryId, userId);
+		if (user != null) {
+			boolean isAdmin = user.isAdmin() != null && user.isAdmin();
+			setAdminFlagInContext(callContext, isAdmin);
+		}
+
+		log.info("API key authentication successful for user: " + userId + " in repository: " + repositoryId);
 		return true;
 	}
 
@@ -210,12 +280,77 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		return tokenService.isAdmin(repositoryId, userName);
 	}
 
+	/**
+	 * Check if a specific authentication method is allowed for a user.
+	 *
+	 * The user's allowedAuthMethods property (nemaki:allowedAuthMethods) controls which
+	 * authentication methods are permitted:
+	 * - null/empty: All methods allowed (backward compatibility)
+	 * - "password": Only password authentication
+	 * - "cloud": Only cloud/OIDC authentication
+	 * - "password,cloud": Both methods allowed
+	 * - "disabled": No authentication allowed (account disabled)
+	 *
+	 * @param user The user to check
+	 * @param method The authentication method to check ("password" or "cloud")
+	 * @return true if the method is allowed, false otherwise
+	 */
+	public boolean isAuthMethodAllowed(UserItem user, String method) {
+		if (user == null || method == null) {
+			return false;
+		}
+
+		// Get allowedAuthMethods from subTypeProperties
+		String allowedMethods = null;
+		if (user.getSubTypeProperties() != null) {
+			for (jp.aegif.nemaki.model.Property prop : user.getSubTypeProperties()) {
+				if ("nemaki:allowedAuthMethods".equals(prop.getKey())) {
+					allowedMethods = String.valueOf(prop.getValue());
+					break;
+				}
+			}
+		}
+
+		// null/empty means all methods allowed (backward compatibility)
+		if (allowedMethods == null || allowedMethods.isEmpty() || "null".equals(allowedMethods)) {
+			return true;
+		}
+
+		// "disabled" means no authentication allowed
+		if ("disabled".equalsIgnoreCase(allowedMethods.trim())) {
+			if (log.isDebugEnabled()) {
+				log.debug("User " + user.getUserId() + " has authentication disabled");
+			}
+			return false;
+		}
+
+		// Check if the requested method is in the comma-separated list
+		String[] methods = allowedMethods.split(",");
+		for (String m : methods) {
+			if (method.equalsIgnoreCase(m.trim())) {
+				return true;
+			}
+		}
+
+		if (log.isDebugEnabled()) {
+			log.debug("Auth method '" + method + "' not allowed for user " + user.getUserId() +
+					  " (allowed: " + allowedMethods + ")");
+		}
+		return false;
+	}
+
 	private UserItem getAuthenticatedUserItem(String repositoryId, String userId, String password) {
 		UserItem u = contentService.getUserItemById(repositoryId, userId);
-		
+
 		if (log.isDebugEnabled()) {
-			log.debug("Authentication attempt - repositoryId: " + repositoryId + ", userId: " + userId + 
+			log.debug("Authentication attempt - repositoryId: " + repositoryId + ", userId: " + userId +
 				", userItem: " + (u != null ? "found" : "not found"));
+		}
+
+		// Check if password authentication is allowed for this user
+		if (u != null && !isAuthMethodAllowed(u, "password")) {
+			log.info("Password authentication denied for user " + userId + " (not in allowedAuthMethods)");
+			return null;
 		}
 
 		// パスワード認証とセキュリティアップグレード
@@ -244,9 +379,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 						u.setPassowrd(result.getNewHash());
 						contentDaoService.update(repositoryId, u);
 						
-						java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-						debugWriter.write("SECURITY UPGRADE COMPLETED: User password hash updated to BCrypt\n");
-						debugWriter.close();
+						log.info("SECURITY UPGRADE COMPLETED: User password hash updated to BCrypt for user: " + userId);
 					} catch (Exception e) {
 						if (log.isDebugEnabled()) {
 							log.debug("SECURITY UPGRADE FAILED: " + e.getMessage());
@@ -295,6 +428,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 	public void setTokenService(TokenService tokenService) {
 		this.tokenService = tokenService;
+	}
+
+	public void setApiKeyService(ApiKeyService apiKeyService) {
+		this.apiKeyService = apiKeyService;
 	}
 
 	public void setPropertyManager(PropertyManager propertyManager) {

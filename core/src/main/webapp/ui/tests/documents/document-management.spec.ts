@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 /**
  * Document Management E2E Tests
@@ -61,7 +61,7 @@ import { randomUUID } from 'crypto';
  *    - File upload: test-upload-{uuid8}.txt
  *    - Folder creation: test-folder-{uuid8}
  *    - Document deletion: test-delete-{uuid8}.txt
- *    - Pattern: test- prefix for cleanup query + randomUUID().substring(0, 8)
+ *    - Pattern: test- prefix for cleanup query + generateTestId()
  *    - Prevents naming conflicts in parallel test execution (6 browsers simultaneously)
  *    - Enables reliable afterEach cleanup with CMIS query
  *    - Example: test-upload-a1b2c3d4.txt
@@ -195,34 +195,7 @@ test.describe('Document Management', () => {
       await page.waitForTimeout(2000);
     }
 
-    // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      // Look for hamburger menu toggle button
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-
-      if (await menuToggle.count() > 0) {
-        try {
-          await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500); // Wait for animation
-        } catch (error) {
-          // Continue even if sidebar close fails
-        }
-      } else {
-        // Fallback: Try alternative selector (header button)
-        const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
-        if (await alternativeToggle.count() > 0) {
-          try {
-            await alternativeToggle.click({ timeout: 3000 });
-            await page.waitForTimeout(500);
-          } catch (error) {
-            // Continue even if alternative selector fails
-          }
-        }
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
   });
 
   test.afterEach(async ({ page }) => {
@@ -368,11 +341,10 @@ test.describe('Document Management', () => {
     await page.waitForTimeout(2000);
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Generate unique filename to avoid conflicts
-    const filename = `test-upload-${randomUUID().substring(0, 8)}.txt`;
+    const filename = `test-upload-${generateTestId()}.txt`;
 
     // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
     // Button text may be 'アップロード' or 'ファイルアップロード' depending on UI version
@@ -524,8 +496,7 @@ test.describe('Document Management', () => {
     await page.waitForTimeout(2000);
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Look for any document row in the table
     const documentRow = page.locator('.ant-table-row').first();
@@ -556,8 +527,7 @@ test.describe('Document Management', () => {
     await page.waitForTimeout(2000);
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Look for search input with simplified selector
     const searchInput = page.locator('.search-input, input[placeholder*="検索"]');
@@ -628,13 +598,12 @@ test.describe('Document Management', () => {
    * Folder creation verified working via manual testing.
    * Re-enable after implementing more robust input selectors.
    */
-  test.skip('should handle folder creation', async ({ page, browserName }) => {
+  test('should handle folder creation', async ({ page, browserName }) => {
     // Wait for page to load
     await page.waitForTimeout(2000);
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Look for folder creation button (フォルダ作成)
     const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
@@ -648,7 +617,7 @@ test.describe('Document Management', () => {
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
 
       // Generate unique folder name
-      const folderName = `test-folder-${randomUUID().substring(0, 8)}`;
+      const folderName = `test-folder-${generateTestId()}`;
 
       // Fill in folder name
       const nameInput = page.locator('.ant-modal input[placeholder*="名前"], .ant-modal input[id*="name"]');
@@ -682,8 +651,7 @@ test.describe('Document Management', () => {
     await page.waitForTimeout(2000);
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
     let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
@@ -694,7 +662,7 @@ test.describe('Document Management', () => {
       await uploadButton.click(isMobile ? { force: true } : {});
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
 
-      const filename = `test-delete-${randomUUID().substring(0, 8)}.txt`;
+      const filename = `test-delete-${generateTestId()}.txt`;
 
       // CRITICAL FIX (2025-12-24): Use fileChooser API to properly trigger Ant Design's file selection
       const [fileChooser] = await Promise.all([
@@ -787,8 +755,7 @@ test.describe('Document Management', () => {
     await page.waitForTimeout(2000);
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Look for download button (DownloadOutlined icon in document rows)
     // Download button is only shown for documents (not folders)

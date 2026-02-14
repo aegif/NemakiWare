@@ -176,20 +176,36 @@ public class CouchAttachmentNode extends CouchNodeBase{
 	}
 	
 	/**
-	 * Gets the actual MIME type from CouchDB _attachments or falls back to stored mimeType
+	 * Gets the actual MIME type from CouchDB _attachments or falls back to stored mimeType.
+	 * If _attachments content_type is the generic "application/octet-stream" but the stored
+	 * mimeType field has a more specific value, prefer the stored value.
 	 * @return actual MIME type
 	 */
 	public String getActualMimeType() {
+		String attachmentContentType = null;
 		// First try to get MIME type from CouchDB _attachments
 		if (attachments != null && !attachments.isEmpty()) {
 			for (AttachmentInfo info : attachments.values()) {
 				if (info != null && info.getContentType() != null && !info.getContentType().isEmpty()) {
-					return info.getContentType();
+					attachmentContentType = info.getContentType();
+					break;
 				}
 			}
 		}
-		
-		// Fall back to stored mimeType field
+
+		// If the stored mimeType field has a specific (non-generic) value, prefer it
+		// over the generic application/octet-stream from _attachments
+		if (mimeType != null && !mimeType.isEmpty() && !"application/octet-stream".equals(mimeType)) {
+			// Stored mimeType is specific, use it
+			return mimeType;
+		}
+
+		// Otherwise use _attachments content_type if available
+		if (attachmentContentType != null) {
+			return attachmentContentType;
+		}
+
+		// Final fallback to stored mimeType field (may be null or octet-stream)
 		return mimeType;
 	}
 	

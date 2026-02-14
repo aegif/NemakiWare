@@ -361,8 +361,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
       await page.waitForTimeout(3000);
 
       // MOBILE FIX: Close sidebar if needed
-      const viewportSize = page.viewportSize();
-      const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+      const isMobile = testHelper.isMobile(browserName);
 
       if (isMobile) {
         const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();

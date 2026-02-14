@@ -5,7 +5,7 @@
 	<groupId>jp.aegif.nemaki.core</groupId>
 	<artifactId>core</artifactId>
 	<packaging>war</packaging>
-	<version>3.0.0</version>
+	<version>3.1.0</version>
 	<name>core</name>
 	<description>NemakiWare Core Server</description>
 	<url>https://github.com/aegif/NemakiWare</url>
@@ -13,7 +13,7 @@
 	<parent>
 		<groupId>jp.aegif.nemakiware</groupId>
 		<artifactId>nemakiware</artifactId>
-		<version>3.0.0</version>
+		<version>3.1.0</version>
 	</parent>
 
 	<properties>
@@ -26,6 +26,7 @@
 		<org.apache.chemistry.opencmis.version>1.1.0-nemakiware</org.apache.chemistry.opencmis.version>
 		<jersey.version>3.1.10</jersey.version>
 		<org.apache.chemistry.opencmis.version.14>0.14.0</org.apache.chemistry.opencmis.version.14>
+		<aws.sdk.version>2.25.60</aws.sdk.version>
 	</properties>
 
 	<repositories>
@@ -62,7 +63,7 @@
 		<dependency>
 			<groupId>jp.aegif.nemaki.plugin</groupId>
 			<artifactId>nemakiware-action</artifactId>
-			<version>3.0.0</version>
+			<version>3.1.0</version>
 			<exclusions>
 				<exclusion>
 					<groupId>xml-apis</groupId>
@@ -98,7 +99,7 @@
 		<dependency>
 			<groupId>jp.aegif.nemaki.common</groupId>
 			<artifactId>nemakiware-common</artifactId>
-			<version>3.0.0</version>
+			<version>3.1.0</version>
 		</dependency>
 		<dependency>
 			<groupId>jp.aegif.nemaki.cloudantinit</groupId>
@@ -188,10 +189,27 @@
 			<artifactId>jackson-databind</artifactId>
 			<version>2.20.1</version>
 		</dependency>
+		<!-- WebAuthn (Passkey) support -->
+		<dependency>
+			<groupId>com.yubico</groupId>
+			<artifactId>webauthn-server-core</artifactId>
+			<version>2.5.3</version>
+			<exclusions>
+				<exclusion>
+					<groupId>org.apache.httpcomponents.client5</groupId>
+					<artifactId>httpclient5</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-annotations</artifactId>
 			<version>2.20</version>
+		</dependency>
+		<dependency>
+			<groupId>com.fasterxml.jackson.datatype</groupId>
+			<artifactId>jackson-datatype-jdk8</artifactId>
+			<version>2.20.1</version>
 		</dependency>
 		<!-- SECURITY UPDATE (2025-11-19): Updated Jackson from 2.17.1 to 2.20.x for security fixes -->
 		<!-- NOTE: jackson-annotations 2.20+ uses major.minor versioning only (no patch version) -->
@@ -542,7 +560,7 @@
 		<dependency>
 			<groupId>jp.aegif.nemaki.solr</groupId>
 			<artifactId>solr</artifactId>
-			<version>3.0.0</version>
+			<version>3.1.0</version>
 			<exclusions>
 				<!-- Exclude Jetty 9 to prevent javax.servlet conflicts -->
 				<exclusion>
@@ -611,9 +629,28 @@
 		</dependency>
 
 		<dependency>
-			<groupId>net.sf.ehcache</groupId>
+			<groupId>org.ehcache</groupId>
 			<artifactId>ehcache</artifactId>
-			<version>2.10.9.2</version>
+			<version>3.10.8</version>
+			<exclusions>
+				<exclusion>
+					<groupId>org.glassfish.jaxb</groupId>
+					<artifactId>jaxb-runtime</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+
+		<dependency>
+			<groupId>org.ehcache</groupId>
+			<artifactId>ehcache-clustered</artifactId>
+			<version>3.10.8</version>
+			<optional>true</optional>
+			<exclusions>
+				<exclusion>
+					<groupId>org.glassfish.jaxb</groupId>
+					<artifactId>jaxb-runtime</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 
 		<dependency>
@@ -844,6 +881,89 @@
 			<artifactId>hibernate-validator</artifactId>
 			<version>8.0.1.Final</version>
 		</dependency>
+
+		<!-- Cloud Authentication: Google ID token verification -->
+		<dependency>
+			<groupId>com.google.auth</groupId>
+			<artifactId>google-auth-library-oauth2-http</artifactId>
+			<version>1.23.0</version>
+		</dependency>
+		<dependency>
+			<groupId>com.google.api-client</groupId>
+			<artifactId>google-api-client</artifactId>
+			<version>2.6.0</version>
+		</dependency>
+
+		<!-- Cloud Authentication: Microsoft / generic JWKS token verification -->
+		<dependency>
+			<groupId>com.nimbusds</groupId>
+			<artifactId>nimbus-jose-jwt</artifactId>
+			<version>9.37.3</version>
+		</dependency>
+
+		<!-- Google Drive API -->
+		<dependency>
+			<groupId>com.google.apis</groupId>
+			<artifactId>google-api-services-drive</artifactId>
+			<version>v3-rev20240521-2.0.0</version>
+		</dependency>
+
+		<!-- Google Admin Directory API (for directory sync) -->
+		<dependency>
+			<groupId>com.google.apis</groupId>
+			<artifactId>google-api-services-admin-directory</artifactId>
+			<version>directory_v1-rev20240509-2.0.0</version>
+		</dependency>
+
+		<!-- Google Drive Activity API (for approval history) -->
+		<dependency>
+			<groupId>com.google.apis</groupId>
+			<artifactId>google-api-services-driveactivity</artifactId>
+			<version>v2-rev20250517-2.0.0</version>
+		</dependency>
+
+		<!-- Google Docs API (for approval metadata) -->
+		<dependency>
+			<groupId>com.google.apis</groupId>
+			<artifactId>google-api-services-docs</artifactId>
+			<version>v1-rev20250325-2.0.0</version>
+		</dependency>
+
+		<!-- AWS SDK v2 S3 for long-term archive storage -->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+			<version>${aws.sdk.version}</version>
+		</dependency>
+
+		<!-- Microsoft Graph SDK (for OneDrive + directory sync) -->
+		<dependency>
+			<groupId>com.microsoft.graph</groupId>
+			<artifactId>microsoft-graph</artifactId>
+			<version>6.5.0</version>
+		</dependency>
+		<dependency>
+			<groupId>com.azure</groupId>
+			<artifactId>azure-identity</artifactId>
+			<version>1.12.1</version>
+		</dependency>
+
+		<!-- AWS SDK (Bedrock Runtime) for embedding generation -->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>bedrockruntime</artifactId>
+			<version>${aws.sdk.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>regions</artifactId>
+			<version>${aws.sdk.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>auth</artifactId>
+			<version>${aws.sdk.version}</version>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -937,6 +1057,8 @@
 								<include>oidc-callback.html</include>
 								<include>saml-callback.html</include>
 								<include>silent-callback.html</include>
+								<include>auth-popup.html</include>
+								<include>auth-popup-entry.js</include>
 								<include>assets/**</include>
 								<include>pdf-worker/**</include>
 								<include>*.png</include>

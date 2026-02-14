@@ -51,7 +51,8 @@ import jakarta.ws.rs.ApplicationPath;
         @Tag(name = "groups", description = "Group management operations"),
         @Tag(name = "auth", description = "Authentication operations"),
         @Tag(name = "audit", description = "Audit logging metrics and monitoring"),
-        @Tag(name = "search-engine", description = "Search engine (Solr) management operations")
+        @Tag(name = "search-engine", description = "Search engine (Solr) management operations"),
+        @Tag(name = "API Keys", description = "API key management for programmatic authentication")
     }
 )
 public class ApiV1Application extends ResourceConfig {

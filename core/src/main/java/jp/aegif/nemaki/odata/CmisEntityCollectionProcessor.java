@@ -119,8 +119,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         // Get pagination options
         int top = getTopOption(uriInfo);
         int skip = getSkipOption(uriInfo);
-        boolean count = getCountOption(uriInfo);
-        
+
         // Get filter option
         FilterOption filterOption = uriInfo.getFilterOption();
         String filterClause = null;
@@ -1062,7 +1061,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                 entity.getNavigationLinks().add(parentLink);
             }
         } catch (Exception e) {
-            // Parent not accessible or doesn't exist
+            // Parent not accessible or doesn't exist - intentionally ignored
         }
     }
     
@@ -1201,7 +1200,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                 entity.getNavigationLinks().add(link);
             }
         } catch (Exception e) {
-            // Related object not accessible
+            // Related object not accessible - intentionally ignored
         }
     }
 }

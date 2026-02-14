@@ -1,10 +1,14 @@
 package jp.aegif.nemaki.rest;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 
 import java.io.InputStream;
 import java.net.URL;
@@ -16,6 +20,11 @@ import java.util.TimeZone;
 /**
  * REST endpoint for build information.
  * Provides version and build timestamp for deployment verification.
+ * This endpoint bypasses authentication (configured in AuthenticationFilter).
+ *
+ * Security:
+ * - All users (including unauthenticated): returns version and buildTime
+ * - Authenticated admin: additionally returns gitCommit
  *
  * Endpoints:
  * - GET /rest/all/build-info - Returns JSON with core version and build timestamp
@@ -23,7 +32,7 @@ import java.util.TimeZone;
 @Path("/all/build-info")
 public class BuildInfoResource {
 
-    private static final String VERSION = "3.0.0";
+    private static final String VERSION = "3.1.0";
 
     /**
      * Returns the current NemakiWare version.
@@ -36,22 +45,35 @@ public class BuildInfoResource {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getBuildInfo() {
+    public Response getBuildInfo(@Context HttpServletRequest request) {
         try {
-            // Get build timestamp from class file modification time
-            String buildTimestamp = getBuildTimestamp();
-
-            // Get git commit hash if available
-            String gitCommit = getGitCommit();
+            // Check if the user is an authenticated admin
+            boolean isAdmin = false;
+            CallContext callContext = (request != null)
+                    ? (CallContext) request.getAttribute("CallContext")
+                    : null;
+            if (callContext != null) {
+                Boolean adminFlag = (Boolean) callContext.get("is_admin");
+                isAdmin = adminFlag != null && adminFlag;
+            }
 
             StringBuilder json = new StringBuilder();
             json.append("{");
             json.append("\"core\":{");
-            json.append("\"version\":\"").append(VERSION).append("\",");
-            json.append("\"buildTime\":\"").append(buildTimestamp).append("\"");
-            if (gitCommit != null && !gitCommit.isEmpty()) {
-                json.append(",\"gitCommit\":\"").append(gitCommit).append("\"");
+            json.append("\"version\":\"").append(VERSION).append("\"");
+
+            // buildTime is non-sensitive metadata, available to all users
+            String buildTimestamp = getBuildTimestamp();
+            json.append(",\"buildTime\":\"").append(buildTimestamp).append("\"");
+
+            // Only expose gitCommit to admin users
+            if (isAdmin) {
+                String gitCommit = getGitCommit();
+                if (gitCommit != null && !gitCommit.isEmpty()) {
+                    json.append(",\"gitCommit\":\"").append(gitCommit).append("\"");
+                }
             }
+
             json.append("}");
             json.append("}");
 

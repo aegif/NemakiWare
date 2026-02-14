@@ -42,6 +42,8 @@ import jakarta.annotation.PreDestroy;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -131,16 +133,24 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                     return;
                 }
 
-                // Count total documents first
-                AtomicLong totalCount = new AtomicLong(0);
+                // Count total documents (root + all descendants)
+                AtomicLong totalCount = new AtomicLong(1); // root folder itself
                 countDocumentsRecursive(repositoryId, rootFolder.getId(), totalCount);
                 status.setTotalDocuments(totalCount.get());
 
                 // Clear existing index
                 clearIndex(repositoryId);
 
-                // Reindex all documents
+                // Reindex all descendants
                 AtomicLong indexedCount = new AtomicLong(0);
+
+                // Index root folder itself
+                try {
+                    solrUtil.indexDocument(repositoryId, rootFolder, true);
+                    indexedCount.incrementAndGet();
+                } catch (Exception e) {
+                    log.warn("Failed to index root folder: " + e.getMessage());
+                }
                 AtomicLong errorCount = new AtomicLong(0);
                 AtomicLong silentDropCount = new AtomicLong(0);
                 AtomicLong reindexedSuccessCount = new AtomicLong(0);
@@ -611,21 +621,23 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
 
         SolrClient solrClient = null;
         try {
-            // Get Solr document count
-            // Escape repositoryId to prevent query injection with special characters
+            // Get Solr document count (cmis:document, cmis:folder, cmis:item)
+            // Exclude RAG documents (doc_type:document/chunk)
             solrClient = solrUtil.getSolrClient();
             if (solrClient != null) {
                 SolrQuery query = new SolrQuery("repository_id:" + ClientUtils.escapeQueryChars(repositoryId));
+                query.addFilterQuery("-doc_type:document -doc_type:chunk");
+                query.addFilterQuery("basetype:(cmis\\:document OR cmis\\:folder OR cmis\\:item)");
                 query.setRows(0);
                 QueryResponse response = solrClient.query(query);
                 health.setSolrDocumentCount(response.getResults().getNumFound());
             }
 
-            // Get CouchDB document count by counting from root folder
+            // Get CouchDB document count: root folder + all descendants
             Folder rootFolder = contentService.getFolder(repositoryId,
                 repositoryInfoMap.get(repositoryId).getRootFolderId());
             if (rootFolder != null) {
-                AtomicLong couchCount = new AtomicLong(0);
+                AtomicLong couchCount = new AtomicLong(1); // count root folder itself
                 countDocumentsRecursive(repositoryId, rootFolder.getId(), couchCount);
                 health.setCouchDbDocumentCount(couchCount.get());
             }
@@ -661,6 +673,106 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         }
 
         return health;
+    }
+
+    @Override
+    public IndexDiscrepancyResult getIndexDiscrepancies(String repositoryId) {
+        IndexDiscrepancyResult result = new IndexDiscrepancyResult();
+        result.setRepositoryId(repositoryId);
+        result.setCheckTime(System.currentTimeMillis());
+
+        SolrClient solrClient = null;
+        try {
+            // 1. Collect all CouchDB document IDs (including root folder)
+            Set<String> couchIds = new HashSet<>();
+            Folder rootFolder = contentService.getFolder(repositoryId,
+                repositoryInfoMap.get(repositoryId).getRootFolderId());
+            if (rootFolder != null) {
+                couchIds.add(rootFolder.getId());
+                collectDocumentIds(repositoryId, rootFolder.getId(), couchIds);
+            }
+
+            // 2. Collect all Solr document IDs (cmis:document, cmis:folder, cmis:item)
+            Map<String, String> solrIdToName = new HashMap<>();
+            solrClient = solrUtil.getSolrClient();
+            if (solrClient != null) {
+                SolrQuery query = new SolrQuery("repository_id:" + ClientUtils.escapeQueryChars(repositoryId));
+                query.addFilterQuery("-doc_type:document -doc_type:chunk");
+                query.addFilterQuery("basetype:(cmis\\:document OR cmis\\:folder OR cmis\\:item)");
+                query.setFields("object_id", "name");
+                query.setRows(500);
+                query.addSort("id", SolrQuery.ORDER.asc);
+                String cursorMark = "*";
+                while (true) {
+                    query.set("cursorMark", cursorMark);
+                    QueryResponse response = solrClient.query(query);
+                    SolrDocumentList docs = response.getResults();
+                    if (docs.isEmpty()) break;
+                    for (SolrDocument doc : docs) {
+                        Object id = doc.getFieldValue("object_id");
+                        Object name = doc.getFieldValue("name");
+                        if (id != null) {
+                            solrIdToName.put(id.toString(), name != null ? name.toString() : null);
+                        }
+                    }
+                    String nextCursorMark = response.getNextCursorMark();
+                    if (cursorMark.equals(nextCursorMark)) break;
+                    cursorMark = nextCursorMark;
+                }
+            }
+
+            Set<String> solrIds = solrIdToName.keySet();
+
+            // 3. Calculate missing in Solr (in CouchDB but not in Solr)
+            Set<String> missingIds = new HashSet<>(couchIds);
+            missingIds.removeAll(solrIds);
+            List<DiscrepancyDocumentInfo> missingList = new ArrayList<>();
+            for (String id : missingIds) {
+                try {
+                    Content content = contentService.getContent(repositoryId, id);
+                    String name = content != null ? content.getName() : null;
+                    String type = content != null ? content.getType() : null;
+                    missingList.add(new DiscrepancyDocumentInfo(id, name, type));
+                } catch (Exception e) {
+                    missingList.add(new DiscrepancyDocumentInfo(id, null, null));
+                }
+            }
+            result.setMissingInSolr(missingList);
+
+            // 4. Calculate orphaned in Solr (in Solr but not in CouchDB)
+            Set<String> orphanedIds = new HashSet<>(solrIds);
+            orphanedIds.removeAll(couchIds);
+            List<DiscrepancyDocumentInfo> orphanedList = new ArrayList<>();
+            for (String id : orphanedIds) {
+                orphanedList.add(new DiscrepancyDocumentInfo(id, solrIdToName.get(id), null));
+            }
+            result.setOrphanedInSolr(orphanedList);
+
+            log.info("Index discrepancy check for " + repositoryId +
+                ": missing=" + missingList.size() + ", orphaned=" + orphanedList.size());
+
+        } catch (Exception e) {
+            log.error("Error getting index discrepancies for repository: " + repositoryId, e);
+        } finally {
+            if (solrClient != null) {
+                try { solrClient.close(); } catch (Exception e) { /* ignore */ }
+            }
+        }
+        return result;
+    }
+
+    private void collectDocumentIds(String repositoryId, String folderId, Set<String> ids) {
+        try {
+            List<Content> children = contentService.getChildren(repositoryId, folderId);
+            for (Content child : children) {
+                ids.add(child.getId());
+                if (child instanceof Folder) {
+                    collectDocumentIds(repositoryId, child.getId(), ids);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error collecting document IDs in folder: " + folderId, e);
+        }
     }
 
     private static final int MAX_QUERY_ROWS = 1000;
@@ -749,18 +861,23 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 return result;
             }
 
-            // Build query with repository filter
-            // Escape repositoryId to prevent query injection with special characters
-            // Always force repository_id filter to prevent cross-repository queries
+            // Build query with repository filter using filter query (fq)
+            // SECURITY: Use fq parameter for repository filter to prevent query injection bypass
+            // Unlike wrapping the query string, fq is always applied independently and cannot
+            // be bypassed with tricks like ") OR 1=1 OR ("
             String escapedRepoId = ClientUtils.escapeQueryChars(repositoryId);
             SolrQuery solrQuery = new SolrQuery();
+            
+            // Set the main query (q parameter)
             if (query != null && !query.trim().isEmpty()) {
-                // Always wrap user query with repository filter for security
-                // This prevents accidental or intentional cross-repository queries
-                solrQuery.setQuery("repository_id:" + escapedRepoId + " AND (" + query + ")");
+                solrQuery.setQuery(query);
             } else {
-                solrQuery.setQuery("repository_id:" + escapedRepoId);
+                solrQuery.setQuery("*:*");
             }
+            
+            // Always add repository filter as fq (filter query) for security
+            // This cannot be bypassed by the main query parameter
+            solrQuery.addFilterQuery("repository_id:" + escapedRepoId);
 
             solrQuery.setStart(start >= 0 ? start : 0);
             // Enforce maximum rows limit to prevent high-load queries

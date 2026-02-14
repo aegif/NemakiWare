@@ -21,8 +21,11 @@
  ******************************************************************************/
 package jp.aegif.nemaki.dao;
 
+import java.util.GregorianCalendar;
 import java.util.List;
+import java.util.Map;
 
+import jp.aegif.nemaki.model.ApiKey;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Change;
@@ -42,6 +45,7 @@ import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.model.WebAuthnCredential;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 
@@ -97,6 +101,14 @@ public interface ContentDaoService {
 	 * @return
 	 */
 	void deleteTypeDefinition(String repositoryId, String nodeId);
+
+	/**
+	 * Clear the type definition cache for a repository.
+	 * Called by TypeManager when invalidating type cache to ensure
+	 * ContentDaoService returns fresh data from database.
+	 * @param repositoryId The repository ID
+	 */
+	void clearTypeCache(String repositoryId);
 
 	/**
 	 * List up user-defined property definitions
@@ -186,6 +198,16 @@ public interface ContentDaoService {
 	 * @return if nothing found, return null
 	 */
 	Content getContent(String repositoryId, String objectId);
+
+	/**
+	 * Bulk get contents by IDs.
+	 * More efficient than multiple individual getContent() calls.
+	 *
+	 * @param repositoryId Repository ID
+	 * @param objectIds List of object IDs to retrieve
+	 * @return Map of object ID to Content, excluding null/not-found documents
+	 */
+	Map<String, Content> getContentsByIds(String repositoryId, List<String> objectIds);
 
 	/**
 	 * Get content by object ID, bypassing cache to get fresh database state
@@ -412,6 +434,8 @@ public interface ContentDaoService {
 	UserItem getUserItem(String repositoryId, String objectId);
 	UserItem getUserItemById(String repositoryId, String userId);
 	List<UserItem> getUserItems(String repositoryId);
+	List<UserItem> getUserItems(String repositoryId, int skip, int limit);
+	int getUserItemCount(String repositoryId);
 
 	GroupItem getGroupItem(String repositoryId, String objectId);
 	GroupItem getGroupItemById(String repositoryId, String userId);
@@ -427,10 +451,19 @@ public interface ContentDaoService {
 	GroupItem getGroupItemByIdFresh(String repositoryId, String groupId);
 
 	List<GroupItem> getGroupItems(String repositoryId);
+	List<GroupItem> getGroupItems(String repositoryId, int skip, int limit);
+	int getGroupItemCount(String repositoryId);
 	List<String> getJoinedGroupByUserId(String repositoryId, String userId);
 
 	PatchHistory getPatchHistoryByName(String repositoryId, String name);
 	Configuration getConfiguration(String repositoryId);
+
+	/**
+	 * Get all API keys for a repository.
+	 * @param repositoryId The repository ID
+	 * @return List of API keys
+	 */
+	List<jp.aegif.nemaki.model.ApiKey> getApiKeys(String repositoryId);
 
 	/**
 	 * Create a document
@@ -491,6 +524,7 @@ public interface ContentDaoService {
 
 	PatchHistory create(String repositoryId, PatchHistory patchHistory);
 	Configuration create(String repositoryId, Configuration configuration);
+	ApiKey create(String repositoryId, ApiKey apiKey);
 
 	NodeBase create(String repositoryId, NodeBase nodeBase);
 
@@ -751,6 +785,24 @@ public interface ContentDaoService {
 	List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc);
 
 	/**
+	 * Get archives created (deleted) by a specific user.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param creator the username of the user who deleted the documents
+	 * @return list of archives created by the specified user
+	 */
+	List<Archive> getArchivesByCreator(String repositoryId, String creator);
+
+	/**
+	 * Get archives where the specified user performed the deletion.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archivedBy the username of the user who deleted the documents
+	 * @return list of archives deleted by the specified user
+	 */
+	List<Archive> getArchivesByArchivedBy(String repositoryId, String archivedBy);
+
+	/**
 	 * Create an archive of a content
 	 * @param repositoryId TODO
 	 * @param archive
@@ -798,10 +850,140 @@ public interface ContentDaoService {
 	void restoreDocumentWithArchive(String repositoryId, Archive archive);
 
 	/**
+	 * Restore a VersionSeries document by purging its tombstone and recreating it.
+	 * Used when restoring archived documents whose VersionSeries was deleted.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param versionSeriesId the ID of the VersionSeries to restore
+	 */
+	void restoreVersionSeries(String repositoryId, String versionSeriesId);
+
+	/**
 	 * Get the actual attachment size from CouchDB _attachments metadata
 	 * @param repositoryId Repository ID
 	 * @param attachmentId Attachment node ID
 	 * @return Actual size in bytes from CouchDB attachment metadata, or null if not available
 	 */
 	Long getAttachmentActualSize(String repositoryId, String attachmentId);
+
+	// Retention lifecycle methods
+
+	/**
+	 * Get archives filtered by archive state from CouchDB view.
+	 */
+	List<Archive> getArchivesByState(String repositoryId, String state);
+
+	/**
+	 * Get searchable archives (non-attachment, latest-version only) from CouchDB view.
+	 * Optionally filtered by archive state. Pre-filtered at DB level for scalability.
+	 */
+	List<Archive> getSearchableArchives(String repositoryId, String state);
+
+	/**
+	 * Get searchable archives with DB-level chronological pagination.
+	 * Uses archivesByArchivedAt view for efficient skip/limit without loading all rows.
+	 *
+	 * @return archives for the requested page, never null
+	 */
+	List<Archive> getSearchableArchivesPaged(String repositoryId, int skip, int limit, boolean descending);
+
+	/**
+	 * Get total count of searchable archives (non-attachment, latest-version).
+	 */
+	long getSearchableArchivesCount(String repositoryId);
+
+	/**
+	 * Get searchable archives filtered by state with DB-level pagination.
+	 * Uses searchableArchives view (keyed by archiveState) with skip/limit.
+	 * When state is null, returns all searchable archives (equivalent to no state filter).
+	 *
+	 * @return archives for the requested page, never null
+	 */
+	List<Archive> getSearchableArchivesByStatePaged(String repositoryId, String state, int skip, int limit, boolean descending);
+
+	/**
+	 * Get count of searchable archives filtered by state.
+	 * When state is null, returns total count of all searchable archives.
+	 */
+	long getSearchableArchivesByStateCount(String repositoryId, String state);
+
+	/**
+	 * Get archives with archivedAt before given date (candidates for cold transition).
+	 */
+	List<Archive> getArchivesForColdTransition(String repositoryId, GregorianCalendar beforeDate);
+
+	/**
+	 * Update archive retention state and related fields.
+	 */
+	void updateArchiveState(String repositoryId, String archiveId,
+			String newState, java.util.Map<String, String> contentRef, GregorianCalendar coldArchivedAt);
+
+	/**
+	 * Get the binary content stream for an archived document.
+	 * Retrieves the CouchDB attachment from the attachment archive in the closet DB.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archive the archive whose content stream to retrieve
+	 * @return InputStream of the binary content, or null if not available
+	 */
+	java.io.InputStream getArchiveContentStream(String repositoryId, Archive archive);
+
+	/**
+	 * Delete the binary content (CouchDB attachment) from an archived document.
+	 * Used in move mode (retention.cold.keep.local.copy=false) to remove the
+	 * local copy after successful cold storage write.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archive the archive whose content to delete
+	 * @return true if the attachment was deleted, false if not found or failed
+	 */
+	boolean deleteArchiveContent(String repositoryId, Archive archive);
+
+	/**
+	 * Get IDs of documents whose cmis:rm_expirationDate is before the given date.
+	 * Uses the documentsByExpirationDate CouchDB view for efficient range query.
+	 *
+	 * @param repositoryId the repository ID (main DB, not closet)
+	 * @param beforeDate documents with expirationDate before this date are returned
+	 * @return list of document IDs whose retention has expired
+	 */
+	List<String> getExpiredDocumentIds(String repositoryId, GregorianCalendar beforeDate);
+
+	/**
+	 * Update the coldMoveMode field on an archive document.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param archiveId the archive ID
+	 * @param coldMoveMode "COPY" or "MOVE"
+	 */
+	void updateArchiveColdMoveMode(String repositoryId, String archiveId, String coldMoveMode);
+
+	// ==========================================
+	// WebAuthn Credential methods
+	// ==========================================
+
+	/**
+	 * Get all WebAuthn credentials for a user.
+	 */
+	List<WebAuthnCredential> getWebAuthnCredentialsByUserId(String repositoryId, String userId);
+
+	/**
+	 * Get a WebAuthn credential by its credential ID (Base64url encoded).
+	 */
+	WebAuthnCredential getWebAuthnCredentialByCredentialId(String repositoryId, String credentialId);
+
+	/**
+	 * Create a new WebAuthn credential.
+	 */
+	WebAuthnCredential createWebAuthnCredential(String repositoryId, WebAuthnCredential credential);
+
+	/**
+	 * Update an existing WebAuthn credential (e.g. signCount).
+	 */
+	WebAuthnCredential updateWebAuthnCredential(String repositoryId, WebAuthnCredential credential);
+
+	/**
+	 * Delete a WebAuthn credential by its document ID.
+	 */
+	void deleteWebAuthnCredential(String repositoryId, String id);
 }

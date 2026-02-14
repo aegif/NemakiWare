@@ -6,6 +6,7 @@ import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.cache.CacheService;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
+import jp.aegif.nemaki.util.spring.SpringContext;
 import org.apache.commons.lang3.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -51,9 +52,16 @@ public class CacheResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		Lock lock = threadLockService.getWriteLock(repositoryId, objectId);
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			result = makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
+		Lock lock = getThreadLockService().getWriteLock(repositoryId, objectId);
 		try {
-			CacheService cache = nemakiCachePool.get(repositoryId);
+			CacheService cache = getNemakiCachePool().get(repositoryId);
 			lock.lock();
 			if (StringUtils.isNotEmpty(strBeforeDate)) {
 				GregorianCalendar beforeDate = DataUtil.convertToCalender(strBeforeDate);
@@ -100,16 +108,23 @@ public class CacheResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-				
-		if(!nemakiCachePool.get(repositoryId).getTreeCache().isCacheEnabled()){
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			result = makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
+		if(!getNemakiCachePool().get(repositoryId).getTreeCache().isCacheEnabled()){
 			//do nothing when cache disabled
 			result.put("treeCacheEnabled", false);
 			return result.toJSONString();
 		}
 
-		Lock lock = threadLockService.getWriteLock(repositoryId, parentId);
+		Lock lock = getThreadLockService().getWriteLock(repositoryId, parentId);
 		try {
-			CacheService cache = nemakiCachePool.get(repositoryId);
+			CacheService cache = getNemakiCachePool().get(repositoryId);
 			lock.lock();
 			cache.removeCmisAndTreeCache(parentId);
 			result.put("deleted", true);
@@ -138,6 +153,20 @@ public class CacheResource extends ResourceBase{
 	public void setTypeManager(jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager) {
 		this.typeManager = typeManager;
 	}
+
+	// Fallback getters for Jersey-Spring DI mismatch
+	private NemakiCachePool getNemakiCachePool() {
+		if (nemakiCachePool != null) return nemakiCachePool;
+		return SpringContext.getApplicationContext().getBean("nemakiCachePool", NemakiCachePool.class);
+	}
+	private ThreadLockService getThreadLockService() {
+		if (threadLockService != null) return threadLockService;
+		return SpringContext.getApplicationContext().getBean("ThreadLockService", ThreadLockService.class);
+	}
+	private jp.aegif.nemaki.cmis.aspect.type.TypeManager getTypeManager() {
+		if (typeManager != null) return typeManager;
+		return SpringContext.getApplicationContext().getBean("typeManager", jp.aegif.nemaki.cmis.aspect.type.TypeManager.class);
+	}
 	
 	/**
 	 * Invalidate type definition cache and force regeneration
@@ -154,7 +183,14 @@ public class CacheResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			result = makeResult(status, result, errMsg);
+			return result.toJSONString();
+		}
+
 		try {
 			logger.info("=== TYPE CACHE INVALIDATION REQUEST ===");
 			logger.info("Repository: " + repositoryId);
@@ -168,17 +204,15 @@ public class CacheResource extends ResourceBase{
 				throw new RuntimeException("Spring ApplicationContext not available");
 			}
 			
-			if (typeManager == null) {
-				throw new RuntimeException("TypeManager not properly injected - check Spring configuration");
-			}
-			
-			logger.info("TypeManager found: " + typeManager.getClass().getName());
-			
+			jp.aegif.nemaki.cmis.aspect.type.TypeManager tm = getTypeManager();
+
+			logger.info("TypeManager found: " + tm.getClass().getName());
+
 			// Call TypeManager to invalidate and regenerate type definitions
 			// This will force all buildTypeDefinitionFromDB methods to execute with our fixes
-			java.lang.reflect.Method invalidateMethod = typeManager.getClass().getDeclaredMethod("invalidateTypeDefinitionCache", String.class);
+			java.lang.reflect.Method invalidateMethod = tm.getClass().getDeclaredMethod("invalidateTypeDefinitionCache", String.class);
 			invalidateMethod.setAccessible(true);
-			invalidateMethod.invoke(typeManager, repositoryId);
+			invalidateMethod.invoke(tm, repositoryId);
 			
 			logger.info("TYPE CACHE INVALIDATION COMPLETED SUCCESSFULLY");
 			

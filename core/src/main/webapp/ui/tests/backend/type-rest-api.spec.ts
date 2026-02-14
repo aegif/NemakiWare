@@ -1,4 +1,5 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { generateTestId } from '../utils/test-helper';
 
 /**
  * Type REST API Integration Tests
@@ -147,7 +148,7 @@ test.describe('Type REST API - List Operations', () => {
 });
 
 test.describe('Type REST API - CRUD Operations', () => {
-  const testTypeSuffix = Date.now().toString();
+  const testTypeSuffix = generateTestId();
   const testTypeId = `test:integrationTest${testTypeSuffix}`;
 
   test('POST /create - should create a new custom type', async ({ request }) => {
@@ -178,7 +179,7 @@ test.describe('Type REST API - CRUD Operations', () => {
 
   test('PUT /update/{typeId} - should update custom type description', async ({ request }) => {
     // First create a type to update
-    const suffix = `update${Date.now()}`;
+    const suffix = `update${generateTestId()}`;
     const typeDefinition = createTestTypeDefinition(suffix);
 
     const createResponse = await request.post(`${REST_API_BASE}/create`, {
@@ -233,7 +234,7 @@ test.describe('Type REST API - CRUD Operations', () => {
    */
   test('DELETE /delete/{typeId} - should delete custom type', async ({ request }) => {
     // Use unique suffix with timestamp and random number to avoid collisions
-    const suffix = `delete${Date.now()}${Math.floor(Math.random() * 10000)}`;
+    const suffix = `delete${generateTestId()}${Math.floor(Math.random() * 10000)}`;
     const typeDefinition = createTestTypeDefinition(suffix);
 
     const createResponse = await request.post(`${REST_API_BASE}/create`, {
@@ -458,7 +459,7 @@ test.describe('Type REST API - Authentication', () => {
 
 test.describe('Type REST API - Custom Type with Properties', () => {
   test('POST /create - should create type with property definitions', async ({ request }) => {
-    const suffix = `props${Date.now()}`;
+    const suffix = `props${generateTestId()}`;
     const typeWithProps = {
       id: `test:typeWithProps${suffix}`,
       localName: `typeWithProps${suffix}`,
@@ -655,7 +656,7 @@ test.describe('Type REST API - NemakiWare Custom Types', () => {
 
 test.describe('Type REST API - Secondary Types', () => {
   test('POST /create - should create secondary type based on cmis:secondary', async ({ request }) => {
-    const suffix = `secondary${Date.now()}`;
+    const suffix = `secondary${generateTestId()}`;
     const secondaryType = {
       id: `test:aspect${suffix}`,
       localName: `aspect${suffix}`,
@@ -718,7 +719,7 @@ test.describe('Type REST API - Secondary Types', () => {
 
 test.describe('Type REST API - Folder Types', () => {
   test('POST /create - should create folder-based custom type', async ({ request }) => {
-    const suffix = `folder${Date.now()}`;
+    const suffix = `folder${generateTestId()}`;
     const folderType = {
       id: `test:customFolder${suffix}`,
       localName: `customFolder${suffix}`,
@@ -773,7 +774,7 @@ test.describe('Type REST API - Folder Types', () => {
 
 test.describe('Type REST API - All Property Types', () => {
   test('POST /create - should create type with all CMIS property types', async ({ request }) => {
-    const suffix = `allprops${Date.now()}`;
+    const suffix = `allprops${generateTestId()}`;
     const typeWithAllProps = {
       id: `test:allPropertyTypes${suffix}`,
       localName: `allPropertyTypes${suffix}`,
@@ -902,7 +903,7 @@ test.describe('Type REST API - All Property Types', () => {
   });
 
   test('POST /create - should create type with multi-value properties', async ({ request }) => {
-    const suffix = `multi${Date.now()}`;
+    const suffix = `multi${generateTestId()}`;
     const typeWithMultiProps = {
       id: `test:multiValueType${suffix}`,
       localName: `multiValueType${suffix}`,
@@ -973,7 +974,7 @@ test.describe('Type REST API - All Property Types', () => {
 
 test.describe('Type REST API - Full CRUD Lifecycle', () => {
   test('should complete full Create-Read-Update-Delete lifecycle', async ({ request }) => {
-    const suffix = `lifecycle${Date.now()}`;
+    const suffix = `lifecycle${generateTestId()}`;
     const typeId = `test:lifecycle${suffix}`;
     const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 
@@ -1085,7 +1086,7 @@ test.describe('Type REST API - Full CRUD Lifecycle', () => {
 
 test.describe('Type REST API - Edge Cases', () => {
   test('POST /create - should handle type with special characters in ID', async ({ request }) => {
-    const suffix = Date.now().toString();
+    const suffix = generateTestId();
     // Use Japanese characters in the display name but keep ID ASCII-safe
     const typeWithSpecialChars = {
       id: `test:special_type_${suffix}`,
@@ -1140,7 +1141,7 @@ test.describe('Type REST API - Edge Cases', () => {
   });
 
   test('POST /create - should handle type with long description', async ({ request }) => {
-    const suffix = Date.now().toString();
+    const suffix = generateTestId();
     const longDescription = 'A'.repeat(5000);  // 5000 character description
 
     const typeWithLongDesc = {
@@ -1184,7 +1185,7 @@ test.describe('Type REST API - Edge Cases', () => {
   });
 
   test('POST /create - should handle type with empty property definitions', async ({ request }) => {
-    const suffix = Date.now().toString();
+    const suffix = generateTestId();
     const typeWithEmptyProps = {
       id: `test:emptyProps${suffix}`,
       localName: `emptyProps${suffix}`,
@@ -1225,7 +1226,7 @@ test.describe('Type REST API - Edge Cases', () => {
   });
 
   test('PUT /update - should handle adding new property to existing type', async ({ request }) => {
-    const suffix = Date.now().toString();
+    const suffix = generateTestId();
     const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 
     // Create type without properties
@@ -1383,7 +1384,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
 
   test('should verify custom type inherits cmis:document properties and has own properties', async ({ request }) => {
     // Create a custom type with custom properties based on cmis:document
-    const suffix = `inherit${Date.now()}`;
+    const suffix = `inherit${generateTestId()}`;
     const customType = {
       id: `test:inheritanceTest${suffix}`,
       localName: `inheritanceTest${suffix}`,
@@ -1486,7 +1487,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
 
   test('should verify base type properties are always inherited', async ({ request }) => {
     // Create a custom type based on cmis:document
-    const suffix = `baseInherit${Date.now()}`;
+    const suffix = `baseInherit${generateTestId()}`;
     const customType = {
       id: `test:baseInherit${suffix}`,
       localName: `baseInherit${suffix}`,
@@ -1574,7 +1575,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
 
   test('should verify folder type inherits cmis:folder properties', async ({ request }) => {
     // Create a custom folder type
-    const suffix = `folderInherit${Date.now()}`;
+    const suffix = `folderInherit${generateTestId()}`;
     const folderType = {
       id: `test:folderInherit${suffix}`,
       localName: `folderInherit${suffix}`,
@@ -1653,7 +1654,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
 
   test('should verify relationship type inherits cmis:relationship properties', async ({ request }) => {
     // Create a custom relationship type
-    const suffix = `relInherit${Date.now()}`;
+    const suffix = `relInherit${generateTestId()}`;
     const relationshipType = {
       id: `test:relInherit${suffix}`,
       localName: `relInherit${suffix}`,
@@ -1771,7 +1772,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
 
 test.describe('Type REST API - Property Constraints', () => {
   test('POST /create - should create type with required property', async ({ request }) => {
-    const suffix = Date.now().toString();
+    const suffix = generateTestId();
     const typeWithRequiredProp = {
       id: `test:requiredProp${suffix}`,
       localName: `requiredProp${suffix}`,
@@ -1833,7 +1834,7 @@ test.describe('Type REST API - Property Constraints', () => {
   });
 
   test('POST /create - should create type with default value property', async ({ request }) => {
-    const suffix = Date.now().toString();
+    const suffix = generateTestId();
     const typeWithDefaultValue = {
       id: `test:defaultValue${suffix}`,
       localName: `defaultValue${suffix}`,

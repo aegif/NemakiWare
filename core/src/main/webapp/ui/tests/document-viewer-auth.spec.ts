@@ -137,6 +137,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { TestHelper } from './utils/test-helper';
 
 /**
  * SELECTOR FIX (2025-12-24) - Document Row Detection Fixed
@@ -152,6 +153,12 @@ import { test, expect } from '@playwright/test';
  * - All rows with buttons: '.ant-table-tbody tr button.ant-btn-link' (more flexible)
  */
 test.describe('Document Viewer Authentication', () => {
+  let testHelper: TestHelper;
+
+  test.beforeEach(async ({ page }) => {
+    testHelper = new TestHelper(page);
+  });
+
   test('should access document details without authentication errors', async ({ page, browserName }) => {
     // Enable console logging
     page.on('console', msg => {
@@ -185,8 +192,7 @@ test.describe('Document Viewer Authentication', () => {
     console.log('✅ Login successful - documents page loaded');
 
     // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();
@@ -280,7 +286,7 @@ test.describe('Document Viewer Authentication', () => {
    *
    * Session stability verified via manual testing with real documents.
    */
-  test.skip('should handle multiple document detail accesses without session issues', async ({ page, browserName }) => {
+  test('should handle multiple document detail accesses without session issues', async ({ page, browserName }) => {
     // Login
     await page.goto('http://localhost:8080/core/ui/index.html');
     await page.waitForTimeout(1000);
@@ -299,8 +305,7 @@ test.describe('Document Viewer Authentication', () => {
     await expect(page.locator('.ant-table')).toBeVisible({ timeout: 15000 });
 
     // Mobile sidebar handling
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();

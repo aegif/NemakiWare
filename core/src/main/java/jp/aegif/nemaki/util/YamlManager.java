@@ -42,7 +42,8 @@ public class YamlManager {
 	public Object loadYml(){
 		InputStream is = getClass().getClassLoader().getResourceAsStream(baseModelFile);
 		if (is == null) {
-			log.error("yaml file not found");
+			log.error("yaml file not found: " + baseModelFile);
+			return null;
 		}
 
 		Reader reader;

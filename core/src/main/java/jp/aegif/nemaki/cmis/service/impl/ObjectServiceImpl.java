@@ -162,6 +162,9 @@ public class ObjectServiceImpl implements ObjectService {
 				}
 			}
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+			if (content == null) {
+				return null;
+			}
 			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
 					content);
 			log.info(MessageFormat.format("ObjcetService#getObject permissionDenied check success: Repo={0}, Id={1}", repositoryId, objectId));
@@ -314,14 +317,12 @@ public class ObjectServiceImpl implements ObjectService {
 
 			// Try to read first few bytes to verify stream contains data
 			if (is.markSupported()) {
-				is.mark(100);
-				byte[] testBuffer = new byte[50];
-				int testBytesRead = is.read(testBuffer);
-				if (testBytesRead > 0) {
-					String preview = new String(testBuffer, 0, testBytesRead, "UTF-8");
-				}
+				is.mark(1);
+				int testBytesRead = is.read(new byte[1]);
 				is.reset();
-			} else {
+				if (log.isDebugEnabled()) {
+					log.debug("InputStream data check: " + (testBytesRead > 0 ? "has data" : "empty"));
+				}
 			}
 		} catch (Exception debugEx) {
 			if (log.isDebugEnabled()) {
@@ -527,8 +528,9 @@ public class ObjectServiceImpl implements ObjectService {
 			if (log.isDebugEnabled()) {
 				log.debug("NEMAKI CREATEFOLDER: PROPERTIES IS NULL");
 			}
+			throw new CmisInvalidArgumentException("Properties must not be null for createFolder");
 		}
-		
+
 		// CRITICAL FIX: Validate type definition before casting to prevent ClassCastException
 		String objectTypeId = DataUtil.getObjectTypeId(properties);
 		TypeDefinition rawTypeDefinition = typeManager.getTypeDefinition(repositoryId, objectTypeId);

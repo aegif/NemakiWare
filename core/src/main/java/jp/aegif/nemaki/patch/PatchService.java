@@ -119,54 +119,35 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 			return;
 		}
 
-		log.info("=== PHASE 3: PatchService initialization starting ===");
-		if (log.isDebugEnabled()) {
-			log.debug("Event source: " + event.getSource().getClass().getName());
-		}
+		// Use ERROR level for critical lifecycle logs to ensure visibility regardless of logging framework config
+		log.error("=== PHASE 3: PatchService initialization starting ===");
 
 		try {
-			log.info("Starting CMIS patch application (Phase 3)");
-
-			// Note: All database initialization (Phase 1) is handled by DatabasePreInitializer
-			// This method focuses on CMIS-aware operations that require fully initialized services
+			log.error("Starting CMIS patch application (Phase 3)");
 
 			// CRITICAL FIX: Create PropertyDefinitionDetail records for system CMIS properties
-			// This addresses the root cause of PropertyDefinitionCore contamination
 			initializeSystemPropertyDefinitionDetails();
 
 			// TCK REQUIREMENT: Create custom secondary type for TCK tests
 			createTCKSecondaryType();
 
 			// PRIORITY 4: TypeManager cache forced update for TCK compliance
-			// This ensures that PropertyDefinitionDetail changes are immediately reflected in type cache
 			invalidateTypeManagerCaches();
-
-			// INITIAL CONTENT: Create Sites and Technical Documents folders
-			// DISABLED: Folder creation moved to Patch_InitialContentSetup with proper ACL configuration
-			// PatchService was creating folders with null ACL (system principal only)
-			// Patch_InitialContentSetup creates folders with admin:all and GROUP_EVERYONE:read ACL
-			// createInitialFolders();
-
-			// NOTE: Test user initialization is handled by Docker/CouchDB initialization
-			if (log.isDebugEnabled()) {
-				log.debug("Test user initialization handled by Docker environment");
-			}
 
 			// CRITICAL TCK FIX: Index root folders in Solr for query tests
 			indexRootFoldersInSolr();
 
 			// Apply any future patches if they exist
 			if (patchList != null && !patchList.isEmpty()) {
-				log.info("Applying " + patchList.size() + " CMIS patches");
+				log.error("Applying " + patchList.size() + " CMIS patches from patchList");
 				apply();
 			} else {
-				log.info("No CMIS patches to apply - Phase 3 completed");
+				log.error("No CMIS patches to apply (patchList is " + (patchList == null ? "null" : "empty") + ") - Phase 3 completed");
 			}
 
-			log.info("=== CMIS patch application completed successfully ===");
+			log.error("=== CMIS patch application completed successfully ===");
 		} catch (Exception e) {
 			log.error("Failed to apply CMIS patches on startup", e);
-			// Continue with application startup even if patches fail
 		}
 	}
 	

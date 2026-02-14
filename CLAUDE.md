@@ -88,14 +88,15 @@ curl -u admin:admin http://localhost:8080/core/atom/bedroom
 
 ### QA統合テスト (推奨)
 ```bash
-./qa-test.sh
-# 期待: 75/75 PASS
+./qa-test.sh qa
+# 期待: 94/94 PASS
 ```
 
 ### TCKテスト
 ```bash
-timeout 300s mvn test -Dtest=BasicsTestGroup,TypesTestGroup,ControlTestGroup,VersioningTestGroup -f core/pom.xml -Pdevelopment
-# 期待: 11/11 PASS
+timeout 900s mvn test -Dtest=BasicsTestGroup,TypesTestGroup,ControlTestGroup,VersioningTestGroup -f core/pom.xml -Pdevelopment
+# 期待: 11/11 PASS (所要時間: 約13分、タイムアウト: 15分)
+# 注意: テスト失敗時はCouchDBにゴミデータ(cmistck*, test-custom-*)が残る場合がある
 ```
 
 ### Playwrightテスト
@@ -197,27 +198,38 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ---
 
-## セキュリティステータス (2025-12-28) ✅
+## セキュリティステータス (2026-02-13) ✅
 
 - npm脆弱性: 0件
 - Maven依存関係: 最新化済み
 - PDF.js CVE-2024-4367: 対応済み (react-pdf 10.0.1)
+- エクスポートACLリーク: 対応済み (CAN_GET_ACL権限チェック追加)
+- アーカイブDAO例外伝播: 対応済み (null返却→CmisRuntimeException)
 
 ---
 
 ## 現在のバージョン
 
-**3.0.0-RC1** (2025-12-28)
+**3.1.0** (2026-02-01)
+- クラウド統合 (Google Workspace / Microsoft Entra ID ディレクトリ同期、Cloud Drive連携)
+- OIDC認証 (Google / Microsoft)
 - 多言語対応 (日本語/英語)
 - セキュリティ脆弱性全解消
 - タイプ管理機能強化
 - React 18 + Vite 7 移行完了
+- インポート/エクスポート機能改善 (同名上書き、リレーションシップ対応、ID読替)
+- Webhook機能
+- MCP (Model Context Protocol) サーバー
+- RAGセマンティック検索
+- アーカイブ管理強化 (検索・一括操作・ダウンロード)
+- WebAuthnパスキー認証
 
 ---
 
 ## 関連ドキュメント
 
-- `QA-3.0.0-RC1.md`: QA作業指示書
-- `CLAUDE-archive-2025-12-28.md`: 詳細履歴アーカイブ
 - `AGENTS.md`: 開発者向け詳細ガイド
 - `README.md`: プロジェクト概要
+- `docs/ARCHITECTURE.md`: システムアーキテクチャ概要
+- `docs/CLOUD_INTEGRATION.md`: クラウド統合設定ガイド
+- `docs/AWS-DEPLOYMENT-GUIDE.md`: AWS本番デプロイガイド

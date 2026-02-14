@@ -149,7 +149,11 @@ public class ProblemDetail {
     public static ProblemDetail serviceUnavailable(String detail) {
         return new ProblemDetail("service-unavailable", "Service Unavailable", 503, detail);
     }
-    
+
+    public static ProblemDetail tooManyRequests(String detail) {
+        return new ProblemDetail("too-many-requests", "Too Many Requests", 429, detail);
+    }
+
     public String getType() {
         return type;
     }

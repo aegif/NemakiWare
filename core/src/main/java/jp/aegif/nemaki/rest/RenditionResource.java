@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rest;
 
+import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -49,6 +50,7 @@ import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
+import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Content;
@@ -56,6 +58,9 @@ import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.util.constant.RenditionKind;
 import jp.aegif.nemaki.util.spring.SpringContext;
+import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
+import org.apache.chemistry.opencmis.commons.enums.Action;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 
 /**
  * Jersey REST Resource for Rendition API
@@ -101,6 +106,11 @@ public class RenditionResource extends ResourceBase {
                 .getBean("RenditionManager", RenditionManager.class);
     }
 
+    private ExceptionService getExceptionService() {
+        return SpringContext.getApplicationContext()
+                .getBean("ExceptionService", ExceptionService.class);
+    }
+
     /**
      * Get all renditions for a document
      */
@@ -115,7 +125,30 @@ public class RenditionResource extends ResourceBase {
         Map<String, Object> response = new HashMap<>();
 
         try {
+            // SECURITY FIX: Require authentication and check object-level read permission
+            CallContext callContext = (CallContext) request.getAttribute("CallContext");
+            if (callContext == null) {
+                response.put("status", "error");
+                response.put("message", "Authentication required");
+                return Response.status(Response.Status.FORBIDDEN).entity(response).build();
+            }
+
             log.info("[RenditionResource] Getting renditions for objectId=" + objectId + " in repo=" + repositoryId);
+
+            // Check object-level read permission
+            Content content = getContentService().getContent(repositoryId, objectId);
+            if (content == null) {
+                response.put("status", "error");
+                response.put("message", "Document not found");
+                return Response.status(Response.Status.NOT_FOUND).entity(response).build();
+            }
+            try {
+                getExceptionService().permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);
+            } catch (CmisPermissionDeniedException e) {
+                response.put("status", "error");
+                response.put("message", "Permission denied");
+                return Response.status(Response.Status.FORBIDDEN).entity(response).build();
+            }
 
             List<Rendition> renditions = getContentService().getRenditions(repositoryId, objectId);
 
@@ -143,6 +176,13 @@ public class RenditionResource extends ResourceBase {
                     renditionMap.put("kind", rendition.getKind());
                     renditionMap.put("height", rendition.getHeight());
                     renditionMap.put("width", rendition.getWidth());
+                    // Include timestamps for freshness checking by UI
+                    if (rendition.getModified() != null) {
+                        renditionMap.put("modified", rendition.getModified().getTimeInMillis());
+                    }
+                    if (rendition.getCreated() != null) {
+                        renditionMap.put("created", rendition.getCreated().getTimeInMillis());
+                    }
                     renditionList.add(renditionMap);
                 }
             }
@@ -165,7 +205,8 @@ public class RenditionResource extends ResourceBase {
     }
 
     /**
-     * Generate PDF rendition for a document
+     * Generate PDF rendition for a document.
+     * When force=true, removes any existing preview renditions before generating a fresh one.
      */
     @POST
     @Path("/generate")
@@ -180,7 +221,15 @@ public class RenditionResource extends ResourceBase {
         Map<String, Object> response = new HashMap<>();
 
         try {
-            log.info("[RenditionResource] Generating rendition for objectId=" + objectId + ", force=" + force);
+            // SECURITY FIX: Require authentication and use user's CallContext for permission checks
+            CallContext callContext = (CallContext) request.getAttribute("CallContext");
+            if (callContext == null) {
+                response.put("status", "error");
+                response.put("message", "Authentication required");
+                return Response.status(Response.Status.FORBIDDEN).entity(response).build();
+            }
+
+            log.info("[RenditionResource] Generating rendition for objectId=" + objectId + ", force=" + force + ", user=" + callContext.getUsername());
 
             // Get the document
             Content content = getContentService().getContent(repositoryId, objectId);
@@ -191,6 +240,26 @@ public class RenditionResource extends ResourceBase {
                 return Response.status(Response.Status.NOT_FOUND).entity(response).build();
             }
 
+            // SECURITY FIX: Check object-level read permission before generating rendition
+            try {
+                getExceptionService().permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);
+            } catch (CmisPermissionDeniedException e) {
+                response.put("status", "error");
+                response.put("message", "Permission denied");
+                return Response.status(Response.Status.FORBIDDEN).entity(response).build();
+            }
+
+            // SECURITY FIX: Check content-level read permission.
+            // Rendition generation reads the document content to convert it to PDF,
+            // so CAN_VIEW_CONTENT_OBJECT (canGetContentStream) permission is required.
+            try {
+                getExceptionService().permissionDenied(callContext, repositoryId, PermissionMapping.CAN_VIEW_CONTENT_OBJECT, content);
+            } catch (CmisPermissionDeniedException e) {
+                response.put("status", "error");
+                response.put("message", "Permission denied: content read access required");
+                return Response.status(Response.Status.FORBIDDEN).entity(response).build();
+            }
+
             if (!content.isDocument()) {
                 response.put("status", "error");
                 response.put("message", "Object is not a document");
@@ -199,20 +268,34 @@ public class RenditionResource extends ResourceBase {
 
             Document document = (Document) content;
 
-            // Check if rendition already exists (unless force=true)
-            if (!force) {
-                List<Rendition> existingRenditions = getContentService().getRenditions(repositoryId, objectId);
-                if (CollectionUtils.isNotEmpty(existingRenditions)) {
+            // Check existing renditions
+            List<Rendition> existingRenditions = getContentService().getRenditions(repositoryId, objectId);
+            if (!force && CollectionUtils.isNotEmpty(existingRenditions)) {
+                for (Rendition r : existingRenditions) {
+                    if ("application/pdf".equals(r.getMimetype()) ||
+                        RenditionKind.CMIS_PREVIEW.value().equals(r.getKind())) {
+                        log.info("[RenditionResource] PDF rendition already exists for objectId=" + objectId);
+                        response.put("status", "success");
+                        response.put("message", "Rendition already exists");
+                        response.put("renditionId", r.getId());
+                        return Response.ok(response).build();
+                    }
+                }
+            }
+
+            // When force=true, remove existing preview renditions before generating fresh one
+            if (force && CollectionUtils.isNotEmpty(existingRenditions)) {
+                List<String> renditionIds = document.getRenditionIds();
+                if (renditionIds != null) {
+                    List<String> toRemove = new ArrayList<>();
                     for (Rendition r : existingRenditions) {
-                        if ("application/pdf".equals(r.getMimetype()) ||
-                            RenditionKind.CMIS_PREVIEW.value().equals(r.getKind())) {
-                            log.info("[RenditionResource] PDF rendition already exists for objectId=" + objectId);
-                            response.put("status", "success");
-                            response.put("message", "Rendition already exists");
-                            response.put("renditionId", r.getId());
-                            return Response.ok(response).build();
+                        if (RenditionKind.CMIS_PREVIEW.value().equals(r.getKind())) {
+                            toRemove.add(r.getId());
+                            log.info("[RenditionResource] Removing stale preview rendition: " + r.getId());
                         }
                     }
+                    renditionIds.removeAll(toRemove);
+                    document.setRenditionIds(renditionIds);
                 }
             }
 
@@ -242,12 +325,24 @@ public class RenditionResource extends ResourceBase {
                 return Response.status(Response.Status.BAD_REQUEST).entity(response).build();
             }
 
-            // Create content stream for conversion
+            // Read attachment content into byte array to avoid consuming cached InputStream
+            byte[] contentBytes;
+            try (InputStream is = attachment.getInputStream()) {
+                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                while ((bytesRead = is.read(buffer)) != -1) {
+                    baos.write(buffer, 0, bytesRead);
+                }
+                contentBytes = baos.toByteArray();
+            }
+
+            // Create content stream for conversion from byte array
             ContentStream contentStream = new ContentStreamImpl(
                 document.getName(),
-                BigInteger.valueOf(attachment.getLength()),
+                BigInteger.valueOf(contentBytes.length),
                 mimeType,
-                attachment.getInputStream()
+                new java.io.ByteArrayInputStream(contentBytes)
             );
 
             // Convert to PDF
@@ -267,12 +362,8 @@ public class RenditionResource extends ResourceBase {
             rendition.setMimetype("application/pdf");
             rendition.setLength(pdfStream.getLength());
 
-            // Set signature from CallContext if available
-            CallContext callContext = (CallContext) request.getAttribute("CallContext");
-            String username = "system";
-            if (callContext != null) {
-                username = callContext.getUsername();
-            }
+            // Set signature from authenticated user's CallContext
+            String username = callContext.getUsername();
             rendition.setCreator(username);
             rendition.setModifier(username);
             GregorianCalendar now = new GregorianCalendar();
@@ -290,10 +381,8 @@ public class RenditionResource extends ResourceBase {
             renditionIds.add(renditionId);
             document.setRenditionIds(renditionIds);
 
-            // Update document - use SystemCallContext for internal operations
-            jp.aegif.nemaki.cmis.factory.SystemCallContext systemContext =
-                new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId);
-            getContentService().update(systemContext, repositoryId, document);
+            // SECURITY FIX: Use authenticated user's CallContext instead of SystemCallContext
+            getContentService().update(callContext, repositoryId, document);
 
             log.info("[RenditionResource] Successfully created PDF rendition: " + renditionId);
 

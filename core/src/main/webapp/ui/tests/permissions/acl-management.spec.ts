@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { TestHelper, generateTestId } from '../utils/test-helper';
 
 /**
  * Advanced ACL (Access Control List) Management E2E Tests
@@ -78,9 +78,9 @@ test.describe('Advanced ACL Management', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   // FIX: Enhanced uniqueness for parallel execution - timestamp + random value
-  const testGroupName = `testgroup-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-  const testFolderName = `acl-test-folder-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-  const childFolderName = `child-folder-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const testGroupName = `testgroup-${generateTestId()}-${Math.random().toString(36).substring(2, 8)}`;
+  const testFolderName = `acl-test-folder-${generateTestId()}-${Math.random().toString(36).substring(2, 8)}`;
+  const childFolderName = `child-folder-${generateTestId()}-${Math.random().toString(36).substring(2, 8)}`;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
@@ -91,16 +91,7 @@ test.describe('Advanced ACL Management', () => {
     await page.waitForTimeout(2000);
 
     // MOBILE FIX: Close sidebar
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
   });
@@ -226,8 +217,7 @@ test.describe('Advanced ACL Management', () => {
   });
 
   test('should verify permission inheritance from parent folder', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -408,7 +398,7 @@ test.describe('Advanced ACL Management', () => {
     // FIXED: Name conflict with Test 2 - using unique name per test instance
 
     // Generate unique folder name for this test instance
-    const uniqueFolderName = `acl-test-folder-${Date.now()}-test3`;
+    const uniqueFolderName = `acl-test-folder-${generateTestId()}-test3`;
     console.log('Test: Creating folder via CMIS Browser Binding API');
 
     // Create folder directly via CMIS API
@@ -496,7 +486,7 @@ test.describe('Advanced ACL Management', () => {
     // after admin grants cmis:all or cmis:read permission via applyACL
 
     // Generate unique folder name for this test instance
-    const uniqueFolderName = `acl-test-folder-${Date.now()}-test4`;
+    const uniqueFolderName = `acl-test-folder-${generateTestId()}-test4`;
     console.log('Test: Creating folder via CMIS Browser Binding API');
 
     // Create folder directly via CMIS API

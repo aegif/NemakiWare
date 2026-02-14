@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "nemakiware": {
+      "url": "http://localhost:8080/core/mcp/message",
+      "headers": {
+        "Authorization": "Basic <run setup-mcp-service-account.sh to generate>"
+      }
+    }
+  }
+}

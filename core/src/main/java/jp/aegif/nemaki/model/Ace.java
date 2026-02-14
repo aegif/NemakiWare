@@ -23,9 +23,11 @@ package jp.aegif.nemaki.model;
 
 import org.apache.commons.lang3.ObjectUtils;
 
+import java.io.Serializable;
 import java.util.List;
 
-public class Ace {
+public class Ace implements Serializable {
+	private static final long serialVersionUID = 1L;
 	private String principalId;
 	private List<String> permissions;
 	private boolean direct;
@@ -64,8 +66,12 @@ public class Ace {
 
 	@Override
 	public boolean equals(Object obj) {
-		return (obj instanceof Ace) 
+		return (obj instanceof Ace)
 				&& ObjectUtils.equals(this.principalId, ((Ace)obj).getPrincipalId());
 	}
-	
+
+	@Override
+	public int hashCode() {
+		return principalId != null ? principalId.hashCode() : 0;
+	}
 }

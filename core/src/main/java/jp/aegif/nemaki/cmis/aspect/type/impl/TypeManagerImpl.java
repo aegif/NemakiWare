@@ -232,8 +232,9 @@ public class TypeManagerImpl implements TypeManager {
 				
 				if (log.isDebugEnabled()) {
 					log.debug("FINAL TYPES STATE: " + TYPES.keySet() + " with sizes:");
-					for (String repo : TYPES.keySet()) {
-						Map<String, TypeDefinitionContainer> repoTypes = TYPES.get(repo);
+					for (Map.Entry<String, Map<String, TypeDefinitionContainer>> entry : TYPES.entrySet()) {
+						String repo = entry.getKey();
+						Map<String, TypeDefinitionContainer> repoTypes = entry.getValue();
 						log.debug("  " + repo + ": " + (repoTypes != null ? repoTypes.size() : 0) + " types");
 					}
 				}
@@ -384,8 +385,9 @@ public class TypeManagerImpl implements TypeManager {
 		// Debug: Log final state
 		if (log.isDebugEnabled()) {
 			log.debug("generate() COMPLETE - TYPES keys: " + TYPES.keySet());
-			for (String repo : TYPES.keySet()) {
-				Map<String, TypeDefinitionContainer> repoTypes = TYPES.get(repo);
+			for (Map.Entry<String, Map<String, TypeDefinitionContainer>> entry : TYPES.entrySet()) {
+				String repo = entry.getKey();
+				Map<String, TypeDefinitionContainer> repoTypes = entry.getValue();
 				log.debug("Repository " + repo + " has " + (repoTypes != null ? repoTypes.size() : 0) + " types");
 				if (repoTypes != null && repoTypes.size() > 0) {
 					log.debug("First few type IDs in " + repo + ": " + 
@@ -624,14 +626,15 @@ public class TypeManagerImpl implements TypeManager {
 			log.info("Cleared SHARED_TYPE_DEFINITIONS and SHARED_PROPERTY_DEFINITIONS caches to ensure consistency after refresh");
 
 			log.info("Starting cache regeneration...");
-			
+
 			generate();
-			
+
 			log.info("Cache regeneration complete");
-			
+
 			// Log final cache state
-			for (String repositoryId : TYPES.keySet()) {
-				Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+			for (Map.Entry<String, Map<String, TypeDefinitionContainer>> entry : TYPES.entrySet()) {
+				String repositoryId = entry.getKey();
+				Map<String, TypeDefinitionContainer> types = entry.getValue();
 				log.debug("NEMAKI TYPE DEBUG: Repository " + repositoryId + " now has " + types.size() + " types in cache");
 				log.debug("NEMAKI TYPE DEBUG: Type IDs after refresh: " + types.keySet());
 			}
@@ -1088,8 +1091,7 @@ public class TypeManagerImpl implements TypeManager {
 		if (log.isDebugEnabled()) {
 			log.debug("=== SYSTEM DEBUG: addBasePropertyDefinitions called for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
 		}
-		
-		String typeId = type.getId();
+
 		try {
 			// Get initial property count
 			Map<String, PropertyDefinition<?>> initialProps = type.getPropertyDefinitions();
@@ -1489,6 +1491,8 @@ private PropertyDefinition<?> createDefaultPropDef(String repositoryId,
 				maxLength = 255L;  // File name length
 				break;
 			// Other STRING properties use unlimited length (null)
+		default:
+			break;
 		}
 	}
 	result = DataUtil.createPropDef(id, localName, localNameSpace,
@@ -1645,10 +1649,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				if (log.isDebugEnabled()) {
 				log.debug("Type has " + typeDef.getPropertyDefinitions().size() + " properties");
 			}
-				for (String propId : typeDef.getPropertyDefinitions().keySet()) {
-					if (!propId.startsWith("cmis:")) {
-					}
-				}
 				types.put(typeId, container);
 			} else {
 				// CRITICAL FIX: Update existing type if it has more properties (custom properties added)
@@ -1773,6 +1773,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			ensureInitialized();
 			types = TYPES.get(repositoryId);
 		}
+		if (types == null) {
+			types = java.util.Collections.emptyMap();
+			log.warn("buildDocumentTypeDefinitionFromDB: types map is null for repository " + repositoryId + ", using empty map");
+		}
 
 		DocumentTypeDefinitionImpl type = new DocumentTypeDefinitionImpl();
 
@@ -1798,10 +1802,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		if (log.isDebugEnabled()) {
 				log.debug("Parent type " + targetParentId + " has " + parentType.getPropertyDefinitions().size() + " properties");
 			}
-		for (String propId : parentType.getPropertyDefinitions().keySet()) {
-			if (!propId.startsWith("cmis:")) {
-			}
-		}
 
 		// Set base attributes, and properties(with specific properties included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
@@ -1842,7 +1842,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			ensureInitialized();
 			types = TYPES.get(repositoryId);
 		}
-		
+		if (types == null) {
+			types = java.util.Collections.emptyMap();
+			log.warn("buildFolderTypeDefinitionFromDB: types map is null for repository " + repositoryId + ", using empty map");
+		}
+
 		FolderTypeDefinitionImpl type = new FolderTypeDefinitionImpl();
 		FolderTypeDefinitionImpl parentType = (FolderTypeDefinitionImpl) types
 				.get(nemakiType.getParentId()).getTypeDefinition();
@@ -1856,11 +1860,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		boolean isBaseType = BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId());
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
 
-		// CRITICAL FIX: Only add folder-specific properties to the base cmis:folder type
-		// Custom types that inherit from cmis:folder should NOT have these properties added directly
-		if (isBaseType) {
-			addFolderPropertyDefinitions(repositoryId, type);
-		}
+		// TCK FIX: All folder types (base and custom) need folder-specific properties (cmis:parentId, etc.)
+		// so that getTypeDefinition() returns a type that includes PARENT_ID and OpenCMIS client accepts
+		// objects with parentId. Previously only cmis:folder had these, causing "parentId does not exist in type".
+		addFolderPropertyDefinitions(repositoryId, type);
 
 		return type;
 	}
@@ -1874,7 +1877,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			ensureInitialized();
 			types = TYPES.get(repositoryId);
 		}
-		
+		if (types == null) {
+			types = java.util.Collections.emptyMap();
+			log.warn("buildRelationshipTypeDefinitionFromDB: types map is null for repository " + repositoryId + ", using empty map");
+		}
+
 		RelationshipTypeDefinitionImpl type = new RelationshipTypeDefinitionImpl();
 		RelationshipTypeDefinitionImpl parentType = (RelationshipTypeDefinitionImpl) types
 				.get(nemakiType.getParentId()).getTypeDefinition();
@@ -1910,7 +1917,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			ensureInitialized();
 			types = TYPES.get(repositoryId);
 		}
-		
+		if (types == null) {
+			types = java.util.Collections.emptyMap();
+			log.warn("buildPolicyTypeDefinitionFromDB: types map is null for repository " + repositoryId + ", using empty map");
+		}
+
 		PolicyTypeDefinitionImpl type = new PolicyTypeDefinitionImpl();
 		PolicyTypeDefinitionImpl parentType = (PolicyTypeDefinitionImpl) types
 				.get(nemakiType.getParentId()).getTypeDefinition();
@@ -1942,7 +1953,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			ensureInitialized();
 			types = TYPES.get(repositoryId);
 		}
-		
+		if (types == null) {
+			types = java.util.Collections.emptyMap();
+			log.warn("buildItemTypeDefinitionFromDB: types map is null for repository " + repositoryId + ", using empty map");
+		}
+
 		ItemTypeDefinitionImpl type = new ItemTypeDefinitionImpl();
 		ItemTypeDefinitionImpl parentType = (ItemTypeDefinitionImpl) types.get(
 				nemakiType.getParentId()).getTypeDefinition();
@@ -2205,11 +2220,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			if (log.isDebugEnabled()) {
 				log.debug("Parent type has " + parentType.getPropertyDefinitions().size() + " properties");
 			}
-			for (String propId : parentType.getPropertyDefinitions().keySet()) {
-				if (!propId.startsWith("cmis:")) {
-				}
-			}
-
 			// Clone parent properties and mark them as inherited
 			for (Map.Entry<String, PropertyDefinition<?>> entry : parentType.getPropertyDefinitions().entrySet()) {
 				String propertyId = entry.getKey();
@@ -2272,10 +2282,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			// DEBUG: Log what was actually copied
 			if (log.isDebugEnabled()) {
 				log.debug("Copied " + parentProperties.size() + " properties from parent");
-			}
-			for (String propId : parentProperties.keySet()) {
-				if (!propId.startsWith("cmis:")) {
-				}
 			}
 		} else {
 			if (log.isDebugEnabled()) {
@@ -2492,10 +2498,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		if (log.isDebugEnabled()) {
 				log.debug("Type has " + type.getPropertyDefinitions().size() + " properties total");
 			}
-		for (String propId : type.getPropertyDefinitions().keySet()) {
-			if (!propId.startsWith("cmis:")) {
-			}
-		}
 	}
 
 
@@ -2690,12 +2692,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					log.trace("Added queryName mapping for existing property: " + queryName + " -> " + propertyId);
 				}
 			}
-			
-			// Track existing properties 
-			if (isCustomProperty) {
-				PropertyDefinition<?> existingInPropertyIdMap = propertyDefinitionCoresByPropertyId.get(propertyId);
-				PropertyDefinition<?> existingInQueryNameMap = propertyDefinitionCoresByQueryName.get(queryName);
-			}
 		}
 	}
 	
@@ -2839,8 +2835,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	public List<TypeDefinitionContainer> getRootTypes(String repositoryId) {
 		ensureInitialized();
 		List<TypeDefinitionContainer> rootTypes = new ArrayList<TypeDefinitionContainer>();
-		for (String key : basetypes.keySet()) {
-			rootTypes.add(basetypes.get(key));
+		for (Map.Entry<String, TypeDefinitionContainer> entry : basetypes.entrySet()) {
+			rootTypes.add(entry.getValue());
 		}
 		return rootTypes;
 	}
@@ -3184,15 +3180,22 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	// CRITICAL CONSISTENCY FIX: Use shared TypeDefinition system for normal path
 	// This ensures both normal and refresh paths return TypeDefinition objects with identical object identity
+	// SpotBugs NP_NULL_ON_SOME_PATH: Add null check before dereferencing typeDefinition
+	if (typeDefinition == null) {
+		log.warn("getTypeDefinition: typeDefinition is null for typeId=" + typeId + ", returning null");
+		return null;
+	}
 	TypeDefinition sharedTypeDefinition = getSharedTypeDefinition(repositoryId, typeDefinition.getId(), typeDefinition);
 	if (log.isDebugEnabled()) {
 		log.debug("TYPE DEFINITION SHARING: Applied getSharedTypeDefinition() to normal path for type " + (typeDefinition != null ? typeDefinition.getId() : "null"));
 	}
-	
+
+	// SpotBugs: NP_NULL_ON_SOME_PATH - Add null check for sharedTypeDefinition
 	if (log.isDebugEnabled()) {
-		log.debug("getTypeDefinition EXIT: typeId=" + (sharedTypeDefinition != null ? sharedTypeDefinition.getId() : "null"));
+		String typeIdForLog = (sharedTypeDefinition != null) ? sharedTypeDefinition.getId() : "null";
+		log.debug("getTypeDefinition EXIT: typeId=" + typeIdForLog);
 	}
-	
+
 	return sharedTypeDefinition;
 	}
 
@@ -3291,23 +3294,24 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		if (typeId == null) {
 			// CRITICAL DEBUG: Base types path
 			log.info("*** getTypesChildren: Processing base types (typeId=null) ***");
-			
+
 			// CRITICAL FIX: Simplified and corrected base types paging logic
 			int currentIndex = 0;
 			int returnedCount = 0;
-			for (String key : basetypes.keySet()) {
+			for (Map.Entry<String, TypeDefinitionContainer> entry : basetypes.entrySet()) {
+				String key = entry.getKey();
 				// Skip items before the skip count
 				if (currentIndex < skip) {
 					currentIndex++;
 					continue;
 				}
-				
+
 				// Stop if we've returned enough items
 				if (returnedCount >= max) {
 					break;
 				}
-				
-				TypeDefinitionContainer type = basetypes.get(key);
+
+				TypeDefinitionContainer type = entry.getValue();
 				TypeDefinition typeDef = type.getTypeDefinition();
 				
 				// CRITICAL DEBUG: Property definition processing for base types
@@ -3778,6 +3782,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			}
 		}
 
+		// SpotBugs: NP_NULL_ON_SOME_PATH - Add null check before accessing tdc
+		if (tdc == null) {
+			log.warn("flattenTypeDefinitionContainer: tdc is null, skipping children processing");
+			return;
+		}
+
 		List<TypeDefinitionContainer> children = tdc.getChildren();
 		if (CollectionUtils.isNotEmpty(children)) {
 			for (TypeDefinitionContainer child : children) {
@@ -4132,6 +4142,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * so subtypes (including secondary types) are not loaded during initial startup.
 	 * Solution: When cache is invalidated (after PatchService creates types), immediately
 	 * regenerate the types for the specific repository to load newly created types.
+	 * 
+	 * CRITICAL FIX (2026-02-04): Also clear ContentDaoService's type cache
+	 * Root cause: ContentDaoService caches type definitions from CouchDB. When TypeManager calls
+	 * generate(), it reads from TypeService which reads from ContentDaoService's CACHED data.
+	 * If ContentDaoService cache is not cleared, TypeManager reads stale data without new types.
+	 * Solution: Call typeService.clearTypeCache() BEFORE generate() to force fresh DB read.
 	 */
 	private void invalidateTypeDefinitionCache(String repositoryId) {
 		synchronized (initLock) {
@@ -4154,7 +4170,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 			// Clear property definition caches for this repository
 			if (subTypeProperties != null) {
-				subTypeProperties.entrySet().removeIf(entry -> entry.getKey().startsWith(repositoryId + ":"));
+				// SpotBugs NP_NULL_ON_SOME_PATH: Add null check for entry key before calling startsWith
+			subTypeProperties.entrySet().removeIf(entry -> entry.getKey() != null && entry.getKey().startsWith(repositoryId + ":"));
 				log.debug("invalidateTypeDefinitionCache: Cleared subtype properties for repository=" + repositoryId);
 			}
 
@@ -4162,6 +4179,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				propertyDefinitionCoresByPropertyId.clear();
 				propertyDefinitionCoresByQueryName.clear();
 				log.debug("invalidateTypeDefinitionCache: Cleared property definition caches");
+			}
+
+			// CRITICAL FIX (2026-02-04): Clear ContentDaoService's type cache BEFORE regenerating
+			// This ensures generate() reads fresh data from CouchDB, not stale cached data
+			if (typeService != null) {
+				log.info("invalidateTypeDefinitionCache: Clearing ContentDaoService type cache for repository=" + repositoryId);
+				typeService.clearTypeCache(repositoryId);
 			}
 
 			// CRITICAL FIX (2025-12-11): Immediately regenerate types for this repository
@@ -4177,8 +4201,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 				// Log secondary types specifically for debugging
 				if (newTypes != null) {
+					// SpotBugs: NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE - Add null check for id
 					long secondaryCount = newTypes.keySet().stream()
-						.filter(id -> !id.startsWith("cmis:"))
+						.filter(id -> id != null && !id.startsWith("cmis:"))
 						.count();
 					log.info("invalidateTypeDefinitionCache: Found " + secondaryCount + " custom/secondary types");
 				}

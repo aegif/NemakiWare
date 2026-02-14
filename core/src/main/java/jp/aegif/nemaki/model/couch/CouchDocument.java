@@ -195,7 +195,7 @@ public class CouchDocument extends CouchContent {
 	
 	@JsonProperty("versionSeriesCheckedOut")
 	public Boolean isVersionSeriesCheckedOut() {
-		return (versionSeriesCheckedOut == null) ? false : versionSeriesCheckedOut;
+		return (versionSeriesCheckedOut == null) ? Boolean.FALSE : versionSeriesCheckedOut;
 	}
 	public void setVersionSeriesCheckedOut(Boolean versionSeriesCheckedOut) {
 		this.versionSeriesCheckedOut = versionSeriesCheckedOut;

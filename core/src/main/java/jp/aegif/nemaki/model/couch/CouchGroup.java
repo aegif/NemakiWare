@@ -84,12 +84,14 @@ public class CouchGroup  extends CouchNodeBase{
 		g.setGroupId(getGroupId());
 		g.setName(getName());
 
+		// Get users from direct field or subTypeProperties
 		List<String> usersList = getUsers();
 		if (usersList == null) {
 			usersList = extractSubTypeProperty("nemaki:users");
 		}
 		g.setUsers(usersList != null ? usersList : new ArrayList<>());
 
+		// Get groups from direct field or subTypeProperties
 		List<String> groupsList = getGroups();
 		if (groupsList == null) {
 			groupsList = extractSubTypeProperty("nemaki:groups");
@@ -99,6 +101,10 @@ public class CouchGroup  extends CouchNodeBase{
 		return g;
 	}
 
+	/**
+	 * Extract a list property from subTypeProperties.
+	 * subTypeProperties is a list of maps with "key" and "value" fields.
+	 */
 	@SuppressWarnings("unchecked")
 	private List<String> extractSubTypeProperty(String propertyKey) {
 		Map<String, Object> additionalProps = getAdditionalProperties();

@@ -24,7 +24,7 @@
  *    - Trade-off: Faster execution but failures cascade to later tests
  *
  * 2. UUID-Based Unique Document Naming (Line 9):
- *    - Uses randomUUID().substring(0, 8) for uniqueness
+ *    - Uses generateTestId() for uniqueness
  *    - Format: "test-props-doc-a1b2c3d4.txt"
  *    - Prevents conflicts when tests run across multiple browsers
  *    - Rationale: Parallel browser execution (6 profiles) requires unique names
@@ -128,8 +128,8 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 test.describe('Document Properties Edit and Persistence', () => {
   // CRITICAL: Tests must run in order - upload creates document for subsequent tests
@@ -137,7 +137,7 @@ test.describe('Document Properties Edit and Persistence', () => {
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
-  const testDocName = `test-props-doc-${randomUUID().substring(0, 8)}.txt`;
+  const testDocName = `test-props-doc-${generateTestId()}.txt`;
   let testDocId: string;
 
   test.beforeEach(async ({ page, browserName }) => {
@@ -167,37 +167,7 @@ test.describe('Document Properties Edit and Persistence', () => {
       console.error('!!! Documents menu NOT found !!!');
     }
 
-    // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-    console.error(`!!! Viewport: ${JSON.stringify(viewportSize)}, isMobileChrome: ${isMobileChrome} !!!`);
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-
-      if (await menuToggle.count() > 0) {
-        try {
-          await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500);
-          console.error('!!! Sidebar closed !!!');
-        } catch (error) {
-          console.error('!!! Sidebar close failed !!!');
-          // Continue even if sidebar close fails
-        }
-      } else {
-        const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
-        if (await alternativeToggle.count() > 0) {
-          try {
-            await alternativeToggle.click({ timeout: 3000 });
-            await page.waitForTimeout(500);
-            console.error('!!! Alternative sidebar close succeeded !!!');
-          } catch (error) {
-            console.error('!!! Alternative sidebar close failed !!!');
-            // Continue even if alternative selector fails
-          }
-        }
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     console.error('!!! beforeEach COMPLETED SUCCESSFULLY !!!');
   });
@@ -223,9 +193,8 @@ test.describe('Document Properties Edit and Persistence', () => {
    * Document upload and property editing verified working via manual testing.
    * Re-enable after implementing more robust upload completion detection.
    */
-  test.skip('should upload test document for property editing', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+  test('should upload test document for property editing', async ({ page, browserName }) => {
+    const isMobile = testHelper.isMobile(browserName);
 
     // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
     // Button text may be 'アップロード' or 'ファイルアップロード' depending on UI version
@@ -271,8 +240,7 @@ test.describe('Document Properties Edit and Persistence', () => {
    * PropertyEditor.tsx lines 306-313 (Edit button), 329-380 (Edit mode form)
    */
   test('should open and edit document properties', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForTimeout(2000);
 
@@ -333,8 +301,7 @@ test.describe('Document Properties Edit and Persistence', () => {
   });
 
   test('should verify property changes persist after page reload', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Refresh via UI navigation instead of page.reload() to avoid breaking React Router
     // Navigate away to User Management
@@ -398,8 +365,7 @@ test.describe('Document Properties Edit and Persistence', () => {
   });
 
   test('should clean up test document', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     console.log(`Cleanup test: Looking for document: ${testDocName}`);
     await page.waitForTimeout(2000);

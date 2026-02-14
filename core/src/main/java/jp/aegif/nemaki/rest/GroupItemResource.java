@@ -45,6 +45,7 @@ import org.json.simple.parser.ParseException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.FormParam;
 import jakarta.ws.rs.GET;
@@ -93,10 +94,17 @@ public class GroupItemResource extends ResourceBase{
 	@GET
 	@Path("/search")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String search(@PathParam("repositoryId") String repositoryId, @QueryParam("query") String query){
+	public String search(@PathParam("repositoryId") String repositoryId, @QueryParam("query") String query,
+			@Context HttpServletRequest httpRequest){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			return makeResult(status, result, errMsg).toJSONString();
+		}
 
 		if (StringUtils.isBlank(query)) {
 			status = false;
@@ -138,7 +146,11 @@ public class GroupItemResource extends ResourceBase{
 	@GET
 	@Path("/list")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String list(@PathParam("repositoryId") String repositoryId){
+	public String list(@PathParam("repositoryId") String repositoryId,
+					   @QueryParam("offset") @DefaultValue("-1") int offset,
+					   @QueryParam("limit") @DefaultValue("-1") int limit,
+					   @QueryParam("query") @DefaultValue("") String query,
+					   @Context HttpServletRequest httpRequest) {
 		if (log.isDebugEnabled()) {
 			log.debug("GroupItemResource.list() called for repository: " + repositoryId);
 		}
@@ -147,36 +159,57 @@ public class GroupItemResource extends ResourceBase{
 		JSONArray listJSON = new JSONArray();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			return makeResult(status, result, errMsg).toJSONString();
+		}
 
-		List<GroupItem> groupList;
-		try{
-			if (log.isDebugEnabled()) {
-				log.debug("Calling getContentService().getGroupItems()");
-			}
-			groupList = getContentService().getGroupItems(repositoryId);
-			if (log.isDebugEnabled()) {
-				log.debug("getGroupItems returned " + groupList.size() + " groups");
-			}
-			
-			for(GroupItem group : groupList){
-				if (log.isDebugEnabled()) {
-					log.debug("Processing group: ID=" + group.getGroupId() + ", Name=" + group.getName());
+		try {
+			boolean paginated = offset >= 0 && limit > 0;
+			boolean hasQuery = query != null && !query.trim().isEmpty();
+			int totalCount;
+
+			if (hasQuery) {
+				String queryLower = query.trim().toLowerCase();
+				List<GroupItem> allGroups = getContentService().getGroupItems(repositoryId);
+				List<GroupItem> filtered = new java.util.ArrayList<>();
+				for (GroupItem group : allGroups) {
+					if (matchesGroupQuery(group, queryLower)) {
+						filtered.add(group);
+					}
 				}
-				JSONObject groupJSON = convertGroupToJson(group);
-				listJSON.add(groupJSON);
+				totalCount = filtered.size();
+				int start = paginated ? Math.min(offset, totalCount) : 0;
+				int end = paginated ? Math.min(start + limit, totalCount) : totalCount;
+				for (int i = start; i < end; i++) {
+					listJSON.add(convertGroupToJson(filtered.get(i)));
+				}
+			} else if (paginated) {
+				totalCount = getContentService().getGroupItemCount(repositoryId);
+				List<GroupItem> groupList = getContentService().getGroupItems(repositoryId, offset, limit);
+				for (GroupItem group : groupList) {
+					listJSON.add(convertGroupToJson(group));
+				}
+			} else {
+				List<GroupItem> groupList = getContentService().getGroupItems(repositoryId);
+				totalCount = groupList.size();
+				for (GroupItem group : groupList) {
+					listJSON.add(convertGroupToJson(group));
+				}
 			}
+
 			result.put(ITEM_ALLGROUPS, listJSON);
-		}catch(Exception ex){
-			if (log.isDebugEnabled()) {
-				log.debug("Exception in GroupItemResource.list(): " + ex.getMessage());
+			result.put("totalCount", totalCount);
+			if (paginated) {
+				result.put("offset", offset);
+				result.put("limit", limit);
 			}
-			ex.printStackTrace();
+		} catch (Exception ex) {
+			log.error("Exception in GroupItemResource.list(): " + ex.getMessage(), ex);
 			addErrMsg(errMsg, ITEM_ALLGROUPS, ErrorCode.ERR_LIST);
 		}
 		result = makeResult(status, result, errMsg);
-		if (log.isDebugEnabled()) {
-			log.debug("GroupItemResource.list() returning result");
-		}
 		return result.toString();
 	}
 
@@ -184,11 +217,17 @@ public class GroupItemResource extends ResourceBase{
 	@GET
 	@Path("/show/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("id") String groupId){
+	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("id") String groupId,
+			@Context HttpServletRequest httpRequest){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+		if (!status) {
+			return makeResult(status, result, errMsg).toJSONString();
+		}
 
 		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
 		if(group == null){
@@ -218,8 +257,13 @@ public class GroupItemResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+
 		//Validation
-		status = validateNewGroup(repositoryId, status, errMsg, groupId, name);
+		if (status) {
+			status = validateNewGroup(repositoryId, status, errMsg, groupId, name);
+		}
 
 		//Create a group
 		if(status){
@@ -312,6 +356,9 @@ public class GroupItemResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
+
 		//Existing group
 		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
 		if (group == null) {
@@ -349,12 +396,15 @@ public class GroupItemResource extends ResourceBase{
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
 	public String delete(@PathParam("repositoryId") String repositoryId,
-			@PathParam("id") String groupId){
+			@PathParam("id") String groupId,
+			@Context HttpServletRequest httpRequest){
 
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
 
 		//Existing group
 		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
@@ -388,6 +438,9 @@ public class GroupItemResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+
+		// Admin check
+		status = checkAdmin(errMsg, httpRequest);
 
 		//Existing Group
 		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
@@ -470,14 +523,23 @@ public class GroupItemResource extends ResourceBase{
 		List<String> ul = group.getUsers();
 		if(ul != null) usersList = ul;
 
+		// Pre-fetch all user IDs once for existence validation (avoid N+1 queries)
+		java.util.Set<String> allUserIds = null;
+		if(apiType.equals(API_ADD)){
+			List<jp.aegif.nemaki.model.UserItem> allUsers = getContentServiceSafe().getUserItems(repositoryId);
+			allUserIds = new java.util.HashSet<>();
+			for(jp.aegif.nemaki.model.UserItem u : allUsers){
+				allUserIds.add(u.getUserId());
+			}
+		}
+
 		for (int i = 0; i < targetUserIds.size(); i++) {
 			String userId = targetUserIds.get(i).toString();
 			boolean notSkip = true;
 
-			//check only when "add" API
+			//check only when "add" API using pre-fetched set
 			if(apiType.equals(API_ADD)){
-				UserItem existingUser = getContentService().getUserItemById(repositoryId, userId);
-				if(existingUser == null){
+				if(!allUserIds.contains(userId)){
 					notSkip = false;
 					addErrMsg(errMsg, ITEM_USER + ":" + userId, ErrorCode.ERR_NOTFOUND);
 				}
@@ -521,19 +583,19 @@ public class GroupItemResource extends ResourceBase{
 		List<String> gl = group.getGroups();
 		if(gl != null) groupsList = gl;
 
+		// Fetch all groups once and build lookup set for existence checks
 		List<GroupItem> allGroupsList = getContentService().getGroupItems(repositoryId);
-		List<String> allGroupsStringList = new ArrayList<String>();
+		java.util.Set<String> allGroupIds = new java.util.HashSet<>();
 		for(final GroupItem g : allGroupsList){
-			allGroupsStringList.add(g.getId());
+			allGroupIds.add(g.getGroupId());
 		}
 
 		for (int i = 0; i < targetGroupIds.size(); i++) {
 			String groupId = targetGroupIds.get(i).toString();
 			boolean notSkip = true;
 
-			//Existance check
-			GroupItem g = getContentService().getGroupItemById(repositoryId, groupId);
-			if(g == null && apiType.equals(API_ADD)){
+			// Existence check using pre-fetched set (no individual DB query)
+			if(apiType.equals(API_ADD) && !allGroupIds.contains(groupId)){
 				notSkip = false;
 				addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ErrorCode.ERR_NOTFOUND);
 			}
@@ -601,6 +663,13 @@ public class GroupItemResource extends ResourceBase{
 		return status;
 	}
 
+
+
+	private boolean matchesGroupQuery(GroupItem group, String queryLower) {
+		if (group.getGroupId() != null && group.getGroupId().toLowerCase().contains(queryLower)) return true;
+		if (group.getName() != null && group.getName().toLowerCase().contains(queryLower)) return true;
+		return false;
+	}
 
 	private JSONObject convertGroupToJson(GroupItem group) {
 		String created = new String();

@@ -67,7 +67,7 @@ public class TokenServiceImpl implements TokenService{
 			String token = UUID.randomUUID().toString();
 
 			String expirationConfig = propertyManager.readValue(PropertyKey.AUTH_TOKEN_EXPIRATION);
-			long expirationMillis = Long.valueOf(expirationConfig);
+			long expirationMillis = Long.parseLong(expirationConfig);
 			long currentTime = System.currentTimeMillis();
 			long expiration = currentTime + expirationMillis;
 

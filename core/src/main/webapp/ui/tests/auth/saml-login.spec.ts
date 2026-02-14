@@ -8,12 +8,12 @@
  * - SAML session management
  *
  * Prerequisites:
- * - Keycloak server running at http://localhost:8088
- * - Keycloak realm 'nemakiware' configured with SAML client 'nemakiware-saml-client'
+ * - Keycloak server running at http://localhost:8180
+ * - Keycloak realm 'nemakiware' configured with SAML client 'nemakiware-sp'
  * - Test user 'testuser' with password 'password' in Keycloak
  *
  * Environment Variables:
- * - KEYCLOAK_URL: Keycloak server URL (default: http://localhost:8088)
+ * - KEYCLOAK_URL: Keycloak server URL (default: http://localhost:8180)
  * - SAML_ENTITY_ID: SAML entity ID (default: nemakiware-saml-client)
  *
  * NOTE: These tests are automatically skipped when Keycloak is not running.
@@ -22,8 +22,8 @@
 import { test, expect } from '@playwright/test';
 import { isKeycloakAvailable, KEYCLOAK_SKIP_MESSAGE } from '../utils/test-state';
 
-const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';
-const SAML_ENTITY_ID = process.env.SAML_ENTITY_ID || 'nemakiware-saml-client';
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8180';
+const SAML_ENTITY_ID = process.env.SAML_ENTITY_ID || 'nemakiware-sp';
 
 test.describe('NemakiWare SAML Authentication', () => {
   // Serial mode: SAML tests interact with shared Keycloak session state
@@ -56,7 +56,7 @@ test.describe('NemakiWare SAML Authentication', () => {
 
   test('should redirect to Keycloak when SAML button is clicked', async ({ page }) => {
     await page.goto('/core/ui/');
-    
+
     await page.waitForFunction(
       () => {
         const root = document.getElementById('root');
@@ -70,14 +70,17 @@ test.describe('NemakiWare SAML Authentication', () => {
     const samlButton = page.locator('button:has-text("SAML"), button:has-text("SSO")').first();
     await samlButton.click();
 
-    await page.waitForURL(/localhost:8088|keycloak/i, { timeout: 15000 });
-    
-    expect(page.url()).toContain('8088');
+    // Extract port from KEYCLOAK_URL for dynamic matching
+    const keycloakPort = new URL(KEYCLOAK_URL).port || '8088';
+    const urlPattern = new RegExp(`localhost:${keycloakPort}|keycloak`, 'i');
+    await page.waitForURL(urlPattern, { timeout: 15000 });
+
+    expect(page.url()).toContain(keycloakPort);
   });
 
   test('should complete SAML login flow with Keycloak', async ({ page }) => {
     await page.goto('/core/ui/');
-    
+
     await page.waitForFunction(
       () => {
         const root = document.getElementById('root');
@@ -91,7 +94,10 @@ test.describe('NemakiWare SAML Authentication', () => {
     const samlButton = page.locator('button:has-text("SAML"), button:has-text("SSO")').first();
     await samlButton.click();
 
-    await page.waitForURL(/localhost:8088|keycloak/i, { timeout: 15000 });
+    // Extract port from KEYCLOAK_URL for dynamic matching
+    const keycloakPort = new URL(KEYCLOAK_URL).port || '8088';
+    const urlPattern = new RegExp(`localhost:${keycloakPort}|keycloak`, 'i');
+    await page.waitForURL(urlPattern, { timeout: 15000 });
 
     const usernameField = page.locator('input[name="username"], #username').first();
     await usernameField.waitFor({ state: 'visible', timeout: 10000 });
@@ -108,7 +114,7 @@ test.describe('NemakiWare SAML Authentication', () => {
     expect(page.url()).toContain('8080');
   });
 
-  test('should handle SAML token conversion endpoint with valid response', async ({ request }) => {
+  test('should reject SAML token conversion (signature verification not implemented)', async ({ request }) => {
     const samlResponse = Buffer.from(
       '<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">' +
       '<saml:Assertion><saml:NameID>testuser</saml:NameID></saml:Assertion>' +
@@ -126,13 +132,11 @@ test.describe('NemakiWare SAML Authentication', () => {
     });
 
     expect(response.ok()).toBeTruthy();
-    
+
+    // SAML token conversion is disabled for security (no signature verification)
     const result = await response.json();
-    expect(result.status).toBe('success');
-    expect(result.value).toBeDefined();
-    expect(result.value.userName).toBe('testuser');
-    expect(result.value.token).toBeDefined();
-    expect(result.value.repositoryId).toBe('bedroom');
+    expect(result.status).toBe('failure');
+    expect(result.error).toBeDefined();
   });
 
   test('should reject SAML token conversion without saml_response', async ({ request }) => {
@@ -148,9 +152,8 @@ test.describe('NemakiWare SAML Authentication', () => {
     expect(result.error).toBeDefined();
   });
 
-  test('should reject SAML response with email attribute for non-existent user', async ({ request }) => {
-    // Note: This test validates current behavior where SSO users must pre-exist in NemakiWare.
-    // Auto-provisioning of SSO users is not yet implemented.
+  test('should reject SAML auto-provisioning (endpoint disabled)', async ({ request }) => {
+    // SAML token conversion is disabled - signature verification not implemented
     const samlResponse = Buffer.from(
       '<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">' +
       '<saml:Assertion>' +
@@ -172,14 +175,13 @@ test.describe('NemakiWare SAML Authentication', () => {
       }
     });
 
-    // User does not exist in NemakiWare, so conversion should fail
     const result = await response.json();
     expect(result.status).toBe('failure');
     expect(result.error).toBeDefined();
   });
 
-  test('should extract username from SAML response with email attribute for existing user', async ({ request }) => {
-    // This test uses 'testuser' which exists in both Keycloak and NemakiWare (created via previous tests)
+  test('should reject SAML token with NameID (endpoint disabled)', async ({ request }) => {
+    // SAML token conversion is disabled - signature verification not implemented
     const samlResponse = Buffer.from(
       '<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">' +
       '<saml:Assertion>' +
@@ -205,8 +207,7 @@ test.describe('NemakiWare SAML Authentication', () => {
     expect(response.ok()).toBeTruthy();
 
     const result = await response.json();
-    expect(result.status).toBe('success');
-    // NameID takes precedence over email attribute
-    expect(result.value.userName).toBe('testuser');
+    expect(result.status).toBe('failure');
+    expect(result.error).toBeDefined();
   });
 });

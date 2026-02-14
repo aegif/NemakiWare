@@ -38,7 +38,8 @@ public enum NodeType {
 	CHANGE("change"),
 	USER("user"),
 	GROUP("group"),
-	PATCH("patch");
+	PATCH("patch"),
+	API_KEY("apiKey");
 
 
 	private final String value;

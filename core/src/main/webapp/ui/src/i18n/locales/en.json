@@ -35,6 +35,7 @@
     "select": "Select",
     "clear": "Clear",
     "retry": "Retry",
+    "refresh": "Refresh",
     "reload": "Reload",
     "back": "Back",
     "next": "Next",
@@ -47,6 +48,8 @@
     "items": "{{count}} items",
     "moreResults": "More results available",
     "unknownError": "Unknown error",
+    "showSettings": "Show Settings",
+    "hideSettings": "Hide Settings",
     "validation": {
       "required": "{{field}} is required",
       "enterField": "Please enter {{field}}",
@@ -73,7 +76,10 @@
       "navigationFailed": "Navigation failed",
       "details": "Details: {{details}}"
     },
-    "confirmDelete": "Delete this {{item}}?"
+    "confirmDelete": "Delete this {{item}}?",
+    "totalItems": "Total {{total}} items",
+    "copyFailed": "Copy failed",
+    "noData": "No data"
   },
     "navigation": {
       "home": "Home",
@@ -86,8 +92,34 @@
       "archive": "Archive",
       "solr": "Solr Index",
       "auditDashboard": "Audit Log",
-      "apiDocs": "API Docs"
+      "apiDocs": "API Docs",
+      "filesystemImportExport": "Filesystem Import/Export",
+      "configViewer": "Config Viewer",
+      "accountSettings": "Account Settings"
     },
+  "configViewer": {
+    "title": "Configuration Properties",
+    "columns": {
+      "category": "Category",
+      "key": "Property Key",
+      "value": "Value",
+      "source": "Source"
+    },
+    "sources": {
+      "systemProperty": "System Property",
+      "environment": "Environment Variable",
+      "couchdbDynamic": "CouchDB Dynamic",
+      "default": "Default"
+    },
+    "filters": {
+      "searchPlaceholder": "Search by property key...",
+      "categoryPlaceholder": "Filter by category"
+    },
+    "messages": {
+      "loadError": "Failed to load configuration properties",
+      "totalItems": "{{count}} items total"
+    }
+  },
   "typeManagement": {
     "title": "Type Management",
     "customTypes": "Custom Types",
@@ -404,6 +436,8 @@
     "checkout": "Check Out",
     "checkin": "Check In",
     "cancelCheckout": "Cancel Check Out",
+    "editInGoogleDrive": "Edit in Google Drive",
+    "editInOneDrive": "Edit in OneDrive",
     "backToFolder": "Back to Folder",
     "back": "Back",
     "checkedOut": "Checked Out",
@@ -458,6 +492,17 @@
       "selectValue": "Select value",
       "enterNumber": "Enter number"
     },
+    "versionDetail": {
+      "title": "Version Detail",
+      "detailButton": "Detail",
+      "name": "File Name",
+      "description": "Description",
+      "lastModifiedBy": "Last Modified By",
+      "lastModifiedDate": "Last Modified Date",
+      "fileSize": "File Size",
+      "mimeType": "MIME Type",
+      "objectId": "Object ID"
+    },
     "relationshipDetail": {
       "title": "Relationship Detail",
       "editTitle": "Edit Relationship Properties",
@@ -485,6 +530,17 @@
       "checkoutError": "Failed to check out",
       "checkinSuccess": "Checked in successfully",
       "checkinError": "Failed to check in",
+      "cloudPushSuccess": "Uploaded to cloud drive",
+      "cloudPushError": "Failed to upload to cloud drive",
+      "cloudPullSuccess": "Content pulled from cloud",
+      "cloudPullError": "Failed to pull content from cloud",
+      "cloudFileNotFoundTitle": "Cloud file not found",
+      "cloudFileNotFoundMessage": "The file on cloud drive appears to have been deleted. Please choose an action.",
+      "cloudFileNotFoundReCreate": "Re-create",
+      "cloudFileNotFoundUnlink": "Unlink",
+      "cloudFileRecoverySuccess": "Cloud file re-created successfully",
+      "cloudUnlinkSuccess": "Cloud sync unlinked",
+      "cloudUnlinkError": "Failed to unlink cloud sync",
       "cancelCheckoutSuccess": "Check out cancelled",
       "cancelCheckoutError": "Failed to cancel check out",
       "selectTargetFirst": "Please select a target object first",
@@ -512,7 +568,46 @@
       "typeCoercionRejected": "Type coercion failed",
       "listElementDropped": "List element dropped",
       "elementCount": "Element count: {{count}}"
-    }
+    },
+    "similarDocuments": "Similar Documents",
+    "noSimilarDocuments": "No similar documents found",
+    "noSimilarDocumentsDescription": "This document is not yet indexed in RAG or there are no semantically similar documents.",
+    "similarDocumentsTable": {
+      "name": "Name",
+      "path": "Path",
+      "similarity": "Similarity",
+      "preview": "Preview"
+    },
+    "cloudComments": {
+      "title": "Cloud Comments",
+      "resolved": "Resolved",
+      "edited": "Edited",
+      "viewAll": "View All",
+      "moreComments": "{{count}} more comments"
+    },
+    "externalContext": {
+      "tab": "External Context",
+      "sourceType": "Source Type",
+      "sourceId": "Source ID",
+      "updatedAt": "Last Updated",
+      "content": "Content",
+      "copy": "Copy",
+      "copySuccess": "Copied",
+      "truncatedWarning": "Data has been truncated (5000 character limit)",
+      "parseError": "Failed to parse JSON",
+      "noData": "No external context data available",
+      "types": {
+        "cloud_sync": "Cloud Sync",
+        "crm": "CRM",
+        "erp": "ERP",
+        "chat": "Chat",
+        "email": "Email"
+      }
+    },
+    "pullFromCloud": "Pull from Cloud",
+    "openInCloud": "Open in Cloud",
+    "updateInGoogleDrive": "Update Google Drive",
+    "updateInOneDrive": "Update OneDrive"
   },
   "folderBrowser": {
     "newFolder": "New Folder",
@@ -542,8 +637,25 @@
       "firstName": "First Name",
       "lastName": "Last Name",
       "email": "Email",
-      "groups": "Groups"
+      "admin": "Administrator",
+      "groups": "Groups",
+      "authMethods": "Auth Methods"
     },
+    "adminBadge": "Admin",
+    "adminToggleTooltip": "Grant or revoke admin privileges for this user",
+    "cannotRevokeOwnAdmin": "You cannot revoke your own admin privileges",
+    "passwordReset": "Password Reset",
+    "resetPassword": "Reset Password",
+    "newPassword": "New Password",
+    "confirmNewPassword": "Confirm New Password",
+    "authMethods": {
+      "all": "All Allowed",
+      "password": "Password Only",
+      "cloud": "Cloud Only",
+      "both": "Password + Cloud",
+      "disabled": "Disabled"
+    },
+    "authMethodsTooltip": "Configure which authentication methods are allowed for this user. If not set, all methods are allowed.",
     "placeholders": {
       "userId": "Enter user ID",
       "userName": "Enter user name",
@@ -551,13 +663,18 @@
       "lastName": "Enter last name",
       "email": "Enter email",
       "password": "Enter password",
-      "groups": "Select groups"
+      "groups": "Select groups",
+      "authMethods": "Select auth methods",
+      "newPassword": "Enter new password",
+      "confirmPassword": "Re-enter password"
     },
     "validation": {
       "userIdRequired": "Please enter a user ID",
       "userNameRequired": "Please enter a user name",
       "passwordRequired": "Please enter a password",
-      "passwordMinLength": "Password must be at least 6 characters"
+      "passwordMinLength": "Password must be at least 6 characters",
+      "passwordMinLength8": "Password must be at least 8 characters",
+      "confirmPasswordRequired": "Please confirm the password"
     },
     "messages": {
       "loadError": "Failed to load users",
@@ -568,8 +685,11 @@
       "updateError": "Failed to update user",
       "deleteError": "Failed to delete user",
       "permissionError": "Permission error: You do not have permission to manage users",
-      "deletePermissionError": "Permission error: You do not have permission to delete users"
-    }
+      "deletePermissionError": "Permission error: You do not have permission to delete users",
+      "passwordResetSuccess": "Password has been reset",
+      "passwordResetError": "Failed to reset password"
+    },
+    "cloudOnlyNoPasswordReset": "This user uses cloud authentication only. Password reset is not available."
   },
   "groupManagement": {
     "title": "Group Management",
@@ -682,17 +802,23 @@
     "unsupportedType": "{{mimeType}} is not supported",
     "previewError": "Preview Error",
     "previewErrorDesc": "An error occurred while displaying the preview",
+    "errorOccurred": "An error occurred while displaying the preview",
     "cannotPreview": "Cannot preview",
     "image": {
       "loading": "Loading image...",
-      "loadError": "Failed to load image: {{error}}"
+      "loadError": "Failed to load image: {{error}}",
+      "missingInfo": "Missing information required to display the image",
+      "fetchError": "Failed to fetch image: {{error}}"
     },
     "video": {
       "loading": "Loading video...",
-      "loadError": "Failed to load video: {{error}}"
+      "loadError": "Failed to load video: {{error}}",
+      "missingInfo": "Missing information required to display the video",
+      "fetchError": "Failed to fetch video: {{error}}"
     },
     "text": {
-      "loadError": "Failed to load file"
+      "loadError": "Failed to load file",
+      "missingInfo": "Missing information required to display the text"
     },
     "pdf": {
       "loading": "Loading PDF...",
@@ -730,6 +856,7 @@
       "previewFailedRetry": "Preview generation failed. Please retry or download and view with a local application.",
       "previewFailed": "Preview generation failed. Please retry or download and view with a local application.",
       "notSupported": "Office document preview is not currently supported. Please download and view with a local application.",
+      "regenerate": "Regenerate Preview",
       "fileTypes": {
         "word": "Word Document",
         "excel": "Excel Document",
@@ -767,6 +894,9 @@
     "or": "or",
     "oidcLogin": "Login with OIDC",
     "samlLogin": "Login with SAML",
+    "googleLogin": "Sign in with Google",
+    "microsoftLogin": "Sign in with Microsoft",
+    "passkeyLogin": "Sign in with Passkey",
     "selectRepository": "Select Repository",
     "messages": {
       "loginFailed": "Login failed. Please check your username, password, and repository ID.",
@@ -774,7 +904,10 @@
       "oidcFailedPrivacy": "OIDC authentication failed: {{error}}\n\n[Important] Authentication state is not saved in privacy mode (incognito window), which may cause OIDC authentication to fail. Please try in normal mode.",
       "samlFailed": "SAML authentication failed: {{error}}",
       "samlResponseNotFound": "SAML authentication response not found.",
-      "samlProcessFailed": "Failed to process SAML authentication: {{error}}"
+      "samlProcessFailed": "Failed to process SAML authentication: {{error}}",
+      "googleFailed": "Google authentication failed: {{error}}",
+      "microsoftFailed": "Microsoft authentication failed: {{error}}",
+      "passkeyFailed": "Passkey authentication failed: {{error}}"
     },
     "validation": {
       "repositoryRequired": "Please select a repository",
@@ -915,13 +1048,16 @@
     "deleteConfirmation": "Confirm Delete",
     "deleteButton": "Delete",
     "checkingRelatedObjects": "Checking related objects...",
-    "deleteConfirmMessage": "<strong>\"{{name}}\"</strong> will be deleted. Continue?",
+    "deleteConfirmMessage": "\"{{name}}\" will be deleted. Continue?",
     "deleteWarningTitle": "Warning:",
-    "deleteWarningMessage": "This object has <strong>{{count}}</strong> child object(s) linked via parent-child relationship (nemaki:parentChildRelationship).",
+    "deleteWarningMessage": "This object has {{count}} child object(s) linked via parent-child relationship (nemaki:parentChildRelationship).",
     "deleteWarningCascade": "Deleting this will also delete all child objects.",
     "renameTitle": "Rename \"{{name}}\"",
     "changeButton": "Change",
     "newName": "New Name",
+    "bulkDelete": "Delete {{count}} items",
+    "bulkDeleteConfirmation": "Confirm Bulk Delete",
+    "bulkDeleteConfirmMessage": "Are you sure you want to delete {{count}} selected item(s)? This action cannot be undone.",
     "columns": {
       "type": "Type",
       "name": "Name",
@@ -978,10 +1114,18 @@
       "newVersionCreated": "New version of \"{{name}}\" created successfully",
       "folderCreateSuccess": "Folder created successfully",
       "folderCreateError": "Failed to create folder",
+      "createFolderSuccess": "Folder created successfully",
+      "createFolderError": "Failed to create folder",
+      "loadObjectsError": "Failed to load objects",
+      "selectFolder": "Please select a folder",
       "deleteSuccess": "Deleted successfully",
       "deleteSuccessWithCount": "{{count}} object(s) deleted successfully",
       "deletePartialFail": "Failed to delete {{count}} object(s)",
       "deleteError": "Failed to delete",
+      "bulkDeleteSuccess": "{{count}} item(s) deleted successfully",
+      "bulkDeletePartial": "{{count}} item(s) deleted, but {{descendantCount}} descendant object(s) could not be deleted",
+      "bulkDeleteFailed": "{{count}} item(s) could not be deleted",
+      "bulkDeleteError": "Bulk delete failed",
       "renameSuccess": "Renamed successfully",
       "renameError": "Failed to rename",
       "checkoutSuccess": "Checked out successfully",
@@ -1148,6 +1292,8 @@
       "originalPath": "Original Path",
       "archiveDate": "Archived At",
       "archivedAt": "Archived At",
+      "archiveState": "State",
+      "coldMoveMode": "Transfer Mode",
       "size": "Size",
       "actions": "Actions"
     },
@@ -1157,10 +1303,68 @@
       "restore": "Restore"
     },
     "confirmRestore": "Restore this object?",
+    "details": {
+      "title": "Archive Details",
+      "creator": "Creator",
+      "mimeType": "MIME Type",
+      "archiveId": "Archive ID",
+      "archivedBy": "Deleted By"
+    },
+    "tabs": {
+      "archives": "Archives",
+      "settings": "Retention Settings",
+      "migrationLogs": "Migration Logs",
+      "pendingArchives": "Pending Archives"
+    },
+    "settings": {
+      "enabled": "Retention",
+      "enabledYes": "Enabled",
+      "enabledNo": "Disabled",
+      "coldAfterDays": "Cold Transition Days",
+      "days": "days",
+      "cronExpression": "Schedule (Cron)",
+      "storageType": "Storage Type",
+      "filesystem": "Filesystem",
+      "beta": "Beta",
+      "storageConnected": "Storage Connection",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "coldMoveMode": "Cold Storage Transfer Mode",
+      "copyMode": "Copy Mode (keep local copy)",
+      "moveMode": "Move Mode (delete local copy)",
+      "localArchiveAfterDays": "Local Archive After Days (Fallback)",
+      "localArchiveCron": "Local Archive Schedule (Cron)"
+    },
+    "migrationLogs": {
+      "startedAt": "Started At",
+      "jobType": "Job Type",
+      "processed": "Processed",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "status": "Status",
+      "duration": "Duration"
+    },
+    "pendingArchives": {
+      "forceArchive": "Force Archive",
+      "extendExpiration": "Extend Expiration",
+      "noItems": "No pending archives",
+      "alert": "expired documents pending archive",
+      "expirationDate": "Expiration Date",
+      "lastModifiedBy": "Last Modified By",
+      "newExpirationDate": "New Expiration Date"
+    },
     "messages": {
       "loadError": "Failed to load archives",
       "restoreSuccess": "Object restored",
-      "restoreError": "Failed to restore"
+      "restoreError": "Failed to restore",
+      "settingsLoadError": "Failed to load retention settings",
+      "logsLoadError": "Failed to load migration logs",
+      "forceArchiveSuccess": "Force archive completed",
+      "forceArchiveError": "Failed to force archive",
+      "extendExpirationSuccess": "Expiration extended",
+      "extendExpirationError": "Failed to extend expiration",
+      "pendingLoadError": "Failed to load pending archives",
+      "restoreErrorParentNotFound": "Cannot restore: destination folder no longer exists"
     }
   },
   "actions": {
@@ -1207,7 +1411,8 @@
     "tabs": {
       "status": "Status",
       "reindex": "Reindexing",
-      "query": "Solr Query"
+      "query": "Solr Query",
+      "cmisQuery": "CMIS Search"
     },
     "healthCheck": {
       "title": "Index Health Check",
@@ -1278,12 +1483,35 @@
       "sortPlaceholder": "score desc",
       "fields": "Fields (fl)",
       "fieldsPlaceholder": "id,name,score",
+      "simulateAsUser": "User Permission Simulation",
+      "simulateAsUserTooltip": "Apply ACL filtering with the specified user's permissions. Admin only.",
+      "selectUser": "Select user (no filtering if not selected)",
       "executeQuery": "Execute Query",
       "results": "Showing {{start}}-{{end}} of {{numFound}} results ({{queryTime}}ms)",
+      "resultsWithAcl": "{{numFound}} total, {{visibleCount}} visible, {{aclFilteredCount}} filtered by ACL (showing {{start}}-{{end}}, {{queryTime}}ms)",
       "noResults": "0 results ({{queryTime}}ms)",
       "document": "Document {{number}}",
       "field": "Field",
       "value": "Value"
+    },
+    "cmisQuery": {
+      "title": "CMIS SQL Search",
+      "description": "Execute queries using CMIS standard SQL format. ACL permission filtering is automatically applied.",
+      "statementLabel": "CMIS Query (SELECT statement)",
+      "statementRequired": "Please enter a CMIS query",
+      "statementPlaceholder": "SELECT * FROM cmis:document WHERE cmis:name LIKE '%test%'",
+      "maxItems": "Max Items",
+      "skipCount": "Skip Count",
+      "simulateAsUser": "User Permission Simulation",
+      "simulateAsUserTooltip": "Execute search with the specified user's permissions. Admin only.",
+      "selectUser": "Select user (searches as yourself if not selected)",
+      "executeQuery": "Execute Query",
+      "results": "Showing {{displayed}} of {{numFound}} results (more: {{hasMore}}, {{queryTime}}ms)",
+      "noResults": "0 results ({{queryTime}}ms)",
+      "columnName": "Name",
+      "columnObjectId": "Object ID",
+      "columnType": "Type",
+      "columnPath": "Path"
     },
     "messages": {
       "fullReindexStarted": "Full reindex started",
@@ -1297,7 +1525,92 @@
       "clearError": "Failed to clear index",
       "indexOptimized": "Index optimized",
       "optimizeError": "Failed to optimize index",
-      "queryError": "Failed to execute query"
+      "queryError": "Failed to execute query",
+      "cmisQueryError": "Failed to execute CMIS query"
+    },
+    "discrepancy": {
+      "loadError": "Failed to load discrepancy data",
+      "reindexSuccess": "Reindexed {{objectId}}",
+      "reindexError": "Failed to reindex",
+      "deleteSuccess": "Deleted {{objectId}} from index",
+      "deleteError": "Failed to delete from index",
+      "bulkReindexComplete": "Bulk reindex completed",
+      "bulkDeleteComplete": "Bulk delete completed",
+      "showDetails": "Show Details",
+      "missingTitle": "Documents Missing from Solr",
+      "orphanedTitle": "Orphaned Documents (not in CouchDB)",
+      "bulkReindexConfirm": "Reindex all items?",
+      "bulkReindex": "Bulk Reindex",
+      "bulkDeleteConfirm": "Delete all items from index?",
+      "bulkDelete": "Bulk Delete",
+      "objectId": "Object ID",
+      "name": "Name",
+      "objectType": "Object Type",
+      "reindex": "Reindex",
+      "deleteConfirm": "Delete this document from the index?",
+      "deleteFromIndex": "Delete from Index"
+    }
+  },
+  "semanticSearch": {
+    "title": "Semantic Search",
+    "placeholder": "Enter what you want to search in natural language...",
+    "searchButton": "Search",
+    "checkingAvailability": "Checking semantic search availability...",
+    "unavailable": "Semantic search is not available",
+    "unavailableDescription": "RAG feature is not enabled on the server or requires configuration. Please contact your administrator.",
+    "helpText": "Search documents based on meaning rather than keywords. You can search using natural language.",
+    "maxResults": "Max Results",
+    "minSimilarity": "Min Similarity",
+    "searchingInFolder": "Searching in this folder",
+    "searching": "Searching...",
+    "resultsCount": "{{count}} results",
+    "noResults": "No matching documents found",
+    "searchFailed": "Search failed",
+    "similarity": "Similarity",
+    "chunkIndex": "Chunk #{{index}}",
+    "boostSettings": "Search Weight Settings",
+    "boostHelpText": "Adjust search weight between properties (file name, description) and body content.",
+    "propertyBoost": "Property Weight",
+    "contentOnly": "Content Focus",
+    "balanced": "Balanced",
+    "propertyOnly": "Property Focus",
+    "propertyBoostDescription": "Move the slider right to prioritize file names and descriptions. Move left to prioritize body content.",
+    "viewDocument": "View Document"
+  },
+  "search": {
+    "fulltext": "Full-text Search",
+    "semantic": "Semantic Search"
+  },
+  "rag": {
+    "admin": {
+      "simulateAs": "Search as User",
+      "selectUser": "Select a user (leave empty to search as yourself)",
+      "simulateDescription": "Administrators can search as other users to verify ACL settings",
+      "simulatingAs": "Searching as {{userId}}",
+      "loadUsersFailed": "Failed to load user list",
+      "adminOnly": "This feature is only available to administrators"
+    },
+    "discrepancy": {
+      "showDetails": "Show details",
+      "missingTitle": "Documents missing from Solr",
+      "orphanedTitle": "Orphaned documents in Solr",
+      "objectId": "Object ID",
+      "name": "Name",
+      "objectType": "Type",
+      "reindex": "Reindex",
+      "deleteFromIndex": "Delete from index",
+      "deleteConfirm": "Delete this document from the index?",
+      "bulkReindex": "Reindex all",
+      "bulkReindexConfirm": "Reindex all missing documents?",
+      "bulkDelete": "Delete all from index",
+      "bulkDeleteConfirm": "Delete all orphaned documents from the index?",
+      "reindexSuccess": "Reindexed {{objectId}}",
+      "reindexError": "Reindex failed",
+      "deleteSuccess": "Deleted {{objectId}} from index",
+      "deleteError": "Failed to delete from index",
+      "bulkReindexComplete": "Bulk reindex completed",
+      "bulkDeleteComplete": "Bulk delete completed",
+      "loadError": "Failed to load discrepancy details"
     }
   },
   "apiDocs": {
@@ -1305,6 +1618,128 @@
     "description": "Interactive documentation for NemakiWare CMIS REST API (OpenAPI 3.0 compliant).",
     "note": "Authentication",
     "noteDescription": "API requests require Basic authentication or OIDC/SAML tokens. Current repository: {{repositoryId}}"
+  },
+  "ragMaintenance": {
+    "title": "RAG Index Maintenance",
+    "description": "Manage RAG (Retrieval-Augmented Generation) vector indexes for semantic search.",
+    "tabs": {
+      "status": "RAG Status",
+      "reindex": "RAG Reindexing",
+      "search": "RAG Search Test"
+    },
+    "healthCheck": {
+      "title": "RAG Health Check",
+      "refresh": "Refresh",
+      "ragEnabled": "RAG Enabled",
+      "embeddingService": "Embedding Service",
+      "solrRagCore": "Solr RAG Core",
+      "documentCount": "Document Count",
+      "chunkCount": "Chunk Count",
+      "eligibleDocuments": "Eligible Documents",
+      "healthy": "RAG system is healthy",
+      "unhealthy": "RAG system has issues",
+      "available": "Available",
+      "unavailable": "Unavailable",
+      "error": "RAG health check failed"
+    },
+    "reindexStatus": {
+      "title": "RAG Reindex Status",
+      "status": "Status",
+      "currentFolder": "Current Folder",
+      "totalDocuments": "Total Documents",
+      "indexed": "Indexed",
+      "errorCount": "Error Count",
+      "errorMessage": "Error Message",
+      "errorDetails": "Error Details ({{count}} errors)",
+      "cancel": "Cancel"
+    },
+    "status": {
+      "idle": "Idle",
+      "running": "Running",
+      "completed": "Completed",
+      "error": "Error",
+      "cancelled": "Cancelled"
+    },
+    "reindexActions": {
+      "title": "RAG Reindex Operations",
+      "fullReindex": "Full RAG Reindex",
+      "fullReindexDesc": "Regenerate vector embeddings for all documents in the repository. This takes time due to embedding generation.",
+      "fullReindexConfirm": "Execute full RAG reindex?",
+      "fullReindexConfirmDesc": "This operation may take a significant amount of time. Embedding generation takes several seconds per document.",
+      "execute": "Execute",
+      "folderReindex": "Folder RAG Reindex",
+      "folderReindexDesc": "Regenerate vector embeddings for documents under the specified folder.",
+      "folderId": "Folder ID",
+      "includeSubfolders": "Include subfolders",
+      "folderReindexButton": "Folder RAG Reindex",
+      "indexManagement": "RAG Index Management",
+      "indexManagementDesc": "Clear the RAG index.",
+      "clearIndex": "Clear RAG Index",
+      "clearIndexConfirm": "Clear RAG index?",
+      "clearIndexConfirmDesc": "This operation cannot be undone. All vector embeddings will be deleted. Semantic search will be unavailable until reindexing."
+    },
+    "search": {
+      "title": "RAG Search Test",
+      "queryLabel": "Search Query",
+      "queryPlaceholder": "Enter search content in natural language...",
+      "queryRequired": "Please enter a search query",
+      "topK": "Max Results",
+      "minScore": "Min Similarity",
+      "propertyBoost": "Property Boost",
+      "contentBoost": "Content Boost",
+      "executeSearch": "Execute Search",
+      "results": "{{count}} results ({{queryTime}}ms)",
+      "noResults": "No results",
+      "resultItem": {
+        "documentName": "Document Name",
+        "score": "Similarity",
+        "chunkIndex": "Chunk Index",
+        "chunkText": "Chunk Text",
+        "objectType": "Object Type"
+      }
+    },
+    "messages": {
+      "fullReindexStarted": "Full RAG reindex started",
+      "fullReindexError": "Failed to start RAG reindex",
+      "folderIdRequired": "Please enter a folder ID",
+      "folderReindexStarted": "Folder RAG reindex started",
+      "folderReindexError": "Failed to start folder RAG reindex",
+      "reindexCancelled": "RAG reindex cancelled",
+      "cancelError": "Failed to cancel",
+      "indexCleared": "RAG index cleared",
+      "clearError": "Failed to clear RAG index",
+      "searchError": "Search failed",
+      "healthCheckError": "Health check failed"
+    }
+  },
+  "importExport": {
+    "import": "Import",
+    "export": "Export",
+    "importTitle": "Import Content",
+    "exportTitle": "Export Content",
+    "importDescription": "Import ACP format or NemakiWare custom format ZIP files",
+    "exportDescription": "Export folder contents as NemakiWare custom format ZIP file",
+    "selectFile": "Select File",
+    "dragDropHint": "Click or drag ZIP file to upload",
+    "supportedFormats": "Supported formats: .acp (Alfresco), .zip (NemakiWare custom format)",
+    "importing": "Importing...",
+    "exporting": "Exporting...",
+    "importSuccess": "Import completed successfully",
+    "exportSuccess": "Export completed successfully",
+    "importError": "Import failed",
+    "exportError": "Export failed",
+    "foldersCreated": "Folders created: {{count}}",
+    "documentsCreated": "Documents created: {{count}}",
+    "warnings": "Warnings",
+    "errors": "Errors",
+    "progress": "Progress: {{progress}}%",
+    "partialSuccess": "Some items encountered errors",
+    "confirmExport": "Export this folder?",
+    "exportInProgress": "Export in progress. Please wait.",
+    "importInProgress": "Import in progress. Please wait.",
+    "noFileSelected": "No file selected",
+    "invalidFileType": "Invalid file type. Please select an .acp or .zip file",
+    "exportSelected": "Export Selected ({{count}})"
   },
   "auditDashboard": {
     "title": "Audit Log Dashboard",
@@ -1330,6 +1765,354 @@
     "config": "Audit Log Configuration",
     "status": "Status",
     "readAuditLevel": "Read Audit Level",
-    "lastUpdated": "Last Updated"
+    "lastUpdated": "Last Updated",
+    "recentEntries": "Recent Audit Entries",
+    "noEntries": "No audit log entries",
+    "operation": "Operation",
+    "user": "User",
+    "target": "Target",
+    "result": "Result",
+    "duration": "Duration",
+    "timestamp": "Timestamp",
+    "entryCount": "Entries",
+    "loadEntries": "Load Logs",
+    "loadError": "Failed to load audit log entries",
+    "clientIp": "Client IP",
+    "errorMessage": "Error"
+  },
+  "filesystemImportExport": {
+    "title": "Filesystem Import/Export",
+    "adminOnly": "Admin Only Feature",
+    "adminOnlyDescription": "This feature allows importing and exporting content directly from/to the application server's local filesystem without ZIP compression. Only administrators can access this feature.",
+    "refreshFolders": "Refresh Folders",
+    "import": {
+      "title": "Import",
+      "description": "Import content from a local filesystem directory on the application server. The directory should contain files in the NemakiWare custom format with JSON metadata files.",
+      "sourcePath": "Source Path",
+      "sourcePathRequired": "Please enter the source path",
+      "sourcePathHelp": "Enter the absolute path to the directory on the server filesystem",
+      "targetFolder": "Target Folder",
+      "targetFolderRequired": "Please select a target folder",
+      "selectFolder": "Select a folder",
+      "button": "Import from Filesystem",
+      "success": "Import completed successfully",
+      "partial": "Import completed with warnings",
+      "error": "Import failed"
+    },
+    "export": {
+      "title": "Export",
+      "description": "Export content to a local filesystem directory on the application server. Files will be exported in the NemakiWare custom format with JSON metadata files.",
+      "sourceFolder": "Source Folder",
+      "sourceFolderRequired": "Please select a source folder",
+      "selectFolder": "Select a folder",
+      "targetPath": "Target Path",
+      "targetPathRequired": "Please enter the target path",
+      "targetPathHelp": "Enter the absolute path to the target directory on the server filesystem",
+      "allowOverwrite": "Allow overwriting existing files",
+      "button": "Export to Filesystem",
+      "success": "Export completed successfully",
+      "partial": "Export completed with warnings",
+      "error": "Export failed"
+    },
+    "result": {
+      "status": "Status",
+      "success": "Success",
+      "partial": "Partial Success",
+      "error": "Error",
+      "foldersCreated": "Folders Created",
+      "documentsCreated": "Documents Created",
+      "foldersExported": "Folders Exported",
+      "documentsExported": "Documents Exported",
+      "targetPath": "Target Path",
+      "warnings": "Warnings",
+      "errors": "Errors"
+    }
+  },
+  "webhookManagement": {
+    "title": "Webhook Management",
+    "columns": {
+      "deliveryId": "Delivery ID",
+      "objectId": "Object ID",
+      "webhookUrl": "Webhook URL",
+      "eventType": "Event Type",
+      "status": "Status",
+      "statusCode": "Status Code",
+      "attemptCount": "Attempts",
+      "deliveredAt": "Delivered At",
+      "errorDetail": "Error Detail",
+      "actions": "Actions"
+    },
+    "status": {
+      "success": "Success",
+      "failed": "Failed"
+    },
+    "filter": {
+      "status": "Status",
+      "all": "All",
+      "success": "Success only",
+      "failed": "Failed only"
+    },
+    "actions": {
+      "retry": "Retry",
+      "testWebhook": "Test Webhook"
+    },
+    "pagination": {
+      "total": "Total {{total}} items"
+    },
+    "messages": {
+      "loadError": "Failed to load delivery logs",
+      "retryQueued": "Retry queued successfully",
+      "retryError": "Failed to retry delivery",
+      "testError": "Webhook test failed"
+    },
+    "testModal": {
+      "title": "Test Webhook Endpoint",
+      "url": "Webhook URL",
+      "urlRequired": "Please enter a URL",
+      "urlInvalid": "Please enter a valid URL",
+      "secret": "Secret (optional)",
+      "secretPlaceholder": "HMAC signing secret",
+      "send": "Send Test",
+      "sending": "Sending...",
+      "resultSuccess": "Webhook test successful",
+      "resultFailed": "Webhook test failed",
+      "statusCode": "Status Code",
+      "responseTime": "Response Time",
+      "responseBody": "Response Body"
+    }
+  },
+  "cloudSync": {
+    "title": "Directory Sync",
+    "actions": "Actions",
+    "deltaSyncButton": "Run Delta Sync",
+    "fullReconciliationButton": "Full Reconciliation",
+    "cancelButton": "Cancel",
+    "testConnectionButton": "Test Connection",
+    "deltaSyncStarted": "Delta sync started",
+    "fullReconciliationStarted": "Full reconciliation started",
+    "fullReconciliationConfirm": "Run full reconciliation? This will reconcile all users and groups.",
+    "syncFailed": "Failed to start sync",
+    "syncCancelled": "Sync cancelled",
+    "cancelFailed": "Failed to cancel sync",
+    "connectionSuccess": "Connection test successful",
+    "connectionFailed": "Connection test failed",
+    "syncStatus": "Sync Status",
+    "status": "Status",
+    "mode": "Mode",
+    "modeDelta": "Delta (Incremental)",
+    "modeFull": "Full Reconciliation",
+    "startTime": "Start Time",
+    "endTime": "End Time",
+    "currentPage": "Current Page",
+    "statusIdle": "Idle",
+    "statusRunning": "Running",
+    "statusCompleted": "Completed",
+    "statusError": "Error",
+    "statusCancelled": "Cancelled",
+    "usersCreated": "Users Created",
+    "usersUpdated": "Users Updated",
+    "usersDeleted": "Users Deleted",
+    "usersSkipped": "Users Skipped",
+    "groupsCreated": "Groups Created",
+    "groupsUpdated": "Groups Updated",
+    "groupsDeleted": "Groups Deleted",
+    "groupsSkipped": "Groups Skipped",
+    "errors": "Errors",
+    "warnings": "Warnings",
+    "ldapTab": "LDAP / Active Directory",
+    "ldapSyncButton": "Run Sync",
+    "ldapPreviewButton": "Preview (Dry Run)",
+    "ldapSyncStarted": "LDAP sync started",
+    "ldapPreviewStarted": "Preview started",
+    "ldapSyncConfirm": "Run LDAP sync? Users and groups will be synchronized.",
+    "ldapConfigTitle": "LDAP Configuration",
+    "ldapUrl": "LDAP URL",
+    "ldapBaseDn": "Base DN",
+    "ldapEnabled": "Enabled",
+    "ldapDisabled": "Disabled",
+    "ldapNotConfigured": "LDAP sync is not configured. Set directory.sync.enabled=true in server configuration.",
+    "dryRun": "Dry Run",
+    "userSearchBase": "User Search Base",
+    "groupSearchBase": "Group Search Base"
+  },
+  "accountSettings": {
+    "title": "Account Settings",
+    "userId": "User ID",
+    "tabs": {
+      "profile": "Profile",
+      "password": "Password",
+      "passkey": "Passkey",
+      "apiKey": "API Key"
+    },
+    "tabDisabled": "N/A",
+    "profile": {
+      "userId": "User ID",
+      "userName": "Display Name",
+      "firstName": "First Name",
+      "lastName": "Last Name",
+      "email": "Email",
+      "role": "Role",
+      "admin": "Admin",
+      "user": "User",
+      "authMethods": "Auth Methods",
+      "authMethodAll": "All allowed",
+      "authMethodDisabled": "Disabled",
+      "authMethodPassword": "Password",
+      "authMethodCloud": "Cloud (Google / Microsoft)",
+      "groups": "Groups"
+    },
+    "changePassword": "Change Password",
+    "currentPassword": "Current Password",
+    "newPassword": "New Password",
+    "confirmPassword": "Confirm New Password",
+    "currentPasswordRequired": "Please enter your current password",
+    "newPasswordRequired": "Please enter a new password",
+    "confirmPasswordRequired": "Please confirm your new password",
+    "passwordMinLength": "Password must be at least 8 characters",
+    "passwordMismatch": "Passwords do not match",
+    "passwordChanged": "Password changed successfully",
+    "passwordChangeError": "Failed to change password",
+    "changePasswordButton": "Change Password",
+    "currentPasswordPlaceholder": "Enter current password",
+    "newPasswordPlaceholder": "Enter new password",
+    "confirmPasswordPlaceholder": "Re-enter new password",
+    "cloudOnlyAccount": "This account uses cloud authentication (Google / Microsoft) only. Password and passkey settings are not available."
+  },
+  "passkey": {
+    "title": "Passkeys",
+    "register": "Register Passkey",
+    "notSupported": "This browser does not support passkeys",
+    "noCredentials": "No passkeys registered",
+    "confirmDelete": "Are you sure you want to delete this passkey?",
+    "columns": {
+      "name": "Name",
+      "createdAt": "Created",
+      "transports": "Transports",
+      "actions": "Actions"
+    },
+    "registerModal": {
+      "title": "Register Passkey",
+      "description": "Register a passkey using your device's biometric authentication or security key.",
+      "displayNamePlaceholder": "Passkey name (e.g., MacBook Pro)",
+      "ok": "Start Registration"
+    },
+    "messages": {
+      "loadError": "Failed to load passkeys",
+      "registerSuccess": "Passkey registered successfully",
+      "registerError": "Failed to register passkey",
+      "deleteSuccess": "Passkey deleted successfully",
+      "deleteError": "Failed to delete passkey",
+      "cancelled": "Passkey operation was cancelled"
+    }
+  },
+  "apiKeyManagement": {
+    "title": "API Key Management",
+    "description": "API keys provide persistent authentication for MCP clients and cloud-only users for programmatic access.",
+    "createKey": "Create API Key",
+    "noKeys": "No API Keys",
+    "noKeysDescription": "This user has no API keys yet. Click the button above to create one.",
+    "columns": {
+      "name": "Name",
+      "keyPrefix": "Key Prefix",
+      "created": "Created",
+      "lastUsed": "Last Used",
+      "expiresAt": "Expires At",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "expired": "Expired"
+    },
+    "neverExpires": "Never expires",
+    "modal": {
+      "createTitle": "Create New API Key",
+      "keyName": "Key Name",
+      "keyNamePlaceholder": "e.g., MCP Client Key",
+      "keyNameRequired": "Please enter a key name",
+      "keyDescription": "Description (optional)",
+      "keyDescriptionPlaceholder": "Describe the purpose of this key",
+      "expiration": "Expiration",
+      "expirationNever": "Never expires",
+      "expiration7Days": "7 days",
+      "expiration30Days": "30 days",
+      "expiration90Days": "90 days",
+      "expiration1Year": "1 year",
+      "expirationCustom": "Custom",
+      "customExpiration": "Custom Expiration Date",
+      "customExpirationRequired": "Please select an expiration date",
+      "warningTitle": "Important: This key is only shown once",
+      "warningMessage": "Please save this API key securely. You will not be able to view the key value again after closing this dialog.",
+      "copySuccess": "Copied to clipboard",
+      "copyButton": "Copy"
+    },
+    "messages": {
+      "createSuccess": "API key created successfully",
+      "createError": "Failed to create API key",
+      "revokeSuccess": "API key revoked successfully",
+      "revokeError": "Failed to revoke API key",
+      "loadError": "Failed to load API keys"
+    },
+    "confirmRevoke": "Are you sure you want to revoke this API key? This action cannot be undone.",
+    "revoke": "Revoke",
+    "neverUsed": "Never used",
+    "myApiKeys": "My API Keys",
+    "manageApiKeys": "Manage API Keys"
+  },
+  "mcpCloudLogin": {
+    "title": "MCP Cloud Login",
+    "description": "Follow the steps below to complete login from Claude Desktop.",
+    "codeLabel": "Login Code",
+    "authenticatePrompt": "Please log in using one of the methods below.",
+    "loginOptions": "Select login method",
+    "noCode": {
+      "title": "Login Code Not Found",
+      "description": "Please access using the URL provided by Claude Desktop.",
+      "goHome": "Go Home"
+    },
+    "authenticated": {
+      "message": "Logged in as {{username}}",
+      "completeButton": "Complete MCP Login"
+    },
+    "submitting": {
+      "title": "Completing login...",
+      "description": "Please wait a moment."
+    },
+    "success": {
+      "title": "Login Complete",
+      "description": "MCP login has been completed successfully.",
+      "instruction": "Return to Claude Desktop and your login will be automatically recognized.",
+      "closeWindow": "Close this window",
+      "closeManually": "Please close this tab manually",
+      "logoutAndRetry": "Logout and try with another account"
+    },
+    "error": {
+      "title": "Login Failed",
+      "retry": "Try Again"
+    },
+    "loginInstructions": "Use your normal NemakiWare login",
+    "loginSteps": "1. Click the button below to open the login page in a new tab",
+    "loginSteps2": "2. After logging in, return to this page and click 'Done'",
+    "openLoginPage": "Open login page in new tab",
+    "checkLogin": "Check login / Done",
+    "errors": {
+      "completionFailed": "Failed to complete login",
+      "networkError": "A network error occurred"
+    }
+  },
+  "cloudDrive": {
+    "importFromGoogleDrive": "Import from Google Drive",
+    "importFromOneDrive": "Import from OneDrive",
+    "selectFile": "Select File",
+    "import": "Import",
+    "importSuccess": "File imported: {{name}}",
+    "importError": "Failed to import file",
+    "loadFilesError": "Failed to load cloud files",
+    "fileName": "File Name",
+    "modifiedTime": "Modified",
+    "size": "Size",
+    "googleDrive": "Google Drive",
+    "oneDrive": "OneDrive"
   }
 }

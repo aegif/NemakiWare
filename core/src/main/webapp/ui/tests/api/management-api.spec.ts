@@ -1,5 +1,5 @@
 import { test, expect, APIRequestContext } from '@playwright/test';
-import { randomUUID } from 'crypto';
+import { generateTestId } from '../utils/test-helper';
 
 /**
  * Management API E2E Tests
@@ -62,8 +62,8 @@ function getAdminAuthHeader(): string {
 /** Generate Basic Authentication header for a non-admin user */
 function getNonAdminAuthHeader(): string {
   // Using a unique test user that won't conflict with Keycloak SSO users
-  // NOTE: api-e2e-testuser is created by global-setup.ts with BCrypt hash of 'test'
-  return `Basic ${Buffer.from('api-e2e-testuser:test').toString('base64')}`;
+  // NOTE: api-e2e-testuser is created by global-setup.ts with BCrypt hash of 'testtest'
+  return `Basic ${Buffer.from('api-e2e-testuser:testtest').toString('base64')}`;
 }
 
 /** Helper to make authenticated API requests with admin credentials */
@@ -191,7 +191,7 @@ async function apiRequestWithAuth(
  * User Management API Tests
  */
 test.describe('User Management API', () => {
-  const uuid = randomUUID().substring(0, 8);
+  const uuid = generateTestId();
   const testUserId = `apitest_user_${uuid}`;
   const testUserEmail = `${testUserId}@test.local`;
 
@@ -310,7 +310,7 @@ test.describe('User Management API', () => {
  * Group Management API Tests
  */
 test.describe('Group Management API', () => {
-  const uuid = randomUUID().substring(0, 8);
+  const uuid = generateTestId();
   const testGroupId = `apitest_group_${uuid}`;
 
   test('should list groups', async ({ request }) => {

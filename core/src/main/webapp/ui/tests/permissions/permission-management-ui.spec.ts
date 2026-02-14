@@ -16,7 +16,7 @@
  * IMPORTANT DESIGN DECISIONS:
  *
  * 1. Timestamp-Based Unique Test Folder Naming (Line 163):
- *    - Uses Date.now() for unique test folder names: `permissions-test-${Date.now()}`
+ *    - Uses Date.now() for unique test folder names: `permissions-test-${generateTestId()}`
  *    - Prevents parallel test execution conflicts (different timestamps)
  *    - Avoids cleanup race conditions across multiple browser projects
  *    - Example: permissions-test-1620270113521 (unique to each test run)
@@ -159,13 +159,13 @@
  */
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { TestHelper, generateTestId } from '../utils/test-helper';
 
 test.describe('Permission Management UI - ACL Display', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   // FIX: Enhanced uniqueness for parallel execution - timestamp + random value
-  const testFolderName = `permissions-test-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const testFolderName = `permissions-test-${generateTestId()}-${Math.random().toString(36).substring(2, 8)}`;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
@@ -175,16 +175,7 @@ test.describe('Permission Management UI - ACL Display', () => {
     await page.waitForTimeout(2000);
 
     // MOBILE FIX: Close sidebar
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
   });
@@ -192,8 +183,7 @@ test.describe('Permission Management UI - ACL Display', () => {
   test('should successfully load ACL data when clicking permissions button', async ({ page, browserName }) => {
     console.log('Test: Verifying ACL data loading (fix for "データの読み込みに失敗しました" error)');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });

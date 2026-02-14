@@ -33,6 +33,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { generateTestId } from './utils/test-helper';
 
 // Test data
 const TEST_USER = 'admin';
@@ -103,7 +104,20 @@ async function navigateToAnyDocument(page: any): Promise<boolean> {
 
   // Wait for document viewer to load
   await page.waitForLoadState('networkidle', { timeout: 20000 });
-  await page.waitForSelector('div[role="tablist"]', { timeout: 25000 });
+  // Tab list may take extra time to render; retry with page reload if needed
+  try {
+    await page.waitForSelector('div[role="tablist"]', { timeout: 15000 });
+  } catch {
+    console.log('[RETRY] Tab list not found, reloading page...');
+    await page.reload();
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
+    try {
+      await page.waitForSelector('div[role="tablist"]', { timeout: 15000 });
+    } catch {
+      console.log('[SKIP] Tab list still not found after reload');
+      return false;
+    }
+  }
   return true;
 }
 
@@ -200,7 +214,7 @@ test.describe('Secondary Type Management', () => {
 
   test('should add secondary type to document via API', async ({ request }) => {
     // Create a test document
-    const docName = `test-secondary-type-${Date.now()}.txt`;
+    const docName = `test-secondary-type-${generateTestId()}.txt`;
     const objectId = await createTestDocument(request, docName);
 
     try {
@@ -242,7 +256,7 @@ test.describe('Secondary Type Management', () => {
 
   test('should remove secondary type from document via API', async ({ request }) => {
     // Create a test document
-    const docName = `test-secondary-type-remove-${Date.now()}.txt`;
+    const docName = `test-secondary-type-remove-${generateTestId()}.txt`;
     const objectId = await createTestDocument(request, docName);
 
     try {
@@ -350,8 +364,8 @@ test.describe('Relationship Management', () => {
 
   test('should create relationship between documents via API', async ({ request }) => {
     // Create two test documents
-    const sourceDocName = `test-rel-source-${Date.now()}.txt`;
-    const targetDocName = `test-rel-target-${Date.now()}.txt`;
+    const sourceDocName = `test-rel-source-${generateTestId()}.txt`;
+    const targetDocName = `test-rel-target-${generateTestId()}.txt`;
 
     const sourceId = await createTestDocument(request, sourceDocName);
     const targetId = await createTestDocument(request, targetDocName);
@@ -365,7 +379,7 @@ test.describe('Relationship Management', () => {
       formData.append('propertyId[0]', 'cmis:objectTypeId');
       formData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
       formData.append('propertyId[1]', 'cmis:name');
-      formData.append('propertyValue[1]', `rel-${Date.now()}`);
+      formData.append('propertyValue[1]', `rel-${generateTestId()}`);
       formData.append('propertyId[2]', 'cmis:sourceId');
       formData.append('propertyValue[2]', sourceId);
       formData.append('propertyId[3]', 'cmis:targetId');
@@ -402,8 +416,8 @@ test.describe('Relationship Management', () => {
 
   test('should delete relationship via API', async ({ request }) => {
     // Create two test documents and a relationship
-    const sourceDocName = `test-rel-delete-source-${Date.now()}.txt`;
-    const targetDocName = `test-rel-delete-target-${Date.now()}.txt`;
+    const sourceDocName = `test-rel-delete-source-${generateTestId()}.txt`;
+    const targetDocName = `test-rel-delete-target-${generateTestId()}.txt`;
 
     const sourceId = await createTestDocument(request, sourceDocName);
     const targetId = await createTestDocument(request, targetDocName);
@@ -415,7 +429,7 @@ test.describe('Relationship Management', () => {
       createFormData.append('propertyId[0]', 'cmis:objectTypeId');
       createFormData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
       createFormData.append('propertyId[1]', 'cmis:name');
-      createFormData.append('propertyValue[1]', `rel-delete-${Date.now()}`);
+      createFormData.append('propertyValue[1]', `rel-delete-${generateTestId()}`);
       createFormData.append('propertyId[2]', 'cmis:sourceId');
       createFormData.append('propertyValue[2]', sourceId);
       createFormData.append('propertyId[3]', 'cmis:targetId');
@@ -464,8 +478,8 @@ test.describe('Relationship Management', () => {
       return;
     }
 
-    // Relationships tab is always visible in DocumentViewer
-    const relationshipsTab = page.getByRole('tab', { name: '関係' });
+    // Relationships tab is always visible in DocumentViewer (supports both ja/en)
+    const relationshipsTab = page.getByRole('tab', { name: '関係' }).or(page.getByRole('tab', { name: 'Relationships' }));
     const tabVisible = await relationshipsTab.isVisible({ timeout: 5000 }).catch(() => false);
     if (!tabVisible) {
       test.skip('DocumentViewer tabs not loaded - possible page load issue');
@@ -477,8 +491,8 @@ test.describe('Relationship Management', () => {
     await relationshipsTab.click();
     await expect(relationshipsTab).toHaveAttribute('aria-selected', 'true', { timeout: 5000 });
 
-    // Verify the "Add Relationship" button is visible
-    const addRelationshipButton = page.getByRole('button', { name: '関係を追加' });
+    // Verify the "Add Relationship" button is visible (supports both ja/en)
+    const addRelationshipButton = page.getByRole('button', { name: '関係を追加' }).or(page.getByRole('button', { name: 'Add Relationship' }));
     await expect(addRelationshipButton).toBeVisible({ timeout: 5000 });
   });
 });

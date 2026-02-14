@@ -431,6 +431,9 @@
         <property name="tokenService">
             <ref bean="TokenService" />
         </property>
+        <property name="apiKeyService">
+            <ref bean="ApiKeyService" />
+        </property>
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
@@ -463,6 +466,23 @@
         </property>
         <property name="repositoryInfoMap">
             <ref bean="repositoryInfoMap" />
+        </property>
+    </bean>
+
+    <!-- API Key Service for persistent API key authentication -->
+    <bean id="ApiKeyService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.factory.auth.ApiKeyService</value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="apiKeyService" />
+        </property>
+    </bean>
+    <bean id="apiKeyService" class="jp.aegif.nemaki.cmis.factory.auth.impl.ApiKeyServiceImpl">
+        <property name="contentDaoService">
+            <ref bean="ContentDaoService" />
         </property>
     </bean>
 
@@ -637,6 +657,11 @@
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
+        <property name="propertyManager" ref="propertyManager" />
+        <property name="retentionLogDaoService" ref="retentionLogDaoService" />
+        <property name="longTermStorageAdapterFactory" ref="longTermStorageAdapterFactory" />
+        <property name="threadLockService" ref="threadLockService" />
+        <property name="nemakiCachePool" ref="nemakiCachePool" />
     </bean>
 
 	<!-- Commented out - REST resources will handle Spring context lookup manually -->
@@ -789,6 +814,11 @@
         <property name="solrIndexMaintenanceService" ref="SolrIndexMaintenanceService" />
     </bean>
 
+    <!-- Auth Config Resource - Public endpoint for SSO button visibility settings -->
+    <bean id="authConfigResource" class="jp.aegif.nemaki.rest.AuthConfigResource">
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
     <!-- Directory Sync Service -->
     <bean id="DirectorySyncService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
@@ -815,6 +845,108 @@
         <property name="directorySyncService" ref="DirectorySyncService" />
         <property name="propertyManager" ref="propertyManager" />
         <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+    </bean>
+
+    <!-- Cloud Directory Sync Service -->
+    <bean id="cloudDirectorySyncService" class="jp.aegif.nemaki.sync.service.CloudDirectorySyncServiceImpl">
+        <property name="principalService" ref="PrincipalService" />
+        <property name="contentService" ref="contentService" />
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
+    <!-- Cloud Directory Sync Scheduler -->
+    <bean id="cloudDirectorySyncScheduler" class="jp.aegif.nemaki.sync.scheduler.CloudDirectorySyncScheduler"
+          init-method="init" destroy-method="destroy">
+        <property name="cloudDirectorySyncService" ref="cloudDirectorySyncService" />
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
+    <!-- Cloud Directory Sync REST API -->
+    <bean id="cloudDirectorySyncResource" class="jp.aegif.nemaki.rest.CloudDirectorySyncResource">
+        <property name="cloudDirectorySyncService" ref="cloudDirectorySyncService" />
+    </bean>
+
+    <!-- Cloud Drive Service -->
+    <bean id="cloudDriveService" class="jp.aegif.nemaki.businesslogic.impl.CloudDriveServiceImpl">
+        <property name="objectService" ref="objectService" />
+    </bean>
+
+    <bean id="cloudDriveResource" class="jp.aegif.nemaki.rest.CloudDriveResource">
+        <property name="cloudDriveService" ref="cloudDriveService" />
+        <property name="contentService" ref="ContentService" />
+    </bean>
+
+    <!-- Webhook Service and related beans -->
+    <bean id="WebhookDaoService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.dao.WebhookDaoService</value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="webhookDaoService" />
+        </property>
+    </bean>
+    <bean id="webhookDaoService" class="jp.aegif.nemaki.dao.impl.couch.WebhookDaoServiceImpl">
+        <property name="connectorPool" ref="connectorPool" />
+    </bean>
+
+    <bean id="webhookDispatcher" class="jp.aegif.nemaki.webhook.HttpWebhookDispatcher" />
+
+    <bean id="WebhookService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.businesslogic.WebhookService</value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="webhookService" />
+        </property>
+    </bean>
+    <bean id="webhookService" class="jp.aegif.nemaki.businesslogic.impl.WebhookServiceImpl">
+        <property name="contentService" ref="ContentService" />
+        <property name="dispatcher" ref="webhookDispatcher" />
+        <property name="webhookDaoService" ref="WebhookDaoService" />
+    </bean>
+
+    <bean id="webhookResource" class="jp.aegif.nemaki.rest.WebhookResource">
+        <property name="webhookService" ref="WebhookService" />
+        <property name="contentService" ref="ContentService" />
+    </bean>
+
+    <!-- Long-term Storage Adapter Factory -->
+    <bean id="longTermStorageAdapterFactory" class="jp.aegif.nemaki.archive.LongTermStorageAdapterFactory"
+          init-method="init">
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
+    <!-- Retention Migration Log DAO -->
+    <bean id="retentionLogDaoService" class="jp.aegif.nemaki.dao.impl.couch.RetentionLogDaoServiceImpl">
+        <property name="connectorPool" ref="connectorPool" />
+    </bean>
+
+    <!-- Retention Scheduler -->
+    <bean id="retentionScheduler" class="jp.aegif.nemaki.archive.RetentionScheduler"
+          init-method="init" destroy-method="destroy"
+          depends-on="ContentService,repositoryInfoMap,longTermStorageAdapterFactory">
+        <property name="contentService" ref="ContentService" />
+        <property name="propertyManager" ref="propertyManager" />
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+        <property name="longTermStorageAdapterFactory" ref="longTermStorageAdapterFactory" />
+        <property name="retentionLogDaoService" ref="retentionLogDaoService" />
+        <property name="threadLockService" ref="threadLockService" />
+        <property name="nemakiCachePool" ref="nemakiCachePool" />
+    </bean>
+
+    <!-- Archive Search Resource -->
+    <bean id="archiveSearchResource" class="jp.aegif.nemaki.rest.ArchiveSearchResource">
+        <property name="contentService" ref="ContentService" />
+    </bean>
+
+    <!-- Archive Download Resource -->
+    <bean id="archiveDownloadResource" class="jp.aegif.nemaki.rest.ArchiveDownloadResource">
+        <property name="contentService" ref="ContentService" />
+        <property name="longTermStorageAdapterFactory" ref="longTermStorageAdapterFactory" />
     </bean>
 
     <!-- API v1 Component Scanning -->

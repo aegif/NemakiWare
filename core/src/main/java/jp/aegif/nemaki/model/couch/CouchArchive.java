@@ -50,6 +50,17 @@ public class CouchArchive extends CouchNodeBase{
 	private String versionSeriesId;
 	private Boolean latestVersion;
 	private String mimeType;
+	private Long contentStreamLength;
+
+	// Retention lifecycle fields
+	private String archiveState;
+	private GregorianCalendar archivedAt;
+	private GregorianCalendar coldArchivedAt;
+	private Map<String, String> contentRef;
+	private String coldMoveMode;
+	private String aclSnapshot;
+	private String propsSnapshot;
+	private String archivedBy;
 
 	public CouchArchive(){
 		super();
@@ -62,11 +73,21 @@ public class CouchArchive extends CouchNodeBase{
 		setName(a.getName());
 		setParentId(a.getParentId());
 		setDeletedWithParent(a.isDeletedWithParent());
+		setPath(a.getPath());
 		setAttachmentNodeId(a.getAttachmentNodeId());
 		setRenditionIds(a.getRenditionIds());
 		setVersionSeriesId(a.getVersionSeriesId());
 		setLatestVersion(a.isLatestVersion());
 		setMimeType(a.getMimeType());
+		setContentStreamLength(a.getContentStreamLength());
+		setArchiveState(a.getArchiveState());
+		setArchivedAt(a.getArchivedAt());
+		setColdArchivedAt(a.getColdArchivedAt());
+		setContentRef(a.getContentRef());
+		setColdMoveMode(a.getColdMoveMode());
+		setAclSnapshot(a.getAclSnapshot());
+		setPropsSnapshot(a.getPropsSnapshot());
+		setArchivedBy(a.getArchivedBy());
 	}
 
 	/**
@@ -161,6 +182,78 @@ public class CouchArchive extends CouchNodeBase{
 		this.mimeType = mimeType;
 	}
 
+	public Long getContentStreamLength() {
+		return contentStreamLength;
+	}
+
+	public void setContentStreamLength(Long contentStreamLength) {
+		this.contentStreamLength = contentStreamLength;
+	}
+
+	public String getArchiveState() {
+		return archiveState;
+	}
+
+	public void setArchiveState(String archiveState) {
+		this.archiveState = archiveState;
+	}
+
+	public GregorianCalendar getArchivedAt() {
+		return archivedAt;
+	}
+
+	public void setArchivedAt(GregorianCalendar archivedAt) {
+		this.archivedAt = archivedAt;
+	}
+
+	public GregorianCalendar getColdArchivedAt() {
+		return coldArchivedAt;
+	}
+
+	public void setColdArchivedAt(GregorianCalendar coldArchivedAt) {
+		this.coldArchivedAt = coldArchivedAt;
+	}
+
+	public Map<String, String> getContentRef() {
+		return contentRef;
+	}
+
+	public void setContentRef(Map<String, String> contentRef) {
+		this.contentRef = contentRef;
+	}
+
+	public String getAclSnapshot() {
+		return aclSnapshot;
+	}
+
+	public void setAclSnapshot(String aclSnapshot) {
+		this.aclSnapshot = aclSnapshot;
+	}
+
+	public String getPropsSnapshot() {
+		return propsSnapshot;
+	}
+
+	public void setPropsSnapshot(String propsSnapshot) {
+		this.propsSnapshot = propsSnapshot;
+	}
+
+	public String getColdMoveMode() {
+		return coldMoveMode;
+	}
+
+	public void setColdMoveMode(String coldMoveMode) {
+		this.coldMoveMode = coldMoveMode;
+	}
+
+	public String getArchivedBy() {
+		return archivedBy;
+	}
+
+	public void setArchivedBy(String archivedBy) {
+		this.archivedBy = archivedBy;
+	}
+
 	@Override
 	public String toString() {
 		Map<String, Object> m = new HashMap<String, Object>();
@@ -185,13 +278,14 @@ public class CouchArchive extends CouchNodeBase{
 
 	@Override
 	public boolean equals(Object obj) {
-		return obj != null && obj instanceof Content
-				&& ((Content) obj).getId().equals(this.getId());
+		return obj instanceof CouchArchive
+				&& this.getId() != null
+				&& this.getId().equals(((CouchArchive) obj).getId());
 	}
 
 	@Override
 	public int hashCode() {
-		return this.getId().hashCode();
+		return this.getId() != null ? this.getId().hashCode() : 0;
 	}
 
 	public Boolean isFolder(){
@@ -225,11 +319,21 @@ public class CouchArchive extends CouchNodeBase{
 		a.setName(getName());
 		a.setParentId(getParentId());
 		a.setDeletedWithParent(isDeletedWithParent());
+		a.setPath(getPath());
 		a.setAttachmentNodeId(getAttachmentNodeId());
 		a.setRenditionIds(getRenditionIds());
 		a.setVersionSeriesId(getVersionSeriesId());
 		a.setIsLatestVersion(isLatestVersion());
 		a.setMimeType(getMimeType());
+		a.setContentStreamLength(getContentStreamLength());
+		a.setArchiveState(getArchiveState());
+		a.setArchivedAt(getArchivedAt());
+		a.setColdArchivedAt(getColdArchivedAt());
+		a.setContentRef(getContentRef());
+		a.setColdMoveMode(getColdMoveMode());
+		a.setAclSnapshot(getAclSnapshot());
+		a.setPropsSnapshot(getPropsSnapshot());
+		a.setArchivedBy(getArchivedBy());
 
 		return a;
 	}

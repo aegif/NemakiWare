@@ -12,6 +12,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { generateTestId } from './utils/test-helper';
 
 const BASE_URL = 'http://localhost:8080';
 const REPOSITORY_ID = 'bedroom';
@@ -69,7 +70,11 @@ async function login(page: any): Promise<void> {
   await page.fill('input[placeholder*="ユーザー名"], input[placeholder*="Username"]', TEST_USER);
   await page.fill('input[type="password"]', TEST_PASSWORD);
   await page.click('button[type="submit"]');
-  await page.waitForURL('**/documents**', { timeout: 30000 });
+  // Hash-based routing: waitForURL glob doesn't match #/documents
+  await page.waitForFunction(
+    () => window.location.hash.includes('/documents'),
+    { timeout: 30000 }
+  );
 }
 
 // Helper: Navigate to document viewer
@@ -244,7 +249,7 @@ test.describe('Relationship Feature Verification', () => {
       relFormData.append('propertyId[0]', 'cmis:objectTypeId');
       relFormData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
       relFormData.append('propertyId[1]', 'cmis:name');
-      relFormData.append('propertyValue[1]', `rel-${Date.now()}`);
+      relFormData.append('propertyValue[1]', `rel-${generateTestId()}`);
       relFormData.append('propertyId[2]', 'cmis:sourceId');
       relFormData.append('propertyValue[2]', source.id);
       relFormData.append('propertyId[3]', 'cmis:targetId');
@@ -318,7 +323,7 @@ test.describe('Relationship Feature Verification', () => {
       relFormData.append('propertyId[0]', 'cmis:objectTypeId');
       relFormData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
       relFormData.append('propertyId[1]', 'cmis:name');
-      relFormData.append('propertyValue[1]', `rel-ui-${Date.now()}`);
+      relFormData.append('propertyValue[1]', `rel-ui-${generateTestId()}`);
       relFormData.append('propertyId[2]', 'cmis:sourceId');
       relFormData.append('propertyValue[2]', source.id);
       relFormData.append('propertyId[3]', 'cmis:targetId');
@@ -344,7 +349,7 @@ test.describe('Relationship Feature Verification', () => {
       }
 
       // Click on relationships tab - use getByRole for accessibility
-      const relationshipsTab = page.getByRole('tab', { name: '関係' });
+      const relationshipsTab = page.getByRole('tab', { name: /リレーションシップ|Relationships|関係/i });
       await expect(relationshipsTab).toBeVisible({ timeout: 10000 });
       await relationshipsTab.click();
       await page.waitForTimeout(2000);
@@ -358,7 +363,7 @@ test.describe('Relationship Feature Verification', () => {
       // Alternative: Check for any visible content in the tab area
       if (!isTabContentVisible) {
         // At minimum, verify we're on the correct tab (tab should be active)
-        const activeTab = page.locator('[class*="ant-tabs-tab-active"]').filter({ hasText: '関係' });
+        const activeTab = page.locator('[class*="ant-tabs-tab-active"]').filter({ hasText: /リレーションシップ|Relationships|関係/i });
         await expect(activeTab).toBeVisible({ timeout: 5000 });
       }
 
@@ -730,7 +735,7 @@ test.describe('Combined Feature Workflow', () => {
 
   // FIX 2025-12-24: Increase timeout for complex workflow test
   test('should support complete workflow: create docs, add relationship, add secondary types', async ({ request }) => {
-    test.setTimeout(180000); // 3 minutes for complex workflow
+    test.setTimeout(120000); // 2 minutes for complex workflow
     const timestamp = Date.now();
     const doc1Name = `workflow-doc1-${timestamp}.txt`;
     const doc2Name = `workflow-doc2-${timestamp}.txt`;
@@ -768,7 +773,7 @@ test.describe('Combined Feature Workflow', () => {
       relFormData.append('propertyId[0]', 'cmis:objectTypeId');
       relFormData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
       relFormData.append('propertyId[1]', 'cmis:name');
-      relFormData.append('propertyValue[1]', `rel-workflow-${Date.now()}`);
+      relFormData.append('propertyValue[1]', `rel-workflow-${generateTestId()}`);
       relFormData.append('propertyId[2]', 'cmis:sourceId');
       relFormData.append('propertyValue[2]', doc1.id);
       relFormData.append('propertyId[3]', 'cmis:targetId');

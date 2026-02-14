@@ -1,7 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 /**
  * Wait for UI to be stable (no loading spinners or notifications blocking interaction)
@@ -510,10 +510,9 @@ test.describe('Folder Hierarchy Operations', () => {
     // CRITICAL FIX (2025-12-24): Simplified test to focus on reliable operations
     // Subfolder creation has timing issues (modal submit fails silently after navigation).
     // This test validates: 1) folder creation at root, 2) navigation into the folder.
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const folderName = `test-folder-${uuid}`;
 
     // Check if folder creation is available
@@ -557,8 +556,7 @@ test.describe('Folder Hierarchy Operations', () => {
     // CRITICAL FIX (2025-12-24): Simplified from hierarchy navigation to single folder tree verification
     // Subfolder creation has timing issues. This test validates that folder creation
     // updates the folder tree component.
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented but hidden on mobile viewports
@@ -566,7 +564,7 @@ test.describe('Folder Hierarchy Operations', () => {
       return;
     }
 
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const folderName = `test-folder-${uuid}-tree`;
 
     // Check if folder tree exists
@@ -608,10 +606,9 @@ test.describe('Folder Hierarchy Operations', () => {
 
   test('should rename folder and verify updates', async ({ page, browserName }) => {
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const originalName = `test-folder-${uuid}-original`;
     const newName = `test-folder-${uuid}-renamed`;
 
@@ -683,10 +680,9 @@ test.describe('Folder Hierarchy Operations', () => {
     test.setTimeout(120000); // Extended timeout for deletion operations
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const folderName = `test-folder-${uuid}-del`;
 
     // Check if folder creation is available

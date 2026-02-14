@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { TestHelper, generateTestId } from '../utils/test-helper';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -102,7 +102,7 @@ let testHelper: TestHelper;
 let testTypeDefPath: string;
 let conflictTypeDefPath: string;
 
-const testTypeId = `test:uploadTest${Date.now()}`;
+const testTypeId = `test:uploadTest${generateTestId()}`;
 const conflictTypeId = 'test:existingType'; // Assumed to exist in repository
 
 /**
@@ -149,6 +149,25 @@ async function waitForTableLoad(page: any, timeout: number = 30000) {
   } catch (error) {
     console.error('Error waiting for table load:', error);
   }
+}
+
+// Helper: Navigate through pagination to find a specific row
+async function findRowInPaginatedTable(page: any, text: string, maxPages: number = 10): Promise<boolean> {
+  for (let pageNum = 0; pageNum < maxPages; pageNum++) {
+    const row = page.locator(`tr:has-text("${text}")`);
+    if (await row.isVisible().catch(() => false)) {
+      return true;
+    }
+    // Try clicking "next page" button
+    const nextButton = page.locator('.ant-pagination-next:not(.ant-pagination-disabled)');
+    if (await nextButton.count() === 0) {
+      break; // No more pages
+    }
+    await nextButton.click();
+    await page.waitForTimeout(1000);
+    await waitForTableLoad(page, 10000);
+  }
+  return false;
 }
 
 // CRITICAL: Serial mode for type definition tests to avoid conflicts
@@ -222,7 +241,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     // Valid type definition
     const validTypeDef = {
       id: testTypeId,
-      displayName: `Upload Test Type ${Date.now()}`,
+      displayName: `Upload Test Type ${generateTestId()}`,
       baseTypeId: 'cmis:document',
       description: 'Test type created via file upload',
       creatable: true,
@@ -235,12 +254,12 @@ test.describe('Type Definition Upload and JSON Editing', () => {
       propertyDefinitions: []
     };
 
-    testTypeDefPath = path.join(tmpDir, `test-type-def-${Date.now()}.json`);
+    testTypeDefPath = path.join(tmpDir, `test-type-def-${generateTestId()}.json`);
     fs.writeFileSync(testTypeDefPath, JSON.stringify(validTypeDef, null, 2));
 
     // Conflict type definition (same ID as test type)
     const conflictTypeDef = { ...validTypeDef };
-    conflictTypeDefPath = path.join(tmpDir, `conflict-type-def-${Date.now()}.json`);
+    conflictTypeDefPath = path.join(tmpDir, `conflict-type-def-${generateTestId()}.json`);
     fs.writeFileSync(conflictTypeDefPath, JSON.stringify(conflictTypeDef, null, 2));
 
     console.log(`Created test type definition files:`);
@@ -265,8 +284,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     testHelper = new TestHelper(page);
 
     // Mobile browser support
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
@@ -304,16 +322,11 @@ test.describe('Type Definition Upload and JSON Editing', () => {
   test('should upload a valid type definition file without conflicts', async ({ page, browserName }) => {
     console.log('Test: Upload valid type definition without conflicts');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
-    // Click "ファイルからインポート" button (implemented in TypeManagement.tsx line 657)
+    // Click "ファイルからインポート" button (implemented in TypeManagement.tsx)
     const importButton = page.locator('button:has-text("ファイルからインポート")');
-    if (await importButton.count() === 0) {
-      // Import button IS implemented - if not found, likely a page load or navigation issue
-      test.skip('Import button not visible - possible page load issue (button IS implemented in TypeManagement.tsx)');
-      return;
-    }
+    await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -402,16 +415,11 @@ test.describe('Type Definition Upload and JSON Editing', () => {
   test('should detect conflict when uploading duplicate type ID', async ({ page, browserName }) => {
     console.log('Test: Upload type definition with ID conflict');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Upload the same type again to trigger conflict
     const importButton = page.locator('button:has-text("ファイルからインポート")');
-    if (await importButton.count() === 0) {
-      // UPDATED (2025-12-26): Import IS implemented in TypeManagement.tsx
-      test.skip('Import button not visible - IS implemented in TypeManagement.tsx');
-      return;
-    }
+    await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -479,8 +487,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
   test('should edit type definition via JSON modal', async ({ page, browserName }) => {
     console.log('Test: Edit type definition via JSON');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // CRITICAL FIX (2025-12-14): First verify type exists via API
     const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
@@ -594,11 +601,10 @@ test.describe('Type Definition Upload and JSON Editing', () => {
   test('should detect conflict when changing type ID in JSON edit', async ({ page, browserName }) => {
     console.log('Test: Edit type with ID change (conflict detection)');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Create a new type to avoid conflict with existing
-    const newTypeId = `test:editTest${Date.now()}`;
+    const newTypeId = `test:editTest${generateTestId()}`;
     const newTypeDef = {
       id: newTypeId,
       displayName: `Edit Test Type`,
@@ -612,11 +618,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
 
     // Upload new type first
     const importButton = page.locator('button:has-text("ファイルからインポート")');
-    if (await importButton.count() === 0) {
-      // UPDATED (2025-12-26): Import IS implemented in TypeManagement.tsx
-      test.skip('Import button not visible - IS implemented in TypeManagement.tsx');
-      return;
-    }
+    await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -626,7 +628,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
 
     // Create temporary file for new type
     const tmpDir = require('os').tmpdir();
-    const newTypePath = path.join(tmpDir, `new-type-${Date.now()}.json`);
+    const newTypePath = path.join(tmpDir, `new-type-${generateTestId()}.json`);
     fs.writeFileSync(newTypePath, JSON.stringify(newTypeDef, null, 2));
 
     await fileInput.setInputFiles(newTypePath);
@@ -743,8 +745,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
   test('should delete custom type', async ({ page, browserName }) => {
     console.log('Test: Delete custom type');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // CRITICAL FIX (2025-12-14): First verify type exists via API
     const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
@@ -836,15 +837,10 @@ test.describe('Type Definition Upload and JSON Editing', () => {
   test('should cancel upload operation', async ({ page, browserName }) => {
     console.log('Test: Cancel upload operation');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     const importButton = page.locator('button:has-text("ファイルからインポート")');
-    if (await importButton.count() === 0) {
-      // UPDATED (2025-12-26): Import IS implemented in TypeManagement.tsx
-      test.skip('Import button not visible - IS implemented in TypeManagement.tsx');
-      return;
-    }
+    await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -865,11 +861,10 @@ test.describe('Type Definition Upload and JSON Editing', () => {
   test('should cancel JSON edit operation', async ({ page, browserName }) => {
     console.log('Test: Cancel JSON edit operation');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Create a test type for this test
-    const cancelTestTypeId = `test:cancelTest${Date.now()}`;
+    const cancelTestTypeId = `test:cancelTest${generateTestId()}`;
     const cancelTestDef = {
       id: cancelTestTypeId,
       displayName: `Cancel Test Type`,
@@ -879,11 +874,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
 
     // Upload type
     const importButton = page.locator('button:has-text("ファイルからインポート")');
-    if (await importButton.count() === 0) {
-      // UPDATED (2025-12-26): Import IS implemented in TypeManagement.tsx
-      test.skip('Import button not visible - IS implemented in TypeManagement.tsx');
-      return;
-    }
+    await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -892,7 +883,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     const fileInput = uploadModal.locator('input[type="file"]');
 
     const tmpDir = require('os').tmpdir();
-    const cancelTestPath = path.join(tmpDir, `cancel-test-${Date.now()}.json`);
+    const cancelTestPath = path.join(tmpDir, `cancel-test-${generateTestId()}.json`);
     fs.writeFileSync(cancelTestPath, JSON.stringify(cancelTestDef, null, 2));
 
     await fileInput.setInputFiles(cancelTestPath);
@@ -909,7 +900,14 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     // Wait for table to finish loading after upload
     await waitForTableLoad(page, 30000);
 
-    // Open edit modal
+    // Open edit modal - search through pagination if needed
+    const found = await findRowInPaginatedTable(page, cancelTestTypeId);
+    if (!found) {
+      // Cleanup temp file before skipping
+      fs.unlinkSync(cancelTestPath);
+      test.skip(true, `Type ${cancelTestTypeId} not found in table after upload`);
+      return;
+    }
     const typeRow = page.locator(`tr:has-text("${cancelTestTypeId}")`);
     // FIX (2025-12-24): Button text is "JSON" not "編集" for JSON editing
     const editButton = typeRow.locator('button:has-text("JSON")');

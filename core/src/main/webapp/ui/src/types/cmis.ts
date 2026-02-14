@@ -55,6 +55,17 @@ export interface User {
   email?: string;
   password?: string;
   groups: string[];
+  /**
+   * Allowed authentication methods for this user.
+   * - undefined/null: All methods allowed (default, backward compatible)
+   * - "password": Password authentication only
+   * - "cloud": Cloud/OIDC authentication only
+   * - "password,cloud": Both methods allowed
+   * - "disabled": Authentication disabled (account locked)
+   */
+  allowedAuthMethods?: string;
+  /** Whether this user has admin privileges */
+  isAdmin?: boolean;
 }
 
 export interface Group {
@@ -159,6 +170,14 @@ export interface CMISObject {
   targetId?: string;
   /** Change token for optimistic locking (CMIS 1.1) */
   changeToken?: string;
+  /** Archive lifecycle state (ARCHIVED_LOCAL, ARCHIVED_COLD, etc.) */
+  archiveState?: string;
+  /** Timestamp when the object was archived */
+  archivedAt?: string;
+  /** Cold storage transfer mode (COPY or MOVE) */
+  coldMoveMode?: string;
+  /** User who performed the deletion (may differ from creator/owner) */
+  archivedBy?: string;
 }
 
 export interface SearchResult {
@@ -210,4 +229,36 @@ export interface ActionExecutionResult {
   success: boolean;
   message: string;
   data?: any;
+}
+
+export interface RetentionSettings {
+  enabled: boolean;
+  coldAfterDays: string;
+  cronExpression: string;
+  storageType: string;
+  storageConnected: boolean;
+  keepLocalCopy: boolean;
+  localArchiveAfterDays: string;
+  localArchiveCron: string;
+}
+
+export interface PendingArchive {
+  id: string;
+  name: string;
+  parentId?: string;
+  expirationDate: string;
+  lastModifiedBy: string;
+}
+
+export interface MigrationLog {
+  id: string;
+  jobType: string;
+  repositoryId: string;
+  startedAt: number;
+  completedAt: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  status: string;
+  details: string;
 }

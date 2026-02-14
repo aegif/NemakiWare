@@ -22,6 +22,7 @@ import org.json.simple.JSONObject;
 import org.w3c.dom.Node;
 
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
+import jp.aegif.nemaki.util.spring.SpringContext;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -45,11 +46,16 @@ public class SolrAllResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		
-		String solrUrl = solrUtil.getSolrUrl();
-		
+
+		// Admin check - Solr URL is sensitive infrastructure information
+		if (!checkAdmin(errMsg, servletRequest)) {
+			return makeResult(false, result, errMsg).toJSONString();
+		}
+
+		String solrUrl = getSolrUtil().getSolrUrl();
+
 		result.put("url", solrUrl);
-		
+
 		// Output
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
@@ -70,7 +76,7 @@ public class SolrAllResource extends ResourceBase {
 		
 		//Call Solr
 		HttpClient httpClient = HttpClientBuilder.create().build();
-		String solrUrl = solrUtil.getSolrUrl();
+		String solrUrl = getSolrUtil().getSolrUrl();
 		String url = solrUrl + "admin/cores?core=nemaki&action=init";
 		HttpGet httpGet = new HttpGet(url);
 		try {
@@ -85,6 +91,7 @@ public class SolrAllResource extends ResourceBase {
 				status = true;
 			}else{
 				status = false;
+				// Include truncated response for debugging (limit to 200 chars to avoid huge messages)
 				String truncatedBody = body.length() > 200 ? body.substring(0, 200) + "..." : body;
 				errMsg.add("Solr initialization returned non-success status");
 				log.warn("Solr init request returned non-success status. Response: " + truncatedBody);
@@ -120,7 +127,7 @@ public class SolrAllResource extends ResourceBase {
 			// Clear existing Solr index first
 			try {
 				HttpClient httpClient = HttpClientBuilder.create().build();
-				String solrUrl = solrUtil.getSolrUrl();
+				String solrUrl = getSolrUtil().getSolrUrl();
 				String clearUrl = solrUrl + "/update?commit=true";
 				org.apache.hc.client5.http.classic.methods.HttpPost clearPost = new org.apache.hc.client5.http.classic.methods.HttpPost(clearUrl);
 				clearPost.setEntity(new org.apache.hc.core5.http.io.entity.StringEntity("<delete><query>*:*</query></delete>", java.nio.charset.StandardCharsets.UTF_8));
@@ -178,6 +185,11 @@ public class SolrAllResource extends ResourceBase {
 	
 	public void setSolrUtil(SolrUtil solrUtil) {
 		this.solrUtil = solrUtil;
+	}
+
+	private SolrUtil getSolrUtil() {
+		if (solrUtil != null) return solrUtil;
+		return SpringContext.getApplicationContext().getBean("solrUtil", SolrUtil.class);
 	}
 	
 }

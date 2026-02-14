@@ -222,7 +222,11 @@ import {
   InfoCircleOutlined,
   DatabaseOutlined,
   ApiOutlined,
-  BarChartOutlined
+  BarChartOutlined,
+  SwapOutlined,
+  SendOutlined,
+  SyncOutlined,
+  ControlOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -284,7 +288,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   useEffect(() => {
     const fetchCoreBuildInfo = async () => {
       try {
-        const response = await fetch('/core/rest/all/build-info');
+        const response = await fetch('/core/rest/all/build-info', { credentials: 'include' });
         if (response.ok) {
           const data = await response.json();
           if (data.core) {
@@ -300,12 +304,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
 
   // UI build info from vite.config.ts
   const uiBuildTime = typeof __UI_BUILD_TIME__ !== 'undefined' ? __UI_BUILD_TIME__ : 'dev';
-  const uiVersion = typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '3.0.0';
+  const uiVersion = typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '3.1.0';
 
-  // Check if current user is admin
-  // For basic auth: username === 'admin'
-  // For OIDC/SAML: check if 'admin' role is present (username typically matches)
-  const isAdmin = authToken?.username === 'admin';
+  // Check if current user is admin via isAdmin flag from /me endpoint
+  const isAdmin = authToken?.isAdmin === true;
 
   // Build menu items - admin submenu only shown to admin users
   const menuItems = [
@@ -318,6 +320,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
       key: '/search',
       icon: <SearchOutlined />,
       label: t('navigation.search'),
+    },
+    {
+      key: '/archive',
+      icon: <InboxOutlined />,
+      label: t('navigation.archive'),
     },
     // Only include admin menu for admin users
     ...(isAdmin ? [{
@@ -341,11 +348,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           label: t('typeManagement.title'),
         },
         {
-          key: '/archive',
-          icon: <InboxOutlined />,
-          label: t('navigation.archive'),
-        },
-        {
           key: '/solr',
           icon: <DatabaseOutlined />,
           label: t('navigation.solr'),
@@ -359,6 +361,26 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           key: '/api-docs',
           icon: <ApiOutlined />,
           label: t('navigation.apiDocs'),
+        },
+        {
+          key: '/filesystem-import-export',
+          icon: <SwapOutlined />,
+          label: t('navigation.filesystemImportExport'),
+        },
+        {
+          key: '/webhooks',
+          icon: <SendOutlined />,
+          label: t('webhookManagement.title'),
+        },
+        {
+          key: '/cloud-directory-sync',
+          icon: <SyncOutlined />,
+          label: t('cloudSync.title'),
+        },
+        {
+          key: '/config-viewer',
+          icon: <ControlOutlined />,
+          label: t('navigation.configViewer'),
         },
       ],
     }] : []),
@@ -375,6 +397,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   };
 
   const userMenuItems = [
+    {
+      key: 'account',
+      icon: <SettingOutlined />,
+      label: t('navigation.accountSettings'),
+      onClick: () => navigate('/account'),
+    },
+    {
+      type: 'divider' as const,
+    },
     {
       key: 'logout',
       icon: <LogoutOutlined />,

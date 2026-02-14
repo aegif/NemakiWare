@@ -34,7 +34,9 @@ import {
   Typography,
   Collapse,
   List,
-  Tooltip
+  Tooltip,
+  Select,
+  Modal
 } from 'antd';
 import {
   SyncOutlined,
@@ -49,7 +51,9 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
-import { SolrMaintenanceService, ReindexStatus, IndexHealthStatus, SolrQueryResult } from '../../services/solrMaintenance';
+import { SolrMaintenanceService, ReindexStatus, IndexHealthStatus, SolrQueryResult, CmisQueryResult, UserInfo, IndexDiscrepancyResult, DiscrepancyDocumentInfo } from '../../services/solrMaintenance';
+import { RAGMaintenanceService, RAGReindexStatus, RAGHealthStatus } from '../../services/ragMaintenance';
+import { RAGSearchAdmin } from './RAGSearchAdmin';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -66,11 +70,33 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
   const [queryResult, setQueryResult] = useState<SolrQueryResult | null>(null);
   const [solrUrl, setSolrUrl] = useState<string>('');
   const [queryForm] = Form.useForm();
+  const [cmisQueryForm] = Form.useForm();
   const [folderIdInput, setFolderIdInput] = useState<string>('');
   const [recursiveReindex, setRecursiveReindex] = useState<boolean>(true);
 
+  // User simulation state
+  const [users, setUsers] = useState<UserInfo[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [selectedSimulateUser, setSelectedSimulateUser] = useState<string | undefined>(undefined);
+  const [cmisSelectedSimulateUser, setCmisSelectedSimulateUser] = useState<string | undefined>(undefined);
+  const [cmisQueryResult, setCmisQueryResult] = useState<CmisQueryResult | null>(null);
+
+  // Discrepancy details state
+  const [discrepancyModalVisible, setDiscrepancyModalVisible] = useState(false);
+  const [discrepancyModalType, setDiscrepancyModalType] = useState<'missing' | 'orphaned'>('missing');
+  const [discrepancyData, setDiscrepancyData] = useState<IndexDiscrepancyResult | null>(null);
+  const [discrepancyLoading, setDiscrepancyLoading] = useState(false);
+
+  // RAG state
+  const [ragHealthStatus, setRagHealthStatus] = useState<RAGHealthStatus | null>(null);
+  const [ragReindexStatus, setRagReindexStatus] = useState<RAGReindexStatus | null>(null);
+  const [ragFolderIdInput, setRagFolderIdInput] = useState<string>('');
+  const [ragRecursiveReindex, setRagRecursiveReindex] = useState<boolean>(true);
+  const [ragLoading, setRagLoading] = useState(false);
+
   const { handleAuthError } = useAuth();
   const service = new SolrMaintenanceService(() => handleAuthError(null));
+  const ragService = new RAGMaintenanceService(() => handleAuthError(null));
 
   const loadSolrUrl = useCallback(async () => {
     try {
@@ -105,15 +131,55 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     }
   }, [repositoryId]);
 
+  // RAG handlers - must be defined before useEffect that uses them
+  const loadRagHealthStatus = useCallback(async () => {
+    setRagLoading(true);
+    try {
+      const status = await ragService.checkRAGHealth(repositoryId);
+      setRagHealthStatus(status);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('ragMaintenance.messages.healthCheckError')}: ${errorMessage}`);
+    } finally {
+      setRagLoading(false);
+    }
+  }, [repositoryId, t]);
+
+  const loadRagReindexStatus = useCallback(async () => {
+    try {
+      const status = await ragService.getRAGReindexStatus(repositoryId);
+      setRagReindexStatus(status);
+      return status;
+    } catch (error: unknown) {
+      console.error('Failed to load RAG reindex status:', error);
+      return null;
+    }
+  }, [repositoryId]);
+
+  const loadUsers = useCallback(async () => {
+    setUsersLoading(true);
+    try {
+      const result = await service.getUsers(repositoryId);
+      setUsers(result);
+    } catch (error: unknown) {
+      console.error('Failed to load users:', error);
+    } finally {
+      setUsersLoading(false);
+    }
+  }, [repositoryId]);
+
   useEffect(() => {
     loadSolrUrl();
     loadHealthStatus();
     loadReindexStatus();
-  }, [repositoryId, loadSolrUrl, loadHealthStatus, loadReindexStatus]);
+    loadRagHealthStatus();
+    loadRagReindexStatus();
+    loadUsers();
+  }, [repositoryId, loadSolrUrl, loadHealthStatus, loadReindexStatus, loadRagHealthStatus, loadRagReindexStatus, loadUsers]);
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
-    
+
     if (reindexStatus?.status === 'running') {
       intervalId = setInterval(async () => {
         const status = await loadReindexStatus();
@@ -132,6 +198,29 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       }
     };
   }, [reindexStatus?.status, loadReindexStatus, loadHealthStatus]);
+
+  // RAG reindex status polling
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+
+    if (ragReindexStatus?.status === 'running') {
+      intervalId = setInterval(async () => {
+        const status = await loadRagReindexStatus();
+        if (status && status.status !== 'running') {
+          if (intervalId) {
+            clearInterval(intervalId);
+          }
+          loadRagHealthStatus();
+        }
+      }, 2000);
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [ragReindexStatus?.status, loadRagReindexStatus, loadRagHealthStatus]);
 
   const handleFullReindex = async () => {
     try {
@@ -200,7 +289,8 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
         values.start || 0,
         values.rows || 10,
         values.sort,
-        values.fields
+        values.fields,
+        selectedSimulateUser
       );
       setQueryResult(result);
     } catch (error: unknown) {
@@ -209,6 +299,138 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleExecuteCmisQuery = async (values: { statement: string; maxItems: number; skipCount: number }) => {
+    setLoading(true);
+    try {
+      const result = await service.executeCmisQuery(
+        repositoryId,
+        values.statement,
+        values.maxItems || 100,
+        values.skipCount || 0,
+        cmisSelectedSimulateUser
+      );
+      setCmisQueryResult(result);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('solrMaintenance.messages.cmisQueryError')}: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFullRagReindex = async () => {
+    try {
+      await ragService.startFullRAGReindex(repositoryId);
+      message.success(t('ragMaintenance.messages.fullReindexStarted'));
+      loadRagReindexStatus();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('ragMaintenance.messages.fullReindexError')}: ${errorMessage}`);
+    }
+  };
+
+  const handleFolderRagReindex = async () => {
+    if (!ragFolderIdInput.trim()) {
+      message.warning(t('ragMaintenance.messages.folderIdRequired'));
+      return;
+    }
+    try {
+      await ragService.startFolderRAGReindex(repositoryId, ragFolderIdInput.trim(), ragRecursiveReindex);
+      message.success(t('ragMaintenance.messages.folderReindexStarted'));
+      loadRagReindexStatus();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('ragMaintenance.messages.folderReindexError')}: ${errorMessage}`);
+    }
+  };
+
+  const handleCancelRagReindex = async () => {
+    try {
+      await ragService.cancelRAGReindex(repositoryId);
+      message.success(t('ragMaintenance.messages.reindexCancelled'));
+      loadRagReindexStatus();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('ragMaintenance.messages.cancelError')}: ${errorMessage}`);
+    }
+  };
+
+  const handleClearRagIndex = async () => {
+    try {
+      await ragService.clearRAGIndex(repositoryId);
+      message.success(t('ragMaintenance.messages.indexCleared'));
+      loadRagHealthStatus();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('ragMaintenance.messages.clearError')}: ${errorMessage}`);
+    }
+  };
+
+  const handleShowDiscrepancies = async (type: 'missing' | 'orphaned') => {
+    setDiscrepancyModalType(type);
+    setDiscrepancyModalVisible(true);
+    setDiscrepancyLoading(true);
+    try {
+      const result = await service.getIndexDiscrepancies(repositoryId);
+      setDiscrepancyData(result);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('solrMaintenance.discrepancy.loadError')}: ${errorMessage}`);
+    } finally {
+      setDiscrepancyLoading(false);
+    }
+  };
+
+  const handleReindexSingle = async (objectId: string) => {
+    try {
+      await service.reindexDocument(repositoryId, objectId);
+      message.success(t('solrMaintenance.discrepancy.reindexSuccess', { objectId }));
+      handleShowDiscrepancies('missing');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('solrMaintenance.discrepancy.reindexError')}: ${errorMessage}`);
+    }
+  };
+
+  const handleDeleteFromIndexSingle = async (objectId: string) => {
+    try {
+      await service.deleteFromIndex(repositoryId, objectId);
+      message.success(t('solrMaintenance.discrepancy.deleteSuccess', { objectId }));
+      handleShowDiscrepancies('orphaned');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('solrMaintenance.discrepancy.deleteError')}: ${errorMessage}`);
+    }
+  };
+
+  const handleBulkReindex = async () => {
+    if (!discrepancyData) return;
+    for (const doc of discrepancyData.missingInSolr) {
+      try {
+        await service.reindexDocument(repositoryId, doc.objectId);
+      } catch {
+        // continue
+      }
+    }
+    message.success(t('solrMaintenance.discrepancy.bulkReindexComplete'));
+    handleShowDiscrepancies('missing');
+    loadHealthStatus();
+  };
+
+  const handleBulkDeleteFromIndex = async () => {
+    if (!discrepancyData) return;
+    for (const doc of discrepancyData.orphanedInSolr) {
+      try {
+        await service.deleteFromIndex(repositoryId, doc.objectId);
+      } catch {
+        // continue
+      }
+    }
+    message.success(t('solrMaintenance.discrepancy.bulkDeleteComplete'));
+    handleShowDiscrepancies('orphaned');
+    loadHealthStatus();
   };
 
   const getStatusTag = (status: string) => {
@@ -275,18 +497,34 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
             />
           </Col>
           <Col span={6}>
-            <Statistic
-              title={t('solrMaintenance.healthCheck.missingInSolr')}
-              value={healthStatus.missingInSolr}
-              valueStyle={{ color: healthStatus.missingInSolr > 0 ? '#cf1322' : '#3f8600' }}
-            />
+            <div style={{ cursor: healthStatus.missingInSolr > 0 ? 'pointer' : 'default' }}
+                 onClick={() => healthStatus.missingInSolr > 0 && handleShowDiscrepancies('missing')}>
+              <Statistic
+                title={t('solrMaintenance.healthCheck.missingInSolr')}
+                value={healthStatus.missingInSolr}
+                valueStyle={{ color: healthStatus.missingInSolr > 0 ? '#cf1322' : '#3f8600' }}
+              />
+              {healthStatus.missingInSolr > 0 && (
+                <Button type="link" size="small" style={{ padding: 0 }}>
+                  {t('solrMaintenance.discrepancy.showDetails')}
+                </Button>
+              )}
+            </div>
           </Col>
           <Col span={6}>
-            <Statistic
-              title={t('solrMaintenance.healthCheck.orphanedInSolr')}
-              value={healthStatus.orphanedInSolr}
-              valueStyle={{ color: healthStatus.orphanedInSolr > 0 ? '#faad14' : '#3f8600' }}
-            />
+            <div style={{ cursor: healthStatus.orphanedInSolr > 0 ? 'pointer' : 'default' }}
+                 onClick={() => healthStatus.orphanedInSolr > 0 && handleShowDiscrepancies('orphaned')}>
+              <Statistic
+                title={t('solrMaintenance.healthCheck.orphanedInSolr')}
+                value={healthStatus.orphanedInSolr}
+                valueStyle={{ color: healthStatus.orphanedInSolr > 0 ? '#faad14' : '#3f8600' }}
+              />
+              {healthStatus.orphanedInSolr > 0 && (
+                <Button type="link" size="small" style={{ padding: 0 }}>
+                  {t('solrMaintenance.discrepancy.showDetails')}
+                </Button>
+              )}
+            </div>
           </Col>
         </Row>
         <div style={{ marginTop: 16 }}>
@@ -523,8 +761,8 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
             </Form.Item>
           </Col>
           <Col span={6}>
-            <Form.Item 
-              name="rows" 
+            <Form.Item
+              name="rows"
               label={t('solrMaintenance.query.rows')}
               tooltip={t('solrMaintenance.query.rowsTooltip')}
             >
@@ -542,6 +780,29 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
             </Form.Item>
           </Col>
         </Row>
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item
+              label={t('solrMaintenance.query.simulateAsUser')}
+              tooltip={t('solrMaintenance.query.simulateAsUserTooltip')}
+            >
+              <Select
+                allowClear
+                placeholder={t('solrMaintenance.query.selectUser')}
+                loading={usersLoading}
+                value={selectedSimulateUser}
+                onChange={setSelectedSimulateUser}
+                style={{ width: '100%' }}
+              >
+                {users.map(user => (
+                  <Select.Option key={user.userId} value={user.userId}>
+                    {user.userName} ({user.userId}){user.isAdmin ? ' [Admin]' : ''}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Col>
+        </Row>
         <Form.Item>
           <Button type="primary" htmlType="submit" icon={<SearchOutlined />} loading={loading}>
             {t('solrMaintenance.query.executeQuery')}
@@ -552,14 +813,25 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       {queryResult && (
         <div style={{ marginTop: 16 }}>
           <Alert
-            message={queryResult.numFound === 0 
-              ? t('solrMaintenance.query.noResults', { queryTime: queryResult.queryTime })
-              : t('solrMaintenance.query.results', { 
-                  numFound: queryResult.numFound, 
-                  start: queryResult.start + 1, 
-                  end: queryResult.start + queryResult.docs.length, 
-                  queryTime: queryResult.queryTime 
-                })}
+            message={
+              queryResult.numFound === 0
+                ? t('solrMaintenance.query.noResults', { queryTime: queryResult.queryTime })
+                : selectedSimulateUser && queryResult.aclFilteredCount !== undefined
+                  ? t('solrMaintenance.query.resultsWithAcl', {
+                      numFound: queryResult.numFound,
+                      visibleCount: queryResult.visibleCount,
+                      aclFilteredCount: queryResult.aclFilteredCount,
+                      start: queryResult.start + 1,
+                      end: queryResult.start + queryResult.docs.length,
+                      queryTime: queryResult.queryTime
+                    })
+                  : t('solrMaintenance.query.results', {
+                      numFound: queryResult.numFound,
+                      start: queryResult.start + 1,
+                      end: queryResult.start + queryResult.docs.length,
+                      queryTime: queryResult.queryTime
+                    })
+            }
             type="info"
             style={{ marginBottom: 16 }}
           />
@@ -580,6 +852,315 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
           ))}
         </div>
       )}
+    </Card>
+  );
+
+  const renderCmisQuery = () => (
+    <Card title={t('solrMaintenance.cmisQuery.title')} style={{ marginTop: 16 }}>
+      <Alert
+        message={t('solrMaintenance.cmisQuery.description')}
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+      />
+      <Form
+        form={cmisQueryForm}
+        layout="vertical"
+        onFinish={handleExecuteCmisQuery}
+        initialValues={{ maxItems: 100, skipCount: 0 }}
+      >
+        <Form.Item
+          name="statement"
+          label={t('solrMaintenance.cmisQuery.statementLabel')}
+          rules={[{ required: true, message: t('solrMaintenance.cmisQuery.statementRequired') }]}
+        >
+          <TextArea
+            placeholder={t('solrMaintenance.cmisQuery.statementPlaceholder')}
+            rows={4}
+          />
+        </Form.Item>
+        <Row gutter={16}>
+          <Col span={6}>
+            <Form.Item name="maxItems" label={t('solrMaintenance.cmisQuery.maxItems')}>
+              <InputNumber min={1} max={1000} style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item name="skipCount" label={t('solrMaintenance.cmisQuery.skipCount')}>
+              <InputNumber min={0} style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              label={t('solrMaintenance.cmisQuery.simulateAsUser')}
+              tooltip={t('solrMaintenance.cmisQuery.simulateAsUserTooltip')}
+            >
+              <Select
+                allowClear
+                placeholder={t('solrMaintenance.cmisQuery.selectUser')}
+                loading={usersLoading}
+                value={cmisSelectedSimulateUser}
+                onChange={setCmisSelectedSimulateUser}
+                style={{ width: '100%' }}
+              >
+                {users.map(user => (
+                  <Select.Option key={user.userId} value={user.userId}>
+                    {user.userName} ({user.userId}){user.isAdmin ? ' [Admin]' : ''}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Col>
+        </Row>
+        <Form.Item>
+          <Button type="primary" htmlType="submit" icon={<SearchOutlined />} loading={loading}>
+            {t('solrMaintenance.cmisQuery.executeQuery')}
+          </Button>
+        </Form.Item>
+      </Form>
+
+      {cmisQueryResult && (
+        <div style={{ marginTop: 16 }}>
+          <Alert
+            message={
+              cmisQueryResult.numFound === 0
+                ? t('solrMaintenance.cmisQuery.noResults', { queryTime: cmisQueryResult.queryTime })
+                : t('solrMaintenance.cmisQuery.results', {
+                    numFound: cmisQueryResult.numFound,
+                    displayed: cmisQueryResult.objects.length,
+                    hasMore: cmisQueryResult.hasMoreItems ? t('common.yes') : t('common.no'),
+                    queryTime: cmisQueryResult.queryTime
+                  })
+            }
+            type="info"
+            style={{ marginBottom: 16 }}
+          />
+          <Table
+            dataSource={cmisQueryResult.objects.map((obj, index) => ({
+              ...obj,
+              key: obj.objectId || index
+            }))}
+            columns={[
+              {
+                title: t('solrMaintenance.cmisQuery.columnName'),
+                dataIndex: 'name',
+                key: 'name',
+                width: 200
+              },
+              {
+                title: t('solrMaintenance.cmisQuery.columnObjectId'),
+                dataIndex: 'objectId',
+                key: 'objectId',
+                width: 300,
+                render: (value: string) => <Text code>{value}</Text>
+              },
+              {
+                title: t('solrMaintenance.cmisQuery.columnType'),
+                dataIndex: 'objectTypeId',
+                key: 'objectTypeId',
+                width: 150
+              },
+              {
+                title: t('solrMaintenance.cmisQuery.columnPath'),
+                dataIndex: 'path',
+                key: 'path',
+                render: (value: string) => value || '-'
+              }
+            ]}
+            pagination={{ pageSize: 20, showSizeChanger: true }}
+            size="small"
+            scroll={{ x: 'max-content' }}
+          />
+        </div>
+      )}
+    </Card>
+  );
+
+  // RAG render functions
+  const renderRagHealthStatus = () => {
+    if (!ragHealthStatus) {
+      return <Spin />;
+    }
+
+    return (
+      <Card title={t('ragMaintenance.healthCheck.title')} extra={
+        <Button icon={<ReloadOutlined />} onClick={loadRagHealthStatus} loading={ragLoading}>
+          {t('ragMaintenance.healthCheck.refresh')}
+        </Button>
+      }>
+        <Row gutter={16}>
+          <Col span={6}>
+            <Statistic
+              title={t('ragMaintenance.healthCheck.ragEnabled')}
+              value={ragHealthStatus.enabled ? t('ragMaintenance.healthCheck.available') : t('ragMaintenance.healthCheck.unavailable')}
+              valueStyle={{ color: ragHealthStatus.enabled ? '#3f8600' : '#cf1322' }}
+            />
+          </Col>
+          <Col span={6}>
+            <Statistic
+              title={t('ragMaintenance.healthCheck.documentCount')}
+              value={ragHealthStatus.ragDocumentCount}
+            />
+          </Col>
+          <Col span={6}>
+            <Statistic
+              title={t('ragMaintenance.healthCheck.chunkCount')}
+              value={ragHealthStatus.ragChunkCount}
+            />
+          </Col>
+          <Col span={6}>
+            <Statistic
+              title={t('ragMaintenance.healthCheck.eligibleDocuments')}
+              value={ragHealthStatus.eligibleDocuments}
+            />
+          </Col>
+        </Row>
+        <div style={{ marginTop: 16 }}>
+          {ragHealthStatus.healthy ? (
+            <Alert message={t('ragMaintenance.healthCheck.healthy')} type="success" showIcon />
+          ) : (
+            <Alert message={ragHealthStatus.message || t('ragMaintenance.healthCheck.unhealthy')} type="warning" showIcon />
+          )}
+        </div>
+      </Card>
+    );
+  };
+
+  const renderRagReindexStatus = () => {
+    if (!ragReindexStatus) {
+      return null;
+    }
+
+    const progress = ragReindexStatus.totalDocuments > 0
+      ? Math.round((ragReindexStatus.indexedCount / ragReindexStatus.totalDocuments) * 100)
+      : 0;
+
+    return (
+      <Card title={t('ragMaintenance.reindexStatus.title')} style={{ marginTop: 16 }}>
+        <Descriptions column={2}>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.status')}>{getStatusTag(ragReindexStatus.status)}</Descriptions.Item>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.currentFolder')}>{ragReindexStatus.currentFolder || '-'}</Descriptions.Item>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.totalDocuments')}>{ragReindexStatus.totalDocuments}</Descriptions.Item>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.indexed')}>{ragReindexStatus.indexedCount}</Descriptions.Item>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.errorCount')}>{ragReindexStatus.errorCount}</Descriptions.Item>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.errorMessage')}>{ragReindexStatus.errorMessage || '-'}</Descriptions.Item>
+        </Descriptions>
+        {ragReindexStatus.status === 'running' && (
+          <div style={{ marginTop: 16 }}>
+            <Progress percent={progress} status="active" />
+            <Button
+              danger
+              icon={<StopOutlined />}
+              onClick={handleCancelRagReindex}
+              style={{ marginTop: 8 }}
+            >
+              {t('ragMaintenance.reindexStatus.cancel')}
+            </Button>
+          </div>
+        )}
+        {ragReindexStatus.errors && ragReindexStatus.errors.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <Collapse
+              items={[
+                {
+                  key: 'errors',
+                  label: t('ragMaintenance.reindexStatus.errorDetails', { count: ragReindexStatus.errors.length }),
+                  children: (
+                    <List
+                      size="small"
+                      dataSource={ragReindexStatus.errors}
+                      renderItem={(error: string, index: number) => (
+                        <List.Item>
+                          <Text type="danger" style={{ fontSize: '12px' }}>
+                            {index + 1}. {error}
+                          </Text>
+                        </List.Item>
+                      )}
+                      style={{ maxHeight: '300px', overflow: 'auto' }}
+                    />
+                  ),
+                },
+              ]}
+            />
+          </div>
+        )}
+      </Card>
+    );
+  };
+
+  const renderRagReindexActions = () => (
+    <Card title={t('ragMaintenance.reindexActions.title')} style={{ marginTop: 16 }}>
+      <Space direction="vertical" style={{ width: '100%' }}>
+        <div>
+          <Text strong>{t('ragMaintenance.reindexActions.fullReindex')}</Text>
+          <p style={{ color: '#666', marginBottom: 8 }}>
+            {t('ragMaintenance.reindexActions.fullReindexDesc')}
+          </p>
+          <Popconfirm
+            title={t('ragMaintenance.reindexActions.fullReindexConfirm')}
+            description={t('ragMaintenance.reindexActions.fullReindexConfirmDesc')}
+            onConfirm={handleFullRagReindex}
+            okText={t('ragMaintenance.reindexActions.execute')}
+            cancelText={t('common.cancel')}
+          >
+            <Button
+              type="primary"
+              icon={<SyncOutlined />}
+              disabled={ragReindexStatus?.status === 'running'}
+            >
+              {t('ragMaintenance.reindexActions.fullReindex')}
+            </Button>
+          </Popconfirm>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <Text strong>{t('ragMaintenance.reindexActions.folderReindex')}</Text>
+          <p style={{ color: '#666', marginBottom: 8 }}>
+            {t('ragMaintenance.reindexActions.folderReindexDesc')}
+          </p>
+          <Space>
+            <Input
+              placeholder={t('ragMaintenance.reindexActions.folderId')}
+              value={ragFolderIdInput}
+              onChange={(e) => setRagFolderIdInput(e.target.value)}
+              style={{ width: 300 }}
+            />
+            <label>
+              <input
+                type="checkbox"
+                checked={ragRecursiveReindex}
+                onChange={(e) => setRagRecursiveReindex(e.target.checked)}
+              />
+              {' '}{t('ragMaintenance.reindexActions.includeSubfolders')}
+            </label>
+            <Button
+              icon={<FolderOutlined />}
+              onClick={handleFolderRagReindex}
+              disabled={ragReindexStatus?.status === 'running'}
+            >
+              {t('ragMaintenance.reindexActions.folderReindexButton')}
+            </Button>
+          </Space>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <Text strong>{t('ragMaintenance.reindexActions.indexManagement')}</Text>
+          <p style={{ color: '#666', marginBottom: 8 }}>
+            {t('ragMaintenance.reindexActions.indexManagementDesc')}
+          </p>
+          <Popconfirm
+            title={t('ragMaintenance.reindexActions.clearIndexConfirm')}
+            description={t('ragMaintenance.reindexActions.clearIndexConfirmDesc')}
+            onConfirm={handleClearRagIndex}
+            okText={t('common.clear')}
+            cancelText={t('common.cancel')}
+          >
+            <Button danger icon={<ClearOutlined />}>
+              {t('ragMaintenance.reindexActions.clearIndex')}
+            </Button>
+          </Popconfirm>
+        </div>
+      </Space>
     </Card>
   );
 
@@ -604,6 +1185,31 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       label: t('solrMaintenance.tabs.query'),
       children: renderSolrQuery(),
     },
+    {
+      key: 'cmis-query',
+      label: t('solrMaintenance.tabs.cmisQuery'),
+      children: renderCmisQuery(),
+    },
+    {
+      key: 'rag-status',
+      label: t('ragMaintenance.tabs.status'),
+      children: (
+        <>
+          {renderRagHealthStatus()}
+          {renderRagReindexStatus()}
+        </>
+      ),
+    },
+    {
+      key: 'rag-reindex',
+      label: t('ragMaintenance.tabs.reindex'),
+      children: renderRagReindexActions(),
+    },
+    {
+      key: 'rag-search',
+      label: t('ragMaintenance.tabs.search'),
+      children: <RAGSearchAdmin repositoryId={repositoryId} />,
+    },
   ];
 
   return (
@@ -617,6 +1223,101 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
         </div>
         <Tabs items={tabItems} />
       </Card>
+
+      <Modal
+        title={discrepancyModalType === 'missing'
+          ? t('solrMaintenance.discrepancy.missingTitle')
+          : t('solrMaintenance.discrepancy.orphanedTitle')}
+        open={discrepancyModalVisible}
+        onCancel={() => setDiscrepancyModalVisible(false)}
+        width={900}
+        footer={[
+          discrepancyModalType === 'missing' && discrepancyData && discrepancyData.missingInSolr.length > 0 && (
+            <Popconfirm
+              key="bulkReindex"
+              title={t('solrMaintenance.discrepancy.bulkReindexConfirm')}
+              onConfirm={handleBulkReindex}
+              okText={t('common.confirm')}
+              cancelText={t('common.cancel')}
+            >
+              <Button type="primary">{t('solrMaintenance.discrepancy.bulkReindex')}</Button>
+            </Popconfirm>
+          ),
+          discrepancyModalType === 'orphaned' && discrepancyData && discrepancyData.orphanedInSolr.length > 0 && (
+            <Popconfirm
+              key="bulkDelete"
+              title={t('solrMaintenance.discrepancy.bulkDeleteConfirm')}
+              onConfirm={handleBulkDeleteFromIndex}
+              okText={t('common.confirm')}
+              cancelText={t('common.cancel')}
+            >
+              <Button danger>{t('solrMaintenance.discrepancy.bulkDelete')}</Button>
+            </Popconfirm>
+          ),
+          <Button key="close" onClick={() => setDiscrepancyModalVisible(false)}>{t('common.close')}</Button>,
+        ]}
+      >
+        {discrepancyLoading ? (
+          <Spin style={{ display: 'block', textAlign: 'center', padding: 40 }} />
+        ) : discrepancyData && (
+          <Table
+            dataSource={
+              (discrepancyModalType === 'missing'
+                ? discrepancyData.missingInSolr
+                : discrepancyData.orphanedInSolr
+              ).map((doc: DiscrepancyDocumentInfo) => ({ ...doc, key: doc.objectId }))
+            }
+            columns={[
+              {
+                title: t('solrMaintenance.discrepancy.objectId'),
+                dataIndex: 'objectId',
+                key: 'objectId',
+                width: 320,
+                render: (value: string) => <Text code style={{ fontSize: 11 }}>{value}</Text>,
+              },
+              {
+                title: t('solrMaintenance.discrepancy.name'),
+                dataIndex: 'name',
+                key: 'name',
+                render: (value: string | null) => value || <Text type="secondary">-</Text>,
+              },
+              {
+                title: t('solrMaintenance.discrepancy.objectType'),
+                dataIndex: 'objectType',
+                key: 'objectType',
+                width: 150,
+                render: (value: string | null) => value || <Text type="secondary">-</Text>,
+              },
+              {
+                title: t('common.actions'),
+                key: 'actions',
+                width: 120,
+                render: (_: unknown, record: DiscrepancyDocumentInfo) => (
+                  discrepancyModalType === 'missing' ? (
+                    <Button size="small" type="link" onClick={() => handleReindexSingle(record.objectId)}>
+                      {t('solrMaintenance.discrepancy.reindex')}
+                    </Button>
+                  ) : (
+                    <Popconfirm
+                      title={t('solrMaintenance.discrepancy.deleteConfirm')}
+                      onConfirm={() => handleDeleteFromIndexSingle(record.objectId)}
+                      okText={t('common.confirm')}
+                      cancelText={t('common.cancel')}
+                    >
+                      <Button size="small" type="link" danger>
+                        {t('solrMaintenance.discrepancy.deleteFromIndex')}
+                      </Button>
+                    </Popconfirm>
+                  )
+                ),
+              },
+            ]}
+            pagination={{ pageSize: 20 }}
+            size="small"
+            scroll={{ x: 'max-content' }}
+          />
+        )}
+      </Modal>
     </div>
   );
 };

@@ -7,4 +7,7 @@ public interface CallContextKey {
 	//Auth token
 	final String AUTH_TOKEN = "nemaki_auth_token";
 	final String AUTH_TOKEN_APP = "nemaki_auth_token_app";
+
+	// API Key for persistent authentication
+	final String API_KEY = "nemaki_api_key";
 }

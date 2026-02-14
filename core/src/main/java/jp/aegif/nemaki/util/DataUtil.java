@@ -87,6 +87,12 @@ public class DataUtil {
 		return ((PropertyString) property).getFirstValue();
 	}
 
+	/**
+	 * Gets a boolean property value from CMIS properties.
+	 * @param properties the CMIS properties
+	 * @param name the property name
+	 * @return the Boolean value, or null if property is not found or not a PropertyBoolean type
+	 */
 	public static Boolean getBooleanProperty(Properties properties, String name) {
 		PropertyData<?> property = properties.getProperties().get(name);
 		if (!(property instanceof PropertyBoolean)) {

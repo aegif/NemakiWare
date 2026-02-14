@@ -5,7 +5,7 @@
 	<groupId>jp.aegif.nemaki.plugin</groupId>
 	<artifactId>nemakiware-action</artifactId>
 	<packaging>jar</packaging>
-	<version>3.0.0</version>
+	<version>3.1.0</version>
 	<name>action</name>
 	<description>NemakiWare Action Interface</description>
 	<url>https://github.com/aegif/NemakiWare</url>

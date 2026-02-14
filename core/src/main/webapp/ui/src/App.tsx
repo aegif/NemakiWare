@@ -199,7 +199,7 @@
  * - Route component throws: ErrorBoundary implemented in ProtectedRoute (catches 401 errors)
  */
 
-import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ConfigProvider, App as AntApp } from 'antd';
 import { Layout } from './components/Layout/Layout';
 import { DocumentList } from './components/DocumentList/DocumentList';
@@ -213,6 +213,12 @@ import { ArchiveManagement } from './components/ArchiveManagement/ArchiveManagem
 import { SolrMaintenance } from './components/SolrMaintenance/SolrMaintenance';
 import { AuditDashboard } from './components/AuditDashboard/AuditDashboard';
 import { ApiDocs } from './components/ApiDocs/ApiDocs';
+import { FilesystemImportExport } from './components/FilesystemImportExport/FilesystemImportExport';
+import { WebhookManagement } from './components/WebhookManagement/WebhookManagement';
+import { CloudDirectorySync } from './components/CloudDirectorySync/CloudDirectorySync';
+import { ConfigViewer } from './components/ConfigViewer/ConfigViewer';
+import { AccountSettings } from './components/AccountSettings/AccountSettings';
+import { McpCloudLogin } from './components/McpCloudLogin/McpCloudLogin';
 import { Login } from './components/Login/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute/ProtectedRoute';
@@ -227,9 +233,32 @@ const customTheme = {
   },
 };
 
-function AppContent() {
-  const { isAuthenticated, authToken } = useAuth();
+// LocalStorage key for MCP pending login code (must match McpCloudLogin.tsx)
+// Using localStorage instead of sessionStorage because OAuth libraries may interfere
+const MCP_PENDING_LOGIN_KEY = 'mcp_pending_login_code';
 
+/**
+ * Inner component that handles routing logic based on authentication state.
+ * Uses useLocation to check if current path is a public route.
+ */
+function AppRoutes() {
+  const { isAuthenticated, authToken } = useAuth();
+  const location = useLocation();
+
+  // Public routes that don't require authentication
+  // cloud-login needs to be accessible for MCP cloud authentication flow
+  const isPublicRoute = location.pathname === '/cloud-login';
+
+  // Handle public routes - accessible without authentication
+  if (isPublicRoute) {
+    return (
+      <Routes>
+        <Route path="/cloud-login" element={<McpCloudLogin />} />
+      </Routes>
+    );
+  }
+
+  // If not authenticated, show login page
   if (!isAuthenticated || !authToken) {
     return <Login onLogin={async (_auth) => {
       // AuthContext will handle the authentication state update
@@ -237,10 +266,21 @@ function AppContent() {
     }} />;
   }
 
+  // Check for pending MCP cloud login BEFORE rendering authenticated routes
+  // This must be done synchronously to prevent redirect to /documents
+  const pendingCode = localStorage.getItem(MCP_PENDING_LOGIN_KEY);
+  if (pendingCode) {
+    // Clear the stored code first to prevent loops
+    localStorage.removeItem(MCP_PENDING_LOGIN_KEY);
+    console.log('MCP: Found pending login code, redirecting to cloud-login:', pendingCode);
+    // Return a Navigate component to redirect to cloud-login
+    return <Navigate to={`/cloud-login?code=${pendingCode}`} replace />;
+  }
+
+  // Authenticated routes
   return (
-    <Router>
-      <Layout repositoryId={authToken.repositoryId}>
-        <Routes>
+    <Layout repositoryId={authToken.repositoryId}>
+      <Routes>
           <Route path="/" element={<Navigate to="/documents" replace />} />
           <Route path="/index.html" element={<Navigate to="/documents" replace />} />
           <Route path="/documents" element={
@@ -256,6 +296,12 @@ function AppContent() {
           <Route path="/search" element={
             <ProtectedRoute>
               <SearchResults repositoryId={authToken.repositoryId} />
+            </ProtectedRoute>
+          } />
+          {/* Account Settings - available to all authenticated users */}
+          <Route path="/account" element={
+            <ProtectedRoute>
+              <AccountSettings repositoryId={authToken.repositoryId} />
             </ProtectedRoute>
           } />
           {/* Admin-only routes - require admin role */}
@@ -287,15 +333,20 @@ function AppContent() {
           } />
           <Route path="/archive" element={
             <ProtectedRoute>
-              <AdminRoute>
-                <ArchiveManagement repositoryId={authToken.repositoryId} />
-              </AdminRoute>
+              <ArchiveManagement repositoryId={authToken.repositoryId} />
             </ProtectedRoute>
           } />
           <Route path="/solr" element={
             <ProtectedRoute>
               <AdminRoute>
                 <SolrMaintenance repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/cloud-directory-sync" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <CloudDirectorySync repositoryId={authToken.repositoryId} />
               </AdminRoute>
             </ProtectedRoute>
           } />
@@ -313,13 +364,35 @@ function AppContent() {
               </AdminRoute>
             </ProtectedRoute>
           } />
+          <Route path="/filesystem-import-export" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <FilesystemImportExport repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/webhooks" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <WebhookManagement repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/config-viewer" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <ConfigViewer repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
           <Route path="/oidc-callback" element={<Login onLogin={() => {}} />} />
           <Route path="/saml-callback" element={<Login onLogin={() => {}} />} />
+          {/* Cloud login for MCP - accessible from authenticated section too */}
+          <Route path="/cloud-login" element={<McpCloudLogin />} />
           {/* 404 - 存在しないページはログインページにリダイレクト */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>
-    </Router>
   );
 }
 
@@ -331,7 +404,9 @@ function App() {
           This prevents the gray overlay issue that occurs when modals are not properly destroyed. */}
       <AntApp>
         <AuthProvider>
-          <AppContent />
+          <Router>
+            <AppRoutes />
+          </Router>
         </AuthProvider>
       </AntApp>
     </ConfigProvider>

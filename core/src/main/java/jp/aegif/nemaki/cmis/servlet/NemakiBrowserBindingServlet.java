@@ -201,12 +201,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 }
             }
         }
-        
+
         String queryString = request.getQueryString();
         String requestURI = request.getRequestURI();
-        String contextPath = request.getContextPath();
-        String servletPath = request.getServletPath();
-        
+
         // Get contentType early for debug code
         String contentType = request.getContentType();
 
@@ -403,11 +401,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 // Extract parameters for debugging if needed
                 try {
                     java.util.Map<String, String[]> params = finalRequest.getParameterMap();
-                    
+
                     // Check for secondary type properties specifically for debugging
-                    for (String paramName : params.keySet()) {
+                    for (Map.Entry<String, String[]> entry : params.entrySet()) {
+                        String paramName = entry.getKey();
                         if (paramName.startsWith("propertyId") || paramName.startsWith("propertyValue")) {
-                            log.debug("Property parameter: " + paramName + " = " + java.util.Arrays.toString(params.get(paramName)));
+                            log.debug("Property parameter: " + paramName + " = " + java.util.Arrays.toString(entry.getValue()));
                         }
                         if (paramName.contains("secondaryObjectType") || paramName.contains("SecondaryType")) {
                             log.debug("Secondary type parameter: " + paramName + " = " + java.util.Arrays.toString(params.get(paramName)));
@@ -1594,7 +1593,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     }
     
     /**
-     * Safe Boolean parameter parsing
+     * Safe Boolean parameter parsing.
+     * @param request the HTTP request
+     * @param name the parameter name
+     * @return the Boolean value, or null if parameter is missing or empty
      */
     private Boolean getBooleanParameterSafe(HttpServletRequest request, String name) {
         String value = request.getParameter(name);
@@ -1759,7 +1761,19 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      */
     private void handleDeleteTypeDirectly(HttpServletRequest request, HttpServletResponse response, String pathInfo) throws Exception {
         log.debug("=== DIRECT DELETE TYPE HANDLER START ===");
-        
+
+        // SECURITY FIX: Verify the requesting user is an admin.
+        // deleteType is a repository-level administrative operation per CMIS spec.
+        org.apache.chemistry.opencmis.commons.server.CallContext deleteTypeCallContext =
+            (org.apache.chemistry.opencmis.commons.server.CallContext) request.getAttribute("CallContext");
+        if (deleteTypeCallContext == null) {
+            throw new org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException("Authentication required for deleteType operation");
+        }
+        Boolean isAdmin = (Boolean) deleteTypeCallContext.get("is_admin");
+        if (isAdmin == null || !isAdmin) {
+            throw new org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException("Admin privilege required for deleteType operation");
+        }
+
         // Extract repository ID from path
         String[] pathParts = pathInfo != null ? pathInfo.split("/") : new String[0];
         if (pathParts.length < 2) {
@@ -2713,11 +2727,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         try {
             // DEBUG: Show all parameters received
-            
+
             java.util.Map<String, String[]> paramMap = request.getParameterMap();
-            for (String paramName : paramMap.keySet()) {
-                String[] values = paramMap.get(paramName);
-                
+            for (Map.Entry<String, String[]> entry : paramMap.entrySet()) {
+                String paramName = entry.getKey();
+                String[] values = entry.getValue();
+
             }
             
             // Extract parent folder ID - Browser Binding uses 'objectId' parameter for parent folder
@@ -3468,48 +3483,24 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             String resultObjectId = null;
 
             switch (cmisaction) {
-                case "checkOut":
-                    // CRITICAL TCK FIX: Use NemakiWare ContentService directly to ensure versioning properties are set correctly
-                    try {
-                        // Get NemakiWare ContentService from Spring context
-                        org.springframework.web.context.WebApplicationContext webAppContext =
-                            org.springframework.web.context.support.WebApplicationContextUtils.getWebApplicationContext(getServletContext());
+                case "checkOut": {
+                    // SECURITY FIX: Use cmisService.checkOut() which routes through VersioningServiceImpl
+                    // and performs permission check via exceptionService.permissionDenied(CAN_CHECKOUT_DOCUMENT).
+                    // Previous implementation bypassed permission checks by calling contentService.checkOut() directly.
+                    org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder =
+                        new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
+                    org.apache.chemistry.opencmis.commons.spi.Holder<Boolean> contentCopiedHolder =
+                        new org.apache.chemistry.opencmis.commons.spi.Holder<Boolean>();
 
-                        if (webAppContext != null) {
-                            jp.aegif.nemaki.businesslogic.ContentService contentService =
-                                webAppContext.getBean("contentService", jp.aegif.nemaki.businesslogic.ContentService.class);
-
-                            
-
-                            // Call NemakiWare's checkOut method which includes the versioning property fixes
-                            jp.aegif.nemaki.model.Document pwcDocument = contentService.checkOut(callContext, repositoryId, objectId, null);
-                            resultObjectId = pwcDocument.getId(); // PWC ID
-
-                            
-
-                        } else {
-                            
-
-                            // Fallback to standard OpenCMIS implementation
-                            org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder =
-                                new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
-                            org.apache.chemistry.opencmis.commons.spi.Holder<Boolean> contentCopiedHolder =
-                                new org.apache.chemistry.opencmis.commons.spi.Holder<Boolean>();
-
-                            cmisService.checkOut(repositoryId, objectIdHolder, null, contentCopiedHolder);
-                            resultObjectId = objectIdHolder.getValue(); // PWC ID
-                        }
-                    } catch (Exception e) {
-                        
-                        e.printStackTrace();
-                        throw e;
-                    }
+                    cmisService.checkOut(repositoryId, objectIdHolder, null, contentCopiedHolder);
+                    resultObjectId = objectIdHolder.getValue(); // PWC ID
                     break;
+                }
 
                 case "checkIn":
                     String checkinComment = request.getParameter("checkinComment");
                     String major = request.getParameter("major");
-                    Boolean isMajor = (major != null) ? Boolean.parseBoolean(major) : Boolean.FALSE;
+                    Boolean isMajor = (major != null) ? Boolean.valueOf(major) : Boolean.FALSE;
 
                     // Extract properties if any (for checkin comment, etc.)
                     java.util.Map<String, Object> properties = extractPropertiesFromRequest(request);
@@ -3824,15 +3815,16 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     private java.util.Map<String, Object> extractPropertiesFromRequest(HttpServletRequest request) {
         java.util.Map<String, Object> properties = new java.util.HashMap<>();
         java.util.Map<String, String[]> paramMap = request.getParameterMap();
-        
+
         // Find all propertyId parameters and match them with propertyValue parameters
-        for (String paramName : paramMap.keySet()) {
+        for (Map.Entry<String, String[]> entry : paramMap.entrySet()) {
+            String paramName = entry.getKey();
             if (paramName.startsWith("propertyId[") && paramName.endsWith("]")) {
                 // Extract index from propertyId[N]
                 String indexStr = paramName.substring("propertyId[".length(), paramName.length() - 1);
                 String singleValueParamName = "propertyValue[" + indexStr + "]";
-                
-                String[] idValues = paramMap.get(paramName);
+
+                String[] idValues = entry.getValue();
                 String[] propValues = paramMap.get(singleValueParamName);
                 
                 if (idValues != null && idValues.length > 0) {
@@ -3847,11 +3839,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         // Multi-value properties are sent as propertyValue[0][0], propertyValue[0][1], etc.
                         java.util.List<String> multiValues = new java.util.ArrayList<>();
                         String multiValuePrefix = "propertyValue[" + indexStr + "][";
-                        
+
                         // Collect all multi-value entries for this property
-                        for (String mvParamName : paramMap.keySet()) {
+                        for (Map.Entry<String, String[]> mvEntry : paramMap.entrySet()) {
+                            String mvParamName = mvEntry.getKey();
                             if (mvParamName.startsWith(multiValuePrefix) && mvParamName.endsWith("]")) {
-                                String[] mvValues = paramMap.get(mvParamName);
+                                String[] mvValues = mvEntry.getValue();
                                 if (mvValues != null && mvValues.length > 0) {
                                     multiValues.add(mvValues[0]);
                                 }

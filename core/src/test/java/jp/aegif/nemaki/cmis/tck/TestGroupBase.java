@@ -217,6 +217,20 @@ public class TestGroupBase extends AbstractRunner {
 							failureDetails.append("\n    Stack: ")
 								.append(stackTrace[0].toString());
 						}
+
+						// Include child results for detailed diagnostics
+						if (result.getChildren() != null && !result.getChildren().isEmpty()) {
+							for (CmisTestResult child : result.getChildren()) {
+								if (child.getStatus() == CmisTestResultStatus.FAILURE ||
+									child.getStatus() == CmisTestResultStatus.UNEXPECTED_EXCEPTION) {
+									failureDetails.append("\n      Child: ").append(child.getStatus())
+										.append(" - ").append(child.getMessage());
+									if (child.getException() != null) {
+										failureDetails.append(" [").append(child.getException().getMessage()).append("]");
+									}
+								}
+							}
+						}
 					}
 					resultIndex++;
 				}
@@ -314,6 +328,9 @@ public class TestGroupBase extends AbstractRunner {
 
 				int deletedCount = 0;
 				for (org.apache.chemistry.opencmis.client.api.CmisObject child : children) {
+					if (child == null) {
+						continue;
+					}
 					String name = child.getName();
 					if (name != null && name.startsWith("cmistck")) {
 						try {

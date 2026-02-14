@@ -24,6 +24,8 @@ interface OfficePreviewProps {
   mimeType: string;
   repositoryId?: string;
   objectId?: string;
+  /** Document's last modification date (ISO string or epoch ms) for rendition freshness check */
+  lastModified?: string | number;
 }
 
 export const OfficePreview: React.FC<OfficePreviewProps> = ({
@@ -31,7 +33,8 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
   fileName,
   mimeType,
   repositoryId,
-  objectId
+  objectId,
+  lastModified
 }) => {
   const { t } = useTranslation();
   const { handleAuthError } = useAuth();
@@ -115,25 +118,41 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
       );
 
       if (pdfRendition) {
-        const streamId = pdfRendition.streamId || pdfRendition.renditionDocumentId;
-        if (streamId) {
-          console.log('[OfficePreview] PDF rendition found with streamId:', streamId);
-          // Fetch PDF as blob with auth headers (react-pdf can't use token-based URLs directly)
-          const pdfBlobUrl = await fetchPdfAsBlob(effectiveRepoId, effectiveObjId, streamId);
-          if (pdfBlobUrl) {
-            setBlobUrl(pdfBlobUrl);
-            setRenditionUrl(pdfBlobUrl);
-            setError(null);
-          } else {
-            setError(t('preview.office.pdfContentError'));
+        // Freshness check: if document was modified after rendition was created, regenerate
+        const renditionModified = pdfRendition.modified || pdfRendition.created;
+        let isStale = false;
+        if (lastModified && renditionModified) {
+          const docModifiedMs = typeof lastModified === 'number' ? lastModified : new Date(lastModified).getTime();
+          if (docModifiedMs > renditionModified) {
+            console.log('[OfficePreview] Rendition is stale (doc modified:', docModifiedMs, ', rendition:', renditionModified, '). Regenerating...');
+            isStale = true;
           }
+        }
+
+        if (isStale) {
+          // Rendition is outdated - force regenerate from latest content
+          await generateRendition(effectiveRepoId, effectiveObjId, true);
         } else {
-          setError(t('preview.office.streamIdNotFound'));
+          const streamId = pdfRendition.streamId || pdfRendition.renditionDocumentId;
+          if (streamId) {
+            console.log('[OfficePreview] PDF rendition found with streamId:', streamId);
+            // Fetch PDF as blob with auth headers (react-pdf can't use token-based URLs directly)
+            const pdfBlobUrl = await fetchPdfAsBlob(effectiveRepoId, effectiveObjId, streamId);
+            if (pdfBlobUrl) {
+              setBlobUrl(pdfBlobUrl);
+              setRenditionUrl(pdfBlobUrl);
+              setError(null);
+            } else {
+              setError(t('preview.office.pdfContentError'));
+            }
+          } else {
+            setError(t('preview.office.streamIdNotFound'));
+          }
         }
       } else {
         // No PDF rendition found - try to generate one
         console.log('[OfficePreview] No PDF rendition found, attempting to generate...');
-        await generateRendition(effectiveRepoId, effectiveObjId);
+        await generateRendition(effectiveRepoId, effectiveObjId, false);
       }
     } catch (err) {
       console.error('[OfficePreview] Error fetching renditions:', err);
@@ -143,11 +162,11 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
     }
   };
 
-  const generateRendition = async (repoId: string, objId: string) => {
+  const generateRendition = async (repoId: string, objId: string, force: boolean = false) => {
     setGenerating(true);
-    console.log(`[OfficePreview] Starting rendition generation for repo=${repoId}, objId=${objId}`);
+    console.log(`[OfficePreview] Starting rendition generation for repo=${repoId}, objId=${objId}, force=${force}`);
     try {
-      const generateResult = await cmisService.generateRenditions(repoId, objId, false);
+      const generateResult = await cmisService.generateRenditions(repoId, objId, force);
       console.log('[OfficePreview] Generate rendition result:', generateResult);
       message.info(t('preview.office.generatingPdf'));
 
@@ -197,16 +216,20 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
     }
   };
 
-  const handleRetry = async () => {
+  const handleForceRegenerate = async () => {
     const { repoId, objId } = extractFromUrl(url);
     const effectiveRepoId = repositoryId || repoId;
     const effectiveObjId = objectId || objId;
 
     if (effectiveRepoId && effectiveObjId) {
-      setLoading(true);
+      // Clean up old blob URL
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+        setBlobUrl(null);
+      }
+      setRenditionUrl(null);
       setError(null);
-      await generateRendition(effectiveRepoId, effectiveObjId);
-      setLoading(false);
+      await generateRendition(effectiveRepoId, effectiveObjId, true);
     }
   };
 
@@ -230,7 +253,7 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
   if (renditionUrl) {
     return (
       <div data-testid="office-preview-pdf">
-        <PDFPreview url={renditionUrl} fileName={`${fileName}.pdf`} />
+        <PDFPreview url={renditionUrl} fileName={`${fileName}.pdf`} onRegenerate={handleForceRegenerate} />
       </div>
     );
   }
@@ -256,7 +279,7 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
               {error && (
                 <Button
                   icon={<ReloadOutlined />}
-                  onClick={handleRetry}
+                  onClick={handleForceRegenerate}
                 >
                   {t('common.retry')}
                 </Button>

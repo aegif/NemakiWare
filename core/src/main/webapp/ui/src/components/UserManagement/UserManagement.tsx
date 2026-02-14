@@ -254,13 +254,16 @@ import {
   Popconfirm,
   Card,
   Tag,
-  Select
+  Select,
+  Switch,
+  Divider
 } from 'antd';
 import {
   UserOutlined,
   PlusOutlined,
   EditOutlined,
-  DeleteOutlined
+  DeleteOutlined,
+  CrownOutlined
 } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
 import { User, Group } from '../../types/cmis';
@@ -271,6 +274,7 @@ interface UserManagementProps {
 }
 
 import { useAuth } from '../../contexts/AuthContext';
+
 export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -278,24 +282,37 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
   const [modalVisible, setModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [searchText, setSearchText] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
+  const [resetPasswordForm] = Form.useForm();
+  const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
   const [form] = Form.useForm();
   const { t } = useTranslation();
 
-  const { handleAuthError } = useAuth();
+  const { handleAuthError, authToken } = useAuth();
   const cmisService = new CMISService(handleAuthError);
+  const searchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    loadUsers();
+    loadUsers(1, '');
     loadGroups();
   }, [repositoryId]);
 
-  const loadUsers = async () => {
+  const loadUsers = async (page?: number, query?: string) => {
     setLoading(true);
+    const p = page ?? currentPage;
+    const q = query ?? searchText;
     try {
-      const userList = await cmisService.getUsers(repositoryId);
-      setUsers(userList);
+      const result = await cmisService.getUsers(repositoryId, {
+        offset: (p - 1) * pageSize,
+        limit: pageSize,
+        query: q || undefined
+      });
+      setUsers(result.users);
+      setTotalCount(result.totalCount);
+      setCurrentPage(p);
     } catch (error: any) {
-      // Failed to load users
       let errorMessage = t('userManagement.messages.loadError');
 
       if (error.status === 500) {
@@ -319,11 +336,19 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
 
   const loadGroups = async () => {
     try {
-      const groupList = await cmisService.getGroups(repositoryId);
-      setGroups(groupList);
+      const result = await cmisService.getGroups(repositoryId);
+      setGroups(result.groups);
     } catch (error: any) {
       // Group loading failed - user management can continue without group list
     }
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchText(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      loadUsers(1, value);
+    }, 300);
   };
 
   const handleSubmit = async (values: any) => {
@@ -336,12 +361,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
         message.success(t('userManagement.messages.createSuccess'));
       }
       
+      // Close modal and reset only on success (preserve input on error)
       setModalVisible(false);
       setEditingUser(null);
       form.resetFields();
-      loadUsers();
     } catch (error: any) {
-      // Failed to create/update user
+      // Failed to create/update user — keep modal open so user can retry
       let errorMessage = editingUser ? t('userManagement.messages.updateError') : t('userManagement.messages.createError');
       
       if (error.status === 500) {
@@ -358,12 +383,18 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       }
       
       message.error(errorMessage);
+    } finally {
+      // Always refresh list (server may have partially succeeded)
+      loadUsers();
     }
   };
 
   const handleEdit = (user: User) => {
     setEditingUser(user);
-    form.setFieldsValue(user);
+    form.setFieldsValue({
+      ...user,
+      isAdmin: user.isAdmin === true,
+    });
     setModalVisible(true);
   };
 
@@ -397,20 +428,28 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
     setModalVisible(false);
     setEditingUser(null);
     form.resetFields();
+    resetPasswordForm.resetFields();
   };
 
-  // Filter users based on search text (includes firstName and lastName)
-  const filteredUsers = users.filter(user => {
-    if (!searchText) return true;
-    const searchLower = searchText.toLowerCase();
-    return (
-      user.id.toLowerCase().includes(searchLower) ||
-      user.name?.toLowerCase().includes(searchLower) ||
-      user.firstName?.toLowerCase().includes(searchLower) ||
-      user.lastName?.toLowerCase().includes(searchLower) ||
-      user.email?.toLowerCase().includes(searchLower)
-    );
-  });
+  const handleResetPassword = async (values: { newPassword: string; confirmPassword: string }) => {
+    if (!editingUser) return;
+    if (values.newPassword !== values.confirmPassword) {
+      message.error(t('accountSettings.passwordMismatch'));
+      return;
+    }
+    setResetPasswordLoading(true);
+    try {
+      await cmisService.changePassword(repositoryId, editingUser.id, '', values.newPassword);
+      message.success(t('userManagement.messages.passwordResetSuccess'));
+      resetPasswordForm.resetFields();
+    } catch (error: any) {
+      message.error(error.message || t('userManagement.messages.passwordResetError'));
+    } finally {
+      setResetPasswordLoading(false);
+    }
+  };
+
+  // Users are now filtered server-side via query parameter
 
   const columns = [
     {
@@ -452,6 +491,18 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       render: (email: string) => email && email.trim() !== '' ? email : '-',
     },
     {
+      title: t('userManagement.columns.admin'),
+      dataIndex: 'isAdmin',
+      key: 'isAdmin',
+      width: 100,
+      render: (isAdmin: boolean) => {
+        if (isAdmin) {
+          return <Tag icon={<CrownOutlined />} color="gold">{t('userManagement.adminBadge')}</Tag>;
+        }
+        return '-';
+      },
+    },
+    {
       title: t('userManagement.columns.groups'),
       dataIndex: 'groups',
       key: 'groups',
@@ -466,6 +517,30 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
             ))}
           </Space>
         );
+      },
+    },
+    {
+      title: t('userManagement.columns.authMethods'),
+      dataIndex: 'allowedAuthMethods',
+      key: 'allowedAuthMethods',
+      width: 120,
+      render: (allowedAuthMethods: string | undefined) => {
+        if (!allowedAuthMethods) {
+          return <Tag color="green">{t('userManagement.authMethods.all')}</Tag>;
+        }
+        if (allowedAuthMethods === 'disabled') {
+          return <Tag color="red">{t('userManagement.authMethods.disabled')}</Tag>;
+        }
+        if (allowedAuthMethods === 'password') {
+          return <Tag color="blue">{t('userManagement.authMethods.password')}</Tag>;
+        }
+        if (allowedAuthMethods === 'cloud') {
+          return <Tag color="purple">{t('userManagement.authMethods.cloud')}</Tag>;
+        }
+        if (allowedAuthMethods === 'password,cloud' || allowedAuthMethods === 'cloud,password') {
+          return <Tag color="cyan">{t('userManagement.authMethods.both')}</Tag>;
+        }
+        return <Tag>{allowedAuthMethods}</Tag>;
       },
     },
     {
@@ -519,18 +594,25 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
         placeholder={t('userManagement.searchPlaceholder')}
         allowClear
         value={searchText}
-        onChange={(e) => setSearchText(e.target.value)}
-        onSearch={(value) => setSearchText(value)}
+        onChange={(e) => handleSearchChange(e.target.value)}
+        onSearch={(value) => { setSearchText(value); loadUsers(1, value); }}
         style={{ marginBottom: 16 }}
         className="ant-input-search"
       />
 
       <Table
         columns={columns}
-        dataSource={filteredUsers}
+        dataSource={users}
         rowKey="id"
         loading={loading}
-        pagination={{ pageSize: 20 }}
+        pagination={{
+          current: currentPage,
+          pageSize: pageSize,
+          total: totalCount,
+          showSizeChanger: false,
+          showTotal: (total) => t('common.totalItems', { total }),
+          onChange: (page) => loadUsers(page),
+        }}
       />
 
       <Modal
@@ -551,7 +633,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
             label={t('userManagement.columns.userId')}
             rules={[
               { required: true, message: t('userManagement.validation.userIdRequired') },
-              { pattern: /^[a-zA-Z0-9_-]+$/, message: t('common.validation.alphanumericOnly') }
+              { pattern: /^[a-zA-Z0-9_.@+-]+$/, message: t('common.validation.alphanumericOnly') }
             ]}
           >
             <Input 
@@ -619,10 +701,43 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
             />
           </Form.Item>
 
+          <Form.Item
+            name="allowedAuthMethods"
+            label={t('userManagement.columns.authMethods')}
+            tooltip={t('userManagement.authMethodsTooltip')}
+          >
+            <Select
+              placeholder={t('userManagement.placeholders.authMethods')}
+              options={[
+                { label: t('userManagement.authMethods.all'), value: '' },
+                { label: t('userManagement.authMethods.password'), value: 'password' },
+                { label: t('userManagement.authMethods.cloud'), value: 'cloud' },
+                { label: t('userManagement.authMethods.both'), value: 'password,cloud' },
+                { label: t('userManagement.authMethods.disabled'), value: 'disabled' },
+              ]}
+            />
+          </Form.Item>
+
+          {editingUser && (
+            <Form.Item
+              name="isAdmin"
+              label={t('userManagement.columns.admin')}
+              valuePropName="checked"
+              tooltip={editingUser?.id === authToken?.username
+                ? t('userManagement.cannotRevokeOwnAdmin')
+                : t('userManagement.adminToggleTooltip')}
+            >
+              <Switch
+                disabled={editingUser?.id === authToken?.username}
+                checkedChildren={<CrownOutlined />}
+              />
+            </Form.Item>
+          )}
+
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
-                {editingUser ? t('common.update') : t('common.create')}
+                {editingUser ? t('common.save') : t('common.create')}
               </Button>
               <Button onClick={handleCancel}>
                 {t('common.cancel')}
@@ -630,6 +745,55 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
             </Space>
           </Form.Item>
         </Form>
+
+        {editingUser && (() => {
+          const allowedAuth = editingUser.allowedAuthMethods;
+          const passwordAllowed = !allowedAuth || allowedAuth === '' || allowedAuth === 'disabled'
+            ? allowedAuth !== 'disabled'
+            : allowedAuth.split(',').map(m => m.trim()).includes('password');
+          return passwordAllowed ? (
+            <>
+              <Divider>{t('userManagement.passwordReset')}</Divider>
+              <Form
+                form={resetPasswordForm}
+                onFinish={handleResetPassword}
+                layout="vertical"
+              >
+                <Form.Item
+                  name="newPassword"
+                  label={t('userManagement.newPassword')}
+                  rules={[
+                    { required: true, message: t('userManagement.validation.passwordRequired') },
+                    { min: 8, message: t('userManagement.validation.passwordMinLength8') }
+                  ]}
+                >
+                  <Input.Password placeholder={t('userManagement.placeholders.newPassword')} />
+                </Form.Item>
+
+                <Form.Item
+                  name="confirmPassword"
+                  label={t('userManagement.confirmNewPassword')}
+                  rules={[
+                    { required: true, message: t('userManagement.validation.confirmPasswordRequired') },
+                  ]}
+                >
+                  <Input.Password placeholder={t('userManagement.placeholders.confirmPassword')} />
+                </Form.Item>
+
+                <Form.Item>
+                  <Button type="primary" htmlType="submit" loading={resetPasswordLoading}>
+                    {t('userManagement.resetPassword')}
+                  </Button>
+                </Form.Item>
+              </Form>
+            </>
+          ) : (
+            <>
+              <Divider>{t('userManagement.passwordReset')}</Divider>
+              <p style={{ color: '#999' }}>{t('userManagement.cloudOnlyNoPasswordReset')}</p>
+            </>
+          );
+        })()}
       </Modal>
     </Card>
   );

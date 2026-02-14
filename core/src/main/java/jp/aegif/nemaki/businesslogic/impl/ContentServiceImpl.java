@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.businesslogic.impl;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.WebhookService;
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
@@ -78,7 +79,9 @@ import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.UnfileObject;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisContentAlreadyExistsException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisNotSupportedException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
@@ -132,9 +135,11 @@ public class ContentServiceImpl implements ContentService {
 	private SolrUtil solrUtil;
 	private NemakiCachePool nemakiCachePool;
 	private TypeManager typeManager;
+	private WebhookService webhookService;
 
 	private static final Logger log = LoggerFactory.getLogger(ContentServiceImpl.class);
 	private final static String PATH_SEPARATOR = "/";
+	private static final String PARENT_CHILD_RELATIONSHIP_TYPE = "nemaki:parentChildRelationship";
 
 	// ///////////////////////////////////////
 	// Content
@@ -414,12 +419,14 @@ public class ContentServiceImpl implements ContentService {
 					if (v1 == null) return sc.ascending ? -1 : 1;
 					if (v2 == null) return sc.ascending ? 1 : -1;
 
-					try {
-						@SuppressWarnings("unchecked")
-						int result = ((Comparable<Object>) v1).compareTo(v2);
-						if (result != 0) {
-							return sc.ascending ? result : -result;
-						}
+				try {
+					@SuppressWarnings("unchecked")
+					Comparable<Object> c1 = (Comparable<Object>) v1;
+					Comparable<Object> c2 = (Comparable<Object>) v2;
+					int result = sc.ascending ? c1.compareTo(v2) : c2.compareTo(v1);
+					if (result != 0) {
+						return result;
+					}
 					} catch (ClassCastException e) {
 						log.debug("applySorting: Cannot compare values for property " + sc.propertyId);
 						continue;
@@ -580,7 +587,6 @@ public class ContentServiceImpl implements ContentService {
 		return contentDaoService.getRelationship(repositoryId, objectId);
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public List<Relationship> getRelationsipsOfObject(String repositoryId, String objectId,
 			RelationshipDirection relationshipDirection) {
@@ -599,10 +605,40 @@ public class ContentServiceImpl implements ContentService {
 		case EITHER:
 			List<Relationship> sources = contentDaoService.getRelationshipsBySource(repositoryId, objectId);
 			List<Relationship> targets = contentDaoService.getRelationshipsByTarget(repositoryId, objectId);
-			return (List<Relationship>) CollectionUtils.disjunction(sources, targets);
+			// Merge by ID to form a proper union.
+			// CollectionUtils.disjunction was incorrect here: it computes symmetric
+			// difference, which drops self-referencing relationships (source == target)
+			// because they appear in both lists.
+			Map<String, Relationship> merged = new LinkedHashMap<>();
+			for (Relationship r : sources) {
+				if (r.getId() != null) merged.put(r.getId(), r);
+			}
+			for (Relationship r : targets) {
+				if (r.getId() != null) merged.putIfAbsent(r.getId(), r);
+			}
+			return new ArrayList<>(merged.values());
 		default:
 			return null;
 		}
+	}
+
+	@Override
+	public List<String> getParentChildChildIds(String repositoryId, String parentObjectId) {
+		List<String> childIds = new ArrayList<>();
+		List<Relationship> sourceRels = contentDaoService.getRelationshipsBySource(repositoryId, parentObjectId);
+		if (sourceRels == null) {
+			return childIds;
+		}
+		for (Relationship rel : sourceRels) {
+			if (!isParentChildRelationshipType(repositoryId, rel.getObjectType())) {
+				continue;
+			}
+			String targetId = rel.getTargetId();
+			if (targetId != null && !targetId.isEmpty()) {
+				childIds.add(targetId);
+			}
+		}
+		return childIds;
 	}
 
 	@Override
@@ -636,6 +672,16 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public List<UserItem> getUserItems(String repositoryId, int skip, int limit) {
+		return contentDaoService.getUserItems(repositoryId, skip, limit);
+	}
+
+	@Override
+	public int getUserItemCount(String repositoryId) {
+		return contentDaoService.getUserItemCount(repositoryId);
+	}
+
+	@Override
 	public GroupItem getGroupItem(String repositoryId, String objectId) {
 		return contentDaoService.getGroupItem(repositoryId, objectId);
 	}
@@ -653,6 +699,16 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		return contentDaoService.getGroupItems(repositoryId);
+	}
+
+	@Override
+	public List<GroupItem> getGroupItems(String repositoryId, int skip, int limit) {
+		return contentDaoService.getGroupItems(repositoryId, skip, limit);
+	}
+
+	@Override
+	public int getGroupItemCount(String repositoryId) {
+		return contentDaoService.getGroupItemCount(repositoryId);
 	}
 
 	@Override
@@ -758,6 +814,17 @@ public class ContentServiceImpl implements ContentService {
 		
 		log.debug("Change event created successfully - ID=" + created.getId() + 
 			", token=" + created.getToken() + ", objectId=" + content.getId());
+
+		// Trigger webhook notifications (async, non-blocking)
+		// WebhookService handles checking if content has webhook configs
+		if (webhookService != null) {
+			try {
+				webhookService.triggerWebhook(callContext, repositoryId, content, changeType, null);
+			} catch (Exception e) {
+				// Webhook failures should not affect the main operation
+				log.warn("Failed to trigger webhook for content " + content.getId() + ": " + e.getMessage());
+			}
+		}
 
 		return change.getToken();
 
@@ -1132,34 +1199,62 @@ public class ContentServiceImpl implements ContentService {
 		contentDaoService.updateAttachment(repositoryId, an, contentStream);
 
 		// Update rendition contentStream
-
 		if (isPreviewEnabled()) {
-			ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(),
-					contentStream.getMimeType(), an.getInputStream());
-
-			if (renditionManager.checkConvertible(previewCS.getMimeType())) {
+			if (renditionManager.checkConvertible(contentStream.getMimeType())) {
 				List<String> renditionIds = originalPwc.getRenditionIds();
+
+				// Remove existing preview renditions
 				if (CollectionUtils.isNotEmpty(renditionIds)) {
 					List<String> removedRenditionIds = new ArrayList<String>();
-
-					// Create preview
 					for (String renditionId : renditionIds) {
 						Rendition rd = contentDaoService.getRendition(repositoryId, renditionId);
-						if (RenditionKind.CMIS_PREVIEW.equals(rd.getKind())) {
+						if (RenditionKind.CMIS_PREVIEW.value().equals(rd.getKind())) {
 							removedRenditionIds.add(renditionId);
-							createPreview(callContext, repositoryId, previewCS, originalPwc);
 						}
 					}
-
-					// Update reference to preview ID
 					renditionIds.removeAll(removedRenditionIds);
 					originalPwc.setRenditionIds(renditionIds);
 				}
+
+				// CRITICAL FIX: Read fresh content from CouchDB into a byte array for preview generation.
+				// Do NOT reuse the cached AttachmentNode's InputStream, as consuming it would
+				// corrupt the cache and cause subsequent reads (e.g., copyAttachment during checkIn)
+				// to get an empty/consumed stream, resulting in content reversion.
+				try {
+					AttachmentNode freshAn = contentDaoService.getAttachment(repositoryId, originalPwc.getAttachmentNodeId());
+					if (freshAn != null && freshAn.getInputStream() != null) {
+						// Read entire stream into byte array so we don't consume the cached stream
+						byte[] contentBytes;
+						try (InputStream is = freshAn.getInputStream()) {
+							java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+							byte[] buffer = new byte[8192];
+							int bytesRead;
+							while ((bytesRead = is.read(buffer)) != -1) {
+								baos.write(buffer, 0, bytesRead);
+							}
+							contentBytes = baos.toByteArray();
+						}
+						ContentStream previewCS = new ContentStreamImpl(
+								contentStream.getFileName(),
+								BigInteger.valueOf(contentBytes.length),
+								contentStream.getMimeType(),
+								new java.io.ByteArrayInputStream(contentBytes));
+						createPreview(callContext, repositoryId, previewCS, originalPwc);
+					}
+				} catch (Exception e) {
+					log.warn("replacePwc: Failed to generate preview rendition: " + e.getMessage());
+				}
+
+				// Invalidate attachment cache after preview generation consumed the stream
+				nemakiCachePool.get(repositoryId).getAttachmentCache().remove(originalPwc.getAttachmentNodeId());
 			}
 		}
 
 		// Modify signature of pwc
 		setSignature(callContext, originalPwc);
+
+		// Persist document metadata changes (modified timestamp, rendition IDs) to CouchDB
+		contentDaoService.update(repositoryId, originalPwc);
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, originalPwc, ChangeType.UPDATED);
@@ -1213,7 +1308,7 @@ public class ContentServiceImpl implements ContentService {
 					// Create preview
 					for (String renditionId : renditionIds) {
 						Rendition rd = contentDaoService.getRendition(repositoryId, renditionId);
-						if (RenditionKind.CMIS_PREVIEW.equals(rd.getKind())) {
+						if (RenditionKind.CMIS_PREVIEW.value().equals(rd.getKind())) {
 							removedRenditionIds.add(renditionId);
 							createPreview(callContext, repositoryId, previewCS, original);
 						}
@@ -1358,6 +1453,14 @@ public class ContentServiceImpl implements ContentService {
 			log.debug("Document found: id={}, name={}, isPWC={}", pwc.getId(), pwc.getName(), pwc.isPrivateWorkingCopy());
 		}
 
+		// CRITICAL: Verify the document is actually a PWC before deleting
+		if (!pwc.isPrivateWorkingCopy()) {
+			log.error("cancelCheckOut called on non-PWC document: id={}, name={}, versionLabel={}",
+				pwc.getId(), pwc.getName(), pwc.getVersionLabel());
+			throw new CmisConstraintException(
+				"Cannot cancel checkout: document " + objectId + " is not a Private Working Copy");
+		}
+
 		writeChangeEvent(callContext, repositoryId, pwc, ChangeType.DELETED);
 
 	// Delete attachment & document itself(without archiving)
@@ -1416,6 +1519,12 @@ public class ContentServiceImpl implements ContentService {
 		Document checkedIn = buildCopyDocument(callContext, repositoryId, pwc, addAces, removeAces);
 		Document latest = getDocumentOfLatestVersion(repositoryId, pwc.getVersionSeriesId());
 
+		// Merge secondary types (aspects/secondaryIds) from the latest version into
+		// the new version if the PWC is missing them. This handles the case where
+		// secondary type properties (e.g. cloud drive metadata) were saved on the
+		// original document during push but not on the PWC.
+		mergeSecondaryTypesFromLatest(checkedIn, latest);
+
 		// When PWCUpdatable is true
 		if (contentStream == null) {
 			checkedIn.setAttachmentNodeId(copyAttachment(callContext, repositoryId, pwc.getAttachmentNodeId()));
@@ -1472,6 +1581,50 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 
+	/**
+	 * Merge secondary type IDs and aspects from the latest version into the new
+	 * version being created during checkIn, if the PWC-based copy is missing them.
+	 * This preserves secondary type properties (e.g. cloud drive metadata) that
+	 * were added to the original document but not to the PWC.
+	 */
+	private void mergeSecondaryTypesFromLatest(Document checkedIn, Document latest) {
+		// Merge secondaryIds
+		List<String> pwcSecIds = checkedIn.getSecondaryIds();
+		List<String> latestSecIds = latest.getSecondaryIds();
+		if (latestSecIds != null && !latestSecIds.isEmpty()) {
+			if (pwcSecIds == null) {
+				pwcSecIds = new ArrayList<>();
+			}
+			for (String secId : latestSecIds) {
+				if (!pwcSecIds.contains(secId)) {
+					pwcSecIds.add(secId);
+				}
+			}
+			checkedIn.setSecondaryIds(pwcSecIds);
+		}
+
+		// Merge aspects
+		List<jp.aegif.nemaki.model.Aspect> pwcAspects = checkedIn.getAspects();
+		List<jp.aegif.nemaki.model.Aspect> latestAspects = latest.getAspects();
+		if (latestAspects != null && !latestAspects.isEmpty()) {
+			if (pwcAspects == null) {
+				pwcAspects = new ArrayList<>();
+			}
+			Set<String> existingAspectNames = new java.util.HashSet<>();
+			for (jp.aegif.nemaki.model.Aspect a : pwcAspects) {
+				if (a.getName() != null) {
+					existingAspectNames.add(a.getName());
+				}
+			}
+			for (jp.aegif.nemaki.model.Aspect latestAspect : latestAspects) {
+				if (latestAspect.getName() != null && !existingAspectNames.contains(latestAspect.getName())) {
+					pwcAspects.add(latestAspect);
+				}
+			}
+			checkedIn.setAspects(pwcAspects);
+		}
+	}
+
 	public Document updateWithoutCheckInOut(CallContext callContext, String repositoryId, Boolean major,
 			Properties properties, ContentStream contentStream, String checkinComment, Document previousDoc,
 			VersionSeries vs) {
@@ -1517,8 +1670,10 @@ public class ContentServiceImpl implements ContentService {
 			Folder parentFolder, org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
 		Document d = new Document();
-		setBaseProperties(callContext, repositoryId, properties, d, parentFolder.getId());
-		d.setParentId(parentFolder.getId());
+		// SpotBugs NP_NULL_PARAM_DEREF: Add null check for parentFolder before dereferencing
+		String parentId = (parentFolder != null) ? parentFolder.getId() : null;
+		setBaseProperties(callContext, repositoryId, properties, d, parentId);
+		d.setParentId(parentId);
 		d.setImmutable(DataUtil.getBooleanProperty(properties, PropertyIds.IS_IMMUTABLE));
 		setSignature(callContext, d);
 
@@ -2115,7 +2270,12 @@ public class ContentServiceImpl implements ContentService {
 		copy.setMimeType(mimeType);
 		setSignature(callContext, copy);
 
-		return contentDaoService.createAttachment(repositoryId, copy, cs);
+		String newAttachmentId = contentDaoService.createAttachment(repositoryId, copy, cs);
+
+		// Invalidate cache: getAttachment cached the original with its InputStream now consumed
+		nemakiCachePool.get(repositoryId).getAttachmentCache().remove(attachmentId);
+
+		return newAttachmentId;
 	}
 
 	private List<String> copyRenditions(CallContext callContext, String repositoryId, List<String> renditionIds) {
@@ -2235,7 +2395,7 @@ public class ContentServiceImpl implements ContentService {
 		List<Aspect> aspects = new ArrayList<Aspect>();
 		PropertyData secondaryTypeIds = properties.getProperties().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 
-		List<String> ids = new ArrayList<String>();
+		List<String> ids;
 		if (secondaryTypeIds == null) {
 			ids = getSecondaryTypeIds(content);
 		} else {
@@ -2556,7 +2716,7 @@ public class ContentServiceImpl implements ContentService {
 	private void setUpdatePropertyValue(String repositoryId, Content content, PropertyData<?> propertyData,
 			Properties properties) {
 		if (propertyData.getId().equals(PropertyIds.NAME)) {
-			if (DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID) != content.getId()) {
+			if (!java.util.Objects.equals(content.getId(), DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID))) {
 				String proposedName = DataUtil.getStringProperty(properties, PropertyIds.NAME);
 
 				// Check duplicate name
@@ -2702,33 +2862,67 @@ public class ContentServiceImpl implements ContentService {
 	 */
 	@Override
 	public void delete(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent) {
-		
+		deleteInternal(callContext, repositoryId, objectId, deletedWithParent, null, null, new HashSet<>());
+	}
+
+
+	/**
+	 * Overloaded delete method that accepts pre-fetched attachment info for archive creation.
+	 * This is needed because in deleteDocument(), the attachment is deleted BEFORE
+	 * the document is deleted, so we need to pass the attachment info explicitly.
+	 */
+	public void delete(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent,
+			String mimeType, Long contentStreamLength) {
+		deleteInternal(callContext, repositoryId, objectId, deletedWithParent, mimeType, contentStreamLength, new HashSet<>());
+	}
+
+	private void deleteWithVisited(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent,
+			String mimeType, Long contentStreamLength, Set<String> visited) {
+		deleteInternal(callContext, repositoryId, objectId, deletedWithParent, mimeType, contentStreamLength, visited);
+	}
+
+	/**
+	 * Internal delete with cascade support for parentChildRelationship.
+	 * When deleting Document/Folder/Item (NOT Relationship), recursively deletes child objects
+	 * linked via nemaki:parentChildRelationship before deleting relationships and the object.
+	 * Uses visited set to prevent infinite loops on circular references.
+	 */
+	private void deleteInternal(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent,
+			String mimeType, Long contentStreamLength, Set<String> visited) {
+
 		Content content = getContent(repositoryId, objectId);
 
-		// Handle case where content was already deleted (e.g., concurrent delete or cascade)
 		if (content == null) {
 			log.warn("delete: Content not found for objectId=" + objectId + " - may have been deleted already");
 			return;
 		}
 
+		if (visited.contains(objectId)) {
+			log.debug("delete: Circular reference detected, skipping objectId=" + objectId);
+			return;
+		}
+		visited.add(objectId);
 
-		// Record the change event(Before the content is deleted!)
 		writeChangeEvent(callContext, repositoryId, content, ChangeType.DELETED);
 
-		// Archive - Check if archive creation is enabled (CRITICAL TCK FIX for timeout)
 		boolean archiveCreateEnabled = propertyManager.readBoolean(PropertyKey.ARCHIVE_CREATE_ENABLED);
 		if (archiveCreateEnabled) {
 			log.debug("Creating archive for object: {}", objectId);
-			createArchive(callContext, repositoryId, objectId, deletedWithParent);
+			if (mimeType != null || contentStreamLength != null) {
+				createArchive(callContext, repositoryId, objectId, deletedWithParent, mimeType, contentStreamLength);
+			} else {
+				createArchive(callContext, repositoryId, objectId, deletedWithParent);
+			}
 		} else {
 			log.debug("Archive creation disabled - skipping archive for object: {}", objectId);
 		}
-		
-		// CRITICAL FIX: Delete attached relationships using optimized approach
-		// Collect all related documents for bulk deletion
+
+		// ParentChild cascade is handled in ObjectServiceInternalImpl.deleteObjectInternal so that
+		// each child goes through permission check, ThreadLockService, and cache invalidation.
+
 		List<Relationship> sourceRelationships = contentDaoService.getRelationshipsBySource(repositoryId, objectId);
 		List<Relationship> targetRelationships = contentDaoService.getRelationshipsByTarget(repositoryId, objectId);
-		
+
 		List<String> relationshipIds = new ArrayList<>();
 		for (Relationship rel : sourceRelationships) {
 			relationshipIds.add(rel.getId());
@@ -2736,30 +2930,54 @@ public class ContentServiceImpl implements ContentService {
 		for (Relationship rel : targetRelationships) {
 			relationshipIds.add(rel.getId());
 		}
-		
-		// Delete relationships in batch if any exist
+
 		if (!relationshipIds.isEmpty()) {
 			try {
 				log.debug("Deleting " + relationshipIds.size() + " relationships for object: " + objectId);
 				deleteRelationshipsBatch(repositoryId, relationshipIds);
 			} catch (Exception e) {
 				log.error("Error deleting relationships for object " + objectId + ": " + e.getMessage(), e);
-				// Continue with main object deletion even if relationship deletion fails
 			}
 		}
 
-		// Delete item
-		
 		try {
 			contentDaoService.delete(repositoryId, objectId);
 		} catch (Exception e) {
 			log.error("ERROR in contentDaoService.delete() for object {}: {}", objectId, e.getMessage(), e);
-			throw e; // Re-throw to maintain original error handling
+			throw e;
 		}
 
-		// Call Solr indexing(optional) - delete from index
 		solrUtil.deleteDocument(repositoryId, objectId);
-		
+	}
+
+	/**
+	 * Check if a relationship type is nemaki:parentChildRelationship or a derived type.
+	 */
+	private boolean isParentChildRelationshipType(String repositoryId, String typeId) {
+		if (typeId == null) {
+			return false;
+		}
+		if (PARENT_CHILD_RELATIONSHIP_TYPE.equals(typeId)) {
+			return true;
+		}
+		TypeDefinition td = getTypeManager().getTypeDefinition(repositoryId, typeId);
+		if (td == null) {
+			return false;
+		}
+		String currentId = typeId;
+		Set<String> seen = new HashSet<>();
+		while (currentId != null && !seen.contains(currentId)) {
+			seen.add(currentId);
+			if (PARENT_CHILD_RELATIONSHIP_TYPE.equals(currentId)) {
+				return true;
+			}
+			TypeDefinition current = getTypeManager().getTypeDefinition(repositoryId, currentId);
+			if (current == null || current.getParentTypeId() == null) {
+				break;
+			}
+			currentId = current.getParentTypeId();
+		}
+		return false;
 	}
 	
 	/**
@@ -2884,7 +3102,7 @@ public class ContentServiceImpl implements ContentService {
 			// Filter out PWC and the document being deleted
 			List<Document> remainingVersions = new ArrayList<Document>();
 			for (Document v : allVersionsInSeries) {
-				if (!v.isPrivateWorkingCopy() && !v.getId().equals(objectId)) {
+				if (!v.isPrivateWorkingCopy() && !java.util.Objects.equals(v.getId(), objectId)) {
 					remainingVersions.add(v);
 				}
 			}
@@ -2927,7 +3145,7 @@ public class ContentServiceImpl implements ContentService {
 					boolean isHighestMajor = true;
 					if (nextLatest.isMajorVersion()) {
 						for (Document v : remainingVersions) {
-							if (v.isMajorVersion() && !v.getId().equals(nextLatest.getId())) {
+							if (v.isMajorVersion() && !java.util.Objects.equals(v.getId(), nextLatest.getId())) {
 								try {
 									double otherVersion = Double.parseDouble(v.getVersionLabel());
 									if (otherVersion > highestVersionNumber) {
@@ -2954,9 +3172,21 @@ public class ContentServiceImpl implements ContentService {
 
 		// Delete documents (with archive creation via delete() method)
 		for (Document version : versionList) {
-			// Archive attachment before deletion
+			// Get attachment info BEFORE deletion for archive creation
+			String mimeType = null;
+			Long contentStreamLength = null;
 			if (version.getAttachmentNodeId() != null) {
 				String attachmentId = version.getAttachmentNodeId();
+				// Get attachment info before deletion
+				try {
+					AttachmentNode attachment = contentDaoService.getAttachment(repositoryId, attachmentId);
+					if (attachment != null) {
+						mimeType = attachment.getMimeType();
+						contentStreamLength = attachment.getLength();
+					}
+				} catch (Exception e) {
+					log.warn("Failed to get attachment info before deletion: {}", e.getMessage());
+				}
 				// Delete an attachment (this also creates attachment archive if enabled)
 				deleteAttachment(callContext, repositoryId, attachmentId);
 			}
@@ -2968,7 +3198,8 @@ public class ContentServiceImpl implements ContentService {
 			}
 
 			// Delete a document (this creates document archive if enabled via delete() method)
-			delete(callContext, repositoryId, version.getId(), deleteWithParent);
+			// Pass pre-fetched attachment info for archive
+			delete(callContext, repositoryId, version.getId(), deleteWithParent, mimeType, contentStreamLength);
 		}
 
 		// Delete VersionSeries when all versions are deleted
@@ -2987,6 +3218,100 @@ public class ContentServiceImpl implements ContentService {
 		}
 		// Note: Solr index deletion is handled in the delete() method for each document
 		// and Solr index update for promoted versions is handled above
+	}
+
+	/**
+	 * Same as deleteDocument but passes visited set for cascade loop detection.
+	 */
+	private void deleteDocumentWithVisited(CallContext callContext, String repositoryId, String objectId, Boolean allVersions,
+			Boolean deleteWithParent, Set<String> visited) {
+		Document document = (Document) getContent(repositoryId, objectId);
+		if (document == null) {
+			return;
+		}
+		List<Document> versionList = new ArrayList<>();
+		String versionSeriesId = document.getVersionSeriesId();
+
+		if (allVersions) {
+			try {
+				versionList = getAllVersions(callContext, repositoryId, versionSeriesId);
+				if (versionList.isEmpty()) {
+					versionList.add(document);
+				}
+			} catch (Exception e) {
+				versionList.add(document);
+			}
+		} else {
+			versionList.add(document);
+			List<Document> allVersionsInSeries = new ArrayList<>();
+			try {
+				allVersionsInSeries = contentDaoService.getAllVersions(repositoryId, versionSeriesId);
+			} catch (Exception e) {
+				// ignore
+			}
+			List<Document> remainingVersions = new ArrayList<>();
+			for (Document v : allVersionsInSeries) {
+				if (!v.isPrivateWorkingCopy() && !java.util.Objects.equals(v.getId(), objectId)) {
+					remainingVersions.add(v);
+				}
+			}
+			if (remainingVersions.isEmpty()) {
+				allVersions = true;
+			} else {
+				Document nextLatest = null;
+				double highestVersionNumber = -1;
+				for (Document v : remainingVersions) {
+					try {
+						double versionNumber = Double.parseDouble(v.getVersionLabel());
+						if (versionNumber > highestVersionNumber) {
+							highestVersionNumber = versionNumber;
+							nextLatest = v;
+						}
+					} catch (NumberFormatException e) {
+						// ignore
+					}
+				}
+				if (nextLatest != null) {
+					nextLatest.setLatestVersion(true);
+					nextLatest.setLatestMajorVersion(nextLatest.isMajorVersion());
+					contentDaoService.update(repositoryId, nextLatest);
+					nemakiCachePool.get(repositoryId).getObjectDataCache().remove(nextLatest.getId());
+					solrUtil.indexDocument(repositoryId, nextLatest);
+				}
+			}
+		}
+
+		for (Document version : versionList) {
+			String mimeType = null;
+			Long contentStreamLength = null;
+			if (version.getAttachmentNodeId() != null) {
+				try {
+					AttachmentNode attachment = contentDaoService.getAttachment(repositoryId, version.getAttachmentNodeId());
+					if (attachment != null) {
+						mimeType = attachment.getMimeType();
+						contentStreamLength = attachment.getLength();
+					}
+				} catch (Exception e) {
+					// ignore
+				}
+				deleteAttachment(callContext, repositoryId, version.getAttachmentNodeId());
+			}
+			if (CollectionUtils.isNotEmpty(version.getRenditionIds())) {
+				for (String renditionId : version.getRenditionIds()) {
+					contentDaoService.delete(repositoryId, renditionId);
+				}
+			}
+			deleteWithVisited(callContext, repositoryId, version.getId(), deleteWithParent, mimeType, contentStreamLength, visited);
+		}
+
+		if (allVersions) {
+			try {
+				contentDaoService.delete(repositoryId, versionSeriesId);
+				nemakiCachePool.get(repositoryId).getObjectDataCache().remove(versionSeriesId);
+			} catch (Exception e) {
+				// ignore
+			}
+		}
 	}
 
 	// deletedWithParent flag controls whether it's deleted with the parent all
@@ -3030,6 +3355,41 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 
+		return failureIds;
+	}
+
+	private List<String> deleteTreeWithVisited(CallContext callContext, String repositoryId, String folderId, Boolean allVersions,
+			Boolean continueOnFailure, Boolean deletedWithParent, Set<String> visited) {
+		List<String> failureIds = new ArrayList<>();
+		List<Content> children = getChildren(repositoryId, folderId);
+		if (!CollectionUtils.isEmpty(children)) {
+			for (Content child : children) {
+				try {
+					if (child.isFolder()) {
+						deleteTreeWithVisited(callContext, repositoryId, child.getId(), allVersions, continueOnFailure, true, visited);
+					} else if (child.isDocument()) {
+						deleteDocumentWithVisited(callContext, repositoryId, child.getId(), allVersions, true, visited);
+					} else {
+						deleteWithVisited(callContext, repositoryId, child.getId(), true, null, null, visited);
+					}
+				} catch (Exception e) {
+					if (continueOnFailure) {
+						failureIds.add(child.getId());
+					} else {
+						throw e;
+					}
+				}
+			}
+		}
+		try {
+			deleteWithVisited(callContext, repositoryId, folderId, deletedWithParent, null, null, visited);
+		} catch (Exception e) {
+			if (continueOnFailure) {
+				failureIds.add(folderId);
+			} else {
+				throw e;
+			}
+		}
 		return failureIds;
 	}
 
@@ -3181,8 +3541,6 @@ public class ContentServiceImpl implements ContentService {
 		Rendition rendition = new Rendition();
 		rendition.setTitle("PDF Preview");
 		rendition.setKind(RenditionKind.CMIS_PREVIEW.value());
-		rendition.setMimetype(contentStream.getMimeType());
-		rendition.setLength(contentStream.getLength());
 
 		ContentStream converted = renditionManager.convertToPdf(contentStream, document.getName());
 
@@ -3191,6 +3549,9 @@ public class ContentServiceImpl implements ContentService {
 			log.warn("createRendition: PDF conversion failed for document: " + document.getName() + " (id=" + document.getId() + ")");
 			return null;
 		} else {
+			// Set MIME type to application/pdf (the converted output), not the source MIME type
+			rendition.setMimetype("application/pdf");
+			rendition.setLength(converted.getLength());
 			String renditionId = contentDaoService.createRendition(repositoryId, rendition, converted);
 			List<String> renditionIds = document.getRenditionIds();
 			if (renditionIds == null) {
@@ -3265,7 +3626,7 @@ public class ContentServiceImpl implements ContentService {
 			return Collections.emptyList();
 		}
 
-		List<String> ids = new ArrayList<String>();
+		List<String> ids;
 		if (c.isDocument()) {
 			Document d = (Document) c;
 			ids = d.getRenditionIds();
@@ -3279,7 +3640,13 @@ public class ContentServiceImpl implements ContentService {
 		List<Rendition> renditions = new ArrayList<Rendition>();
 		if (CollectionUtils.isNotEmpty(ids)) {
 			for (String id : ids) {
-				renditions.add(contentDaoService.getRendition(repositoryId, id));
+				Rendition r = contentDaoService.getRendition(repositoryId, id);
+				if (r != null) {
+					renditions.add(r);
+				} else {
+					log.warn("Rendition not found for id: " + id + " referenced by object: " + objectId
+							+ " - skipping (rendition may have been deleted)");
+				}
 			}
 		}
 
@@ -3325,6 +3692,66 @@ public class ContentServiceImpl implements ContentService {
 			aclCache.put(content.getId(), acl);
 		}
 		return acl;
+	}
+
+	@Override
+	public Map<String, Content> getContentsByIds(String repositoryId, List<String> objectIds) {
+		return contentDaoService.getContentsByIds(repositoryId, objectIds);
+	}
+
+	@Override
+	public Map<String, Acl> calculateAcls(String repositoryId, Collection<Content> contents) {
+		Map<String, Acl> result = new HashMap<>();
+		if (contents == null || contents.isEmpty()) {
+			return result;
+		}
+
+		NemakiCache<Acl> aclCache = nemakiCachePool.get(repositoryId).getAclCache();
+
+		for (Content content : contents) {
+			if (content == null) {
+				continue;
+			}
+			String contentId = content.getId();
+
+			// Check cache first
+			Acl cachedAcl = aclCache.get(contentId);
+			if (cachedAcl != null) {
+				result.put(contentId, cachedAcl);
+				continue;
+			}
+
+			// Calculate ACL (same logic as calculateAcl)
+			Acl acl;
+			boolean iht = getAclInheritedWithDefault(repositoryId, content);
+			boolean isRootContent = isRoot(repositoryId, content);
+
+			if (!isRootContent && iht) {
+				List<Ace> aces = new ArrayList<Ace>();
+				List<Ace> calcResult = calculateAclInternal(repositoryId, aces, content);
+
+				// Convert result to Acl
+				acl = new Acl();
+				for (Ace r : calcResult) {
+					if (r.isDirect()) {
+						acl.getLocalAces().add(r);
+					} else {
+						acl.getInheritedAces().add(r);
+					}
+				}
+			} else {
+				acl = content.getAcl();
+			}
+
+			// Convert anonymous and anyone
+			convertSystemPrincipalId(repositoryId, acl.getAllAces());
+
+			// Cache the result
+			aclCache.put(contentId, acl);
+			result.put(contentId, acl);
+		}
+
+		return result;
 	}
 
 	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content) {
@@ -3450,10 +3877,10 @@ public class ContentServiceImpl implements ContentService {
 		} else {
 			if (isTopLevel(repositoryId, content) && !inheritedAtTopLevel) {
 				// default to TRUE (top-level folders inherit by default even when inheritedAtTopLevel is false)
-				return (content.isAclInherited() == null) ? true : content.isAclInherited();
+				return (content.isAclInherited() == null) ? Boolean.TRUE : content.isAclInherited();
 			} else {
 				// default to TRUE (normal folders inherit by default)
-				return (content.isAclInherited() == null) ? true : content.isAclInherited();
+				return (content.isAclInherited() == null) ? Boolean.TRUE : content.isAclInherited();
 			}
 		}
 	}
@@ -3495,7 +3922,17 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
-		return contentDaoService.getArchives(repositoryId, skip, limit, true);
+		return contentDaoService.getArchives(repositoryId, skip, limit, desc);
+	}
+
+	@Override
+	public List<Archive> getArchivesByCreator(String repositoryId, String creator) {
+		return contentDaoService.getArchivesByCreator(repositoryId, creator);
+	}
+
+	@Override
+	public List<Archive> getArchivesByArchivedBy(String repositoryId, String archivedBy) {
+		return contentDaoService.getArchivesByArchivedBy(repositoryId, archivedBy);
 	}
 
 	@Override
@@ -3524,12 +3961,129 @@ public class ContentServiceImpl implements ContentService {
 		a.setParentId(content.getParentId());
 		setSignature(callContext, a);
 
+		// Preserve the original document creator as the archive owner.
+		// This is critical for retention-triggered archives (SystemCallContext)
+		// where callContext.getUsername() is "system" — without this override,
+		// the original creator would lose access to their archived content.
+		a.setCreator(content.getCreator());
+
+		// Record who actually performed the deletion.
+		// Both creator and archivedBy can access the archive.
+		a.setArchivedBy(callContext.getUsername());
+
+		// Set retention lifecycle fields
+		a.setArchiveState(Archive.STATE_ARCHIVED_LOCAL);
+		a.setArchivedAt(new GregorianCalendar());
+
+		// Snapshot ACL for archived content access control
+		try {
+			if (content.getAcl() != null) {
+				com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+				a.setAclSnapshot(mapper.writeValueAsString(content.getAcl()));
+			}
+		} catch (Exception e) {
+			log.warn("Failed to snapshot ACL for archive: {}", e.getMessage());
+		}
+
+		// Set path (calculate from folder hierarchy)
+		try {
+			String path = calculatePath(repositoryId, content);
+			a.setPath(path);
+		} catch (Exception e) {
+			log.warn("Failed to calculate path for archive: {}", e.getMessage());
+		}
+
 		// Set Document archive specific info
 		if (content.isDocument()) {
 			Document document = (Document) content;
 			a.setAttachmentNodeId(document.getAttachmentNodeId());
 			a.setVersionSeriesId(document.getVersionSeriesId());
 			a.setIsLatestVersion(document.isLatestVersion());
+
+			// Set mimeType and contentStreamLength from AttachmentNode
+			if (document.getAttachmentNodeId() != null) {
+				try {
+					AttachmentNode attachment = contentDaoService.getAttachment(repositoryId, document.getAttachmentNodeId());
+					if (attachment != null) {
+						a.setMimeType(attachment.getMimeType());
+						a.setContentStreamLength(attachment.getLength());
+					}
+				} catch (Exception e) {
+					log.warn("Failed to get attachment info for archive: {}", e.getMessage());
+				}
+			}
+		}
+
+		return contentDaoService.createArchive(repositoryId, a, deletedWithParent);
+	}
+
+
+	/**
+	 * Overloaded createArchive that accepts pre-fetched attachment info.
+	 * This is needed because in deleteDocument(), the attachment is deleted BEFORE
+	 * the document archive is created, so we need to pass the attachment info explicitly.
+	 */
+	public Archive createArchive(CallContext callContext, String repositoryId, String objectId,
+			Boolean deletedWithParent, String mimeType, Long contentStreamLength) {
+		Content content = getContent(repositoryId, objectId);
+
+		// Set base info
+		Archive a = new Archive();
+
+		a.setOriginalId(content.getId());
+		// a.setLastRevision(content.getRevision());
+		a.setName(content.getName());
+		a.setType(content.getType());
+		a.setDeletedWithParent(deletedWithParent);
+		a.setParentId(content.getParentId());
+		setSignature(callContext, a);
+
+		// Preserve the original document creator as the archive owner.
+		// This is critical for retention-triggered archives (SystemCallContext)
+		// where callContext.getUsername() is "system" — without this override,
+		// the original creator would lose access to their archived content.
+		a.setCreator(content.getCreator());
+
+		// Record who actually performed the deletion.
+		// Both creator and archivedBy can access the archive.
+		a.setArchivedBy(callContext.getUsername());
+
+		// Set retention lifecycle fields
+		a.setArchiveState(Archive.STATE_ARCHIVED_LOCAL);
+		a.setArchivedAt(new GregorianCalendar());
+
+		// Snapshot ACL
+		try {
+			if (content.getAcl() != null) {
+				com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+				a.setAclSnapshot(mapper.writeValueAsString(content.getAcl()));
+			}
+		} catch (Exception e) {
+			log.warn("Failed to snapshot ACL for archive: {}", e.getMessage());
+		}
+
+		// Set path (calculate from folder hierarchy)
+		try {
+			String path = calculatePath(repositoryId, content);
+			a.setPath(path);
+		} catch (Exception e) {
+			log.warn("Failed to calculate path for archive: {}", e.getMessage());
+		}
+
+		// Set Document archive specific info
+		if (content.isDocument()) {
+			Document document = (Document) content;
+			a.setAttachmentNodeId(document.getAttachmentNodeId());
+			a.setVersionSeriesId(document.getVersionSeriesId());
+			a.setIsLatestVersion(document.isLatestVersion());
+
+			// Use pre-fetched attachment info if provided
+			if (mimeType != null) {
+				a.setMimeType(mimeType);
+			}
+			if (contentStreamLength != null) {
+				a.setContentStreamLength(contentStreamLength);
+			}
 		}
 
 		return contentDaoService.createArchive(repositoryId, a, deletedWithParent);
@@ -3551,8 +4105,7 @@ public class ContentServiceImpl implements ContentService {
 	public void restoreArchive(String repositoryId, String archiveId) throws ParentNoLongerExistException {
 		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
 		if (archive == null) {
-			log.error("Archive does not exist!");
-			return;
+			throw new CmisObjectNotFoundException("restoreArchive: archive does not exist, archiveId=" + archiveId);
 		}
 
 		// Check whether the destination does still extist.
@@ -3569,18 +4122,20 @@ public class ContentServiceImpl implements ContentService {
 		Content restored = null;
 		if (archive.isFolder()) {
 			restored = restoreFolder(repositoryId, archive);
-			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
 		} else if (archive.isDocument()) {
 			restored = restoreDocument(repositoryId, archive);
-			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
 		} else if (archive.isAttachment()) {
-			log.error("Attachment can't be restored alone");
+			throw new CmisNotSupportedException("restoreArchive: attachment cannot be restored alone, archiveId=" + archiveId);
 		} else {
-			log.error("Only document or folder is supported for restoration");
+			throw new CmisNotSupportedException("restoreArchive: unsupported archive type for restoration, archiveId=" + archiveId);
 		}
 
-		// Solr indexing for restored content (failure won't affect main operation)
+		// Write change event (restored may be null if the archive was a PWC
+		// that was deleted during checkout state cleanup)
 		if (restored != null) {
+			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
+
+			// Solr indexing for restored content (failure won't affect main operation)
 			try {
 				if (solrUtil != null) {
 					solrUtil.indexDocument(repositoryId, restored);
@@ -3592,17 +4147,53 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private Document restoreDocument(String repositoryId, Archive archive) {
-		try {
-			// Get archives of the same version series
-			List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId,
-					archive.getVersionSeriesId());
-			for (Archive version : versions) {
-				contentDaoService.restoreDocumentWithArchive(repositoryId, version);
-				// delete archives
-				contentDaoService.deleteDocumentArchive(repositoryId, version.getId());
+		// Fail fast if versionSeriesId is null to prevent unfiltered DAO queries
+		String versionSeriesId = archive.getVersionSeriesId();
+		if (versionSeriesId == null) {
+			throw new CmisRuntimeException("restoreDocument: archive has no versionSeriesId, archiveId=" + archive.getId());
+		}
+
+		// Get archives of the same version series
+		List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId,
+				versionSeriesId);
+
+		// Restore VersionSeries if it was deleted along with the document
+		VersionSeries vs = contentDaoService.getVersionSeries(repositoryId, versionSeriesId);
+		if (vs == null) {
+			log.info("restoreDocument: VersionSeries {} not found, recreating it", versionSeriesId);
+			contentDaoService.restoreVersionSeries(repositoryId, versionSeriesId);
+			vs = contentDaoService.getVersionSeries(repositoryId, versionSeriesId);
+		}
+
+		for (Archive version : versions) {
+			contentDaoService.restoreDocumentWithArchive(repositoryId, version);
+			// delete archives
+			contentDaoService.deleteDocumentArchive(repositoryId, version.getId());
+		}
+
+		// After restoring all versions, clean up checkout state
+		List<Document> restoredVersions = contentDaoService.getAllVersions(repositoryId, versionSeriesId);
+		if (CollectionUtils.isNotEmpty(restoredVersions)) {
+			for (Document version : restoredVersions) {
+				if (version.isPrivateWorkingCopy()) {
+					// PWC is meaningless after restore (checkout context is lost)
+					contentDaoService.delete(repositoryId, version.getAttachmentNodeId());
+					contentDaoService.delete(repositoryId, version.getId());
+				} else if (version.isVersionSeriesCheckedOut()) {
+					// Clear checkout flags on normal versions
+					version.setVersionSeriesCheckedOut(false);
+					version.setVersionSeriesCheckedOutBy(null);
+					version.setVersionSeriesCheckedOutId(null);
+					contentDaoService.update(repositoryId, version);
+				}
 			}
-		} catch (Exception e) {
-			log.error("fail to restore a document", e);
+		}
+		// Clear checkout state on VersionSeries itself
+		if (vs != null && vs.isVersionSeriesCheckedOut()) {
+			vs.setVersionSeriesCheckedOut(false);
+			vs.setVersionSeriesCheckedOutBy(null);
+			vs.setVersionSeriesCheckedOutId(null);
+			contentDaoService.update(repositoryId, vs);
 		}
 
 		return getDocument(repositoryId, archive.getOriginalId());
@@ -3624,7 +4215,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 		String deletedArchiveId = contentDaoService.deleteArchive(repositoryId, archive.getId());
 		if (deletedArchiveId == null) {
-			log.warn("Archive deletion returned null during restore: " + archive.getId());
+			throw new CmisRuntimeException("restoreFolder: folder archive record deletion failed after restoration, archiveId=" + archive.getId());
 		}
 
 		return getFolder(repositoryId, archive.getOriginalId());
@@ -3643,8 +4234,7 @@ public class ContentServiceImpl implements ContentService {
 	public void destroyArchive(String repositoryId, String archiveId) {
 		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
 		if (archive == null) {
-			log.error("destroyArchive: archive does not exist, archiveId=" + archiveId);
-			return;
+			throw new CmisObjectNotFoundException("destroyArchive: archive does not exist, archiveId=" + archiveId);
 		}
 
 		if (archive.isFolder()) {
@@ -3652,9 +4242,13 @@ public class ContentServiceImpl implements ContentService {
 		} else if (archive.isDocument()) {
 			destroyDocument(repositoryId, archive);
 		} else if (archive.isAttachment()) {
-			log.error("destroyArchive: attachment cannot be restored alone, archiveId=" + archiveId);
+			throw new CmisNotSupportedException("destroyArchive: attachment cannot be destroyed alone, archiveId=" + archiveId);
 		} else {
-			log.error("destroyArchive: only document or folder is supported for restoration, archiveId=" + archiveId);
+			// cmis:item (user/group) or other non-document/folder types: delete directly from archive DB
+			String deletedId = contentDaoService.deleteArchive(repositoryId, archiveId);
+			if (deletedId == null) {
+				throw new CmisRuntimeException("destroyArchive: deletion failed for cmis:item archive, archiveId=" + archiveId);
+			}
 		}
 	}
 
@@ -3668,55 +4262,46 @@ public class ContentServiceImpl implements ContentService {
 		}
 		String deletedArchiveId = contentDaoService.deleteArchive(repositoryId, archive.getId());
 		if (deletedArchiveId == null) {
-			log.warn("destroyFolder: folder archive deletion returned null, archiveId=" + archive.getId());
+			throw new CmisRuntimeException("destroyFolder: folder archive deletion failed, archiveId=" + archive.getId());
 		}
 	}
 
 	private void destroyDocument(String repositoryId, Archive archive) {
-		try {
-			// Check versionSeriesId before calling getArchivesOfVersionSeries
-			String versionSeriesId = archive.getVersionSeriesId();
-			if (versionSeriesId == null) {
-				log.warn("destroyDocument: archive has no versionSeriesId, archiveId=" + archive.getId());
-				return;
-			}
+		// Check versionSeriesId before calling getArchivesOfVersionSeries
+		String versionSeriesId = archive.getVersionSeriesId();
+		if (versionSeriesId == null) {
+			throw new CmisRuntimeException("destroyDocument: archive has no versionSeriesId, archiveId=" + archive.getId());
+		}
 
-			// Get archives of the same version series
-			List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId, versionSeriesId);
+		// Get archives of the same version series
+		List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId, versionSeriesId);
 
-			if (versions == null) {
-				log.warn("destroyDocument: getArchivesOfVersionSeries returned null, versionSeriesId=" + versionSeriesId);
-				return;
-			}
-			if (versions.isEmpty()) {
-				log.warn("destroyDocument: no versions found, versionSeriesId=" + versionSeriesId);
-				return;
-			}
+		if (versions == null) {
+			throw new CmisRuntimeException("destroyDocument: getArchivesOfVersionSeries returned null, versionSeriesId=" + versionSeriesId);
+		}
+		if (versions.isEmpty()) {
+			throw new CmisRuntimeException("destroyDocument: no versions found, versionSeriesId=" + versionSeriesId);
+		}
 
-			for (Archive version : versions) {
-				// Get attachment archive FIRST (before deleting version)
-				Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
+		for (Archive version : versions) {
+			// Get attachment archive FIRST (before deleting version)
+			Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
 
-				// Delete attachment archive first (continue even if fails - best effort cleanup)
-				if (attachmentArchive != null) {
-					String deletedAttachmentId = contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
-					if (deletedAttachmentId == null) {
-						log.warn("destroyDocument: attachment archive deletion returned null, attachmentId=" + attachmentArchive.getId());
-					}
-				} else {
-					log.warn("destroyDocument: attachment archive not found, versionId=" + version.getId());
+			// Delete attachment archive first (continue even if fails - best effort cleanup)
+			if (attachmentArchive != null) {
+				String deletedAttachmentId = contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
+				if (deletedAttachmentId == null) {
+					log.warn("destroyDocument: attachment archive deletion returned null, attachmentId=" + attachmentArchive.getId());
 				}
-
-				// Then delete version archive
-				String deletedVersionId = contentDaoService.deleteArchive(repositoryId, version.getId());
-				if (deletedVersionId == null) {
-					log.warn("destroyDocument: version archive deletion returned null, versionId=" + version.getId());
-				}
+			} else {
+				log.warn("destroyDocument: attachment archive not found, versionId=" + version.getId());
 			}
-		} catch (NotFoundException e) {
-			log.warn("destroyDocument: archive not found during destroy, archiveId=" + archive.getId());
-		} catch (Exception e) {
-			log.error("destroyDocument: failed to destroy document archive, archiveId=" + archive.getId(), e);
+
+			// Then delete version archive
+			String deletedVersionId = contentDaoService.deleteArchive(repositoryId, version.getId());
+			if (deletedVersionId == null) {
+				throw new CmisRuntimeException("destroyDocument: version archive deletion returned null, versionId=" + version.getId());
+			}
 		}
 	}
 
@@ -3776,7 +4361,6 @@ public class ContentServiceImpl implements ContentService {
 		// CMIS spec requires updating change token after any modification
 		if (n instanceof Content) {
 			Content content = (Content) n;
-			String oldChangeToken = content.getChangeToken();
 			String newChangeToken = String.valueOf(System.currentTimeMillis());
 			content.setChangeToken(newChangeToken);
 		}
@@ -3822,6 +4406,10 @@ public class ContentServiceImpl implements ContentService {
 		this.typeManager = typeManager;
 	}
 
+	public void setWebhookService(WebhookService webhookService) {
+		this.webhookService = webhookService;
+	}
+
 	@Override
 	public Long getAttachmentActualSize(String repositoryId, String attachmentId) {
 		try {
@@ -3848,6 +4436,122 @@ public class ContentServiceImpl implements ContentService {
 			return null;
 		}
 	}	
+
+	// Retention lifecycle methods
+
+	@Override
+	public List<Archive> getArchivesByState(String repositoryId, String state) {
+		return contentDaoService.getArchivesByState(repositoryId, state);
+	}
+
+	@Override
+	public List<Archive> getSearchableArchives(String repositoryId, String state) {
+		return contentDaoService.getSearchableArchives(repositoryId, state);
+	}
+
+	@Override
+	public List<Archive> getSearchableArchivesPaged(String repositoryId, int skip, int limit, boolean descending) {
+		return contentDaoService.getSearchableArchivesPaged(repositoryId, skip, limit, descending);
+	}
+
+	@Override
+	public long getSearchableArchivesCount(String repositoryId) {
+		return contentDaoService.getSearchableArchivesCount(repositoryId);
+	}
+
+	@Override
+	public List<Archive> getSearchableArchivesByStatePaged(String repositoryId, String state, int skip, int limit, boolean descending) {
+		return contentDaoService.getSearchableArchivesByStatePaged(repositoryId, state, skip, limit, descending);
+	}
+
+	@Override
+	public long getSearchableArchivesByStateCount(String repositoryId, String state) {
+		return contentDaoService.getSearchableArchivesByStateCount(repositoryId, state);
+	}
+
+	@Override
+	public List<Archive> getArchivesForColdTransition(String repositoryId, GregorianCalendar beforeDate) {
+		return contentDaoService.getArchivesForColdTransition(repositoryId, beforeDate);
+	}
+
+	@Override
+	public void updateArchiveState(String repositoryId, String archiveId,
+			String newState, Map<String, String> contentRef, GregorianCalendar coldArchivedAt) {
+		contentDaoService.updateArchiveState(repositoryId, archiveId, newState, contentRef, coldArchivedAt);
+	}
+
+	@Override
+	public java.io.InputStream getArchiveContentStream(String repositoryId, String archiveId) {
+		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
+		if (archive == null) {
+			return null;
+		}
+		return contentDaoService.getArchiveContentStream(repositoryId, archive);
+	}
+
+	@Override
+	public boolean deleteArchiveContent(String repositoryId, String archiveId) {
+		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
+		if (archive == null) {
+			return false;
+		}
+		return contentDaoService.deleteArchiveContent(repositoryId, archive);
+	}
+
+	@Override
+	public List<String> getExpiredDocumentIds(String repositoryId, GregorianCalendar beforeDate) {
+		return contentDaoService.getExpiredDocumentIds(repositoryId, beforeDate);
+	}
+
+	@Override
+	public List<Content> getExpiredDocuments(String repositoryId, GregorianCalendar beforeDate) {
+		List<String> ids = getExpiredDocumentIds(repositoryId, beforeDate);
+		List<Content> results = new java.util.ArrayList<>();
+		for (String id : ids) {
+			Content c = getContent(repositoryId, id);
+			if (c != null) {
+				results.add(c);
+			}
+		}
+		return results;
+	}
+
+	@Override
+	public void updateExpirationDate(String repositoryId, String objectId, GregorianCalendar newDate) {
+		Content content = getContent(repositoryId, objectId);
+		if (content == null) {
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException(
+					"Document not found: " + objectId);
+		}
+
+		List<jp.aegif.nemaki.model.Property> subTypeProps = content.getSubTypeProperties();
+		if (subTypeProps == null) {
+			subTypeProps = new java.util.ArrayList<>();
+		}
+
+		boolean found = false;
+		for (jp.aegif.nemaki.model.Property prop : subTypeProps) {
+			if ("cmis:rm_expirationDate".equals(prop.getKey())) {
+				prop.setValue(newDate.getTimeInMillis());
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			jp.aegif.nemaki.model.Property newProp = new jp.aegif.nemaki.model.Property();
+			newProp.setKey("cmis:rm_expirationDate");
+			newProp.setValue(newDate.getTimeInMillis());
+			subTypeProps.add(newProp);
+		}
+		content.setSubTypeProperties(subTypeProps);
+		contentDaoService.update(repositoryId, content);
+	}
+
+	@Override
+	public void updateArchiveColdMoveMode(String repositoryId, String archiveId, String coldMoveMode) {
+		contentDaoService.updateArchiveColdMoveMode(repositoryId, archiveId, coldMoveMode);
+	}
+
 	/**
 	 * ATOMIC OPERATIONS: Helper methods for atomic Document+Attachment operations
 	 * These methods ensure _rev consistency during compound CouchDB operations
@@ -3929,3 +4633,4 @@ public class ContentServiceImpl implements ContentService {
 
 	////////////////////////////////////////////
 }
+

@@ -276,8 +276,7 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 	 */
 	@Override
 	public int compareTo(CouchChange o) {
-		int asc = this.created.compareTo(o.getCreated());
-		return -asc;
+		return o.getCreated().compareTo(this.created);
 	}
 
 	@Override

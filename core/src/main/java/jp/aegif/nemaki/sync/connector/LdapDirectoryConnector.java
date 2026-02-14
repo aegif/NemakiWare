@@ -124,9 +124,13 @@ public class LdapDirectoryConnector {
     /**
      * Validate that a filter string doesn't contain obvious injection attempts.
      * This is a basic check - the filter should come from trusted configuration.
+     * A valid LDAP filter must be enclosed in parentheses per RFC 4515.
      */
     public static boolean isValidLdapFilter(String filter) {
         if (filter == null || filter.isEmpty()) {
+            return false;
+        }
+        if (filter.charAt(0) != '(' || filter.charAt(filter.length() - 1) != ')') {
             return false;
         }
         int openParens = 0;

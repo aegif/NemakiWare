@@ -40,7 +40,7 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { TestHelper, generateTestId } from '../utils/test-helper';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -62,8 +62,7 @@ test.describe('PreviewComponent File Type Routing', () => {
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button').filter({
@@ -93,12 +92,11 @@ test.describe('PreviewComponent File Type Routing', () => {
   });
 
   test('should show preview tab for document with content', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // First, upload a test file to ensure we have a document with content
     const tempDir = os.tmpdir();
-    const testFilePath = path.join(tempDir, `preview-test-${Date.now()}.txt`);
+    const testFilePath = path.join(tempDir, `preview-test-${generateTestId()}.txt`);
     fs.writeFileSync(testFilePath, 'Test content for preview verification', 'utf-8');
 
     try {
@@ -173,8 +171,7 @@ test.describe('PreviewComponent File Type Routing', () => {
   });
 
   test('should display "no content" message for documents without content stream', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Look for a folder (folders don't have content streams)
     const folderRow = page.locator('.ant-table-tbody tr').filter({
@@ -200,7 +197,7 @@ test.describe('PreviewComponent File Type Routing', () => {
         const folderModal = page.locator('.ant-modal').filter({ hasText: /フォルダ|Folder/ });
         if (await folderModal.count() > 0) {
           const nameInput = folderModal.locator('input').first();
-          await nameInput.fill(`test-folder-${Date.now()}`);
+          await nameInput.fill(`test-folder-${generateTestId()}`);
           const okButton = folderModal.locator('button.ant-btn-primary');
           await okButton.click(isMobile ? { force: true } : {});
           await page.waitForTimeout(1000);
@@ -226,8 +223,7 @@ test.describe('PreviewComponent Image Preview', () => {
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button').filter({
@@ -245,8 +241,7 @@ test.describe('PreviewComponent Image Preview', () => {
   });
 
   test('should render ImagePreview for image/png files', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Create a temporary PNG file for testing
     const tempDir = os.tmpdir();
@@ -335,8 +330,7 @@ test.describe('PreviewComponent Text Preview', () => {
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button').filter({
@@ -354,8 +348,7 @@ test.describe('PreviewComponent Text Preview', () => {
   });
 
   test('should render TextPreview for text/plain files', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Create a temporary text file for testing
     const tempDir = os.tmpdir();
@@ -433,8 +426,7 @@ test.describe('PreviewComponent Error Handling', () => {
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button').filter({
@@ -452,8 +444,7 @@ test.describe('PreviewComponent Error Handling', () => {
   });
 
   test('should show warning for unsupported file types', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Create a temporary file with unsupported extension
     const tempDir = os.tmpdir();
@@ -533,12 +524,11 @@ test.describe('PreviewComponent Error Handling', () => {
   test('should handle gracefully when preview component fails', async ({ page, browserName }) => {
     // This test verifies that the error boundary catches rendering errors
     // We upload a file to ensure we have a document to test with
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Create a temporary file for testing
     const tempDir = os.tmpdir();
-    const testFilePath = path.join(tempDir, `error-test-${Date.now()}.txt`);
+    const testFilePath = path.join(tempDir, `error-test-${generateTestId()}.txt`);
     fs.writeFileSync(testFilePath, 'Test content for error handling test', 'utf-8');
 
     try {
@@ -611,8 +601,7 @@ test.describe('PreviewComponent PDF Preview', () => {
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button').filter({
@@ -630,12 +619,11 @@ test.describe('PreviewComponent PDF Preview', () => {
   });
 
   test('should render PDFPreview with navigation controls for PDF files', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Create a minimal valid PDF file for testing
     const tempDir = os.tmpdir();
-    const testPdfPath = path.join(tempDir, `test-pdf-${Date.now()}.pdf`);
+    const testPdfPath = path.join(tempDir, `test-pdf-${generateTestId()}.pdf`);
 
     // Minimal valid PDF content
     const pdfContent = `%PDF-1.4
@@ -731,8 +719,7 @@ test.describe('PreviewComponent Video Preview', () => {
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button').filter({
@@ -750,13 +737,12 @@ test.describe('PreviewComponent Video Preview', () => {
   });
 
   test('should render VideoPreview with player controls for video files', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Create a minimal valid WebM video file for testing
     // This is a minimal WebM container with an empty video track
     const tempDir = os.tmpdir();
-    const testVideoPath = path.join(tempDir, `test-video-${Date.now()}.webm`);
+    const testVideoPath = path.join(tempDir, `test-video-${generateTestId()}.webm`);
 
     // Minimal WebM header (EBML + Segment + Info + Tracks)
     // This creates a valid but minimal WebM container

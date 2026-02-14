@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
+import { TestHelper } from '../utils/test-helper';
 
 /**
  * Back to Current Folder Navigation Test
@@ -19,9 +20,11 @@ import { AuthHelper } from '../utils/auth-helper';
  */
 test.describe('Back to Current Folder Navigation', () => {
   let authHelper: AuthHelper;
+  let testHelper: TestHelper;
 
   test.beforeEach(async ({ page }) => {
     authHelper = new AuthHelper(page);
+    testHelper = new TestHelper(page);
     await authHelper.login();
     await page.waitForTimeout(2000);
   });
@@ -31,8 +34,7 @@ test.describe('Back to Current Folder Navigation', () => {
   });
 
   test('should return to current folder when clicking back button', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
     const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
 
     // Step 1: Wait for document list to load
@@ -109,8 +111,7 @@ test.describe('Back to Current Folder Navigation', () => {
   });
 
   test('should preserve folderId when navigating through multiple documents', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table-tbody', { timeout: 10000 });
 

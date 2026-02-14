@@ -129,11 +129,26 @@ export default defineConfig({
   base: '/core/ui/',
   define: {
     __UI_BUILD_TIME__: JSON.stringify(buildTime),
-    __UI_VERSION__: JSON.stringify('3.0.0')
+    __UI_VERSION__: JSON.stringify('3.1.0')
   },
   build: {
     outDir: 'dist',
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: 'index.html',
+        'auth-popup': 'src/auth-popup.ts',
+      },
+      output: {
+        // Keep auth-popup entry as a predictable filename (no hash)
+        entryFileNames: (chunkInfo) => {
+          if (chunkInfo.name === 'auth-popup') {
+            return 'auth-popup-entry.js';
+          }
+          return 'assets/[name]-[hash].js';
+        },
+      },
+    },
   },
   server: {
     proxy: {

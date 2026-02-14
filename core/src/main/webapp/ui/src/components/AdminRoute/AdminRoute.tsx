@@ -5,9 +5,8 @@
  * Non-admin users attempting to access admin routes are redirected to /documents.
  *
  * Admin Detection:
- * - Currently checks if username === 'admin'
- * - For OIDC/SAML, the username from the token is used
- * - Future enhancement: Check for admin role in token claims
+ * - Uses isAdmin flag from /me endpoint (set on the server side)
+ * - No username-based fallback to avoid permission display inconsistency
  *
  * Usage:
  * ```tsx
@@ -30,10 +29,8 @@ interface AdminRouteProps {
 export const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
   const { authToken } = useAuth();
 
-  // Check if user is admin
-  // For now, we simply check username === 'admin'
-  // This works for both basic auth and OIDC/SAML (username is set from token)
-  const isAdmin = authToken?.username === 'admin';
+  // Check if user is admin via isAdmin flag from /me endpoint
+  const isAdmin = authToken?.isAdmin === true;
 
   if (!isAdmin) {
     // Non-admin users are redirected to documents page

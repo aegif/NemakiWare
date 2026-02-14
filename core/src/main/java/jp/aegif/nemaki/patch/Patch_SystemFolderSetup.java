@@ -483,7 +483,7 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
             java.net.HttpURLConnection checkConn = (java.net.HttpURLConnection) checkUrl.openConnection();
             
             String auth = "admin:password";
-            String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes());
+            String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             checkConn.setRequestProperty("Authorization", "Basic " + encodedAuth);
             checkConn.setRequestMethod("HEAD");
             

@@ -62,7 +62,8 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
     // Global paths that don't require a repository in the URL (use default repository for auth)
     private static final String[] GLOBAL_PATHS = {
         "audit/metrics",
-        "audit/"
+        "audit/",
+        "health"
     };
 
     @Override
@@ -114,7 +115,20 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
         }
         String app = (authTokenApp == null) ? "" : authTokenApp;
 
-        if (authToken != null && !authToken.isEmpty()) {
+        // Check for X-API-Key header (persistent API key authentication for MCP clients)
+        String apiKey = requestContext.getHeaderString("X-API-Key");
+        if (apiKey == null || apiKey.isEmpty()) {
+            // Fallback to lowercase header name
+            apiKey = requestContext.getHeaderString("x-api-key");
+        }
+
+        if (apiKey != null && !apiKey.isEmpty()) {
+            // API Key authentication - set it in context for AuthenticationService to validate
+            logger.fine("ApiAuthenticationFilter: X-API-Key header found, passing to AuthenticationService");
+            callContext.put(CallContextKey.API_KEY, apiKey);
+            // Note: AuthenticationService.loginWithApiKey() will validate the key and set username
+
+        } else if (authToken != null && !authToken.isEmpty()) {
             // Token-based authentication
             logger.fine("ApiAuthenticationFilter: AUTH_TOKEN header found, validating token");
 
@@ -149,7 +163,7 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
                 try {
                     String credentials = authHeader.substring(6);
                     byte[] decoded = Base64.getDecoder().decode(credentials);
-                    String decodedStr = new String(decoded);
+                    String decodedStr = new String(decoded, java.nio.charset.StandardCharsets.UTF_8);
                     int colonIndex = decodedStr.indexOf(':');
                     if (colonIndex < 0) {
                         abortWithUnauthorized(requestContext, "Invalid Basic authentication format");

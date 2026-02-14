@@ -45,6 +45,7 @@ import jakarta.servlet.FilterConfig;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -57,7 +58,7 @@ public class AuthenticationFilter implements Filter {
 	private RepositoryInfoMap repositoryInfoMap;
 	private PrincipalService principalService;
 	private final String TOKEN_FALSE = "false";
-	
+
 	// ObjectMapper for RFC 7807 ProblemDetail serialization (thread-safe, reusable)
 	private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -79,7 +80,7 @@ public class AuthenticationFilter implements Filter {
 		try {
 			// CORS is handled by SimpleCorsFilter in web.xml - do not add CORS headers here
 			// to avoid duplicate header application
-			
+
 			// Handle CORS preflight requests (OPTIONS) - bypass authentication
 			// SimpleCorsFilter handles the actual CORS headers, we just need to bypass auth
 			if ("OPTIONS".equalsIgnoreCase(hreq.getMethod())) {
@@ -102,29 +103,27 @@ public class AuthenticationFilter implements Filter {
 				return;
 			}
 
-			// Check various URI patterns for /all/ paths
-			if (requestURI != null && requestURI.contains("/rest/all/")) {
-				log.debug("Bypassing authentication for /rest/all/ URI: " + requestURI);
+			// Bypass authentication for public /rest/all/* endpoints
+			// - /rest/all/repositories: needed for login page
+			// - /rest/all/build-info: non-sensitive server metadata for version display
+			if (requestURI != null && (requestURI.contains("/rest/all/repositories") || requestURI.contains("/rest/all/build-info"))) {
+				log.debug("Bypassing authentication for public /rest/all/* URI: " + requestURI);
 				chain.doFilter(req, res);
 				return;
 			}
 
-			// For servlet mappings, pathInfo might be null, so check servletPath
-			if (servletPath != null && servletPath.contains("/all/")) {
-				log.debug("Bypassing authentication for /all/ servletPath: " + servletPath);
-				chain.doFilter(req, res);
-				return;
-			}
-
-			if (pathInfo != null && pathInfo.startsWith("/all/")) {
-				log.debug("Bypassing authentication for /all/ pathInfo: " + pathInfo);
-				chain.doFilter(req, res);
-				return;
-			}
-
-			// Bypass authentication for SSO token conversion endpoints (SAML and OIDC)
-			if (requestURI != null && (requestURI.contains("/authtoken/saml/convert") || requestURI.contains("/authtoken/oidc/convert"))) {
+			// Bypass authentication for SSO token conversion endpoints (SAML, OIDC, Google, Microsoft)
+			if (requestURI != null && (requestURI.contains("/authtoken/saml/convert") || requestURI.contains("/authtoken/oidc/convert")
+					|| requestURI.contains("/authtoken/google/convert") || requestURI.contains("/authtoken/microsoft/convert"))) {
 				log.debug("Bypassing authentication for SSO token conversion endpoint: " + requestURI);
+				chain.doFilter(req, res);
+				return;
+			}
+
+			// Bypass authentication for WebAuthn authentication endpoints (passkey login)
+			if (requestURI != null && (requestURI.contains("/webauthn/authenticate/begin")
+					|| requestURI.contains("/webauthn/authenticate/complete"))) {
+				log.debug("Bypassing authentication for WebAuthn authentication endpoint: " + requestURI);
 				chain.doFilter(req, res);
 				return;
 			}
@@ -137,12 +136,45 @@ public class AuthenticationFilter implements Filter {
 				return;
 			}
 
+			// Bypass authentication for auth config endpoint (SSO button visibility settings)
+			// This must be public because it's accessed before user login
+			// Only match specific patterns to prevent unintended bypasses
+			if (requestURI != null && (
+					requestURI.equals("/core/rest/auth/config") ||
+					requestURI.endsWith("/rest/auth/config"))) {
+				log.debug("Bypassing authentication for auth config endpoint: " + requestURI);
+				chain.doFilter(req, res);
+				return;
+			}
+
 			// Bypass authentication for API v1 auth endpoints (login, saml, oidc)
 			// These endpoints handle their own authentication through request body or SSO
 			if (requestURI != null && requestURI.contains("/api/v1/cmis/auth/") &&
 				(requestURI.endsWith("/login") || requestURI.contains("/saml") || requestURI.contains("/oidc"))) {
 				log.debug("Bypassing authentication for API v1 auth endpoint: " + requestURI);
 				chain.doFilter(req, res);
+				return;
+			}
+
+			// Bypass authentication for legacy authtoken login endpoint
+			// The login endpoint validates credentials itself via request body password
+			// Pattern: /core/rest/repo/{repositoryId}/authtoken/{userName}/login
+			if (requestURI != null && requestURI.contains("/rest/repo/") && requestURI.contains("/authtoken/") && requestURI.endsWith("/login")) {
+				log.debug("Bypassing authentication for authtoken login endpoint: " + requestURI);
+				chain.doFilter(req, res);
+				return;
+			}
+
+			// NOTE: MCP cloud login completion endpoint requires authentication
+			// The authenticated user's ID is used to complete the login, ensuring
+			// only the logged-in user can bind their identity to the MCP session
+
+			// Check if the target REST resource is disabled by configuration.
+			// Reject early to avoid wasting resources on authentication for disabled endpoints.
+			if (!checkResourceEnabled(hreq)) {
+				String resourceName = extractResourceName(pathInfo);
+				log.warn("REST resource disabled by configuration: " + resourceName + " (URI: " + requestURI + ")");
+				hres.sendError(HttpServletResponse.SC_FORBIDDEN, "Resource is disabled by server configuration");
 				return;
 			}
 
@@ -161,7 +193,7 @@ public class AuthenticationFilter implements Filter {
 					hres.setCharacterEncoding("UTF-8");
 					// Support both Basic and Bearer authentication for future JWT/OAuth2 compatibility
 					hres.setHeader("WWW-Authenticate", "Basic realm=\"NemakiWare API\", Bearer realm=\"NemakiWare API\"");
-					
+
 					// Use ProblemDetail class for consistent RFC 7807 format and proper JSON escaping
 					ProblemDetail problem = ProblemDetail.unauthorized(
 						"Valid credentials are required to access this resource. Please provide Basic or Bearer authentication credentials.",
@@ -196,6 +228,10 @@ public class AuthenticationFilter implements Filter {
 			// Fallback to standard header name used by UI
 			authToken = request.getHeader("AUTH_TOKEN");
 		}
+		// Also check for HttpOnly cookie (more secure than header for browser clients)
+		if (authToken == null || authToken.isEmpty()) {
+			authToken = getAuthTokenFromCookie(request);
+		}
 		String authTokenApp = request.getHeader(CallContextKey.AUTH_TOKEN_APP);
 		if (authTokenApp == null || authTokenApp.isEmpty()) {
 			authTokenApp = request.getHeader("AUTH_TOKEN_APP");
@@ -204,12 +240,12 @@ public class AuthenticationFilter implements Filter {
 
 		if (authToken != null && !authToken.isEmpty()) {
 			// Token-based authentication - validate token and get username
-			log.info("=== AUTH: AUTH_TOKEN header found, validating token for repository: " + repositoryId + " ===");
+			log.debug("=== AUTH: AUTH_TOKEN header found, validating token for repository: " + repositoryId + " ===");
 
 			if (tokenService != null) {
 				String userName = tokenService.validateToken(app, repositoryId, authToken);
 				if (userName != null) {
-					log.info("=== AUTH: Token validated successfully for user: " + userName + " ===");
+					log.debug("=== AUTH: Token validated successfully for user: " + userName + " ===");
 					ctxt.put(CallContext.USERNAME, userName);
 					ctxt.put(CallContextKey.AUTH_TOKEN, authToken);
 					ctxt.put(CallContextKey.AUTH_TOKEN_APP, authTokenApp);
@@ -222,25 +258,64 @@ public class AuthenticationFilter implements Filter {
 				return false;
 			}
 		} else {
-			// Fall back to Basic auth
-			String authHeader = request.getHeader("Authorization");
-			if (authHeader != null && authHeader.startsWith("Basic ")) {
-				try {
-					String base64Credentials = authHeader.substring("Basic ".length()).trim();
-					String credentials = new String(java.util.Base64.getDecoder().decode(base64Credentials));
-					String[] values = credentials.split(":", 2);
-					if (values.length == 2) {
-						ctxt.put(CallContext.USERNAME, values[0]);
-						ctxt.put(CallContext.PASSWORD, values[1]);
-						log.debug("=== AUTH: Basic auth extracted - username=" + values[0] + " ===");
+			// Check for X-API-Key header (persistent API key authentication for MCP clients)
+			String apiKey = request.getHeader("X-API-Key");
+			if (apiKey == null || apiKey.isEmpty()) {
+				// Fallback to lowercase header name
+				apiKey = request.getHeader("x-api-key");
+			}
+
+			if (apiKey != null && !apiKey.isEmpty()) {
+				// API Key authentication - set it in context for AuthenticationService to validate
+				log.debug("=== AUTH: X-API-Key header found, passing to AuthenticationService ===");
+				ctxt.put(CallContextKey.API_KEY, apiKey);
+				// AuthenticationService.loginWithApiKey() will validate the key and set username
+			} else {
+				// Check Authorization header for Basic or Bearer authentication
+				String authHeader = request.getHeader("Authorization");
+				if (authHeader != null && authHeader.startsWith("Bearer ")) {
+					// Bearer token authentication (standard OAuth2/JWT format)
+					String token = authHeader.substring("Bearer ".length()).trim();
+					if (token.isEmpty()) {
+						log.warn("Empty Bearer token");
+						return false;
 					}
-				} catch (Exception e) {
-					log.error("Failed to parse Basic auth header", e);
+
+					log.debug("=== AUTH: Bearer token found, validating for repository: " + repositoryId + " ===");
+
+					if (tokenService != null) {
+						String userName = tokenService.validateToken(app, repositoryId, token);
+						if (userName != null) {
+							log.debug("=== AUTH: Bearer token validated successfully for user: " + userName + " ===");
+							ctxt.put(CallContext.USERNAME, userName);
+							ctxt.put(CallContextKey.AUTH_TOKEN, token);
+						} else {
+							log.info("=== AUTH: Invalid or expired Bearer token for repository: " + repositoryId + " ===");
+							return false;
+						}
+					} else {
+						log.warn("=== AUTH: TokenService not available for Bearer token validation ===");
+						return false;
+					}
+				} else if (authHeader != null && authHeader.startsWith("Basic ")) {
+					// Basic authentication (username:password)
+					try {
+						String base64Credentials = authHeader.substring("Basic ".length()).trim();
+						String credentials = new String(java.util.Base64.getDecoder().decode(base64Credentials), java.nio.charset.StandardCharsets.UTF_8);
+						String[] values = credentials.split(":", 2);
+						if (values.length == 2) {
+							ctxt.put(CallContext.USERNAME, values[0]);
+							ctxt.put(CallContext.PASSWORD, values[1]);
+							log.debug("=== AUTH: Basic auth extracted - username=" + values[0] + " ===");
+						}
+					} catch (Exception e) {
+						log.error("Failed to parse Basic auth header", e);
+						return false;
+					}
+				} else {
+					log.warn("No Authorization header, AUTH_TOKEN, or X-API-Key found");
 					return false;
 				}
-			} else {
-				log.warn("No Authorization header or AUTH_TOKEN found");
-				return false;
 			}
 		}
 
@@ -349,11 +424,12 @@ public class AuthenticationFilter implements Filter {
         		}else{
         			log.warn("Could not extract repositoryId from auth path: " + java.util.Arrays.toString(pathFragments));
         		}
-        	}else if("audit".equals(pathFragments[0])){
-        		// Handle /audit/... paths (global endpoints that use default repository)
-        		// pathFragments = ["audit", "metrics", ...]
+        	}else if("audit".equals(pathFragments[0]) ||
+        			"health".equals(pathFragments[0])){
+        		// Handle global endpoints that use default repository
+        		// (audit, health)
         		String defaultRepo = repositoryInfoMap.getDefaultRepositoryId();
-        		log.debug("=== AUTH: Using default repository for /audit/ path=" + defaultRepo + " ===");
+        		log.debug("=== AUTH: Using default repository for global path=" + defaultRepo + " ===");
         		return defaultRepo;
         	}else{
         		// For paths like /user/bedroom, /group/bedroom, etc.
@@ -377,32 +453,100 @@ public class AuthenticationFilter implements Filter {
 	}
 
 	private boolean checkResourceEnabled(HttpServletRequest request){
-		boolean enabled = true;
-
 		String pathInfo = request.getPathInfo();
-		if(pathInfo.startsWith("/user")){
-			String userResourceEnabled = propertyManager.readValue(PropertyKey.REST_USER_ENABLED);
-			enabled = TOKEN_FALSE.equals(userResourceEnabled) ? false : true;
-		}else if(pathInfo.startsWith("/group")){
-			String groupResourceEnabled = propertyManager.readValue(PropertyKey.REST_GROUP_ENABLED);
-			enabled = TOKEN_FALSE.equals(groupResourceEnabled) ? false : true;
-		}else if(pathInfo.startsWith("/type")){
-			String typeResourceEnabled = propertyManager.readValue(PropertyKey.REST_TYPE_ENABLED);
-			enabled = TOKEN_FALSE.equals(typeResourceEnabled) ? false : true;
-		}else if(pathInfo.startsWith("/archive")){
-			String archiveResourceEnabled = propertyManager.readValue(PropertyKey.REST_ARCHIVE_ENABLED);
-			enabled = TOKEN_FALSE.equals(archiveResourceEnabled) ? false : true;
-		}else if(pathInfo.startsWith("/search-engine")){
-			String solrResourceEnabled = propertyManager.readValue(PropertyKey.REST_SOLR_ENABLED);
-			enabled = TOKEN_FALSE.equals(solrResourceEnabled) ? false : true;
-		}else if(pathInfo.startsWith("/authtoken")){
-			String authtokenResourceEnabled = propertyManager.readValue(PropertyKey.REST_AUTHTOKEN_ENABLED);
-			enabled = TOKEN_FALSE.equals(authtokenResourceEnabled) ? false : true;
-		}else{
-			enabled = false;
+		String resourceName = extractResourceName(pathInfo);
+
+		// If we can't determine the resource name, allow the request through
+		// (defense in depth: individual endpoints have their own permission checks)
+		if (resourceName == null) {
+			return true;
 		}
 
-		return enabled;
+		String propertyKey = null;
+		switch (resourceName) {
+			case "user":
+				propertyKey = PropertyKey.REST_USER_ENABLED;
+				break;
+			case "group":
+				propertyKey = PropertyKey.REST_GROUP_ENABLED;
+				break;
+			case "type":
+				propertyKey = PropertyKey.REST_TYPE_ENABLED;
+				break;
+			case "archive":
+				propertyKey = PropertyKey.REST_ARCHIVE_ENABLED;
+				break;
+			case "search-engine":
+				propertyKey = PropertyKey.REST_SOLR_ENABLED;
+				break;
+			case "authtoken":
+				propertyKey = PropertyKey.REST_AUTHTOKEN_ENABLED;
+				break;
+			default:
+				// Resource not in the controlled list, allow by default
+				return true;
+		}
+
+		String value = propertyManager.readValue(propertyKey);
+		return !TOKEN_FALSE.equals(value);
+	}
+
+	/**
+	 * Extract the REST resource name from pathInfo.
+	 * Handles the following path patterns:
+	 *   /repo/{repositoryId}/{resource}/...  → resource
+	 *   /all/{resource}/...                  → resource
+	 *   /v1/repo/{repositoryId}/{resource}/... → resource
+	 *
+	 * @param pathInfo the servlet path info (may be null)
+	 * @return the resource name, or null if it cannot be determined
+	 */
+	private String extractResourceName(String pathInfo) {
+		if (pathInfo == null || pathInfo.isEmpty()) {
+			return null;
+		}
+		String p = pathInfo.startsWith("/") ? pathInfo.substring(1) : pathInfo;
+		String[] parts = p.split("/");
+		if (parts.length == 0) {
+			return null;
+		}
+
+		// /v1/repo/{id}/{resource}/...
+		if ("v1".equals(parts[0]) && parts.length > 3 && ApiType.REPO.equals(parts[1])) {
+			return parts[3];
+		}
+		// /repo/{id}/{resource}/...
+		if (ApiType.REPO.equals(parts[0]) && parts.length > 2) {
+			return parts[2];
+		}
+		// /all/{resource}/...
+		if (ApiType.ALL.equals(parts[0]) && parts.length > 1) {
+			return parts[1];
+		}
+		return null;
+	}
+
+	/**
+	 * Extract authentication token from HttpOnly cookie.
+	 * This is the preferred method for browser clients as it's more secure than headers.
+	 * 
+	 * @param request The HTTP request
+	 * @return The auth token from cookie, or null if not found
+	 */
+	private String getAuthTokenFromCookie(HttpServletRequest request) {
+		Cookie[] cookies = request.getCookies();
+		if (cookies != null) {
+			for (Cookie cookie : cookies) {
+				if ("nemaki_auth_token".equals(cookie.getName())) {
+					String value = cookie.getValue();
+					if (value != null && !value.isEmpty()) {
+						log.debug("=== AUTH: Found auth token in HttpOnly cookie ===");
+						return value;
+					}
+				}
+			}
+		}
+		return null;
 	}
 
 	public void setPropertyManager(PropertyManager propertyManager) {

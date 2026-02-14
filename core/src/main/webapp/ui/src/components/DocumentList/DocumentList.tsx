@@ -225,7 +225,8 @@ import {
   Breadcrumb,
   Tag,
   Radio,
-  Alert
+  Alert,
+  DatePicker
 } from 'antd';
 import {
   FileOutlined,
@@ -242,14 +243,31 @@ import {
   CheckOutlined,
   CloseOutlined,
   UpOutlined,
-  FormOutlined
+  FormOutlined,
+  ImportOutlined,
+  ExportOutlined,
+  GoogleOutlined,
+  WindowsOutlined,
+  CloudDownloadOutlined
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
-import { CMISObject, TypeDefinition } from '../../types/cmis';
+import { CMISObject, TypeDefinition, AllowableActions } from '../../types/cmis';
 import { FolderTree } from '../FolderTree/FolderTree';
 import { useAuth } from '../../contexts/AuthContext';
+import { fetchCloudAuthConfig, CloudAuthConfig } from '../../services/cloud-auth';
+import {
+  getGoogleDriveAccessToken,
+  getOneDriveAccessToken,
+  importFromGoogleDrive,
+  importFromOneDrive,
+  listGoogleDriveFiles,
+  listOneDriveFiles,
+  GoogleDriveFile,
+  OneDriveFile
+} from '../../services/cloud-drive';
+import { formatServerDate } from '../../utils/dateUtils';
 
 interface DocumentListProps {
   repositoryId: string;
@@ -280,7 +298,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // Initialize synchronously from URL to show correct folder contents on return from DocumentViewer
   const [selectedFolderId, setSelectedFolderId] = useState<string>(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('folderId') || '';
+    const fromUrl = urlParams.get('folderId');
+    if (fromUrl) return fromUrl;
+    if (repositoryId) {
+      return sessionStorage.getItem(`nemakiware_selectedFolderId_${repositoryId}`) || '';
+    }
+    return '';
   });
   // currentFolderId: The tree pivot point - ancestors are calculated from this folder
   // Only changes when clicking an already-selected folder (second click)
@@ -318,6 +341,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
   }, [currentFolderId, repositoryId, currentFolderIdIsUserSet]);
 
+  // Persist selectedFolderId to sessionStorage for restoration after page navigation
+  useEffect(() => {
+    if (selectedFolderId && repositoryId) {
+      sessionStorage.setItem(`nemakiware_selectedFolderId_${repositoryId}`, selectedFolderId);
+    }
+  }, [selectedFolderId, repositoryId]);
+
   // CRITICAL FIX (2025-12-30): Rehydrate currentFolderId when repositoryId changes
   // This handles the case where repositoryId was not available during initial render
   useEffect(() => {
@@ -351,6 +381,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string>('');
   const [deleteTargetName, setDeleteTargetName] = useState<string>('');
+  const [deleteTargetIsFolder, setDeleteTargetIsFolder] = useState(false);
   const [deleteDescendantCount, setDeleteDescendantCount] = useState(0);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -359,6 +390,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [renameTargetId, setRenameTargetId] = useState<string>('');
   const [renameTargetName, setRenameTargetName] = useState<string>('');
   const [renameForm] = Form.useForm();
+
+  // Bulk operation states (2026-01-28)
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [bulkDeleteModalVisible, setBulkDeleteModalVisible] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   // Type selection states (2025-12-11)
   const [documentTypes, setDocumentTypes] = useState<TypeDefinition[]>([]);
@@ -369,11 +405,32 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [selectedDocumentTypeDefinition, setSelectedDocumentTypeDefinition] = useState<TypeDefinition | null>(null);
   const [selectedFolderTypeDefinition, setSelectedFolderTypeDefinition] = useState<TypeDefinition | null>(null);
 
+  // Folder permission state for conditional button rendering
+  const [folderAllowableActions, setFolderAllowableActions] = useState<AllowableActions | undefined>(undefined);
+  const canCreateDoc = folderAllowableActions?.canCreateDocument === true;
+  const canCreateFld = folderAllowableActions?.canCreateFolder === true;
+
+  // Import/Export states (2026-01-28)
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importForm] = Form.useForm();
+
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { handleAuthError } = useAuth();
+  const { handleAuthError, authToken } = useAuth();
   const cmisService = new CMISService(handleAuthError);
+
+  // Cloud import states (2026-02-03)
+  const [cloudAuthConfig, setCloudAuthConfig] = useState<CloudAuthConfig | null>(null);
+  const [cloudImportModalVisible, setCloudImportModalVisible] = useState(false);
+  const [cloudImportProvider, setCloudImportProvider] = useState<'google' | 'microsoft' | null>(null);
+  const [cloudFiles, setCloudFiles] = useState<(GoogleDriveFile | OneDriveFile)[]>([]);
+  const [cloudFilesLoading, setCloudFilesLoading] = useState(false);
+  const [cloudImporting, setCloudImporting] = useState(false);
+  const [selectedCloudFile, setSelectedCloudFile] = useState<GoogleDriveFile | OneDriveFile | null>(null);
 
   // Debug: Log component mount/unmount
   useEffect(() => {
@@ -381,6 +438,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     return () => {
       console.log('[DocumentList] Component UNMOUNTED');
     };
+  }, []);
+
+  // Load cloud auth config for cloud import buttons (2026-02-03)
+  useEffect(() => {
+    fetchCloudAuthConfig().then(setCloudAuthConfig).catch(() => {});
   }, []);
 
   // Initialize folder ID from URL parameter or default to root
@@ -488,7 +550,49 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       const folder = await cmisService.getObject(repositoryId, selectedFolderId);
       const folderPath = folder.path || '/';
       setCurrentFolderPath(folderPath);
-    } catch (error) {
+      setFolderAllowableActions(folder.allowableActions);
+    } catch (error: any) {
+      console.error('[DocumentList] loadObjects error for folder:', selectedFolderId, error);
+      // Determine error type: only fallback to root on 404 (folder gone / stale sessionStorage).
+      // For 401/403/network/500, keep current folder and show explicit error.
+      const status = error?.status || error?.response?.status;
+      const is404 = status === 404
+        || (error instanceof Error && /not found|404|objectNotFound/i.test(error.message));
+
+      if (is404 && selectedFolderId !== ROOT_FOLDER_ID) {
+        console.warn('[DocumentList] Folder not found (404), clearing stale state and falling back to root');
+        if (repositoryId) {
+          sessionStorage.removeItem(`nemakiware_selectedFolderId_${repositoryId}`);
+          sessionStorage.removeItem(`nemakiware_currentFolderId_${repositoryId}`);
+        }
+        setSelectedFolderId(ROOT_FOLDER_ID);
+        setCurrentFolderId(ROOT_FOLDER_ID);
+        setCurrentFolderIdIsUserSet(false);
+        setCurrentFolderPath('/');
+        setSearchParams({ folderId: ROOT_FOLDER_ID });
+        return; // The useEffect will re-trigger loadObjects with ROOT_FOLDER_ID
+      } else if (is404 && selectedFolderId === ROOT_FOLDER_ID) {
+        // ROOT_FOLDER_ID itself is stale (e.g., after DB re-initialization) - resolve dynamically
+        console.warn('[DocumentList] ROOT_FOLDER_ID is stale (404), attempting dynamic root resolution');
+        try {
+          const rootFolder = await cmisService.getRootFolder(repositoryId);
+          if (rootFolder && rootFolder.id && rootFolder.id !== ROOT_FOLDER_ID) {
+            console.info('[DocumentList] Resolved new root folder ID:', rootFolder.id);
+            if (repositoryId) {
+              sessionStorage.removeItem(`nemakiware_selectedFolderId_${repositoryId}`);
+              sessionStorage.removeItem(`nemakiware_currentFolderId_${repositoryId}`);
+            }
+            setSelectedFolderId(rootFolder.id);
+            setCurrentFolderId(rootFolder.id);
+            setCurrentFolderIdIsUserSet(false);
+            setCurrentFolderPath('/');
+            setSearchParams({ folderId: rootFolder.id });
+            return; // The useEffect will re-trigger loadObjects with the new root ID
+          }
+        } catch (resolveErr) {
+          console.error('[DocumentList] Failed to dynamically resolve root folder:', resolveErr);
+        }
+      }
       message.error(`${t('documentList.messages.loadObjectsError')}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       // Clear objects on error to show empty state
       setObjects([]);
@@ -565,7 +669,16 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         for (const [key, value] of Object.entries(values)) {
           if (!key.startsWith('cmis:') && key !== 'file' && key !== 'name' && key !== 'objectTypeId') {
             if (value !== undefined && value !== null && value !== '') {
-              properties[key] = value;
+              // Convert DatePicker dayjs objects to ISO 8601 format for CMIS
+              // propertyDefinitions is an object keyed by propId, not an array
+              const propDef = selectedDocumentTypeDefinition?.propertyDefinitions?.[key];
+              if (propDef?.propertyType === 'datetime' && value && typeof value === 'object' && (value as any).toISOString) {
+                properties[key] = (value as any).toISOString();
+              } else if (propDef?.propertyType === 'datetime' && typeof value === 'string') {
+                properties[key] = new Date(value).toISOString();
+              } else {
+                properties[key] = value;
+              }
             }
           }
         }
@@ -591,6 +704,88 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
   };
 
+  /**
+   * Open cloud import modal for the specified provider (2026-02-03)
+   * Lists files from Google Drive or OneDrive for selection
+   */
+  const handleOpenCloudImport = async (provider: 'google' | 'microsoft') => {
+    if (!cloudAuthConfig) return;
+
+    setCloudImportProvider(provider);
+    setCloudImportModalVisible(true);
+    setCloudFilesLoading(true);
+    setCloudFiles([]);
+    setSelectedCloudFile(null);
+
+    try {
+      let accessToken: string;
+      if (provider === 'google') {
+        const authData = localStorage.getItem('nemakiware_auth');
+        const loginHint = authData ? JSON.parse(authData).username : undefined;
+        accessToken = await getGoogleDriveAccessToken(cloudAuthConfig.googleClientId!, loginHint);
+        const files = await listGoogleDriveFiles(accessToken);
+        setCloudFiles(files);
+      } else {
+        accessToken = await getOneDriveAccessToken(
+          cloudAuthConfig.microsoftClientId!,
+          cloudAuthConfig.microsoftTenantId!
+        );
+        const files = await listOneDriveFiles(accessToken);
+        setCloudFiles(files);
+      }
+    } catch (error) {
+      console.error('Failed to load cloud files:', error);
+      message.error(t('cloudDrive.loadFilesError'));
+      setCloudImportModalVisible(false);
+    } finally {
+      setCloudFilesLoading(false);
+    }
+  };
+
+  /**
+   * Import the selected cloud file to the current folder (2026-02-03)
+   */
+  const handleCloudImport = async () => {
+    if (!selectedCloudFile || !cloudImportProvider || !cloudAuthConfig) return;
+
+    setCloudImporting(true);
+    try {
+      let accessToken: string;
+      if (cloudImportProvider === 'google') {
+        const authData = localStorage.getItem('nemakiware_auth');
+        const loginHint = authData ? JSON.parse(authData).username : undefined;
+        accessToken = await getGoogleDriveAccessToken(cloudAuthConfig.googleClientId!, loginHint);
+        await importFromGoogleDrive(
+          repositoryId,
+          selectedFolderId,
+          selectedCloudFile as GoogleDriveFile,
+          accessToken
+        );
+      } else {
+        accessToken = await getOneDriveAccessToken(
+          cloudAuthConfig.microsoftClientId!,
+          cloudAuthConfig.microsoftTenantId!
+        );
+        await importFromOneDrive(
+          repositoryId,
+          selectedFolderId,
+          selectedCloudFile as OneDriveFile,
+          accessToken
+        );
+      }
+
+      message.success(t('cloudDrive.importSuccess', { name: selectedCloudFile.name }));
+      setCloudImportModalVisible(false);
+      setSelectedCloudFile(null);
+      await loadObjects();
+    } catch (error) {
+      console.error('Cloud import failed:', error);
+      message.error(t('cloudDrive.importError'));
+    } finally {
+      setCloudImporting(false);
+    }
+  };
+
   const handleCreateFolder = async (values: any) => {
     // Clear previous error
     setFolderError(null);
@@ -606,7 +801,16 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       for (const [key, value] of Object.entries(values)) {
         if (!key.startsWith('cmis:') && key !== 'name' && key !== 'objectTypeId') {
           if (value !== undefined && value !== null && value !== '') {
-            properties[key] = value;
+            // Convert DatePicker dayjs objects to ISO 8601 format for CMIS
+            // propertyDefinitions is an object keyed by propId, not an array
+            const propDef = selectedFolderTypeDefinition?.propertyDefinitions?.[key];
+            if (propDef?.propertyType === 'datetime' && value && typeof value === 'object' && (value as any).toISOString) {
+              properties[key] = (value as any).toISOString();
+            } else if (propDef?.propertyType === 'datetime' && typeof value === 'string') {
+              properties[key] = new Date(value).toISOString();
+            } else {
+              properties[key] = value;
+            }
           }
         }
       }
@@ -631,9 +835,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
    * Show delete confirmation modal with cascade deletion info.
    * Checks for parentChildRelationship descendants before deletion.
    */
-  const handleDeleteClick = async (objectId: string, objectName: string) => {
+  const handleDeleteClick = async (objectId: string, objectName: string, baseType?: string) => {
     setDeleteTargetId(objectId);
     setDeleteTargetName(objectName);
+    setDeleteTargetIsFolder(baseType === 'cmis:folder');
     setDeleteLoading(true);
     setDeleteModalVisible(true);
 
@@ -663,21 +868,28 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
       // NemakiWare-specific: Use cascade deletion for parentChildRelationship
       // This will delete all descendant objects linked via nemaki:parentChildRelationship
-      const result = await cmisService.deleteObjectWithCascade(repositoryId, deleteTargetId);
+      const result = await cmisService.deleteObjectWithCascade(repositoryId, deleteTargetId, true, deleteTargetIsFolder);
 
-      // Reload objects from server after successful deletion
+      // Reload objects from server after deletion attempt
       await loadObjects();
 
-      // Show appropriate success message based on cascade deletion results
+      // Check if root object was actually deleted
+      if (!result.rootDeleted) {
+        // Root deletion failed - show error
+        message.error(t('documentList.messages.deleteError'));
+        return;
+      }
+
+      // Root was deleted - show appropriate success message
       if (result.deletedCount > 1) {
         message.success(t('documentList.messages.deleteSuccessWithCount', { count: result.deletedCount }));
       } else {
         message.success(t('documentList.messages.deleteSuccess'));
       }
 
-      // Warn about any failures during cascade deletion
-      if (result.failedIds.length > 0) {
-        message.warning(t('documentList.messages.deletePartialFail', { count: result.failedIds.length }));
+      // Warn about any descendant failures during cascade deletion
+      if (result.descendantFailedIds.length > 0) {
+        message.warning(t('documentList.messages.deletePartialFail', { count: result.descendantFailedIds.length }));
       }
     } catch (error) {
       message.error(t('documentList.messages.deleteError'));
@@ -685,6 +897,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setLoading(false);
       setDeleteTargetId('');
       setDeleteTargetName('');
+      setDeleteTargetIsFolder(false);
       setDeleteDescendantCount(0);
     }
   };
@@ -693,6 +906,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     setDeleteModalVisible(false);
     setDeleteTargetId('');
     setDeleteTargetName('');
+    setDeleteTargetIsFolder(false);
     setDeleteDescendantCount(0);
   };
 
@@ -714,9 +928,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
     try {
       setLoading(true);
+      // Find the target object to get its changeToken for optimistic locking
+      const targetObject = objects.find(obj => obj.id === renameTargetId);
+      const changeToken = targetObject?.changeToken;
       await cmisService.updateProperties(repositoryId, renameTargetId, {
         'cmis:name': values.newName.trim()
-      });
+      }, changeToken);
       message.success(t('documentList.messages.renameSuccess'));
       setRenameModalVisible(false);
       renameForm.resetFields();
@@ -729,7 +946,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setRenameTargetId('');
       setRenameTargetName('');
     }
-  };
+  };;
 
   const handleRenameCancel = () => {
     setRenameModalVisible(false);
@@ -737,6 +954,94 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     setRenameTargetId('');
     setRenameTargetName('');
   };
+
+  /**
+   * Handle bulk delete operation with improved counting and parallel execution.
+   * 
+   * Improvements over previous implementation:
+   * 1. Separate counts for complete success vs partial success (descendant failures)
+   * 2. Collect all failed descendant IDs for detailed reporting (deduplicated)
+   * 3. Parallel execution with concurrency limit for better UX with large selections
+   * 4. Clearer message wording distinguishing root vs descendant failures
+   * 5. Failure logging for troubleshooting
+   */
+  const handleBulkDelete = async () => {
+    setBulkDeleteLoading(true);
+    try {
+      // Separate counters for clear reporting
+      let completeSuccessCount = 0;  // Root deleted AND all descendants deleted
+      let partialSuccessCount = 0;   // Root deleted BUT some descendants failed
+      let failedCount = 0;           // Root deletion failed
+      const failedDescendantIdSet = new Set<string>();  // Use Set to deduplicate
+
+      // Parallel execution with concurrency limit (3 concurrent deletions)
+      const CONCURRENCY_LIMIT = 3;
+      const objectIds = selectedRowKeys.map(key => String(key));
+      
+      for (let i = 0; i < objectIds.length; i += CONCURRENCY_LIMIT) {
+        const batch = objectIds.slice(i, i + CONCURRENCY_LIMIT);
+        const results = await Promise.allSettled(
+          batch.map(objectId => {
+            const obj = objects.find(o => o.id === objectId);
+            const isFolder = obj?.baseType === 'cmis:folder';
+            return cmisService.deleteObjectWithCascade(repositoryId, objectId, true, isFolder);
+          })
+        );
+
+        results.forEach((result, index) => {
+          const objectId = batch[index];
+          if (result.status === 'fulfilled') {
+            const deleteResult = result.value;
+            if (deleteResult.rootDeleted) {
+              if (deleteResult.descendantFailedIds.length > 0) {
+                // Root deleted but some descendants failed - partial success
+                partialSuccessCount++;
+                deleteResult.descendantFailedIds.forEach(id => failedDescendantIdSet.add(id));
+                // Log for troubleshooting
+                console.warn(`[Bulk Delete] Object ${objectId} deleted but ${deleteResult.descendantFailedIds.length} descendant(s) failed:`, deleteResult.descendantFailedIds);
+              } else {
+                // Complete success - root and all descendants deleted
+                completeSuccessCount++;
+              }
+            } else {
+              // Root deletion failed
+              failedCount++;
+              console.error(`[Bulk Delete] Failed to delete root object: ${objectId}`);
+            }
+          } else {
+            // Promise rejected - treat as failed
+            failedCount++;
+            console.error(`[Bulk Delete] Error deleting object ${objectId}:`, result.reason);
+          }
+        });
+      }
+
+      // Display results with clear, non-overlapping messages
+      if (completeSuccessCount > 0) {
+        message.success(t('documentList.messages.bulkDeleteSuccess', { count: completeSuccessCount }));
+      }
+      if (partialSuccessCount > 0) {
+        message.warning(
+          t('documentList.messages.bulkDeletePartial', { 
+            count: partialSuccessCount,
+            descendantCount: failedDescendantIdSet.size 
+          })
+        );
+      }
+      if (failedCount > 0) {
+        message.error(t('documentList.messages.bulkDeleteFailed', { count: failedCount }));
+      }
+
+      setSelectedRowKeys([]);
+      await loadObjects();
+    } catch (error) {
+      console.error('[Bulk Delete] Unexpected error:', error);
+      message.error(t('documentList.messages.bulkDeleteError'));
+    } finally {
+      setBulkDeleteModalVisible(false);
+      setBulkDeleteLoading(false);
+    }
+  };;
 
   const handleDownload = (objectId: string) => {
     const url = cmisService.getDownloadUrl(repositoryId, objectId);
@@ -757,8 +1062,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
   };
 
-  const handleCheckInClick = (objectId: string) => {
-    setCurrentDocumentId(objectId);
+  const handleCheckInClick = (objectId: string, record?: CMISObject) => {
+    // PWCでない元ドキュメントの場合、PWC IDに解決
+    const pwcId = record?.properties?.['cmis:versionSeriesCheckedOutId'];
+    const isPWC = record?.properties?.['cmis:isPrivateWorkingCopy'] === true ||
+                  record?.properties?.['cmis:isPrivateWorkingCopy'] === 'true';
+    const effectiveId = (!isPWC && pwcId) ? String(pwcId) : objectId;
+    setCurrentDocumentId(effectiveId);
     setCheckInModalVisible(true);
   };
 
@@ -791,10 +1101,15 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
   };
 
-  const handleCancelCheckOut = async (objectId: string) => {
+  const handleCancelCheckOut = async (objectId: string, record?: CMISObject) => {
+    // PWCでない元ドキュメントの場合、PWC IDに解決
+    const pwcId = record?.properties?.['cmis:versionSeriesCheckedOutId'];
+    const isPWC = record?.properties?.['cmis:isPrivateWorkingCopy'] === true ||
+                  record?.properties?.['cmis:isPrivateWorkingCopy'] === 'true';
+    const effectiveId = (!isPWC && pwcId) ? String(pwcId) : objectId;
     try {
       setLoading(true);
-      await cmisService.cancelCheckOut(repositoryId, objectId);
+      await cmisService.cancelCheckOut(repositoryId, effectiveId);
       message.success(t('documentList.messages.cancelCheckoutSuccess'));
       await loadObjects();
     } catch (error) {
@@ -846,6 +1161,112 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     setSearchQuery('');
     setIsSearchMode(false);
     loadObjects();
+  };
+
+  // Import handler (2026-01-28)
+  const handleImport = async (values: { file: { originFileObj?: File; name?: string }[] }) => {
+    if (!values.file || values.file.length === 0) {
+      message.error(t('importExport.noFileSelected'));
+      return;
+    }
+
+    const fileItem = values.file[0];
+    const file = fileItem.originFileObj;
+    if (!file || !(file instanceof File)) {
+      message.error(t('importExport.noFileSelected'));
+      return;
+    }
+
+    // Validate file type
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith('.acp') && !fileName.endsWith('.zip')) {
+      message.error(t('importExport.invalidFileType'));
+      return;
+    }
+
+    setIsImporting(true);
+    setImportProgress(0);
+
+    try {
+      const result = await cmisService.importContent(
+        repositoryId,
+        selectedFolderId || ROOT_FOLDER_ID,
+        file as File,
+        (progress) => setImportProgress(progress)
+      );
+
+      if (result.status === 'success') {
+        message.success(
+          `${t('importExport.importSuccess')} - ${t('importExport.foldersCreated', { count: result.foldersCreated })}, ${t('importExport.documentsCreated', { count: result.documentsCreated })}`
+        );
+      } else if (result.status === 'partial') {
+        message.warning(t('importExport.partialSuccess'));
+        if (result.warnings && result.warnings.length > 0) {
+          console.warn('Import warnings:', result.warnings);
+        }
+        if (result.errors && result.errors.length > 0) {
+          console.error('Import errors:', result.errors);
+        }
+      }
+
+      await loadObjects();
+    } catch (error) {
+      console.error('Import error:', error);
+      message.error(`${t('importExport.importError')}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setImportModalVisible(false);
+      importForm.resetFields();
+      setIsImporting(false);
+      setImportProgress(0);
+    }
+  };
+
+  // Export handler (2026-01-28)
+  const handleExport = async () => {
+    if (!selectedFolderId) {
+      message.warning(t('documentList.messages.selectFolder'));
+      return;
+    }
+
+    setIsExporting(true);
+
+    try {
+      let blob: Blob;
+      let fileName: string;
+
+      if (selectedRowKeys.length > 0) {
+        // Export only selected items
+        blob = await cmisService.exportObjects(
+          repositoryId,
+          selectedRowKeys.map(String)
+        );
+        fileName = `export_selected_${Date.now()}.zip`;
+      } else {
+        // Export entire folder
+        blob = await cmisService.exportContent(
+          repositoryId,
+          selectedFolderId
+        );
+        fileName = `export_${selectedFolderId}_${Date.now()}.zip`;
+      }
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      message.success(t('importExport.exportSuccess'));
+    } catch (error) {
+      console.error('Export error:', error);
+      message.error(`${t('importExport.exportError')}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const columns = [
@@ -1015,7 +1436,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         dataIndex: 'creationDate',
         key: 'creationDate',
         width: 150,
-        render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+        render: (date: string) => formatServerDate(date),
       },
     ] : []),
     {
@@ -1037,7 +1458,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       dataIndex: 'lastModificationDate',
       key: 'modified',
       width: 180,
-      render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+      render: (date: string) => formatServerDate(date),
     },
     {
       title: t('documentList.columns.modifiedBy'),
@@ -1050,12 +1471,16 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       key: 'actions',
       width: 300,
       render: (_: any, record: CMISObject) => {
-        // Handle both boolean and string values (AtomPub returns strings, Browser binding returns booleans)
-        const isPrivateWorkingCopy = record.properties?.['cmis:isPrivateWorkingCopy'];
-        const isVersionSeriesCheckedOut = record.properties?.['cmis:isVersionSeriesCheckedOut'];
-        const isPWC = isPrivateWorkingCopy === true || isPrivateWorkingCopy === 'true' ||
-                      isVersionSeriesCheckedOut === true || isVersionSeriesCheckedOut === 'true';
         const isVersionable = record.baseType === 'cmis:document';
+        // チェックアウト状態の判定（PWCでない元ドキュメントでも検出）
+        const isCheckedOut = record.properties?.['cmis:isVersionSeriesCheckedOut'] === true ||
+                             record.properties?.['cmis:isVersionSeriesCheckedOut'] === 'true';
+        // canCheckIn/canCancelCheckOut のフォールバック条件:
+        // 元ドキュメントがチェックアウト済み（isCheckedOut）かつ canCheckOut が false（= 既にチェックアウト済み）
+        // かつ自分がチェックアウトしたドキュメントのみ表示
+        const checkedOutBy = record.properties?.['cmis:versionSeriesCheckedOutBy'];
+        const showCheckInFallback = isVersionable && isCheckedOut && !record.allowableActions?.canCheckOut &&
+          checkedOutBy != null && String(checkedOutBy) === authToken?.username;
 
         return (
           <Space>
@@ -1066,19 +1491,22 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 onClick={() => {
                   // CRITICAL FIX (2025-12-16): Use selectedFolderId with URL fallback for back button navigation
                   const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
-                  const folderParam = `?folderId=${effectiveFolderId}`;
+                  const currentFolderParam = currentFolderId ? `&currentFolderId=${currentFolderId}` : '';
+                  const folderParam = `?folderId=${effectiveFolderId}${currentFolderParam}`;
                   const targetUrl = `/documents/${record.id}${folderParam}`;
                   navigate(targetUrl);
                 }}
               />
             </Tooltip>
-            <Tooltip title={t('documentList.actions.rename')}>
-              <Button
-                icon={<FormOutlined />}
-                size="small"
-                onClick={() => handleRenameClick(record.id, record.name)}
-              />
-            </Tooltip>
+            {record.allowableActions?.canUpdateProperties && (
+              <Tooltip title={t('documentList.actions.rename')}>
+                <Button
+                  icon={<FormOutlined />}
+                  size="small"
+                  onClick={() => handleRenameClick(record.id, record.name)}
+                />
+              </Tooltip>
+            )}
             {record.baseType === 'cmis:document' && (
               <Tooltip title={t('common.download')}>
                 <Button
@@ -1088,7 +1516,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 />
               </Tooltip>
             )}
-            {isVersionable && !isPWC && (
+            {record.allowableActions?.canCheckOut && (
               <Tooltip title={t('documentList.actions.checkout')}>
                 <Button
                   icon={<EditOutlined />}
@@ -1097,24 +1525,24 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 />
               </Tooltip>
             )}
-            {isVersionable && isPWC && (
-              <>
-                <Tooltip title={t('documentList.actions.checkin')}>
-                  <Button
-                    icon={<CheckOutlined />}
-                    size="small"
-                    type="primary"
-                    onClick={() => handleCheckInClick(record.id)}
-                  />
-                </Tooltip>
-                <Tooltip title={t('documentList.actions.cancelCheckout')}>
-                  <Button
-                    icon={<CloseOutlined />}
-                    size="small"
-                    onClick={() => handleCancelCheckOut(record.id)}
-                  />
-                </Tooltip>
-              </>
+            {(record.allowableActions?.canCheckIn || showCheckInFallback) && (
+              <Tooltip title={t('documentList.actions.checkin')}>
+                <Button
+                  icon={<CheckOutlined />}
+                  size="small"
+                  type="primary"
+                  onClick={() => handleCheckInClick(record.id, record)}
+                />
+              </Tooltip>
+            )}
+            {(record.allowableActions?.canCancelCheckOut || showCheckInFallback) && (
+              <Tooltip title={t('documentList.actions.cancelCheckout')}>
+                <Button
+                  icon={<CloseOutlined />}
+                  size="small"
+                  onClick={() => handleCancelCheckOut(record.id, record)}
+                />
+              </Tooltip>
             )}
             {isVersionable && (
               <Tooltip title={t('documentList.actions.versionHistory')}>
@@ -1125,27 +1553,31 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 />
               </Tooltip>
             )}
-            <Tooltip title={t('documentList.actions.permissionManagement')}>
-              <Button
-                icon={<LockOutlined />}
-                size="small"
-                onClick={() => {
-                  // CRITICAL FIX (2025-12-23): Preserve folderId when navigating to PermissionManagement
-                  const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
-                  navigate(`/permissions/${record.id}?folderId=${effectiveFolderId}`);
-                }}
-              >
-                {t('documentList.actions.permissionManagement')}
-              </Button>
-            </Tooltip>
-            <Tooltip title={t('common.delete')}>
-              <Button
-                icon={<DeleteOutlined />}
-                size="small"
-                danger
-                onClick={() => handleDeleteClick(record.id, record.name)}
-              />
-            </Tooltip>
+            {record.allowableActions?.canGetACL && (
+              <Tooltip title={t('documentList.actions.permissionManagement')}>
+                <Button
+                  icon={<LockOutlined />}
+                  size="small"
+                  onClick={() => {
+                    // CRITICAL FIX (2025-12-23): Preserve folderId when navigating to PermissionManagement
+                    const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
+                    navigate(`/permissions/${record.id}?folderId=${effectiveFolderId}`);
+                  }}
+                >
+                  {t('documentList.actions.permissionManagement')}
+                </Button>
+              </Tooltip>
+            )}
+            {record.allowableActions?.canDeleteObject && (
+              <Tooltip title={t('common.delete')}>
+                <Button
+                  icon={<DeleteOutlined />}
+                  size="small"
+                  danger
+                  onClick={() => handleDeleteClick(record.id, record.name, record.baseType)}
+                />
+              </Tooltip>
+            )}
           </Space>
         );
       },
@@ -1198,12 +1630,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
       if (pathSegments.length === 1) {
         // Parent is root folder
-        const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
         // Note: Parent navigation updates both selected and current folder IDs
-        setSelectedFolderId(rootFolderId);
-        setCurrentFolderId(rootFolderId);
+        setSelectedFolderId(ROOT_FOLDER_ID);
+        setCurrentFolderId(ROOT_FOLDER_ID);
         setCurrentFolderPath('/');
-        setSearchParams({ folderId: rootFolderId });
+        setSearchParams({ folderId: ROOT_FOLDER_ID });
       } else {
         // Parent is another subfolder - navigate up one level
         const parentPath = '/' + pathSegments.slice(0, -1).join('/');
@@ -1256,31 +1687,34 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         <Col span={18}>
           <Card>
             <Space direction="vertical" style={{ width: '100%' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Space>
-                  <Button
-                    icon={<UpOutlined />}
-                    onClick={handleGoToParent}
-                    disabled={isInRootFolder}
-                    title={t('documentList.goToParent')}
-                  >
-                    {t('documentList.up')}
-                  </Button>
-                  <Breadcrumb items={breadcrumbItems} />
-                </Space>
-                <Space>
-                  <Input
-                    placeholder={t('documentList.searchPlaceholder')}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onPressEnter={handleSearch}
-                    style={{ width: 200 }}
-                    className="search-input"
-                  />
-                  <Button onClick={handleSearch} className="search-button">{t('common.search')}</Button>
-                  {isSearchMode && (
-                    <Button onClick={handleClearSearch}>{t('common.clear')}</Button>
-                  )}
+              {/* 1段目: ナビゲーション + 検索 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, minHeight: 32 }}>
+                <Button
+                  icon={<UpOutlined />}
+                  onClick={handleGoToParent}
+                  disabled={isInRootFolder}
+                  title={t('documentList.goToParent')}
+                  style={{ flexShrink: 0 }}
+                >
+                  {t('documentList.up')}
+                </Button>
+                <Breadcrumb items={breadcrumbItems} style={{ flex: 1, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }} />
+                <Input
+                  placeholder={t('documentList.searchPlaceholder')}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onPressEnter={handleSearch}
+                  style={{ width: 200, flexShrink: 0, marginLeft: 'auto' }}
+                  className="search-input"
+                />
+                <Button onClick={handleSearch} className="search-button" style={{ flexShrink: 0 }}>{t('common.search')}</Button>
+                {isSearchMode && (
+                  <Button onClick={handleClearSearch} style={{ flexShrink: 0 }}>{t('common.clear')}</Button>
+                )}
+              </div>
+              {/* 2段目: アクションボタン */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8, justifyContent: 'flex-end' }}>
+                {canCreateDoc && (
                   <Button
                     type="primary"
                     icon={<UploadOutlined />}
@@ -1288,13 +1722,62 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   >
                     {t('documentList.uploadFile')}
                   </Button>
+                )}
+                {/* Cloud import buttons - only shown for the logged-in platform (2026-02-03) */}
+                {canCreateDoc && cloudAuthConfig?.googleEnabled && authToken?.authMethod === 'google' && (
+                  <Button
+                    icon={<GoogleOutlined />}
+                    onClick={() => handleOpenCloudImport('google')}
+                  >
+                    {t('cloudDrive.importFromGoogleDrive')}
+                  </Button>
+                )}
+                {canCreateDoc && cloudAuthConfig?.microsoftEnabled && authToken?.authMethod === 'microsoft' && (
+                  <Button
+                    icon={<WindowsOutlined />}
+                    onClick={() => handleOpenCloudImport('microsoft')}
+                  >
+                    {t('cloudDrive.importFromOneDrive')}
+                  </Button>
+                )}
+                {canCreateFld && (
                   <Button
                     icon={<PlusOutlined />}
                     onClick={() => setFolderModalVisible(true)}
                   >
                     {t('documentList.createFolder')}
                   </Button>
-                </Space>
+                )}
+                {canCreateDoc && authToken?.isAdmin && (
+                  <Button
+                    icon={<ImportOutlined />}
+                    onClick={() => setImportModalVisible(true)}
+                  >
+                    {t('importExport.import')}
+                  </Button>
+                )}
+                <Button
+                  icon={<ExportOutlined />}
+                  onClick={handleExport}
+                  loading={isExporting}
+                >
+                  {selectedRowKeys.length > 0
+                    ? t('importExport.exportSelected', { count: selectedRowKeys.length })
+                    : t('importExport.export')}
+                </Button>
+                {selectedRowKeys.length > 0 &&
+                  selectedRowKeys.every(key => {
+                    const obj = objects.find(o => o.id === key);
+                    return obj?.allowableActions?.canDeleteObject === true;
+                  }) && (
+                  <Button
+                    danger
+                    icon={<DeleteOutlined />}
+                    onClick={() => setBulkDeleteModalVisible(true)}
+                  >
+                    {t('documentList.bulkDelete', { count: selectedRowKeys.length })}
+                  </Button>
+                )}
               </div>
               
               <Table
@@ -1304,6 +1787,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 loading={loading}
                 pagination={{ pageSize: 20 }}
                 size="small"
+                rowSelection={{
+                  selectedRowKeys,
+                  onChange: (newSelectedRowKeys: React.Key[]) => {
+                    setSelectedRowKeys(newSelectedRowKeys);
+                  },
+                }}
               />
             </Space>
           </Card>
@@ -1424,7 +1913,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                     ) : propDef.propertyType === 'integer' || propDef.propertyType === 'decimal' ? (
                       <Input type="number" placeholder={propDef.description || t('documentList.placeholders.enterProperty', { name: propDef.displayName || propId })} />
                     ) : propDef.propertyType === 'datetime' ? (
-                      <Input type="datetime-local" />
+                      <DatePicker showTime style={{ width: '100%' }} />
                     ) : (
                       <Input placeholder={propDef.description || t('documentList.placeholders.enterProperty', { name: propDef.displayName || propId })} />
                     )}
@@ -1544,7 +2033,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                     ) : propDef.propertyType === 'integer' || propDef.propertyType === 'decimal' ? (
                       <Input type="number" placeholder={propDef.description || t('documentList.placeholders.enterProperty', { name: propDef.displayName || propId })} />
                     ) : propDef.propertyType === 'datetime' ? (
-                      <Input type="datetime-local" />
+                      <DatePicker showTime style={{ width: '100%' }} />
                     ) : (
                       <Input placeholder={propDef.description || t('documentList.placeholders.enterProperty', { name: propDef.displayName || propId })} />
                     )}
@@ -1664,7 +2153,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               dataIndex: 'lastModificationDate',
               key: 'date',
               width: 180,
-              render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+              render: (date: string) => formatServerDate(date),
             },
             {
               title: t('documentList.columns.modifiedBy'),
@@ -1763,6 +2252,213 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             <Input placeholder={t('documentList.placeholders.enterNewName')} autoFocus />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Import Modal (2026-01-28) */}
+      <Modal
+        title={isImporting ? t('importExport.importing') : t('importExport.importTitle')}
+        open={importModalVisible}
+        onCancel={() => {
+          if (isImporting) return;
+          setImportModalVisible(false);
+          importForm.resetFields();
+        }}
+        footer={null}
+        maskClosable={false}
+        closable={!isImporting}
+        width={600}
+      >
+        <Form form={importForm} onFinish={handleImport} layout="vertical">
+          <p style={{ marginBottom: 16, color: '#666' }}>
+            {t('importExport.importDescription')}
+          </p>
+          <Form.Item
+            name="file"
+            label={t('importExport.selectFile')}
+            rules={[{ required: true, message: t('importExport.noFileSelected') }]}
+            valuePropName="fileList"
+            getValueFromEvent={(e) => {
+              if (Array.isArray(e)) {
+                return e;
+              }
+              return e?.fileList;
+            }}
+          >
+            <Upload.Dragger
+              beforeUpload={() => false}
+              maxCount={1}
+              accept=".acp,.zip"
+              disabled={isImporting}
+            >
+              <p className="ant-upload-drag-icon">
+                <ImportOutlined />
+              </p>
+              <p className="ant-upload-text">{t('importExport.dragDropHint')}</p>
+              <p className="ant-upload-hint">{t('importExport.supportedFormats')}</p>
+            </Upload.Dragger>
+          </Form.Item>
+
+          {isImporting && (
+            <div style={{ marginBottom: 16 }}>
+              <p>{t('importExport.importInProgress')}</p>
+              <div style={{ 
+                width: '100%', 
+                height: 8, 
+                backgroundColor: '#f0f0f0', 
+                borderRadius: 4,
+                overflow: 'hidden'
+              }}>
+                <div style={{ 
+                  width: `${importProgress}%`, 
+                  height: '100%', 
+                  backgroundColor: '#1890ff',
+                  transition: 'width 0.3s ease'
+                }} />
+              </div>
+              <p style={{ textAlign: 'center', marginTop: 8 }}>
+                {t('importExport.progress', { progress: importProgress })}
+              </p>
+            </div>
+          )}
+
+          <Form.Item>
+            <Space>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={isImporting}
+                disabled={isImporting}
+              >
+                {isImporting ? t('importExport.importing') : t('importExport.import')}
+              </Button>
+              <Button
+                onClick={() => {
+                  setImportModalVisible(false);
+                  importForm.resetFields();
+                }}
+                disabled={isImporting}
+              >
+                {t('common.cancel')}
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Bulk Delete Confirmation Modal */}
+      <Modal
+        title={t('documentList.bulkDeleteConfirmation')}
+        open={bulkDeleteModalVisible}
+        onOk={handleBulkDelete}
+        onCancel={() => {
+          setBulkDeleteModalVisible(false);
+        }}
+        okText={t('documentList.deleteButton')}
+        cancelText={t('common.cancel')}
+        okButtonProps={{ danger: true, loading: bulkDeleteLoading }}
+        maskClosable={false}
+      >
+        <p>
+          {t('documentList.bulkDeleteConfirmMessage', { count: selectedRowKeys.length })}
+        </p>
+      </Modal>
+
+      {/* Cloud Import Modal (2026-02-03) */}
+      <Modal
+        title={
+          cloudImportProvider === 'google'
+            ? t('cloudDrive.importFromGoogleDrive')
+            : t('cloudDrive.importFromOneDrive')
+        }
+        open={cloudImportModalVisible}
+        onCancel={() => {
+          if (cloudImporting) return;
+          setCloudImportModalVisible(false);
+          setSelectedCloudFile(null);
+        }}
+        footer={[
+          <Button
+            key="cancel"
+            onClick={() => {
+              setCloudImportModalVisible(false);
+              setSelectedCloudFile(null);
+            }}
+            disabled={cloudImporting}
+          >
+            {t('common.cancel')}
+          </Button>,
+          <Button
+            key="import"
+            type="primary"
+            icon={<CloudDownloadOutlined />}
+            onClick={handleCloudImport}
+            loading={cloudImporting}
+            disabled={!selectedCloudFile || cloudFilesLoading}
+          >
+            {cloudImporting
+              ? t('common.importing')
+              : t('cloudDrive.import')}
+          </Button>,
+        ]}
+        width={700}
+        maskClosable={false}
+      >
+        {cloudFilesLoading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}>{t('common.loading')}</div>
+        ) : (
+          <Table
+            dataSource={cloudFiles}
+            rowKey="id"
+            size="small"
+            pagination={{ pageSize: 10 }}
+            rowSelection={{
+              type: 'radio',
+              selectedRowKeys: selectedCloudFile ? [selectedCloudFile.id] : [],
+              onChange: (_, selectedRows) => {
+                setSelectedCloudFile(selectedRows[0] || null);
+              },
+            }}
+            onRow={(record) => ({
+              onClick: () => setSelectedCloudFile(record),
+              style: { cursor: 'pointer' },
+            })}
+            columns={[
+              {
+                title: t('cloudDrive.fileName'),
+                dataIndex: 'name',
+                key: 'name',
+                ellipsis: true,
+              },
+              {
+                title: t('cloudDrive.modifiedTime'),
+                key: 'modifiedTime',
+                width: 180,
+                render: (_, record) => {
+                  const date =
+                    (record as GoogleDriveFile).modifiedTime ||
+                    (record as OneDriveFile).lastModifiedDateTime;
+                  return formatServerDate(date);
+                },
+              },
+              {
+                title: t('cloudDrive.size'),
+                key: 'size',
+                width: 100,
+                render: (_, record) => {
+                  const size =
+                    parseInt((record as GoogleDriveFile).size || '0') ||
+                    (record as OneDriveFile).size ||
+                    0;
+                  if (size === 0) return '-';
+                  if (size < 1024) return `${size} B`;
+                  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+                  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+                },
+              },
+            ]}
+            locale={{ emptyText: t('common.noData') }}
+          />
+        )}
       </Modal>
     </div>
   );

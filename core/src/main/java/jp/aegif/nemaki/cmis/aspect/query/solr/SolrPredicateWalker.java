@@ -222,24 +222,118 @@ public class SolrPredicateWalker{
 	}
 
 	/**
-	 * TODO Implement check for each kind of literal
-	 * Parse field name & condition value. Field name is prepared for Solr
-	 * query.
+	 * Parse field name & condition value with literal type validation.
+	 * Field name is prepared for Solr query.
 	 *
-	 * @param leftNode
-	 * @param rightNode
-	 * @return
+	 * Validates that the literal type on the right-hand side is compatible
+	 * with the property type on the left-hand side.
+	 *
+	 * @param leftNode the column reference node (left side of comparison)
+	 * @param rightNode the literal value node (right side of comparison)
+	 * @return map containing field name (FLD) and condition value (CND)
+	 * @throws IllegalStateException if literal type is not compatible with property type
 	 */
 	private HashMap<String, String> walkCompareInternal(Tree leftNode,
 			Tree rightNode) {
 		HashMap<String, String> map = new HashMap<String, String>();
 
 		String left = solrUtil.convertToString(leftNode);
+		
+		// Validate literal type compatibility with property type
+		validateLiteralType(leftNode, rightNode);
+		
 		String right = safeWalkExprToString(rightNode);
 
 		map.put(FLD, ClientUtils.escapeQueryChars(solrUtil.getPropertyNameInSolr(repositoryId, left)));
 		map.put(CND, right);
 		return map;
+	}
+
+	/**
+	 * Validates that the literal type is compatible with the property type.
+	 *
+	 * Note: CMIS QL grammar ensures left-hand side is always a column reference
+	 * and right-hand side is a literal value in comparison expressions.
+	 * This method assumes that ordering.
+	 *
+	 * @param columnNode the column reference node (left-hand side of comparison)
+	 * @param literalNode the literal value node (right-hand side of comparison)
+	 * @throws IllegalStateException if types are not compatible
+	 */
+	private void validateLiteralType(Tree columnNode, Tree literalNode) {
+		int literalType = literalNode.getType();
+		
+		// Skip validation for non-literal types (e.g., column references, expressions)
+		// This handles cases like "column1 = column2" comparisons
+		if (!LiteralTypeValidator.isLiteralType(literalType)) {
+			return;
+		}
+		
+		try {
+			ColumnReference colRef = getColumnReference(columnNode);
+			String colRefName = colRef.getName();
+			TypeDefinition td = colRef.getTypeDefinition();
+			Map<String, PropertyDefinition<?>> pds = td.getPropertyDefinitions();
+			PropertyDefinition<?> pd = pds.get(colRefName);
+			
+			if (pd != null) {
+				PropertyType propType = pd.getPropertyType();
+				LiteralTypeValidator.validate(propType, literalType, colRefName);
+			}
+		} catch (IllegalStateException e) {
+			// Re-throw type validation errors
+			throw e;
+		} catch (Exception e) {
+			// Log but don't fail for other errors (e.g., missing property definitions)
+			// This maintains backward compatibility with existing queries
+			log.debug("Could not validate literal type for comparison: " + e.getMessage());
+		}
+	}
+
+	/**
+	 * Validates that all literal types in an IN list are compatible with the property type.
+	 *
+	 * @param colRef the column reference
+	 * @param listNode the IN_LIST node containing literal elements
+	 * @throws IllegalStateException if any element's type is not compatible
+	 */
+	private void validateInListLiteralTypes(ColumnReference colRef, Tree listNode) {
+		if (listNode.getType() != CmisQlStrictLexer.IN_LIST) {
+			return;
+		}
+		
+		try {
+			String colRefName = colRef.getName();
+			TypeDefinition td = colRef.getTypeDefinition();
+			Map<String, PropertyDefinition<?>> pds = td.getPropertyDefinitions();
+			PropertyDefinition<?> pd = pds.get(colRefName);
+			
+			if (pd == null) {
+				return;
+			}
+			
+			PropertyType propType = pd.getPropertyType();
+			
+			// Validate each element in the list
+			int childCount = listNode.getChildCount();
+			for (int i = 0; i < childCount; i++) {
+				Tree child = listNode.getChild(i);
+				int literalType = child.getType();
+				
+				// Skip non-literal types using the common utility method
+				if (!LiteralTypeValidator.isLiteralType(literalType)) {
+					continue;
+				}
+				
+				LiteralTypeValidator.validate(propType, literalType, colRefName);
+			}
+		} catch (IllegalStateException e) {
+			// Re-throw type validation errors
+			throw e;
+		} catch (Exception e) {
+			// Log but don't fail for other errors
+			log.debug("Could not validate literal types for IN list: " + e.getMessage());
+		}
 	}
 
 	private Query walkLike(Tree colNode, Tree stringNode) {
@@ -286,6 +380,9 @@ public class SolrPredicateWalker{
 		// Check for CMIS SQL specification
 		ColumnReference colRef = getColumnReference(colNode);
 
+		// Validate literal types for each element in the IN list
+		validateInListLiteralTypes(colRef, listNode);
+
 		// Build a statement
 		// Combine queries with "OR" because Solr doesn't have "IN" syntax
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
@@ -313,6 +410,9 @@ public class SolrPredicateWalker{
 			throw new IllegalStateException(
 					"Operator ANY...IN only is allowed on multi-value properties ");
 		}
+
+		// Validate literal types for each element in the IN list
+		validateInListLiteralTypes(colRef, rightNode);
 
 		// CRITICAL FIX (2025-12-19): Build proper OR query for multi-valued IN clause
 		// The previous implementation called walkEquals() which doesn't handle IN lists correctly

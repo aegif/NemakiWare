@@ -117,7 +117,6 @@ import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.CmisExtensionToken;
 import jp.aegif.nemaki.util.constant.PropertyKey;
-import net.sf.ehcache.Element;
 
 public class CompileServiceImpl implements CompileService {
 
@@ -198,7 +197,7 @@ public class CompileServiceImpl implements CompileService {
 			result.setRenditions(compileRenditions(callContext, repositoryId, content));
 		}
 
-		nemakiCachePool.get(repositoryId).getObjectDataCache().put(new Element(content.getId(), result));
+		nemakiCachePool.get(repositoryId).getObjectDataCache().put(content.getId(), result);
 
 		if (log.isDebugEnabled()) {
 			log.debug(MessageFormat.format("compileObjectDataWithFullAttributes END: Repo={0}, Id={1}", repositoryId, content.getId()));
@@ -263,6 +262,10 @@ public class CompileServiceImpl implements CompileService {
 	private ObjectData filterObjectData(String repositoryId, ObjectData fullObjectData, String filter,
 			Map<String, String> propertyAliases, Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includeAcl) {
+
+		if (fullObjectData == null) {
+			return null;
+		}
 
 		// Debug logging for BaseTypeId checking
 		if (log.isDebugEnabled()) {
@@ -538,16 +541,20 @@ public class CompileServiceImpl implements CompileService {
 			return null;
 		case SOURCE:
 			propertyId = PropertyIds.SOURCE_ID;
+			break;
 		case TARGET:
 			propertyId = PropertyIds.TARGET_ID;
+			break;
 		default:
+			propertyId = PropertyIds.SOURCE_ID;
+			break;
 		}
 
 		List<ObjectData> filtered = new ArrayList<ObjectData>();
 		if (CollectionUtils.isNotEmpty(bothRelationships)) {
 			for (ObjectData rel : bothRelationships) {
-				PropertyData<?> filterId = rel.getProperties().getProperties().get(PropertyIds.SOURCE_ID);
-				if (objectId.equals(filterId)) {
+				PropertyData<?> filterProp = rel.getProperties().getProperties().get(propertyId);
+				if (filterProp != null && objectId.equals(filterProp.getFirstValue())) {
 					filtered.add(rel);
 				}
 			}
@@ -704,7 +711,7 @@ public class CompileServiceImpl implements CompileService {
 
 				// Retrieve the content(using caches)
 				String objectId = change.getId();
-				Content content = new Content();
+				Content content;
 
 				if (cachedContents.containsKey(objectId)) {
 					content = cachedContents.get(objectId);
@@ -1136,6 +1143,7 @@ public class CompileServiceImpl implements CompileService {
 		List<Rendition> _renditions = contentService.getRenditions(repositoryId, content.getId());
 		if (CollectionUtils.isNotEmpty(_renditions)) {
 			for (Rendition _rd : _renditions) {
+				if (_rd == null) continue;
 				RenditionDataImpl rd = new RenditionDataImpl();
 				rd.setStreamId(_rd.getId());
 				rd.setMimeType(_rd.getMimetype());
@@ -1209,6 +1217,31 @@ public class CompileServiceImpl implements CompileService {
 				log.error("TypeDefinition is null for objectType: " + objectType + " in repository: " + repositoryId);
 				// CRITICAL FIX (2025-12-27): Add fallback basic properties for orphaned objects
 				return compileBasicFallbackProperties(content, objectType);
+			}
+
+			// TCK FIX: Ensure type definition base type matches content kind. If content was stored with wrong
+			// objectType (e.g. folder with document type id), use the standard base type so we don't return
+			// e.g. cmis:parentId under a document type (causes "Cannot convert property cmis:parentId").
+			if (content.isFolder() && tdf.getBaseTypeId() != BaseTypeId.CMIS_FOLDER) {
+				objectType = "cmis:folder";
+				tdfc = typeManager.getTypeById(repositoryId, objectType);
+				tdf = (tdfc != null && tdfc.getTypeDefinition() != null) ? tdfc.getTypeDefinition() : tdf;
+			} else if (content.isDocument() && tdf.getBaseTypeId() != BaseTypeId.CMIS_DOCUMENT) {
+				objectType = "cmis:document";
+				tdfc = typeManager.getTypeById(repositoryId, objectType);
+				tdf = (tdfc != null && tdfc.getTypeDefinition() != null) ? tdfc.getTypeDefinition() : tdf;
+			} else if (content.isRelationship() && tdf.getBaseTypeId() != BaseTypeId.CMIS_RELATIONSHIP) {
+				objectType = "cmis:relationship";
+				tdfc = typeManager.getTypeById(repositoryId, objectType);
+				tdf = (tdfc != null && tdfc.getTypeDefinition() != null) ? tdfc.getTypeDefinition() : tdf;
+			} else if (content.isPolicy() && tdf.getBaseTypeId() != BaseTypeId.CMIS_POLICY) {
+				objectType = "cmis:policy";
+				tdfc = typeManager.getTypeById(repositoryId, objectType);
+				tdf = (tdfc != null && tdfc.getTypeDefinition() != null) ? tdfc.getTypeDefinition() : tdf;
+			} else if (content.isItem() && tdf.getBaseTypeId() != BaseTypeId.CMIS_ITEM) {
+				objectType = "cmis:item";
+				tdfc = typeManager.getTypeById(repositoryId, objectType);
+				tdf = (tdfc != null && tdfc.getTypeDefinition() != null) ? tdfc.getTypeDefinition() : tdf;
 			}
 
 			if (content.isFolder()) {
@@ -1336,8 +1369,10 @@ public class CompileServiceImpl implements CompileService {
 		// cmis:objectId - MUST be first
 		addProperty(properties, tdf, PropertyIds.OBJECT_ID, content.getId());
 		
-		// cmis:objectTypeId - MUST be early in order  
-		addProperty(properties, tdf, PropertyIds.OBJECT_TYPE_ID, content.getObjectType());
+		// cmis:objectTypeId - Use resolved type id (tdf.getId()) so client gets a type that matches properties.
+		// When we corrected to base type (e.g. cmis:folder) due to content/type mismatch, returning
+		// the stored objectType would cause "object not found" if that type is not in the repository.
+		addProperty(properties, tdf, PropertyIds.OBJECT_TYPE_ID, tdf.getId());
 		
 		// cmis:name and cmis:description
 		addProperty(properties, tdf, PropertyIds.NAME, content.getName());
@@ -1490,7 +1525,7 @@ public class CompileServiceImpl implements CompileService {
 
 		// TCK compliance verified without this property for documents
 
-		Boolean isImmutable = (document.isImmutable() == null) ? false : document.isImmutable();
+		Boolean isImmutable = (document.isImmutable() == null) ? Boolean.FALSE : document.isImmutable();
 		try {
 			addProperty(properties, tdf, PropertyIds.IS_IMMUTABLE, isImmutable);
 		} catch (Exception e) {
@@ -1796,9 +1831,6 @@ public class CompileServiceImpl implements CompileService {
 	}
 
 	private void setCmisSecondaryTypes(String repositoryId, PropertiesImpl props, Content content, TypeDefinition tdf) {
-		if (log.isDebugEnabled()) {
-			log.debug("setCmisSecondaryTypes called for content: " + content.getId());
-		}
 		List<Aspect> aspects = content.getAspects();
 		List<String> secondaryIds = new ArrayList<String>();
 
@@ -1811,26 +1843,15 @@ public class CompileServiceImpl implements CompileService {
 
 		// CMIS 1.1 COMPLIANCE FIX: Always provide empty list instead of null for multi-cardinality properties
 		// This ensures CMIS Browser Binding returns [] instead of null for compliance
-		// Fixed: Create PropertyIdImpl directly to force empty list instead of null
 		PropertyDefinition<?> pdf = tdf.getPropertyDefinitions().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 		if (checkAddProperty(props, tdf, PropertyIds.SECONDARY_OBJECT_TYPE_IDS)) {
-			if (log.isDebugEnabled()) {
-				log.debug("Creating PropertyIdImpl with list size: " + secondaryIds.size());
-			}
 			PropertyIdImpl propId = new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
-			if (log.isDebugEnabled()) {
-				log.debug("PropertyIdImpl created, getValues() = " + propId.getValues());
-				log.debug("PropertyIdImpl getFirstValue() = " + propId.getFirstValue());
-			}
 			if (pdf != null) {
 				propId.setDisplayName(pdf.getDisplayName());
 				propId.setLocalName(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 				propId.setQueryName(pdf.getQueryName());
 			}
 			props.addProperty(propId);
-			if (log.isDebugEnabled()) {
-				log.debug("PropertyIdImpl added to properties");
-			}
 		}
 
 		// each secondary properties

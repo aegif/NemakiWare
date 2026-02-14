@@ -35,7 +35,6 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.common.ErrorCode;
 import jp.aegif.nemaki.model.Content;
@@ -43,7 +42,11 @@ import jp.aegif.nemaki.util.spring.SpringContext;
 
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
+import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
@@ -125,22 +128,46 @@ public class PermissionResource extends ResourceBase {
 		return service;
 	}
 
+	private ExceptionService getExceptionService() {
+		return SpringContext.getApplicationContext()
+				.getBean("ExceptionService", ExceptionService.class);
+	}
+
 	@SuppressWarnings("unchecked")
 	@GET
 	@Produces(MediaType.APPLICATION_JSON)
-	public String getACL(@PathParam("repositoryId") String repositoryId, @PathParam("objectId") String objectId) {
+	public String getACL(@PathParam("repositoryId") String repositoryId, @PathParam("objectId") String objectId,
+			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
 		try {
+			// Authentication check
+			CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+			if (callContext == null) {
+				status = false;
+				addErrMsg(errMsg, "acl", "Authentication required");
+				return makeResult(status, result, errMsg).toJSONString();
+			}
+
 			Content content = getContentServiceSafe().getContent(repositoryId, objectId);
 			if (content == null) {
 				status = false;
 				addErrMsg(errMsg, "object", ErrorCode.ERR_NOTFOUND);
 			} else {
+				// Object-level permission check
+				try {
+					getExceptionService().permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_ACL_OBJECT, content);
+				} catch (CmisPermissionDeniedException e) {
+					status = false;
+					addErrMsg(errMsg, "acl", "Permission denied");
+					return makeResult(status, result, errMsg).toJSONString();
+				}
+
 				boolean aclInherited = getContentServiceSafe().getAclInheritedWithDefault(repositoryId, content);
 
+				// Use calculateAcl to get both local and inherited ACLs
 				jp.aegif.nemaki.model.Acl acl = getContentServiceSafe().calculateAcl(repositoryId, content);
 				JSONObject aclJson;
 				if (acl != null) {
@@ -200,9 +227,15 @@ public class PermissionResource extends ResourceBase {
 			
 			// Convert JSON to CMIS ACL
 			org.apache.chemistry.opencmis.commons.data.Acl cmisAcl = convertJsonToCmisAcl(inputJson, breakInheritance);
-			
-			// Apply ACL to the object using AclService
-			getAclServiceSafe().applyAcl(new SystemCallContext(repositoryId), repositoryId, objectId, cmisAcl, aclPropagation);
+
+			// SECURITY FIX: Use the actual user's CallContext instead of SystemCallContext.
+			// SystemCallContext bypassed AclServiceImpl.applyAcl's permissionDenied(CAN_APPLY_ACL_OBJECT) check,
+			// allowing any authenticated user to modify ACLs on any object (privilege escalation).
+			CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+			if (callContext == null) {
+				throw new CmisPermissionDeniedException("Authentication required");
+			}
+			getAclServiceSafe().applyAcl(callContext, repositoryId, objectId, cmisAcl, aclPropagation);
 			
 			result.put("status", "success");
 		} catch (ParseException e) {
@@ -225,6 +258,7 @@ public class PermissionResource extends ResourceBase {
 		JSONArray permissions = new JSONArray();
 
 		if (acl != null) {
+			// Add local (direct) ACEs
 			if (acl.getLocalAces() != null) {
 				for (jp.aegif.nemaki.model.Ace ace : acl.getLocalAces()) {
 					JSONObject permission = new JSONObject();
@@ -235,12 +269,13 @@ public class PermissionResource extends ResourceBase {
 						perms.addAll(ace.getPermissions());
 					}
 					permission.put("permissions", perms);
-					permission.put("direct", true);
+					permission.put("direct", true);  // Local ACEs are direct
 
 					permissions.add(permission);
 				}
 			}
 
+			// Add inherited ACEs
 			if (acl.getInheritedAces() != null) {
 				for (jp.aegif.nemaki.model.Ace ace : acl.getInheritedAces()) {
 					JSONObject permission = new JSONObject();
@@ -251,7 +286,7 @@ public class PermissionResource extends ResourceBase {
 						perms.addAll(ace.getPermissions());
 					}
 					permission.put("permissions", perms);
-					permission.put("direct", false);
+					permission.put("direct", false);  // Inherited ACEs are not direct
 
 					permissions.add(permission);
 				}

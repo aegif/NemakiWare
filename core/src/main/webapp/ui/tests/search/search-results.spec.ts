@@ -21,12 +21,15 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
+import { TestHelper } from '../utils/test-helper';
 
 test.describe('Search Results Detailed Verification', () => {
   let authHelper: AuthHelper;
+  let testHelper: TestHelper;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
+    testHelper = new TestHelper(page);
 
     // Login as admin
     await authHelper.login();
@@ -35,8 +38,7 @@ test.describe('Search Results Detailed Verification', () => {
     await page.waitForTimeout(2000);
 
     // Mobile sidebar close logic (if needed)
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // Close sidebar to prevent overlay blocking
@@ -54,8 +56,7 @@ test.describe('Search Results Detailed Verification', () => {
 
   test('should display search-specific columns in search mode', async ({ page, browserName }) => {
     // Mobile detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find search input
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -93,14 +94,13 @@ test.describe('Search Results Detailed Verification', () => {
     await expect(creationDateHeader).toBeVisible({ timeout: 5000 });
   });
 
-  test.skip('should display path information in search results', async ({ page, browserName }) => {
+  test('should display path information in search results', async ({ page, browserName }) => {
     // SKIPPED: Test requires documents to exist in repository
     // This test depends on having searchable documents in the test environment
     // which may not exist in a clean test database
 
     // Mobile detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Perform search
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -132,8 +132,7 @@ test.describe('Search Results Detailed Verification', () => {
     // Test may skip if no documents matching "test" exist in repository
 
     // Mobile detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Perform search
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -155,14 +154,15 @@ test.describe('Search Results Detailed Verification', () => {
 
     // Verify objectType column shows Japanese label (ドキュメント or フォルダ) or CMIS type
     const firstRow = rows.first();
-    // Search mode columns: タイプ(0), 名前(1), オブジェクトタイプ(2), パス(3), 作成者(4), 作成日時(5)
-    const objectTypeCell = firstRow.locator('td').nth(2); // objectType is 3rd column (index 2)
+    // Search mode columns: checkbox(0), タイプ(1), 名前(2), オブジェクトタイプ(3), パス(4), 作成者(5), 作成日時(6)
+    // Note: rowSelection adds a checkbox column at index 0, shifting all indices by +1
+    const objectTypeCell = firstRow.locator('td').nth(3); // objectType is 4th column (index 3, after checkbox)
 
     const objectTypeText = await objectTypeCell.textContent();
-    // Check for Japanese labels or CMIS type prefix
+    // Check for Japanese labels or CMIS/NemakiWare type prefix
     const validObjectTypes = ['ドキュメント', 'フォルダ', 'cmis:document', 'cmis:folder'];
     const isValidType = validObjectTypes.some(type => objectTypeText?.includes(type));
-    expect(isValidType || objectTypeText?.startsWith('cmis:')).toBeTruthy();
+    expect(isValidType || objectTypeText?.startsWith('cmis:') || objectTypeText?.startsWith('nemaki:')).toBeTruthy();
   });
 
   test('should display createdBy and creationDate in search results', async ({ page, browserName }) => {
@@ -170,8 +170,7 @@ test.describe('Search Results Detailed Verification', () => {
     // Test may skip if no documents matching "test" exist in repository
 
     // Mobile detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Perform search
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -193,14 +192,15 @@ test.describe('Search Results Detailed Verification', () => {
 
     const firstRow = rows.first();
 
-    // Search mode columns: タイプ(0), 名前(1), オブジェクトタイプ(2), パス(3), 作成者(4), 作成日時(5)
+    // Search mode columns: checkbox(0), タイプ(1), 名前(2), オブジェクトタイプ(3), パス(4), 作成者(5), 作成日時(6)
+    // Note: rowSelection adds a checkbox column at index 0, shifting all indices by +1
     // Verify createdBy column
-    const createdByCell = firstRow.locator('td').nth(4);
+    const createdByCell = firstRow.locator('td').nth(5);
     const createdByText = await createdByCell.textContent();
     expect(createdByText).toBeTruthy();
 
     // Verify creationDate column has date format
-    const creationDateCell = firstRow.locator('td').nth(5);
+    const creationDateCell = firstRow.locator('td').nth(6);
     const creationDateText = await creationDateCell.textContent();
     expect(creationDateText).toBeTruthy();
     // Verify it contains date-like content (year or slash for date separator)
@@ -209,8 +209,7 @@ test.describe('Search Results Detailed Verification', () => {
 
   test('should switch to browse-mode columns when clearing search', async ({ page, browserName }) => {
     // Mobile detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Perform search first
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -260,8 +259,7 @@ test.describe('Search Results Detailed Verification', () => {
     // Test may skip if no documents matching "test" exist in repository
 
     // Mobile detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Perform search
     const searchInput = page.locator('input[placeholder*="検索"]').first();

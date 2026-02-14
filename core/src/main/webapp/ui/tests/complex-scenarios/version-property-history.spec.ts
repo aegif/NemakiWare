@@ -22,8 +22,8 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 import {
   TIMEOUTS,
   I18N_PATTERNS,
@@ -35,7 +35,7 @@ test.describe('Version and Property History Consistency', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
-  const testRunId = randomUUID().substring(0, 8);
+  const testRunId = generateTestId();
   const testDocumentName = `version-history-test-${testRunId}.txt`;
   const initialContent = `Initial content - ${testRunId}`;
   const version2Content = `Version 2 content - ${testRunId}`;
@@ -53,16 +53,7 @@ test.describe('Version and Property History Consistency', () => {
     await authHelper.login();
     await page.waitForTimeout(2000);
 
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
   });
@@ -70,8 +61,7 @@ test.describe('Version and Property History Consistency', () => {
   test('Step 1: Create initial document (Version 1.0)', async ({ page, browserName }) => {
     console.log(`Creating initial document: ${testDocumentName}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -99,8 +89,7 @@ test.describe('Version and Property History Consistency', () => {
   test('Step 2: Check out document and create Version 2.0', async ({ page, browserName }) => {
     console.log('Creating Version 2.0...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -179,8 +168,7 @@ test.describe('Version and Property History Consistency', () => {
   test('Step 3: Create Version 3.0 with different content', async ({ page, browserName }) => {
     console.log('Creating Version 3.0...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -241,8 +229,7 @@ test.describe('Version and Property History Consistency', () => {
   test('Step 4: View version history and verify all versions exist', async ({ page, browserName }) => {
     console.log('Viewing version history...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -286,8 +273,7 @@ test.describe('Version and Property History Consistency', () => {
   test('Step 5: Delete latest version and verify rollback to previous version', async ({ page, browserName }) => {
     console.log('Deleting latest version...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -340,8 +326,7 @@ test.describe('Version and Property History Consistency', () => {
   test('Step 6: Verify document content matches previous version after rollback', async ({ page, browserName }) => {
     console.log('Verifying content after version rollback...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });

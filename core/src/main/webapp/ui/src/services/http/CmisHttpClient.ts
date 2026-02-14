@@ -176,6 +176,9 @@ export class CmisHttpClient {
       
       const xhr = new XMLHttpRequest();
       
+      // Send HttpOnly cookies with all requests for cookie-based authentication
+      xhr.withCredentials = true;
+      
       // Guard against double-settlement (defensive programming)
       let settled = false;
       

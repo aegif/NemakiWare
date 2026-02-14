@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
+import { TestHelper } from '../utils/test-helper';
 
 /**
  * SKIPPED (2025-12-23) - Environment Pollution Blocking API Access
@@ -36,9 +37,11 @@ import { AuthHelper } from '../utils/auth-helper';
  */
 test.describe('System Folders (/.system)', () => {
   let authHelper: AuthHelper;
+  let testHelper: TestHelper;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
+    testHelper = new TestHelper(page);
 
     // Login as admin
     await authHelper.login();
@@ -47,8 +50,7 @@ test.describe('System Folders (/.system)', () => {
     await page.waitForTimeout(2000);
 
     // Close mobile sidebar if needed
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
@@ -64,8 +66,7 @@ test.describe('System Folders (/.system)', () => {
   });
 
   test('should display /.system folder and its subfolders', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // NOTE (2025-12-24): In environments with accumulated test data, .system folder
     // may be deep in pagination (page 15+ with 300+ items).
@@ -115,8 +116,7 @@ test.describe('System Folders (/.system)', () => {
   });
 
   test('should display users in /.system/users folder', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate via folder hierarchy instead of path query (path queries don't work for .system folders)
     // Step 1: Get root folder children
@@ -270,8 +270,7 @@ test.describe('System Folders (/.system)', () => {
   });
 
   test('should handle navigation to system folders via UI', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // NOTE (2025-12-24): Use API to get folder IDs and navigate via URL
     // to avoid pagination issues in environments with accumulated test data.

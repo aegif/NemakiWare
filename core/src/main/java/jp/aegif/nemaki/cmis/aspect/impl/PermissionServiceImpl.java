@@ -24,6 +24,7 @@ package jp.aegif.nemaki.cmis.aspect.impl;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -166,14 +167,17 @@ public class PermissionServiceImpl implements PermissionService {
 		
 		log.debug("Non-admin user " + userName + " proceeding with permission checks, userItem=" + (u != null ? "exists" : "null"));
 
-		// PWC doesn't accept any actions from a non-owner user
-		// Note: Admin users bypass this check (handled above), so they CAN manipulate PWC
+		// PWC: only the checkout owner (or admin, handled above) can perform actions
+		// The owner is granted full access without further ACL checks, since PWCs
+		// typically have empty ACL entries and rely on ownership for authorization
 		if(content.isDocument()){
 			Document document = (Document)content;
 			if(document.isPrivateWorkingCopy()){
 				VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
-				if(!userName.equals(vs.getVersionSeriesCheckedOutBy())){
-					return false;
+				if(userName.equals(vs.getVersionSeriesCheckedOutBy())){
+					return true;  // PWC owner has full access
+				} else {
+					return false; // Non-owner cannot access PWC
 				}
 			}
 		}
@@ -346,21 +350,25 @@ public class PermissionServiceImpl implements PermissionService {
 			return readSource | readTarget;
 		}
 
-		//Update action
+		// SECURITY FIX: Update and Delete actions now require write-level permissions on source/target.
+		// Previously used CAN_GET_OBJECT_RELATIONSHIPS_OBJECT (read-level), which allowed users
+		// with only read permission to update/delete relationships (including parentChild links).
+
+		//Update action — require CAN_UPDATE_PROPERTIES_OBJECT on source or target
 		if(PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT.equals(key)){
 			boolean updateSource =
-					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source, userName, groups);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source, userName, groups);
 			boolean updateTarget =
-					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target, userName, groups);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target, userName, groups);
 			return updateSource | updateTarget;
 		}
 
-		//Delete action
+		//Delete action — require CAN_DELETE_OBJECT on source or target
 		if(PermissionMapping.CAN_DELETE_OBJECT.equals(key)){
 			boolean deleteSource =
-					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source, userName, groups);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_DELETE_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source, userName, groups);
 			boolean deleteTarget =
-					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target, userName, groups);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_DELETE_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target, userName, groups);
 			return deleteSource | deleteTarget;
 		}
 
@@ -398,7 +406,7 @@ public class PermissionServiceImpl implements PermissionService {
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
 					|| BaseTypeId.CMIS_FOLDER.value().equals(baseType)
 					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
-						.equals(baseType));
+						.value().equals(baseType));
 		if (PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET.equals(key))
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
 					|| BaseTypeId.CMIS_FOLDER.value().equals(baseType)
@@ -609,6 +617,56 @@ public class PermissionServiceImpl implements PermissionService {
 		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
+
+
+	@Override
+	public Map<String, Boolean> checkPermissions(CallContext callContext, String repositoryId, String permissionKey,
+			Map<String, Acl> acls, Map<String, String> baseTypes, Map<String, Content> contents) {
+
+		Map<String, Boolean> result = new HashMap<>();
+		if (contents == null || contents.isEmpty()) {
+			return result;
+		}
+
+		String userName = callContext.getUsername();
+
+		// Get user info once for all checks
+		UserItem userItem = contentService.getUserItemById(repositoryId, userName);
+		boolean isAdmin = (userItem != null && userItem.isAdmin());
+
+		// Admin always passes all permission checks
+		if (isAdmin) {
+			for (String objectId : contents.keySet()) {
+				result.put(objectId, true);
+			}
+			log.debug("Admin user " + userName + " granted access to all " + contents.size() + " objects");
+			return result;
+		}
+
+		// Get groups once for all checks
+		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+
+		// Check permission for each content
+		for (Map.Entry<String, Content> entry : contents.entrySet()) {
+			String objectId = entry.getKey();
+			Content content = entry.getValue();
+
+			if (content == null) {
+				result.put(objectId, false);
+				continue;
+			}
+
+			Acl acl = acls.get(objectId);
+			String baseType = baseTypes.get(objectId);
+
+			// Use existing checkPermissionInternal with pre-fetched user/groups
+			Boolean hasPermission = checkPermissionInternal(callContext, repositoryId, permissionKey,
+					acl, baseType, content, userName, groups);
+			result.put(objectId, hasPermission != null ? hasPermission : false);
+		}
+
+		return result;
+	}
 
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;

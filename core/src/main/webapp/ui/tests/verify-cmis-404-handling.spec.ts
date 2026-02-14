@@ -132,6 +132,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { TestHelper } from './utils/test-helper';
 
 /**
  * SELECTOR FIX (2025-12-24) - Document Row Detection Fixed
@@ -147,6 +148,12 @@ import { test, expect } from '@playwright/test';
  * - All rows with buttons: '.ant-table-tbody tr button.ant-btn-link' (more flexible)
  */
 test.describe('CMIS API 404 Error Handling', () => {
+  let testHelper: TestHelper;
+
+  test.beforeEach(async ({ page }) => {
+    testHelper = new TestHelper(page);
+  });
+
   /**
    * FIX (2025-12-24): Route interception timing fixed
    *
@@ -201,8 +208,7 @@ test.describe('CMIS API 404 Error Handling', () => {
     console.log('✅ Route interception set up');
 
     // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // Look for hamburger menu toggle button
@@ -293,8 +299,7 @@ test.describe('CMIS API 404 Error Handling', () => {
     console.log('✅ Login successful');
 
     // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // Look for hamburger menu toggle button

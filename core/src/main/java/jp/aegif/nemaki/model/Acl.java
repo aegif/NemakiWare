@@ -21,13 +21,15 @@
  ******************************************************************************/
 package jp.aegif.nemaki.model;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map.Entry;
 
 //This class need to be calculated for the path of inherited ACEs
-public class Acl {
+public class Acl implements Serializable {
+	private static final long serialVersionUID = 1L;
 	private List<Ace> inheritedAces;
 	private List<Ace> localAces;
 

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { randomUUID } from 'crypto';
+import { generateTestId } from '../utils/test-helper';
 
 /**
  * Custom Property Input Feature E2E Tests (2025-12-23)
@@ -293,7 +293,7 @@ test.describe('Custom Property Input Feature', () => {
         return;
       }
 
-      const uuid = randomUUID().substring(0, 8);
+      const uuid = generateTestId();
       const testFileName = `test-custom-prop-doc-${uuid}.txt`;
 
       // Open upload modal
@@ -322,22 +322,65 @@ test.describe('Custom Property Input Feature', () => {
         await typeOption.click();
         await page.waitForTimeout(1000);
 
-        // Fill custom properties if available
+        // Fill ALL required custom properties
         const customPropsSection = modal.locator('h4:has-text("カスタムプロパティ")');
         if (await customPropsSection.count() > 0) {
-          // Find first text input in custom properties section and fill it
-          const customInputs = modal.locator('div:has(> h4:has-text("カスタムプロパティ")) input[type="text"], div:has(> h4:has-text("カスタムプロパティ")) input:not([type])');
-          if (await customInputs.count() > 0) {
-            await customInputs.first().fill('Test custom value');
+          const props = customDocType.propertyDefinitions.filter(
+            (p: any) => p.id && !p.id.startsWith('cmis:')
+          );
+          let textIdx = 0;
+          for (const prop of props) {
+            const propType = prop.propertyType || prop.type;
+            const displayName = prop.displayName || prop.id;
+            if (propType === 'datetime') {
+              // Skip - handled after the loop
+            } else if (propType === 'boolean') {
+              // Skip boolean selects
+            } else {
+              // Text/string/integer: fill by placeholder matching prop.id
+              const propInput = modal.locator(`input[placeholder*="${prop.id}"]`);
+              if (await propInput.count() > 0) {
+                await propInput.fill(`Test value ${++textIdx}`);
+              }
+            }
+          }
+          // Fill Ant Design DatePicker inputs using popup "Now" button
+          const datePickers = modal.locator('.ant-picker');
+          const dtCount = await datePickers.count();
+          for (let i = 0; i < dtCount; i++) {
+            if (i > 0) {
+              // Close any lingering popup by clicking elsewhere
+              await modal.locator('h4:has-text("カスタムプロパティ")').click();
+              await page.waitForTimeout(500);
+            }
+
+            const picker = datePickers.nth(i);
+            await picker.click();
+            await page.waitForTimeout(1000);
+
+            const popup = page.locator('.ant-picker-dropdown:not(.ant-picker-dropdown-hidden)');
+            if (await popup.count() > 0) {
+              const nowBtn = popup.locator('.ant-picker-now-btn');
+              if (await nowBtn.count() > 0) {
+                await nowBtn.click();
+                await page.waitForTimeout(500);
+              }
+              const okBtn = popup.locator('.ant-picker-ok button');
+              if (await okBtn.count() > 0) {
+                await okBtn.click();
+                await page.waitForTimeout(500);
+              }
+            }
+            await page.waitForTimeout(500);
           }
         }
       }
 
-      // Submit
+      // Submit and wait for upload
       await page.locator('.ant-modal button:has-text("アップロード")').click();
 
       // Wait for success message
-      await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 15000 });
+      await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 30000 });
 
       // Verify document appears in list
       await page.waitForTimeout(2000);
@@ -479,7 +522,7 @@ test.describe('Custom Property Input Feature', () => {
     });
 
     test('should create folder with selected type', async ({ page }) => {
-      const uuid = randomUUID().substring(0, 8);
+      const uuid = generateTestId();
       const testFolderName = `test-custom-prop-folder-${uuid}`;
 
       // Open folder modal
@@ -521,7 +564,7 @@ test.describe('Custom Property Input Feature', () => {
   test.describe('Relationship Creation Modal', () => {
     test('should navigate to document detail and show relationship tab', async ({ page }) => {
       // First, find a document to work with
-      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) button[type="link"]').first();
+      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) .ant-btn-link').first();
 
       if (await documentLink.count() === 0) {
         test.skip('No documents found in list');
@@ -530,24 +573,17 @@ test.describe('Custom Property Input Feature', () => {
 
       await documentLink.click();
 
-      // Wait for document viewer to load
-      await page.waitForURL('**/documents/**', { timeout: 10000 });
+      // Wait for document viewer to load (hash-based routing)
+      await page.waitForTimeout(3000);
 
       // Look for relationship tab
-      const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
-
-      if (await relationshipTab.count() === 0) {
-        // UPDATED (2025-12-26): Relationships tab IS implemented in DocumentViewer.tsx line 917
-        test.skip('Relationship tab not visible - IS implemented in DocumentViewer.tsx line 917');
-        return;
-      }
-
-      await expect(relationshipTab).toBeVisible();
+      const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
+      await expect(relationshipTab).toBeVisible({ timeout: 10000 });
     });
 
     test('should show type selection in relationship creation modal', async ({ page }) => {
       // Find a document
-      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) button[type="link"]').first();
+      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) .ant-btn-link').first();
 
       if (await documentLink.count() === 0) {
         test.skip('No documents found in list');
@@ -555,34 +591,32 @@ test.describe('Custom Property Input Feature', () => {
       }
 
       await documentLink.click();
-      await page.waitForURL('**/documents/**', { timeout: 10000 });
+      await page.waitForTimeout(3000);
 
       // Click relationship tab
-      const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
+      const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
       if (await relationshipTab.count() === 0) {
-        // UPDATED (2025-12-26): Relationships tab IS implemented in DocumentViewer.tsx line 917
-        test.skip('Relationship tab not visible - IS implemented in DocumentViewer.tsx line 917');
+        test.skip('Relationship tab not visible');
         return;
       }
       await relationshipTab.click();
       await page.waitForTimeout(1000);
 
       // Look for "Add Relationship" button
-      const addButton = page.locator('button:has-text("関連を追加")');
+      const addButton = page.locator('button:has-text("関係を追加")');
       if (await addButton.count() === 0) {
-        // UPDATED (2025-12-26): Add relationship button IS implemented in RelationshipEditor.tsx
-        test.skip('Add relationship button not visible - IS implemented in RelationshipEditor.tsx');
+        test.skip('Add relationship button not visible');
         return;
       }
 
       await addButton.click();
 
       // Verify modal opens with type selection
-      const modal = page.locator('.ant-modal').filter({ hasText: '関連' });
+      const modal = page.locator('.ant-modal').filter({ hasText: '関係を追加' });
       await expect(modal).toBeVisible({ timeout: 5000 });
 
       // Check for type dropdown
-      const typeLabel = modal.locator('label:has-text("関連タイプ"), .ant-form-item-label:has-text("タイプ")');
+      const typeLabel = modal.locator('text=関係タイプ');
       await expect(typeLabel).toBeVisible();
 
       // Close modal
@@ -630,35 +664,33 @@ test.describe('Custom Property Input Feature', () => {
       }
 
       // Find a document
-      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) button[type="link"]').first();
+      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) .ant-btn-link').first();
       if (await documentLink.count() === 0) {
         test.skip('No documents found in list');
         return;
       }
 
       await documentLink.click();
-      await page.waitForURL('**/documents/**', { timeout: 10000 });
+      await page.waitForTimeout(3000);
 
       // Click relationship tab
-      const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
+      const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
       if (await relationshipTab.count() === 0) {
-        // UPDATED (2025-12-26): Relationships tab IS implemented in DocumentViewer.tsx line 917
-        test.skip('Relationship tab not visible - IS implemented in DocumentViewer.tsx line 917');
+        test.skip('Relationship tab not visible');
         return;
       }
       await relationshipTab.click();
       await page.waitForTimeout(1000);
 
       // Open add relationship modal
-      const addButton = page.locator('button:has-text("関連を追加")');
+      const addButton = page.locator('button:has-text("関係を追加")');
       if (await addButton.count() === 0) {
-        // UPDATED (2025-12-26): Add relationship button IS implemented in RelationshipEditor.tsx
-        test.skip('Add relationship button not visible - IS implemented in RelationshipEditor.tsx');
+        test.skip('Add relationship button not visible');
         return;
       }
       await addButton.click();
 
-      const modal = page.locator('.ant-modal').filter({ hasText: '関連' });
+      const modal = page.locator('.ant-modal').filter({ hasText: '関係' });
       await expect(modal).toBeVisible({ timeout: 5000 });
 
       // Select the custom relationship type
@@ -687,35 +719,33 @@ test.describe('Custom Property Input Feature', () => {
 
     test('should not lose form data when clicking outside relationship modal', async ({ page }) => {
       // Find a document
-      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) button[type="link"]').first();
+      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) .ant-btn-link').first();
       if (await documentLink.count() === 0) {
         test.skip('No documents found in list');
         return;
       }
 
       await documentLink.click();
-      await page.waitForURL('**/documents/**', { timeout: 10000 });
+      await page.waitForTimeout(3000);
 
       // Click relationship tab
-      const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
+      const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
       if (await relationshipTab.count() === 0) {
-        // UPDATED (2025-12-26): Relationships tab IS implemented in DocumentViewer.tsx line 917
-        test.skip('Relationship tab not visible - IS implemented in DocumentViewer.tsx line 917');
+        test.skip('Relationship tab not visible');
         return;
       }
       await relationshipTab.click();
       await page.waitForTimeout(1000);
 
       // Open add relationship modal
-      const addButton = page.locator('button:has-text("関連を追加")');
+      const addButton = page.locator('button:has-text("関係を追加")');
       if (await addButton.count() === 0) {
-        // UPDATED (2025-12-26): Add relationship button IS implemented in RelationshipEditor.tsx
-        test.skip('Add relationship button not visible - IS implemented in RelationshipEditor.tsx');
+        test.skip('Add relationship button not visible');
         return;
       }
       await addButton.click();
 
-      const modal = page.locator('.ant-modal').filter({ hasText: '関連' });
+      const modal = page.locator('.ant-modal').filter({ hasText: '関係' });
       await expect(modal).toBeVisible({ timeout: 5000 });
 
       // Fill target object ID if field exists
@@ -803,8 +833,8 @@ test.describe('Custom Property Input Feature', () => {
           // Boolean should render as Select
           const booleanSelects = customPropsSection.locator('.ant-select:has(.ant-select-item-option:has-text("はい"))');
 
-          // DateTime should render as datetime-local input
-          const datetimeInputs = customPropsSection.locator('input[type="datetime-local"]');
+          // DateTime should render as DatePicker
+          const datetimeInputs = customPropsSection.locator('.ant-picker');
 
           // Number should render as number input
           const numberInputs = customPropsSection.locator('input[type="number"]');

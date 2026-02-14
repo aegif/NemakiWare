@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { randomUUID } from 'crypto';
+import { generateTestId } from '../utils/test-helper';
 
 /**
  * Helper Functions for ACL API Testing
@@ -208,7 +208,7 @@ test.describe('ACL Operations - API Direct Tests', () => {
     test.setTimeout(120000); // 2 minutes for setup
 
     // Generate unique test data with 8-character UUID prefix
-    const uuid = randomUUID().split('-')[0];
+    const uuid = generateTestId();
     testFolderName = `api-test-folder-${uuid}`;
     testUsername = `apitest${uuid}`;
 
@@ -437,7 +437,7 @@ test.describe('ACL Operations - Error Cases', () => {
 
     try {
       // Create a test folder
-      const uuid = randomUUID().split('-')[0];
+      const uuid = generateTestId();
       const testFolderName = `error-test-folder-${uuid}`;
       console.log(`Test: Creating test folder "${testFolderName}"`);
 
@@ -493,7 +493,7 @@ test.describe('ACL Operations - Error Cases', () => {
 
     try {
       // Create a test folder
-      const uuid = randomUUID().split('-')[0];
+      const uuid = generateTestId();
       const testFolderName = `error-test-folder-${uuid}`;
       const nonExistentUser = `nonexistent${uuid}`;
 
@@ -549,7 +549,7 @@ test.describe('ACL Operations - Error Cases', () => {
 
     try {
       // Create a test folder
-      const uuid = randomUUID().split('-')[0];
+      const uuid = generateTestId();
       const testFolderName = `error-test-folder-${uuid}`;
       const testUsername = `duptest${uuid}`;
 
@@ -626,7 +626,7 @@ test.describe('ACL Operations - Multiple Users', () => {
    * Multi-user ACL operations verified working via manual API testing.
    * Re-enable after implementing ACL batch operation synchronization.
    */
-  test.skip('should add and remove multiple users in single operations', async ({ browser }) => {
+  test('should add and remove multiple users in single operations', async ({ browser }) => {
     test.setTimeout(60000);
 
     const context = await browser.newContext();
@@ -635,7 +635,7 @@ test.describe('ACL Operations - Multiple Users', () => {
 
     try {
       // Create a test folder
-      const uuid = randomUUID().split('-')[0];
+      const uuid = generateTestId();
       const testFolderName = `multi-user-test-folder-${uuid}`;
       console.log(`Test: Creating test folder "${testFolderName}"`);
 
@@ -750,7 +750,7 @@ test.describe('ACL Operations - Permission Combinations', () => {
   const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
 
   test('should correctly apply different permission combinations', async ({ browser }) => {
-    test.setTimeout(180000); // 3 minutes for multiple ACL operations
+    test.setTimeout(120000); // 2 minutes for multiple ACL operations
 
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -758,7 +758,7 @@ test.describe('ACL Operations - Permission Combinations', () => {
 
     try {
       // Create a test folder
-      const uuid = randomUUID().split('-')[0];
+      const uuid = generateTestId();
       const testFolderName = `perm-combo-test-folder-${uuid}`;
       console.log(`Test: Creating test folder "${testFolderName}"`);
 

@@ -50,8 +50,7 @@ test.describe('Layout Navigation', () => {
     await testHelper.waitForAntdLoad();
 
     // MOBILE FIX: Close sidebar on mobile browsers to prevent overlay issues
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button').filter({ has: page.locator('[data-icon="menu-fold"], [data-icon="menu-unfold"]') });
@@ -67,8 +66,7 @@ test.describe('Layout Navigation', () => {
   });
 
   test('should display full logo when sidebar is expanded', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // On mobile, we need to expand the sidebar first
     if (isMobile) {
@@ -93,8 +91,7 @@ test.describe('Layout Navigation', () => {
   });
 
   test('should toggle sidebar collapse state', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find the toggle button
     const menuToggle = page.locator('button').filter({
@@ -123,8 +120,7 @@ test.describe('Layout Navigation', () => {
   });
 
   test('should navigate to documents page from menu', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // First navigate away from documents if already there
     const searchMenuItem = page.locator('.ant-menu-item').filter({ hasText: /検索|Search/i });
@@ -147,8 +143,7 @@ test.describe('Layout Navigation', () => {
   });
 
   test('should navigate to search page from menu', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     const searchMenuItem = page.locator('.ant-menu-item').filter({ hasText: /検索|Search/i });
 
@@ -163,8 +158,7 @@ test.describe('Layout Navigation', () => {
   });
 
   test('should expand admin submenu and show children', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find admin submenu
     const adminSubmenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
@@ -192,8 +186,7 @@ test.describe('Layout Navigation', () => {
   });
 
   test('should navigate to user management from admin submenu', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Expand admin submenu first
     const adminSubmenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
@@ -217,8 +210,7 @@ test.describe('Layout Navigation', () => {
   });
 
   test('should navigate to group management from admin submenu', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Expand admin submenu first
     const adminSubmenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
@@ -242,8 +234,7 @@ test.describe('Layout Navigation', () => {
   });
 
   test('should navigate to type management from admin submenu', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Expand admin submenu first
     const adminSubmenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
@@ -267,8 +258,7 @@ test.describe('Layout Navigation', () => {
   });
 
   test('should navigate to archive management from admin submenu', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Expand admin submenu first
     const adminSubmenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
@@ -313,8 +303,7 @@ test.describe('Layout Navigation', () => {
   });
 
   test('should display user dropdown with username', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Look for user avatar or username in header
     const header = page.locator('.ant-layout-header');
@@ -333,8 +322,7 @@ test.describe('Layout Navigation', () => {
   });
 
   test('should show logout option in user dropdown', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find and click user dropdown
     const header = page.locator('.ant-layout-header');
@@ -357,8 +345,7 @@ test.describe('Layout Navigation', () => {
   });
 
   test('should highlight current menu item based on route', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
@@ -377,8 +364,7 @@ test.describe('Layout Navigation', () => {
   });
 
   test('should perform logout and redirect to login page', async ({ page, browserName, context }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find and click user dropdown
     const header = page.locator('.ant-layout-header');
@@ -436,8 +422,7 @@ test.describe('Layout Sidebar Collapse', () => {
   });
 
   test('should show "N" logo when sidebar is collapsed', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find the toggle button
     const menuToggle = page.locator('button').filter({
@@ -465,8 +450,7 @@ test.describe('Layout Sidebar Collapse', () => {
   });
 
   test('should hide menu text when sidebar is collapsed', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find the toggle button
     const menuToggle = page.locator('button').filter({
@@ -494,8 +478,7 @@ test.describe('Layout Sidebar Collapse', () => {
   });
 
   test('should preserve navigation functionality when sidebar is collapsed', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Collapse the sidebar first
     const menuToggle = page.locator('button').filter({

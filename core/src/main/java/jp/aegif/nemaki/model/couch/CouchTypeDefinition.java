@@ -142,6 +142,7 @@ public class CouchTypeDefinition extends CouchNodeBase {
 							case "typeMutabilityUpdate": this.typeMutabilityUpdate = boolValue; break;
 							case "typeMutabilityDelete": this.typeMutabilityDelete = boolValue; break;
 							case "versionable": this.versionable = boolValue; break;
+					default: break;
 						}
 					}
 				}

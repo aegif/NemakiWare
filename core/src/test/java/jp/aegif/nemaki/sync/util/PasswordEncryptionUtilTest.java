@@ -122,9 +122,11 @@ public class PasswordEncryptionUtilTest {
     @Test
     public void testEncryptEmptyPassword() {
         String encrypted = PasswordEncryptionUtil.encrypt("");
-        String decrypted = PasswordEncryptionUtil.decrypt(encrypted);
-        
-        assertEquals("Empty password should encrypt and decrypt correctly", "", decrypted);
+
+        // Empty string is returned as-is (not encrypted), which is the correct behavior
+        assertEquals("Empty password should be returned as-is", "", encrypted);
+        assertFalse("Empty password should not be in encrypted format",
+                PasswordEncryptionUtil.isEncrypted(encrypted));
     }
 
     @Test

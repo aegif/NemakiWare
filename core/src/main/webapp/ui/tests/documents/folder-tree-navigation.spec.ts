@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 /**
  * FolderTree Component Navigation E2E Tests
@@ -95,8 +95,7 @@ test.describe('FolderTree Navigation', () => {
 
   test('should display folder tree with visual hierarchy', async ({ page, browserName }) => {
     // Skip on mobile - folder tree is hidden
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -123,8 +122,7 @@ test.describe('FolderTree Navigation', () => {
 
   test('should show instruction text for click interactions', async ({ page, browserName }) => {
     // Skip on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -156,8 +154,7 @@ test.describe('FolderTree Navigation', () => {
 
   test('should select folder on single click', async ({ page, browserName }) => {
     // Skip on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -213,8 +210,7 @@ test.describe('FolderTree Navigation', () => {
 
   test('should expand folder tree node on toggle click', async ({ page, browserName }) => {
     // Skip on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -264,8 +260,7 @@ test.describe('FolderTree Navigation', () => {
 
   test('should update main content pane when folder selected', async ({ page, browserName }) => {
     // Skip on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -274,7 +269,7 @@ test.describe('FolderTree Navigation', () => {
     }
 
     // Create a test folder to ensure we have something to navigate to
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const testFolderName = `test-tree-${uuid}-nav`;
 
     const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
@@ -331,8 +326,7 @@ test.describe('FolderTree Navigation', () => {
 
   test('should show current and selected folder distinction', async ({ page, browserName }) => {
     // Skip on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -409,10 +403,9 @@ test.describe('FolderTree Navigation', () => {
    * Folder tree double-click navigation verified working via manual testing.
    * Re-enable after implementing more robust tree state synchronization.
    */
-  test.skip('should handle double-click to make folder current', async ({ page, browserName }) => {
+  test('should handle double-click to make folder current', async ({ page, browserName }) => {
     // Skip on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -421,7 +414,7 @@ test.describe('FolderTree Navigation', () => {
     }
 
     // Create nested folder structure for testing
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const parentName = `test-tree-${uuid}-parent`;
     const childName = `test-tree-${uuid}-child`;
 
@@ -522,10 +515,9 @@ test.describe('FolderTree Navigation', () => {
    * Folder tree lazy loading verified working via manual testing.
    * Re-enable after implementing isolated test folder environment.
    */
-  test.skip('should load children on tree node expansion', async ({ page, browserName }) => {
+  test('should load children on tree node expansion', async ({ page, browserName }) => {
     // Skip on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -534,7 +526,7 @@ test.describe('FolderTree Navigation', () => {
     }
 
     // Create a folder with child to test lazy loading
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const parentName = `test-tree-${uuid}-lazy-parent`;
     const childName = `test-tree-${uuid}-lazy-child`;
 

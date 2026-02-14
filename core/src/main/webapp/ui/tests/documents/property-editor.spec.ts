@@ -127,13 +127,13 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 test.describe('PropertyEditor Component Tests', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
-  const testDocName = `test-prop-editor-${randomUUID().substring(0, 8)}.txt`;
+  const testDocName = `test-prop-editor-${generateTestId()}.txt`;
   let testDocId: string;
 
   test.beforeEach(async ({ page, browserName }) => {
@@ -149,26 +149,11 @@ test.describe('PropertyEditor Component Tests', () => {
     await testHelper.navigateToDocuments();
     await page.waitForTimeout(1000);
 
-    // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-
-      if (await menuToggle.count() > 0) {
-        try {
-          await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500);
-        } catch (error) {
-          // Continue even if sidebar close fails
-        }
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     // CRITICAL FIX (2025-12-26): Ensure test document exists before each test
     // This eliminates data-dependent test skips
-    const isMobile = isMobileChrome;
+    const isMobile = testHelper.isMobile(browserName);
     const docExists = await testHelper.ensureTestDocument(
       testDocName,
       'Test content for PropertyEditor testing',
@@ -180,8 +165,7 @@ test.describe('PropertyEditor Component Tests', () => {
   });
 
   test('should verify test document exists and open properties tab', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Test document should be ensured by beforeEach hook
     // Verify it exists in table
@@ -208,8 +192,7 @@ test.describe('PropertyEditor Component Tests', () => {
   });
 
   test('should display string properties with correct input type', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForTimeout(2000);
 
@@ -263,8 +246,7 @@ test.describe('PropertyEditor Component Tests', () => {
   });
 
   test('should display integer/decimal properties with InputNumber', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForTimeout(2000);
 
@@ -300,8 +282,7 @@ test.describe('PropertyEditor Component Tests', () => {
   });
 
   test('should display boolean properties with Switch component', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForTimeout(2000);
 
@@ -347,8 +328,7 @@ test.describe('PropertyEditor Component Tests', () => {
   });
 
   test('should display datetime properties with DatePicker', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForTimeout(2000);
 
@@ -396,8 +376,7 @@ test.describe('PropertyEditor Component Tests', () => {
   });
 
   test('should display updatable=false properties as disabled with read-only indicator', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForTimeout(2000);
 
@@ -450,8 +429,7 @@ test.describe('PropertyEditor Component Tests', () => {
   });
 
   test('should show required property validation with asterisk', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForTimeout(2000);
 
@@ -511,8 +489,7 @@ test.describe('PropertyEditor Component Tests', () => {
   });
 
   test('should display multi-value properties with tags mode Select', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForTimeout(2000);
 
@@ -556,8 +533,7 @@ test.describe('PropertyEditor Component Tests', () => {
   });
 
   test('should clean up test document', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     console.log(`PropertyEditor Cleanup: Cleaning up document: ${testDocName}`);
 

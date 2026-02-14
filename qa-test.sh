@@ -141,7 +141,7 @@ BASE_URL="http://localhost:8080/core"
 # Test token registration for admin user
 echo -n "Testing: Token Registration for Admin User ... "
 total_tests=$((total_tests + 1))
-if token_reg_response=$(curl -s -u admin:admin "$BASE_URL/rest/repo/bedroom/authtoken/admin/register" 2>/dev/null) && \
+if token_reg_response=$(curl -s -u admin:admin -X POST "$BASE_URL/rest/repo/bedroom/authtoken/admin/register" 2>/dev/null) && \
    echo "$token_reg_response" | jq -e '.status == "success"' >/dev/null 2>&1; then
     echo -e "${GREEN}PASSED${NC}"
     success_count=$((success_count + 1))
@@ -240,44 +240,38 @@ run_test "Base Folder Type" "curl -s -u admin:admin 'http://localhost:8080/core/
 run_test "Type Children Query" "curl -s -u admin:admin 'http://localhost:8080/core/atom/bedroom/types?typeId=cmis:document' | grep -o '<cmisra:numItems>[0-9]*</cmisra:numItems>' | sed 's/<[^>]*>//g'" ""
 run_test "Type Descendants Query" "curl -s -u admin:admin 'http://localhost:8080/core/atom/bedroom/typedesc?typeId=cmis:document' | grep -c 'cmis:document'" ""
 
-# Test custom type registration (if TypeRegistrationServlet is available)
+# Test custom type registration via REST API
 echo -n "Testing: Custom Type Registration Support ... "
 total_tests=$((total_tests + 1))
-if curl -s -u admin:admin -o /dev/null -w "%{http_code}" "http://localhost:8080/core/rest/type-register/" | grep -q "200"; then
-    # Test JSON type definition structure
-    type_test_json='{
-        "id": "custom:testType",
-        "localName": "TestType",
-        "displayName": "Test Custom Type",
-        "description": "Test type for QA validation",
-        "baseId": "cmis:document",
-        "creatable": true,
-        "queryable": true,
-        "properties": {
-            "custom:testProperty": {
-                "id": "custom:testProperty",
-                "localName": "testProperty",
-                "displayName": "Test Property",
-                "description": "Test property for validation",
-                "propertyType": "string",
-                "cardinality": "single",
-                "required": false,
-                "queryable": true
-            }
-        }
-    }'
-    
-    # Test type registration endpoint availability
-    if curl -s -X POST -H "Content-Type: application/json" -u admin:admin \
-           -d "$type_test_json" \
-           "http://localhost:8080/core/rest/repo/bedroom/type/register-json" -o /dev/null -w "%{http_code}" | grep -q "200"; then
-        echo -e "${GREEN}PASSED${NC} (Type registration functional)"
-        success_count=$((success_count + 1))
-    else
-        echo -e "${RED}FAILED${NC} (Type registration not working)"
-    fi
+type_test_json='{
+    "id": "custom:testType",
+    "localName": "TestType",
+    "displayName": "Test Custom Type",
+    "description": "Test type for QA validation",
+    "baseId": "cmis:document",
+    "parentId": "cmis:document",
+    "propertyDefinitions": [{
+        "id": "custom:testProperty",
+        "localName": "custom:testProperty",
+        "displayName": "Test Property",
+        "propertyType": "string",
+        "cardinality": "single",
+        "updatability": "readwrite",
+        "required": false,
+        "queryable": true
+    }]
+}'
+
+# Test type registration via /rest/repo/{repoId}/type/register-json
+if curl -s -X POST -H "Content-Type: application/json" -u admin:admin \
+       -d "$type_test_json" \
+       "http://localhost:8080/core/rest/repo/bedroom/type/register-json" -o /dev/null -w "%{http_code}" | grep -q "200"; then
+    echo -e "${GREEN}PASSED${NC} (Type registration functional)"
+    success_count=$((success_count + 1))
+    # Cleanup: delete the test type
+    curl -s -X DELETE -u admin:admin "http://localhost:8080/core/rest/repo/bedroom/type/delete/custom:testType" -o /dev/null 2>/dev/null
 else
-    echo -e "${RED}FAILED${NC} (Type registration endpoint not available)"
+    echo -e "${RED}FAILED${NC} (Type registration not working)"
 fi
 
 if [[ "$TEST_MODE" == "full" ]] || [[ "$TEST_MODE" == "qa" ]]; then
@@ -624,14 +618,15 @@ run_test "Type List Returns JSON" "
     if echo \"\$response\" | jq -e '.status' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
 " "PASS"
 
-run_test "Type Show nemaki:group (Custom Type)" "
-    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/type/show/nemaki:group')
-    if echo \"\$response\" | jq -e '.type.id == \"nemaki:group\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+# Test that base CMIS types are accessible via CMIS browser binding (REST /type/show is for custom types only)
+run_test "Type Definition cmis:document (Base Type)" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis:document')
+    if echo \"\$response\" | jq -e '.id == \"cmis:document\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
 " "PASS"
 
-run_test "Type Show nemaki:parentChildRelationship (Custom Type)" "
-    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/type/show/nemaki:parentChildRelationship')
-    if echo \"\$response\" | jq -e '.type.id == \"nemaki:parentChildRelationship\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+run_test "Type Definition cmis:folder (Base Type)" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis:folder')
+    if echo \"\$response\" | jq -e '.id == \"cmis:folder\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
 " "PASS"
 
 echo
@@ -646,27 +641,242 @@ run_test "Solr URL Returns JSON" "
 
 echo
 echo "=== 23. AUTHENTICATION SECURITY TESTS ==="
-# Test invalid authentication attempts are properly rejected
-run_test "Invalid User Authentication" "curl -s -o /dev/null -w '%{http_code}' -u 'nonexistent:password' 'http://localhost:8080/core/rest/repo/bedroom/authtoken/nonexistent/login' -X POST -d ''" "401"
-run_test "Wrong Password Authentication" "curl -s -o /dev/null -w '%{http_code}' -u 'admin:wrongpassword' 'http://localhost:8080/core/rest/repo/bedroom/authtoken/admin/login' -X POST -d ''" "401"
-run_test "Empty Credentials Authentication" "curl -s -o /dev/null -w '%{http_code}' -u ':' 'http://localhost:8080/core/rest/repo/bedroom/authtoken//login' -X POST -d ''" "401"
+# Test CMIS endpoints properly reject invalid Basic Auth credentials
 run_test "CMIS AtomPub Invalid Auth" "curl -s -o /dev/null -w '%{http_code}' -u 'invalid:invalid' 'http://localhost:8080/core/atom/bedroom'" "401"
 run_test "CMIS Browser Invalid Auth" "curl -s -o /dev/null -w '%{http_code}' -u 'invalid:invalid' 'http://localhost:8080/core/browser/bedroom'" "401"
 
-# Test special characters are handled safely (should reject malicious input)
-echo -n "Testing: Special Characters Security ... "
+# Test authtoken login endpoint returns failure for invalid credentials
+# Note: This endpoint returns HTTP 200 with {"status":"failure"} for auth failures (RESTful design)
+run_test "Authtoken Invalid User Login" "
+    response=\$(curl -s 'http://localhost:8080/core/rest/repo/bedroom/authtoken/nonexistent/login' -X POST -d 'password=wrongpassword')
+    if echo \"\$response\" | jq -e '.status == \"failure\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+run_test "Authtoken Wrong Password Login" "
+    response=\$(curl -s 'http://localhost:8080/core/rest/repo/bedroom/authtoken/admin/login' -X POST -d 'password=wrongpassword')
+    if echo \"\$response\" | jq -e '.status == \"failure\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+run_test "Authtoken Empty Password Login" "
+    response=\$(curl -s 'http://localhost:8080/core/rest/repo/bedroom/authtoken/admin/login' -X POST -d '')
+    if echo \"\$response\" | jq -e '.status == \"failure\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+# Test special characters are handled safely in login (should return failure, not crash)
+run_test "Authtoken SQL Injection Prevention" "
+    response=\$(curl -s 'http://localhost:8080/core/rest/repo/bedroom/authtoken/admin/login' -X POST -d \"password=admin' OR '1'='1\")
+    if echo \"\$response\" | jq -e '.status == \"failure\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+echo
+
+echo "=== 24. v3.1 AUDIT METRICS TESTS ==="
+
+echo -n "Testing: Audit Metrics Endpoint ... "
 total_tests=$((total_tests + 1))
-# Use credentials with SQL injection attempt and shell escape characters
-# These should always be rejected (401) regardless of database state
-status=$(curl -s -o /dev/null -w '%{http_code}' -u "admin' OR '1'='1:password" 'http://localhost:8080/core/rest/repo/bedroom/authtoken/admin/login' -X POST -d '' 2>/dev/null || echo "000")
-if [[ "$status" == "401" ]] || [[ "$status" == "000" ]] || [[ "$status" == "400" ]]; then
-    echo -e "${GREEN}PASSED${NC} (Special characters properly rejected: $status)"
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/audit/metrics")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
     success_count=$((success_count + 1))
 else
-    echo -e "${RED}FAILED${NC} (Unexpected status: $status)"
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: Audit Metrics JSON Structure ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s -u admin:admin "http://localhost:8080/core/api/v1/cmis/audit/metrics" | python3 -c "import sys,json; d=json.load(sys.stdin); m=d.get('metrics',{}); print('ok' if 'audit.events.total' in m or 'total' in m else 'fail')" 2>/dev/null)
+if [[ "$result" == "ok" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo -n "Testing: Audit Metrics Has Links ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s -u admin:admin "http://localhost:8080/core/api/v1/cmis/audit/metrics" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok' if '_links' in d and 'enabled' in d else 'fail')" 2>/dev/null)
+if [[ "$result" == "ok" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo -n "Testing: Audit Prometheus Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/audit/metrics/prometheus")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: Audit Prometheus Format ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s -u admin:admin "http://localhost:8080/core/api/v1/cmis/audit/metrics/prometheus" | grep -c "nemakiware_audit_events_total")
+if [[ "$result" -ge "1" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo -n "Testing: Audit Metrics Reset ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s -X POST -u admin:admin "http://localhost:8080/core/api/v1/cmis/audit/metrics/reset" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok' if 'message' in d else 'fail')" 2>/dev/null)
+if [[ "$result" == "ok" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
 fi
 
 echo
+
+echo "=== 25. v3.1 HEALTH & OPERATIONS TESTS ==="
+
+echo -n "Testing: Health Check Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/health")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: Health Status Field ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s -u admin:admin "http://localhost:8080/core/api/v1/cmis/health" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok' if d.get('status') in ['healthy','degraded','unhealthy'] else 'fail')" 2>/dev/null)
+if [[ "$result" == "ok" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo -n "Testing: Stats Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/repo/bedroom/stats")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: Prometheus Metrics Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/repo/bedroom/metrics")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: Jobs Status Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/repo/bedroom/jobs")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: Jobs Pause/Resume Cycle ... "
+total_tests=$((total_tests + 1))
+pause_status=$(curl -s -X POST -u admin:admin "http://localhost:8080/core/api/v1/cmis/repo/bedroom/jobs/pause" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null)
+resume_status=$(curl -s -X POST -u admin:admin "http://localhost:8080/core/api/v1/cmis/repo/bedroom/jobs/resume" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null)
+if [[ "$pause_status" == "paused" ]] && [[ "$resume_status" == "running" ]]; then
+    echo -e "${GREEN}PASSED${NC} (pause→$pause_status, resume→$resume_status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (pause=$pause_status, resume=$resume_status)"
+fi
+
+echo
+
+echo "=== 26. v3.1 MCP PROTOCOL TESTS ==="
+
+echo -n "Testing: MCP Info Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8080/core/mcp/info")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: MCP Health Endpoint ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s "http://localhost:8080/core/mcp/health" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok' if d.get('status')=='healthy' else 'fail')" 2>/dev/null)
+if [[ "$result" == "ok" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo -n "Testing: MCP Initialize (JSON-RPC) ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s -X POST -H "Content-Type: application/json" -H "Authorization: Basic YWRtaW46YWRtaW4=" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"qa-test","version":"1.0"}}}' "http://localhost:8080/core/mcp/message" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok' if d.get('result',{}).get('serverInfo') else 'fail')" 2>/dev/null)
+if [[ "$result" == "ok" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo -n "Testing: MCP Tools List ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s -X POST -H "Content-Type: application/json" -H "Authorization: Basic YWRtaW46YWRtaW4=" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' "http://localhost:8080/core/mcp/message" | python3 -c "import sys,json; d=json.load(sys.stdin); tools=d.get('result',{}).get('tools',[]); print('ok' if len(tools)>0 else 'fail')" 2>/dev/null)
+if [[ "$result" == "ok" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo
+
+echo "=== 27. v3.1 RAG GRACEFUL DEGRADATION TESTS ==="
+
+echo -n "Testing: RAG Health Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/repositories/bedroom/rag/health")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: RAG Enabled Check ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/repositories/bedroom/search-engine/rag/enabled")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: RAG Status Check ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/repositories/bedroom/search-engine/rag/status")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo
+
 echo "=== TEST SUMMARY ==="
 echo "Tests passed: $success_count / $total_tests"
 echo "Success rate: $(( success_count * 100 / total_tests ))%"

@@ -338,38 +338,30 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
     if (!objectId) return;
 
     try {
-      // Load each API separately with detailed error handling
+      // Load object and ACL (required)
       const obj = await cmisService.getObject(repositoryId, objectId)
         .catch(err => {
-          // Failed to load object
           throw new Error(`${t('permissionManagement.messages.loadObjectError')}: ${err.message}`);
         });
 
       const aclData = await cmisService.getACL(repositoryId, objectId)
         .catch(err => {
-          // Failed to load ACL
           throw new Error(`${t('permissionManagement.messages.loadAclError')}: ${err.message}`);
-        });
-
-      const userList = await cmisService.getUsers(repositoryId)
-        .catch(err => {
-          // Failed to load users
-          throw new Error(`${t('permissionManagement.messages.loadUsersError')}: ${err.message}`);
-        });
-
-      const groupList = await cmisService.getGroups(repositoryId)
-        .catch(err => {
-          // Failed to load groups
-          throw new Error(`${t('permissionManagement.messages.loadGroupsError')}: ${err.message}`);
         });
 
       setObject(obj);
       setACL(aclData);
-      setUsers(userList);
-      setGroups(groupList);
 
       const inheritanceEnabled = aclData.aclInherited !== false;
       setIsInherited(inheritanceEnabled);
+
+      // Load users and groups (optional - may fail for non-admin users)
+      // If these fail, ACL is still viewable but "add permission" is disabled
+      const userResult = await cmisService.getUsers(repositoryId).catch(() => null);
+      const groupResult = await cmisService.getGroups(repositoryId).catch(() => null);
+
+      if (userResult) setUsers(userResult.users);
+      if (groupResult) setGroups(groupResult.groups);
     } catch (error) {
       // Failed to load permission data
       const errorMessage = error instanceof Error ? error.message : t('permissionManagement.messages.loadError');
@@ -447,6 +439,8 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
     });
   };
 
+  const canApplyACL = object?.allowableActions?.canApplyACL === true;
+
   const columns = [
     {
       title: t('permissionManagement.columns.principal'),
@@ -499,7 +493,7 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
         </Tag>
       ),
     },
-    {
+    ...(canApplyACL ? [{
       title: t('common.actions'),
       key: 'actions',
       width: 100,
@@ -511,8 +505,8 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
             okText={t('common.yes')}
             cancelText={t('common.no')}
           >
-            <Button 
-              icon={<DeleteOutlined />} 
+            <Button
+              icon={<DeleteOutlined />}
               size="small"
               danger
             >
@@ -521,7 +515,7 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
           </Popconfirm>
         )
       ),
-    },
+    }] : []),
   ];
 
   if (loading || !object || !acl) {
@@ -562,9 +556,9 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
           </Space>
           
           <Space>
-            {isInherited && (
-              <Button 
-                type="default" 
+            {canApplyACL && isInherited && (
+              <Button
+                type="default"
                 icon={<LockOutlined />}
                 onClick={handleBreakInheritance}
                 danger
@@ -572,13 +566,15 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
                 {t('permissionManagement.breakInheritanceButton')}
               </Button>
             )}
-            <Button 
-              type="primary" 
-              icon={<PlusOutlined />}
-              onClick={() => setModalVisible(true)}
-            >
-              {t('permissionManagement.addPermission')}
-            </Button>
+            {canApplyACL && users.length > 0 && (
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => setModalVisible(true)}
+              >
+                {t('permissionManagement.addPermission')}
+              </Button>
+            )}
           </Space>
         </div>
 

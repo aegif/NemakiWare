@@ -35,6 +35,7 @@
     "select": "選択",
     "clear": "クリア",
     "retry": "再試行",
+    "refresh": "更新",
     "reload": "再読み込み",
     "back": "戻る",
     "next": "次へ",
@@ -47,6 +48,8 @@
     "items": "{{count}}個",
     "moreResults": "さらに結果があります",
     "unknownError": "不明なエラー",
+    "showSettings": "設定を表示",
+    "hideSettings": "設定を非表示",
     "validation": {
       "required": "{{field}}は必須です",
       "enterField": "{{field}}を入力してください",
@@ -73,7 +76,10 @@
       "navigationFailed": "ナビゲーションに失敗しました",
       "details": "詳細: {{details}}"
     },
-    "confirmDelete": "この{{item}}を削除しますか？"
+    "confirmDelete": "この{{item}}を削除しますか？",
+    "totalItems": "全 {{total}} 件",
+    "copyFailed": "コピーに失敗しました",
+    "noData": "データがありません"
   },
     "navigation": {
       "home": "ホーム",
@@ -86,8 +92,34 @@
       "archive": "アーカイブ",
       "solr": "Solrインデックス",
       "auditDashboard": "監査ログ",
-      "apiDocs": "API仕様"
+      "apiDocs": "API仕様",
+      "filesystemImportExport": "ファイルシステム インポート/エクスポート",
+      "configViewer": "設定ビューア",
+      "accountSettings": "アカウント設定"
     },
+  "configViewer": {
+    "title": "設定プロパティ一覧",
+    "columns": {
+      "category": "カテゴリー",
+      "key": "プロパティキー",
+      "value": "値",
+      "source": "取得元"
+    },
+    "sources": {
+      "systemProperty": "システムプロパティ",
+      "environment": "環境変数",
+      "couchdbDynamic": "CouchDB動的設定",
+      "default": "デフォルト値"
+    },
+    "filters": {
+      "searchPlaceholder": "プロパティキーで検索...",
+      "categoryPlaceholder": "カテゴリーで絞り込み"
+    },
+    "messages": {
+      "loadError": "設定プロパティの読み込みに失敗しました",
+      "totalItems": "全 {{count}} 件"
+    }
+  },
   "typeManagement": {
     "title": "タイプ管理",
     "customTypes": "カスタムタイプ",
@@ -404,6 +436,8 @@
     "checkout": "チェックアウト",
     "checkin": "チェックイン",
     "cancelCheckout": "チェックアウト取消",
+    "editInGoogleDrive": "Google Driveで編集",
+    "editInOneDrive": "OneDriveで編集",
     "backToFolder": "フォルダに戻る",
     "back": "戻る",
     "checkedOut": "チェックアウト中",
@@ -458,6 +492,17 @@
       "selectValue": "値を選択",
       "enterNumber": "数値を入力"
     },
+    "versionDetail": {
+      "title": "バージョン詳細",
+      "detailButton": "詳細",
+      "name": "ファイル名",
+      "description": "説明",
+      "lastModifiedBy": "最終更新者",
+      "lastModifiedDate": "最終更新日時",
+      "fileSize": "ファイルサイズ",
+      "mimeType": "MIMEタイプ",
+      "objectId": "オブジェクトID"
+    },
     "relationshipDetail": {
       "title": "関連オブジェクト詳細",
       "editTitle": "関連プロパティを編集",
@@ -485,6 +530,17 @@
       "checkoutError": "チェックアウトに失敗しました",
       "checkinSuccess": "チェックインしました",
       "checkinError": "チェックインに失敗しました",
+      "cloudPushSuccess": "クラウドドライブにアップロードしました",
+      "cloudPushError": "クラウドドライブへのアップロードに失敗しました",
+      "cloudPullSuccess": "クラウドからコンテンツを取得しました",
+      "cloudPullError": "クラウドからの取得に失敗しました",
+      "cloudFileNotFoundTitle": "クラウドファイルが見つかりません",
+      "cloudFileNotFoundMessage": "クラウドドライブ上のファイルが削除されているようです。以下の操作を選択してください。",
+      "cloudFileNotFoundReCreate": "再登録",
+      "cloudFileNotFoundUnlink": "同期解除",
+      "cloudFileRecoverySuccess": "クラウドファイルを新規登録しました",
+      "cloudUnlinkSuccess": "クラウド同期を解除しました",
+      "cloudUnlinkError": "クラウド同期の解除に失敗しました",
       "cancelCheckoutSuccess": "チェックアウトをキャンセルしました",
       "cancelCheckoutError": "チェックアウトのキャンセルに失敗しました",
       "selectTargetFirst": "ターゲットオブジェクトを選択してください",
@@ -512,7 +568,46 @@
       "typeCoercionRejected": "型変換失敗",
       "listElementDropped": "リスト要素の欠落",
       "elementCount": "要素数: {{count}}"
-    }
+    },
+    "similarDocuments": "類似ドキュメント",
+    "noSimilarDocuments": "類似ドキュメントが見つかりません",
+    "noSimilarDocumentsDescription": "このドキュメントはまだRAGインデックスに登録されていないか、意味的に類似したドキュメントが存在しません。",
+    "similarDocumentsTable": {
+      "name": "名前",
+      "path": "パス",
+      "similarity": "類似度",
+      "preview": "プレビュー"
+    },
+    "cloudComments": {
+      "title": "クラウドコメント",
+      "resolved": "解決済み",
+      "edited": "編集済",
+      "viewAll": "全て表示",
+      "moreComments": "他 {{count}} 件のコメント"
+    },
+    "externalContext": {
+      "tab": "外部コンテキスト",
+      "sourceType": "ソース種別",
+      "sourceId": "ソースID",
+      "updatedAt": "最終更新",
+      "content": "コンテンツ",
+      "copy": "コピー",
+      "copySuccess": "コピーしました",
+      "truncatedWarning": "データが切り捨てられています（5000文字上限）",
+      "parseError": "JSONの解析に失敗しました",
+      "noData": "外部コンテキストデータがありません",
+      "types": {
+        "cloud_sync": "クラウド同期",
+        "crm": "CRM",
+        "erp": "ERP",
+        "chat": "チャット",
+        "email": "メール"
+      }
+    },
+    "pullFromCloud": "クラウドから取得",
+    "openInCloud": "クラウドで開く",
+    "updateInGoogleDrive": "Google Driveを更新",
+    "updateInOneDrive": "OneDriveを更新"
   },
   "folderBrowser": {
     "newFolder": "新規フォルダ",
@@ -542,8 +637,25 @@
       "firstName": "名",
       "lastName": "姓",
       "email": "メールアドレス",
-      "groups": "所属グループ"
+      "admin": "管理者",
+      "groups": "所属グループ",
+      "authMethods": "認証方式"
     },
+    "adminBadge": "管理者",
+    "adminToggleTooltip": "このユーザーに管理者権限を付与/剥奪します",
+    "cannotRevokeOwnAdmin": "自分自身の管理者権限は削除できません",
+    "passwordReset": "パスワードリセット",
+    "resetPassword": "パスワードをリセット",
+    "newPassword": "新しいパスワード",
+    "confirmNewPassword": "新しいパスワード（確認）",
+    "authMethods": {
+      "all": "すべて許可",
+      "password": "パスワードのみ",
+      "cloud": "クラウドのみ",
+      "both": "パスワード+クラウド",
+      "disabled": "無効"
+    },
+    "authMethodsTooltip": "このユーザーに許可される認証方式を設定します。未設定の場合はすべての方式が許可されます。",
     "placeholders": {
       "userId": "ユーザーIDを入力",
       "userName": "ユーザー名を入力",
@@ -551,13 +663,18 @@
       "lastName": "姓を入力",
       "email": "メールアドレスを入力",
       "password": "パスワードを入力",
-      "groups": "グループを選択"
+      "groups": "グループを選択",
+      "authMethods": "認証方式を選択",
+      "newPassword": "新しいパスワードを入力",
+      "confirmPassword": "パスワードを再入力"
     },
     "validation": {
       "userIdRequired": "ユーザーIDを入力してください",
       "userNameRequired": "ユーザー名を入力してください",
       "passwordRequired": "パスワードを入力してください",
-      "passwordMinLength": "パスワードは6文字以上で入力してください"
+      "passwordMinLength": "パスワードは6文字以上で入力してください",
+      "passwordMinLength8": "パスワードは8文字以上で入力してください",
+      "confirmPasswordRequired": "パスワードの確認を入力してください"
     },
     "messages": {
       "loadError": "ユーザーの読み込みに失敗しました",
@@ -568,8 +685,11 @@
       "updateError": "ユーザーの更新に失敗しました",
       "deleteError": "ユーザーの削除に失敗しました",
       "permissionError": "権限エラー: ユーザー管理の権限がありません",
-      "deletePermissionError": "権限エラー: ユーザー削除の権限がありません"
-    }
+      "deletePermissionError": "権限エラー: ユーザー削除の権限がありません",
+      "passwordResetSuccess": "パスワードをリセットしました",
+      "passwordResetError": "パスワードのリセットに失敗しました"
+    },
+    "cloudOnlyNoPasswordReset": "このユーザーはクラウド認証のみのため、パスワードリセットはできません。"
   },
   "groupManagement": {
     "title": "グループ管理",
@@ -682,17 +802,23 @@
     "unsupportedType": "{{mimeType}} はサポートされていません",
     "previewError": "プレビューエラー",
     "previewErrorDesc": "プレビューの表示中にエラーが発生しました",
+    "errorOccurred": "プレビューの表示中にエラーが発生しました",
     "cannotPreview": "プレビューできません",
     "image": {
       "loading": "画像を取得しています...",
-      "loadError": "画像の取得に失敗しました: {{error}}"
+      "loadError": "画像の取得に失敗しました: {{error}}",
+      "missingInfo": "画像表示に必要な情報が不足しています",
+      "fetchError": "画像の取得に失敗しました: {{error}}"
     },
     "video": {
       "loading": "動画を取得しています...",
-      "loadError": "動画の取得に失敗しました: {{error}}"
+      "loadError": "動画の取得に失敗しました: {{error}}",
+      "missingInfo": "動画表示に必要な情報が不足しています",
+      "fetchError": "動画の取得に失敗しました: {{error}}"
     },
     "text": {
-      "loadError": "ファイルの読み込みに失敗しました"
+      "loadError": "ファイルの読み込みに失敗しました",
+      "missingInfo": "テキスト表示に必要な情報が不足しています"
     },
     "pdf": {
       "loading": "PDFを取得しています...",
@@ -730,6 +856,7 @@
       "previewFailedRetry": "プレビューの生成に失敗しました。再試行するか、ダウンロードしてローカルアプリケーションでご確認ください。",
       "previewFailed": "プレビューの生成に失敗しました。再試行するか、ダウンロードしてローカルアプリケーションでご確認ください。",
       "notSupported": "オフィス文書のプレビューは現在サポートされていません。ダウンロードしてローカルアプリケーションでご確認ください。",
+      "regenerate": "プレビューを再生成",
       "fileTypes": {
         "word": "Word文書",
         "excel": "Excel文書",
@@ -767,6 +894,9 @@
     "or": "または",
     "oidcLogin": "OIDC認証でログイン",
     "samlLogin": "SAML認証でログイン",
+    "googleLogin": "Googleアカウントでログイン",
+    "microsoftLogin": "Microsoftアカウントでログイン",
+    "passkeyLogin": "パスキーでログイン",
     "selectRepository": "リポジトリを選択",
     "messages": {
       "loginFailed": "ログインに失敗しました。ユーザー名、パスワード、リポジトリIDを確認してください。",
@@ -774,7 +904,10 @@
       "oidcFailedPrivacy": "OIDC認証に失敗しました: {{error}}\n\n【重要】プライバシーモード（シークレットウィンドウ）では認証状態が保存されないため、OIDC認証が失敗する場合があります。通常モードでお試しください。",
       "samlFailed": "SAML認証に失敗しました: {{error}}",
       "samlResponseNotFound": "SAML認証レスポンスが見つかりません。",
-      "samlProcessFailed": "SAML認証の処理に失敗しました: {{error}}"
+      "samlProcessFailed": "SAML認証の処理に失敗しました: {{error}}",
+      "googleFailed": "Googleアカウント認証に失敗しました: {{error}}",
+      "microsoftFailed": "Microsoftアカウント認証に失敗しました: {{error}}",
+      "passkeyFailed": "パスキー認証に失敗しました: {{error}}"
     },
     "validation": {
       "repositoryRequired": "リポジトリを選択してください",
@@ -915,13 +1048,16 @@
     "deleteConfirmation": "削除の確認",
     "deleteButton": "削除する",
     "checkingRelatedObjects": "関連オブジェクトを確認中...",
-    "deleteConfirmMessage": "<strong>「{{name}}」</strong>を削除しますか？",
+    "deleteConfirmMessage": "「{{name}}」を削除しますか？",
     "deleteWarningTitle": "⚠️ 注意:",
-    "deleteWarningMessage": "このオブジェクトには親子関係（nemaki:parentChildRelationship）で紐づいた<strong>{{count}}件</strong>の子オブジェクトがあります。",
+    "deleteWarningMessage": "このオブジェクトには親子関係（nemaki:parentChildRelationship）で紐づいた{{count}}件の子オブジェクトがあります。",
     "deleteWarningCascade": "削除すると、これらの子オブジェクトもすべて削除されます。",
     "renameTitle": "「{{name}}」の名前を変更",
     "changeButton": "変更",
     "newName": "新しい名前",
+    "bulkDelete": "{{count}}件を削除",
+    "bulkDeleteConfirmation": "一括削除の確認",
+    "bulkDeleteConfirmMessage": "選択した{{count}}件のアイテムを削除しますか？この操作は取り消せません。",
     "columns": {
       "type": "タイプ",
       "name": "名前",
@@ -978,10 +1114,18 @@
       "newVersionCreated": "「{{name}}」の新しいバージョンを作成しました",
       "folderCreateSuccess": "フォルダを作成しました",
       "folderCreateError": "フォルダの作成に失敗しました",
+      "createFolderSuccess": "フォルダを作成しました",
+      "createFolderError": "フォルダの作成に失敗しました",
+      "loadObjectsError": "オブジェクトの読み込みに失敗しました",
+      "selectFolder": "フォルダを選択してください",
       "deleteSuccess": "削除しました",
       "deleteSuccessWithCount": "{{count}}件のオブジェクトを削除しました",
       "deletePartialFail": "{{count}}件のオブジェクトの削除に失敗しました",
       "deleteError": "削除に失敗しました",
+      "bulkDeleteSuccess": "{{count}}件のアイテムを削除しました",
+      "bulkDeletePartial": "{{count}}件のアイテムを削除しましたが、{{descendantCount}}件の子孫オブジェクトの削除に失敗しました",
+      "bulkDeleteFailed": "{{count}}件のアイテムを削除できませんでした",
+      "bulkDeleteError": "一括削除に失敗しました",
       "renameSuccess": "名前を変更しました",
       "renameError": "名前の変更に失敗しました",
       "checkoutSuccess": "チェックアウトしました",
@@ -1148,6 +1292,8 @@
       "originalPath": "オリジナルパス",
       "archiveDate": "アーカイブ日時",
       "archivedAt": "アーカイブ日時",
+      "archiveState": "状態",
+      "coldMoveMode": "移行モード",
       "size": "サイズ",
       "actions": "アクション"
     },
@@ -1157,10 +1303,68 @@
       "restore": "復元"
     },
     "confirmRestore": "このオブジェクトを復元しますか？",
+    "details": {
+      "title": "アーカイブ詳細",
+      "creator": "作成者",
+      "mimeType": "MIMEタイプ",
+      "archiveId": "アーカイブID",
+      "archivedBy": "削除実行者"
+    },
+    "tabs": {
+      "archives": "アーカイブ一覧",
+      "settings": "リテンション設定",
+      "migrationLogs": "移行ログ",
+      "pendingArchives": "期限切れ未アーカイブ"
+    },
+    "settings": {
+      "enabled": "リテンション",
+      "enabledYes": "有効",
+      "enabledNo": "無効",
+      "coldAfterDays": "コールド移行日数",
+      "days": "日",
+      "cronExpression": "スケジュール (Cron式)",
+      "storageType": "ストレージ種別",
+      "filesystem": "ファイルシステム",
+      "beta": "ベータ",
+      "storageConnected": "ストレージ接続",
+      "connected": "接続済み",
+      "disconnected": "未接続",
+      "coldMoveMode": "コールドストレージ移動モード",
+      "copyMode": "コピーモード (ローカルコピー保持)",
+      "moveMode": "移動モード (ローカルコピー削除)",
+      "localArchiveAfterDays": "ローカルアーカイブ日数 (フォールバック)",
+      "localArchiveCron": "ローカルアーカイブスケジュール (Cron式)"
+    },
+    "migrationLogs": {
+      "startedAt": "実行日時",
+      "jobType": "ジョブ種別",
+      "processed": "処理数",
+      "succeeded": "成功",
+      "failed": "失敗",
+      "status": "ステータス",
+      "duration": "所要時間"
+    },
+    "pendingArchives": {
+      "forceArchive": "強制アーカイブ",
+      "extendExpiration": "有効期限延長",
+      "noItems": "期限切れの未アーカイブドキュメントはありません",
+      "alert": "件の期限切れドキュメントが未アーカイブです",
+      "expirationDate": "有効期限",
+      "lastModifiedBy": "最終更新者",
+      "newExpirationDate": "新しい有効期限"
+    },
     "messages": {
       "loadError": "アーカイブの読み込みに失敗しました",
       "restoreSuccess": "オブジェクトを復元しました",
-      "restoreError": "復元に失敗しました"
+      "restoreError": "復元に失敗しました",
+      "settingsLoadError": "リテンション設定の読み込みに失敗しました",
+      "logsLoadError": "移行ログの読み込みに失敗しました",
+      "forceArchiveSuccess": "強制アーカイブが完了しました",
+      "forceArchiveError": "強制アーカイブに失敗しました",
+      "extendExpirationSuccess": "有効期限を延長しました",
+      "extendExpirationError": "有効期限の延長に失敗しました",
+      "pendingLoadError": "期限切れ未アーカイブの読み込みに失敗しました",
+      "restoreErrorParentNotFound": "復元先のフォルダが削除されているため復元できません"
     }
   },
   "actions": {
@@ -1207,7 +1411,8 @@
     "tabs": {
       "status": "ステータス",
       "reindex": "再インデクシング",
-      "query": "Solrクエリ"
+      "query": "Solrクエリ",
+      "cmisQuery": "CMIS検索"
     },
     "healthCheck": {
       "title": "インデックスヘルスチェック",
@@ -1278,12 +1483,35 @@
       "sortPlaceholder": "score desc",
       "fields": "フィールド (fl)",
       "fieldsPlaceholder": "id,name,score",
+      "simulateAsUser": "ユーザー権限シミュレーション",
+      "simulateAsUserTooltip": "指定したユーザーの権限でACLフィルタリングを適用します。管理者のみ使用可能です。",
+      "selectUser": "ユーザーを選択（未選択時はフィルタリングなし）",
       "executeQuery": "クエリ実行",
       "results": "{{numFound}}件中 {{start}}〜{{end}}件を表示 ({{queryTime}}ms)",
+      "resultsWithAcl": "{{numFound}}件中 {{visibleCount}}件が閲覧可能、{{aclFilteredCount}}件がACLでフィルタ ({{start}}〜{{end}}件を表示, {{queryTime}}ms)",
       "noResults": "0件 ({{queryTime}}ms)",
       "document": "ドキュメント {{number}}",
       "field": "フィールド",
       "value": "値"
+    },
+    "cmisQuery": {
+      "title": "CMIS SQL検索",
+      "description": "CMIS標準のSQL形式でクエリを実行します。ACLによる権限フィルタリングが自動適用されます。",
+      "statementLabel": "CMISクエリ (SELECT文)",
+      "statementRequired": "CMISクエリを入力してください",
+      "statementPlaceholder": "SELECT * FROM cmis:document WHERE cmis:name LIKE '%test%'",
+      "maxItems": "最大件数",
+      "skipCount": "スキップ件数",
+      "simulateAsUser": "ユーザー権限シミュレーション",
+      "simulateAsUserTooltip": "指定したユーザーの権限で検索を実行します。管理者のみ使用可能です。",
+      "selectUser": "ユーザーを選択（未選択時は自分として検索）",
+      "executeQuery": "クエリ実行",
+      "results": "{{numFound}}件中 {{displayed}}件を表示 (さらに結果: {{hasMore}}, {{queryTime}}ms)",
+      "noResults": "0件 ({{queryTime}}ms)",
+      "columnName": "名前",
+      "columnObjectId": "オブジェクトID",
+      "columnType": "タイプ",
+      "columnPath": "パス"
     },
     "messages": {
       "fullReindexStarted": "全体再インデクシングを開始しました",
@@ -1297,7 +1525,92 @@
       "clearError": "インデックスのクリアに失敗しました",
       "indexOptimized": "インデックスを最適化しました",
       "optimizeError": "インデックスの最適化に失敗しました",
-      "queryError": "クエリの実行に失敗しました"
+      "queryError": "クエリの実行に失敗しました",
+      "cmisQueryError": "CMISクエリの実行に失敗しました"
+    },
+    "discrepancy": {
+      "loadError": "不整合データの読み込みに失敗しました",
+      "reindexSuccess": "{{objectId}} を再インデックスしました",
+      "reindexError": "再インデックスに失敗しました",
+      "deleteSuccess": "{{objectId}} をインデックスから削除しました",
+      "deleteError": "インデックスからの削除に失敗しました",
+      "bulkReindexComplete": "一括再インデックスが完了しました",
+      "bulkDeleteComplete": "一括削除が完了しました",
+      "showDetails": "詳細を表示",
+      "missingTitle": "Solrに未登録のドキュメント",
+      "orphanedTitle": "孤立ドキュメント（CouchDBに存在しない）",
+      "bulkReindexConfirm": "全件を再インデックスしますか？",
+      "bulkReindex": "一括再インデックス",
+      "bulkDeleteConfirm": "全件をインデックスから削除しますか？",
+      "bulkDelete": "一括削除",
+      "objectId": "オブジェクトID",
+      "name": "名前",
+      "objectType": "オブジェクトタイプ",
+      "reindex": "再インデックス",
+      "deleteConfirm": "このドキュメントをインデックスから削除しますか？",
+      "deleteFromIndex": "インデックスから削除"
+    }
+  },
+  "semanticSearch": {
+    "title": "セマンティック検索",
+    "placeholder": "検索したい内容を自然言語で入力...",
+    "searchButton": "検索",
+    "checkingAvailability": "セマンティック検索の可用性を確認中...",
+    "unavailable": "セマンティック検索は利用できません",
+    "unavailableDescription": "RAG機能がサーバーで有効になっていないか、設定が必要です。管理者にお問い合わせください。",
+    "helpText": "キーワードではなく意味に基づいてドキュメントを検索します。自然な文章で検索できます。",
+    "maxResults": "最大結果数",
+    "minSimilarity": "最小類似度",
+    "searchingInFolder": "このフォルダ内を検索",
+    "searching": "検索中...",
+    "resultsCount": "{{count}}件の結果",
+    "noResults": "該当するドキュメントが見つかりませんでした",
+    "searchFailed": "検索に失敗しました",
+    "similarity": "類似度",
+    "chunkIndex": "チャンク #{{index}}",
+    "boostSettings": "検索重み設定",
+    "boostHelpText": "プロパティ（ファイル名・説明）と本文コンテンツの検索重みを調整します。",
+    "propertyBoost": "プロパティ重み",
+    "contentOnly": "本文重視",
+    "balanced": "バランス",
+    "propertyOnly": "プロパティ重視",
+    "propertyBoostDescription": "スライダーを右に動かすと、ファイル名や説明文がより重視されます。左に動かすと、本文の内容がより重視されます。",
+    "viewDocument": "ドキュメントを表示"
+  },
+  "search": {
+    "fulltext": "全文検索",
+    "semantic": "セマンティック検索"
+  },
+  "rag": {
+    "admin": {
+      "simulateAs": "検索実行ユーザー",
+      "selectUser": "ユーザーを選択（未選択時は自分として検索）",
+      "simulateDescription": "管理者は他のユーザーとして検索を実行し、ACL設定を確認できます",
+      "simulatingAs": "{{userId}} として検索を実行中",
+      "loadUsersFailed": "ユーザー一覧の読み込みに失敗しました",
+      "adminOnly": "この機能は管理者のみ利用できます"
+    },
+    "discrepancy": {
+      "showDetails": "詳細を表示",
+      "missingTitle": "Solrに未登録のドキュメント",
+      "orphanedTitle": "Solrに孤立したドキュメント",
+      "objectId": "オブジェクトID",
+      "name": "名前",
+      "objectType": "タイプ",
+      "reindex": "再インデックス",
+      "deleteFromIndex": "インデックスから削除",
+      "deleteConfirm": "このドキュメントをインデックスから削除しますか？",
+      "bulkReindex": "全て再インデックス",
+      "bulkReindexConfirm": "未登録の全ドキュメントを再インデックスしますか？",
+      "bulkDelete": "全てインデックスから削除",
+      "bulkDeleteConfirm": "孤立した全ドキュメントをインデックスから削除しますか？",
+      "reindexSuccess": "{{objectId}} を再インデックスしました",
+      "reindexError": "再インデックスに失敗しました",
+      "deleteSuccess": "{{objectId}} をインデックスから削除しました",
+      "deleteError": "インデックスからの削除に失敗しました",
+      "bulkReindexComplete": "一括再インデックスが完了しました",
+      "bulkDeleteComplete": "一括削除が完了しました",
+      "loadError": "不整合詳細の読み込みに失敗しました"
     }
   },
   "apiDocs": {
@@ -1305,6 +1618,128 @@
     "description": "NemakiWare CMIS REST API (OpenAPI 3.0準拠) のインタラクティブドキュメントです。",
     "note": "認証について",
     "noteDescription": "APIリクエストにはBasic認証またはOIDC/SAMLトークンが必要です。現在のリポジトリ: {{repositoryId}}"
+  },
+  "ragMaintenance": {
+    "title": "RAGインデックスメンテナンス",
+    "description": "RAG（検索拡張生成）のベクトルインデックスを管理します。セマンティック検索に使用されます。",
+    "tabs": {
+      "status": "RAGステータス",
+      "reindex": "RAG再インデクシング",
+      "search": "RAG検索テスト"
+    },
+    "healthCheck": {
+      "title": "RAGヘルスチェック",
+      "refresh": "更新",
+      "ragEnabled": "RAG有効",
+      "embeddingService": "埋め込みサービス",
+      "solrRagCore": "Solr RAGコア",
+      "documentCount": "インデックス済みドキュメント数",
+      "chunkCount": "チャンク数",
+      "eligibleDocuments": "対象ドキュメント数",
+      "healthy": "RAGシステムは正常です",
+      "unhealthy": "RAGシステムに問題があります",
+      "available": "利用可能",
+      "unavailable": "利用不可",
+      "error": "RAGヘルスチェックに失敗しました"
+    },
+    "reindexStatus": {
+      "title": "RAG再インデクシング状態",
+      "status": "状態",
+      "currentFolder": "現在のフォルダ",
+      "totalDocuments": "総ドキュメント数",
+      "indexed": "インデックス済み",
+      "errorCount": "エラー数",
+      "errorMessage": "エラーメッセージ",
+      "errorDetails": "エラー詳細 ({{count}}件)",
+      "cancel": "キャンセル"
+    },
+    "status": {
+      "idle": "待機中",
+      "running": "実行中",
+      "completed": "完了",
+      "error": "エラー",
+      "cancelled": "キャンセル"
+    },
+    "reindexActions": {
+      "title": "RAG再インデクシング操作",
+      "fullReindex": "全体RAG再インデクシング",
+      "fullReindexDesc": "リポジトリ内の全ドキュメントのベクトル埋め込みを再生成します。埋め込み生成のため時間がかかります。",
+      "fullReindexConfirm": "全体RAG再インデクシングを実行しますか？",
+      "fullReindexConfirmDesc": "この操作にはかなりの時間がかかる場合があります。埋め込み生成にはドキュメント1つあたり数秒かかります。",
+      "execute": "実行",
+      "folderReindex": "フォルダ単位のRAG再インデクシング",
+      "folderReindexDesc": "指定したフォルダ配下のドキュメントのベクトル埋め込みを再生成します。",
+      "folderId": "フォルダID",
+      "includeSubfolders": "サブフォルダを含む",
+      "folderReindexButton": "フォルダRAG再インデクシング",
+      "indexManagement": "RAGインデックス管理",
+      "indexManagementDesc": "RAGインデックスのクリアを行います。",
+      "clearIndex": "RAGインデックスクリア",
+      "clearIndexConfirm": "RAGインデックスをクリアしますか？",
+      "clearIndexConfirmDesc": "この操作は取り消せません。全てのベクトル埋め込みが削除されます。セマンティック検索は再インデックスするまで利用できなくなります。"
+    },
+    "search": {
+      "title": "RAG検索テスト",
+      "queryLabel": "検索クエリ",
+      "queryPlaceholder": "自然言語で検索内容を入力...",
+      "queryRequired": "検索クエリを入力してください",
+      "topK": "最大結果数",
+      "minScore": "最小類似度",
+      "propertyBoost": "プロパティ重み",
+      "contentBoost": "コンテンツ重み",
+      "executeSearch": "検索実行",
+      "results": "{{count}}件の結果 ({{queryTime}}ms)",
+      "noResults": "結果なし",
+      "resultItem": {
+        "documentName": "ドキュメント名",
+        "score": "類似度",
+        "chunkIndex": "チャンク番号",
+        "chunkText": "チャンクテキスト",
+        "objectType": "オブジェクトタイプ"
+      }
+    },
+    "messages": {
+      "fullReindexStarted": "全体RAG再インデクシングを開始しました",
+      "fullReindexError": "RAG再インデクシングの開始に失敗しました",
+      "folderIdRequired": "フォルダIDを入力してください",
+      "folderReindexStarted": "フォルダRAG再インデクシングを開始しました",
+      "folderReindexError": "フォルダRAG再インデクシングの開始に失敗しました",
+      "reindexCancelled": "RAG再インデクシングをキャンセルしました",
+      "cancelError": "キャンセルに失敗しました",
+      "indexCleared": "RAGインデックスをクリアしました",
+      "clearError": "RAGインデックスのクリアに失敗しました",
+      "searchError": "検索に失敗しました",
+      "healthCheckError": "ヘルスチェックに失敗しました"
+    }
+  },
+  "importExport": {
+    "import": "インポート",
+    "export": "エクスポート",
+    "importTitle": "コンテンツのインポート",
+    "exportTitle": "コンテンツのエクスポート",
+    "importDescription": "ACP形式またはNemakiWare独自形式のZIPファイルをインポートします",
+    "exportDescription": "フォルダの内容をNemakiWare独自形式のZIPファイルとしてエクスポートします",
+    "selectFile": "ファイルを選択",
+    "dragDropHint": "クリックまたはドラッグしてZIPファイルをアップロード",
+    "supportedFormats": "対応形式: .acp (Alfresco), .zip (NemakiWare独自形式)",
+    "importing": "インポート中...",
+    "exporting": "エクスポート中...",
+    "importSuccess": "インポートが完了しました",
+    "exportSuccess": "エクスポートが完了しました",
+    "importError": "インポートに失敗しました",
+    "exportError": "エクスポートに失敗しました",
+    "foldersCreated": "作成されたフォルダ: {{count}}",
+    "documentsCreated": "作成されたドキュメント: {{count}}",
+    "warnings": "警告",
+    "errors": "エラー",
+    "progress": "進捗: {{progress}}%",
+    "partialSuccess": "一部のアイテムでエラーが発生しました",
+    "confirmExport": "このフォルダをエクスポートしますか？",
+    "exportInProgress": "エクスポート処理中です。しばらくお待ちください。",
+    "importInProgress": "インポート処理中です。しばらくお待ちください。",
+    "noFileSelected": "ファイルが選択されていません",
+    "invalidFileType": "無効なファイル形式です。.acpまたは.zipファイルを選択してください",
+    "exportSelected": "選択をエクスポート ({{count}}件)"
   },
   "auditDashboard": {
     "title": "監査ログ ダッシュボード",
@@ -1330,6 +1765,354 @@
     "config": "監査ログ設定",
     "status": "状態",
     "readAuditLevel": "READ監査レベル",
-    "lastUpdated": "最終更新"
+    "lastUpdated": "最終更新",
+    "recentEntries": "最近の監査ログ",
+    "noEntries": "監査ログエントリがありません",
+    "operation": "操作",
+    "user": "ユーザー",
+    "target": "対象",
+    "result": "結果",
+    "duration": "所要時間",
+    "timestamp": "日時",
+    "entryCount": "表示件数",
+    "loadEntries": "ログ読込",
+    "loadError": "監査ログの読込に失敗しました",
+    "clientIp": "クライアントIP",
+    "errorMessage": "エラー"
+  },
+  "filesystemImportExport": {
+    "title": "ファイルシステム インポート/エクスポート",
+    "adminOnly": "管理者専用機能",
+    "adminOnlyDescription": "この機能は、アプリケーションサーバーのローカルファイルシステムから直接コンテンツをインポート/エクスポートできます（ZIP圧縮なし）。管理者のみがこの機能にアクセスできます。",
+    "refreshFolders": "フォルダを更新",
+    "import": {
+      "title": "インポート",
+      "description": "アプリケーションサーバー上のローカルファイルシステムディレクトリからコンテンツをインポートします。ディレクトリにはNemakiWare独自形式のファイルとJSONメタデータファイルが含まれている必要があります。",
+      "sourcePath": "ソースパス",
+      "sourcePathRequired": "ソースパスを入力してください",
+      "sourcePathHelp": "サーバーファイルシステム上のディレクトリへの絶対パスを入力してください",
+      "targetFolder": "インポート先フォルダ",
+      "targetFolderRequired": "インポート先フォルダを選択してください",
+      "selectFolder": "フォルダを選択",
+      "button": "ファイルシステムからインポート",
+      "success": "インポートが正常に完了しました",
+      "partial": "インポートが警告付きで完了しました",
+      "error": "インポートに失敗しました"
+    },
+    "export": {
+      "title": "エクスポート",
+      "description": "アプリケーションサーバー上のローカルファイルシステムディレクトリにコンテンツをエクスポートします。ファイルはNemakiWare独自形式でJSONメタデータファイルと共にエクスポートされます。",
+      "sourceFolder": "エクスポート元フォルダ",
+      "sourceFolderRequired": "エクスポート元フォルダを選択してください",
+      "selectFolder": "フォルダを選択",
+      "targetPath": "出力先パス",
+      "targetPathRequired": "出力先パスを入力してください",
+      "targetPathHelp": "サーバーファイルシステム上の出力先ディレクトリへの絶対パスを入力してください",
+      "allowOverwrite": "既存ファイルを上書きする",
+      "button": "ファイルシステムにエクスポート",
+      "success": "エクスポートが正常に完了しました",
+      "partial": "エクスポートが警告付きで完了しました",
+      "error": "エクスポートに失敗しました"
+    },
+    "result": {
+      "status": "ステータス",
+      "success": "成功",
+      "partial": "一部成功",
+      "error": "エラー",
+      "foldersCreated": "作成されたフォルダ数",
+      "documentsCreated": "作成されたドキュメント数",
+      "foldersExported": "エクスポートされたフォルダ数",
+      "documentsExported": "エクスポートされたドキュメント数",
+      "targetPath": "出力先パス",
+      "warnings": "警告",
+      "errors": "エラー"
+    }
+  },
+  "webhookManagement": {
+    "title": "Webhook管理",
+    "columns": {
+      "deliveryId": "配信ID",
+      "objectId": "オブジェクトID",
+      "webhookUrl": "Webhook URL",
+      "eventType": "イベント種別",
+      "status": "ステータス",
+      "statusCode": "ステータスコード",
+      "attemptCount": "試行回数",
+      "deliveredAt": "配信日時",
+      "errorDetail": "エラー詳細",
+      "actions": "アクション"
+    },
+    "status": {
+      "success": "成功",
+      "failed": "失敗"
+    },
+    "filter": {
+      "status": "ステータス",
+      "all": "すべて",
+      "success": "成功のみ",
+      "failed": "失敗のみ"
+    },
+    "actions": {
+      "retry": "再試行",
+      "testWebhook": "Webhookテスト"
+    },
+    "pagination": {
+      "total": "全 {{total}} 件"
+    },
+    "messages": {
+      "loadError": "配信ログの読み込みに失敗しました",
+      "retryQueued": "再試行をキューに追加しました",
+      "retryError": "再試行に失敗しました",
+      "testError": "Webhookテストに失敗しました"
+    },
+    "testModal": {
+      "title": "Webhookエンドポイントテスト",
+      "url": "Webhook URL",
+      "urlRequired": "URLを入力してください",
+      "urlInvalid": "有効なURLを入力してください",
+      "secret": "シークレット（任意）",
+      "secretPlaceholder": "HMAC署名用シークレット",
+      "send": "テスト送信",
+      "sending": "送信中...",
+      "resultSuccess": "Webhookテスト成功",
+      "resultFailed": "Webhookテスト失敗",
+      "statusCode": "ステータスコード",
+      "responseTime": "応答時間",
+      "responseBody": "レスポンス"
+    }
+  },
+  "cloudSync": {
+    "title": "ディレクトリ同期",
+    "actions": "操作",
+    "deltaSyncButton": "Delta同期実行",
+    "fullReconciliationButton": "Full Reconciliation",
+    "cancelButton": "キャンセル",
+    "testConnectionButton": "接続テスト",
+    "deltaSyncStarted": "Delta同期を開始しました",
+    "fullReconciliationStarted": "Full Reconciliationを開始しました",
+    "fullReconciliationConfirm": "Full Reconciliationを実行しますか？全ユーザー・グループの突合を行います。",
+    "syncFailed": "同期の開始に失敗しました",
+    "syncCancelled": "同期をキャンセルしました",
+    "cancelFailed": "キャンセルに失敗しました",
+    "connectionSuccess": "接続テスト成功",
+    "connectionFailed": "接続テスト失敗",
+    "syncStatus": "同期ステータス",
+    "status": "状態",
+    "mode": "モード",
+    "modeDelta": "Delta（差分）",
+    "modeFull": "Full Reconciliation",
+    "startTime": "開始時刻",
+    "endTime": "終了時刻",
+    "currentPage": "現在のページ",
+    "statusIdle": "待機中",
+    "statusRunning": "実行中",
+    "statusCompleted": "完了",
+    "statusError": "エラー",
+    "statusCancelled": "キャンセル済",
+    "usersCreated": "ユーザー作成",
+    "usersUpdated": "ユーザー更新",
+    "usersDeleted": "ユーザー削除",
+    "usersSkipped": "ユーザースキップ",
+    "groupsCreated": "グループ作成",
+    "groupsUpdated": "グループ更新",
+    "groupsDeleted": "グループ削除",
+    "groupsSkipped": "グループスキップ",
+    "errors": "エラー",
+    "warnings": "警告",
+    "ldapTab": "LDAP / Active Directory",
+    "ldapSyncButton": "同期実行",
+    "ldapPreviewButton": "プレビュー（Dry Run）",
+    "ldapSyncStarted": "LDAP同期を開始しました",
+    "ldapPreviewStarted": "プレビューを開始しました",
+    "ldapSyncConfirm": "LDAP同期を実行しますか？ユーザーとグループが同期されます。",
+    "ldapConfigTitle": "LDAP設定",
+    "ldapUrl": "LDAP URL",
+    "ldapBaseDn": "Base DN",
+    "ldapEnabled": "有効",
+    "ldapDisabled": "無効",
+    "ldapNotConfigured": "LDAP同期は設定されていません。サーバー設定で directory.sync.enabled=true を設定してください。",
+    "dryRun": "Dry Run",
+    "userSearchBase": "ユーザー検索ベース",
+    "groupSearchBase": "グループ検索ベース"
+  },
+  "accountSettings": {
+    "title": "アカウント設定",
+    "userId": "ユーザーID",
+    "tabs": {
+      "profile": "プロフィール",
+      "password": "パスワード",
+      "passkey": "パスキー",
+      "apiKey": "APIキー"
+    },
+    "tabDisabled": "無効",
+    "profile": {
+      "userId": "ユーザーID",
+      "userName": "表示名",
+      "firstName": "名",
+      "lastName": "姓",
+      "email": "メールアドレス",
+      "role": "権限",
+      "admin": "管理者",
+      "user": "一般ユーザー",
+      "authMethods": "認証方式",
+      "authMethodAll": "すべて許可",
+      "authMethodDisabled": "無効",
+      "authMethodPassword": "パスワード",
+      "authMethodCloud": "クラウド（Google / Microsoft）",
+      "groups": "所属グループ"
+    },
+    "changePassword": "パスワード変更",
+    "currentPassword": "現在のパスワード",
+    "newPassword": "新しいパスワード",
+    "confirmPassword": "新しいパスワード（確認）",
+    "currentPasswordRequired": "現在のパスワードを入力してください",
+    "newPasswordRequired": "新しいパスワードを入力してください",
+    "confirmPasswordRequired": "パスワードの確認を入力してください",
+    "passwordMinLength": "パスワードは8文字以上で入力してください",
+    "passwordMismatch": "パスワードが一致しません",
+    "passwordChanged": "パスワードを変更しました",
+    "passwordChangeError": "パスワードの変更に失敗しました",
+    "changePasswordButton": "パスワードを変更",
+    "currentPasswordPlaceholder": "現在のパスワードを入力",
+    "newPasswordPlaceholder": "新しいパスワードを入力",
+    "confirmPasswordPlaceholder": "新しいパスワードを再入力",
+    "cloudOnlyAccount": "このアカウントはクラウド認証（Google / Microsoft）のみで利用できます。パスワードやパスキーの設定はできません。"
+  },
+  "passkey": {
+    "title": "パスキー",
+    "register": "パスキーを登録",
+    "notSupported": "このブラウザはパスキーに対応していません",
+    "noCredentials": "登録されたパスキーはありません",
+    "confirmDelete": "このパスキーを削除しますか？",
+    "columns": {
+      "name": "名前",
+      "createdAt": "登録日",
+      "transports": "トランスポート",
+      "actions": "操作"
+    },
+    "registerModal": {
+      "title": "パスキーを登録",
+      "description": "デバイスの生体認証やセキュリティキーを使用してパスキーを登録します。",
+      "displayNamePlaceholder": "パスキーの名前（例：MacBook Pro）",
+      "ok": "登録開始"
+    },
+    "messages": {
+      "loadError": "パスキーの読み込みに失敗しました",
+      "registerSuccess": "パスキーを登録しました",
+      "registerError": "パスキーの登録に失敗しました",
+      "deleteSuccess": "パスキーを削除しました",
+      "deleteError": "パスキーの削除に失敗しました",
+      "cancelled": "パスキーの操作がキャンセルされました"
+    }
+  },
+  "apiKeyManagement": {
+    "title": "APIキー管理",
+    "description": "APIキーはMCPクライアントやクラウド専用ユーザーがプログラムでアクセスするための永続的な認証を提供します。",
+    "createKey": "新規APIキー作成",
+    "noKeys": "APIキーがありません",
+    "noKeysDescription": "このユーザーにはまだAPIキーがありません。上のボタンをクリックして作成してください。",
+    "columns": {
+      "name": "名前",
+      "keyPrefix": "キープレフィックス",
+      "created": "作成日時",
+      "lastUsed": "最終使用",
+      "expiresAt": "有効期限",
+      "status": "ステータス",
+      "actions": "操作"
+    },
+    "status": {
+      "active": "有効",
+      "inactive": "無効",
+      "expired": "期限切れ"
+    },
+    "neverExpires": "無期限",
+    "modal": {
+      "createTitle": "新規APIキー作成",
+      "keyName": "キー名",
+      "keyNamePlaceholder": "例: MCPクライアント用",
+      "keyNameRequired": "キー名を入力してください",
+      "keyDescription": "説明（任意）",
+      "keyDescriptionPlaceholder": "このキーの使用目的を説明",
+      "expiration": "有効期限",
+      "expirationNever": "無期限",
+      "expiration7Days": "7日間",
+      "expiration30Days": "30日間",
+      "expiration90Days": "90日間",
+      "expiration1Year": "1年間",
+      "expirationCustom": "カスタム",
+      "customExpiration": "カスタム有効期限",
+      "customExpirationRequired": "有効期限を選択してください",
+      "warningTitle": "重要：このキーは一度だけ表示されます",
+      "warningMessage": "このAPIキーは安全に保存してください。このダイアログを閉じると、キーの値を再度確認することはできません。",
+      "copySuccess": "クリップボードにコピーしました",
+      "copyButton": "コピー"
+    },
+    "messages": {
+      "createSuccess": "APIキーを作成しました",
+      "createError": "APIキーの作成に失敗しました",
+      "revokeSuccess": "APIキーを無効化しました",
+      "revokeError": "APIキーの無効化に失敗しました",
+      "loadError": "APIキーの読み込みに失敗しました"
+    },
+    "confirmRevoke": "このAPIキーを無効化しますか？この操作は元に戻せません。",
+    "revoke": "無効化",
+    "neverUsed": "未使用",
+    "myApiKeys": "マイAPIキー",
+    "manageApiKeys": "APIキー管理"
+  },
+  "mcpCloudLogin": {
+    "title": "MCPクラウドログイン",
+    "description": "Claude Desktopからのログインを完了するには、以下の手順に従ってください。",
+    "codeLabel": "ログインコード",
+    "authenticatePrompt": "以下のいずれかの方法でログインしてください。",
+    "loginOptions": "ログイン方法を選択",
+    "noCode": {
+      "title": "ログインコードが見つかりません",
+      "description": "Claude Desktopから提供されたURLでアクセスしてください。",
+      "goHome": "ホームに戻る"
+    },
+    "authenticated": {
+      "message": "{{username}}としてログイン中",
+      "completeButton": "MCPログインを完了"
+    },
+    "submitting": {
+      "title": "ログインを完了しています...",
+      "description": "しばらくお待ちください。"
+    },
+    "success": {
+      "title": "ログイン完了",
+      "description": "MCPログインが正常に完了しました。",
+      "instruction": "Claude Desktopに戻ると、自動的にログイン状態が反映されます。",
+      "closeWindow": "このウィンドウを閉じる",
+      "closeManually": "このタブを手動で閉じてください",
+      "logoutAndRetry": "ログアウトして別のアカウントで試す"
+    },
+    "error": {
+      "title": "ログインに失敗しました",
+      "retry": "やり直す"
+    },
+    "loginInstructions": "通常のNemakiWareログインを使用してください",
+    "loginSteps": "1. 下のボタンで新しいタブでログインページを開きます",
+    "loginSteps2": "2. ログイン後、このページに戻って「完了」をクリックしてください",
+    "openLoginPage": "ログインページを新しいタブで開く",
+    "checkLogin": "ログイン確認・完了",
+    "errors": {
+      "completionFailed": "ログインの完了に失敗しました",
+      "networkError": "ネットワークエラーが発生しました"
+    }
+  },
+  "cloudDrive": {
+    "importFromGoogleDrive": "Google Driveからインポート",
+    "importFromOneDrive": "OneDriveからインポート",
+    "selectFile": "ファイルを選択",
+    "import": "インポート",
+    "importSuccess": "ファイルをインポートしました: {{name}}",
+    "importError": "インポートに失敗しました",
+    "loadFilesError": "クラウドファイルの読み込みに失敗しました",
+    "fileName": "ファイル名",
+    "modifiedTime": "更新日時",
+    "size": "サイズ",
+    "googleDrive": "Google Drive",
+    "oneDrive": "OneDrive"
   }
 }

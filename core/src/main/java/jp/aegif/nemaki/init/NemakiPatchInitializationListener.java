@@ -95,7 +95,8 @@ public class NemakiPatchInitializationListener implements ServletContextListener
                 "patch_SystemFolderSetup",       // Creates .system folder
                 "patch_InitialContentSetup",     // Creates Sites and Technical Documents folders
                 "patch_StandardCmisViews",       // Creates CMIS views
-                "patch_TestUserInitialization"   // Creates test users
+                "patch_TestUserInitialization",  // Creates test users
+                "patch_McpServiceAccount"        // Creates MCP service account for API access
             };
 
             for (String beanName : patchBeanNames) {

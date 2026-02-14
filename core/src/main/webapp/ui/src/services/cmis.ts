@@ -273,12 +273,12 @@
  * - getContentStream() fails: Content not available or permission denied (reject with error)
  */
 
-import { AuthService } from './auth';
+// AuthService is no longer needed - authentication handled by HttpOnly cookie
 import { getCmisAuthHeaders } from './auth/CmisAuthHeaderProvider';
 import { CmisHttpClient } from './http';
 import { AtomPubClient } from './clients';
 import { ParsedAtomEntry } from './parsers';
-import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions, CoercionWarning } from '../types/cmis';
+import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions, CoercionWarning, RetentionSettings, MigrationLog, PendingArchive } from '../types/cmis';
 import { CompatibleType, MigrationPropertyDefinition, MigrationPropertyType } from '../types/typeMigration';
 
 /**
@@ -330,8 +330,25 @@ function convertParsedEntryToCmisObject(entry: ParsedAtomEntry): CMISObject {
     versionLabel: props['cmis:versionLabel'] as string | undefined,
     isLatestVersion: props['cmis:isLatestVersion'] as boolean | undefined,
     isLatestMajorVersion: props['cmis:isLatestMajorVersion'] as boolean | undefined,
+    changeToken: props['cmis:changeToken'] as string | undefined,
     coercionWarnings: coercionWarnings.length > 0 ? coercionWarnings : undefined
   };
+}
+
+/**
+ * Normalize archive type to a valid CMIS baseType for UI rendering.
+ * Backend filters out 'attachment' type, but as a safety net,
+ * map document-like types (e.g. 'attachment') to 'cmis:document'.
+ */
+function normalizeArchiveBaseType(type: string): string {
+  if (type === 'cmis:document' || type === 'cmis:folder') {
+    return type;
+  }
+  if (type === 'attachment') {
+    return 'cmis:document';
+  }
+  // cmis:item (user/group), cmis:relationship, etc. are not downloadable documents
+  return type.startsWith('cmis:') ? type : 'cmis:document';
 }
 
 const MIGRATION_PROPERTY_TYPES: MigrationPropertyType[] = [
@@ -348,13 +365,11 @@ const MIGRATION_PROPERTY_TYPES: MigrationPropertyType[] = [
 export class CMISService {
   private baseUrl = '/core/browser';
   private restBaseUrl = '/core/rest/repo';  // REST API for type management operations
-  private authService: AuthService;
   private httpClient: CmisHttpClient;
   private atomPubClient: AtomPubClient;
   private onAuthError?: (error: any) => void;
 
   constructor(onAuthError?: (error: any) => void) {
-    this.authService = AuthService.getInstance();
     this.onAuthError = onAuthError;
     // Initialize HTTP client with auth header provider from dedicated module
     this.httpClient = new CmisHttpClient(getCmisAuthHeaders);
@@ -616,25 +631,9 @@ export class CMISService {
   }
 
   private getAuthHeaders(): Record<string, string> {
-    try {
-      const authData = localStorage.getItem('nemakiware_auth');
-
-      if (authData) {
-        const auth = JSON.parse(authData);
-
-        if (auth.username && auth.token) {
-          // Use Basic auth with username to provide username context
-          const credentials = btoa(`${auth.username}:dummy`);
-          return {
-            'Authorization': `Basic ${credentials}`,
-            'nemaki_auth_token': String(auth.token)
-          };
-        }
-      }
-    } catch (e) {
-      // localStorage access failed - return empty headers
-    }
-
+    // Authentication is handled by HttpOnly cookie (nemaki_auth_token)
+    // which is automatically sent by the browser for same-origin requests.
+    // No explicit auth headers needed.
     return {};
   }
 
@@ -823,7 +822,7 @@ export class CMISService {
 
       // Convert ParsedAtomEntry[] to CMISObject[]
       const children: CMISObject[] = result.data?.entries.map(convertParsedEntryToCmisObject) || [];
-      
+
       return children;
     } catch (error) {
       // Re-throw errors to preserve existing behavior
@@ -1160,8 +1159,18 @@ export class CMISService {
 
       // CRITICAL FIX (2025-11-17): Include change token for optimistic locking
       // The CMIS server requires the change token to prevent concurrent update conflicts (HTTP 409)
-      if (changeToken) {
-        formData.append('changeToken', changeToken);
+      // If no changeToken provided, fetch the current object to get it
+      let token = changeToken;
+      if (!token) {
+        try {
+          const currentObject = await this.getObject(repositoryId, objectId);
+          token = currentObject?.changeToken;
+        } catch (e) {
+          console.warn('Could not fetch changeToken, proceeding without it:', e);
+        }
+      }
+      if (token) {
+        formData.append('changeToken', token);
       }
 
       let propertyIndex = 0;
@@ -1243,12 +1252,21 @@ export class CMISService {
    * @param objectId Object ID to delete
    * @returns Promise resolving when deletion is complete
    */
-  async deleteObject(repositoryId: string, objectId: string): Promise<void> {
+  async deleteObject(repositoryId: string, objectId: string, isFolder: boolean = false): Promise<void> {
     try {
       const url = `${this.baseUrl}/${repositoryId}`;
       const params = new URLSearchParams();
-      params.append('cmisaction', 'deleteObject');
-      params.append('objectId', objectId);
+
+      if (isFolder) {
+        // Use deleteTree for folders to handle contained objects
+        params.append('cmisaction', 'deleteTree');
+        params.append('folderId', objectId);
+        params.append('allVersions', 'true');
+        params.append('continueOnFailure', 'false');
+      } else {
+        params.append('cmisaction', 'deleteObject');
+        params.append('objectId', objectId);
+      }
 
       const response = await this.httpClient.postUrlEncoded(url, params);
 
@@ -1664,9 +1682,95 @@ export class CMISService {
     }
   }
 
-  async getUsers(repositoryId: string): Promise<User[]> {
+  /**
+   * Get the current authenticated user's information including isAdmin flag.
+   */
+  async getCurrentUser(repositoryId: string): Promise<{
+    userId: string;
+    userName: string;
+    isAdmin: boolean;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    groups?: string[];
+    allowedAuthMethods?: string | null;
+  }> {
+    const url = `/core/rest/repo/${repositoryId}/user/me`;
+    const response = await this.httpClient.getJson(url);
+
+    if (response.status === 200) {
+      const data = JSON.parse(response.responseText);
+      if (data.status === true || data.status === 'success') {
+        const user = data.user;
+        return {
+          userId: user.userId,
+          userName: user.userName,
+          isAdmin: user.isAdmin === true,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          groups: Array.isArray(user.groups) ? user.groups : [],
+          // Preserve null vs undefined distinction:
+          // null = server returned null (field not set in DB)
+          // undefined = not fetched yet
+          allowedAuthMethods: user.allowedAuthMethods != null ? user.allowedAuthMethods : null,
+        };
+      }
+      throw new Error('Failed to get current user');
+    }
+
+    const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+    throw error;
+  }
+
+  /**
+   * Change a user's password.
+   * - Self-service: requires oldPassword
+   * - Admin resetting another user: oldPassword can be empty
+   */
+  async changePassword(repositoryId: string, userId: string, oldPassword: string, newPassword: string): Promise<void> {
+    const url = `${this.restBaseUrl}/${repositoryId}/user/changePassword/${userId}`;
+
+    const formData = new URLSearchParams();
+    if (oldPassword) {
+      formData.append('oldPassword', oldPassword);
+    }
+    formData.append('newPassword', newPassword);
+
+    const response = await this.httpClient.request({
+      method: 'PUT',
+      url,
+      body: formData.toString(),
+      contentType: 'application/x-www-form-urlencoded',
+      accept: 'application/json'
+    });
+
+    if (response.status === 200) {
+      const data = JSON.parse(response.responseText);
+      if (data.status === false || data.status === 'failure' || data.status === 'error') {
+        const errMessages = data.errMsg || data.error || [];
+        const errText = Array.isArray(errMessages)
+          ? errMessages.map((e: any) => typeof e === 'string' ? e : JSON.stringify(e)).join(', ')
+          : String(errMessages);
+        throw new Error(errText || 'Password change failed');
+      }
+      return;
+    }
+
+    const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+    throw error;
+  }
+
+  async getUsers(repositoryId: string, params?: {
+    offset?: number; limit?: number; query?: string;
+  }): Promise<{ users: User[]; totalCount: number }> {
     try {
-      const url = `/core/rest/repo/${repositoryId}/user/list`;
+      const searchParams = new URLSearchParams();
+      if (params?.offset != null && params.offset >= 0) searchParams.set('offset', String(params.offset));
+      if (params?.limit != null && params.limit > 0) searchParams.set('limit', String(params.limit));
+      if (params?.query) searchParams.set('query', params.query);
+      const qs = searchParams.toString();
+      const url = `/core/rest/repo/${repositoryId}/user/list${qs ? '?' + qs : ''}`;
       const response = await this.httpClient.getJson(url);
 
       if (response.status === 200) {
@@ -1674,41 +1778,35 @@ export class CMISService {
           const data = JSON.parse(response.responseText);
           const rawUsers = data.users || [];
 
-          // Transform user data to match UI expectations
-          // Preserve firstName and lastName as separate fields for table display
           const transformedUsers = rawUsers.map((user: any) => ({
             id: user.userId || user.id,
             name: user.userName || user.userId || user.id,
             firstName: user.firstName,
             lastName: user.lastName,
             email: user.email,
-            groups: user.groups || []
+            groups: user.groups || [],
+            allowedAuthMethods: user.allowedAuthMethods,
+            isAdmin: user.isAdmin === true
           }));
 
-          return transformedUsers;
+          return {
+            users: transformedUsers,
+            totalCount: data.totalCount ?? transformedUsers.length
+          };
         } catch (e) {
           throw new Error('Invalid response format');
         }
       } else if (response.status === 500) {
-        // サーバー側エラーの詳細情報を解析
         let errorMessage = 'サーバーエラーが発生しました';
         let errorDetails = '';
         try {
           const errorResponse = JSON.parse(response.responseText);
-          if (errorResponse.message) {
-            errorMessage = errorResponse.message;
-          }
-          if (errorResponse.error) {
-            errorDetails = errorResponse.error;
-          }
-          if (errorResponse.errorType) {
-            errorDetails += ` (${errorResponse.errorType})`;
-          }
+          if (errorResponse.message) errorMessage = errorResponse.message;
+          if (errorResponse.error) errorDetails = errorResponse.error;
+          if (errorResponse.errorType) errorDetails += ` (${errorResponse.errorType})`;
         } catch (e) {
-          // JSONパースできない場合はレスポンステキストをそのまま使用
           errorDetails = response.responseText || 'Unknown server error';
         }
-
         const error = new Error(errorMessage);
         (error as any).details = errorDetails;
         (error as any).status = response.status;
@@ -1746,8 +1844,19 @@ export class CMISService {
       if (response.status === 200) {
         try {
           const data = JSON.parse(response.responseText);
+          // Check legacy API status field - server returns HTTP 200 even on failure
+          if (data.status === false || data.status === 'failure' || data.status === 'error') {
+            const errMessages = data.errMsg || data.error || data.errors || [];
+            const errText = Array.isArray(errMessages)
+              ? errMessages.map((e: any) => typeof e === 'string' ? e : JSON.stringify(e)).join(', ')
+              : String(errMessages);
+            throw new Error(errText || 'User creation failed');
+          }
           return data;
         } catch (e) {
+          if (e instanceof Error && e.message !== 'Invalid response format') {
+            throw e;
+          }
           throw new Error('Invalid response format');
         }
       }
@@ -1776,6 +1885,15 @@ export class CMISService {
       if (user.groups !== undefined) {
         formData.append('groups', JSON.stringify(user.groups));
       }
+      // Add allowedAuthMethods parameter (empty string clears it)
+      // Only send when explicitly set to a string value; skip null/undefined to preserve server-side value
+      if (user.allowedAuthMethods !== undefined && user.allowedAuthMethods !== null) {
+        formData.append('allowedAuthMethods', user.allowedAuthMethods);
+      }
+      // Add isAdmin parameter
+      if (user.isAdmin !== undefined) {
+        formData.append('isAdmin', String(user.isAdmin));
+      }
 
       // Use PUT method via httpClient.request()
       const response = await this.httpClient.request({
@@ -1789,8 +1907,20 @@ export class CMISService {
       if (response.status === 200) {
         try {
           const data = JSON.parse(response.responseText);
+          // Check legacy API status field - server returns HTTP 200 even on failure
+          // Server uses status: "failure" (string), not false (boolean)
+          if (data.status === false || data.status === 'failure' || data.status === 'error') {
+            const errMessages = data.errMsg || data.error || data.errors || [];
+            const errText = Array.isArray(errMessages)
+              ? errMessages.map((e: any) => typeof e === 'string' ? e : JSON.stringify(e)).join(', ')
+              : String(errMessages);
+            throw new Error(errText || 'User update failed');
+          }
           return data;
         } catch (e) {
+          if (e instanceof Error && e.message !== 'Invalid response format') {
+            throw e;
+          }
           throw new Error('Invalid response format');
         }
       }
@@ -1817,6 +1947,21 @@ export class CMISService {
       });
 
       if (response.status === 200 || response.status === 204) {
+        if (response.status === 200 && response.responseText) {
+          let data: any;
+          try {
+            data = JSON.parse(response.responseText);
+          } catch {
+            // JSON parse error - response is not JSON, treat as success
+          }
+          if (data && (data.status === false || data.status === 'failure' || data.status === 'error')) {
+            const errMessages = data.errMsg || data.error || data.errors || [];
+            const errText = Array.isArray(errMessages)
+              ? errMessages.map((e: any) => typeof e === 'string' ? e : JSON.stringify(e)).join(', ')
+              : String(errMessages);
+            throw new Error(errText || 'User deletion failed');
+          }
+        }
         return;
       }
 
@@ -1830,9 +1975,16 @@ export class CMISService {
     }
   }
 
-  async getGroups(repositoryId: string): Promise<Group[]> {
+  async getGroups(repositoryId: string, params?: {
+    offset?: number; limit?: number; query?: string;
+  }): Promise<{ groups: Group[]; totalCount: number }> {
     try {
-      const url = `/core/rest/repo/${repositoryId}/group/list`;
+      const searchParams = new URLSearchParams();
+      if (params?.offset != null && params.offset >= 0) searchParams.set('offset', String(params.offset));
+      if (params?.limit != null && params.limit > 0) searchParams.set('limit', String(params.limit));
+      if (params?.query) searchParams.set('query', params.query);
+      const qs = searchParams.toString();
+      const url = `/core/rest/repo/${repositoryId}/group/list${qs ? '?' + qs : ''}`;
       const response = await this.httpClient.getJson(url);
 
       if (response.status === 200) {
@@ -1840,43 +1992,36 @@ export class CMISService {
           const data = JSON.parse(response.responseText);
           const rawGroups = data.groups || [];
 
-          // Transform group data to match UI expectations
           const transformedGroups = rawGroups.map((group: any) => {
             const userMembers = group.users || [];
             const groupMembers = group.groups || [];
             return {
               id: group.groupId || group.id,
               name: group.groupName || group.name || group.groupId || 'Unknown Group',
-              members: [...userMembers, ...groupMembers],  // Combined for backward compatibility
+              members: [...userMembers, ...groupMembers],
               userMembers,
               groupMembers
             };
           });
 
-          return transformedGroups;
+          return {
+            groups: transformedGroups,
+            totalCount: data.totalCount ?? transformedGroups.length
+          };
         } catch (e) {
           throw new Error('Invalid response format');
         }
       } else if (response.status === 500) {
-        // サーバー側エラーの詳細情報を解析
         let errorMessage = 'サーバーエラーが発生しました';
         let errorDetails = '';
         try {
           const errorResponse = JSON.parse(response.responseText);
-          if (errorResponse.message) {
-            errorMessage = errorResponse.message;
-          }
-          if (errorResponse.error) {
-            errorDetails = errorResponse.error;
-          }
-          if (errorResponse.errorType) {
-            errorDetails += ` (${errorResponse.errorType})`;
-          }
+          if (errorResponse.message) errorMessage = errorResponse.message;
+          if (errorResponse.error) errorDetails = errorResponse.error;
+          if (errorResponse.errorType) errorDetails += ` (${errorResponse.errorType})`;
         } catch (e) {
-          // JSONパースできない場合はレスポンステキストをそのまま使用
           errorDetails = response.responseText || 'Unknown server error';
         }
-
         const error = new Error(errorMessage);
         (error as any).details = errorDetails;
         (error as any).status = response.status;
@@ -2532,7 +2677,7 @@ export class CMISService {
   ): Promise<string[]> {
     // Circular reference detection
     if (visited.has(objectId)) {
-      console.log(`[CASCADE DELETE] Circular reference detected, skipping: ${objectId}`);
+      console.debug(`[CASCADE DELETE] Circular reference detected, skipping: ${objectId}`);
       return [];
     }
     visited.add(objectId);
@@ -2554,7 +2699,7 @@ export class CMISService {
         }
       }
 
-      console.log(`[CASCADE DELETE] Object ${objectId} has ${parentChildRels.length} parentChild relationships as source`);
+      console.debug(`[CASCADE DELETE] Object ${objectId} has ${parentChildRels.length} parentChild relationship(s) as source`);
 
       // Recursively collect descendants for each child
       for (const rel of parentChildRels) {
@@ -2568,7 +2713,7 @@ export class CMISService {
         }
       }
     } catch (error) {
-      console.error(`[CASCADE DELETE] Error collecting descendants for ${objectId}:`, error);
+      console.warn(`[CASCADE DELETE] Error collecting descendants for ${objectId}:`, error);
       // Continue with what we have, don't fail the entire operation
     }
 
@@ -2589,46 +2734,73 @@ export class CMISService {
    * @param repositoryId Repository ID
    * @param objectId Object ID to delete
    * @param cascadeParentChild Whether to cascade delete parentChild descendants (default: true)
-   * @returns Object with deletion results: deletedCount, failedIds
+   * @returns Object with detailed deletion results
    */
   async deleteObjectWithCascade(
     repositoryId: string,
     objectId: string,
-    cascadeParentChild: boolean = true
-  ): Promise<{ deletedCount: number; failedIds: string[] }> {
-    const failedIds: string[] = [];
-    let deletedCount = 0;
+    cascadeParentChild: boolean = true,
+    isFolder: boolean = false
+  ): Promise<{
+    deletedCount: number;
+    failedIds: string[];
+    rootDeleted: boolean;
+    descendantDeletedCount: number;
+    descendantFailedIds: string[];
+  }> {
+    const descendantFailedIds: string[] = [];
+    let descendantDeletedCount = 0;
+    let rootDeleted = false;
 
     if (cascadeParentChild) {
-      // Collect all descendants to delete
-      const descendants = await this.collectParentChildDescendants(repositoryId, objectId);
-      console.log(`[CASCADE DELETE] Found ${descendants.length} descendants to delete for ${objectId}`);
+      // Collect all descendants to delete, with timeout to prevent hanging
+      let descendants: string[] = [];
+      try {
+        const DESCENDANT_TIMEOUT_MS = 30000; // 30 seconds
+        descendants = await Promise.race([
+          this.collectParentChildDescendants(repositoryId, objectId),
+          new Promise<string[]>((_, reject) =>
+            setTimeout(() => reject(new Error('Descendant collection timed out')), DESCENDANT_TIMEOUT_MS)
+          )
+        ]);
+      } catch (error) {
+        console.warn(`[CASCADE DELETE] Skipping descendant collection for ${objectId}: ${error instanceof Error ? error.message : error}`);
+        // Continue without descendants - deleteTree will handle folder contents
+      }
 
       // Delete descendants from leaves to root
       for (const descendantId of descendants) {
         try {
           await this.deleteObject(repositoryId, descendantId);
-          deletedCount++;
-          console.log(`[CASCADE DELETE] Deleted descendant: ${descendantId}`);
+          descendantDeletedCount++;
         } catch (error) {
-          console.error(`[CASCADE DELETE] Failed to delete descendant ${descendantId}:`, error);
-          failedIds.push(descendantId);
+          console.warn(`[CASCADE DELETE] Failed to delete descendant ${descendantId}:`, error);
+          descendantFailedIds.push(descendantId);
           // Continue with other deletions
         }
       }
     }
 
-    // Finally delete the root object
+    // Finally delete the root object (use deleteTree for folders)
     try {
-      await this.deleteObject(repositoryId, objectId);
-      deletedCount++;
-      console.log(`[CASCADE DELETE] Deleted root object: ${objectId}`);
+      await this.deleteObject(repositoryId, objectId, isFolder);
+      rootDeleted = true;
     } catch (error) {
-      console.error(`[CASCADE DELETE] Failed to delete root object ${objectId}:`, error);
-      failedIds.push(objectId);
+      console.warn(`[CASCADE DELETE] Failed to delete root object ${objectId}:`, error);
+      // Root deletion failed - this is a complete failure for this object
     }
 
-    return { deletedCount, failedIds };
+    // Combine for backward compatibility
+    const failedIds = rootDeleted ? [...descendantFailedIds] : [objectId, ...descendantFailedIds];
+    const deletedCount = (rootDeleted ? 1 : 0) + descendantDeletedCount;
+
+    return {
+      deletedCount,
+      failedIds,
+      rootDeleted,
+      descendantDeletedCount,
+      descendantFailedIds
+    };
   }
 
   /**
@@ -2689,35 +2861,57 @@ export class CMISService {
     }
   }
 
-  async getArchives(repositoryId: string): Promise<CMISObject[]> {
+  async getArchives(repositoryId: string, options?: {
+    skip?: number;
+    limit?: number;
+    desc?: boolean;
+  }): Promise<{ archives: CMISObject[], isAdmin: boolean, totalItems: number }> {
     try {
       // Use correct REST endpoint for archive index
-      const url = `/core/rest/repo/${repositoryId}/archive/index`;
+      const params = new URLSearchParams();
+      if (options?.skip != null) params.set('skip', String(options.skip));
+      if (options?.limit != null) params.set('limit', String(options.limit));
+      if (options?.desc != null) params.set('desc', String(options.desc));
+      const qs = params.toString();
+      const url = `/core/rest/repo/${repositoryId}/archive/index${qs ? '?' + qs : ''}`;
       const response = await this.httpClient.getJson(url);
 
       if (response.status === 200) {
+        let data: Record<string, unknown>;
         try {
-          const data = JSON.parse(response.responseText);
-          const archives = data.archives || [];
-          // Map REST API archive format to CMISObject format
-          // REST API returns: {id, originalId, name, type, parentId, creator, created, mimeType, ...}
-          // UI expects CMISObject with: {id, name, baseType, objectType, ...}
-          // id: archive ID (used for restore/download operations on the archive)
-          return archives.map((archive: Record<string, unknown>) => ({
-            id: String(archive.id || ''),
-            name: String(archive.name || 'Unknown'),
-            baseType: String(archive.type || 'cmis:document'),
-            objectType: String(archive.type || 'cmis:document'),
-            properties: {},
-            path: archive.path as string | undefined,
-            createdBy: archive.creator as string | undefined,
-            lastModificationDate: archive.created as string | undefined,
-            contentStreamLength: archive.contentLength as number | undefined,
-            contentStreamMimeType: archive.mimeType as string | undefined,
-          } as CMISObject));
+          data = JSON.parse(response.responseText);
         } catch (e) {
           throw new Error('Invalid response format');
         }
+        // Check REST API status field - server may return HTTP 200 with failure status
+        if (data.status === 'failure') {
+          console.error('Archive API returned failure:', data.error);
+          throw new Error('Archive API error: ' + JSON.stringify(data.error));
+        }
+        const archives = (data.archives || []) as Record<string, unknown>[];
+        // Map REST API archive format to CMISObject format
+        // REST API returns: {id, originalId, name, type, parentId, creator, created, mimeType, ...}
+        // UI expects CMISObject with: {id, name, baseType, objectType, ...}
+        // id: archive ID (used for restore/download operations on the archive)
+        const isAdmin = data.isAdmin === true;
+        const totalItems = typeof data.totalItems === 'number' ? data.totalItems : archives.length;
+        const mappedArchives = archives.map((archive: Record<string, unknown>) => ({
+          id: String(archive.id || ''),
+          name: String(archive.name || 'Unknown'),
+          baseType: normalizeArchiveBaseType(String(archive.type || 'cmis:document')),
+          objectType: String(archive.type || 'cmis:document'),
+          properties: {},
+          path: archive.path as string | undefined,
+          createdBy: archive.creator as string | undefined,
+          lastModificationDate: archive.created as string | undefined,
+          contentStreamLength: archive.contentLength as number | undefined,
+          contentStreamMimeType: archive.mimeType as string | undefined,
+          archiveState: archive.archiveState as string | undefined,
+          archivedAt: archive.archivedAt as string | undefined,
+          coldMoveMode: archive.coldMoveMode as string | undefined,
+          archivedBy: archive.archivedBy as string | undefined,
+        } as CMISObject));
+        return { archives: mappedArchives, isAdmin, totalItems };
       }
 
       const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
@@ -2727,6 +2921,52 @@ export class CMISService {
         throw error;
       }
       throw new Error('Network error during archive retrieval');
+    }
+  }
+
+  async getRetentionSettings(repositoryId: string): Promise<RetentionSettings> {
+    try {
+      const url = `/core/rest/repo/${repositoryId}/archive/retention-settings`;
+      const response = await this.httpClient.getJson(url);
+
+      if (response.status === 200) {
+        const data = JSON.parse(response.responseText);
+        if (data.status && data.settings) {
+          return data.settings as RetentionSettings;
+        }
+        throw new Error(data.errMsg?.[0]?.message || 'Failed to get retention settings');
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during retention settings retrieval');
+    }
+  }
+
+  async getMigrationLogs(repositoryId: string, limit: number = 50): Promise<MigrationLog[]> {
+    try {
+      const url = `/core/rest/repo/${repositoryId}/archive/migration-logs?limit=${limit}`;
+      const response = await this.httpClient.getJson(url);
+
+      if (response.status === 200) {
+        const data = JSON.parse(response.responseText);
+        if (data.status) {
+          return (data.logs || []) as MigrationLog[];
+        }
+        throw new Error(data.errMsg?.[0]?.message || 'Failed to get migration logs');
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during migration logs retrieval');
     }
   }
 
@@ -2763,6 +3003,29 @@ export class CMISService {
       });
 
       if (response.status === 200 || response.status === 204) {
+        // Check response body for error codes
+        if (response.responseText) {
+          try {
+            const data = JSON.parse(response.responseText);
+            if (data.status === 'failure' && data.error) {
+              const errors = Array.isArray(data.error) ? data.error : [data.error];
+              for (const err of errors) {
+                if (typeof err === 'object') {
+                  const values = Object.values(err);
+                  if (values.includes('errRestoreBecauseParentNoLongerExists')) {
+                    throw new Error('ERR_RESTORE_BECAUSE_PARENT_NO_LONGER_EXISTS');
+                  }
+                }
+              }
+              throw new Error(JSON.stringify(data.error));
+            }
+          } catch (parseError) {
+            if (parseError instanceof Error && parseError.message.startsWith('ERR_')) {
+              throw parseError;
+            }
+            // Ignore parse errors for non-JSON responses
+          }
+        }
         return;
       }
 
@@ -2773,6 +3036,82 @@ export class CMISService {
         throw error;
       }
       throw new Error('Network error during object restoration');
+    }
+  }
+
+  async getPendingArchives(repositoryId: string): Promise<PendingArchive[]> {
+    try {
+      const url = `/core/rest/repo/${repositoryId}/archive/pending-archives`;
+      const response = await this.httpClient.request({
+        method: 'GET',
+        url,
+        accept: 'application/json'
+      });
+
+      if (response.status === 200) {
+        const data = JSON.parse(response.responseText);
+        if (data.status === 'success' && data.pendingArchives) {
+          return data.pendingArchives;
+        }
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to get pending archives:', error);
+      return [];
+    }
+  }
+
+  async forceArchive(repositoryId: string, objectId: string): Promise<void> {
+    try {
+      const url = `/core/rest/repo/${repositoryId}/archive/force-archive/${objectId}`;
+      const response = await this.httpClient.request({
+        method: 'POST',
+        url,
+        body: JSON.stringify({}),
+        contentType: 'application/json',
+        accept: 'application/json'
+      });
+
+      if (response.status === 200) {
+        const data = JSON.parse(response.responseText);
+        if (data.status === 'failure') {
+          throw new Error('Force archive failed');
+        }
+        return;
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) throw error;
+      throw new Error('Network error during force archive');
+    }
+  }
+
+  async extendExpiration(repositoryId: string, objectId: string, newDate: string): Promise<void> {
+    try {
+      const url = `/core/rest/repo/${repositoryId}/archive/extend-expiration/${objectId}?newExpirationDate=${encodeURIComponent(newDate)}`;
+      const response = await this.httpClient.request({
+        method: 'PUT',
+        url,
+        body: JSON.stringify({}),
+        contentType: 'application/json',
+        accept: 'application/json'
+      });
+
+      if (response.status === 200) {
+        const data = JSON.parse(response.responseText);
+        if (data.status === 'failure') {
+          throw new Error('Extend expiration failed');
+        }
+        return;
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) throw error;
+      throw new Error('Network error during expiration extension');
     }
   }
 
@@ -2816,8 +3155,12 @@ export class CMISService {
   }
 
   getDownloadUrl(repositoryId: string, objectId: string): string {
-    const token = this.authService.getAuthToken();
-    return `${this.baseUrl}/${repositoryId}/node/${objectId}/content?token=${token}`;
+    // Authentication is handled by HttpOnly cookie, no token in URL needed
+    return `${this.baseUrl}/${repositoryId}/node/${objectId}/content`;
+  }
+
+  getArchiveDownloadUrl(repositoryId: string, archiveId: string): string {
+    return `/core/rest/repo/${repositoryId}/archive/${archiveId}/content`;
   }
 
   async getContentStream(repositoryId: string, objectId: string): Promise<ArrayBuffer> {
@@ -2951,8 +3294,8 @@ export class CMISService {
    * @deprecated Use getRenditionContent() instead for authenticated access
    */
   getRenditionUrl(repositoryId: string, objectId: string, streamId: string): string {
-    const token = this.authService.getAuthToken();
-    return `${this.baseUrl}/${repositoryId}?cmisselector=content&objectId=${objectId}&streamId=${streamId}&token=${token}`;
+    // Authentication is handled by HttpOnly cookie, no token in URL needed
+    return `${this.baseUrl}/${repositoryId}?cmisselector=content&objectId=${objectId}&streamId=${streamId}`;
   }
 
   // ============================================================
@@ -3252,5 +3595,217 @@ export class CMISService {
     }
 
     return data;
+  }
+
+  /**
+   * Import content from ACP or custom format ZIP file.
+   * Supports Alfresco ACP format and NemakiWare custom format with distributed JSON metadata.
+   *
+   * @param repositoryId Repository ID
+   * @param folderId Target folder ID to import into
+   * @param file ZIP file to import
+   * @param onProgress Optional progress callback
+   * @returns Promise resolving to import result
+   */
+  async importContent(
+    repositoryId: string,
+    folderId: string,
+    file: File,
+    onProgress?: (progress: number) => void
+  ): Promise<{
+    status: string;
+    message: string;
+    foldersCreated: number;
+    documentsCreated: number;
+    errors?: string[];
+    warnings?: string[];
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const headers = this.getAuthHeaders();
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `/core/rest/repo/${repositoryId}/importexport/import/${folderId}`);
+      xhr.withCredentials = true; // Send HttpOnly cookie for authentication
+
+      // Set auth headers
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+
+      // Extended timeout for large imports (60 minutes)
+      // 1GB+ ZIPs with hundreds of files require significant server processing time
+      xhr.timeout = 3600000;
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          onProgress(progress);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data);
+          } catch (e) {
+            reject(new Error('Invalid response format'));
+          }
+        } else {
+          try {
+            const errorData = JSON.parse(xhr.responseText);
+            reject(new Error(errorData.message || `Import failed: ${xhr.status}`));
+          } catch (e) {
+            reject(new Error(`Import failed: ${xhr.status}`));
+          }
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error during import'));
+      };
+
+      xhr.ontimeout = () => {
+        reject(new Error('Import timed out'));
+      };
+
+      xhr.send(formData);
+    });
+  }
+
+  /**
+   * Export folder contents as custom NemakiWare format ZIP.
+   * The ZIP contains files with their version history and JSON metadata.
+   *
+   * @param repositoryId Repository ID
+   * @param folderId Folder ID to export
+   * @param onProgress Optional progress callback
+   * @returns Promise resolving to Blob containing the ZIP file
+   */
+  async exportContent(
+    repositoryId: string,
+    folderId: string,
+    onProgress?: (progress: number) => void
+  ): Promise<Blob> {
+    const headers = this.getAuthHeaders();
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `/core/rest/repo/${repositoryId}/importexport/export/${folderId}`);
+      xhr.responseType = 'blob';
+      xhr.withCredentials = true; // Send HttpOnly cookie for authentication
+
+      // Set auth headers
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+
+      // Extended timeout for large exports (10 minutes)
+      xhr.timeout = 600000;
+
+      xhr.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          onProgress(progress);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(xhr.response as Blob);
+        } else {
+          reject(new Error(`Export failed: ${xhr.status}`));
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error during export'));
+      };
+
+      xhr.ontimeout = () => {
+        reject(new Error('Export timed out'));
+      };
+
+      xhr.send();
+    });
+  }
+
+  async exportObjects(
+    repositoryId: string,
+    objectIds: string[],
+    onProgress?: (progress: number) => void
+  ): Promise<Blob> {
+    const headers = this.getAuthHeaders();
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `/core/rest/repo/${repositoryId}/importexport/export/objects`);
+      xhr.responseType = 'blob';
+      xhr.withCredentials = true;
+
+      // Set auth headers
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      xhr.setRequestHeader('Content-Type', 'application/json');
+
+      xhr.timeout = 600000;
+
+      xhr.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          onProgress(progress);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(xhr.response as Blob);
+        } else {
+          reject(new Error(`Export failed: ${xhr.status}`));
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error during export'));
+      };
+
+      xhr.ontimeout = () => {
+        reject(new Error('Export timed out'));
+      };
+
+      xhr.send(JSON.stringify({ objectIds }));
+    });
+  }
+
+  async getConfigProperties(repositoryId: string): Promise<{ key: string; value: string; source: string; category: string }[]> {
+    try {
+      const url = `/core/rest/repo/${repositoryId}/config/properties`;
+      const response = await this.httpClient.getJson(url);
+
+      if (response.status === 200) {
+        const data = JSON.parse(response.responseText);
+        if (data.status === 'success') {
+          return (data.properties || []).map((p: Record<string, unknown>) => ({
+            key: String(p.key || ''),
+            value: String(p.value ?? ''),
+            source: String(p.source || 'default'),
+            category: String(p.category || 'General'),
+          }));
+        }
+        throw new Error('Failed to load config properties');
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during config properties retrieval');
+    }
   }
 }

@@ -63,6 +63,10 @@ public class UserResponse {
     @JsonProperty("lastModificationDate")
     private String lastModificationDate;
     
+    @Schema(description = "Allowed authentication methods for this user", example = "password,cloud")
+    @JsonProperty("allowedAuthMethods")
+    private String allowedAuthMethods;
+
     @Schema(description = "HATEOAS links")
     @JsonProperty("_links")
     private Map<String, LinkInfo> links;
@@ -174,10 +178,18 @@ public class UserResponse {
         this.lastModificationDate = lastModificationDate;
     }
     
+    public String getAllowedAuthMethods() {
+        return allowedAuthMethods;
+    }
+
+    public void setAllowedAuthMethods(String allowedAuthMethods) {
+        this.allowedAuthMethods = allowedAuthMethods;
+    }
+
     public Map<String, LinkInfo> getLinks() {
         return links;
     }
-    
+
     public void setLinks(Map<String, LinkInfo> links) {
         this.links = links;
     }

@@ -40,14 +40,19 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.DateUtil;
+
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
@@ -68,10 +73,32 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class GroupController {
 
+    @Autowired
+    private HttpServletRequest httpRequest;
+
     private ContentService contentService;
 
     private ObjectMapper objectMapper;
-    
+
+    private void checkAdminAuthorization() {
+        CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+        if (callContext == null) {
+            throw new RuntimeException("Authentication required for group management operations");
+        }
+        Boolean isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
+        if (isAdmin == null || !isAdmin) {
+            throw new RuntimeException("Only administrators can perform group management operations");
+        }
+    }
+
+    private String getAuthenticatedUsername() {
+        CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+        if (callContext != null) {
+            return callContext.getUsername();
+        }
+        return "system";
+    }
+
     private ContentService getContentService() {
         if (contentService != null) {
             return contentService;
@@ -95,9 +122,11 @@ public class GroupController {
      */
     @GetMapping
     public ResponseEntity<Map<String, Object>> listGroups(@PathVariable String repositoryId) {
+        checkAdminAuthorization();
+
         Map<String, Object> response = new HashMap<>();
         List<Map<String, Object>> groupList = new ArrayList<>();
-        
+
         try {
             List<GroupItem> groups = getContentService().getGroupItems(repositoryId);
             
@@ -125,11 +154,13 @@ public class GroupController {
      */
     @GetMapping("/{groupId}")
     public ResponseEntity<Map<String, Object>> getGroup(
-            @PathVariable String repositoryId, 
+            @PathVariable String repositoryId,
             @PathVariable String groupId) {
-        
+
+        checkAdminAuthorization();
+
         Map<String, Object> response = new HashMap<>();
-        
+
         try {
             GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
             
@@ -162,10 +193,12 @@ public class GroupController {
             @RequestParam String name,
             @RequestParam(required = false) String users,
             @RequestParam(required = false) String groups) {
-        
+
+        checkAdminAuthorization();
+
         Map<String, Object> response = new HashMap<>();
         List<String> errors = new ArrayList<>();
-        
+
         // Validation
         if (StringUtils.isBlank(groupId)) {
             errors.add("Group ID is required");
@@ -206,8 +239,9 @@ public class GroupController {
             group.setParentId(groupsFolder.getId());
             
             // Set creation metadata
-            group.setCreator("system");
-            group.setModifier("system");
+            String username = getAuthenticatedUsername();
+            group.setCreator(username);
+            group.setModifier(username);
             GregorianCalendar now = new GregorianCalendar();
             group.setCreated(now);
             group.setModified(now);
@@ -239,35 +273,37 @@ public class GroupController {
             @RequestParam(required = false) String name,
             @RequestParam(required = false) String users,
             @RequestParam(required = false) String groups) {
-        
+
+        checkAdminAuthorization();
+
         Map<String, Object> response = new HashMap<>();
-        
+
         try {
             GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
-            
+
             if (group == null) {
                 response.put("status", "error");
                 response.put("message", "Group not found");
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
             }
-            
+
             // Update properties
             if (StringUtils.isNotBlank(name)) {
                 group.setName(name);
             }
-            
+
             if (users != null) {
                 List<String> userList = parseJsonArray(users);
                 group.setUsers(userList);
             }
-            
+
             if (groups != null) {
                 List<String> groupList = parseJsonArray(groups);
                 group.setGroups(groupList);
             }
-            
+
             // Set modification metadata
-            group.setModifier("system");
+            group.setModifier(getAuthenticatedUsername());
             group.setModified(new GregorianCalendar());
             
             // Update group in repository
@@ -294,18 +330,20 @@ public class GroupController {
     public ResponseEntity<Map<String, Object>> deleteGroup(
             @PathVariable String repositoryId,
             @PathVariable String groupId) {
-        
+
+        checkAdminAuthorization();
+
         Map<String, Object> response = new HashMap<>();
-        
+
         try {
             GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
-            
+
             if (group == null) {
                 response.put("status", "error");
                 response.put("message", "Group not found");
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
             }
-            
+
             // Delete group from repository
             getContentService().delete(new SystemCallContext(repositoryId), repositoryId, group.getId(), false);
             
@@ -331,57 +369,64 @@ public class GroupController {
             @PathVariable String groupId,
             @RequestParam(required = false) String users,
             @RequestParam(required = false) String groups) {
-        
+
+        checkAdminAuthorization();
+
         Map<String, Object> response = new HashMap<>();
-        
+
         try {
             GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
-            
+
             if (group == null) {
                 response.put("status", "error");
                 response.put("message", "Group not found");
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
             }
-            
-            // Add users
+
+            // Add users (pre-fetch all user IDs once for validation)
             if (users != null) {
                 List<String> newUsers = parseJsonArray(users);
                 List<String> currentUsers = new ArrayList<>(group.getUsers());
+
+                java.util.Set<String> allUserIds = new java.util.HashSet<>();
+                for (UserItem u : getContentService().getUserItems(repositoryId)) {
+                    allUserIds.add(u.getUserId());
+                }
+
                 for (String userId : newUsers) {
-                    if (!currentUsers.contains(userId)) {
-                        // Validate user exists
-                        UserItem user = getContentService().getUserItemById(repositoryId, userId);
-                        if (user != null) {
-                            currentUsers.add(userId);
-                        }
+                    if (!currentUsers.contains(userId) && allUserIds.contains(userId)) {
+                        currentUsers.add(userId);
                     }
                 }
                 group.setUsers(currentUsers);
             }
             
-            // Add groups
+            // Add groups (pre-fetch all group IDs once for validation)
             if (groups != null) {
                 List<String> newGroups = parseJsonArray(groups);
                 List<String> currentGroups = new ArrayList<>(group.getGroups());
+
+                java.util.Set<String> allGroupIds = new java.util.HashSet<>();
+                for (GroupItem g : getContentService().getGroupItems(repositoryId)) {
+                    allGroupIds.add(g.getGroupId());
+                }
+
                 for (String newGroupId : newGroups) {
-                    if (!currentGroups.contains(newGroupId) && !newGroupId.equals(groupId)) {
-                        // Validate group exists
-                        GroupItem targetGroup = getContentService().getGroupItemById(repositoryId, newGroupId);
-                        if (targetGroup != null) {
-                            currentGroups.add(newGroupId);
-                        }
+                    if (!currentGroups.contains(newGroupId) && !newGroupId.equals(groupId)
+                            && allGroupIds.contains(newGroupId)) {
+                        currentGroups.add(newGroupId);
                     }
                 }
                 group.setGroups(currentGroups);
             }
             
             // Set modification metadata
-            group.setModifier("system");
+            group.setModifier(getAuthenticatedUsername());
             group.setModified(new GregorianCalendar());
-            
+
             // Update group in repository
             getContentService().update(new SystemCallContext(repositoryId), repositoryId, group);
-            
+
             response.put("status", "success");
             response.put("message", "Members added successfully");
             response.put("group", convertGroupToMap(group));
@@ -405,9 +450,11 @@ public class GroupController {
             @PathVariable String groupId,
             @RequestParam(required = false) String users,
             @RequestParam(required = false) String groups) {
-        
+
+        checkAdminAuthorization();
+
         Map<String, Object> response = new HashMap<>();
-        
+
         try {
             GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
             
@@ -434,12 +481,12 @@ public class GroupController {
             }
             
             // Set modification metadata
-            group.setModifier("system");
+            group.setModifier(getAuthenticatedUsername());
             group.setModified(new GregorianCalendar());
-            
+
             // Update group in repository
             getContentService().update(new SystemCallContext(repositoryId), repositoryId, group);
-            
+
             response.put("status", "success");
             response.put("message", "Members removed successfully");
             response.put("group", convertGroupToMap(group));

@@ -60,6 +60,8 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- NOTE: Patch_CloudDriveMetadataSecondaryType is registered in cmisPostInitializer's cmisPatchList -->
+				<!-- DO NOT add it here to avoid duplicate execution -->
 			</list>
 		</property>
 	</bean>
@@ -104,9 +106,70 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
-				<!-- NemakiWare standard types: nemaki:document, secondary types -->
+			<!-- NemakiWare standard types: nemaki:document, secondary types -->
 				<!-- MUST run after StandardCmisViews to ensure base types exist -->
 				<bean class="jp.aegif.nemaki.patch.Patch_NemakiwareStandardTypes">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Webhook delivery log views for Phase 3 DAO layer -->
+				<!-- MUST run after StandardCmisViews to ensure design document exists -->
+				<bean class="jp.aegif.nemaki.patch.Patch_WebhookDeliveryLogViews">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Retention migration log views for retention job logging -->
+				<bean class="jp.aegif.nemaki.patch.Patch_RetentionMigrationLogViews">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Archive byCreator view for user-specific archive listing -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ArchiveByCreatorView">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Archive byArchivedBy view for listing archives by the deleting user -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ArchiveByArchivedByView">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Searchable archives view for efficient archive/search queries -->
+				<bean class="jp.aegif.nemaki.patch.Patch_SearchableArchivesView">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Archives by archivedAt view for DB-level chronological pagination -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ArchivesByArchivedAtView">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Cloud Drive Metadata secondary type for Google Drive / OneDrive integration -->
+				<bean class="jp.aegif.nemaki.patch.Patch_CloudDriveMetadataSecondaryType">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- External Integration secondary type for external context data (cloud sync, CRM, ERP, chat) -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ExternalIntegrationSecondaryType">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- CMIS 1.1 Retention Management secondary type (cmis:rm_clientMgtRetention) -->
+				<bean class="jp.aegif.nemaki.patch.Patch_RetentionSecondaryTypes">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- CouchDB view for querying documents by expiration date -->
+				<bean class="jp.aegif.nemaki.patch.Patch_RetentionExpirationView">
 					<property name="patchUtil">
 						<ref bean="patchUtil" />
 					</property>
@@ -173,6 +236,66 @@
 	</bean>
 
 	<bean id="patch_NemakiwareStandardTypes" class="jp.aegif.nemaki.patch.Patch_NemakiwareStandardTypes">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_WebhookDeliveryLogViews" class="jp.aegif.nemaki.patch.Patch_WebhookDeliveryLogViews">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_RetentionMigrationLogViews" class="jp.aegif.nemaki.patch.Patch_RetentionMigrationLogViews">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_ArchiveByCreatorView" class="jp.aegif.nemaki.patch.Patch_ArchiveByCreatorView">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_ArchiveByArchivedByView" class="jp.aegif.nemaki.patch.Patch_ArchiveByArchivedByView">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_SearchableArchivesView" class="jp.aegif.nemaki.patch.Patch_SearchableArchivesView">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_ArchivesByArchivedAtView" class="jp.aegif.nemaki.patch.Patch_ArchivesByArchivedAtView">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_CloudDriveMetadataSecondaryType" class="jp.aegif.nemaki.patch.Patch_CloudDriveMetadataSecondaryType">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_ExternalIntegrationSecondaryType" class="jp.aegif.nemaki.patch.Patch_ExternalIntegrationSecondaryType">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_RetentionSecondaryTypes" class="jp.aegif.nemaki.patch.Patch_RetentionSecondaryTypes">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_RetentionExpirationView" class="jp.aegif.nemaki.patch.Patch_RetentionExpirationView">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

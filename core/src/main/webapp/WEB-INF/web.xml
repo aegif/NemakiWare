@@ -44,7 +44,7 @@
 
     <!-- EHCache Shutdown Listener to prevent memory leaks and thread issues -->
     <listener>
-		<listener-class>jp.aegif.nemaki.util.EHCacheShutdownListener</listener-class>
+		<listener-class>jp.aegif.nemaki.util.EhcacheShutdownListener</listener-class>
     </listener>
 
 	<!-- OpenCMIS servlets - All three bindings for CMIS 1.1 compliance -->
@@ -94,11 +94,11 @@
 			<param-name>cmisVersion</param-name>
 			<param-value>1.1</param-value>
 		</init-param>
-		<!-- Multipart configuration for file uploads - enhanced limits for TCK compliance -->
+		<!-- Multipart configuration for CMIS file uploads -->
 		<multipart-config>
-			<max-file-size>104857600</max-file-size>        <!-- 100MB - enhanced limit for TCK tests -->
-			<max-request-size>104857600</max-request-size>   <!-- 100MB - enhanced limit for TCK tests -->
-			<file-size-threshold>32768</file-size-threshold> <!-- 32KB - unchanged -->
+			<max-file-size>2147483648</max-file-size>        <!-- 2GB -->
+			<max-request-size>2147483648</max-request-size>   <!-- 2GB -->
+			<file-size-threshold>1048576</file-size-threshold> <!-- 1MB -->
 		</multipart-config>
 		<load-on-startup>2</load-on-startup>
 	</servlet>
@@ -108,6 +108,13 @@
 		<filter-class>jp.aegif.nemaki.rest.SimpleCorsFilter</filter-class>
 	</filter>
 	
+	<!-- Audit request context filter - captures client IP and request metadata for audit logging -->
+	<!-- Applied to CMIS binding paths where AuthenticationFilter is not used -->
+	<filter>
+		<filter-name>auditRequestContextFilter</filter-name>
+		<filter-class>jp.aegif.nemaki.audit.AuditRequestContextFilter</filter-class>
+	</filter>
+
 	<!-- REST authentication filter - re-enabled with Spring integration -->
 	<filter>
 		<filter-name>restAuthenticationFilter</filter-name>
@@ -141,6 +148,16 @@
 		<url-pattern>/odata/*</url-pattern>
 	</filter-mapping>
 	
+	<!-- Audit request context filter mapping - CMIS binding paths -->
+	<filter-mapping>
+		<filter-name>auditRequestContextFilter</filter-name>
+		<url-pattern>/browser/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>auditRequestContextFilter</filter-name>
+		<url-pattern>/atom/*</url-pattern>
+	</filter-mapping>
+
 	<!-- DeleteType filter mapping - TEMPORARILY DISABLED to allow query action support -->
 	<!-- CRITICAL FIX: This filter mapping prevents cmisaction=query from working in TCK tests -->
 	<!--
@@ -197,7 +214,16 @@
 		<filter-name>restAuthenticationFilter</filter-name>
 		<url-pattern>/rest/solr/*</url-pattern>
 	</filter-mapping>
-	<!-- Note: /rest/all/* paths bypass authentication by not having filter mapping -->
+	<!-- /rest/all/log/* and /rest/all/build-info require authentication for security -->
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/all/log/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/all/build-info</url-pattern>
+	</filter-mapping>
+	<!-- Note: /rest/all/repositories bypasses authentication (needed for login page) -->
 	
 	<!-- Apply authentication to /api/* endpoints (Spring MVC controllers) -->
 	<filter-mapping>
@@ -283,6 +309,13 @@
         <param-value>org.glassfish.jersey.server.spring.SpringLifecycleListener</param-value>
     </init-param>
     <load-on-startup>10</load-on-startup>
+    <!-- Multipart configuration for file uploads (import/export, bulk check-in, etc.)
+         For ZIPs larger than 2GB, use filesystem import: extract on server, then import via admin menu -->
+    <multipart-config>
+      <max-file-size>2147483648</max-file-size>        <!-- 2GB -->
+      <max-request-size>2147483648</max-request-size>   <!-- 2GB -->
+      <file-size-threshold>1048576</file-size-threshold> <!-- 1MB: files larger than this are written to disk -->
+    </multipart-config>
  </servlet>
 
  <servlet-mapping>
@@ -322,6 +355,28 @@
  <servlet-mapping>
   <servlet-name>odata</servlet-name>
   <url-pattern>/odata/*</url-pattern>
+ </servlet-mapping>
+
+ <!-- MCP (Model Context Protocol) application for LLM integration -->
+ <!-- Provides semantic search and document access for Claude Desktop, etc. -->
+ <servlet>
+  <servlet-name>jersey-mcp</servlet-name>
+  <servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
+  <init-param>
+        <param-name>jakarta.ws.rs.Application</param-name>
+        <param-value>jp.aegif.nemaki.mcp.McpApplication</param-value>
+    </init-param>
+    <!-- Enable Jersey-Spring integration -->
+    <init-param>
+        <param-name>jersey.config.server.provider.classnames</param-name>
+        <param-value>org.glassfish.jersey.server.spring.SpringLifecycleListener</param-value>
+    </init-param>
+    <load-on-startup>13</load-on-startup>
+ </servlet>
+
+ <servlet-mapping>
+  <servlet-name>jersey-mcp</servlet-name>
+  <url-pattern>/mcp/*</url-pattern>
  </servlet-mapping>
 
  <!-- Simple servlet for /rest/all/repositories endpoint -->
@@ -395,6 +450,10 @@
 <servlet-mapping>
  <servlet-name>default</servlet-name>
  <url-pattern>/ui/silent-callback.html</url-pattern>
+</servlet-mapping>
+<servlet-mapping>
+ <servlet-name>default</servlet-name>
+ <url-pattern>/ui/auth-popup.html</url-pattern>
 </servlet-mapping>
 <!-- Static asset directories - served directly by default servlet -->
 <servlet-mapping>

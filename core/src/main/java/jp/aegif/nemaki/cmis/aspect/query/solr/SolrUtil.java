@@ -24,6 +24,7 @@ package jp.aegif.nemaki.cmis.aspect.query.solr;
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.TextExtractionService;
+import jp.aegif.nemaki.rag.indexing.RAGIndexingService;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -84,6 +85,10 @@ public class SolrUtil implements ApplicationContextAware {
 
 	// Cached ContentService instance to avoid repeated applicationContext.getBean() calls
 	private volatile ContentService contentServiceCache;
+
+	// Retry configuration for async Solr indexing
+	private static final int SOLR_INDEX_MAX_RETRY = 2;
+	private static final long[] SOLR_INDEX_RETRY_DELAYS_MS = {1000, 3000};
 
 	public SolrUtil() {
 		map = new HashMap<String, String>();
@@ -159,22 +164,31 @@ public class SolrUtil implements ApplicationContextAware {
 	 * @param cmisColName
 	 * @return
 	 */
-	public String getPropertyNameInSolr(String repositoryId,String cmisColName) {
-		
-	//TODO: secondary types
+	public String getPropertyNameInSolr(String repositoryId, String cmisColName) {
+		// First check the static mapping for standard CMIS properties
 		String val = map.get(cmisColName);
-		NemakiPropertyDefinitionCore pd = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, cmisColName);
-		if (val == null) {
-			if(pd.getPropertyType().equals(PropertyType.DATETIME)){
-				val = "dynamicDate.property." + cmisColName;
-			}else{
-				// case for STRING
-				val = "dynamic.property." + cmisColName.replace(":", "\\:").replace("\\\\:", "\\:");				
-			}
-			
+		if (val != null) {
+			return val;
 		}
 
-		return val;
+		// For custom properties (including secondary type properties),
+		// look up the property definition to determine the field type
+		NemakiPropertyDefinitionCore pd = null;
+		if (typeService != null) {
+			pd = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, cmisColName);
+		} else {
+			log.warn("TypeService is null, cannot determine property type for: " + cmisColName);
+		}
+
+		// Handle DATETIME properties with special field type
+		if (pd != null && PropertyType.DATETIME.equals(pd.getPropertyType())) {
+			return "dynamicDate.property." + cmisColName;
+		}
+
+		// Default to STRING type for all other properties
+		// (including secondary type properties when pd is null)
+		// Note: Escape colons in field names for Solr query syntax
+		return "dynamic.property." + cmisColName.replace(":", "\\:").replace("\\\\:", "\\:");
 	}
 
 	public String convertToString(Tree propertyNode) {
@@ -243,8 +257,40 @@ public class SolrUtil implements ApplicationContextAware {
 			// Execute Solr indexing asynchronously to avoid blocking CMIS operations
 			CompletableFuture.runAsync(() -> {
 				indexDocumentInternal(repositoryId, content);
+			}).exceptionally(ex -> {
+				log.warn("Solr async indexing failed for {}, scheduling retry: {}", content.getId(), ex.getMessage());
+				scheduleRetry(() -> indexDocumentInternal(repositoryId, content), content.getId(), 1);
+				return null;
 			});
 		}
+	}
+
+	/**
+	 * Schedule a retry for a failed async Solr operation with exponential backoff.
+	 * @param task the operation to retry
+	 * @param docId document ID for logging
+	 * @param attempt current retry attempt (1-based)
+	 */
+	private void scheduleRetry(Runnable task, String docId, int attempt) {
+		if (attempt > SOLR_INDEX_MAX_RETRY) {
+			log.error("Solr indexing permanently failed for document {} after {} retries", docId, SOLR_INDEX_MAX_RETRY);
+			return;
+		}
+		long delay = SOLR_INDEX_RETRY_DELAYS_MS[Math.min(attempt - 1, SOLR_INDEX_RETRY_DELAYS_MS.length - 1)];
+		log.info("Scheduling Solr indexing retry {} for document {} in {}ms", attempt, docId, delay);
+		CompletableFuture.runAsync(() -> {
+			try {
+				Thread.sleep(delay);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return;
+			}
+			task.run();
+		}).exceptionally(ex -> {
+			log.warn("Solr indexing retry {} failed for {}: {}", attempt, docId, ex.getMessage());
+			scheduleRetry(task, docId, attempt + 1);
+			return null;
+		});
 	}
 
 	/**
@@ -349,6 +395,8 @@ public class SolrUtil implements ApplicationContextAware {
 			
 			if (response.getStatus() == 0) {
 				log.info("Document indexed successfully in Solr: " + content.getId() + " for repository: " + repositoryId);
+				// Trigger RAG indexing asynchronously if enabled
+				triggerRAGIndexing(repositoryId, content);
 			} else {
 				log.error("Document indexing failed with status: " + response.getStatus() + " for document: " + content.getId());
 			}
@@ -370,6 +418,50 @@ public class SolrUtil implements ApplicationContextAware {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Trigger RAG indexing asynchronously if RAG is enabled.
+	 * This is called after successful Solr indexing.
+	 * Only Document objects are indexed for RAG (folders are skipped).
+	 */
+	private void triggerRAGIndexing(String repositoryId, Content content) {
+		// Only index documents (not folders or other content types)
+		if (!(content instanceof Document)) {
+			return;
+		}
+		Document document = (Document) content;
+
+		CompletableFuture.runAsync(() -> {
+			try {
+				RAGIndexingService ragService = getRAGIndexingServiceSafely();
+				if (ragService != null) {
+					ragService.indexDocument(repositoryId, document);
+					log.debug("RAG indexing triggered for document: " + document.getId());
+				}
+			} catch (Exception e) {
+				// RAG indexing failure should not affect normal operations
+				log.warn("RAG indexing failed for document: " + document.getId() + ", error: " + e.getMessage());
+			}
+		});
+	}
+
+	/**
+	 * Trigger RAG document deletion asynchronously if RAG is enabled.
+	 */
+	private void triggerRAGDeletion(String repositoryId, String documentId) {
+		CompletableFuture.runAsync(() -> {
+			try {
+				RAGIndexingService ragService = getRAGIndexingServiceSafely();
+				if (ragService != null) {
+					ragService.deleteDocument(repositoryId, documentId);
+					log.debug("RAG document deletion triggered for: " + documentId);
+				}
+			} catch (Exception e) {
+				// RAG deletion failure should not affect normal operations
+				log.warn("RAG document deletion failed for: " + documentId + ", error: " + e.getMessage());
+			}
+		});
 	}
 
 	/**
@@ -661,32 +753,52 @@ public class SolrUtil implements ApplicationContextAware {
 		CompletableFuture.runAsync(() -> {
 			try {
 				SolrClient solrClient = getSolrClient();
-				
+
 				UpdateRequest updateRequest = new UpdateRequest();
 				updateRequest.deleteById(documentId);
 				updateRequest.setCommitWithin(1000);
-				
+
 				// DIRECT FIX: Don't pass core name to avoid URL duplication
 				// getSolrUrl() already returns full URL with core path
 				UpdateResponse response = updateRequest.process(solrClient);
-				
+
 				if (response.getStatus() == 0) {
 					log.debug("Document deleted successfully from Solr: " + documentId + " for repository: " + repositoryId);
+					// Trigger RAG deletion
+					triggerRAGDeletion(repositoryId, documentId);
 				} else {
 					log.warn("Document deletion failed with status: " + response.getStatus() + " for document: " + documentId);
+					throw new RuntimeException("Solr deletion failed with status: " + response.getStatus());
 				}
-				
+
 				solrClient.close();
 			} catch (SolrServerException | IOException e) {
 				log.warn("Solr document deletion failed for document: " + documentId + " in repository: " + repositoryId + ", error: " + e.getMessage());
+				throw new RuntimeException("Solr deletion failed: " + e.getMessage(), e);
 			}
+		}).exceptionally(ex -> {
+			log.warn("Solr async deletion failed for {}, scheduling retry: {}", documentId, ex.getMessage());
+			scheduleRetry(() -> {
+				try {
+					SolrClient solrClient = getSolrClient();
+					UpdateRequest req = new UpdateRequest();
+					req.deleteById(documentId);
+					req.setCommitWithin(1000);
+					req.process(solrClient);
+					solrClient.close();
+					log.info("Solr deletion retry succeeded for document: {}", documentId);
+				} catch (Exception retryEx) {
+					throw new RuntimeException("Solr deletion retry failed: " + retryEx.getMessage(), retryEx);
+				}
+			}, documentId, 1);
+			return null;
 		});
 	}
 
 	public String getSolrUrl(){
 		String protocol = propertyManager.readValue(PropertyKey.SOLR_PROTOCOL);
 		String host = propertyManager.readValue(PropertyKey.SOLR_HOST);
-		int port = Integer.valueOf(propertyManager
+		int port = Integer.parseInt(propertyManager
 				.readValue(PropertyKey.SOLR_PORT));
 		String context = propertyManager.readValue(PropertyKey.SOLR_CONTEXT);
 
@@ -788,6 +900,28 @@ public class SolrUtil implements ApplicationContextAware {
 			}
 		} catch (Exception e) {
 			log.debug("ContentService not yet available: {}", e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Get RAGIndexingService lazily from ApplicationContext.
+	 * Returns null if RAG is not enabled or service is not available.
+	 */
+	private RAGIndexingService getRAGIndexingServiceSafely() {
+		if (applicationContext == null) {
+			return null;
+		}
+		try {
+			RAGIndexingService service = applicationContext.getBean(RAGIndexingService.class);
+			// Only return if RAG is enabled
+			if (service != null && service.isEnabled()) {
+				return service;
+			}
+			return null;
+		} catch (Exception e) {
+			// RAG service not available - this is normal when RAG is disabled
+			log.debug("RAGIndexingService not available: {}", e.getMessage());
 			return null;
 		}
 	}
@@ -930,4 +1064,24 @@ public class SolrUtil implements ApplicationContextAware {
 		}
 	}
 	
+	/**
+	 * Calculate ancestors for IN_TREE queries.
+	 *
+	 * Note: Currently unused. IN_TREE queries are implemented using parent_id
+	 * relationships in SolrPredicateWalker.walkInTreeInternal() instead.
+	 *
+	 * Future consideration: If performance issues arise with deep folder hierarchies,
+	 * consider implementing ancestor indexing using the 'ancestor_path' field type
+	 * defined in Solr schema (managed-schema.xml). This would enable more efficient
+	 * IN_TREE queries by pre-computing and indexing ancestor paths at index time.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param content the content object
+	 * @return list of ancestor IDs (currently returns empty list)
+	 */
+	@SuppressWarnings("unused")
+	private List<String> calculateAncestors(String repositoryId, Content content) {
+		// Reserved for future implementation
+		return new ArrayList<>();
+	}
 }

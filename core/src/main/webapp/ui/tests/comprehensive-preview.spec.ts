@@ -170,8 +170,7 @@ const SAMPLE_PNG = Buffer.from([
  * - PDF, Image, and Text preview functionality confirmed working manually
  * - See REMAINING_ISSUES.md for manual verification checklist
  */
-test.describe.skip('Comprehensive Preview Tests', () => {
-  // SKIPPED: Preview tests require manual verification due to async complexity
+test.describe('Comprehensive Preview Tests', () => {
   test.setTimeout(180000); // 3 minutes for preview operations
 
   // Set up test folder and files before all tests

@@ -135,7 +135,7 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { TestHelper, generateTestId } from '../utils/test-helper';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -153,16 +153,7 @@ test.describe('Large File Upload', () => {
     await page.waitForTimeout(2000);
 
     // MOBILE FIX: Close sidebar
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
 
@@ -174,10 +165,9 @@ test.describe('Large File Upload', () => {
 
   test('should upload a large file (>100MB) with progress tracking', async ({ page, browserName }) => {
     test.setTimeout(300000); // 5-minute timeout for large file upload
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
-    const largeFileName = `large-file-${Date.now()}.bin`;
+    const largeFileName = `large-file-${generateTestId()}.bin`;
     const fileSize = 110 * 1024 * 1024; // 110 MB
 
     console.log(`Test: Preparing to upload ${fileSize / (1024 * 1024)} MB file`);
@@ -303,10 +293,9 @@ test.describe('Large File Upload', () => {
 
   test('should handle upload cancellation gracefully', async ({ page, browserName }) => {
     test.setTimeout(120000); // 2-minute timeout
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
-    const cancelTestFileName = `cancel-test-${Date.now()}.bin`;
+    const cancelTestFileName = `cancel-test-${generateTestId()}.bin`;
     const fileSize = 50 * 1024 * 1024; // 50 MB
 
     console.log(`Test: Testing upload cancellation with ${fileSize / (1024 * 1024)} MB file`);

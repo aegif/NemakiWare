@@ -186,12 +186,23 @@ public class Content extends NodeBase {
 
 	@Override
 	public boolean equals(Object obj) {
-		return obj != null && obj instanceof Content
-				&& ((Content) obj).getId().equals(this.getId());
+		if (this == obj) {
+			return true;
+		}
+		if (obj == null || !(obj instanceof Content)) {
+			return false;
+		}
+		String thisId = this.getId();
+		String otherId = ((Content) obj).getId();
+		if (thisId == null || otherId == null) {
+			return false;
+		}
+		return thisId.equals(otherId);
 	}
 
 	@Override
 	public int hashCode() {
-		return this.getId().hashCode();
+		String id = this.getId();
+		return id != null ? id.hashCode() : System.identityHashCode(this);
 	}
 }

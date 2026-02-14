@@ -190,6 +190,7 @@
 
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { AuthService, AuthToken } from '../services/auth';
+import { CMISService } from '../services/cmis';
 import { OIDCService } from '../services/oidc';
 import { isOIDCEnabled, getOIDCConfig } from '../config/oidc';
 import { SAMLService } from '../services/saml';
@@ -217,7 +218,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // This prevents the gray screen issue after login
     // Enhanced version with more aggressive cleanup and retry mechanism
     const cleanupStaleOverlays = () => {
-      // List of ALL selectors that could cause gray overlay or block input
+      // Skip cleanup if any modal is actively open (has visible content)
+      const hasActiveModal = document.querySelector('.ant-modal-wrap:not([style*="display: none"]) .ant-modal-content') !== null;
+      if (hasActiveModal) {
+        return;
+      }
+
+      // List of selectors for stale overlay elements that block interaction
+      // Note: .ant-message and .ant-notification are excluded because they are
+      // transient notifications managed by Ant Design and auto-dismiss
       const overlaySelectors = [
         '.ant-modal-mask',
         '.ant-modal-wrap',
@@ -229,15 +238,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         '.ant-image-preview-wrap',
         '.ant-spin-nested-loading > .ant-spin-blur',
         '.ant-spin-container.ant-spin-blur',
-        '.ant-notification',
-        '.ant-message',
         '.ant-popover',
         '.ant-tooltip',
         '.ant-dropdown',
         '[class*="ant-"][class*="-mask"]',
         '[class*="ant-"][class*="-wrap"]:empty',
-        // Also clean up potential loading overlays
-        '[style*="position: fixed"][style*="z-index"]',
       ];
 
       let removedCount = 0;
@@ -245,8 +250,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const elements = document.querySelectorAll(selector);
           elements.forEach((el) => {
-            // Check if the element is blocking interaction
             const style = window.getComputedStyle(el);
+
+            // Skip hidden elements — they are properly managed by React and not blocking
+            if (style.display === 'none' || style.visibility === 'hidden') {
+              return;
+            }
+
+            // Check if the element is blocking interaction
             const isBlocking = style.position === 'fixed' || style.position === 'absolute';
             const hasHighZIndex = parseInt(style.zIndex) > 100;
             const isOverlay = el.classList.contains('ant-modal-mask') ||
@@ -314,11 +325,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setTimeout(cleanupStaleOverlays, 1000);
     };
 
-    const checkAuthState = () => {
+    const checkAuthState = async () => {
       const authService = AuthService.getInstance();
       const currentAuth = authService.getCurrentAuth();
 
       if (currentAuth) {
+        // If isAdmin is not yet known, try to fetch from /me endpoint
+        if (currentAuth.isAdmin === undefined || currentAuth.allowedAuthMethods === undefined) {
+          try {
+            const cmisService = new CMISService(() => {});
+            const meInfo = await cmisService.getCurrentUser(currentAuth.repositoryId);
+            currentAuth.isAdmin = meInfo.isAdmin;
+            currentAuth.allowedAuthMethods = meInfo.allowedAuthMethods;
+            authService.saveAuth(currentAuth);
+          } catch (e) {
+            // If /me fails (e.g. session expired), leave isAdmin/allowedAuthMethods as undefined
+            console.warn('AuthContext: Failed to fetch /me during init:', e);
+          }
+        }
         setAuthToken(currentAuth);
         setIsAuthenticated(true);
         // Clean up any stale overlays when auth state changes to authenticated
@@ -365,6 +389,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const authService = AuthService.getInstance();
       const auth = await authService.login(username, password, repositoryId);
+
+      // Fetch isAdmin flag and allowedAuthMethods from /me endpoint
+      try {
+        const cmisService = new CMISService(() => {});
+        const meInfo = await cmisService.getCurrentUser(repositoryId);
+        auth.isAdmin = meInfo.isAdmin;
+        auth.allowedAuthMethods = meInfo.allowedAuthMethods;
+        // Update localStorage with isAdmin and allowedAuthMethods
+        authService.saveAuth(auth);
+      } catch (meError) {
+        console.warn('AuthContext: Failed to fetch /me, preserving existing auth state:', meError);
+        // Do not override isAdmin on /me failure - preserve whatever value was obtained during login
+        // to avoid downgrading real admins due to transient network issues
+      }
+
       setAuthToken(auth);
       setIsAuthenticated(true);
 
@@ -414,7 +453,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(false);
 
     // Call IdP-side logout based on authentication method
-    if (authMethod === 'oidc' && isOIDCEnabled()) {
+    if (authMethod === 'oidc' && await isOIDCEnabled()) {
       try {
         const oidcService = new OIDCService(getOIDCConfig());
         await oidcService.signoutRedirect();
@@ -424,7 +463,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('OIDC signoutRedirect failed:', error);
         // Fall through to local redirect
       }
-    } else if (authMethod === 'saml' && isSAMLEnabled()) {
+    } else if (authMethod === 'saml' && await isSAMLEnabled()) {
       try {
         const samlService = new SAMLService(getSAMLConfig());
         samlService.initiateLogout();

@@ -38,7 +38,7 @@
  *    - Property ID: test:customProp{uuid8}
  *    - Filename: test-custom-{uuid8}.txt
  *    - Rationale: Prevents conflicts in parallel test execution across browsers
- *    - Implementation: randomUUID().substring(0, 8) for concise uniqueness
+ *    - Implementation: generateTestId() for concise uniqueness
  *
  * 4. Smart Conditional Skipping with Informative Messages (Lines 158-160, 185-187, 252-261, 353-361):
  *    - Skip if create button not found: test.skip('Create type button not found - UI may not be implemented')
@@ -128,8 +128,8 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 /**
  * SELECTOR FIX (2025-10-25)
@@ -174,16 +174,7 @@ test.describe('Custom Type Creation and Property Management', () => {
     await page.waitForTimeout(2000);
 
     // MOBILE FIX: Close sidebar
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
 
@@ -204,15 +195,14 @@ test.describe('Custom Type Creation and Property Management', () => {
   test('should create a new custom document type with properties', async ({ page, browserName }) => {
     console.log('Test: Creating new custom document type');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Wait for type table to load
     await page.waitForSelector('.ant-table', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
     // Generate unique custom type ID
-    const typeIdSuffix = randomUUID().substring(0, 8);
+    const typeIdSuffix = generateTestId();
     customTypeId = `test:customDoc${typeIdSuffix}`;
     const typeName = `Test Custom Document ${typeIdSuffix}`;
 
@@ -414,24 +404,24 @@ test.describe('Custom Type Creation and Property Management', () => {
      */
     console.log('Test: Adding custom properties via JSON editor');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
     // Find a custom type (non-cmis: types) that we can edit
     // The edit button is disabled for standard CMIS types (cmis:* prefix)
+    // UI has two edit buttons: "GUI編集" (GUI editor) and "JSON" (JSON editor)
     const customTypeRow = page.locator('tr[data-row-key]').filter({
-      has: page.locator('button:has-text("編集"):not([disabled])')
+      has: page.locator('button:has-text("JSON"):not([disabled])')
     }).first();
 
     if (await customTypeRow.count() > 0) {
       const typeId = await customTypeRow.getAttribute('data-row-key');
       console.log(`✅ Found editable type: ${typeId}`);
 
-      // Click edit button (opens JSON editor modal)
-      const editButton = customTypeRow.locator('button').filter({ hasText: '編集' });
+      // Click JSON button (opens JSON editor modal)
+      const editButton = customTypeRow.locator('button').filter({ hasText: 'JSON' });
       await editButton.click(isMobile ? { force: true } : {});
       await page.waitForTimeout(1000);
       console.log('✅ Clicked edit button');
@@ -458,7 +448,7 @@ test.describe('Custom Type Creation and Property Management', () => {
           try {
             // Parse and add a custom property
             const typeDef = JSON.parse(currentJson);
-            const propertyId = `test:customProp${randomUUID().substring(0, 8)}`;
+            const propertyId = `test:customProp${generateTestId()}`;
 
             // Ensure propertyDefinitions object exists
             if (!typeDef.propertyDefinitions) {
@@ -544,8 +534,7 @@ test.describe('Custom Type Creation and Property Management', () => {
   test('should create document with custom type and edit custom properties', async ({ page, browserName }) => {
     console.log('Test: Creating document with custom type and editing custom properties');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -564,7 +553,7 @@ test.describe('Custom Type Creation and Property Management', () => {
       await uploadButton.click(isMobile ? { force: true } : {});
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
 
-      const filename = `test-custom-${randomUUID().substring(0, 8)}.txt`;
+      const filename = `test-custom-${generateTestId()}.txt`;
 
       // Check if type selector is available in upload modal
       // The type selector is inside a Form.Item with label "タイプ"

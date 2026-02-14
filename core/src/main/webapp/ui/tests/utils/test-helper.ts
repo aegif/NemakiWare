@@ -1,4 +1,8 @@
 import { Page, expect } from '@playwright/test';
+import { ApiHelper, generateTestId, generateTestFolderName, generateTestDocumentName } from './api-helper';
+
+// Re-export API helper utilities for convenience
+export { ApiHelper, generateTestId, generateTestFolderName, generateTestDocumentName };
 
 /**
  * General Test Helper Utilities for NemakiWare Playwright E2E Tests
@@ -218,6 +222,49 @@ export class TestHelper {
   constructor(private page: Page) {}
 
   /**
+   * Check if the current browser is mobile viewport
+   * Mobile detection: Chromium browser with viewport width ≤ 414px
+   *
+   * @param browserName The browser name from Playwright (chromium, firefox, webkit)
+   * @returns true if mobile viewport, false otherwise
+   */
+  isMobile(browserName: string): boolean {
+    const viewportSize = this.page.viewportSize();
+    return browserName === 'chromium' && viewportSize !== null && viewportSize.width <= 414;
+  }
+
+  /**
+   * Close mobile sidebar if on mobile viewport
+   * In mobile mode, the sidebar may overlay content and block interactions.
+   * This method detects mobile viewport and closes the sidebar menu.
+   *
+   * Usage in test.beforeEach:
+   * ```typescript
+   * test.beforeEach(async ({ page, browserName }) => {
+   *   const testHelper = new TestHelper(page);
+   *   await testHelper.closeMobileSidebar(browserName);
+   * });
+   * ```
+   *
+   * @param browserName The browser name from Playwright (chromium, firefox, webkit)
+   */
+  async closeMobileSidebar(browserName: string): Promise<void> {
+    if (!this.isMobile(browserName)) {
+      return;
+    }
+
+    const menuToggle = this.page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
+    if (await menuToggle.count() > 0) {
+      try {
+        await menuToggle.first().click({ timeout: 3000 });
+        await this.page.waitForTimeout(500);
+      } catch (e) {
+        // Menu toggle may not be available or already closed
+      }
+    }
+  }
+
+  /**
    * Wait for page to fully load including all AJAX requests
    */
   async waitForPageLoad(timeout: number = 10000): Promise<void> {
@@ -404,7 +451,9 @@ export class TestHelper {
     if (await errorBoundaryCheck.count() > 0) {
       console.log('TestHelper: Error boundary still visible after closeAllOverlays - forcing page reload');
       await this.page.reload({ waitUntil: 'networkidle' });
-      await this.page.waitForTimeout(3000);
+      // Wait for UI to be ready after reload (not just a timeout)
+      await this.waitForAntdLoad();
+      await this.page.waitForTimeout(1000); // Additional stabilization time
     }
 
     // Click upload button to open modal
@@ -802,10 +851,12 @@ export class TestHelper {
     // Additional wait for dynamic content to render
     await this.page.waitForTimeout(1000);
 
-    // Check upload button - multiple selector patterns
+    // Check upload button - multiple selector patterns (Japanese + English)
     const uploadButtonSelectors = [
       'button:has-text("ファイルアップロード")',
       'button:has-text("アップロード")',
+      'button:has-text("Upload")',
+      'button:has-text("File Upload")',
       'button:has([data-icon="upload"])',
     ];
 
@@ -822,10 +873,12 @@ export class TestHelper {
       }
     }
 
-    // Check folder creation button - multiple selector patterns
+    // Check folder creation button - multiple selector patterns (Japanese + English)
     const folderButtonSelectors = [
       'button:has-text("フォルダ作成")',
       'button:has-text("新規フォルダ")',
+      'button:has-text("Create Folder")',
+      'button:has-text("New Folder")',
       'button:has([data-icon="folder-add"])',
       'button:has([data-icon="plus"])',
     ];
@@ -843,10 +896,11 @@ export class TestHelper {
       }
     }
 
-    // Check search input
+    // Check search input (Japanese + English)
     const searchSelectors = [
       'input.search-input',
       'input[placeholder*="検索"]',
+      'input[placeholder*="Search"]',
       '.ant-input-search input',
     ];
 
@@ -868,13 +922,15 @@ export class TestHelper {
   }
 
   /**
-   * Get upload button locator with fallback selectors
+   * Get upload button locator with fallback selectors (Japanese + English)
    * Use this instead of hardcoded selectors in tests
    */
   async getUploadButton(): Promise<any | null> {
     const selectors = [
       'button:has-text("ファイルアップロード")',
       'button:has-text("アップロード")',
+      'button:has-text("Upload")',
+      'button:has-text("File Upload")',
       'button:has([data-icon="upload"])',
     ];
 
@@ -888,12 +944,14 @@ export class TestHelper {
   }
 
   /**
-   * Get folder creation button locator with fallback selectors
+   * Get folder creation button locator with fallback selectors (Japanese + English)
    */
   async getFolderButton(): Promise<any | null> {
     const selectors = [
       'button:has-text("フォルダ作成")',
       'button:has-text("新規フォルダ")',
+      'button:has-text("Create Folder")',
+      'button:has-text("New Folder")',
       'button:has([data-icon="folder-add"])',
     ];
 
@@ -912,49 +970,44 @@ export class TestHelper {
    * STABILIZATION FIX (2025-01-17): Added closeAllOverlays at the beginning
    * to ensure any leftover modals from failed tests are cleaned up before deletion.
    *
-   * @param fileName Name of the file to delete
+   * @param fileName Name of the file to delete. Use generateTestId() to ensure uniqueness,
+   *   as this method deletes ALL documents matching the name. Must not contain single quotes.
    * @param isMobile Whether the browser is in mobile mode
    * @returns true if deleted (or didn't exist), false if deletion failed
    */
-  async deleteTestDocument(fileName: string, isMobile: boolean = false): Promise<boolean> {
-    console.log(`TestHelper: Deleting test document ${fileName}...`);
+  async deleteTestDocument(fileName: string, _isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Deleting test document ${fileName} via API...`);
 
-    // STABILIZATION FIX: Close any open overlays before attempting deletion
-    await this.closeAllOverlays();
+    try {
+      const apiHelper = new ApiHelper(this.page);
 
-    // Find document row
-    const docRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).first();
-    if (await docRow.count() === 0) {
-      console.log(`TestHelper: Document ${fileName} not found - already deleted or never existed`);
-      return true;
-    }
+      // Query for document by name
+      const safeName = fileName.replace(/'/g, "''");
+      const query = `SELECT cmis:objectId FROM cmis:document WHERE cmis:name = '${safeName}'`;
+      const docIds = await apiHelper.queryObjects(query);
 
-    // Find delete button
-    const deleteButton = docRow.locator('button').filter({ has: this.page.locator('[data-icon="delete"]') }).first();
-    if (await deleteButton.count() === 0) {
-      console.log(`TestHelper: Delete button not found for ${fileName}`);
+      if (docIds.length === 0) {
+        console.log(`TestHelper: Document ${fileName} not found - already deleted or never existed`);
+        return true;
+      }
+
+      // Delete each matching document
+      let allDeleted = true;
+      for (const docId of docIds) {
+        const deleted = await apiHelper.deleteObject(docId);
+        if (deleted) {
+          console.log(`TestHelper: Document ${fileName} (${docId}) deleted successfully via API`);
+        } else {
+          console.log(`TestHelper: Failed to delete document ${fileName} (${docId})`);
+          allDeleted = false;
+        }
+      }
+
+      return allDeleted;
+    } catch (error) {
+      console.log(`TestHelper: Error deleting document ${fileName}:`, error);
       return false;
     }
-
-    await deleteButton.click(isMobile ? { force: true } : {});
-    await this.page.waitForTimeout(500);
-
-    // Confirm deletion
-    const confirmButton = this.page.locator('.ant-popconfirm button, .ant-popover button').filter({ hasText: /OK|はい|確認/ }).first();
-    if (await confirmButton.count() > 0) {
-      await confirmButton.click();
-      await this.page.waitForTimeout(3000);
-    }
-
-    // Verify deleted
-    const stillExists = await this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).count() > 0;
-    if (!stillExists) {
-      console.log(`TestHelper: Document ${fileName} deleted successfully`);
-      return true;
-    }
-
-    console.log(`TestHelper: Document ${fileName} still exists after deletion attempt`);
-    return false;
   }
 
   /**
@@ -1139,38 +1192,24 @@ export class TestHelper {
       } catch (e) {
         console.log('TestHelper: Error boundary reload failed, attempting page reload');
         await this.page.reload({ waitUntil: 'networkidle' });
-        await this.page.waitForTimeout(2000);
+        // Wait for UI to be ready after reload (not just a timeout)
+        await this.waitForAntdLoad();
         closedCount++;
       }
     }
 
-    // Step 1: FIRST remove blocking overlay elements via JavaScript (critical for unblocking)
-    const initialRemoved = await this.page.evaluate(() => {
-      let removed = 0;
+    // ===== UI Operations First (React-safe approach) =====
+    // Try UI interactions before resorting to JavaScript DOM manipulation
+    // This preserves React's internal state consistency
 
-      // Remove all modal masks first (they block pointer events)
-      document.querySelectorAll('.ant-modal-mask').forEach((el) => {
-        if (el.parentNode) {
-          el.parentNode.removeChild(el);
-          removed++;
-        }
-      });
-
-      // Reset body overflow style
-      document.body.style.overflow = '';
-      document.body.style.paddingRight = '';
-
-      return removed;
-    });
-    closedCount += initialRemoved;
-
-    // Step 2: Press Escape multiple times to close any modal/drawer/popover
+    // Step 1: Press Escape multiple times to close any modal/drawer/popover
+    // This is the safest way to close overlays as it triggers proper React event handlers
     for (let i = 0; i < 3; i++) {
       await this.page.keyboard.press('Escape');
       await this.page.waitForTimeout(200);
     }
 
-    // Step 3: Try clicking modal close buttons with force option
+    // Step 2: Try clicking modal close buttons
     const modalCloseButtons = this.page.locator('.ant-modal:not(.ant-modal-hidden) .ant-modal-close');
     const modalCloseCount = await modalCloseButtons.count();
     for (let i = 0; i < modalCloseCount; i++) {
@@ -1183,7 +1222,7 @@ export class TestHelper {
       }
     }
 
-    // Step 4: Try clicking cancel buttons in modals with force option
+    // Step 3: Try clicking cancel buttons in modals
     const cancelButtons = this.page.locator('.ant-modal:not(.ant-modal-hidden) button').filter({ hasText: /キャンセル|Cancel|閉じる|Close/i });
     const cancelCount = await cancelButtons.count();
     for (let i = 0; i < cancelCount; i++) {
@@ -1196,7 +1235,7 @@ export class TestHelper {
       }
     }
 
-    // Step 5: Close drawers
+    // Step 4: Close drawers via UI
     const drawerCloseButtons = this.page.locator('.ant-drawer:not(.ant-drawer-hidden) .ant-drawer-close');
     const drawerCloseCount = await drawerCloseButtons.count();
     for (let i = 0; i < drawerCloseCount; i++) {
@@ -1209,55 +1248,83 @@ export class TestHelper {
       }
     }
 
-    // Step 6: Final aggressive JavaScript cleanup
-    const finalRemoved = await this.page.evaluate(() => {
-      let removed = 0;
-
-      // Remove ALL modal-related elements
-      document.querySelectorAll('.ant-modal-wrap, .ant-modal-mask, .ant-modal-root').forEach((el) => {
-        if (el.parentNode) {
-          el.parentNode.removeChild(el);
-          removed++;
-        }
-      });
-
-      // Remove drawer elements
-      document.querySelectorAll('.ant-drawer, .ant-drawer-mask').forEach((el) => {
-        if (el.parentNode) {
-          el.parentNode.removeChild(el);
-          removed++;
-        }
-      });
-
-      // Remove popconfirms and popovers
-      document.querySelectorAll('.ant-popconfirm, .ant-popover').forEach((el) => {
-        if (el.parentNode) {
-          el.parentNode.removeChild(el);
-          removed++;
-        }
-      });
-
-      // Reset body styles completely
-      document.body.style.overflow = '';
-      document.body.style.paddingRight = '';
-      document.body.classList.remove('ant-scrolling-effect');
-
-      return removed;
-    });
-    closedCount += finalRemoved;
-
-    // Step 7: Wait for DOM to stabilize
+    // Step 5: Wait for any animations to complete after UI operations
     await this.page.waitForTimeout(500);
 
-    // Step 8: Verify no blocking overlays remain
-    const remainingOverlays = await this.page.locator('.ant-modal-wrap, .ant-modal-mask, .ant-drawer-mask').count();
-    if (remainingOverlays > 0) {
-      console.log(`TestHelper: WARNING - ${remainingOverlays} overlay elements still present after cleanup`);
-      // Final attempt - force remove via JavaScript
-      await this.page.evaluate(() => {
-        document.querySelectorAll('.ant-modal-wrap, .ant-modal-mask, .ant-drawer-mask').forEach((el) => {
-          el.remove();
+    // ===== JavaScript Cleanup (Last Resort) =====
+    // Only use DOM manipulation if UI operations failed to close overlays
+    // This risks React state inconsistency but is necessary for stuck overlays
+
+    // Step 6: Check if overlays still remain
+    const remainingModalMasks = await this.page.locator('.ant-modal-mask').count();
+    const remainingModalWraps = await this.page.locator('.ant-modal-wrap').count();
+    const remainingDrawerMasks = await this.page.locator('.ant-drawer-mask').count();
+
+    if (remainingModalMasks > 0 || remainingModalWraps > 0 || remainingDrawerMasks > 0) {
+      console.log(`TestHelper: UI operations did not fully close overlays (masks: ${remainingModalMasks}, wraps: ${remainingModalWraps}, drawers: ${remainingDrawerMasks}). Using JavaScript cleanup as fallback.`);
+
+      // Step 7: JavaScript cleanup for stuck overlays
+      const jsRemoved = await this.page.evaluate(() => {
+        let removed = 0;
+
+        // Remove modal masks (they block pointer events)
+        document.querySelectorAll('.ant-modal-mask').forEach((el) => {
+          if (el.parentNode) {
+            el.parentNode.removeChild(el);
+            removed++;
+          }
         });
+
+        // Remove modal wraps and roots
+        document.querySelectorAll('.ant-modal-wrap, .ant-modal-root').forEach((el) => {
+          if (el.parentNode) {
+            el.parentNode.removeChild(el);
+            removed++;
+          }
+        });
+
+        // Remove drawer elements
+        document.querySelectorAll('.ant-drawer, .ant-drawer-mask').forEach((el) => {
+          if (el.parentNode) {
+            el.parentNode.removeChild(el);
+            removed++;
+          }
+        });
+
+        // Remove popconfirms and popovers
+        document.querySelectorAll('.ant-popconfirm, .ant-popover').forEach((el) => {
+          if (el.parentNode) {
+            el.parentNode.removeChild(el);
+            removed++;
+          }
+        });
+
+        // Reset body styles
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+        document.body.classList.remove('ant-scrolling-effect');
+
+        return removed;
+      });
+      closedCount += jsRemoved;
+
+      // Step 8: Final verification
+      const stillRemaining = await this.page.locator('.ant-modal-wrap, .ant-modal-mask, .ant-drawer-mask').count();
+      if (stillRemaining > 0) {
+        console.log(`TestHelper: WARNING - ${stillRemaining} overlay elements still present after JavaScript cleanup`);
+        // Absolute last resort - force remove
+        await this.page.evaluate(() => {
+          document.querySelectorAll('.ant-modal-wrap, .ant-modal-mask, .ant-drawer-mask').forEach((el) => {
+            el.remove();
+          });
+        });
+      }
+    } else {
+      // UI operations were sufficient - just reset body styles as a precaution
+      await this.page.evaluate(() => {
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+        document.body.classList.remove('ant-scrolling-effect');
       });
     }
 
@@ -1274,48 +1341,43 @@ export class TestHelper {
    * STABILIZATION FIX (2025-01-17): Added closeAllOverlays at the beginning
    * to ensure any leftover modals from failed tests are cleaned up before deletion.
    *
-   * @param folderName Name of the folder to delete
+   * @param folderName Name of the folder to delete. Use generateTestId() to ensure uniqueness,
+   *   as this method deletes ALL folders matching the name. Must not contain single quotes.
    * @param isMobile Whether the browser is in mobile mode
    * @returns true if deleted (or didn't exist), false if deletion failed
    */
-  async deleteTestFolder(folderName: string, isMobile: boolean = false): Promise<boolean> {
-    console.log(`TestHelper: Deleting test folder ${folderName}...`);
+  async deleteTestFolder(folderName: string, _isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Deleting test folder ${folderName} via API...`);
 
-    // STABILIZATION FIX: Close any open overlays before attempting deletion
-    await this.closeAllOverlays();
+    try {
+      const apiHelper = new ApiHelper(this.page);
 
-    // Find folder row
-    const folderRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).first();
-    if (await folderRow.count() === 0) {
-      console.log(`TestHelper: Folder ${folderName} not found - already deleted or never existed`);
-      return true;
-    }
+      // Query for folder by name
+      const safeName = folderName.replace(/'/g, "''");
+      const query = `SELECT cmis:objectId FROM cmis:folder WHERE cmis:name = '${safeName}'`;
+      const folderIds = await apiHelper.queryObjects(query);
 
-    // Find delete button
-    const deleteButton = folderRow.locator('button').filter({ has: this.page.locator('[data-icon="delete"]') }).first();
-    if (await deleteButton.count() === 0) {
-      console.log(`TestHelper: Delete button not found for ${folderName}`);
+      if (folderIds.length === 0) {
+        console.log(`TestHelper: Folder ${folderName} not found - already deleted or never existed`);
+        return true;
+      }
+
+      // Delete each matching folder (including contents)
+      let allDeleted = true;
+      for (const folderId of folderIds) {
+        const deleted = await apiHelper.deleteFolderTree(folderId);
+        if (deleted) {
+          console.log(`TestHelper: Folder ${folderName} (${folderId}) deleted successfully via API`);
+        } else {
+          console.log(`TestHelper: Failed to delete folder ${folderName} (${folderId})`);
+          allDeleted = false;
+        }
+      }
+
+      return allDeleted;
+    } catch (error) {
+      console.log(`TestHelper: Error deleting folder ${folderName}:`, error);
       return false;
     }
-
-    await deleteButton.click(isMobile ? { force: true } : {});
-    await this.page.waitForTimeout(500);
-
-    // Confirm deletion
-    const confirmButton = this.page.locator('.ant-popconfirm button, .ant-popover button').filter({ hasText: /OK|はい|確認/ }).first();
-    if (await confirmButton.count() > 0) {
-      await confirmButton.click();
-      await this.page.waitForTimeout(3000);
-    }
-
-    // Verify deleted
-    const stillExists = await this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).count() > 0;
-    if (!stillExists) {
-      console.log(`TestHelper: Folder ${folderName} deleted successfully`);
-      return true;
-    }
-
-    console.log(`TestHelper: Folder ${folderName} still exists after deletion attempt`);
-    return false;
   }
 }

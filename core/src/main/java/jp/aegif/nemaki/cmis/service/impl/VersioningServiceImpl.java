@@ -102,8 +102,9 @@ public class VersioningServiceImpl implements VersioningService {
 			nemakiCachePool.get(repositoryId).removeCmisCache(originalId);
 
 			objectId.setValue(pwc.getId());
-			Holder<Boolean> copied = new Holder<Boolean>(true);
-			contentCopied = copied;
+			if (contentCopied != null) {
+				contentCopied.setValue(true);
+			}
 			
 		}finally{
 			lock.unlock();
@@ -193,8 +194,11 @@ public class VersioningServiceImpl implements VersioningService {
 
 			// Safe to access pwc.getId() now since objectNotFound throws if null
 			nemakiCachePool.get(repositoryId).removeCmisCache(pwc.getId());
+			// SECURITY FIX: Use CAN_CHECKIN_DOCUMENT instead of CAN_CANCEL_CHECKOUT_DOCUMENT.
+			// The previous key allowed users with cancel-checkout permission (but not write permission)
+			// to perform checkIn operations.
 			exceptionService.permissionDenied(callContext,
-					repositoryId, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, pwc);
+					repositoryId, PermissionMapping.CAN_CHECKIN_DOCUMENT, pwc);
 
 			// //////////////////
 			// Specific Exception
@@ -248,7 +252,7 @@ public class VersioningServiceImpl implements VersioningService {
 		}
 
 		// Default to false
-		Boolean _major = (major == null) ? false : major;
+		Boolean _major = (major == null) ? Boolean.FALSE : major;
 		Document document = null;
 		if (_major) {
 			document = contentService
@@ -265,9 +269,9 @@ public class VersioningServiceImpl implements VersioningService {
 			log.error("Document not found for versionSeriesId: " + versionSeriesId +
 					" in repository: " + repositoryId + " (major: " + _major + ")");
 			exceptionService.objectNotFound(DomainType.OBJECT, null, versionSeriesId);
-			// Method execution ends here due to exception thrown above
+			return null;
 		}
-		
+
 		Lock lock = threadLockService.getReadLock(repositoryId, document.getId());
 		
 		try{
@@ -312,7 +316,7 @@ public class VersioningServiceImpl implements VersioningService {
 			if (d == null) {
 				log.error("Document not found for objectId: " + objectId + " in repository: " + repositoryId);
 				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
-				// Method execution ends here due to exception thrown above
+				return null;
 			}
 
 			versionSeriesId = d.getVersionSeriesId();

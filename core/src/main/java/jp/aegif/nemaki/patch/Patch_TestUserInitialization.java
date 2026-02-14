@@ -174,8 +174,8 @@ public class Patch_TestUserInitialization extends AbstractNemakiPatch {
                     propsMap.put("nemaki:email", "testuser@example.com");
 
                     List<Property> properties = new ArrayList<>();
-                    for (String key : propsMap.keySet()) {
-                        properties.add(new Property(key, propsMap.get(key)));
+                    for (Map.Entry<String, Object> entry : propsMap.entrySet()) {
+                        properties.add(new Property(entry.getKey(), entry.getValue()));
                     }
 
                     if (!properties.isEmpty()) {

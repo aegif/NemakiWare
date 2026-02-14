@@ -112,7 +112,10 @@ import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
 test.describe('NemakiWare Authentication', () => {
+  let testHelper: TestHelper;
+
   test.beforeEach(async ({ page, context }) => {
+    testHelper = new TestHelper(page);
     // Start with a clean session
     await context.clearCookies();
     await context.clearPermissions();
@@ -149,8 +152,6 @@ test.describe('NemakiWare Authentication', () => {
   });
 
   test('should display login page correctly', async ({ page }) => {
-    const testHelper = new TestHelper(page);
-
     await page.goto('/core/ui/index.html');
 
     // Check page title
@@ -180,7 +181,6 @@ test.describe('NemakiWare Authentication', () => {
 
   test('should successfully login with valid credentials', async ({ page, browserName }) => {
     const authHelper = new AuthHelper(page);
-    const testHelper = new TestHelper(page);
 
     await authHelper.login();
 
@@ -198,8 +198,7 @@ test.describe('NemakiWare Authentication', () => {
     await expect(page.locator('.ant-layout-content')).toBeVisible({ timeout: 10000 });
 
     // MOBILE FIX: Close sidebar on mobile to access header elements
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
@@ -307,8 +306,7 @@ test.describe('NemakiWare Authentication', () => {
     expect(await authHelper.isLoggedIn()).toBe(true);
 
     // MOBILE FIX: Close sidebar before logout to access header menu
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');

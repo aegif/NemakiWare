@@ -1,0 +1,408 @@
+/*******************************************************************************
+ * Copyright (c) 2013 aegif.
+ *
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ *
+ * Contributors:
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
+ ******************************************************************************/
+package jp.aegif.nemaki.webhook;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.Set;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
+import jp.aegif.nemaki.businesslogic.impl.WebhookServiceImpl.WebhookDispatcher;
+
+/**
+ * HTTP implementation of WebhookDispatcher.
+ * Sends webhook payloads to configured URLs via HTTP POST.
+ * 
+ * Security notes:
+ * - SSRF protection blocks localhost, private networks, and cloud metadata endpoints
+ * - DNS resolution is performed once at validation time and the resolved IP is reused
+ *   for the actual connection, preventing DNS rebinding attacks.
+ */
+public class HttpWebhookDispatcher implements WebhookDispatcher {
+    
+    private static final Log log = LogFactory.getLog(HttpWebhookDispatcher.class);
+    
+    private static final int DEFAULT_CONNECT_TIMEOUT = 10000; // 10 seconds
+    private static final int DEFAULT_READ_TIMEOUT = 30000; // 30 seconds
+    private static final int MAX_RESPONSE_BODY_LENGTH = 1000; // Truncate response body for logging
+    
+    /**
+     * Blocked hostnames for SSRF protection.
+     * Includes localhost variants and cloud metadata endpoints.
+     */
+    private static final Set<String> BLOCKED_HOSTNAMES = Set.of(
+        "localhost",
+        "127.0.0.1",
+        "0.0.0.0",
+        "::1",
+        "[::1]",
+        "169.254.169.254",  // AWS/GCP metadata endpoint
+        "metadata.google.internal",  // GCP metadata
+        "metadata.google.com"
+    );
+    
+    private int connectTimeout = DEFAULT_CONNECT_TIMEOUT;
+    private int readTimeout = DEFAULT_READ_TIMEOUT;
+    
+    @Override
+    public void dispatch(String url, String payload, Map<String, String> headers, WebhookConfig config) {
+        HttpURLConnection connection = null;
+        try {
+            connection = openConnection(url, payload, headers);
+
+            // Get response
+            int responseCode = connection.getResponseCode();
+            String responseBody = readResponseBody(connection, responseCode);
+
+            if (responseCode >= 200 && responseCode < 300) {
+                log.info("Webhook delivered successfully to " + url + " (HTTP " + responseCode + ")");
+                if (log.isDebugEnabled() && responseBody != null && !responseBody.isEmpty()) {
+                    log.debug("Response body: " + responseBody);
+                }
+            } else {
+                log.warn("Webhook delivery failed to " + url + " (HTTP " + responseCode + ")" + 
+                        (responseBody != null && !responseBody.isEmpty() ? " - Response: " + responseBody : ""));
+            }
+
+        } catch (IllegalArgumentException e) {
+            log.warn("Webhook dispatch skipped: " + e.getMessage());
+        } catch (MalformedURLException e) {
+            log.error("Webhook dispatch failed: malformed URL " + url, e);
+        } catch (IOException e) {
+            log.error("Webhook dispatch failed: I/O error for " + url + " - " + e.getMessage());
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+    
+
+    /**
+     * Build an HTTP POST connection, validate the URL (SSRF protection), set headers,
+     * and write the payload. Returns the opened connection ready for reading the response.
+     *
+     * @throws IllegalArgumentException if url/payload is invalid or blocked by SSRF protection
+     * @throws MalformedURLException if the URL is malformed
+     * @throws IOException if an I/O error occurs during connection or payload write
+     */
+    private HttpURLConnection openConnection(String url, String payload, Map<String, String> headers)
+            throws IOException {
+        if (url == null || url.isEmpty()) {
+            throw new IllegalArgumentException("URL is null or empty");
+        }
+        if (payload == null) {
+            throw new IllegalArgumentException("payload is null");
+        }
+
+        URL targetUrl = new URL(url);
+
+        // Validate URL protocol (only HTTP/HTTPS allowed)
+        String protocol = targetUrl.getProtocol().toLowerCase();
+        if (!protocol.equals("http") && !protocol.equals("https")) {
+            throw new IllegalArgumentException("unsupported protocol " + protocol);
+        }
+
+        // SSRF protection: resolve and validate hostname
+        // Returns the resolved IP address to prevent DNS rebinding attacks
+        InetAddress resolvedAddress = resolveAndValidateUrl(targetUrl);
+        if (resolvedAddress == null) {
+            throw new IllegalArgumentException("URL blocked for security reasons (SSRF protection) - " + url);
+        }
+
+        // Build URL using resolved IP to prevent DNS rebinding
+        int port = targetUrl.getPort() != -1 ? targetUrl.getPort() : targetUrl.getDefaultPort();
+        URL resolvedUrl = new URL(protocol, resolvedAddress.getHostAddress(), port,
+                targetUrl.getFile());
+
+        HttpURLConnection connection = (HttpURLConnection) resolvedUrl.openConnection();
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setConnectTimeout(connectTimeout);
+        connection.setReadTimeout(readTimeout);
+
+        // SSRF protection: Disable automatic redirect following
+        connection.setInstanceFollowRedirects(false);
+
+        // Set Host header to original hostname (required for virtual hosting)
+        connection.setRequestProperty("Host", targetUrl.getHost() +
+                (targetUrl.getPort() != -1 ? ":" + targetUrl.getPort() : ""));
+
+        // Set default headers
+        connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+        connection.setRequestProperty("User-Agent", "NemakiWare-Webhook/1.0");
+
+        // Set custom headers
+        if (headers != null) {
+            for (Map.Entry<String, String> header : headers.entrySet()) {
+                if (header.getKey() != null && header.getValue() != null) {
+                    connection.setRequestProperty(header.getKey(), header.getValue());
+                }
+            }
+        }
+
+        // Write payload
+        byte[] payloadBytes = payload.getBytes(StandardCharsets.UTF_8);
+        connection.setRequestProperty("Content-Length", String.valueOf(payloadBytes.length));
+
+        try (OutputStream os = connection.getOutputStream()) {
+            os.write(payloadBytes);
+            os.flush();
+        }
+
+        return connection;
+    }
+
+    /**
+     * Read response body from connection with truncation.
+     * Uses error stream for non-2xx responses, input stream for success.
+     * Truncates to MAX_RESPONSE_BODY_LENGTH and appends marker if truncated.
+     */
+    private String readResponseBody(HttpURLConnection connection, int responseCode) {
+        InputStream inputStream = null;
+        try {
+            if (responseCode >= 200 && responseCode < 300) {
+                inputStream = connection.getInputStream();
+            } else {
+                inputStream = connection.getErrorStream();
+            }
+            
+            if (inputStream == null) {
+                return null;
+            }
+            
+            StringBuilder response = new StringBuilder();
+            boolean truncated = false;
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    response.append(line);
+                    // Stop reading if we've exceeded max length
+                    if (response.length() > MAX_RESPONSE_BODY_LENGTH) {
+                        truncated = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Truncate and add marker if needed
+            if (truncated || response.length() > MAX_RESPONSE_BODY_LENGTH) {
+                return response.substring(0, Math.min(response.length(), MAX_RESPONSE_BODY_LENGTH)) 
+                       + "...(truncated)";
+            }
+            return response.toString();
+        } catch (IOException e) {
+            log.debug("Failed to read response body: " + e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Resolve and validate URL for SSRF protection.
+     * Returns the first safe resolved InetAddress, or null if the URL is blocked.
+     * 
+     * The returned address should be used for the actual connection to prevent
+     * DNS rebinding attacks (where DNS resolves to a different IP between validation
+     * and connection time).
+     */
+    InetAddress resolveAndValidateUrl(URL url) {
+        String host = url.getHost();
+        if (host == null || host.isEmpty()) {
+            return null;
+        }
+        
+        String hostLower = host.toLowerCase();
+        
+        // Check against blocked hostnames
+        if (BLOCKED_HOSTNAMES.contains(hostLower)) {
+            log.debug("SSRF protection: blocked hostname " + host);
+            return null;
+        }
+        
+        // Resolve hostname and check ALL resolved IP addresses
+        try {
+            InetAddress[] addresses = InetAddress.getAllByName(host);
+            
+            for (InetAddress address : addresses) {
+                if (!isAddressSafe(address, host)) {
+                    return null;
+                }
+            }
+            
+            // Return the first address for connection use
+            return addresses.length > 0 ? addresses[0] : null;
+            
+        } catch (UnknownHostException e) {
+            log.warn("SSRF protection: could not resolve hostname " + host + ", blocking for security");
+            return null;
+        }
+    }
+    
+    /**
+     * Check if a single IP address is safe to access.
+     * Blocks loopback, link-local, site-local, any-local, multicast,
+     * and IPv6 ULA (fc00::/7) addresses.
+     */
+    private boolean isAddressSafe(InetAddress address, String host) {
+        if (address.isLoopbackAddress()) {
+            log.debug("SSRF protection: blocked loopback address " + host + " -> " + address.getHostAddress());
+            return false;
+        }
+        
+        if (address.isLinkLocalAddress()) {
+            log.debug("SSRF protection: blocked link-local address " + host + " -> " + address.getHostAddress());
+            return false;
+        }
+        
+        if (address.isSiteLocalAddress()) {
+            log.debug("SSRF protection: blocked site-local (private) address " + host + " -> " + address.getHostAddress());
+            return false;
+        }
+        
+        if (address.isAnyLocalAddress()) {
+            log.debug("SSRF protection: blocked any-local address " + host + " -> " + address.getHostAddress());
+            return false;
+        }
+        
+        if (address.isMulticastAddress()) {
+            log.debug("SSRF protection: blocked multicast address " + host + " -> " + address.getHostAddress());
+            return false;
+        }
+        
+        byte[] addrBytes = address.getAddress();
+        
+        // Check for IPv4 private ranges that might not be caught by isSiteLocalAddress
+        if (addrBytes.length == 4) {
+            int firstOctet = addrBytes[0] & 0xFF;
+            int secondOctet = addrBytes[1] & 0xFF;
+            
+            // 10.0.0.0/8
+            if (firstOctet == 10) {
+                log.debug("SSRF protection: blocked 10.x.x.x private address " + host);
+                return false;
+            }
+            
+            // 172.16.0.0/12
+            if (firstOctet == 172 && secondOctet >= 16 && secondOctet <= 31) {
+                log.debug("SSRF protection: blocked 172.16-31.x.x private address " + host);
+                return false;
+            }
+            
+            // 192.168.0.0/16
+            if (firstOctet == 192 && secondOctet == 168) {
+                log.debug("SSRF protection: blocked 192.168.x.x private address " + host);
+                return false;
+            }
+            
+            // 169.254.0.0/16 (link-local, includes AWS metadata)
+            if (firstOctet == 169 && secondOctet == 254) {
+                log.debug("SSRF protection: blocked 169.254.x.x link-local address " + host);
+                return false;
+            }
+        }
+        
+        // Check for IPv6 ULA (Unique Local Address) fc00::/7
+        // This covers fc00::/8 and fd00::/8
+        if (addrBytes.length == 16) {
+            int firstByte = addrBytes[0] & 0xFF;
+            // fc00::/7 means first 7 bits are 1111110, so first byte is 0xFC or 0xFD
+            if (firstByte == 0xFC || firstByte == 0xFD) {
+                log.debug("SSRF protection: blocked IPv6 ULA address " + host + " -> " + address.getHostAddress());
+                return false;
+            }
+        }
+        
+        return true;
+    }
+    
+    public void setConnectTimeout(int connectTimeout) {
+        this.connectTimeout = connectTimeout;
+    }
+    
+    public void setReadTimeout(int readTimeout) {
+        this.readTimeout = readTimeout;
+    }
+    
+    /**
+     * Synchronous dispatch for testing webhooks.
+     * Returns the delivery result including actual status code and response body.
+     */
+    @Override
+    public WebhookDeliveryLog dispatchSync(String url, String payload, Map<String, String> headers, WebhookConfig config) {
+        WebhookDeliveryLog result = new WebhookDeliveryLog();
+        result.setDeliveryId(java.util.UUID.randomUUID().toString());
+        result.setWebhookUrl(url);
+        result.setEventType("TEST");
+        result.setAttemptNumber(1);
+        result.setTimestamp(new java.util.GregorianCalendar());
+
+        HttpURLConnection connection = null;
+        try {
+            connection = openConnection(url, payload, headers);
+
+            // Get response
+            int responseCode = connection.getResponseCode();
+            String responseBody = readResponseBody(connection, responseCode);
+
+            result.setStatusCode(responseCode);
+            result.setResponseBody(responseBody);
+            result.setSuccess(responseCode >= 200 && responseCode < 300);
+
+            if (result.isSuccess()) {
+                log.info("Test webhook delivered successfully to " + url + " (HTTP " + responseCode + ")");
+            } else {
+                log.warn("Test webhook delivery failed to " + url + " (HTTP " + responseCode + ")");
+            }
+
+        } catch (IllegalArgumentException e) {
+            result.setSuccess(false);
+            result.setStatusCode(0);
+            result.setResponseBody("Error: " + e.getMessage());
+        } catch (MalformedURLException e) {
+            result.setSuccess(false);
+            result.setStatusCode(0);
+            result.setResponseBody("Error: malformed URL - " + e.getMessage());
+        } catch (IOException e) {
+            result.setSuccess(false);
+            result.setStatusCode(0);
+            result.setResponseBody("Error: I/O error - " + e.getMessage());
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+
+        return result;
+    }
+}
