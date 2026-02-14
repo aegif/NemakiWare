@@ -3635,8 +3635,9 @@ export class CMISService {
         xhr.setRequestHeader(key, value);
       });
 
-      // Extended timeout for large imports (10 minutes)
-      xhr.timeout = 600000;
+      // Extended timeout for large imports (60 minutes)
+      // 1GB+ ZIPs with hundreds of files require significant server processing time
+      xhr.timeout = 3600000;
 
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable && onProgress) {

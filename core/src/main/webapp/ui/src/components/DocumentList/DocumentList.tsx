@@ -1209,13 +1209,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         }
       }
 
-      setImportModalVisible(false);
-      importForm.resetFields();
       await loadObjects();
     } catch (error) {
       console.error('Import error:', error);
       message.error(`${t('importExport.importError')}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
+      setImportModalVisible(false);
+      importForm.resetFields();
       setIsImporting(false);
       setImportProgress(0);
     }

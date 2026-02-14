@@ -762,11 +762,15 @@ public class ImportExportResource extends ResourceBase {
         try (ZipFile zf = new ZipFile(zipFile)) {
             boolean hasPackageXml = false;
             boolean hasMetaJson = false;
+            boolean hasAnyFile = false;
 
             Enumeration<? extends ZipEntry> entries = zf.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
                 String name = entry.getName();
+                if (!entry.isDirectory()) {
+                    hasAnyFile = true;
+                }
                 if (name.endsWith(".xml") && !name.contains("/")) {
                     // Root-level XML file suggests ACP format
                     hasPackageXml = true;
@@ -779,6 +783,10 @@ public class ImportExportResource extends ResourceBase {
             if (hasPackageXml && !hasMetaJson) {
                 return ImportFormat.ACP;
             } else if (hasMetaJson) {
+                return ImportFormat.CUSTOM;
+            } else if (hasAnyFile) {
+                // Plain ZIP with files/folders but no metadata — import as-is
+                log.info("No metadata found in ZIP; treating as plain file import");
                 return ImportFormat.CUSTOM;
             }
         }
