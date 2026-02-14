@@ -402,9 +402,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     try {
       if (window.location.pathname.includes('oidc-callback')) {
-        // Process OIDC callback
+        // Process OIDC callback - recover repositoryId from OIDC state
         const oidcUser = await oidcService.signinRedirectCallback();
-        const repositoryId = repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID;
+        const stateRepoId = (oidcUser as any).state?.repositoryId as string | undefined;
+        const repositoryId = stateRepoId
+          || (repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID);
         const auth = await oidcService.convertOIDCToken(oidcUser, repositoryId);
 
         // Save auth to localStorage before redirect
@@ -423,8 +425,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         // Redirect to main app after successful OIDC authentication
         window.location.href = '/core/ui/';
       } else {
-        // Initiate OIDC redirect
-        await oidcService.signinRedirect();
+        // Initiate OIDC redirect - pass selected repositoryId via OIDC state
+        const repositoryId = form.getFieldValue('repositoryId')
+          || (repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID);
+        await oidcService.signinRedirect({ repositoryId });
       }
     } catch (error) {
       console.error('OIDC login error:', error);
@@ -442,12 +446,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   const handleSAMLLogin = async () => {
     if (!samlService) return;
-    
+
     setLoading(true);
     setError(null);
 
     try {
-      const repositoryId = repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID;
+      const repositoryId = form.getFieldValue('repositoryId')
+        || (repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID);
       samlService.initiateLogin(repositoryId);
     } catch (error) {
       // SAML login failed - log actual error for debugging
@@ -506,7 +511,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError(null);
 
     try {
-      const repositoryId = repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID;
+      const repositoryId = form.getFieldValue('repositoryId') || (repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID);
       const auth = await signInWithGoogle(cloudAuthConfig.googleClientId, repositoryId);
       authService.saveAuth(auth);
       performCleanup();
@@ -528,7 +533,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError(null);
 
     try {
-      const repositoryId = repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID;
+      const repositoryId = form.getFieldValue('repositoryId') || (repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID);
       const auth = await signInWithMicrosoft(
         cloudAuthConfig.microsoftClientId,
         cloudAuthConfig.microsoftTenantId || 'common',

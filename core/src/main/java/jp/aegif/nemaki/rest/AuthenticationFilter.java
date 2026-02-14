@@ -158,7 +158,8 @@ public class AuthenticationFilter implements Filter {
 
 			// Bypass authentication for legacy authtoken login endpoint
 			// The login endpoint validates credentials itself via request body password
-			if (requestURI != null && requestURI.contains("/authtoken/") && requestURI.endsWith("/login")) {
+			// Pattern: /core/rest/repo/{repositoryId}/authtoken/{userName}/login
+			if (requestURI != null && requestURI.contains("/rest/repo/") && requestURI.contains("/authtoken/") && requestURI.endsWith("/login")) {
 				log.debug("Bypassing authentication for authtoken login endpoint: " + requestURI);
 				chain.doFilter(req, res);
 				return;
@@ -239,12 +240,12 @@ public class AuthenticationFilter implements Filter {
 
 		if (authToken != null && !authToken.isEmpty()) {
 			// Token-based authentication - validate token and get username
-			log.info("=== AUTH: AUTH_TOKEN header found, validating token for repository: " + repositoryId + " ===");
+			log.debug("=== AUTH: AUTH_TOKEN header found, validating token for repository: " + repositoryId + " ===");
 
 			if (tokenService != null) {
 				String userName = tokenService.validateToken(app, repositoryId, authToken);
 				if (userName != null) {
-					log.info("=== AUTH: Token validated successfully for user: " + userName + " ===");
+					log.debug("=== AUTH: Token validated successfully for user: " + userName + " ===");
 					ctxt.put(CallContext.USERNAME, userName);
 					ctxt.put(CallContextKey.AUTH_TOKEN, authToken);
 					ctxt.put(CallContextKey.AUTH_TOKEN_APP, authTokenApp);
@@ -266,55 +267,55 @@ public class AuthenticationFilter implements Filter {
 
 			if (apiKey != null && !apiKey.isEmpty()) {
 				// API Key authentication - set it in context for AuthenticationService to validate
-				log.info("=== AUTH: X-API-Key header found, passing to AuthenticationService ===");
+				log.debug("=== AUTH: X-API-Key header found, passing to AuthenticationService ===");
 				ctxt.put(CallContextKey.API_KEY, apiKey);
 				// AuthenticationService.loginWithApiKey() will validate the key and set username
 			} else {
 				// Check Authorization header for Basic or Bearer authentication
 				String authHeader = request.getHeader("Authorization");
 				if (authHeader != null && authHeader.startsWith("Bearer ")) {
-				// Bearer token authentication (standard OAuth2/JWT format)
-				String token = authHeader.substring("Bearer ".length()).trim();
-				if (token.isEmpty()) {
-					log.warn("Empty Bearer token");
-					return false;
-				}
+					// Bearer token authentication (standard OAuth2/JWT format)
+					String token = authHeader.substring("Bearer ".length()).trim();
+					if (token.isEmpty()) {
+						log.warn("Empty Bearer token");
+						return false;
+					}
 
-				log.info("=== AUTH: Bearer token found, validating for repository: " + repositoryId + " ===");
+					log.debug("=== AUTH: Bearer token found, validating for repository: " + repositoryId + " ===");
 
-				if (tokenService != null) {
-					String userName = tokenService.validateToken(app, repositoryId, token);
-					if (userName != null) {
-						log.info("=== AUTH: Bearer token validated successfully for user: " + userName + " ===");
-						ctxt.put(CallContext.USERNAME, userName);
-						ctxt.put(CallContextKey.AUTH_TOKEN, token);
+					if (tokenService != null) {
+						String userName = tokenService.validateToken(app, repositoryId, token);
+						if (userName != null) {
+							log.debug("=== AUTH: Bearer token validated successfully for user: " + userName + " ===");
+							ctxt.put(CallContext.USERNAME, userName);
+							ctxt.put(CallContextKey.AUTH_TOKEN, token);
+						} else {
+							log.info("=== AUTH: Invalid or expired Bearer token for repository: " + repositoryId + " ===");
+							return false;
+						}
 					} else {
-						log.info("=== AUTH: Invalid or expired Bearer token for repository: " + repositoryId + " ===");
+						log.warn("=== AUTH: TokenService not available for Bearer token validation ===");
+						return false;
+					}
+				} else if (authHeader != null && authHeader.startsWith("Basic ")) {
+					// Basic authentication (username:password)
+					try {
+						String base64Credentials = authHeader.substring("Basic ".length()).trim();
+						String credentials = new String(java.util.Base64.getDecoder().decode(base64Credentials), java.nio.charset.StandardCharsets.UTF_8);
+						String[] values = credentials.split(":", 2);
+						if (values.length == 2) {
+							ctxt.put(CallContext.USERNAME, values[0]);
+							ctxt.put(CallContext.PASSWORD, values[1]);
+							log.debug("=== AUTH: Basic auth extracted - username=" + values[0] + " ===");
+						}
+					} catch (Exception e) {
+						log.error("Failed to parse Basic auth header", e);
 						return false;
 					}
 				} else {
-					log.info("=== AUTH: TokenService not available for Bearer token validation ===");
+					log.warn("No Authorization header, AUTH_TOKEN, or X-API-Key found");
 					return false;
 				}
-			} else if (authHeader != null && authHeader.startsWith("Basic ")) {
-				// Basic authentication (username:password)
-				try {
-					String base64Credentials = authHeader.substring("Basic ".length()).trim();
-					String credentials = new String(java.util.Base64.getDecoder().decode(base64Credentials), java.nio.charset.StandardCharsets.UTF_8);
-					String[] values = credentials.split(":", 2);
-					if (values.length == 2) {
-						ctxt.put(CallContext.USERNAME, values[0]);
-						ctxt.put(CallContext.PASSWORD, values[1]);
-						log.debug("=== AUTH: Basic auth extracted - username=" + values[0] + " ===");
-					}
-				} catch (Exception e) {
-					log.error("Failed to parse Basic auth header", e);
-					return false;
-				}
-			} else {
-				log.warn("No Authorization header, AUTH_TOKEN, or X-API-Key found");
-				return false;
-			}
 			}
 		}
 

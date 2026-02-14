@@ -252,9 +252,7 @@ test.describe('Group Management CRUD Operations', () => {
     {
       // Fill group ID and name (Ant Design Form.Item name="id" creates input with id="id")
       const groupIdInput = page.locator('input[id="id"]');
-      if (await groupIdInput.count() === 0) {
-        test.skip(true, 'Group ID input field not found - form structure may have changed');
-      }
+      await expect(groupIdInput.first()).toBeVisible({ timeout: 5000 });
       await groupIdInput.first().fill(TEST_GROUP_NAME);
 
       const groupNameInput = page.locator('input[id="name"]');
@@ -339,150 +337,90 @@ test.describe('Group Management CRUD Operations', () => {
     await expect(groupRow).toBeVisible({ timeout: 10000 });
 
     {
-      console.log('[DEBUG] Test 2: Group found, looking for members button');
-      // Look for member management button (may be users icon, edit icon)
+      // Members button (edit icon) must exist on the group row
+      console.log('[DEBUG] Test 2: Group found, looking for members/edit button');
       const membersButton = groupRow.locator('button').filter({
         has: page.locator('[data-icon="user"], [data-icon="team"], [data-icon="edit"]')
       });
-      const membersButtonCount = await membersButton.count();
-      console.log('[DEBUG] Test 2: Members button count:', membersButtonCount);
+      await expect(membersButton.first()).toBeVisible({ timeout: 5000 });
 
-      if (membersButtonCount > 0) {
-        console.log('[DEBUG] Test 2: Clicking members button...');
-        // CRITICAL FIX (2025-11-10): Modal buttons need force: true even on desktop
-        await membersButton.first().click({ force: true });
-        await page.waitForTimeout(1000);
-        console.log('[DEBUG] Test 2: Members button clicked');
+      // Open edit modal
+      await membersButton.first().click({ force: true });
+      await page.waitForTimeout(1000);
+      console.log('[DEBUG] Test 2: Edit button clicked');
 
-        // CRITICAL FIX (2025-11-10): Wait for modal to appear and verify it contains member management interface
-        const modal = page.locator('.ant-modal, .ant-drawer');
-        try {
-          await expect(modal).toBeVisible({ timeout: 5000 });
-          console.log('[DEBUG] Test 2: Modal appeared successfully');
-        } catch (error) {
-          console.log('[DEBUG] Test 2: Modal did not appear:', error);
-          test.skip('Modal did not appear after clicking members button');
-        }
+      const modal = page.locator('.ant-modal, .ant-drawer');
+      await expect(modal).toBeVisible({ timeout: 5000 });
+      console.log('[DEBUG] Test 2: Modal appeared');
 
-        // CRITICAL FIX (2025-11-10): The members field in the modal is an Ant Design Select component
-        // Look directly for the members select element (id="members" based on form structure)
-        const membersSelect = modal.locator('#userMembers, #groupMembers, .ant-select[id*="member"], input[id*="member"]');
-        const membersSelectCount = await membersSelect.count();
-        console.log('[DEBUG] Test 2: Members select count:', membersSelectCount);
+      // Members select must be present
+      const membersSelect = modal.locator('#userMembers, #groupMembers, .ant-select[id*="member"], input[id*="member"]');
+      await expect(membersSelect.first()).toBeVisible({ timeout: 5000 });
+      console.log('[DEBUG] Test 2: Members select found');
 
-        if (membersSelectCount > 0) {
-          console.log('[DEBUG] Test 2: Clicking members select to open dropdown...');
-          // CRITICAL FIX (2025-11-10): Use scrollIntoViewIfNeeded before clicking to ensure visibility
-          await membersSelect.first().scrollIntoViewIfNeeded();
-          await page.waitForTimeout(300);
-          await membersSelect.first().click({ force: true });
-          await page.waitForTimeout(500);
-          console.log('[DEBUG] Test 2: Members select clicked');
+      // Open dropdown and add a member
+      await membersSelect.first().scrollIntoViewIfNeeded();
+      await page.waitForTimeout(300);
+      await membersSelect.first().click({ force: true });
+      await page.waitForTimeout(500);
 
-          // Type testuser or admin
-          await page.keyboard.type('testuser');
-          await page.waitForTimeout(500);
-          console.log('[DEBUG] Test 2: Typed "testuser" in search');
+      // Try testuser first, then admin as fallback
+      await page.keyboard.type('testuser');
+      await page.waitForTimeout(500);
 
-          // Select from dropdown
-          const userOption = page.locator('.ant-select-item:has-text("testuser")').first();
-          if (await userOption.count() > 0) {
-            console.log('[DEBUG] Test 2: Found testuser option, clicking...');
-            await userOption.click({ force: true });
-          } else {
-            console.log('[DEBUG] Test 2: testuser not found, trying admin...');
-            // If testuser doesn't exist, try admin
-            await page.keyboard.press('Backspace');
-            await page.keyboard.press('Backspace');
-            await page.keyboard.press('Backspace');
-            await page.keyboard.press('Backspace');
-            await page.keyboard.press('Backspace');
-            await page.keyboard.press('Backspace');
-            await page.keyboard.press('Backspace');
-            await page.keyboard.press('Backspace');
-            await page.keyboard.type('admin');
-            await page.waitForTimeout(500);
-
-            const adminOption = page.locator('.ant-select-item:has-text("admin")').first();
-            if (await adminOption.count() > 0) {
-              console.log('[DEBUG] Test 2: Found admin option, clicking...');
-              await adminOption.click({ force: true });
-            } else {
-              console.log('[DEBUG] Test 2: Neither testuser nor admin found in dropdown');
-            }
-          }
-
-          // CRITICAL FIX (2025-11-10): Close the dropdown before submitting form
-          // The dropdown must be closed or it will block the submit button
-          console.log('[DEBUG] Test 2: Closing dropdown with Escape key...');
-          await page.keyboard.press('Escape');
-          // Wait longer for dropdown animation to complete
-          await page.waitForTimeout(1000);
-          console.log('[DEBUG] Test 2: Dropdown closed, waiting for UI to stabilize...');
-
-          // Save member addition
-          // CRITICAL FIX (2025-11-10): For edit modal, we need to click the submit button
-          // Pressing Enter on input fields doesn't trigger form submission for edit operations
-          // Find submit button with flexible text matching
-          console.log('[DEBUG] Test 2: Looking for submit button...');
-          const submitButton = modal.locator('button').filter({ hasText: /作\s*成|保存|更\s*新|OK|確\s*定/ });
-          const submitButtonCount = await submitButton.count();
-          console.log('[DEBUG] Test 2: Submit button count:', submitButtonCount);
-
-          if (submitButtonCount > 0) {
-            console.log('[DEBUG] Test 2: Clicking submit button to save member changes...');
-            // Click without force to allow React event handlers to fire
-            await submitButton.first().click();
-            await page.waitForTimeout(1000);
-            console.log('[DEBUG] Test 2: Submit button clicked');
-          } else {
-            console.log('[DEBUG] Test 2: Submit button not found, trying Enter as fallback...');
-            await page.keyboard.press('Enter');
-            await page.waitForTimeout(500);
-          }
-
-          // Wait for modal to close
-          console.log('[DEBUG] Test 2: Waiting for modal to close...');
-          try {
-            await expect(modal).not.toBeVisible({ timeout: 5000 });
-            console.log('[DEBUG] Test 2: Modal closed successfully');
-          } catch (error) {
-            console.log('[DEBUG] Test 2: Modal did not close, trying button click as fallback...');
-            // Fallback: Try clicking the submit button
-            const submitButton = modal.locator('button').filter({ hasText: /作\s*成|保存|更\s*新|OK/ });
-            if (await submitButton.count() > 0) {
-              await submitButton.first().click();
-              await page.waitForTimeout(500);
-              await expect(modal).not.toBeVisible({ timeout: 5000 });
-              console.log('[DEBUG] Test 2: Modal closed after button click');
-            }
-          }
-
-          // CRITICAL DEBUG: Log API activity before waiting for success message
-          console.log('[DEBUG] Test 2: API Requests captured:', apiRequests.length);
-          apiRequests.forEach((req, i) => console.log(`  [${i}]`, req));
-          console.log('[DEBUG] Test 2: API Responses captured:', apiResponses.length);
-          apiResponses.forEach((res, i) => console.log(`  [${i}]`, res));
-
-          // FIX (2025-12-26): Wait for API responses and table update instead of transient success message
-          console.log('[DEBUG] Test 2: Waiting for member update to complete...');
-          await page.waitForTimeout(2000);
-          console.log('[DEBUG] Test 2: Member update completed');
-        } else {
-          console.log('[DEBUG] Test 2: Members select not found in modal');
-          test.skip('Members select not found in modal - form structure may have changed');
-        }
+      const userOption = page.locator('.ant-select-item:has-text("testuser")').first();
+      if (await userOption.count() > 0) {
+        console.log('[DEBUG] Test 2: Selecting testuser');
+        await userOption.click({ force: true });
       } else {
-        // Try clicking the group row to open detail view
-        await groupRow.click({ force: true });
-        await page.waitForTimeout(1000);
-
-        // Look for members section
-        const membersSection = page.locator('text=メンバー, text=Members');
-        if (await membersSection.count() > 0) {
-          await expect(membersSection).toBeVisible();
-        }
+        // Clear and try admin
+        for (let i = 0; i < 8; i++) await page.keyboard.press('Backspace');
+        await page.keyboard.type('admin');
+        await page.waitForTimeout(500);
+        const adminOption = page.locator('.ant-select-item:has-text("admin")').first();
+        await expect(adminOption).toBeVisible({ timeout: 3000 });
+        console.log('[DEBUG] Test 2: Selecting admin');
+        await adminOption.click({ force: true });
       }
+
+      // Close dropdown before submit
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1000);
+
+      // Submit - button must exist and API must respond 200
+      const submitButton = page.locator('.ant-modal-footer button.ant-btn-primary, .ant-modal button').filter({ hasText: /保\s*存|更\s*新|OK/ });
+      await expect(submitButton.first()).toBeVisible({ timeout: 5000 });
+
+      const updateResponsePromise = page.waitForResponse(
+        resp => resp.url().includes('/group/update/') && resp.status() === 200,
+        { timeout: 15000 }
+      );
+      await submitButton.first().click();
+      const updateResponse = await updateResponsePromise;
+      expect(updateResponse).toBeTruthy();
+      console.log('[DEBUG] Test 2: Group update API responded with 200');
+
+      await expect(modal).not.toBeVisible({ timeout: 10000 });
+      console.log('[DEBUG] Test 2: Modal closed after member update');
+
+      // Postcondition: reopen the edit modal and verify the member persisted
+      await page.waitForTimeout(1000);
+      await membersButton.first().click({ force: true });
+      const verifyModal = page.locator('.ant-modal, .ant-drawer');
+      await expect(verifyModal).toBeVisible({ timeout: 5000 });
+
+      const memberTag = verifyModal.locator('.ant-select-selection-item').filter({ hasText: /testuser|admin/ });
+      await expect(memberTag.first()).toBeVisible({ timeout: 5000 });
+      console.log('[DEBUG] Test 2: Member persisted - verified after reopening modal');
+
+      // Close verification modal
+      const cancelButton = verifyModal.locator('button').filter({ hasText: /キャンセル|Cancel|閉じる|Close/ });
+      if (await cancelButton.count() > 0) {
+        await cancelButton.first().click();
+      } else {
+        await page.keyboard.press('Escape');
+      }
+      await expect(verifyModal).not.toBeVisible({ timeout: 5000 });
     }
   });
 
@@ -499,25 +437,8 @@ test.describe('Group Management CRUD Operations', () => {
       await page.waitForTimeout(2000);
     }
 
-    // Find test group - ensure it exists via API if not created by previous test
-    let groupRow = page.locator('tr').filter({ hasText: TEST_GROUP_NAME });
-    const groupVisible = await groupRow.isVisible().catch(() => false);
-    if (!groupVisible) {
-      // Create group via API as fallback
-      await page.request.post(
-        `http://localhost:8080/core/rest/repo/bedroom/group/create/${TEST_GROUP_NAME}`,
-        { headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}` } }
-      );
-      await page.reload();
-      await page.waitForTimeout(3000);
-      // Search again after reload
-      const searchInput2 = page.locator('input[placeholder*="検索"], input[placeholder*="search"], input[placeholder*="Search"], input[placeholder*="グループ"]');
-      if (await searchInput2.isVisible().catch(() => false)) {
-        await searchInput2.fill(TEST_GROUP_NAME);
-        await page.waitForTimeout(2000);
-      }
-      groupRow = page.locator('tr').filter({ hasText: TEST_GROUP_NAME });
-    }
+    // Find test group - must exist from the create test (no API fallback)
+    const groupRow = page.locator('tr').filter({ hasText: TEST_GROUP_NAME });
     await expect(groupRow).toBeVisible({ timeout: 10000 });
 
     // Click edit button

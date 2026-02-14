@@ -478,8 +478,8 @@ test.describe('Relationship Management', () => {
       return;
     }
 
-    // Relationships tab is always visible in DocumentViewer
-    const relationshipsTab = page.getByRole('tab', { name: '関係' });
+    // Relationships tab is always visible in DocumentViewer (supports both ja/en)
+    const relationshipsTab = page.getByRole('tab', { name: '関係' }).or(page.getByRole('tab', { name: 'Relationships' }));
     const tabVisible = await relationshipsTab.isVisible({ timeout: 5000 }).catch(() => false);
     if (!tabVisible) {
       test.skip('DocumentViewer tabs not loaded - possible page load issue');
@@ -491,8 +491,8 @@ test.describe('Relationship Management', () => {
     await relationshipsTab.click();
     await expect(relationshipsTab).toHaveAttribute('aria-selected', 'true', { timeout: 5000 });
 
-    // Verify the "Add Relationship" button is visible
-    const addRelationshipButton = page.getByRole('button', { name: '関係を追加' });
+    // Verify the "Add Relationship" button is visible (supports both ja/en)
+    const addRelationshipButton = page.getByRole('button', { name: '関係を追加' }).or(page.getByRole('button', { name: 'Add Relationship' }));
     await expect(addRelationshipButton).toBeVisible({ timeout: 5000 });
   });
 });

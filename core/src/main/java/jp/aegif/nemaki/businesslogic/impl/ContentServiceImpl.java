@@ -81,6 +81,7 @@ import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisContentAlreadyExistsException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisNotSupportedException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
@@ -586,7 +587,6 @@ public class ContentServiceImpl implements ContentService {
 		return contentDaoService.getRelationship(repositoryId, objectId);
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public List<Relationship> getRelationsipsOfObject(String repositoryId, String objectId,
 			RelationshipDirection relationshipDirection) {
@@ -605,7 +605,18 @@ public class ContentServiceImpl implements ContentService {
 		case EITHER:
 			List<Relationship> sources = contentDaoService.getRelationshipsBySource(repositoryId, objectId);
 			List<Relationship> targets = contentDaoService.getRelationshipsByTarget(repositoryId, objectId);
-			return (List<Relationship>) CollectionUtils.disjunction(sources, targets);
+			// Merge by ID to form a proper union.
+			// CollectionUtils.disjunction was incorrect here: it computes symmetric
+			// difference, which drops self-referencing relationships (source == target)
+			// because they appear in both lists.
+			Map<String, Relationship> merged = new LinkedHashMap<>();
+			for (Relationship r : sources) {
+				if (r.getId() != null) merged.put(r.getId(), r);
+			}
+			for (Relationship r : targets) {
+				if (r.getId() != null) merged.putIfAbsent(r.getId(), r);
+			}
+			return new ArrayList<>(merged.values());
 		default:
 			return null;
 		}
@@ -4094,8 +4105,7 @@ public class ContentServiceImpl implements ContentService {
 	public void restoreArchive(String repositoryId, String archiveId) throws ParentNoLongerExistException {
 		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
 		if (archive == null) {
-			log.error("Archive does not exist!");
-			return;
+			throw new CmisObjectNotFoundException("restoreArchive: archive does not exist, archiveId=" + archiveId);
 		}
 
 		// Check whether the destination does still extist.
@@ -4115,9 +4125,9 @@ public class ContentServiceImpl implements ContentService {
 		} else if (archive.isDocument()) {
 			restored = restoreDocument(repositoryId, archive);
 		} else if (archive.isAttachment()) {
-			log.error("Attachment can't be restored alone");
+			throw new CmisNotSupportedException("restoreArchive: attachment cannot be restored alone, archiveId=" + archiveId);
 		} else {
-			log.error("Only document or folder is supported for restoration");
+			throw new CmisNotSupportedException("restoreArchive: unsupported archive type for restoration, archiveId=" + archiveId);
 		}
 
 		// Write change event (restored may be null if the archive was a PWC
@@ -4137,54 +4147,53 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private Document restoreDocument(String repositoryId, Archive archive) {
-		try {
-			// Get archives of the same version series
-			String versionSeriesId = archive.getVersionSeriesId();
-			List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId,
-					versionSeriesId);
+		// Fail fast if versionSeriesId is null to prevent unfiltered DAO queries
+		String versionSeriesId = archive.getVersionSeriesId();
+		if (versionSeriesId == null) {
+			throw new CmisRuntimeException("restoreDocument: archive has no versionSeriesId, archiveId=" + archive.getId());
+		}
 
-			// Restore VersionSeries if it was deleted along with the document
-			VersionSeries vs = contentDaoService.getVersionSeries(repositoryId, versionSeriesId);
-			if (vs == null && versionSeriesId != null) {
-				log.info("restoreDocument: VersionSeries {} not found, recreating it", versionSeriesId);
-				contentDaoService.restoreVersionSeries(repositoryId, versionSeriesId);
-				vs = contentDaoService.getVersionSeries(repositoryId, versionSeriesId);
-			}
+		// Get archives of the same version series
+		List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId,
+				versionSeriesId);
 
-			for (Archive version : versions) {
-				contentDaoService.restoreDocumentWithArchive(repositoryId, version);
-				// delete archives
-				contentDaoService.deleteDocumentArchive(repositoryId, version.getId());
-			}
+		// Restore VersionSeries if it was deleted along with the document
+		VersionSeries vs = contentDaoService.getVersionSeries(repositoryId, versionSeriesId);
+		if (vs == null) {
+			log.info("restoreDocument: VersionSeries {} not found, recreating it", versionSeriesId);
+			contentDaoService.restoreVersionSeries(repositoryId, versionSeriesId);
+			vs = contentDaoService.getVersionSeries(repositoryId, versionSeriesId);
+		}
 
-			// After restoring all versions, clean up checkout state
-			if (versionSeriesId != null) {
-				List<Document> restoredVersions = contentDaoService.getAllVersions(repositoryId, versionSeriesId);
-				if (CollectionUtils.isNotEmpty(restoredVersions)) {
-					for (Document version : restoredVersions) {
-						if (version.isPrivateWorkingCopy()) {
-							// PWC is meaningless after restore (checkout context is lost)
-							contentDaoService.delete(repositoryId, version.getAttachmentNodeId());
-							contentDaoService.delete(repositoryId, version.getId());
-						} else if (version.isVersionSeriesCheckedOut()) {
-							// Clear checkout flags on normal versions
-							version.setVersionSeriesCheckedOut(false);
-							version.setVersionSeriesCheckedOutBy(null);
-							version.setVersionSeriesCheckedOutId(null);
-							contentDaoService.update(repositoryId, version);
-						}
-					}
-				}
-				// Clear checkout state on VersionSeries itself
-				if (vs != null && vs.isVersionSeriesCheckedOut()) {
-					vs.setVersionSeriesCheckedOut(false);
-					vs.setVersionSeriesCheckedOutBy(null);
-					vs.setVersionSeriesCheckedOutId(null);
-					contentDaoService.update(repositoryId, vs);
+		for (Archive version : versions) {
+			contentDaoService.restoreDocumentWithArchive(repositoryId, version);
+			// delete archives
+			contentDaoService.deleteDocumentArchive(repositoryId, version.getId());
+		}
+
+		// After restoring all versions, clean up checkout state
+		List<Document> restoredVersions = contentDaoService.getAllVersions(repositoryId, versionSeriesId);
+		if (CollectionUtils.isNotEmpty(restoredVersions)) {
+			for (Document version : restoredVersions) {
+				if (version.isPrivateWorkingCopy()) {
+					// PWC is meaningless after restore (checkout context is lost)
+					contentDaoService.delete(repositoryId, version.getAttachmentNodeId());
+					contentDaoService.delete(repositoryId, version.getId());
+				} else if (version.isVersionSeriesCheckedOut()) {
+					// Clear checkout flags on normal versions
+					version.setVersionSeriesCheckedOut(false);
+					version.setVersionSeriesCheckedOutBy(null);
+					version.setVersionSeriesCheckedOutId(null);
+					contentDaoService.update(repositoryId, version);
 				}
 			}
-		} catch (Exception e) {
-			log.error("fail to restore a document", e);
+		}
+		// Clear checkout state on VersionSeries itself
+		if (vs != null && vs.isVersionSeriesCheckedOut()) {
+			vs.setVersionSeriesCheckedOut(false);
+			vs.setVersionSeriesCheckedOutBy(null);
+			vs.setVersionSeriesCheckedOutId(null);
+			contentDaoService.update(repositoryId, vs);
 		}
 
 		return getDocument(repositoryId, archive.getOriginalId());
@@ -4206,7 +4215,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 		String deletedArchiveId = contentDaoService.deleteArchive(repositoryId, archive.getId());
 		if (deletedArchiveId == null) {
-			log.warn("Archive deletion returned null during restore: " + archive.getId());
+			throw new CmisRuntimeException("restoreFolder: folder archive record deletion failed after restoration, archiveId=" + archive.getId());
 		}
 
 		return getFolder(repositoryId, archive.getOriginalId());
@@ -4225,8 +4234,7 @@ public class ContentServiceImpl implements ContentService {
 	public void destroyArchive(String repositoryId, String archiveId) {
 		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
 		if (archive == null) {
-			log.error("destroyArchive: archive does not exist, archiveId=" + archiveId);
-			return;
+			throw new CmisObjectNotFoundException("destroyArchive: archive does not exist, archiveId=" + archiveId);
 		}
 
 		if (archive.isFolder()) {
@@ -4234,9 +4242,13 @@ public class ContentServiceImpl implements ContentService {
 		} else if (archive.isDocument()) {
 			destroyDocument(repositoryId, archive);
 		} else if (archive.isAttachment()) {
-			log.error("destroyArchive: attachment cannot be restored alone, archiveId=" + archiveId);
+			throw new CmisNotSupportedException("destroyArchive: attachment cannot be destroyed alone, archiveId=" + archiveId);
 		} else {
-			log.error("destroyArchive: only document or folder is supported for restoration, archiveId=" + archiveId);
+			// cmis:item (user/group) or other non-document/folder types: delete directly from archive DB
+			String deletedId = contentDaoService.deleteArchive(repositoryId, archiveId);
+			if (deletedId == null) {
+				throw new CmisRuntimeException("destroyArchive: deletion failed for cmis:item archive, archiveId=" + archiveId);
+			}
 		}
 	}
 
@@ -4250,55 +4262,46 @@ public class ContentServiceImpl implements ContentService {
 		}
 		String deletedArchiveId = contentDaoService.deleteArchive(repositoryId, archive.getId());
 		if (deletedArchiveId == null) {
-			log.warn("destroyFolder: folder archive deletion returned null, archiveId=" + archive.getId());
+			throw new CmisRuntimeException("destroyFolder: folder archive deletion failed, archiveId=" + archive.getId());
 		}
 	}
 
 	private void destroyDocument(String repositoryId, Archive archive) {
-		try {
-			// Check versionSeriesId before calling getArchivesOfVersionSeries
-			String versionSeriesId = archive.getVersionSeriesId();
-			if (versionSeriesId == null) {
-				log.warn("destroyDocument: archive has no versionSeriesId, archiveId=" + archive.getId());
-				return;
-			}
+		// Check versionSeriesId before calling getArchivesOfVersionSeries
+		String versionSeriesId = archive.getVersionSeriesId();
+		if (versionSeriesId == null) {
+			throw new CmisRuntimeException("destroyDocument: archive has no versionSeriesId, archiveId=" + archive.getId());
+		}
 
-			// Get archives of the same version series
-			List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId, versionSeriesId);
+		// Get archives of the same version series
+		List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId, versionSeriesId);
 
-			if (versions == null) {
-				log.warn("destroyDocument: getArchivesOfVersionSeries returned null, versionSeriesId=" + versionSeriesId);
-				return;
-			}
-			if (versions.isEmpty()) {
-				log.warn("destroyDocument: no versions found, versionSeriesId=" + versionSeriesId);
-				return;
-			}
+		if (versions == null) {
+			throw new CmisRuntimeException("destroyDocument: getArchivesOfVersionSeries returned null, versionSeriesId=" + versionSeriesId);
+		}
+		if (versions.isEmpty()) {
+			throw new CmisRuntimeException("destroyDocument: no versions found, versionSeriesId=" + versionSeriesId);
+		}
 
-			for (Archive version : versions) {
-				// Get attachment archive FIRST (before deleting version)
-				Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
+		for (Archive version : versions) {
+			// Get attachment archive FIRST (before deleting version)
+			Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
 
-				// Delete attachment archive first (continue even if fails - best effort cleanup)
-				if (attachmentArchive != null) {
-					String deletedAttachmentId = contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
-					if (deletedAttachmentId == null) {
-						log.warn("destroyDocument: attachment archive deletion returned null, attachmentId=" + attachmentArchive.getId());
-					}
-				} else {
-					log.warn("destroyDocument: attachment archive not found, versionId=" + version.getId());
+			// Delete attachment archive first (continue even if fails - best effort cleanup)
+			if (attachmentArchive != null) {
+				String deletedAttachmentId = contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
+				if (deletedAttachmentId == null) {
+					log.warn("destroyDocument: attachment archive deletion returned null, attachmentId=" + attachmentArchive.getId());
 				}
-
-				// Then delete version archive
-				String deletedVersionId = contentDaoService.deleteArchive(repositoryId, version.getId());
-				if (deletedVersionId == null) {
-					log.warn("destroyDocument: version archive deletion returned null, versionId=" + version.getId());
-				}
+			} else {
+				log.warn("destroyDocument: attachment archive not found, versionId=" + version.getId());
 			}
-		} catch (NotFoundException e) {
-			log.warn("destroyDocument: archive not found during destroy, archiveId=" + archive.getId());
-		} catch (Exception e) {
-			log.error("destroyDocument: failed to destroy document archive, archiveId=" + archive.getId(), e);
+
+			// Then delete version archive
+			String deletedVersionId = contentDaoService.deleteArchive(repositoryId, version.getId());
+			if (deletedVersionId == null) {
+				throw new CmisRuntimeException("destroyDocument: version archive deletion returned null, versionId=" + version.getId());
+			}
 		}
 	}
 

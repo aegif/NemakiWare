@@ -874,11 +874,28 @@ private ContentService getContentServiceSafe() {
 	}
 
 	/**
-	 * Get root folder ID for the specified repository
-	 * Centralizes repository-specific root folder ID mapping
+	 * Get root folder ID for the specified repository.
+	 * Uses RepositoryInfoMap for dynamic lookup with hardcoded fallback.
 	 */
 	private String getRootFolderIdForRepository(String repositoryId) {
-		// Known root folder IDs for supported repositories
+		// Dynamic lookup via RepositoryInfoMap (works regardless of DB re-initialization)
+		try {
+			jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repoInfoMap =
+				jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+					.getBean("repositoryInfoMap", jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+			if (repoInfoMap != null) {
+				org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = repoInfoMap.get(repositoryId);
+				if (repoInfo != null && repoInfo.getRootFolderId() != null) {
+					log.debug("Root folder ID from RepositoryInfoMap: " + repoInfo.getRootFolderId() + " for repository: " + repositoryId);
+					return repoInfo.getRootFolderId();
+				}
+			}
+		} catch (Exception e) {
+			log.warn("Failed to get root folder ID from RepositoryInfoMap for repository: " + repositoryId + ", falling back to hardcoded IDs");
+		}
+
+		// Fallback: hardcoded IDs from default CouchDB initialization
+		// These may become stale if the database is re-initialized
 		switch (repositoryId) {
 			case "bedroom":
 				return "e02f784f8360a02cc14d1314c10038ff";

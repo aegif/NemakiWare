@@ -232,8 +232,8 @@ export class OIDCService {
     this.userManager = new UserManager(settings);
   }
 
-  async signinRedirect(): Promise<void> {
-    return this.userManager.signinRedirect();
+  async signinRedirect(state?: Record<string, any>): Promise<void> {
+    return this.userManager.signinRedirect({ state });
   }
 
   async signinRedirectCallback(): Promise<User> {

@@ -332,14 +332,13 @@ export class ApiHelper {
   async createUser(userId: string, password: string, isAdmin: boolean = false): Promise<boolean> {
     try {
       const response = await this.page.request.post(
-        `${BASE_URL}/core/rest/repo/${this.repositoryId}/user/create`,
+        `${BASE_URL}/core/rest/repo/${this.repositoryId}/user/create-json/${encodeURIComponent(userId)}`,
         {
           headers: {
             'Authorization': this.authHeader,
             'Content-Type': 'application/json'
           },
           data: {
-            id: userId,
             name: userId,
             firstName: 'Test',
             lastName: 'User',
@@ -349,6 +348,10 @@ export class ApiHelper {
           }
         }
       );
+      if (!response.ok()) {
+        const body = (await response.text().catch(() => '')).slice(0, 300);
+        console.log(`ApiHelper: createUser ${userId} failed: ${response.status()} ${body}`);
+      }
       return response.ok();
     } catch (error) {
       console.log(`ApiHelper: Failed to create user ${userId}:`, error);
@@ -362,7 +365,7 @@ export class ApiHelper {
   async deleteUser(userId: string): Promise<boolean> {
     try {
       const response = await this.page.request.delete(
-        `${BASE_URL}/core/rest/repo/${this.repositoryId}/user/${encodeURIComponent(userId)}`,
+        `${BASE_URL}/core/rest/repo/${this.repositoryId}/user/delete/${encodeURIComponent(userId)}`,
         { headers: { 'Authorization': this.authHeader } }
       );
       if (!response.ok()) {
@@ -383,7 +386,7 @@ export class ApiHelper {
   async deleteGroup(groupId: string): Promise<boolean> {
     try {
       const response = await this.page.request.delete(
-        `${BASE_URL}/core/rest/repo/${this.repositoryId}/group/${encodeURIComponent(groupId)}`,
+        `${BASE_URL}/core/rest/repo/${this.repositoryId}/group/delete/${encodeURIComponent(groupId)}`,
         { headers: { 'Authorization': this.authHeader } }
       );
       if (!response.ok()) {
@@ -404,7 +407,7 @@ export class ApiHelper {
   async deleteType(typeId: string): Promise<boolean> {
     try {
       const response = await this.page.request.delete(
-        `${BASE_URL}/core/rest/repo/${this.repositoryId}/type/${encodeURIComponent(typeId)}`,
+        `${BASE_URL}/core/rest/repo/${this.repositoryId}/type/delete/${encodeURIComponent(typeId)}`,
         { headers: { 'Authorization': this.authHeader } }
       );
       if (!response.ok()) {

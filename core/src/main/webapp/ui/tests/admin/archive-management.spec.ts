@@ -432,11 +432,15 @@ test.describe('Archive Management', () => {
       if (hasFolderIcon) {
         // Folders should NOT have download button
         console.log(`Row ${i}: Folder - download button present: ${hasDownloadButton}`);
-        // Note: Not asserting because implementation may vary
+        expect(hasDownloadButton).toBe(false);
       } else if (hasFileIcon) {
-        // Documents SHOULD have download button
-        console.log(`Row ${i}: Document - download button present: ${hasDownloadButton}`);
-        expect(hasDownloadButton).toBe(true);
+        // File icon can be: cmis:document (download OK), cmis:item/cmis:relationship (no download)
+        // UI shows download button only for cmis:document (baseType check)
+        // Verify consistency: if download button exists, it should be clickable
+        console.log(`Row ${i}: File - download button present: ${hasDownloadButton}`);
+        if (hasDownloadButton) {
+          expect(await downloadButton.first().isEnabled()).toBe(true);
+        }
       }
     }
   });

@@ -157,11 +157,12 @@ test.describe('Archive Management Enhanced', () => {
 
   test.describe('i18n: English labels', () => {
     test('should display all English labels on archive page', async ({ page }) => {
-      // Switch to English
+      // Navigate first to establish the correct origin, then switch to English
+      await page.goto(`${BASE_URL}/core/ui/#/archive`);
       await page.evaluate(() => {
         localStorage.setItem('nemakiware-language', 'en');
       });
-      await page.goto(`${BASE_URL}/core/ui/#/archive`);
+      await page.reload();
       await page.waitForTimeout(3000);
 
       // Verify page title
@@ -188,10 +189,11 @@ test.describe('Archive Management Enhanced', () => {
     });
 
     test('should display English labels on pending archives tab', async ({ page }) => {
+      await page.goto(`${BASE_URL}/core/ui/#/archive`);
       await page.evaluate(() => {
         localStorage.setItem('nemakiware-language', 'en');
       });
-      await page.goto(`${BASE_URL}/core/ui/#/archive`);
+      await page.reload();
       await page.waitForTimeout(3000);
 
       const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: 'Pending Archives' });
@@ -713,9 +715,16 @@ test.describe('Archive Management - REST API Edge Cases', () => {
 
       console.log(`Force archive as non-admin: ${response.status()}`);
 
-      // Should be rejected (403 or 401)
-      expect(response.status()).toBeGreaterThanOrEqual(400);
-      console.log('Force archive correctly rejected for non-admin user');
+      // NemakiWare REST API returns HTTP 200 with JSON body containing status field.
+      // Admin check failure is indicated by status: "error" in the response body.
+      if (response.status() >= 400) {
+        console.log('Force archive correctly rejected for non-admin user (HTTP error)');
+      } else {
+        const body = await response.json();
+        console.log(`Force archive response body: ${JSON.stringify(body)}`);
+        expect(body.status).toBe('failure');
+        console.log('Force archive correctly rejected for non-admin user (JSON status: error)');
+      }
     } finally {
       await api.deleteUser(testUserId);
     }
@@ -742,8 +751,16 @@ test.describe('Archive Management - REST API Edge Cases', () => {
       );
 
       console.log(`Extend expiration as non-admin: ${response.status()}`);
-      expect(response.status()).toBeGreaterThanOrEqual(400);
-      console.log('Extend expiration correctly rejected for non-admin user');
+
+      // NemakiWare REST API returns HTTP 200 with JSON body containing status field.
+      if (response.status() >= 400) {
+        console.log('Extend expiration correctly rejected for non-admin user (HTTP error)');
+      } else {
+        const body = await response.json();
+        console.log(`Extend expiration response body: ${JSON.stringify(body)}`);
+        expect(body.status).toBe('failure');
+        console.log('Extend expiration correctly rejected for non-admin user (JSON status: error)');
+      }
     } finally {
       await api.deleteUser(testUserId);
     }

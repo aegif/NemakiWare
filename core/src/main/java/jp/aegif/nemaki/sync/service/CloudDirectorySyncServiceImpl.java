@@ -358,14 +358,57 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 		Boolean suspended = gUser.getSuspended();
 		String allowedAuthMethods = (suspended != null && suspended) ? "disabled" : "cloud";
 
+		String fullName = gUser.getName() != null ? gUser.getName().getFullName() : email;
+		String firstName = gUser.getName() != null ? gUser.getName().getGivenName() : "";
+		String lastName = gUser.getName() != null ? gUser.getName().getFamilyName() : "";
+
 		try {
-			User existing = principalService.getUserById(repositoryId, userId);
-			if (existing == null) {
+			// Check if UserItem already exists (authoritative source for user management).
+			// IMPORTANT: Do NOT use principalService.getUserById() for the existence check,
+			// because PrincipalDaoService shares the userItemsById CouchDB view with ContentDaoService.
+			// If a UserItem was created via OIDC/Google login, principalService.getUserById() would
+			// return a User model deserialized from the UserItem document. Calling
+			// principalService.updateUser() on that User model would then update the UserItem
+			// document through the principal DAO path, potentially corrupting it (cross-contamination).
+			UserItem existingItem = (contentService != null)
+					? contentService.getUserItemById(repositoryId, userId) : null;
+
+			if (existingItem != null) {
+				// User already exists as UserItem - update through ensureUserItem only
+				// (avoids cross-contamination from principalService.updateUser on UserItem docs)
+				boolean changed = false;
+				String existingName = existingItem.getName();
+				if (fullName != null && !fullName.equals(existingName)) {
+					changed = true;
+				}
+				// Check subTypeProperties for firstName/lastName/email changes
+				if (firstName != null) {
+					String existingFirstName = getSubTypePropertyValue(existingItem, "nemaki:firstName");
+					if (!firstName.equals(existingFirstName)) changed = true;
+				}
+				if (lastName != null) {
+					String existingLastName = getSubTypePropertyValue(existingItem, "nemaki:lastName");
+					if (!lastName.equals(existingLastName)) changed = true;
+				}
+				if (email != null) {
+					String existingEmail = getSubTypePropertyValue(existingItem, "nemaki:email");
+					if (!email.equals(existingEmail)) changed = true;
+				}
+
+				ensureUserItem(repositoryId, userId, fullName, firstName, lastName,
+						email, existingItem.getPassowrd(), allowedAuthMethods);
+				if (changed) {
+					result.incrementUsersUpdated();
+				} else {
+					result.incrementUsersSkipped();
+				}
+			} else {
+				// User does not exist - create new
 				User newUser = new User();
 				newUser.setUserId(userId);
-				newUser.setName(gUser.getName() != null ? gUser.getName().getFullName() : email);
-				newUser.setFirstName(gUser.getName() != null ? gUser.getName().getGivenName() : "");
-				newUser.setLastName(gUser.getName() != null ? gUser.getName().getFamilyName() : "");
+				newUser.setName(fullName);
+				newUser.setFirstName(firstName);
+				newUser.setLastName(lastName);
 				newUser.setEmail(email);
 				// Cloud-synced users get a random password hash (login via OIDC only)
 				newUser.setPasswordHash(UUID.randomUUID().toString());
@@ -374,40 +417,6 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 						newUser.getName(), newUser.getFirstName(), newUser.getLastName(),
 						email, newUser.getPasswordHash(), allowedAuthMethods);
 				result.incrementUsersCreated();
-			} else {
-				boolean updated = false;
-				if (gUser.getName() != null) {
-					String fullName = gUser.getName().getFullName();
-					if (fullName != null && !fullName.equals(existing.getName())) {
-						existing.setName(fullName);
-						updated = true;
-					}
-					if (gUser.getName().getGivenName() != null && !gUser.getName().getGivenName().equals(existing.getFirstName())) {
-						existing.setFirstName(gUser.getName().getGivenName());
-						updated = true;
-					}
-					if (gUser.getName().getFamilyName() != null && !gUser.getName().getFamilyName().equals(existing.getLastName())) {
-						existing.setLastName(gUser.getName().getFamilyName());
-						updated = true;
-					}
-				}
-				// Update email on User object
-				if (email != null && !email.equals(existing.getEmail())) {
-					existing.setEmail(email);
-					updated = true;
-				}
-				if (updated) {
-					principalService.updateUser(repositoryId, existing);
-					result.incrementUsersUpdated();
-				} else {
-					result.incrementUsersSkipped();
-				}
-				// Ensure UserItem exists even for previously synced users
-				// Pass source email (not existing.getEmail() which may be null)
-				// Also update allowedAuthMethods based on current suspension status
-				ensureUserItem(repositoryId, userId, existing.getName(),
-						existing.getFirstName(), existing.getLastName(),
-						email, existing.getPasswordHash(), allowedAuthMethods);
 			}
 		} catch (Exception e) {
 			log.warn("Failed to sync Google user " + email + ": " + e.getMessage());
@@ -645,9 +654,12 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 		Object removed = msUser.get("@removed");
 		if (removed != null) {
 			try {
-				User existing = principalService.getUserById(repositoryId, userId);
-				if (existing != null) {
-					principalService.deleteUser(repositoryId, userId);
+				UserItem existingItem = (contentService != null)
+						? contentService.getUserItemById(repositoryId, userId) : null;
+				if (existingItem != null) {
+					// Delete through contentService to properly remove UserItem
+					contentService.delete(new SystemCallContext(repositoryId), repositoryId,
+							existingItem.getId(), true);
 					result.incrementUsersDeleted();
 				}
 			} catch (Exception e) {
@@ -666,8 +678,43 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 		String allowedAuthMethods = accountEnabled ? "cloud" : "disabled";
 
 		try {
-			User existing = principalService.getUserById(repositoryId, userId);
-			if (existing == null) {
+			// Check if UserItem already exists (authoritative source for user management).
+			// See syncGoogleUser for detailed rationale on avoiding principalService.updateUser()
+			// for UserItem documents.
+			UserItem existingItem = (contentService != null)
+					? contentService.getUserItemById(repositoryId, userId) : null;
+
+			if (existingItem != null) {
+				// User already exists - update through ensureUserItem only
+				boolean changed = false;
+				if (displayName != null && !displayName.equals(existingItem.getName())) {
+					changed = true;
+				}
+				if (givenName != null) {
+					String existingFirstName = getSubTypePropertyValue(existingItem, "nemaki:firstName");
+					if (!givenName.equals(existingFirstName)) changed = true;
+				}
+				if (surname != null) {
+					String existingLastName = getSubTypePropertyValue(existingItem, "nemaki:lastName");
+					if (!surname.equals(existingLastName)) changed = true;
+				}
+				if (effectiveEmail != null) {
+					String existingEmail = getSubTypePropertyValue(existingItem, "nemaki:email");
+					if (!effectiveEmail.equals(existingEmail)) changed = true;
+				}
+
+				ensureUserItem(repositoryId, userId,
+						displayName != null ? displayName : existingItem.getName(),
+						givenName != null ? givenName : "",
+						surname != null ? surname : "",
+						effectiveEmail, existingItem.getPassowrd(), allowedAuthMethods);
+				if (changed) {
+					result.incrementUsersUpdated();
+				} else {
+					result.incrementUsersSkipped();
+				}
+			} else {
+				// User does not exist - create new
 				User newUser = new User();
 				newUser.setUserId(userId);
 				newUser.setName(displayName != null ? displayName : userId);
@@ -680,37 +727,6 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 						newUser.getName(), newUser.getFirstName(), newUser.getLastName(),
 						newUser.getEmail(), newUser.getPasswordHash(), allowedAuthMethods);
 				result.incrementUsersCreated();
-			} else {
-				boolean updated = false;
-				if (displayName != null && !displayName.equals(existing.getName())) {
-					existing.setName(displayName);
-					updated = true;
-				}
-				if (givenName != null && !givenName.equals(existing.getFirstName())) {
-					existing.setFirstName(givenName);
-					updated = true;
-				}
-				if (surname != null && !surname.equals(existing.getLastName())) {
-					existing.setLastName(surname);
-					updated = true;
-				}
-				// Update email on User object
-				if (effectiveEmail != null && !effectiveEmail.equals(existing.getEmail())) {
-					existing.setEmail(effectiveEmail);
-					updated = true;
-				}
-				if (updated) {
-					principalService.updateUser(repositoryId, existing);
-					result.incrementUsersUpdated();
-				} else {
-					result.incrementUsersSkipped();
-				}
-				// Ensure UserItem exists even for previously synced users
-				// Pass source email (not existing.getEmail() which may be null)
-				// Also update allowedAuthMethods based on current account status
-				ensureUserItem(repositoryId, userId, existing.getName(),
-						existing.getFirstName(), existing.getLastName(),
-						effectiveEmail, existing.getPasswordHash(), allowedAuthMethods);
 			}
 		} catch (Exception e) {
 			log.warn("Failed to sync MS user " + userId + ": " + e.getMessage());
@@ -1228,6 +1244,21 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 		}
 		properties.add(new Property(key, value));
 		return true;
+	}
+
+	/**
+	 * Get the value of a subtype property by key. Returns null if not found.
+	 */
+	private String getSubTypePropertyValue(UserItem item, String key) {
+		List<Property> properties = item.getSubTypeProperties();
+		if (properties == null) return null;
+		for (Property p : properties) {
+			if (key.equals(p.getKey())) {
+				Object val = p.getValue();
+				return val != null ? val.toString() : null;
+			}
+		}
+		return null;
 	}
 
 	/**

@@ -1738,7 +1738,8 @@
     "exportInProgress": "Export in progress. Please wait.",
     "importInProgress": "Import in progress. Please wait.",
     "noFileSelected": "No file selected",
-    "invalidFileType": "Invalid file type. Please select an .acp or .zip file"
+    "invalidFileType": "Invalid file type. Please select an .acp or .zip file",
+    "exportSelected": "Export Selected ({{count}})"
   },
   "auditDashboard": {
     "title": "Audit Log Dashboard",

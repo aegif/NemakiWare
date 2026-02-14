@@ -1738,7 +1738,8 @@
     "exportInProgress": "エクスポート処理中です。しばらくお待ちください。",
     "importInProgress": "インポート処理中です。しばらくお待ちください。",
     "noFileSelected": "ファイルが選択されていません",
-    "invalidFileType": "無効なファイル形式です。.acpまたは.zipファイルを選択してください"
+    "invalidFileType": "無効なファイル形式です。.acpまたは.zipファイルを選択してください",
+    "exportSelected": "選択をエクスポート ({{count}}件)"
   },
   "auditDashboard": {
     "title": "監査ログ ダッシュボード",

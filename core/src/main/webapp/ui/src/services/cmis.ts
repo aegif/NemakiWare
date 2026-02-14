@@ -344,9 +344,10 @@ function normalizeArchiveBaseType(type: string): string {
   if (type === 'cmis:document' || type === 'cmis:folder') {
     return type;
   }
-  if (type === 'attachment' || type === 'cmis:item') {
+  if (type === 'attachment') {
     return 'cmis:document';
   }
+  // cmis:item (user/group), cmis:relationship, etc. are not downloadable documents
   return type.startsWith('cmis:') ? type : 'cmis:document';
 }
 
@@ -3716,6 +3717,54 @@ export class CMISService {
       };
 
       xhr.send();
+    });
+  }
+
+  async exportObjects(
+    repositoryId: string,
+    objectIds: string[],
+    onProgress?: (progress: number) => void
+  ): Promise<Blob> {
+    const headers = this.getAuthHeaders();
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `/core/rest/repo/${repositoryId}/importexport/export/objects`);
+      xhr.responseType = 'blob';
+      xhr.withCredentials = true;
+
+      // Set auth headers
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      xhr.setRequestHeader('Content-Type', 'application/json');
+
+      xhr.timeout = 600000;
+
+      xhr.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          onProgress(progress);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(xhr.response as Blob);
+        } else {
+          reject(new Error(`Export failed: ${xhr.status}`));
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error during export'));
+      };
+
+      xhr.ontimeout = () => {
+        reject(new Error('Export timed out'));
+      };
+
+      xhr.send(JSON.stringify({ objectIds }));
     });
   }
 

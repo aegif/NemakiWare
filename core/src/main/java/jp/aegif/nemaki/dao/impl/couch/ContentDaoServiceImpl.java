@@ -34,6 +34,7 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import com.ibm.cloud.cloudant.v1.model.AllDocsResult;
@@ -4197,49 +4198,41 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return null;
 		} catch (ServiceResponseException e) {
 			// CouchDB/Cloudant service error (connection, timeout, 5xx errors)
-			log.error(buildLogMsg(archiveId, "CouchDB service error during archive deletion"), e);
-			return null;
+			throw new CmisRuntimeException("deleteArchive: CouchDB service error, archiveId=" + archiveId, e);
 		} catch (Exception e) {
 			// Unexpected error
-			log.error(buildLogMsg(archiveId, "unexpected error during archive deletion"), e);
-			return null;
+			throw new CmisRuntimeException("deleteArchive: unexpected error, archiveId=" + archiveId, e);
 		}
 	}
 
 	@Override
 	public void deleteDocumentArchive(String repositoryId, String archiveId) {
-		try {
-			Archive docArchive = getArchive(repositoryId, archiveId);
-			if (docArchive == null) {
-				log.warn(buildLogMsg(archiveId, "document archive not found"));
-				return;
-			}
+		Archive docArchive = getArchive(repositoryId, archiveId);
+		if (docArchive == null) {
+			log.warn(buildLogMsg(archiveId, "document archive not found"));
+			return;
+		}
 
-			// Handle attachment archive deletion
-			String attachmentNodeId = docArchive.getAttachmentNodeId();
-			if (attachmentNodeId != null) {
-				Archive attachmentArchive = getArchiveByOriginalId(repositoryId, attachmentNodeId);
-				if (attachmentArchive != null) {
-					String deletedAttachmentArchiveId = deleteArchive(repositoryId, attachmentArchive.getId());
-					if (deletedAttachmentArchiveId == null) {
-						log.warn(buildLogMsg(attachmentArchive.getId(), "attachment archive deletion returned null"));
-					}
-				} else {
-					log.warn(buildLogMsg(attachmentNodeId, "attachment archive not found by original ID"));
+		// Handle attachment archive deletion
+		String attachmentNodeId = docArchive.getAttachmentNodeId();
+		if (attachmentNodeId != null) {
+			Archive attachmentArchive = getArchiveByOriginalId(repositoryId, attachmentNodeId);
+			if (attachmentArchive != null) {
+				String deletedAttachmentArchiveId = deleteArchive(repositoryId, attachmentArchive.getId());
+				if (deletedAttachmentArchiveId == null) {
+					log.warn(buildLogMsg(attachmentArchive.getId(), "attachment archive already deleted or not found"));
 				}
 			} else {
-				log.warn(buildLogMsg(archiveId, "document archive has no attachment node ID"));
+				log.warn(buildLogMsg(attachmentNodeId, "attachment archive not found by original ID"));
 			}
+		} else {
+			log.warn(buildLogMsg(archiveId, "document archive has no attachment node ID"));
+		}
 
-			// Delete the document archive itself
-			String deletedDocArchiveId = deleteArchive(repositoryId, docArchive.getId());
-			if (deletedDocArchiveId == null) {
-				log.warn(buildLogMsg(docArchive.getId(), "document archive deletion returned null"));
-			}
-		} catch (NotFoundException e) {
-			log.warn(buildLogMsg(archiveId, "document archive not found: " + e.getMessage()));
-		} catch (Exception e) {
-			log.error(buildLogMsg(archiveId, "error during document archive deletion"), e);
+		// Delete the document archive itself
+		String deletedDocArchiveId = deleteArchive(repositoryId, docArchive.getId());
+		if (deletedDocArchiveId == null) {
+			throw new CmisRuntimeException("deleteDocumentArchive: document archive deletion failed, archiveId=" + docArchive.getId());
 		}
 	}
 

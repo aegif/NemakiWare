@@ -551,7 +551,48 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       const folderPath = folder.path || '/';
       setCurrentFolderPath(folderPath);
       setFolderAllowableActions(folder.allowableActions);
-    } catch (error) {
+    } catch (error: any) {
+      console.error('[DocumentList] loadObjects error for folder:', selectedFolderId, error);
+      // Determine error type: only fallback to root on 404 (folder gone / stale sessionStorage).
+      // For 401/403/network/500, keep current folder and show explicit error.
+      const status = error?.status || error?.response?.status;
+      const is404 = status === 404
+        || (error instanceof Error && /not found|404|objectNotFound/i.test(error.message));
+
+      if (is404 && selectedFolderId !== ROOT_FOLDER_ID) {
+        console.warn('[DocumentList] Folder not found (404), clearing stale state and falling back to root');
+        if (repositoryId) {
+          sessionStorage.removeItem(`nemakiware_selectedFolderId_${repositoryId}`);
+          sessionStorage.removeItem(`nemakiware_currentFolderId_${repositoryId}`);
+        }
+        setSelectedFolderId(ROOT_FOLDER_ID);
+        setCurrentFolderId(ROOT_FOLDER_ID);
+        setCurrentFolderIdIsUserSet(false);
+        setCurrentFolderPath('/');
+        setSearchParams({ folderId: ROOT_FOLDER_ID });
+        return; // The useEffect will re-trigger loadObjects with ROOT_FOLDER_ID
+      } else if (is404 && selectedFolderId === ROOT_FOLDER_ID) {
+        // ROOT_FOLDER_ID itself is stale (e.g., after DB re-initialization) - resolve dynamically
+        console.warn('[DocumentList] ROOT_FOLDER_ID is stale (404), attempting dynamic root resolution');
+        try {
+          const rootFolder = await cmisService.getRootFolder(repositoryId);
+          if (rootFolder && rootFolder.id && rootFolder.id !== ROOT_FOLDER_ID) {
+            console.info('[DocumentList] Resolved new root folder ID:', rootFolder.id);
+            if (repositoryId) {
+              sessionStorage.removeItem(`nemakiware_selectedFolderId_${repositoryId}`);
+              sessionStorage.removeItem(`nemakiware_currentFolderId_${repositoryId}`);
+            }
+            setSelectedFolderId(rootFolder.id);
+            setCurrentFolderId(rootFolder.id);
+            setCurrentFolderIdIsUserSet(false);
+            setCurrentFolderPath('/');
+            setSearchParams({ folderId: rootFolder.id });
+            return; // The useEffect will re-trigger loadObjects with the new root ID
+          }
+        } catch (resolveErr) {
+          console.error('[DocumentList] Failed to dynamically resolve root folder:', resolveErr);
+        }
+      }
       message.error(`${t('documentList.messages.loadObjectsError')}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       // Clear objects on error to show empty state
       setObjects([]);
@@ -1190,16 +1231,30 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     setIsExporting(true);
 
     try {
-      const blob = await cmisService.exportContent(
-        repositoryId,
-        selectedFolderId
-      );
+      let blob: Blob;
+      let fileName: string;
+
+      if (selectedRowKeys.length > 0) {
+        // Export only selected items
+        blob = await cmisService.exportObjects(
+          repositoryId,
+          selectedRowKeys.map(String)
+        );
+        fileName = `export_selected_${Date.now()}.zip`;
+      } else {
+        // Export entire folder
+        blob = await cmisService.exportContent(
+          repositoryId,
+          selectedFolderId
+        );
+        fileName = `export_${selectedFolderId}_${Date.now()}.zip`;
+      }
 
       // Create download link
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `export_${selectedFolderId}_${Date.now()}.zip`;
+      link.download = fileName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -1575,12 +1630,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
       if (pathSegments.length === 1) {
         // Parent is root folder
-        const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
         // Note: Parent navigation updates both selected and current folder IDs
-        setSelectedFolderId(rootFolderId);
-        setCurrentFolderId(rootFolderId);
+        setSelectedFolderId(ROOT_FOLDER_ID);
+        setCurrentFolderId(ROOT_FOLDER_ID);
         setCurrentFolderPath('/');
-        setSearchParams({ folderId: rootFolderId });
+        setSearchParams({ folderId: ROOT_FOLDER_ID });
       } else {
         // Parent is another subfolder - navigate up one level
         const parentPath = '/' + pathSegments.slice(0, -1).join('/');
@@ -1694,7 +1748,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                     {t('documentList.createFolder')}
                   </Button>
                 )}
-                {canCreateDoc && (
+                {canCreateDoc && authToken?.isAdmin && (
                   <Button
                     icon={<ImportOutlined />}
                     onClick={() => setImportModalVisible(true)}
@@ -1707,9 +1761,15 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   onClick={handleExport}
                   loading={isExporting}
                 >
-                  {t('importExport.export')}
+                  {selectedRowKeys.length > 0
+                    ? t('importExport.exportSelected', { count: selectedRowKeys.length })
+                    : t('importExport.export')}
                 </Button>
-                {selectedRowKeys.length > 0 && (
+                {selectedRowKeys.length > 0 &&
+                  selectedRowKeys.every(key => {
+                    const obj = objects.find(o => o.id === key);
+                    return obj?.allowableActions?.canDeleteObject === true;
+                  }) && (
                   <Button
                     danger
                     icon={<DeleteOutlined />}

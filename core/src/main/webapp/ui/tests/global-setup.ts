@@ -188,25 +188,134 @@ function createTestPdf(): Buffer {
  * Ensure CMIS-v1.1-Specification-Sample.pdf exists in the repository.
  * This PDF is required by advanced-search.spec.ts tests for full-text search verification.
  */
+/**
+ * Helper: Create a document with content in a single multipart createDocument request.
+ * This avoids the setContent two-step approach which requires changeToken and can fail silently.
+ */
+async function createDocumentWithContent(
+  baseURL: string,
+  authHeader: string,
+  docName: string,
+  pdfBuffer: Buffer
+): Promise<string | null> {
+  const boundary = '----FormBoundary' + Math.random().toString(36).substring(2);
+  const parts: Buffer[] = [];
+
+  const addField = (name: string, value: string) => {
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`
+    ));
+  };
+
+  addField('cmisaction', 'createDocument');
+  addField('propertyId[0]', 'cmis:objectTypeId');
+  addField('propertyValue[0]', 'cmis:document');
+  addField('propertyId[1]', 'cmis:name');
+  addField('propertyValue[1]', docName);
+
+  // Include file content in the same createDocument request
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="content"; filename="${docName}"\r\nContent-Type: application/pdf\r\n\r\n`
+  ));
+  parts.push(pdfBuffer);
+  parts.push(Buffer.from('\r\n'));
+  parts.push(Buffer.from(`--${boundary}--\r\n`));
+
+  const body = Buffer.concat(parts);
+
+  const response = await fetch(
+    `${baseURL}/core/browser/bedroom/root`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      },
+      body: body,
+      signal: AbortSignal.timeout(30000)
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    if (errorText.includes('already exists') || errorText.includes('AlreadyExists')) {
+      return null; // Already exists
+    }
+    throw new Error(`Failed to create ${docName}: ${response.status} ${errorText.substring(0, 200)}`);
+  }
+
+  const data = await response.json();
+  const docId = data.succinctProperties?.['cmis:objectId'] || data.properties?.['cmis:objectId']?.value;
+  return docId;
+}
+
+/**
+ * Helper: Upload content to an existing document that has no content stream.
+ * Fetches the changeToken first, then calls setContent.
+ */
+async function setContentForExistingDoc(
+  baseURL: string,
+  authHeader: string,
+  objectId: string,
+  fileName: string,
+  pdfBuffer: Buffer
+): Promise<boolean> {
+  // Get current changeToken
+  const objResponse = await fetch(
+    `${baseURL}/core/browser/bedroom?cmisselector=object&objectId=${objectId}`,
+    { headers: { 'Authorization': authHeader }, signal: AbortSignal.timeout(10000) }
+  );
+  if (!objResponse.ok) throw new Error(`Failed to get object ${objectId}: ${objResponse.status}`);
+  const objData = await objResponse.json();
+  const changeToken = objData.succinctProperties?.['cmis:changeToken'] || objData.properties?.['cmis:changeToken']?.value;
+
+  const boundary = '----FormBoundary' + Math.random().toString(36).substring(2);
+  const parts: Buffer[] = [];
+  const addField = (name: string, value: string) => {
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`
+    ));
+  };
+
+  addField('cmisaction', 'setContent');
+  addField('objectId', objectId);
+  if (changeToken) {
+    addField('changeToken', changeToken);
+  }
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="content"; filename="${fileName}"\r\nContent-Type: application/pdf\r\n\r\n`
+  ));
+  parts.push(pdfBuffer);
+  parts.push(Buffer.from('\r\n'));
+  parts.push(Buffer.from(`--${boundary}--\r\n`));
+
+  const response = await fetch(
+    `${baseURL}/core/browser/bedroom`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      },
+      body: Buffer.concat(parts),
+      signal: AbortSignal.timeout(30000)
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`setContent failed for ${fileName}: ${response.status} ${errorText.substring(0, 200)}`);
+  }
+  return true;
+}
+
 async function ensureTestPdfExists(baseURL: string): Promise<void> {
   const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
   const pdfName = 'CMIS-v1.1-Specification-Sample.pdf';
+  const jpPdfName = '日本語ドキュメント.pdf';
 
   try {
-    // Get root folder ID first (needed for both check and upload)
-    // Note: repositoryInfo response is nested under the repository ID key
-    const repoInfoResponse = await fetch(
-      `${baseURL}/core/browser/bedroom?cmisselector=repositoryInfo`,
-      {
-        headers: { 'Authorization': authHeader },
-        signal: AbortSignal.timeout(10000)
-      }
-    );
-    const repoInfoWrapper = await repoInfoResponse.json();
-    const repoInfo = repoInfoWrapper.bedroom || repoInfoWrapper;
-    const rootFolderId = repoInfo.rootFolderId;
-
-    // Check if PDF already exists by searching children of root folder
+    // Check existing children of root folder
     const childrenResponse = await fetch(
       `${baseURL}/core/browser/bedroom/root?cmisselector=children`,
       {
@@ -215,188 +324,50 @@ async function ensureTestPdfExists(baseURL: string): Promise<void> {
       }
     );
 
+    let objects: any[] = [];
     if (childrenResponse.ok) {
       const childrenData = await childrenResponse.json();
-      const objects = childrenData.objects || [];
-      const existingPdf = objects.find((obj: any) =>
-        obj.object?.properties?.['cmis:name']?.value === pdfName
-      );
-      if (existingPdf) {
-        console.log(`✅ ${pdfName} already exists in repository`);
-        return;
-      }
+      objects = childrenData.objects || [];
     }
 
-    // Create PDF content
     const pdfBuffer = createTestPdf();
 
-    // Upload via application/x-www-form-urlencoded (without file content first, then setContent)
-    // Use URLSearchParams for reliable encoding
-    const formData = new URLSearchParams();
-    formData.append('cmisaction', 'createDocument');
-    formData.append('propertyId[0]', 'cmis:objectTypeId');
-    formData.append('propertyValue[0]', 'cmis:document');
-    formData.append('propertyId[1]', 'cmis:name');
-    formData.append('propertyValue[1]', pdfName);
-
-    console.log(`📄 Creating ${pdfName} for search tests...`);
-    // POST to the root folder URL for createDocument
-    const createResponse = await fetch(
-      `${baseURL}/core/browser/bedroom/root`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': authHeader,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: formData.toString(),
-        signal: AbortSignal.timeout(30000)
-      }
-    );
-
-    if (!createResponse.ok) {
-      const errorText = await createResponse.text();
-      if (errorText.includes('already exists') || errorText.includes('AlreadyExists')) {
-        console.log(`✅ ${pdfName} already exists`);
-        return;
-      }
-      console.log(`⚠️ Could not create ${pdfName}: ${createResponse.status} ${errorText.substring(0, 200)}`);
-      return;
-    }
-
-    const createData = await createResponse.json();
-    const docId = createData.succinctProperties?.['cmis:objectId'] || createData.properties?.['cmis:objectId']?.value;
-    console.log(`✅ ${pdfName} created (ID: ${docId})`);
-
-    // Now upload PDF content via setContentStream using multipart
-    const boundary = '----FormBoundary' + Math.random().toString(36).substring(2);
-    const parts: Buffer[] = [];
-
-    const addField = (name: string, value: string) => {
-      parts.push(Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`
-      ));
-    };
-
-    addField('cmisaction', 'setContent');
-    addField('objectId', docId);
-
-    // Add file part
-    parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="content"; filename="${pdfName}"\r\nContent-Type: application/pdf\r\n\r\n`
-    ));
-    parts.push(pdfBuffer);
-    parts.push(Buffer.from('\r\n'));
-    parts.push(Buffer.from(`--${boundary}--\r\n`));
-
-    const body = Buffer.concat(parts);
-
-    const setContentResponse = await fetch(
-      `${baseURL}/core/browser/bedroom`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': authHeader,
-          'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        },
-        body: body,
-        signal: AbortSignal.timeout(30000)
-      }
-    );
-
-    if (setContentResponse.ok) {
-      console.log(`✅ PDF content uploaded successfully`);
-    } else {
-      const errorText = await setContentResponse.text();
-      console.log(`⚠️ Could not set PDF content: ${setContentResponse.status} ${errorText.substring(0, 200)}`);
-    }
-
-    // Also create Japanese-named PDF for multilingual search test
-    const jpPdfName = '日本語ドキュメント.pdf';
-    const jpChildrenData = childrenResponse.ok ? await (async () => {
-      // Re-check children (we already fetched above but need to check for JP PDF)
-      const resp = await fetch(
-        `${baseURL}/core/browser/bedroom/root?cmisselector=children`,
-        { headers: { 'Authorization': authHeader }, signal: AbortSignal.timeout(10000) }
+    // Process each PDF: check existence + content, create or repair as needed
+    for (const name of [pdfName, jpPdfName]) {
+      const existing = objects.find((obj: any) =>
+        obj.object?.properties?.['cmis:name']?.value === name
       );
-      return resp.ok ? await resp.json() : { objects: [] };
-    })() : { objects: [] };
 
-    const existingJpPdf = (jpChildrenData.objects || []).find((obj: any) =>
-      obj.object?.properties?.['cmis:name']?.value === jpPdfName
-    );
+      if (existing) {
+        // Check if content stream exists (contentStreamMimeType should be set for valid content)
+        const mimeType = existing.object?.properties?.['cmis:contentStreamMimeType']?.value;
+        const contentLength = existing.object?.properties?.['cmis:contentStreamLength']?.value;
 
-    if (!existingJpPdf) {
-      const jpFormData = new URLSearchParams();
-      jpFormData.append('cmisaction', 'createDocument');
-      jpFormData.append('propertyId[0]', 'cmis:objectTypeId');
-      jpFormData.append('propertyValue[0]', 'cmis:document');
-      jpFormData.append('propertyId[1]', 'cmis:name');
-      jpFormData.append('propertyValue[1]', jpPdfName);
-
-      console.log(`📄 Creating ${jpPdfName} for Japanese search tests...`);
-      // POST to the root folder URL for createDocument
-      const jpCreateResponse = await fetch(
-        `${baseURL}/core/browser/bedroom/root`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': authHeader,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: jpFormData.toString(),
-          signal: AbortSignal.timeout(30000)
+        if (mimeType && contentLength > 0) {
+          console.log(`✅ ${name} already exists in repository`);
+          continue;
         }
-      );
 
-      if (jpCreateResponse.ok) {
-        const jpCreateData = await jpCreateResponse.json();
-        const jpDocId = jpCreateData.succinctProperties?.['cmis:objectId'] || jpCreateData.properties?.['cmis:objectId']?.value;
-        console.log(`✅ ${jpPdfName} created (ID: ${jpDocId})`);
-
-        // Set content with Japanese text for full-text search
-        const jpPdfBuffer = createTestPdf();
-        const jpBoundary = '----FormBoundary' + Math.random().toString(36).substring(2);
-        const jpParts: Buffer[] = [];
-        const addJpField = (name: string, value: string) => {
-          jpParts.push(Buffer.from(
-            `--${jpBoundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`
-          ));
-        };
-        addJpField('cmisaction', 'setContent');
-        addJpField('objectId', jpDocId);
-        jpParts.push(Buffer.from(
-          `--${jpBoundary}\r\nContent-Disposition: form-data; name="content"; filename="${jpPdfName}"\r\nContent-Type: application/pdf\r\n\r\n`
-        ));
-        jpParts.push(jpPdfBuffer);
-        jpParts.push(Buffer.from('\r\n'));
-        jpParts.push(Buffer.from(`--${jpBoundary}--\r\n`));
-
-        await fetch(`${baseURL}/core/browser/bedroom`, {
-          method: 'POST',
-          headers: {
-            'Authorization': authHeader,
-            'Content-Type': `multipart/form-data; boundary=${jpBoundary}`,
-          },
-          body: Buffer.concat(jpParts),
-          signal: AbortSignal.timeout(30000)
-        });
-        console.log(`✅ ${jpPdfName} content uploaded`);
+        // Document exists but has no content - repair by uploading content
+        const objectId = existing.object?.properties?.['cmis:objectId']?.value;
+        console.log(`🔧 ${name} exists but has no content (mime=${mimeType}, length=${contentLength}), uploading content...`);
+        const success = await setContentForExistingDoc(baseURL, authHeader, objectId, name, pdfBuffer);
+        if (success) {
+          console.log(`✅ ${name} content repaired successfully`);
+        }
       } else {
-        const jpErrorText = await jpCreateResponse.text();
-        if (jpErrorText.includes('already exists') || jpErrorText.includes('AlreadyExists')) {
-          console.log(`✅ ${jpPdfName} already exists`);
-        } else {
-          console.log(`⚠️ Could not create ${jpPdfName}: ${jpCreateResponse.status}`);
+        // Create new document with content in single request
+        console.log(`📄 Creating ${name} with content...`);
+        const docId = await createDocumentWithContent(baseURL, authHeader, name, pdfBuffer);
+        if (docId) {
+          console.log(`✅ ${name} created with content (ID: ${docId})`);
         }
       }
-    } else {
-      console.log(`✅ ${jpPdfName} already exists`);
     }
 
     console.log('⏳ Waiting for Solr indexing...');
   } catch (error) {
-    console.log(`⚠️ Could not ensure test PDF exists:`, error);
+    throw new Error(`Required test PDF setup failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

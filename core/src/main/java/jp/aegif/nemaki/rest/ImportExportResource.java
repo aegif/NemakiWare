@@ -46,6 +46,7 @@ import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
@@ -126,6 +127,8 @@ public class ImportExportResource extends ResourceBase {
     private static final String VERSION_PREFIX = ".v";
     private static final String TYPE_DEFINITIONS_DIR = ".nemaki-types/";
     private static final String TYPE_DEFINITION_SUFFIX = ".type.json";
+    private static final String RELATIONSHIPS_DIR = ".nemaki-relationships/";
+    private static final String RELATIONSHIP_SUFFIX = ".rel.json";
 
     // Base type IDs that should not be exported
     private static final Set<String> BASE_TYPE_IDS = new HashSet<>();
@@ -321,6 +324,7 @@ public class ImportExportResource extends ResourceBase {
             ImportFormat format = detectFormat(tempFile);
             log.info("Detected import format: " + format);
 
+            int importedRelationships = 0;
             if (format == ImportFormat.ACP) {
                 ImportResult acpResult = importAcpFormat(repositoryId, folderId, tempFile, callContext);
                 importedFolders = acpResult.foldersCreated;
@@ -331,6 +335,7 @@ public class ImportExportResource extends ResourceBase {
                 ImportResult customResult = importCustomFormat(repositoryId, folderId, tempFile, callContext);
                 importedFolders = customResult.foldersCreated;
                 importedDocuments = customResult.documentsCreated;
+                importedRelationships = customResult.relationshipsCreated;
                 errors.addAll(customResult.errors);
                 warnings.addAll(customResult.warnings);
             } else {
@@ -351,6 +356,9 @@ public class ImportExportResource extends ResourceBase {
             result.put("message", "Import completed");
             result.put("foldersCreated", importedFolders);
             result.put("documentsCreated", importedDocuments);
+            if (importedRelationships > 0) {
+                result.put("relationshipsCreated", importedRelationships);
+            }
             if (!errors.isEmpty()) {
                 result.put("errors", errors);
             }
@@ -381,6 +389,7 @@ public class ImportExportResource extends ResourceBase {
 
     /**
      * Export folder contents as custom NemakiWare format ZIP.
+     * Items that the user does not have read permission for are silently skipped.
      * 
      * @param repositoryId Repository ID
      * @param folderId Folder ID to export
@@ -398,15 +407,6 @@ public class ImportExportResource extends ResourceBase {
         log.info("Export request received for repository: " + repositoryId + ", folder: " + folderId);
 
         try {
-            // Admin check - export requires admin privileges
-            JSONArray adminErrMsg = new JSONArray();
-            if (!checkAdmin(adminErrMsg, request)) {
-                return Response.status(Response.Status.FORBIDDEN)
-                        .entity("{\"status\":\"error\",\"message\":\"Admin access required for export operations\"}")
-                        .type(MediaType.APPLICATION_JSON)
-                        .build();
-            }
-
             ContentService cs = getContentService();
             if (cs == null) {
                 return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
@@ -425,6 +425,14 @@ public class ImportExportResource extends ResourceBase {
 
             CallContext callContext = createCallContext(request, repositoryId);
 
+            // Verify the user has read permission on the target folder
+            if (!hasReadPermission(cs, repositoryId, callContext, folder)) {
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity("{\"status\":\"error\",\"message\":\"You do not have read permission on this folder\"}")
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
+
             StreamingOutput streamingOutput = new StreamingOutput() {
                 @Override
                 public void write(OutputStream output) throws IOException {
@@ -439,7 +447,15 @@ public class ImportExportResource extends ResourceBase {
                         } catch (Exception e) {
                             log.warn("Failed to export type definitions: " + e.getMessage(), e);
                         }
-                        exportFolderRecursive(repositoryId, folder, "", zos, callContext);
+                        Set<String> exportedObjectIds = new HashSet<>();
+                        exportFolderRecursive(repositoryId, folder, "", zos, callContext, exportedObjectIds);
+
+                        // Export relationships
+                        try {
+                            collectAndExportRelationships(repositoryId, exportedObjectIds, zos, callContext);
+                        } catch (Exception e) {
+                            log.warn("Failed to export relationships: " + e.getMessage(), e);
+                        }
                     } catch (Exception e) {
                         log.error("Export streaming failed: " + e.getMessage(), e);
                         throw new IOException("Export failed: " + e.getMessage(), e);
@@ -461,10 +477,285 @@ public class ImportExportResource extends ResourceBase {
         }
     }
 
+    /**
+     * Export selected objects (documents and/or folders) as a ZIP archive.
+     * Accepts a JSON body with an array of object IDs.
+     */
+    @POST
+    @Path("/export/objects")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces("application/zip")
+    public Response exportSelectedObjects(
+            @PathParam("repositoryId") String repositoryId,
+            @Context HttpServletRequest request,
+            String body) {
+
+        log.info("Export selected objects request for repository: " + repositoryId);
+
+        try {
+            JSONParser parser = new JSONParser();
+            JSONObject json = (JSONObject) parser.parse(body);
+            JSONArray objectIds = (JSONArray) json.get("objectIds");
+
+            if (objectIds == null || objectIds.isEmpty()) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("{\"status\":\"error\",\"message\":\"objectIds is required and must not be empty\"}")
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
+
+            ContentService cs = getContentService();
+            if (cs == null) {
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity("{\"status\":\"error\",\"message\":\"ContentService not available\"}")
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
+
+            CallContext callContext = createCallContext(request, repositoryId);
+
+            // Validate all objects exist and user has read permission
+            List<Content> contents = new ArrayList<>();
+            for (Object idObj : objectIds) {
+                String objectId = (String) idObj;
+                Content content = cs.getContent(repositoryId, objectId);
+                if (content == null) {
+                    log.warn("Export: object not found: " + objectId);
+                    continue;
+                }
+                if (!hasReadPermission(cs, repositoryId, callContext, content)) {
+                    log.info("Export: skipping '" + content.getName() + "' (no read permission)");
+                    continue;
+                }
+                contents.add(content);
+            }
+
+            if (contents.isEmpty()) {
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity("{\"status\":\"error\",\"message\":\"No accessible objects to export\"}")
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
+
+            StreamingOutput streamingOutput = new StreamingOutput() {
+                @Override
+                public void write(OutputStream output) throws IOException {
+                    try (ZipOutputStream zos = new ZipOutputStream(output)) {
+                        // Collect custom type IDs for type definition export
+                        try {
+                            Set<String> customTypeIds = new HashSet<>();
+                            for (Content c : contents) {
+                                if (c instanceof Folder) {
+                                    collectCustomTypeIds(repositoryId, (Folder) c, customTypeIds);
+                                } else if (c instanceof Document) {
+                                    String objectType = c.getObjectType();
+                                    if (objectType != null && !objectType.equals("cmis:document")) {
+                                        customTypeIds.add(objectType);
+                                    }
+                                }
+                            }
+                            if (!customTypeIds.isEmpty()) {
+                                exportTypeDefinitions(repositoryId, customTypeIds, zos);
+                            }
+                        } catch (Exception e) {
+                            log.warn("Failed to export type definitions: " + e.getMessage(), e);
+                        }
+
+                        ContentService cs = getContentService();
+                        Set<String> exportedObjectIds = new HashSet<>();
+                        for (Content c : contents) {
+                            if (c instanceof Folder) {
+                                Folder folder = (Folder) c;
+                                String folderPath = folder.getName();
+                                zos.putNextEntry(new ZipEntry(folderPath + "/"));
+                                zos.closeEntry();
+                                exportFolderRecursive(repositoryId, folder, folderPath, zos, callContext, exportedObjectIds);
+                            } else if (c instanceof Document) {
+                                Document doc = (Document) c;
+                                exportedObjectIds.add(doc.getId());
+                                exportSingleDocument(repositoryId, doc, doc.getName(), zos, callContext, cs);
+                            }
+                        }
+
+                        // Export relationships
+                        try {
+                            collectAndExportRelationships(repositoryId, exportedObjectIds, zos, callContext);
+                        } catch (Exception e) {
+                            log.warn("Failed to export relationships: " + e.getMessage(), e);
+                        }
+                    } catch (Exception e) {
+                        log.error("Export streaming failed: " + e.getMessage(), e);
+                        throw new IOException("Export failed: " + e.getMessage(), e);
+                    }
+                }
+            };
+
+            String fileName = "export_selected_" + System.currentTimeMillis() + ".zip";
+            return Response.ok(streamingOutput)
+                    .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
+                    .build();
+
+        } catch (ParseException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"status\":\"error\",\"message\":\"Invalid JSON body\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        } catch (Exception e) {
+            log.error("Export selected objects failed: " + e.getMessage(), e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("{\"status\":\"error\",\"message\":\"Export failed: " + e.getMessage() + "\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+    }
+
     // ========== Format Detection ==========
 
     private enum ImportFormat {
         ACP, CUSTOM, UNKNOWN
+    }
+
+
+    /**
+     * Get PermissionService from SpringContext.
+     */
+    private jp.aegif.nemaki.cmis.aspect.PermissionService getPermissionService() {
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean("PermissionService", jp.aegif.nemaki.cmis.aspect.PermissionService.class);
+        } catch (Exception e) {
+            log.debug("Failed to get PermissionService: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Check whether the current user (from CallContext) has read permission on the given content.
+     * Returns true if permission check is unavailable (fail-open for robustness).
+     */
+    private boolean hasReadPermission(ContentService cs, String repositoryId,
+                                      CallContext callContext, Content content) {
+        try {
+            jp.aegif.nemaki.cmis.aspect.PermissionService permService = getPermissionService();
+            if (permService == null) {
+                // PermissionService unavailable - fall back to admin-only
+                return isAdmin(callContext.getUsername(), repositoryId);
+            }
+            jp.aegif.nemaki.model.Acl acl = cs.calculateAcl(repositoryId, content);
+            Boolean result = permService.checkPermission(
+                callContext, repositoryId,
+                org.apache.chemistry.opencmis.commons.data.PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
+                acl, content.getType(), content);
+            return result != null && result;
+        } catch (Exception e) {
+            log.debug("Permission check failed for " + content.getName() + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Check whether the current user has ACL read permission (CAN_GET_ACL) on the given content.
+     * Returns false if permission check fails or is unavailable (fail-closed for security).
+     */
+    private boolean hasAclPermission(ContentService cs, String repositoryId,
+                                     CallContext callContext, Content content) {
+        try {
+            jp.aegif.nemaki.cmis.aspect.PermissionService permService = getPermissionService();
+            if (permService == null) {
+                return isAdmin(callContext.getUsername(), repositoryId);
+            }
+            jp.aegif.nemaki.model.Acl acl = cs.calculateAcl(repositoryId, content);
+            Boolean result = permService.checkPermission(
+                callContext, repositoryId,
+                org.apache.chemistry.opencmis.commons.data.PermissionMapping.CAN_GET_ACL_OBJECT,
+                acl, content.getType(), content);
+            return result != null && result;
+        } catch (Exception e) {
+            log.debug("ACL permission check failed for " + content.getName() + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Add a property to PropertiesImpl with the correct CMIS type based on the type definition.
+     * Falls back to PropertyStringImpl if the type definition is not available or the property is unknown.
+     */
+    @SuppressWarnings("unchecked")
+    private void addTypedProperty(PropertiesImpl props, String propName, Object propValue,
+                                  String typeId, String repositoryId) {
+        if (propValue == null) {
+            return;
+        }
+        String strValue = propValue.toString();
+
+        // Try to get the property type from the type definition
+        PropertyType propertyType = null;
+        try {
+            TypeManager tm = getTypeManager();
+            if (tm != null && typeId != null) {
+                org.apache.chemistry.opencmis.commons.definitions.TypeDefinition typeDef =
+                    tm.getTypeDefinition(repositoryId, typeId);
+                if (typeDef != null && typeDef.getPropertyDefinitions() != null) {
+                    org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> propDef =
+                        typeDef.getPropertyDefinitions().get(propName);
+                    if (propDef != null) {
+                        propertyType = propDef.getPropertyType();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Could not resolve property type for " + propName + " on type " + typeId + ": " + e.getMessage());
+        }
+
+        if (propertyType == null) {
+            props.addProperty(new PropertyStringImpl(propName, strValue));
+            return;
+        }
+
+        try {
+            switch (propertyType) {
+                case BOOLEAN:
+                    props.addProperty(new PropertyBooleanImpl(propName, Boolean.valueOf(strValue)));
+                    break;
+                case INTEGER:
+                    props.addProperty(new PropertyIntegerImpl(propName, new java.math.BigInteger(strValue)));
+                    break;
+                case DECIMAL:
+                    props.addProperty(new PropertyDecimalImpl(propName, new java.math.BigDecimal(strValue)));
+                    break;
+                case DATETIME:
+                    java.util.GregorianCalendar cal = new java.util.GregorianCalendar();
+                    cal.setTimeInMillis(Long.parseLong(strValue));
+                    props.addProperty(new PropertyDateTimeImpl(propName, cal));
+                    break;
+                case ID:
+                    props.addProperty(new PropertyIdImpl(propName, strValue));
+                    break;
+                default:
+                    props.addProperty(new PropertyStringImpl(propName, strValue));
+                    break;
+            }
+        } catch (Exception e) {
+            // If type conversion fails, fall back to string
+            log.debug("Type conversion failed for property " + propName + " (type=" + propertyType + "), falling back to string: " + e.getMessage());
+            props.addProperty(new PropertyStringImpl(propName, strValue));
+        }
+    }
+
+    /**
+     * Check if user is admin (fallback for when PermissionService is unavailable).
+     */
+    private boolean isAdmin(String username, String repositoryId) {
+        try {
+            ContentService cs = getContentService();
+            if (cs != null) {
+                jp.aegif.nemaki.model.UserItem user = cs.getUserItemById(repositoryId, username);
+                return user != null && user.isAdmin();
+            }
+        } catch (Exception e) {
+            log.debug("Admin check failed: " + e.getMessage());
+        }
+        return false;
     }
 
     private ImportFormat detectFormat(File zipFile) throws IOException {
@@ -878,6 +1169,9 @@ public class ImportExportResource extends ResourceBase {
         ImportResult result = new ImportResult();
         ContentService cs = getContentService();
 
+        // ID mapping: old objectId (from export) → new objectId (after import)
+        Map<String, String> oldIdToNewId = new HashMap<>();
+
         // First pass: collect entry names and parse metadata files (small, safe to keep in memory)
         List<String> entryNames = new ArrayList<>();
         Map<String, JSONObject> metadataMap = new HashMap<>();
@@ -887,16 +1181,16 @@ public class ImportExportResource extends ResourceBase {
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
                 String name = entry.getName();
-                
+
                 // Sanitize path (fix: ZIP path traversal)
                 if (!isValidZipEntryName(name)) {
                     result.warnings.add("Skipping invalid path: " + name);
                     continue;
                 }
-                
+
                 if (!entry.isDirectory()) {
-                    // Skip .nemaki-types/ entries from regular file processing
-                    if (name.startsWith(TYPE_DEFINITIONS_DIR)) {
+                    // Skip .nemaki-types/ and .nemaki-relationships/ entries from regular file processing
+                    if (name.startsWith(TYPE_DEFINITIONS_DIR) || name.startsWith(RELATIONSHIPS_DIR)) {
                         continue;
                     }
                     entryNames.add(name);
@@ -960,16 +1254,38 @@ public class ImportExportResource extends ResourceBase {
                 }
 
                 try {
-                    // Ensure parent folders exist
+                    // Ensure parent folders exist (with same-name reuse and ID mapping)
                     String parentPath = getParentPath(path);
                     String parentFolderId = ensureFolderPath(repositoryId, parentPath, targetFolderId,
-                            pathToFolderId, callContext, result);
+                            pathToFolderId, callContext, result, metadataMap, oldIdToNewId);
 
                     // Get filename
                     String fileName = getFileName(path);
 
                     // Get metadata if available
                     JSONObject metadata = metadataMap.get(path);
+
+                    // Extract old objectId from metadata for ID mapping
+                    String oldObjectId = null;
+                    if (metadata != null) {
+                        JSONObject metaProps = (JSONObject) metadata.get("properties");
+                        if (metaProps != null) {
+                            Object oldIdObj = metaProps.get(PropertyIds.OBJECT_ID);
+                            if (oldIdObj != null && !oldIdObj.toString().isEmpty()) {
+                                oldObjectId = oldIdObj.toString();
+                            }
+                        }
+                    }
+
+                    // Check for same-name file in target folder
+                    Content existingChild = null;
+                    List<Content> siblings = cs.getChildren(repositoryId, parentFolderId);
+                    for (Content sibling : siblings) {
+                        if (fileName.equals(sibling.getName())) {
+                            existingChild = sibling;
+                            break;
+                        }
+                    }
 
                     // Check for version files
                     List<String> versionPaths = findVersionFilesFor(path, zf);
@@ -1005,13 +1321,20 @@ public class ImportExportResource extends ResourceBase {
                         }
                     }
 
+                    // Atomic overwrite: create with temp name first, then delete old, then rename
+                    // This prevents data loss if creation fails (old document preserved)
+                    boolean isOverwrite = (existingChild != null && existingChild instanceof Document);
+                    String createName = isOverwrite
+                            ? ".importing-" + System.currentTimeMillis() + "-" + fileName
+                            : fileName;
+
                     PropertiesImpl props = new PropertiesImpl();
                     props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, objectTypeId));
-                    props.addProperty(new PropertyStringImpl(PropertyIds.NAME, fileName));
+                    props.addProperty(new PropertyStringImpl(PropertyIds.NAME, createName));
 
-                    // Apply custom properties from metadata
+                    // Apply custom properties from metadata (type-aware)
                     if (metadata != null) {
-                        applyCustomProperties(metadata, props);
+                        applyCustomProperties(metadata, props, objectTypeId, repositoryId);
                     }
 
                     ContentStream contentStream = new ContentStreamImpl(fileName,
@@ -1021,7 +1344,42 @@ public class ImportExportResource extends ResourceBase {
                     Document newDoc = cs.createDocument(callContext, repositoryId, props, parentFolder,
                             contentStream, VersioningState.MAJOR, null, null, null);
 
+                    // If overwrite: delete old document, then rename new document
+                    if (isOverwrite) {
+                        String existingDocId = existingChild.getId();
+                        log.info("Import: overwriting existing document '" + fileName + "' (id=" + existingDocId + ")");
+                        try {
+                            cs.deleteDocument(callContext, repositoryId, existingDocId, true, false);
+                        } catch (Exception e) {
+                            // Delete of old doc failed: clean up the temp-named new doc and skip
+                            log.warn("Failed to delete existing document for overwrite: " + fileName + " - " + e.getMessage());
+                            result.warnings.add("Failed to overwrite (cannot delete existing): " + fileName);
+                            try {
+                                cs.deleteDocument(callContext, repositoryId, newDoc.getId(), true, false);
+                            } catch (Exception cleanupEx) {
+                                log.warn("Failed to clean up temp document: " + createName + " - " + cleanupEx.getMessage());
+                                result.warnings.add("Orphaned temp document: " + createName);
+                            }
+                            continue;
+                        }
+
+                        // Rename new document from temp name to original name
+                        try {
+                            PropertiesImpl renameProps = new PropertiesImpl();
+                            renameProps.addProperty(new PropertyStringImpl(PropertyIds.NAME, fileName));
+                            cs.updateProperties(callContext, repositoryId, renameProps, newDoc);
+                        } catch (Exception e) {
+                            log.warn("Failed to rename imported document from temp name: " + createName + " - " + e.getMessage());
+                            result.warnings.add("Document imported with temp name (rename failed): " + createName);
+                        }
+                    }
+
                     result.documentsCreated++;
+
+                    // Record ID mapping
+                    if (oldObjectId != null) {
+                        oldIdToNewId.put(oldObjectId, newDoc.getId());
+                    }
 
                     // Apply ACL from metadata
                     if (metadata != null) {
@@ -1037,6 +1395,9 @@ public class ImportExportResource extends ResourceBase {
                     result.errors.add("Failed to import: " + path + " - " + e.getMessage());
                 }
             }
+
+            // Import relationships (after all documents/folders are imported)
+            importRelationships(repositoryId, zf, oldIdToNewId, callContext, result);
         }
 
         return result;
@@ -1058,8 +1419,20 @@ public class ImportExportResource extends ResourceBase {
         return lastSlash >= 0 ? path.substring(lastSlash + 1) : path;
     }
 
+    /**
+     * Ensure folder path exists (legacy overload without ID mapping).
+     */
     private String ensureFolderPath(String repositoryId, String path, String rootFolderId,
             Map<String, String> pathToFolderId, CallContext callContext, ImportResult result) throws Exception {
+        return ensureFolderPath(repositoryId, path, rootFolderId, pathToFolderId, callContext, result, null, null);
+    }
+
+    /**
+     * Ensure folder path exists, reusing existing same-name folders and recording ID mappings.
+     */
+    private String ensureFolderPath(String repositoryId, String path, String rootFolderId,
+            Map<String, String> pathToFolderId, CallContext callContext, ImportResult result,
+            Map<String, JSONObject> metadataMap, Map<String, String> oldIdToNewId) throws Exception {
 
         if (path.isEmpty()) {
             return rootFolderId;
@@ -1073,28 +1446,76 @@ public class ImportExportResource extends ResourceBase {
 
         // Ensure parent exists first
         String parentPath = getParentPath(path);
-        String parentFolderId = ensureFolderPath(repositoryId, parentPath, rootFolderId, 
-                pathToFolderId, callContext, result);
+        String parentFolderId = ensureFolderPath(repositoryId, parentPath, rootFolderId,
+                pathToFolderId, callContext, result, metadataMap, oldIdToNewId);
 
-        // Create this folder
         String folderName = getFileName(path);
 
+        // Check if a folder with the same name already exists in the parent
+        List<Content> siblings = cs.getChildren(repositoryId, parentFolderId);
+        for (Content sibling : siblings) {
+            if (folderName.equals(sibling.getName()) && sibling instanceof Folder) {
+                // Reuse existing folder
+                String existingFolderId = sibling.getId();
+                pathToFolderId.put(path, existingFolderId);
+                log.info("Import: reusing existing folder '" + folderName + "' (id=" + existingFolderId + ")");
+
+                // Record ID mapping from folder metadata if available
+                if (metadataMap != null && oldIdToNewId != null) {
+                    // Folder metadata key is "path/" (with trailing slash)
+                    JSONObject folderMeta = metadataMap.get(path + "/");
+                    if (folderMeta != null) {
+                        JSONObject metaProps = (JSONObject) folderMeta.get("properties");
+                        if (metaProps != null) {
+                            Object oldIdObj = metaProps.get(PropertyIds.OBJECT_ID);
+                            if (oldIdObj != null && !oldIdObj.toString().isEmpty()) {
+                                oldIdToNewId.put(oldIdObj.toString(), existingFolderId);
+                            }
+                        }
+                    }
+                }
+
+                return existingFolderId;
+            }
+        }
+
+        // Create new folder
         PropertiesImpl props = new PropertiesImpl();
         props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:folder"));
         props.addProperty(new PropertyStringImpl(PropertyIds.NAME, folderName));
 
         Folder parentFolder = cs.getFolder(repositoryId, parentFolderId);
-        Folder newFolder = cs.createFolder(callContext, repositoryId, props, parentFolder, 
+        Folder newFolder = cs.createFolder(callContext, repositoryId, props, parentFolder,
                 null, null, null, null);
 
         pathToFolderId.put(path, newFolder.getId());
         result.foldersCreated++;
+
+        // Record ID mapping from folder metadata if available
+        if (metadataMap != null && oldIdToNewId != null) {
+            JSONObject folderMeta = metadataMap.get(path + "/");
+            if (folderMeta != null) {
+                JSONObject metaProps = (JSONObject) folderMeta.get("properties");
+                if (metaProps != null) {
+                    Object oldIdObj = metaProps.get(PropertyIds.OBJECT_ID);
+                    if (oldIdObj != null && !oldIdObj.toString().isEmpty()) {
+                        oldIdToNewId.put(oldIdObj.toString(), newFolder.getId());
+                    }
+                }
+            }
+        }
 
         return newFolder.getId();
     }
 
     @SuppressWarnings("unchecked")
     private void applyCustomProperties(JSONObject metadata, PropertiesImpl props) {
+        applyCustomProperties(metadata, props, null, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void applyCustomProperties(JSONObject metadata, PropertiesImpl props,
+                                       String typeId, String repositoryId) {
         JSONObject properties = (JSONObject) metadata.get("properties");
         if (properties == null) {
             return;
@@ -1117,7 +1538,7 @@ public class ImportExportResource extends ResourceBase {
             }
 
             if (propValue != null) {
-                props.addProperty(new PropertyStringImpl(propName, propValue.toString()));
+                addTypedProperty(props, propName, propValue, typeId, repositoryId);
             }
         }
     }
@@ -1381,6 +1802,112 @@ public class ImportExportResource extends ResourceBase {
                     (typesSkipped > 0 ? ", skipped " + typesSkipped + " existing" : ""));
         } else if (typesSkipped > 0) {
             result.warnings.add("All " + typesSkipped + " type definition(s) already exist, skipped");
+        }
+    }
+
+    /**
+     * Import relationships from .nemaki-relationships/ directory in the ZIP.
+     * Performs ID remapping using oldIdToNewId for source/target references.
+     */
+    @SuppressWarnings("unchecked")
+    private void importRelationships(String repositoryId, ZipFile zf,
+            Map<String, String> oldIdToNewId, CallContext callContext, ImportResult result) {
+
+        // Collect relationship entries
+        List<String> relEntries = new ArrayList<>();
+        Enumeration<? extends ZipEntry> entries = zf.entries();
+        while (entries.hasMoreElements()) {
+            ZipEntry entry = entries.nextElement();
+            String name = entry.getName();
+            if (!entry.isDirectory() && name.startsWith(RELATIONSHIPS_DIR) && name.endsWith(RELATIONSHIP_SUFFIX)) {
+                relEntries.add(name);
+            }
+        }
+
+        if (relEntries.isEmpty()) {
+            return;
+        }
+
+        log.info("Found " + relEntries.size() + " relationship(s) to import");
+        ContentService cs = getContentService();
+        if (cs == null) {
+            result.warnings.add("ContentService not available for relationship import");
+            return;
+        }
+
+        int created = 0;
+        int failed = 0;
+
+        for (String entryName : relEntries) {
+            try {
+                byte[] jsonBytes = readZipEntry(zf, entryName);
+                if (jsonBytes == null) {
+                    result.warnings.add("Could not read relationship: " + entryName);
+                    failed++;
+                    continue;
+                }
+
+                JSONParser parser = new JSONParser();
+                JSONObject relJson = (JSONObject) parser.parse(new String(jsonBytes, "UTF-8"));
+
+                String objectType = (String) relJson.get("objectType");
+                String sourceId = (String) relJson.get("sourceId");
+                String targetId = (String) relJson.get("targetId");
+
+                if (objectType == null || sourceId == null || targetId == null) {
+                    result.warnings.add("Relationship missing required fields: " + entryName);
+                    failed++;
+                    continue;
+                }
+
+                // Remap source and target IDs
+                String newSourceId = oldIdToNewId.getOrDefault(sourceId, sourceId);
+                String newTargetId = oldIdToNewId.getOrDefault(targetId, targetId);
+
+                // Build properties for createRelationship
+                PropertiesImpl props = new PropertiesImpl();
+                props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, objectType));
+                props.addProperty(new PropertyIdImpl(PropertyIds.SOURCE_ID, newSourceId));
+                props.addProperty(new PropertyIdImpl(PropertyIds.TARGET_ID, newTargetId));
+
+                String relName = (String) relJson.get("name");
+                if (relName != null && !relName.isEmpty()) {
+                    props.addProperty(new PropertyStringImpl(PropertyIds.NAME, relName));
+                }
+
+                // Apply custom properties with type-aware reconstruction
+                JSONObject customProps = (JSONObject) relJson.get("properties");
+                if (customProps != null) {
+                    for (Object key : customProps.keySet()) {
+                        String propName = (String) key;
+                        Object propValue = customProps.get(propName);
+                        if (propValue != null) {
+                            addTypedProperty(props, propName, propValue, objectType, repositoryId);
+                        }
+                    }
+                }
+
+                Relationship newRel = cs.createRelationship(callContext, repositoryId, props, null, null, null, null);
+                created++;
+
+                // Restore ACL from exported data
+                JSONArray aclArray = (JSONArray) relJson.get("acl");
+                if (aclArray != null && !aclArray.isEmpty() && newRel != null) {
+                    applyCustomAcl(repositoryId, newRel.getId(), relJson, callContext, result);
+                }
+
+                log.info("Imported relationship: " + objectType + " (source=" + newSourceId + ", target=" + newTargetId + ")");
+
+            } catch (Exception e) {
+                log.error("Failed to import relationship from: " + entryName, e);
+                result.warnings.add("Failed to import relationship: " + entryName + " - " + e.getMessage());
+                failed++;
+            }
+        }
+
+        result.relationshipsCreated = created;
+        if (created > 0 || failed > 0) {
+            log.info("Relationship import: " + created + " created, " + failed + " failed");
         }
     }
 
@@ -1666,12 +2193,32 @@ public class ImportExportResource extends ResourceBase {
 
     @SuppressWarnings("unchecked")
     private void exportFolderRecursive(String repositoryId, Folder folder, String basePath,
-            ZipOutputStream zos, CallContext callContext) throws Exception {
+            ZipOutputStream zos, CallContext callContext, Set<String> exportedObjectIds) throws Exception {
 
         ContentService cs = getContentService();
         List<Content> children = cs.getChildren(repositoryId, folder.getId());
 
+        // Collect this folder's ID
+        if (exportedObjectIds != null) {
+            exportedObjectIds.add(folder.getId());
+        }
+
+        // Export folder metadata (.meta.json inside the folder)
+        if (!basePath.isEmpty()) {
+            JSONObject folderMeta = buildFolderMetadata(repositoryId, folder, callContext);
+            String folderMetaPath = basePath + "/.meta.json";
+            zos.putNextEntry(new ZipEntry(folderMetaPath));
+            zos.write(folderMeta.toJSONString().getBytes("UTF-8"));
+            zos.closeEntry();
+        }
+
         for (Content child : children) {
+            // ACL check: skip items the user cannot read
+            if (!hasReadPermission(cs, repositoryId, callContext, child)) {
+                log.info("Export: skipping '" + child.getName() + "' (no read permission for user: " + callContext.getUsername() + ")");
+                continue;
+            }
+
             String childPath = basePath.isEmpty() ? child.getName() : basePath + "/" + child.getName();
 
             if (child instanceof Folder) {
@@ -1680,10 +2227,15 @@ public class ImportExportResource extends ResourceBase {
                 zos.closeEntry();
 
                 // Recurse into folder
-                exportFolderRecursive(repositoryId, (Folder) child, childPath, zos, callContext);
+                exportFolderRecursive(repositoryId, (Folder) child, childPath, zos, callContext, exportedObjectIds);
 
             } else if (child instanceof Document) {
                 Document doc = (Document) child;
+
+                // Collect document ID
+                if (exportedObjectIds != null) {
+                    exportedObjectIds.add(doc.getId());
+                }
 
                 // Export document content (fix: InputStream resource leak)
                 if (doc.getAttachmentNodeId() != null) {
@@ -1718,12 +2270,49 @@ public class ImportExportResource extends ResourceBase {
         }
     }
 
+    /**
+     * Export a single document (content + metadata + version history) into the ZIP stream.
+     */
+    private void exportSingleDocument(String repositoryId, Document doc, String path,
+            ZipOutputStream zos, CallContext callContext, ContentService cs) throws Exception {
+        // Export document content
+        if (doc.getAttachmentNodeId() != null) {
+            try {
+                var attachment = cs.getAttachment(repositoryId, doc.getAttachmentNodeId());
+                if (attachment != null && attachment.getInputStream() != null) {
+                    zos.putNextEntry(new ZipEntry(path));
+                    byte[] buffer = new byte[8192];
+                    int len;
+                    try (InputStream is = attachment.getInputStream()) {
+                        while ((len = is.read(buffer)) != -1) {
+                            zos.write(buffer, 0, len);
+                        }
+                    }
+                    zos.closeEntry();
+                }
+            } catch (Exception e) {
+                log.warn("Failed to export content for: " + path, e);
+            }
+        }
+
+        // Export metadata
+        JSONObject metadata = buildDocumentMetadata(repositoryId, doc, callContext);
+        String metaPath = path + META_SUFFIX;
+        zos.putNextEntry(new ZipEntry(metaPath));
+        zos.write(metadata.toJSONString().getBytes("UTF-8"));
+        zos.closeEntry();
+
+        // Export version history
+        exportVersionHistory(repositoryId, doc, path, zos, callContext);
+    }
+
     @SuppressWarnings("unchecked")
     private JSONObject buildDocumentMetadata(String repositoryId, Document doc, CallContext callContext) {
         JSONObject metadata = new JSONObject();
 
         // Properties
         JSONObject properties = new JSONObject();
+        properties.put(PropertyIds.OBJECT_ID, doc.getId());
         properties.put(PropertyIds.NAME, doc.getName());
         properties.put(PropertyIds.OBJECT_TYPE_ID, doc.getObjectType());
         if (doc.getDescription() != null) {
@@ -1739,21 +2328,23 @@ public class ImportExportResource extends ResourceBase {
         }
         metadata.put("properties", properties);
 
-        // ACL
-        if (doc.getAcl() != null && doc.getAcl().getLocalAces() != null) {
-            JSONArray aclArray = new JSONArray();
-            for (Ace ace : doc.getAcl().getLocalAces()) {
-                JSONObject aceJson = new JSONObject();
-                aceJson.put("principalId", ace.getPrincipalId());
-                JSONArray permsArray = new JSONArray();
-                if (ace.getPermissions() != null) {
-                    permsArray.addAll(ace.getPermissions());
+        // ACL - only include if user has CAN_GET_ACL permission
+        if (hasAclPermission(getContentService(), repositoryId, callContext, doc)) {
+            if (doc.getAcl() != null && doc.getAcl().getLocalAces() != null) {
+                JSONArray aclArray = new JSONArray();
+                for (Ace ace : doc.getAcl().getLocalAces()) {
+                    JSONObject aceJson = new JSONObject();
+                    aceJson.put("principalId", ace.getPrincipalId());
+                    JSONArray permsArray = new JSONArray();
+                    if (ace.getPermissions() != null) {
+                        permsArray.addAll(ace.getPermissions());
+                    }
+                    aceJson.put("permissions", permsArray);
+                    aceJson.put("direct", ace.isDirect());
+                    aclArray.add(aceJson);
                 }
-                aceJson.put("permissions", permsArray);
-                aceJson.put("direct", ace.isDirect());
-                aclArray.add(aceJson);
+                metadata.put("acl", aclArray);
             }
-            metadata.put("acl", aclArray);
         }
 
         // Version info
@@ -1767,23 +2358,45 @@ public class ImportExportResource extends ResourceBase {
         }
         metadata.put("versionInfo", versionInfo);
 
-        // Relationships
-        try {
-            ContentService cs = getContentService();
-            List<Relationship> relationships = cs.getRelationsipsOfObject(repositoryId, doc.getId(), null);
-            if (relationships != null && !relationships.isEmpty()) {
-                JSONArray relArray = new JSONArray();
-                for (Relationship rel : relationships) {
-                    JSONObject relJson = new JSONObject();
-                    relJson.put("type", rel.getObjectType());
-                    relJson.put("sourceId", rel.getSourceId());
-                    relJson.put("targetId", rel.getTargetId());
-                    relArray.add(relJson);
+        // Relationships are exported separately via .nemaki-relationships/ with proper
+        // per-relationship permission filtering. Omitted from document metadata to avoid
+        // bypassing relationship permission checks.
+
+        return metadata;
+    }
+
+    /**
+     * Build metadata JSON for a folder (objectId, objectType, name, ACL).
+     * ACL is only included if the user has CAN_GET_ACL permission.
+     */
+    @SuppressWarnings("unchecked")
+    private JSONObject buildFolderMetadata(String repositoryId, Folder folder, CallContext callContext) {
+        JSONObject metadata = new JSONObject();
+
+        // Properties
+        JSONObject properties = new JSONObject();
+        properties.put(PropertyIds.OBJECT_ID, folder.getId());
+        properties.put(PropertyIds.OBJECT_TYPE_ID, folder.getObjectType() != null ? folder.getObjectType() : "cmis:folder");
+        properties.put(PropertyIds.NAME, folder.getName());
+        metadata.put("properties", properties);
+
+        // ACL - only include if user has CAN_GET_ACL permission
+        if (hasAclPermission(getContentService(), repositoryId, callContext, folder)) {
+            if (folder.getAcl() != null && folder.getAcl().getLocalAces() != null) {
+                JSONArray aclArray = new JSONArray();
+                for (Ace ace : folder.getAcl().getLocalAces()) {
+                    JSONObject aceJson = new JSONObject();
+                    aceJson.put("principalId", ace.getPrincipalId());
+                    JSONArray permsArray = new JSONArray();
+                    if (ace.getPermissions() != null) {
+                        permsArray.addAll(ace.getPermissions());
+                    }
+                    aceJson.put("permissions", permsArray);
+                    aceJson.put("direct", ace.isDirect());
+                    aclArray.add(aceJson);
                 }
-                metadata.put("relationships", relArray);
+                metadata.put("acl", aclArray);
             }
-        } catch (Exception e) {
-            log.debug("Failed to get relationships for export: " + e.getMessage());
         }
 
         return metadata;
@@ -1874,6 +2487,116 @@ public class ImportExportResource extends ResourceBase {
 
         } catch (Exception e) {
             log.warn("Failed to export version history for: " + basePath, e);
+        }
+    }
+
+    /**
+     * Collect relationships from exported objects and write them to .nemaki-relationships/ in the ZIP.
+     * Only relationships where at least one endpoint (source or target) is in the exported set are included.
+     * Each relationship is checked for read permission before export.
+     */
+    @SuppressWarnings("unchecked")
+    private void collectAndExportRelationships(String repositoryId, Set<String> exportedObjectIds,
+            ZipOutputStream zos, CallContext callContext) throws Exception {
+
+        if (exportedObjectIds == null || exportedObjectIds.isEmpty()) {
+            return;
+        }
+
+        ContentService cs = getContentService();
+        if (cs == null) {
+            return;
+        }
+
+        // Collect unique relationships (deduplicate by relationship ID)
+        Map<String, Relationship> uniqueRelationships = new HashMap<>();
+
+        for (String objectId : exportedObjectIds) {
+            try {
+                // P2 fix: Use EITHER direction so target-side relationships are also collected
+                List<Relationship> rels = cs.getRelationsipsOfObject(repositoryId, objectId,
+                        org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.EITHER);
+                if (rels != null) {
+                    for (Relationship rel : rels) {
+                        // Only include if source OR target is in the exported set
+                        if (exportedObjectIds.contains(rel.getSourceId()) || exportedObjectIds.contains(rel.getTargetId())) {
+                            uniqueRelationships.put(rel.getId(), rel);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Failed to get relationships for object " + objectId + ": " + e.getMessage());
+            }
+        }
+
+        if (uniqueRelationships.isEmpty()) {
+            return;
+        }
+
+        // Create .nemaki-relationships/ directory entry
+        zos.putNextEntry(new ZipEntry(RELATIONSHIPS_DIR));
+        zos.closeEntry();
+
+        int count = 0;
+        int skipped = 0;
+        for (Map.Entry<String, Relationship> entry : uniqueRelationships.entrySet()) {
+            Relationship rel = entry.getValue();
+
+            // P1 fix: Check read permission on each relationship before export
+            if (callContext != null && !hasReadPermission(cs, repositoryId, callContext, rel)) {
+                skipped++;
+                log.debug("Export: skipping relationship " + rel.getId() + " (no read permission)");
+                continue;
+            }
+
+            JSONObject relJson = new JSONObject();
+            relJson.put("objectType", rel.getObjectType());
+            relJson.put("sourceId", rel.getSourceId());
+            relJson.put("targetId", rel.getTargetId());
+            relJson.put("name", rel.getName());
+
+            // Properties
+            if (rel.getSubTypeProperties() != null) {
+                JSONObject propsJson = new JSONObject();
+                for (jp.aegif.nemaki.model.Property prop : rel.getSubTypeProperties()) {
+                    if (prop.getValue() != null) {
+                        propsJson.put(prop.getKey(), prop.getValue().toString());
+                    }
+                }
+                if (!propsJson.isEmpty()) {
+                    relJson.put("properties", propsJson);
+                }
+            }
+
+            // ACL - only include if user has CAN_GET_ACL permission on the relationship
+            if (hasAclPermission(cs, repositoryId, callContext, rel)) {
+                if (rel.getAcl() != null && rel.getAcl().getLocalAces() != null) {
+                    JSONArray aclArray = new JSONArray();
+                    for (Ace ace : rel.getAcl().getLocalAces()) {
+                        JSONObject aceJson = new JSONObject();
+                        aceJson.put("principalId", ace.getPrincipalId());
+                        JSONArray permsArray = new JSONArray();
+                        if (ace.getPermissions() != null) {
+                            permsArray.addAll(ace.getPermissions());
+                        }
+                        aceJson.put("permissions", permsArray);
+                        aclArray.add(aceJson);
+                    }
+                    relJson.put("acl", aclArray);
+                }
+            }
+
+            String entryName = RELATIONSHIPS_DIR + entry.getKey() + RELATIONSHIP_SUFFIX;
+            zos.putNextEntry(new ZipEntry(entryName));
+            zos.write(relJson.toJSONString().getBytes("UTF-8"));
+            zos.closeEntry();
+            count++;
+        }
+
+        if (skipped > 0) {
+            log.info("Exported " + count + " relationship(s), skipped " + skipped + " (no read permission)");
+        } else {
+            log.info("Exported " + count + " relationship(s)");
         }
     }
 
@@ -2602,6 +3325,7 @@ public class ImportExportResource extends ResourceBase {
     private static class ImportResult {
         int foldersCreated = 0;
         int documentsCreated = 0;
+        int relationshipsCreated = 0;
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
     }

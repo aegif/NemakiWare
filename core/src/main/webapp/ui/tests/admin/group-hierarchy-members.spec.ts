@@ -165,6 +165,13 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         await page.waitForTimeout(2000);
       }
 
+      // Search for the group to find it (may not be on first page due to cloud-synced groups)
+      const searchInput = page.locator('input[placeholder*="検索"]').or(page.locator('input[placeholder*="search" i]'));
+      if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await searchInput.fill(testGroupId);
+        await page.waitForTimeout(2000);
+      }
+
       // Verify group was created
       await expect(page.locator(`.ant-table tbody tr:has-text("${testGroupId}")`)).toBeVisible({ timeout: 10000 });
     });

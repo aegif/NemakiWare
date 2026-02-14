@@ -50,7 +50,6 @@ export interface LoginCredentials {
  *    - Implementation uses typeof check and parameter parsing (Lines 42-58)
  *    - Rationale: Supports both legacy test code (Pattern B) and modern test code (Pattern C)
  *    - TypeScript overload signatures (Lines 25-32) provide proper type safety
- *    - Repository parameter optional, defaults to 'bedroom' if omitted
  *    - Advantage: Tests can use most convenient calling pattern without sacrificing type safety
  *
  * 2. React SPA Initialization Wait Strategy (Lines 63-76):
@@ -187,7 +186,6 @@ export interface LoginCredentials {
  * - logout() fails: User menu not found (all selector fallbacks failed)
  * - logout() fails: Login form not appearing after logout (hard navigation didn't work)
  * - isLoggedIn() incorrect: Authenticated elements not present despite valid session
- * - Repository dropdown timeout: Option not found or dropdown didn't open
  */
 export class AuthHelper {
   constructor(private page: Page) {}

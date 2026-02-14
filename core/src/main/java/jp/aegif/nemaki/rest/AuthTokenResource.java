@@ -1294,8 +1294,27 @@ public class AuthTokenResource extends ResourceBase{
 
 	/**
 	 * Get root folder ID for the specified repository.
+	 * Uses RepositoryInfoMap for dynamic lookup with hardcoded fallback.
 	 */
 	private String getRootFolderIdForRepository(String repositoryId) {
+		// Dynamic lookup via RepositoryInfoMap (works regardless of DB re-initialization)
+		try {
+			jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repoInfoMap =
+				jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+					.getBean("repositoryInfoMap", jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+			if (repoInfoMap != null) {
+				org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = repoInfoMap.get(repositoryId);
+				if (repoInfo != null && repoInfo.getRootFolderId() != null) {
+					logger.debug("Root folder ID from RepositoryInfoMap: {} for repository: {}", repoInfo.getRootFolderId(), repositoryId);
+					return repoInfo.getRootFolderId();
+				}
+			}
+		} catch (Exception e) {
+			logger.warn("Failed to get root folder ID from RepositoryInfoMap for repository: {}, falling back to hardcoded IDs", repositoryId);
+		}
+
+		// Fallback: hardcoded IDs from default CouchDB initialization
+		// These may become stale if the database is re-initialized
 		switch (repositoryId) {
 			case "bedroom":
 				return "e02f784f8360a02cc14d1314c10038ff";
@@ -1366,10 +1385,10 @@ public class AuthTokenResource extends ResourceBase{
 		cookieBuilder.append("; Max-Age=").append(24 * 60 * 60); // 24 hours
 		cookieBuilder.append("; HttpOnly");
 
-		// Set Secure flag for HTTPS connections (skip for localhost development)
-		String serverName = request != null ? request.getServerName() : "";
-		boolean isSecure = request != null && request.isSecure();
-		if (isSecure || (!serverName.equals("localhost") && !serverName.equals("127.0.0.1"))) {
+		// Set Secure flag when the connection is HTTPS (direct or behind reverse proxy).
+		// Checks both request.isSecure() and X-Forwarded-Proto header to support
+		// TLS termination at load balancer/reverse proxy (e.g. nginx, AWS ALB, Ingress).
+		if (request != null && isSecureConnection(request)) {
 			cookieBuilder.append("; Secure");
 		}
 
@@ -1385,7 +1404,7 @@ public class AuthTokenResource extends ResourceBase{
 	/**
 	 * Clear the authentication cookie on logout.
 	 * Sets the cookie with empty value and immediate expiration.
-	 * 
+	 *
 	 * Uses the same format as setAuthTokenCookie() to ensure the cookie
 	 * is properly deleted (must match Path, SameSite, etc. attributes).
 	 */
@@ -1403,10 +1422,8 @@ public class AuthTokenResource extends ResourceBase{
 		cookieBuilder.append("; Max-Age=0"); // Immediate expiration
 		cookieBuilder.append("; HttpOnly");
 
-		// Set Secure flag for HTTPS connections (skip for localhost development)
-		String serverName = request != null ? request.getServerName() : "";
-		boolean isSecure = request != null && request.isSecure();
-		if (isSecure || (!serverName.equals("localhost") && !serverName.equals("127.0.0.1"))) {
+		// Secure flag must match the original cookie for proper deletion
+		if (request != null && isSecureConnection(request)) {
 			cookieBuilder.append("; Secure");
 		}
 
@@ -1418,7 +1435,40 @@ public class AuthTokenResource extends ResourceBase{
 
 		logger.debug("Auth token cookie cleared");
 	}
-	
+
+	/**
+	 * Determine if the current connection is secure (HTTPS).
+	 * Checks both the servlet container's isSecure() flag and the X-Forwarded-Proto
+	 * header to support TLS termination at a reverse proxy / load balancer.
+	 */
+	private boolean isSecureConnection(jakarta.servlet.http.HttpServletRequest req) {
+		if (req.isSecure()) {
+			return true;
+		}
+		// Support reverse proxy TLS termination (nginx, AWS ALB, Ingress, etc.)
+		// Handle multi-value X-Forwarded-Proto (e.g., "https, http" from proxy chains)
+		String forwardedProto = req.getHeader("X-Forwarded-Proto");
+		if (forwardedProto != null) {
+			String firstProto = forwardedProto.split(",")[0].trim();
+			if ("https".equalsIgnoreCase(firstProto)) {
+				return true;
+			}
+		}
+		// RFC 7239 Forwarded header support (e.g., "for=...; proto=https; by=...")
+		String forwarded = req.getHeader("Forwarded");
+		if (forwarded != null) {
+			// Parse first entry (before any comma) for the proto directive
+			String firstEntry = forwarded.split(",")[0];
+			for (String directive : firstEntry.split(";")) {
+				String trimmed = directive.trim().toLowerCase();
+				if (trimmed.startsWith("proto=")) {
+					return "https".equals(trimmed.substring(6).trim());
+				}
+			}
+		}
+		return false;
+	}
+
 	/**
 	 * Get TokenService from Spring context if not injected via setter
 	 * This is a fallback mechanism for Jersey-Spring integration issues
