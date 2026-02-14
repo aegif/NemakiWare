@@ -128,12 +128,13 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
   };
 
   // Highlight matching text
-  const highlightText = (text: string, maxLength: number = 300) => {
+  const highlightText = (text: string | undefined | null, maxLength: number = 300) => {
+    if (!text) return '';
     if (text.length > maxLength) {
       return text.substring(0, maxLength) + '...';
     }
     return text;
-  };
+  };;
 
   // Format score as percentage
   const formatScore = (score: number) => {
@@ -289,7 +290,7 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
               dataSource={results}
               renderItem={(item) => (
                 <List.Item
-                  key={item.chunkId}
+                  key={item.chunkId || `${item.documentId}_${item.chunkIndex ?? 0}`}
                   style={{ cursor: 'default' }}
                   actions={[
                     <Button
@@ -311,7 +312,7 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
                           style={{ padding: 0, height: 'auto' }}
                           onClick={() => handleDocumentClick(item.documentId)}
                         >
-                          <Text strong style={{ fontSize: 16 }}>{item.documentName}</Text>
+                          <Text strong style={{ fontSize: 16 }}>{item.documentName || item.documentId}</Text>
                         </Button>
                         <Text type="secondary">
                           {t('semanticSearch.similarity')}: {formatScore(item.score)}
@@ -320,23 +321,27 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
                     }
                     description={
                       <Space direction="vertical" size={0}>
-                        <Text type="secondary">{item.path}</Text>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {t('semanticSearch.chunkIndex', { index: item.chunkIndex + 1 })}
-                        </Text>
+                        <Text type="secondary">{item.path || ''}</Text>
+                        {item.chunkIndex != null && (
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {t('semanticSearch.chunkIndex', { index: item.chunkIndex + 1 })}
+                          </Text>
+                        )}
                       </Space>
                     }
                   />
-                  <Paragraph
-                    style={{
-                      background: '#f5f5f5',
-                      padding: '8px 12px',
-                      borderRadius: 4,
-                      marginTop: 8
-                    }}
-                  >
-                    {highlightText(item.chunkText)}
-                  </Paragraph>
+                  {item.chunkText && (
+                    <Paragraph
+                      style={{
+                        background: '#f5f5f5',
+                        padding: '8px 12px',
+                        borderRadius: 4,
+                        marginTop: 8
+                      }}
+                    >
+                      {highlightText(item.chunkText)}
+                    </Paragraph>
+                  )}
                 </List.Item>
               )}
             />
