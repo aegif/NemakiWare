@@ -360,11 +360,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
         await cmisService.createUser(repositoryId, values);
         message.success(t('userManagement.messages.createSuccess'));
       }
-      
-      setModalVisible(false);
-      setEditingUser(null);
-      form.resetFields();
-      loadUsers();
     } catch (error: any) {
       // Failed to create/update user
       let errorMessage = editingUser ? t('userManagement.messages.updateError') : t('userManagement.messages.createError');
@@ -383,8 +378,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       }
       
       message.error(errorMessage);
+    } finally {
+      setModalVisible(false);
+      setEditingUser(null);
+      form.resetFields();
+      loadUsers();
     }
-  };
+  };;
 
   const handleEdit = (user: User) => {
     setEditingUser(user);
