@@ -279,7 +279,7 @@ public class GroupItemResource extends ResourceBase{
 
 				getContentService().createGroupItem(new SystemCallContext(repositoryId), repositoryId, group);
 			}catch(Exception ex){
-				ex.printStackTrace();
+				log.error("Failed to create group: " + groupId, ex);
 				status = false;
 				addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_CREATE);
 			}
@@ -382,7 +382,7 @@ public class GroupItemResource extends ResourceBase{
 			try{
 				getContentService().update(new SystemCallContext(repositoryId), repositoryId, group);
 			}catch(Exception ex){
-				ex.printStackTrace();
+				log.error("Failed to update group: " + groupId, ex);
 				status = false;
 				addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_UPDATE);
 			}
@@ -470,7 +470,7 @@ public class GroupItemResource extends ResourceBase{
 				try{
 					getContentService().update(new SystemCallContext(repositoryId), repositoryId, group);
 				}catch(Exception ex){
-					ex.printStackTrace();
+					log.error("Failed to add members to group: " + groupId, ex);
 					status = false;
 					addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_UPDATEMEMBERS);
 				}
@@ -478,7 +478,7 @@ public class GroupItemResource extends ResourceBase{
 				try{
 					getContentService().update(new SystemCallContext(repositoryId), repositoryId, group);
 				}catch(Exception ex){
-					ex.printStackTrace();
+					log.error("Failed to remove members from group: " + groupId, ex);
 					status = false;
 					addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_UPDATEMEMBERS);
 				}
@@ -676,13 +676,13 @@ public class GroupItemResource extends ResourceBase{
 		try{
 			created = DateUtil.formatSystemDateTime(group.getCreated());
 		}catch(Exception ex){
-			ex.printStackTrace();
+			log.warn("Failed to format created date for group " + group.getGroupId(), ex);
 		}
 		String modified = new String();
 		try{
 			modified = DateUtil.formatSystemDateTime(group.getModified());
 		}catch(Exception ex){
-			ex.printStackTrace();
+			log.warn("Failed to format modified date for group " + group.getGroupId(), ex);
 		}
 		JSONObject groupJSON = new JSONObject();
 		groupJSON.put(ITEM_GROUPID, group.getGroupId());

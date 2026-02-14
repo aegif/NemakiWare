@@ -259,7 +259,7 @@ public class ArchiveResource extends ResourceBase {
 				result.put("isAdmin", adminUser);
 			}
 		}catch(Exception e){
-			e.printStackTrace();
+			log.error("Failed to retrieve archives", e);
 			status = false;
 			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_GET_ARCHIVES);
 		}
@@ -301,7 +301,7 @@ public class ArchiveResource extends ResourceBase {
 				result.put("archive", archiveJson);
 			}
 		} catch (Exception e) {
-			e.printStackTrace();
+			log.error("Failed to show archive: " + id, e);
 			status = false;
 			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_GET_ARCHIVES);
 		}

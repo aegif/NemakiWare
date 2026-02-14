@@ -3392,26 +3392,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					String contentType = contentStream.getMimeType() != null ?
 						contentStream.getMimeType() : "application/octet-stream";
 
-					// DEBUG: Log content details
-					log.error("Document ID: " + documentId);
-					log.error("Content Type: " + contentType);
-					try {
-						// Mark and reset to read content without consuming
-						InputStream debugStream = contentStream.getStream();
-						if (debugStream.markSupported()) {
-							debugStream.mark(100);
-							byte[] firstBytes = new byte[50];
-							int bytesRead = debugStream.read(firstBytes);
-							if (bytesRead > 0) {
-								String preview = new String(firstBytes, 0, bytesRead, "UTF-8");
-								log.error("Content preview: " + preview);
-							}
-							debugStream.reset();
-						}
-					} catch (Exception debugEx) {
-						log.error("Could not preview content: " + debugEx.getMessage());
-					}
-
 					log.debug("STAGE 2: Adding binary attachment to document: " + documentId + " (revision: " + documentRevision + ")");
 					
 					// Retry logic for attachment creation as well
@@ -3609,51 +3589,31 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// STAGE 2: If there's binary content, update it as a CouchDB attachment
 			if (contentStream != null && contentStream.getStream() != null) {
 				try {
-					// CRITICAL FIX: Use the revision from STAGE 1 completion, not a fresh GET
+					// Use the revision from STAGE 1 completion
 					String revisionToUse = stage1RevisionAfterUpdate;
 					if (revisionToUse == null) {
 						// Fallback: get fresh revision only if STAGE 1 revision is somehow lost
 						com.ibm.cloud.cloudant.v1.model.Document doc = client.get(attachment.getId());
 						revisionToUse = doc != null ? doc.getRev() : null;
-								}
+					}
 
-					// Update attachment with binary content
+					// Update attachment with binary content - stream directly without buffering
 					String attachmentName = "content"; // Standard attachment name for content
 					String contentType = contentStream.getMimeType() != null ?
 						contentStream.getMimeType() : "application/octet-stream";
 					if (log.isDebugEnabled()) {
-					log.debug("UPDATE ATTACHMENT STAGE 2: Attachment ID: " + attachment.getId());
-				}
-					if (log.isDebugEnabled()) {
-					log.debug("UPDATE ATTACHMENT STAGE 2: Content length from metadata: " + contentStream.getLength());
-				}
-
-					// DEBUG: Read the InputStream and count actual bytes
-					InputStream originalStream = contentStream.getStream();
-					java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-					byte[] buffer = new byte[8192];
-					int bytesRead;
-					int totalBytesRead = 0;
-					while ((bytesRead = originalStream.read(buffer)) != -1) {
-						baos.write(buffer, 0, bytesRead);
-						totalBytesRead += bytesRead;
+						log.debug("UPDATE ATTACHMENT STAGE 2: Attachment ID: " + attachment.getId()
+							+ ", Content length from metadata: " + contentStream.getLength());
 					}
-					byte[] allBytes = baos.toByteArray();
-					if (log.isDebugEnabled()) {
-					log.debug("UPDATE ATTACHMENT STAGE 2: Content preview: " + new String(allBytes, 0, Math.min(100, allBytes.length), java.nio.charset.StandardCharsets.UTF_8));
-				}
-
-					// Create new InputStream from the bytes we read
-					java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(allBytes);
 
 					String newRevision = client.createAttachment(
 						attachment.getId(),
 						revisionToUse,
 						attachmentName,
-						bais,
+						contentStream.getStream(),
 						contentType
 					);
-								log.debug("Updated binary content as attachment for: " + attachment.getId() + " (revision: " + newRevision + ")");
+					log.debug("Updated binary content as attachment for: " + attachment.getId() + " (revision: " + newRevision + ")");
 
 				} catch (Exception attachmentError) {
 					log.warn("Failed to update binary content as attachment for: " + attachment.getId() + ". Metadata updated only.", attachmentError);

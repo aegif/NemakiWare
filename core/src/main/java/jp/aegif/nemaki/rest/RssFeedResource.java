@@ -21,12 +21,12 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rest;
 
-import java.text.SimpleDateFormat;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.TimeZone;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.DELETE;
@@ -61,11 +61,7 @@ public class RssFeedResource extends ResourceBase {
     private static final String MEDIA_TYPE_RSS = "application/rss+xml";
     private static final String MEDIA_TYPE_ATOM = "application/atom+xml";
     
-    private static final SimpleDateFormat ISO8601_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-    
-    static {
-        ISO8601_FORMAT.setTimeZone(TimeZone.getTimeZone("UTC"));
-    }
+    private static final DateTimeFormatter ISO8601_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
     
     private RssFeedService rssFeedService;
     private RssTokenService rssTokenService;
@@ -664,9 +660,7 @@ public class RssFeedResource extends ResourceBase {
         if (calendar == null) {
             return null;
         }
-        synchronized (ISO8601_FORMAT) {
-            return ISO8601_FORMAT.format(calendar.getTime());
-        }
+        return ISO8601_FORMAT.format(calendar.toInstant());
     }
     
     /**

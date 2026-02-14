@@ -96,43 +96,15 @@ public class MetricsResource {
     }
 
     private void appendRepositoryMetrics(StringBuilder sb, String repositoryId) {
-        // TODO: Integrate with ContentService to get actual counts
-        // For now, return placeholder values
-        long nodeCount = 0;
-        long documentCount = 0;
-        long folderCount = 0;
-
-        sb.append("# HELP nemaki_repository_nodes_total Total number of nodes in the repository\n");
-        sb.append("# TYPE nemaki_repository_nodes_total gauge\n");
-        sb.append("nemaki_repository_nodes_total{repository=\"").append(repositoryId).append("\"} ")
-                .append(nodeCount).append("\n");
-
-        sb.append("# HELP nemaki_repository_documents_total Total number of documents in the repository\n");
-        sb.append("# TYPE nemaki_repository_documents_total gauge\n");
-        sb.append("nemaki_repository_documents_total{repository=\"").append(repositoryId).append("\"} ")
-                .append(documentCount).append("\n");
-
-        sb.append("# HELP nemaki_repository_folders_total Total number of folders in the repository\n");
-        sb.append("# TYPE nemaki_repository_folders_total gauge\n");
-        sb.append("nemaki_repository_folders_total{repository=\"").append(repositoryId).append("\"} ")
-                .append(folderCount).append("\n");
+        // Repository object counts are not yet instrumented.
+        // Omitted to avoid returning misleading zero values to monitoring systems.
+        // TODO: Integrate with ContentDaoService views to expose actual counts.
     }
 
     private void appendJobMetrics(StringBuilder sb, String repositoryId) {
-        // TODO: Integrate with actual job queue
-        int pendingJobs = 0;
-        int runningJobs = 0;
-
-        sb.append("# HELP nemaki_jobs_pending Number of pending jobs\n");
-        sb.append("# TYPE nemaki_jobs_pending gauge\n");
-        sb.append("nemaki_jobs_pending{repository=\"").append(repositoryId).append("\"} ")
-                .append(pendingJobs).append("\n");
-
-        sb.append("# HELP nemaki_jobs_running Number of running jobs\n");
-        sb.append("# TYPE nemaki_jobs_running gauge\n");
-        sb.append("nemaki_jobs_running{repository=\"").append(repositoryId).append("\"} ")
-                .append(runningJobs).append("\n");
-
+        // Job queue counts (pending/running) are not yet instrumented.
+        // Only the paused flag is real — omit the rest to avoid misleading zeros.
+        // TODO: Integrate with actual job queue to expose pending/running counts.
         sb.append("# HELP nemaki_jobs_paused Whether jobs are paused (1=paused, 0=running)\n");
         sb.append("# TYPE nemaki_jobs_paused gauge\n");
         sb.append("nemaki_jobs_paused{repository=\"").append(repositoryId).append("\"} ")

@@ -1186,7 +1186,7 @@ private ContentService getContentServiceSafe() {
 				getContentService().delete(new SystemCallContext(repositoryId), repositoryId, user.getId(), false);
 				log.debug("User deletion completed successfully");
 			} catch (Exception ex) {
-				ex.printStackTrace();
+				log.error("Failed to delete user: " + userId, ex);
 				status = false;
 				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_DELETE);
 			}
@@ -1261,7 +1261,7 @@ private ContentService getContentServiceSafe() {
 				created = DateUtil.formatSystemDateTime(user.getCreated());
 			}
 		} catch (Exception ex) {
-			ex.printStackTrace();
+			log.warn("Failed to format created date for user " + user.getUserId(), ex);
 		}
 		String modified = new String();
 		try {
@@ -1269,7 +1269,7 @@ private ContentService getContentServiceSafe() {
 				modified = DateUtil.formatSystemDateTime(user.getModified());
 			}
 		} catch (Exception ex) {
-			ex.printStackTrace();
+			log.warn("Failed to format modified date for user " + user.getUserId(), ex);
 		}
 		JSONObject userJSON = new JSONObject();
 		userJSON.clear();
