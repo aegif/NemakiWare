@@ -360,8 +360,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
         await cmisService.createUser(repositoryId, values);
         message.success(t('userManagement.messages.createSuccess'));
       }
+      
+      // Close modal and reset only on success (preserve input on error)
+      setModalVisible(false);
+      setEditingUser(null);
+      form.resetFields();
     } catch (error: any) {
-      // Failed to create/update user
+      // Failed to create/update user — keep modal open so user can retry
       let errorMessage = editingUser ? t('userManagement.messages.updateError') : t('userManagement.messages.createError');
       
       if (error.status === 500) {
@@ -379,12 +384,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       
       message.error(errorMessage);
     } finally {
-      setModalVisible(false);
-      setEditingUser(null);
-      form.resetFields();
+      // Always refresh list (server may have partially succeeded)
       loadUsers();
     }
-  };;
+  };
 
   const handleEdit = (user: User) => {
     setEditingUser(user);

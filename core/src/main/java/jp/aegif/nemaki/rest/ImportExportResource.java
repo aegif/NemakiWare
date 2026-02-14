@@ -1230,11 +1230,10 @@ public class ImportExportResource extends ResourceBase {
                     }
                     entryNames.add(name);
 
-                    // Parse metadata files (fix: apply size limit to JSON files too)
+                    // Parse metadata files (enforce MAX_METADATA_SIZE to prevent OOM)
                     if (name.endsWith(META_SUFFIX)) {
-                        // Check JSON file size limit
                         long jsonSize = entry.getSize();
-                        if (jsonSize > MAX_SINGLE_FILE_SIZE) {
+                        if (jsonSize > MAX_METADATA_SIZE) {
                             result.warnings.add("Skipping large metadata file: " + name + " (size: " + jsonSize + ")");
                             continue;
                         }
@@ -1245,14 +1244,13 @@ public class ImportExportResource extends ResourceBase {
                             long totalRead = 0;
                             while ((len = is.read(buffer)) != -1) {
                                 totalRead += len;
-                                // Monitor size during read if entry.getSize() was -1 (unknown)
-                                if (totalRead > MAX_SINGLE_FILE_SIZE) {
+                                if (totalRead > MAX_METADATA_SIZE) {
                                     result.warnings.add("Skipping metadata file exceeding size limit: " + name);
                                     break;
                                 }
                                 baos.write(buffer, 0, len);
                             }
-                            if (totalRead <= MAX_SINGLE_FILE_SIZE) {
+                            if (totalRead <= MAX_METADATA_SIZE) {
                                 JSONParser parser = new JSONParser();
                                 JSONObject meta = (JSONObject) parser.parse(new String(baos.toByteArray(), "UTF-8"));
                                 String baseName = name.substring(0, name.length() - META_SUFFIX.length());
