@@ -1033,15 +1033,15 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       }
 
       setSelectedRowKeys([]);
-      setBulkDeleteModalVisible(false);
       await loadObjects();
     } catch (error) {
       console.error('[Bulk Delete] Unexpected error:', error);
       message.error(t('documentList.messages.bulkDeleteError'));
     } finally {
+      setBulkDeleteModalVisible(false);
       setBulkDeleteLoading(false);
     }
-  };
+  };;
 
   const handleDownload = (objectId: string) => {
     const url = cmisService.getDownloadUrl(repositoryId, objectId);

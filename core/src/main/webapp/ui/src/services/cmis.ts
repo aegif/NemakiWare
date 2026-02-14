@@ -2753,8 +2753,20 @@ export class CMISService {
     let rootDeleted = false;
 
     if (cascadeParentChild) {
-      // Collect all descendants to delete
-      const descendants = await this.collectParentChildDescendants(repositoryId, objectId);
+      // Collect all descendants to delete, with timeout to prevent hanging
+      let descendants: string[] = [];
+      try {
+        const DESCENDANT_TIMEOUT_MS = 30000; // 30 seconds
+        descendants = await Promise.race([
+          this.collectParentChildDescendants(repositoryId, objectId),
+          new Promise<string[]>((_, reject) =>
+            setTimeout(() => reject(new Error('Descendant collection timed out')), DESCENDANT_TIMEOUT_MS)
+          )
+        ]);
+      } catch (error) {
+        console.warn(`[CASCADE DELETE] Skipping descendant collection for ${objectId}: ${error instanceof Error ? error.message : error}`);
+        // Continue without descendants - deleteTree will handle folder contents
+      }
 
       // Delete descendants from leaves to root
       for (const descendantId of descendants) {

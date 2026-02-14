@@ -94,11 +94,11 @@
 			<param-name>cmisVersion</param-name>
 			<param-value>1.1</param-value>
 		</init-param>
-		<!-- Multipart configuration for file uploads - enhanced limits for TCK compliance -->
+		<!-- Multipart configuration for CMIS file uploads -->
 		<multipart-config>
-			<max-file-size>104857600</max-file-size>        <!-- 100MB - enhanced limit for TCK tests -->
-			<max-request-size>104857600</max-request-size>   <!-- 100MB - enhanced limit for TCK tests -->
-			<file-size-threshold>32768</file-size-threshold> <!-- 32KB - unchanged -->
+			<max-file-size>2147483648</max-file-size>        <!-- 2GB -->
+			<max-request-size>2147483648</max-request-size>   <!-- 2GB -->
+			<file-size-threshold>1048576</file-size-threshold> <!-- 1MB -->
 		</multipart-config>
 		<load-on-startup>2</load-on-startup>
 	</servlet>
@@ -309,6 +309,13 @@
         <param-value>org.glassfish.jersey.server.spring.SpringLifecycleListener</param-value>
     </init-param>
     <load-on-startup>10</load-on-startup>
+    <!-- Multipart configuration for file uploads (import/export, bulk check-in, etc.)
+         For ZIPs larger than 2GB, use filesystem import: extract on server, then import via admin menu -->
+    <multipart-config>
+      <max-file-size>2147483648</max-file-size>        <!-- 2GB -->
+      <max-request-size>2147483648</max-request-size>   <!-- 2GB -->
+      <file-size-threshold>1048576</file-size-threshold> <!-- 1MB: files larger than this are written to disk -->
+    </multipart-config>
  </servlet>
 
  <servlet-mapping>
