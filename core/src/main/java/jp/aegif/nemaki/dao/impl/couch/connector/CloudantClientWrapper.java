@@ -637,44 +637,67 @@ public class CloudantClientWrapper {
 	}
 
 	/**
-	 * Get attachment content length using HEAD request
-	 * CRITICAL: Returns actual attachment size from CouchDB without downloading content
+	 * Get attachment content length from CouchDB _attachments metadata.
+	 * This avoids downloading the entire attachment just to measure its size.
+	 * Falls back to stream counting only if metadata is unavailable.
 	 * @param docId Document ID
 	 * @param attachmentName Attachment name (e.g., "content")
 	 * @return Attachment size in bytes, or null if not found
 	 */
 	public Long getAttachmentSize(String docId, String attachmentName) {
+		// Primary: Use _attachments metadata (no I/O required)
 		try {
-			// CRITICAL TCK FIX: HEAD request returns gzip-encoded size, not actual content size
-			// CouchDB automatically gzip-encodes attachments, so HEAD Content-Length is encoded size
-			// We need to GET the attachment and count actual bytes to get the correct CMIS contentStreamLength
+			GetDocumentOptions options = new GetDocumentOptions.Builder()
+				.db(databaseName)
+				.docId(docId)
+				.build();
+
+			com.ibm.cloud.cloudant.v1.model.Document doc = client.getDocument(options).execute().getResult();
+			if (doc != null && doc.getAttachments() != null) {
+				com.ibm.cloud.cloudant.v1.model.Attachment att = doc.getAttachments().get(attachmentName);
+				if (att != null && att.length() != null) {
+					if (log.isDebugEnabled()) {
+						log.debug("getAttachmentSize (metadata) for " + docId + "/" + attachmentName + ": " + att.length() + " bytes");
+					}
+					return att.length();
+				}
+			}
+		} catch (NotFoundException e) {
+			log.debug("Document not found for attachment metadata: " + docId);
+			return null;
+		} catch (Exception e) {
+			log.warn("Error getting attachment metadata for " + docId + "/" + attachmentName + ": " + e.getMessage());
+			// Fall through to stream-based fallback
+		}
+
+		// Fallback: Download and count bytes (for edge cases where metadata is missing)
+		try {
 			GetAttachmentOptions options = new GetAttachmentOptions.Builder()
 				.db(databaseName)
 				.docId(docId)
 				.attachmentName(attachmentName)
 				.build();
 
-			// GET request with automatic decompression
 			com.ibm.cloud.sdk.core.http.Response<java.io.InputStream> response = client.getAttachment(options).execute();
-			java.io.InputStream stream = response.getResult();
+			try (java.io.InputStream stream = response.getResult()) {
+				long totalBytes = 0;
+				byte[] buffer = new byte[8192];
+				int bytesRead;
+				while ((bytesRead = stream.read(buffer)) != -1) {
+					totalBytes += bytesRead;
+				}
 
-			// Count actual bytes (decompressed)
-			long totalBytes = 0;
-			byte[] buffer = new byte[8192];
-			int bytesRead;
-			while ((bytesRead = stream.read(buffer)) != -1) {
-				totalBytes += bytesRead;
+				if (log.isDebugEnabled()) {
+					log.debug("getAttachmentSize (stream fallback) for " + docId + "/" + attachmentName + ": " + totalBytes + " bytes");
+				}
+				return totalBytes;
 			}
-			stream.close();
-
-			log.debug("Attachment actual size for " + docId + "/" + attachmentName + ": " + totalBytes + " bytes (decompressed)");
-			return totalBytes;
 
 		} catch (NotFoundException e) {
 			log.debug("Attachment not found: " + docId + "/" + attachmentName);
 			return null;
 		} catch (Exception e) {
-			log.warn("Error getting attachment size for " + docId + "/" + attachmentName + ": " + e.getMessage());
+			log.warn("Error getting attachment size for " + docId + "/" + attachmentName + ": " + e.getMessage(), e);
 			return null;
 		}
 	}
@@ -1491,11 +1514,11 @@ public class CloudantClientWrapper {
 	public void create(Object document) {
 		try {
 			log.debug("Creating document of type: " + document.getClass().getSimpleName());
-			
+
 			if (document instanceof jp.aegif.nemaki.model.couch.CouchTypeDefinition) {
 				jp.aegif.nemaki.model.couch.CouchTypeDefinition typeDef = (jp.aegif.nemaki.model.couch.CouchTypeDefinition) document;
 			}
-			
+
 			ObjectMapper mapper = getObjectMapper();
 			Map<String, Object> documentMap;
 			
@@ -1601,9 +1624,9 @@ public class CloudantClientWrapper {
 		if (document instanceof jp.aegif.nemaki.model.couch.CouchRelationship) {
 		}
 
-			
+
 			// Send JSON directly as a raw string to preserve all content
-			
+
 			PostDocumentOptions options = new PostDocumentOptions.Builder()
 				.db(databaseName)
 				.body(new java.io.ByteArrayInputStream(jsonString.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
@@ -1639,7 +1662,7 @@ public class CloudantClientWrapper {
 				jp.aegif.nemaki.model.couch.CouchNodeBase nodeBase = (jp.aegif.nemaki.model.couch.CouchNodeBase) document;
 				nodeBase.setId(result.getId());
 				nodeBase.setRevision(result.getRev());
-				log.info("EKTORP-STYLE: Set ID " + result.getId() + " and revision " + result.getRev() + " back to " + 
+				log.info("EKTORP-STYLE: Set ID " + result.getId() + " and revision " + result.getRev() + " back to " +
 					document.getClass().getSimpleName() + " object for future Ektorp-style updates");
 			}
 		} catch (Exception e) {
@@ -1879,9 +1902,26 @@ public class CloudantClientWrapper {
 						}
 
 						// CRITICAL: doc.getProperties() does NOT include _attachments.
-						// Use doc.getAttachments() to get CouchDB _attachments metadata
-						// for accurate file size and MIME type.
-						Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> docAttachments = doc.getAttachments();
+						// Re-fetch with attEncodingInfo=true to get encoding metadata
+						// (gzip detection), which is essential for accurate content length.
+						// Without this, CouchDB gzip-compressed attachments report compressed
+						// size as length, causing content stream truncation on download.
+						Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> docAttachments = null;
+						try {
+							GetDocumentOptions encInfoOptions = new GetDocumentOptions.Builder()
+								.db(databaseName)
+								.docId(id)
+								.attEncodingInfo(true)
+								.build();
+							com.ibm.cloud.cloudant.v1.model.Document encInfoDoc =
+								client.getDocument(encInfoOptions).execute().getResult();
+							if (encInfoDoc != null) {
+								docAttachments = encInfoDoc.getAttachments();
+							}
+						} catch (Exception encInfoEx) {
+							log.debug("Failed to get attEncodingInfo for " + id + ", falling back to doc.getAttachments(): " + encInfoEx.getMessage());
+							docAttachments = doc.getAttachments();
+						}
 						if (docAttachments != null && !docAttachments.isEmpty()) {
 							Map<String, Map<String, Object>> attachmentsMap = new HashMap<>();
 							for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Attachment> attEntry : docAttachments.entrySet()) {
@@ -1892,6 +1932,13 @@ public class CloudantClientWrapper {
 								attInfo.put("digest", att.digest());
 								attInfo.put("revpos", att.revpos());
 								attInfo.put("stub", att.stub());
+								// Include encoding info if available (from attEncodingInfo=true)
+								if (att.encoding() != null) {
+									attInfo.put("encoding", att.encoding());
+								}
+								if (att.encodedLength() != null) {
+									attInfo.put("encoded_length", att.encodedLength());
+								}
 								attachmentsMap.put(attEntry.getKey(), attInfo);
 							}
 							completeMap.put("_attachments", attachmentsMap);
@@ -2287,7 +2334,8 @@ public class CloudantClientWrapper {
 	}
 
 	/**
-	 * Get attachment using Cloudant SDK
+	 * Get attachment using Cloudant SDK.
+	 * OkHttp transparently handles gzip decompression, so the returned stream is always decompressed.
 	 */
 	public Object getAttachment(String docId, String attachmentName) {
 		try {
@@ -2297,27 +2345,26 @@ public class CloudantClientWrapper {
 				.attachmentName(attachmentName)
 				.build();
 
-			// Get attachment as InputStream
-			java.io.InputStream attachmentStream = client.getAttachment(options).execute().getResult();
+			com.ibm.cloud.sdk.core.http.Response<java.io.InputStream> response = client.getAttachment(options).execute();
+			java.io.InputStream attachmentStream = response.getResult();
+
 			log.debug("Retrieved attachment: " + attachmentName + " from document: " + docId);
-			
 			return attachmentStream;
 
 		} catch (NotFoundException e) {
 			log.debug("Attachment not found: " + attachmentName + " in document: " + docId);
-			// Ektorp compatibility: throw exception instead of returning null
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException(
 				"Attachment '" + attachmentName + "' not found in document '" + docId + "'", e);
 		} catch (Exception e) {
 			log.warn("Error retrieving attachment '" + attachmentName + "' from document '" + docId + "': " + e.getMessage());
-			// Ektorp compatibility: throw exception instead of swallowing errors
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
 				"Failed to retrieve attachment '" + attachmentName + "' from document '" + docId + "'", e);
 		}
 	}
 
 	/**
-	 * Get attachment with revision using Cloudant SDK
+	 * Get attachment with revision using Cloudant SDK.
+	 * OkHttp transparently handles gzip decompression, so the returned stream is always decompressed.
 	 */
 	public Object getAttachment(String docId, String attachmentName, String revision) {
 		try {
@@ -2331,20 +2378,18 @@ public class CloudantClientWrapper {
 				builder.rev(revision);
 			}
 
-			// Get attachment as InputStream
-			java.io.InputStream attachmentStream = client.getAttachment(builder.build()).execute().getResult();
+			com.ibm.cloud.sdk.core.http.Response<java.io.InputStream> response = client.getAttachment(builder.build()).execute();
+			java.io.InputStream attachmentStream = response.getResult();
+
 			log.debug("Retrieved attachment: " + attachmentName + " from document: " + docId + " (revision: " + revision + ")");
-			
 			return attachmentStream;
 
 		} catch (NotFoundException e) {
 			log.debug("Attachment not found: " + attachmentName + " in document: " + docId + " (revision: " + revision + ")");
-			// Ektorp compatibility: throw exception instead of returning null
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException(
 				"Attachment '" + attachmentName + "' not found in document '" + docId + "' (revision: " + revision + ")", e);
 		} catch (Exception e) {
 			log.warn("Error retrieving attachment '" + attachmentName + "' from document '" + docId + "' (revision: " + revision + "): " + e.getMessage());
-			// Ektorp compatibility: throw exception instead of swallowing errors
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
 				"Failed to retrieve attachment '" + attachmentName + "' from document '" + docId + "' (revision: " + revision + ")", e);
 		}

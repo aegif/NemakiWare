@@ -18,9 +18,11 @@ export interface RAGReindexStatus {
   status: 'idle' | 'running' | 'completed' | 'error' | 'cancelled';
   totalDocuments: number;
   indexedCount: number;
+  skippedCount: number;
   errorCount: number;
   startTime: number;
   endTime: number;
+  currentDocument: string | null;
   currentFolder: string | null;
   errorMessage: string | null;
   errors: string[];

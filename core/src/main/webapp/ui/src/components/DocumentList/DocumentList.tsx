@@ -1748,7 +1748,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                     {t('documentList.createFolder')}
                   </Button>
                 )}
-                {canCreateDoc && authToken?.isAdmin && (
+                {canCreateDoc && (
                   <Button
                     icon={<ImportOutlined />}
                     onClick={() => setImportModalVisible(true)}
@@ -2300,24 +2300,44 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
           {isImporting && (
             <div style={{ marginBottom: 16 }}>
-              <p>{t('importExport.importInProgress')}</p>
-              <div style={{ 
-                width: '100%', 
-                height: 8, 
-                backgroundColor: '#f0f0f0', 
+              <p>{importProgress >= 100
+                ? t('importExport.serverProcessing')
+                : t('importExport.importInProgress')}</p>
+              <div style={{
+                width: '100%',
+                height: 8,
+                backgroundColor: '#f0f0f0',
                 borderRadius: 4,
                 overflow: 'hidden'
               }}>
-                <div style={{ 
-                  width: `${importProgress}%`, 
-                  height: '100%', 
-                  backgroundColor: '#1890ff',
-                  transition: 'width 0.3s ease'
-                }} />
+                {importProgress >= 100 ? (
+                  <div style={{
+                    width: '100%',
+                    height: '100%',
+                    background: 'linear-gradient(90deg, #1890ff 25%, #40a9ff 50%, #1890ff 75%)',
+                    backgroundSize: '200% 100%',
+                    animation: 'importStripe 1.5s linear infinite',
+                  }} />
+                ) : (
+                  <div style={{
+                    width: `${importProgress}%`,
+                    height: '100%',
+                    backgroundColor: '#1890ff',
+                    transition: 'width 0.3s ease'
+                  }} />
+                )}
               </div>
               <p style={{ textAlign: 'center', marginTop: 8 }}>
-                {t('importExport.progress', { progress: importProgress })}
+                {importProgress >= 100
+                  ? t('importExport.serverProcessing')
+                  : t('importExport.progress', { progress: importProgress })}
               </p>
+              <style>{`
+                @keyframes importStripe {
+                  0% { background-position: 200% 0; }
+                  100% { background-position: -200% 0; }
+                }
+              `}</style>
             </div>
           )}
 

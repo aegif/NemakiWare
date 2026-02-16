@@ -1172,16 +1172,9 @@ public class CompileServiceImpl implements CompileService {
 			return new PropertiesImpl();
 		}
 		
-		// FORCE ERROR log for visibility
-		log.debug("=== COMPILE PROPERTIES DEBUG ===");
-		log.error("Repository: " + repositoryId);
-		log.error("Content ID: " + content.getId());
-		log.error("Content Name: " + content.getName());
-		log.error("Content Type: " + content.getClass().getSimpleName());
-		log.error("Is Document: " + content.isDocument());
-		if (content.isDocument()) {
-			Document doc = (Document) content;
-			log.error("Document AttachmentNodeId: " + doc.getAttachmentNodeId());
+		if (log.isDebugEnabled()) {
+			log.debug("compileProperties: repo=" + repositoryId + ", id=" + content.getId()
+				+ ", name=" + content.getName() + ", type=" + content.getClass().getSimpleName());
 		}
 		
 		// Set coercion audit context for structured logging of data loss events
@@ -1600,22 +1593,15 @@ public class CompileServiceImpl implements CompileService {
 		String mimeType = null;
 		String fileName = null;
 		String streamId = null;
-		AttachmentNode attachment = null; // Add attachment variable to method scope
+		AttachmentNode attachment = null;
 
 		// Check if ContentStream is attached
 		DocumentTypeDefinition dtdf = (DocumentTypeDefinition) tdf;
 		ContentStreamAllowed csa = dtdf.getContentStreamAllowed();
 		
-		// DEBUG: Log attachment properties processing when debug enabled
 		if (log.isDebugEnabled()) {
 			log.debug("setCmisAttachmentProperties - Document: " + document.getName() + " (ID: " + document.getId() + 
-				"), ContentStreamAllowed: " + csa + ", AttachmentNodeId: " + document.getAttachmentNodeId() + 
-				", Document type: " + document.getObjectType());
-		}
-		
-		// CLOUDANT SDK FIX: Improved attachment handling with _rev consistency
-		if (log.isDebugEnabled()) {
-			log.debug("Content stream processing - document=" + document.getName() + ", csa=" + csa + ", attachmentId=" + document.getAttachmentNodeId());
+				"), ContentStreamAllowed: " + csa + ", AttachmentNodeId: " + document.getAttachmentNodeId());
 		}
 		
 		if (ContentStreamAllowed.REQUIRED == csa
@@ -1624,58 +1610,25 @@ public class CompileServiceImpl implements CompileService {
 			attachment = getAttachmentWithRetry(repositoryId, document.getAttachmentNodeId(), document.getId());
 
 			if (attachment == null) {
-				// CLOUDANT SDK FIX: Handle null attachment with proper logging and CMIS compliance
 				if (log.isDebugEnabled()) {
 					log.debug("Attachment not found for document " + document.getId() + " (attachmentId=" + document.getAttachmentNodeId() + ")");
 				}
 				
-				// CMIS 1.1 COMPLIANCE: Don't set content stream properties when no attachment exists
-				// This prevents TCK test failures with "content stream length property value doesn't match actual content length"
 				if (ContentStreamAllowed.REQUIRED == csa) {
 					log.warn("Document type requires content stream but no attachment found - document may be incomplete");
 				}
 			} else {
-				if (log.isDebugEnabled()) {
-					log.debug("Attachment found: length=" + attachment.getLength() + ", mimeType=" + attachment.getMimeType());
-				}
-				
-				// CRITICAL TCK FIX: Handle attachment length with proper CMIS 1.1 compliance
+				// Use AttachmentNode metadata length from CouchDB _attachments metadata.
+				// CouchAttachmentNode deserialization already populates length from _attachments.
+				// No need to download the entire stream just to measure size.
 				long attachmentLength = attachment.getLength();
-				if (log.isDebugEnabled()) {
-					log.debug("Attachment raw length from DB: " + attachmentLength);
+				if (attachmentLength >= 0) {
+					length = attachmentLength;
+				} else {
+					length = -1L;
 				}
-				
-				// CRITICAL TCK FIX: Always retrieve actual size from CouchDB
-				// This ensures cmis:contentStreamLength is always accurate, even after appendContent
-				if (true) {
-					if (log.isDebugEnabled()) {
-						log.debug("Retrieving actual attachment size from CouchDB for " + attachment.getId());
-					}
-
-					// CLOUDANT SDK: Try to get actual attachment size with _rev safety
-					try {
-						Long actualSize = contentService.getAttachmentActualSize(repositoryId, attachment.getId());
-						if (actualSize != null && actualSize > 0) {
-							length = actualSize;
-							if (log.isDebugEnabled()) {
-								log.debug("Retrieved actual attachment size: " + actualSize + " bytes for attachment " + attachment.getId());
-							}
-						} else {
-							// CRITICAL TCK FIX: For TCK compliance, use -1 for unknown size instead of null
-							// This prevents ContentStream properties from being omitted completely
-							length = -1L; // CMIS 1.1 specification: -1 indicates unknown content length
-							if (log.isDebugEnabled()) {
-								log.debug("Could not retrieve actual attachment size, using -1L for unknown size (CMIS 1.1 standard)");
-							}
-						}
-					} catch (Exception e) {
-						log.warn("Exception retrieving actual attachment size: " + e.getMessage());
-						// CRITICAL TCK FIX: Use -1L instead of null for better TCK compliance
-						length = -1L; // CMIS 1.1 standard: -1 for unknown content length
-						if (log.isDebugEnabled()) {
-							log.debug("Exception occurred, using -1L for unknown length (CMIS 1.1 compliant)");
-						}
-					}
+				if (log.isDebugEnabled()) {
+					log.debug("Attachment length from metadata: " + length + " bytes for " + attachment.getId());
 				}
 				
 				mimeType = attachment.getMimeType();
@@ -1686,76 +1639,34 @@ public class CompileServiceImpl implements CompileService {
 				}
 				streamId = attachment.getId();
 			}
-		} else {
-			if (log.isDebugEnabled()) {
-				log.debug("Condition NOT met: not REQUIRED and not (ALLOWED + has attachmentId)");
-			}
 		}
 
 		// Add ContentStream properties to Document object - CMIS 1.1 compliant
-		// CRITICAL: Handle CMIS content stream property rules correctly
-		if (log.isDebugEnabled()) {
-			log.debug("Final state before property setting:");
-			log.debug("  - attachment: " + (attachment != null ? "EXISTS" : "NULL"));
-			log.debug("  - length: " + length);
-			log.debug("  - mimeType: " + mimeType);
-			log.debug("  - fileName: " + fileName);
-			log.debug("  - streamId: " + streamId);
-		}
 		if (attachment != null && length != null) {
-			// Case 1: Content stream exists with known size (length >= 0)
-			// Case 2: Content stream exists with unknown size (length = -1)
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_LENGTH, length >= 0 ? length : -1L);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_MIME_TYPE, mimeType);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_FILE_NAME, fileName);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_ID, streamId);
 		} else if (ContentStreamAllowed.REQUIRED == csa && attachment == null) {
-			// Case 3: Required content stream but no attachment - this is an error state
-			// Set properties to indicate missing required content stream
-			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_LENGTH, -1L); // Unknown size for missing stream
+			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_LENGTH, -1L);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_MIME_TYPE, null);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_FILE_NAME, null);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_ID, null);
 		} else if (ContentStreamAllowed.ALLOWED == csa && attachment == null && StringUtils.isBlank(document.getAttachmentNodeId())) {
-			// CRITICAL TCK FIX (2025-10-05): Case 3.5 - CMIS 1.1 compliance for ALLOWED content streams
-			//
-			// CMIS 1.1 Specification: For ContentStreamAllowed=ALLOWED documents WITHOUT content:
-			// - Content stream properties MUST exist in the response
-			// - Properties should have -1/null values to indicate no content
-			// - This applies to: documents created without content, documents with deleted content
-			//
-			// TCK Requirement: createDocumentWithoutContent test expects all 4 properties to exist
-			// Correct behavior: Set properties to -1/null when attachmentNodeId is blank
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_LENGTH, -1L);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_MIME_TYPE, null);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_FILE_NAME, null);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_ID, null);
 		} else if (ContentStreamAllowed.ALLOWED == csa && attachment == null && StringUtils.isNotBlank(document.getAttachmentNodeId())) {
-			// CRITICAL TCK FIX (2025-10-11): Case 3.6 - Orphaned attachment reference
-			//
-			// Investigation results:
-			// - Document has attachmentNodeId but attachment node missing from CouchDB
-			// - TCK requires ALL properties in query results (including content stream properties)
-			// - Setting length=-1 prevents ObjectInfo.hasContent=true (CmisService treats length=-1 as "no content")
-			// - This satisfies both TCK query requirements AND prevents "Content stream is null!" errors
-			//
-			// Solution: Set content stream properties with null/sentinel values
-			// - length=-1: Signals "no content" to CmisService.hasContent logic
-			// - mimeType/fileName/streamId=null: No actual content metadata
-			// - Result: Properties in query response, but no <atom:content> element in AtomPub XML
 			log.warn("Orphaned attachment reference detected - attachmentNodeId=" + document.getAttachmentNodeId() +
 				" exists but attachment node not found. Setting content properties with null/sentinel values for TCK compliance.");
 
-			// TCK FIX: Set properties for query results, but use length=-1 to prevent hasContent=true
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_LENGTH, -1L);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_MIME_TYPE, null);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_FILE_NAME, null);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_ID, null);
 		} else {
-			// Case 4: ContentStreamAllowed.NOTALLOWED or other cases - don't set properties
-		}
-		if (log.isDebugEnabled()) {
-			log.debug("END DEBUG setCmisAttachmentProperties");
+			// Case: ContentStreamAllowed.NOTALLOWED or other cases - don't set properties
 		}
 	}
 
