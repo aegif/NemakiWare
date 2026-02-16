@@ -174,6 +174,12 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- RSS Token views for token persistence -->
+				<bean class="jp.aegif.nemaki.patch.Patch_RssTokenViews">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
@@ -296,6 +302,12 @@
 	</bean>
 
 	<bean id="patch_RetentionExpirationView" class="jp.aegif.nemaki.patch.Patch_RetentionExpirationView">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_RssTokenViews" class="jp.aegif.nemaki.patch.Patch_RssTokenViews">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

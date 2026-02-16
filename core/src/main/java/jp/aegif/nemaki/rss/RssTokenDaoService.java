@@ -48,11 +48,14 @@ public interface RssTokenDaoService {
     
     /**
      * Get a token by its token value.
+     * When repositoryId is specified, searches only that repository.
+     * When repositoryId is null, searches all repositories.
      * 
+     * @param repositoryId The repository ID to search in (null for all repositories)
      * @param tokenValue The token value
      * @return The token if found, null otherwise
      */
-    RssToken getByToken(String tokenValue);
+    RssToken getByToken(String repositoryId, String tokenValue);
     
     /**
      * Get all tokens for a user.

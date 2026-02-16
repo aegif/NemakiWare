@@ -128,7 +128,31 @@
 			<ref bean="ContentDaoService" />
 		</property>
 	</bean>
-	<bean id="rssTokenService" class="jp.aegif.nemaki.rss.RssTokenService" />
+	<bean id="rssTokenService" class="jp.aegif.nemaki.rss.RssTokenService">
+		<property name="rssTokenDaoService">
+			<ref bean="RssTokenDaoService" />
+		</property>
+	</bean>
+
+	<!-- RSS Token DAO Service -->
+	<bean id="RssTokenDaoService" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.rss.RssTokenDaoService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="rssTokenDaoServiceImpl" />
+		</property>
+	</bean>
+	<bean id="rssTokenDaoServiceImpl" class="jp.aegif.nemaki.dao.impl.couch.RssTokenDaoServiceImpl">
+		<property name="connectorPool">
+			<ref bean="connectorPool" />
+		</property>
+		<property name="repositoryInfoMap">
+			<ref bean="repositoryInfoMap" />
+		</property>
+	</bean>
 
 	<bean id="PrincipalService" class="org.springframework.aop.framework.ProxyFactoryBean">
 		<property name="proxyInterfaces">

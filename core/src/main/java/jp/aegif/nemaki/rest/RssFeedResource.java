@@ -624,7 +624,7 @@ public class RssFeedResource extends ResourceBase {
         if (tokenService == null) {
             return null;
         }
-        RssToken token = tokenService.validateToken(tokenValue);
+        RssToken token = tokenService.validateToken(repositoryId, tokenValue);
         if (token == null) {
             return null;
         }

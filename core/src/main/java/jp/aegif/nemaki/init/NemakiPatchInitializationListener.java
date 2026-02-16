@@ -85,9 +85,6 @@ public class NemakiPatchInitializationListener implements ServletContextListener
         }
     }
 
-    /**
-     * Apply patches by retrieving them from Spring context
-     */
     private void applyPatchesFromSpringContext(WebApplicationContext springContext) {
         try {
             // Patch execution order (CRITICAL: System folder must be first)
@@ -96,7 +93,8 @@ public class NemakiPatchInitializationListener implements ServletContextListener
                 "patch_InitialContentSetup",     // Creates Sites and Technical Documents folders
                 "patch_StandardCmisViews",       // Creates CMIS views
                 "patch_TestUserInitialization",  // Creates test users
-                "patch_McpServiceAccount"        // Creates MCP service account for API access
+                "patch_McpServiceAccount",       // Creates MCP service account for API access
+                "patch_RssTokenViews"            // Creates RSS token views for token persistence
             };
 
             for (String beanName : patchBeanNames) {
