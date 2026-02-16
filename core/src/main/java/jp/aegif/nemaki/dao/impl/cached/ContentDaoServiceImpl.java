@@ -1058,10 +1058,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Change create(String repositoryId, Change change) {
 		Change created = nonCachedContentDaoService.create(repositoryId, change);
-		Change latest = nonCachedContentDaoService.getLatestChange(repositoryId);
+		// The newly created change IS the latest change - no need to re-query the entire view
 		nemakiCachePool.get(repositoryId).getLatestChangeTokenCache().removeAll();
 		nemakiCachePool.get(repositoryId).getLatestChangeTokenCache()
-				.put(TOKEN_CACHE_LATEST_CHANGE_TOKEN, latest);
+				.put(TOKEN_CACHE_LATEST_CHANGE_TOKEN, created);
 		return created;
 	}
 

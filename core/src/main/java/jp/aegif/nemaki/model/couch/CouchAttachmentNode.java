@@ -156,23 +156,39 @@ public class CouchAttachmentNode extends CouchNodeBase{
 	}
 	
 	/**
-	 * Gets the actual file length from CouchDB _attachments or falls back to stored length
-	 * CRITICAL: This method provides the correct file size for CMIS content stream properties
-	 * @return actual file length
+	 * Gets the actual file length from CouchDB _attachments or falls back to stored length.
+	 * CRITICAL: When CouchDB uses gzip encoding, _attachments.length is the compressed size,
+	 * not the actual content size. The stored metadata length field may also be the compressed size
+	 * (set from _attachments at creation time). In that case, return -1 (unknown) to avoid
+	 * truncating the content stream during download.
+	 * @return actual file length, or -1 if unknown (e.g. gzip-encoded)
 	 */
 	public long getActualLength() {
-		// First try to get length from CouchDB _attachments (most accurate)
+		// Check if any attachment uses gzip encoding
+		boolean hasGzipEncoding = false;
 		if (attachments != null && !attachments.isEmpty()) {
 			for (AttachmentInfo info : attachments.values()) {
-				if (info != null && info.getLength() > 0) {
-					// Found actual CouchDB attachment size
-					return info.getLength();
+				if (info != null) {
+					long contentLength = info.getActualContentLength();
+					if (contentLength >= 0) {
+						// Non-gzip: _attachments length is the true uncompressed size
+						return contentLength;
+					}
+					// contentLength == -1 means gzip-encoded
+					hasGzipEncoding = true;
 				}
 			}
 		}
+
+		if (hasGzipEncoding) {
+			// When gzip encoding is present, the stored metadata length field is also unreliable
+			// because it was likely set from the compressed _attachments.length at upload time.
+			// Return -1 (unknown) so HTTP response uses chunked transfer instead of truncating.
+			return -1;
+		}
 		
-		// Fall back to stored length field (but prefer actual CouchDB data)
-		return length > 0 ? length : 0;
+		// No _attachments info available: use stored length field
+		return length >= 0 ? length : 0;
 	}
 	
 	/**
@@ -285,6 +301,11 @@ public class CouchAttachmentNode extends CouchNodeBase{
 		private int revpos;
 		
 		private boolean stub;
+
+		private String encoding;
+
+		@JsonProperty("encoded_length")
+		private long encodedLength;
 		
 		public String getContentType() {
 			return contentType;
@@ -324,6 +345,38 @@ public class CouchAttachmentNode extends CouchNodeBase{
 		
 		public void setStub(boolean stub) {
 			this.stub = stub;
+		}
+
+		public String getEncoding() {
+			return encoding;
+		}
+
+		public void setEncoding(String encoding) {
+			this.encoding = encoding;
+		}
+
+		public long getEncodedLength() {
+			return encodedLength;
+		}
+
+		public void setEncodedLength(long encodedLength) {
+			this.encodedLength = encodedLength;
+		}
+
+		/**
+		 * Returns the actual uncompressed content length.
+		 * When CouchDB uses gzip encoding, _attachments.length may be the compressed size
+		 * (especially for edge cases like empty content). This method detects gzip encoding
+		 * and returns -1 to indicate the length from _attachments is unreliable.
+		 * @return actual length, or -1 if gzip-encoded (unreliable)
+		 */
+		public long getActualContentLength() {
+			if ("gzip".equals(encoding)) {
+				// When gzip encoding is present, _attachments.length may be compressed size
+				// Return -1 to signal caller should not trust this value
+				return -1;
+			}
+			return length;
 		}
 	}
 }

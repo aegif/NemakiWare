@@ -25,9 +25,11 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.locks.Lock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -481,6 +483,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			numFound = docs.getNumFound();
 
 			List<Content> contents = new ArrayList<Content>();
+			Set<String> seenIds = new HashSet<String>();
 			for (SolrDocument doc : docs) {
 				// Type-safe field value extraction
 				String docId = extractStringFieldValue(doc, "object_id");
@@ -488,7 +491,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 					logger.warn("Skipping document with null object_id");
 					continue;
 				}
-				
+				if (!seenIds.add(docId)) {
+					logger.warn("[objectId=" + docId + "] Duplicate entry in Solr, skipping.");
+					continue;
+				}
+
 				Content c = contentService.getContent(repositoryId, docId);
 
 				// When for some reason the content is missed, pass through

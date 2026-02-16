@@ -48,8 +48,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
-import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
-import com.ibm.cloud.sdk.core.service.exception.ServiceResponseException;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.ContentDaoService;
@@ -79,7 +77,6 @@ import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.model.couch.CouchArchive;
 import jp.aegif.nemaki.model.couch.CouchAttachmentNode;
 import jp.aegif.nemaki.model.couch.CouchChange;
 import jp.aegif.nemaki.model.couch.CouchConfiguration;
@@ -101,6 +98,12 @@ import jp.aegif.nemaki.model.couch.CouchVersionSeries;
 import jp.aegif.nemaki.model.couch.CouchWebAuthnCredential;
 import jp.aegif.nemaki.model.WebAuthnCredential;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.dao.impl.couch.delegate.ArchiveDaoDelegate;
+import jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate;
+import jp.aegif.nemaki.dao.impl.couch.delegate.ChangeEventDaoDelegate;
+import jp.aegif.nemaki.dao.impl.couch.delegate.DaoHelper;
+import jp.aegif.nemaki.dao.impl.couch.delegate.TypeDefinitionDaoDelegate;
+import jp.aegif.nemaki.dao.impl.couch.delegate.UserGroupDaoDelegate;
 import jp.aegif.nemaki.util.spring.SpringContext;
 
 /**
@@ -120,8 +123,42 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	private static final String DESIGN_DOCUMENT = "_design/_repo";
 	private static final String ATTACHMENT_NAME = "content";
 
+	// Delegate instances for decomposed responsibilities
+	private DaoHelper daoHelper;
+	private TypeDefinitionDaoDelegate typeDefinitionDao;
+	private UserGroupDaoDelegate userGroupDao;
+	private AttachmentDaoDelegate attachmentDao;
+	private ChangeEventDaoDelegate changeEventDao;
+	private ArchiveDaoDelegate archiveDao;
+
 	public ContentDaoServiceImpl() {
 
+	}
+
+	/**
+	 * Initialize delegate instances once both connectorPool and repositoryInfoMap are set.
+	 * Called from setters since Spring uses setter injection.
+	 */
+	private void initDelegates() {
+		if (connectorPool == null || repositoryInfoMap == null) {
+			return; // Wait until both dependencies are injected
+		}
+		if (daoHelper != null) {
+			return; // Already initialized
+		}
+		daoHelper = new DaoHelper();
+		typeDefinitionDao = new TypeDefinitionDaoDelegate(
+			connectorPool, daoHelper,
+			() -> {
+				TypeManager tm = (TypeManager) SpringContext.getBean("typeManager");
+				if (tm != null) { tm.refreshTypes(); }
+			},
+			(repoId, nodeId) -> delete(repoId, nodeId)
+		);
+		userGroupDao = new UserGroupDaoDelegate(connectorPool, daoHelper);
+		attachmentDao = new AttachmentDaoDelegate(connectorPool, daoHelper);
+		changeEventDao = new ChangeEventDaoDelegate(connectorPool, daoHelper);
+		archiveDao = new ArchiveDaoDelegate(connectorPool, repositoryInfoMap, daoHelper);
 	}
 
 	/**
@@ -147,615 +184,80 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	// ///////////////////////////////////////
-	// Type & Property definition
+	// Type & Property definition (delegated to TypeDefinitionDaoDelegate)
 	// ///////////////////////////////////////
 	@Override
 	public List<NemakiTypeDefinition> getTypeDefinitions(String repositoryId) {
-		try {
-			// Use ViewQuery to get type definitions from design document
-			
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			// CRITICAL FIX: Must include documents to get full type definition data
-			queryParams.put("include_docs", true);
-			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "typeDefinitions", queryParams);
-			
-			List<NemakiTypeDefinition> typeDefinitions = new ArrayList<NemakiTypeDefinition>();
-			
-			// Handle null result gracefully (occurs during initial startup when design documents may not exist yet)
-			if (result != null && result.getRows() != null) {
-				int processedCount = 0;
-				
-				for (ViewResultRow row : result.getRows()) {
-					processedCount++;
-					
-					if (row.getDoc() != null) {
-						// Convert document to CouchTypeDefinition, then to NemakiTypeDefinition
-						try {
-							// Handle both Document and Map types from Cloudant SDK
-							Map<String, Object> docMap = null;
-							Object docObj = row.getDoc();
-							
-							if (docObj instanceof Map) {
-								// Already a Map, use directly
-								docMap = (Map<String, Object>) docObj;
-								} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
-								// Convert Document to Map using properties
-								com.ibm.cloud.cloudant.v1.model.Document doc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
-								docMap = doc.getProperties();
-								
-								// CRITICAL FIX: Add CouchDB metadata (_id, _rev) to properties map
-								// getProperties() only returns document content, not CouchDB metadata
-								// CouchNodeBase constructor needs _id and _rev fields for proper object initialization
-								if (doc.getId() != null) {
-									docMap.put("_id", doc.getId());
-									}
-								if (doc.getRev() != null) {
-									docMap.put("_rev", doc.getRev());
-									}
-								
-								} else {
-									continue;
-							}
-									String typeId = (String) docMap.get("typeId");
-									
-								
-	
-								
-	
-								
-	
-								
-	
-								
-	
-								
-								CouchTypeDefinition ctd = new CouchTypeDefinition(docMap);
-
-								
-									if (ctd != null) {
-									typeDefinitions.add(ctd.convert());
-								}
-						} catch (Exception e) {
-							String typeId = "unknown";
-							try {
-								Object docObj = row.getDoc();
-								if (docObj instanceof Map) {
-									typeId = (String) ((Map<String, Object>) docObj).get("typeId");
-								} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
-									typeId = (String) ((com.ibm.cloud.cloudant.v1.model.Document) docObj).getProperties().get("typeId");
-								}
-							} catch (Exception ex) {
-								// Ignore, use default "unknown"
-							}
-								e.printStackTrace();
-							log.warn("Failed to convert type definition document: " + e.getMessage());
-							if (log.isDebugEnabled()) {
-								e.printStackTrace();
-							}
-						}
-					}
-				}
-			}
-			
-				
-			// If no types found via ViewQuery, return basic CMIS types as fallback
-			if (typeDefinitions.isEmpty()) {
-					log.warn("No type definitions found via ViewQuery, returning basic CMIS types as fallback");
-				
-				// Create basic folder type definition
-				NemakiTypeDefinition folderType = new NemakiTypeDefinition();
-				folderType.setId("cmis:folder");
-				folderType.setType("typeDefinition");
-				folderType.setBaseId(BaseTypeId.CMIS_FOLDER);
-				folderType.setTypeId("cmis:folder");
-				typeDefinitions.add(folderType);
-				
-				// Create basic document type definition
-				NemakiTypeDefinition documentType = new NemakiTypeDefinition();
-				documentType.setId("cmis:document");
-				documentType.setType("typeDefinition");
-				documentType.setBaseId(BaseTypeId.CMIS_DOCUMENT);
-				documentType.setTypeId("cmis:document");
-				typeDefinitions.add(documentType);
-			}
-			
-			log.debug("Retrieved " + typeDefinitions.size() + " type definitions from repository: " + repositoryId);
-			return typeDefinitions;
-			
-		} catch (Exception e) {
-			log.error("Error retrieving type definitions from repository '" + repositoryId + "': " + e.getMessage(), e);
-			
-			// Return basic CMIS types as fallback in case of error
-			List<NemakiTypeDefinition> fallbackTypes = new ArrayList<NemakiTypeDefinition>();
-			
-			NemakiTypeDefinition folderType = new NemakiTypeDefinition();
-			folderType.setId("cmis:folder");
-			folderType.setType("typeDefinition");
-			folderType.setBaseId(BaseTypeId.CMIS_FOLDER);
-			folderType.setTypeId("cmis:folder");
-			fallbackTypes.add(folderType);
-			
-			NemakiTypeDefinition documentType = new NemakiTypeDefinition();
-			documentType.setId("cmis:document");
-			documentType.setType("typeDefinition");
-			documentType.setBaseId(BaseTypeId.CMIS_DOCUMENT);
-			documentType.setTypeId("cmis:document");
-			fallbackTypes.add(documentType);
-			
-			log.warn("Using fallback type definitions due to error");
-			return fallbackTypes;
-		}
+		return typeDefinitionDao.getTypeDefinitions(repositoryId);
 	}
 
 	@Override
 	public NemakiTypeDefinition getTypeDefinition(String repositoryId, String typeId) {
-		throw new UnsupportedOperationException(Thread.currentThread().getStackTrace()[0].getMethodName()
-				+ ":this method is only for cahced service. No need for implementation.");
+		return typeDefinitionDao.getTypeDefinition(repositoryId, typeId);
 	}
 
 	@Override
 	public NemakiTypeDefinition createTypeDefinition(String repositoryId, NemakiTypeDefinition typeDefinition) {
-				
-		// Step 1: Create CouchTypeDefinition
-			CouchTypeDefinition ct = new CouchTypeDefinition(typeDefinition);
-			
-		// Step 2: Call CloudantClientWrapper create
-					
-		try {
-			connectorPool.getClient(repositoryId).create(ct);
-			} catch (Exception e) {
-				e.printStackTrace();
-			throw e;
-		}
-			
-		// Step 3: Convert back to NemakiTypeDefinition
-			NemakiTypeDefinition result = ct.convert();
-			
-		if (typeManager != null) {
-			typeManager.refreshTypes();
-		}
-		
-			return result;
+		return typeDefinitionDao.createTypeDefinition(repositoryId, typeDefinition);
 	}
 
 	@Override
 	public NemakiTypeDefinition updateTypeDefinition(String repositoryId, NemakiTypeDefinition typeDefinition) {
-		CouchTypeDefinition cp = connectorPool.getClient(repositoryId).get(CouchTypeDefinition.class, typeDefinition.getId());
-		CouchTypeDefinition update = new CouchTypeDefinition(typeDefinition);
-		update.setRevision(cp.getRevision());
-
-		connectorPool.getClient(repositoryId).update(update);
-		return update.convert();
+		return typeDefinitionDao.updateTypeDefinition(repositoryId, typeDefinition);
 	}
 
 	@Override
 	public void deleteTypeDefinition(String repositoryId, String nodeId) {
-				
-			delete(repositoryId, nodeId);
-		}
-
+		typeDefinitionDao.deleteTypeDefinition(repositoryId, nodeId);
+	}
 
 	@Override
 	public void clearTypeCache(String repositoryId) {
-		// No-op: Non-cached implementation doesn't have a cache to clear
+		typeDefinitionDao.clearTypeCache(repositoryId);
 	}
 
 	@Override
 	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores(String repositoryId) {
-		try {
-			// Use ViewQuery to get property definition cores from design document
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "propertyDefinitionCores", queryParams);
-			
-			List<NemakiPropertyDefinitionCore> cores = new ArrayList<NemakiPropertyDefinitionCore>();
-			
-			if (result.getRows() != null) {
-				for (ViewResultRow row : result.getRows()) {
-					if (row.getDoc() != null) {
-						try {
-							
-							ObjectMapper mapper = createConfiguredObjectMapper();
-							
-							// CRITICAL FIX: Create order-isolated Map to prevent JSON sequence contamination
-							// Handle both Document and Map types from Cloudant SDK
-							Map<String, Object> originalDoc = null;
-							Object docObj = row.getDoc();
-							
-							if (docObj instanceof Map) {
-								// Already a Map, use directly
-								originalDoc = (Map<String, Object>) docObj;
-							} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
-								// Convert Document to Map using properties
-								com.ibm.cloud.cloudant.v1.model.Document doc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
-								originalDoc = doc.getProperties();
-								
-								// Add CouchDB metadata (_id, _rev) to properties map
-								if (doc.getId() != null) {
-									originalDoc.put("_id", doc.getId());
-								}
-								if (doc.getRev() != null) {
-									originalDoc.put("_rev", doc.getRev());
-								}
-							} else {
-								continue;
-							}
-							
-							Map<String, Object> isolatedDoc = new java.util.LinkedHashMap<>();
-							
-							// CONTAMINATION DEFENSE: Add properties in controlled order to prevent sequence pollution
-							if (originalDoc.containsKey("_id")) isolatedDoc.put("_id", originalDoc.get("_id"));
-							if (originalDoc.containsKey("_rev")) isolatedDoc.put("_rev", originalDoc.get("_rev"));
-							if (originalDoc.containsKey("objectType")) isolatedDoc.put("objectType", originalDoc.get("objectType"));
-							if (originalDoc.containsKey("type")) isolatedDoc.put("type", originalDoc.get("type"));
-							
-							// CRITICAL: Process property fields in deterministic order
-							if (originalDoc.containsKey("propertyId")) isolatedDoc.put("propertyId", originalDoc.get("propertyId"));
-							if (originalDoc.containsKey("queryName")) isolatedDoc.put("queryName", originalDoc.get("queryName"));
-							if (originalDoc.containsKey("localName")) isolatedDoc.put("localName", originalDoc.get("localName"));
-							if (originalDoc.containsKey("localNamespace")) isolatedDoc.put("localNamespace", originalDoc.get("localNamespace"));
-							if (originalDoc.containsKey("displayName")) isolatedDoc.put("displayName", originalDoc.get("displayName"));
-							if (originalDoc.containsKey("description")) isolatedDoc.put("description", originalDoc.get("description"));
-							if (originalDoc.containsKey("propertyType")) isolatedDoc.put("propertyType", originalDoc.get("propertyType"));
-							if (originalDoc.containsKey("cardinality")) isolatedDoc.put("cardinality", originalDoc.get("cardinality"));
-							if (originalDoc.containsKey("updatability")) isolatedDoc.put("updatability", originalDoc.get("updatability"));
-							if (originalDoc.containsKey("inherited")) isolatedDoc.put("inherited", originalDoc.get("inherited"));
-							if (originalDoc.containsKey("required")) isolatedDoc.put("required", originalDoc.get("required"));
-							if (originalDoc.containsKey("queryable")) isolatedDoc.put("queryable", originalDoc.get("queryable"));
-							if (originalDoc.containsKey("orderable")) isolatedDoc.put("orderable", originalDoc.get("orderable"));
-							if (originalDoc.containsKey("openChoice")) isolatedDoc.put("openChoice", originalDoc.get("openChoice"));
-							if (originalDoc.containsKey("choices")) isolatedDoc.put("choices", originalDoc.get("choices"));
-							if (originalDoc.containsKey("defaultValue")) isolatedDoc.put("defaultValue", originalDoc.get("defaultValue"));
-							if (originalDoc.containsKey("resolution")) isolatedDoc.put("resolution", originalDoc.get("resolution"));
-							if (originalDoc.containsKey("precision")) isolatedDoc.put("precision", originalDoc.get("precision"));
-							if (originalDoc.containsKey("maxLength")) isolatedDoc.put("maxLength", originalDoc.get("maxLength"));
-							if (originalDoc.containsKey("minValue")) isolatedDoc.put("minValue", originalDoc.get("minValue"));
-							if (originalDoc.containsKey("maxValue")) isolatedDoc.put("maxValue", originalDoc.get("maxValue"));
-							
-							// Add any remaining fields (preserving original values while controlling order)
-							for (Map.Entry<String, Object> entry : originalDoc.entrySet()) {
-								if (!isolatedDoc.containsKey(entry.getKey())) {
-									isolatedDoc.put(entry.getKey(), entry.getValue());
-								}
-							}
-							
-							CouchPropertyDefinitionCore cpdc = mapper.convertValue(isolatedDoc, CouchPropertyDefinitionCore.class);
-							
-							// CRITICAL CONTAMINATION PREVENTION: Validate PropertyId before conversion
-							if (cpdc != null) {
-								if (cpdc.getPropertyId() == null) {
-									continue; // Skip NULL PropertyId entries to prevent contamination
-								}
-								
-								// ADDITIONAL VALIDATION: Check for empty PropertyId
-								if (cpdc.getPropertyId().trim().isEmpty()) {
-									continue; // Skip empty PropertyId entries
-								}
-								
-								cores.add(cpdc.convert());
-							}
-						} catch (Exception e) {
-							log.warn("Failed to convert property definition core document: " + e.getMessage());
-						}
-					}
-				}
-			}
-			
-			log.debug("Retrieved " + cores.size() + " property definition cores from repository: " + repositoryId);
-			return cores;
-			
-		} catch (Exception e) {
-			log.error("Error retrieving property definition cores from repository '" + repositoryId + "': " + e.getMessage(), e);
-			return new ArrayList<NemakiPropertyDefinitionCore>(); // Return empty list on error
-		}
+		return typeDefinitionDao.getPropertyDefinitionCores(repositoryId);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String repositoryId, String nodeId) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			CouchPropertyDefinitionCore cpdc = client.get(CouchPropertyDefinitionCore.class, nodeId);
-			
-			if (cpdc != null) {
-				// CRITICAL CONTAMINATION PREVENTION: Validate PropertyId before conversion
-				if (cpdc.getPropertyId() == null) {
-					return null; // Return null instead of processing contaminated data
-				}
-				
-				// ADDITIONAL VALIDATION: Check for empty PropertyId
-				if (cpdc.getPropertyId().trim().isEmpty()) {
-					return null; // Return null instead of processing contaminated data
-				}
-				
-				if (log.isDebugEnabled()) {
-					log.debug("TCK: About to call convert() on CouchPropertyDefinitionCore with propertyId=" +
-						cpdc.getPropertyId() + ", propertyType=" + cpdc.getPropertyType());
-				}
-				NemakiPropertyDefinitionCore result = cpdc.convert();
-				if (log.isDebugEnabled()) {
-					log.debug("TCK: After convert(), NemakiPropertyDefinitionCore has propertyId=" +
-						result.getPropertyId() + ", propertyType=" + result.getPropertyType());
-				}
-				return result;
-			}
-			
-			return null;
-			
-		} catch (Exception e) {
-			log.error("Error retrieving property definition core '" + nodeId + "' from repository '" + repositoryId + "': " + e.getMessage(), e);
-			return null;
-		}
+		return typeDefinitionDao.getPropertyDefinitionCore(repositoryId, nodeId);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(String repositoryId, String propertyId) {
-		try {
-			// Query propertyDefinitionCoreByPropertyId view with propertyId
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			List<CouchPropertyDefinitionCore> couchCores = client.queryView("_repo", "propertyDefinitionCoresByPropertyId", propertyId, CouchPropertyDefinitionCore.class);
-			
-			if (!couchCores.isEmpty()) {
-				CouchPropertyDefinitionCore cpdc = couchCores.get(0);
-				
-				// CRITICAL CONTAMINATION PREVENTION: Validate PropertyId before conversion
-				if (cpdc == null) {
-					return null;
-				}
-				
-				if (cpdc.getPropertyId() == null) {
-					return null; // Return null instead of processing contaminated data
-				}
-				
-				// ADDITIONAL VALIDATION: Check for empty PropertyId
-				if (cpdc.getPropertyId().trim().isEmpty()) {
-					return null; // Return null instead of processing contaminated data
-				}
-				// Return the first (and should be only) result
-				return cpdc.convert();
-			}
-			
-			return null;
-		} catch (Exception e) {
-			log.error("Error getting property definition core by property ID: " + propertyId + " in repository: " + repositoryId, e);
-			return null;
-		}
+		return typeDefinitionDao.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String repositoryId, String nodeId) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			CouchPropertyDefinitionDetail cpdd = client.get(CouchPropertyDefinitionDetail.class, nodeId);
-			
-			if (cpdd != null) {
-				return cpdd.convert();
-			}
-			return null;
-			
-		} catch (Exception e) {
-			log.error("Error retrieving property definition detail '" + nodeId + "' from repository '" + repositoryId + "': " + e.getMessage(), e);
-			return null;
-		}
+		return typeDefinitionDao.getPropertyDefinitionDetail(repositoryId, nodeId);
 	}
 
 	@Override
 	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(String repositoryId,
 			String coreNodeId) {
-		try {
-			
-			// Alternative approach: Direct document retrieval without ObjectMapper conversion
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			queryParams.put("include_docs", true);
-			
-			ViewResult result = client.queryView("_repo", "propertyDefinitionDetails", queryParams);
-			List<NemakiPropertyDefinitionDetail> details = new ArrayList<NemakiPropertyDefinitionDetail>();
-			
-	 
-		 
-				
-			if (result != null && result.getRows() != null) {
-				for (ViewResultRow row : result.getRows()) {
-					if (row.getDoc() != null) {
-						// Handle Cloudant SDK Document object properly
-						Object docObj = row.getDoc();
-						Map<String, Object> docMap = null;
-						
-						if (docObj instanceof Map) {
-							docMap = (Map<String, Object>) docObj;
-						} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
-							// Convert Cloudant Document to Map using properties
-							com.ibm.cloud.cloudant.v1.model.Document cloudantDoc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
-							docMap = cloudantDoc.getProperties();
-							
-							// Ensure _id and _rev are included from the Cloudant Document
-							if (docMap != null) {
-								docMap.put("_id", cloudantDoc.getId());
-								docMap.put("_rev", cloudantDoc.getRev());
-												}
-						} else {
-											continue;
-						}
-						
-						if (docMap == null) {
-											continue;
-						}
-						
-						Object docCoreNodeId = docMap.get("coreNodeId");
-						
-	 
-							
-						if (coreNodeId.equals(String.valueOf(docCoreNodeId))) {
-												
-							// Direct construction instead of ObjectMapper conversion
-							try {
-								CouchPropertyDefinitionDetail cpdd = new CouchPropertyDefinitionDetail();
-								
-								// Set base properties
-								cpdd.setId((String) docMap.get("_id"));
-								cpdd.setRevision((String) docMap.get("_rev"));
-								cpdd.setType((String) docMap.get("type"));
-								
-								// Handle date fields - skip for now as they need proper conversion
-								cpdd.setCreator((String) docMap.get("creator"));
-								cpdd.setModifier((String) docMap.get("modifier"));
-								
-								// Set property definition specific properties
-								cpdd.setCoreNodeId((String) docMap.get("coreNodeId"));
-								cpdd.setPropertyId((String) docMap.get("propertyId"));
-								cpdd.setLocalName((String) docMap.get("localName"));
-								cpdd.setLocalNameSpace((String) docMap.get("localNameSpace"));
-								cpdd.setQueryName((String) docMap.get("queryName"));
-								cpdd.setDisplayName((String) docMap.get("displayName"));
-								cpdd.setDescription((String) docMap.get("description"));
-								
-								// Handle enum types safely
-								Object propertyTypeObj = docMap.get("propertyType");
-								if (propertyTypeObj != null) {
-									try {
-										cpdd.setPropertyType(org.apache.chemistry.opencmis.commons.enums.PropertyType.valueOf(propertyTypeObj.toString()));
-									} catch (Exception e) {
-										log.warn("Invalid propertyType: " + propertyTypeObj + ", using STRING as default");
-										cpdd.setPropertyType(org.apache.chemistry.opencmis.commons.enums.PropertyType.STRING);
-									}
-								}
-								
-								Object cardinalityObj = docMap.get("cardinality");
-								if (cardinalityObj != null) {
-									try {
-										cpdd.setCardinality(org.apache.chemistry.opencmis.commons.enums.Cardinality.valueOf(cardinalityObj.toString()));
-									} catch (Exception e) {
-										log.warn("Invalid cardinality: " + cardinalityObj + ", using SINGLE as default");
-										cpdd.setCardinality(org.apache.chemistry.opencmis.commons.enums.Cardinality.SINGLE);
-									}
-								}
-								
-								Object updatabilityObj = docMap.get("updatability");
-								if (updatabilityObj != null) {
-									try {
-										cpdd.setUpdatability(org.apache.chemistry.opencmis.commons.enums.Updatability.valueOf(updatabilityObj.toString()));
-									} catch (Exception e) {
-										log.warn("Invalid updatability: " + updatabilityObj + ", using READWRITE as default");
-										cpdd.setUpdatability(org.apache.chemistry.opencmis.commons.enums.Updatability.READWRITE);
-									}
-								}
-								
-								// Handle boolean fields safely
-								Object requiredObj = docMap.get("required");
-								cpdd.setRequired(requiredObj != null && Boolean.parseBoolean(requiredObj.toString()));
-								
-								Object queryableObj = docMap.get("queryable");
-								cpdd.setQueryable(queryableObj != null && Boolean.parseBoolean(queryableObj.toString()));
-								
-								Object orderableObj = docMap.get("orderable");
-								cpdd.setOrderable(orderableObj != null && Boolean.parseBoolean(orderableObj.toString()));
-								
-								Object openChoiceObj = docMap.get("openChoice");
-								cpdd.setOpenChoice(openChoiceObj != null && Boolean.parseBoolean(openChoiceObj.toString()));
-								
-								// Handle numeric fields safely
-								Object maxLengthObj = docMap.get("maxLength");
-								if (maxLengthObj != null) {
-									try {
-										cpdd.setMaxLength(Long.valueOf(maxLengthObj.toString()));
-									} catch (Exception e) {
-										log.debug("Non-numeric maxLength: " + maxLengthObj);
-									}
-								}
-								
-								Object minValueObj = docMap.get("minValue");
-								if (minValueObj != null) {
-									try {
-										cpdd.setMinValue(Long.valueOf(minValueObj.toString()));
-									} catch (Exception e) {
-										log.debug("Non-numeric minValue: " + minValueObj);
-									}
-								}
-								
-								Object maxValueObj = docMap.get("maxValue");
-								if (maxValueObj != null) {
-									try {
-										cpdd.setMaxValue(Long.valueOf(maxValueObj.toString()));
-									} catch (Exception e) {
-										log.debug("Non-numeric maxValue: " + maxValueObj);
-									}
-								}
-								
-								// Convert default values list if present
-								Object defaultValueObj = docMap.get("defaultValue");
-								if (defaultValueObj instanceof List) {
-									cpdd.setDefaultValue((List<Object>) defaultValueObj);
-								}
-								
-								// Convert choices list if present  
-								Object choicesObj = docMap.get("choices");
-								if (choicesObj instanceof List) {
-									// For now, set as null - choices conversion is complex
-									cpdd.setChoices(null);
-								}
-								
-								details.add(cpdd.convert());
-									
-							} catch (Exception constructionError) {
-								}
-						}
-					}
-				}
-			}
-			
-					return details;
-			
-		} catch (Exception e) {
-			log.error("Error retrieving property definition details for core node '" + coreNodeId + "' from repository '" + repositoryId + "': " + e.getMessage(), e);
-			return new ArrayList<NemakiPropertyDefinitionDetail>(); // Return empty list on error
-		}
+		return typeDefinitionDao.getPropertyDefinitionDetailByCoreNodeId(repositoryId, coreNodeId);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionCore createPropertyDefinitionCore(String repositoryId,
 			NemakiPropertyDefinitionCore propertyDefinitionCore) {
-		
-		// CRITICAL DEBUG: Trace ID assignment during PropertyDefinitionCore creation
-					
-		CouchPropertyDefinitionCore cpc = new CouchPropertyDefinitionCore(propertyDefinitionCore);
-			
-		// The create() method should set the ID on the cpc object
-		connectorPool.getClient(repositoryId).create(cpc);
-			
-		// CRITICAL CONTAMINATION PREVENTION: Validate PropertyId before conversion
-		if (cpc.getPropertyId() == null) {
-					throw new IllegalStateException("PropertyId cannot be null in createPropertyDefinitionCore - this indicates a creation failure");
-		}
-		
-		// ADDITIONAL VALIDATION: Check for empty PropertyId
-		if (cpc.getPropertyId().trim().isEmpty()) {
-				throw new IllegalStateException("PropertyId cannot be empty in createPropertyDefinitionCore - this indicates a creation failure");
-		}
-		
-			NemakiPropertyDefinitionCore result = cpc.convert();
-				
-		return result;
+		return typeDefinitionDao.createPropertyDefinitionCore(repositoryId, propertyDefinitionCore);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionDetail createPropertyDefinitionDetail(String repositoryId,
 			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
-		CouchPropertyDefinitionDetail cpd = new CouchPropertyDefinitionDetail(propertyDefinitionDetail);
-		connectorPool.getClient(repositoryId).create(cpd);
-		return cpd.convert();
+		return typeDefinitionDao.createPropertyDefinitionDetail(repositoryId, propertyDefinitionDetail);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(String repositoryId,
 			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
-
-		CouchPropertyDefinitionDetail cpd = connectorPool.getClient(repositoryId)
-				.get(CouchPropertyDefinitionDetail.class, propertyDefinitionDetail.getId());
-
-		CouchPropertyDefinitionDetail update = new CouchPropertyDefinitionDetail(propertyDefinitionDetail);
-		update.setRevision(cpd.getRevision());
-
-		connectorPool.getClient(repositoryId).update(update);
-		return update.convert();
+		return typeDefinitionDao.updatePropertyDefinitionDetail(repositoryId, propertyDefinitionDetail);
 	}
 
 	// ///////////////////////////////////////
@@ -773,24 +275,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Content getContent(String repositoryId, String objectId) {
-		// CRITICAL: Enhanced implementation with detailed debugging for Cloudant migration
-		log.info("getContent START: Repo=" + repositoryId + ", Id=" + objectId);
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			log.info("CLOUDANT DEBUG: About to call client.get() method - client class: " + client.getClass().getName());
 			com.ibm.cloud.cloudant.v1.model.Document doc = client.get(objectId);
-			log.info("CLOUDANT DEBUG: client.get() method completed - doc class: " + (doc != null ? doc.getClass().getName() : "null"));
 			
 			if (doc == null) {
 				log.warn("Document not found: " + objectId + " in repository: " + repositoryId);
 				return null;
 			}
-			
-			log.info("Document retrieved successfully: " + objectId);
-			
-			// CRITICAL FIX: Use Cloudant SDK Document.get() method for direct field access
-			// CouchDB document contains type/objectType fields but ObjectMapper conversion loses them
-			log.info("CLOUDANT FIX: Using Document.get() for direct field access");
 			
 			// Create document map by directly accessing fields from Cloudant Document
 			Map<String, Object> actualDocMap = new HashMap<>();
@@ -805,15 +297,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			String name = (String) doc.get("name");
 			String creator = (String) doc.get("creator");
 			String modifier = (String) doc.get("modifier");
-			// CRITICAL TCK FIX (2025-11-03): Keep date fields as original type (numeric or string)
-			// Do NOT convert to String - let CouchNodeBase.parseDateTime() handle the conversion
-			// CouchDB stores timestamps as numbers, but Cloudant SDK may return as strings
+			// Keep date fields as original type (numeric or string)
 			Object created = doc.get("created");
 			Object modified = doc.get("modified");
 			String changeToken = (String) doc.get("changeToken");
 
-			// CRITICAL TCK FIX (2025-11-03): Convert Gson LazilyParsedNumber to Long for Jackson compatibility
-			// LazilyParsedNumber is a Gson internal class that Jackson cannot deserialize properly
+			// Convert Gson LazilyParsedNumber to Long for Jackson compatibility
 			if (created != null && created.getClass().getName().contains("LazilyParsedNumber")) {
 				created = ((Number) created).longValue();
 			}
@@ -821,10 +310,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				modified = ((Number) modified).longValue();
 			}
 
-			log.info("CLOUDANT FIX: Direct field access results:");
-			log.info("  - type: " + type);
-			log.info("  - objectType: " + objectType);
-			log.info("  - name: " + name);
+			if (log.isDebugEnabled()) {
+				log.debug("getContent: id=" + objectId + ", type=" + type + ", objectType=" + objectType + ", name=" + name);
+			}
 			
 			// Add all accessible fields to the map
 			if (type != null) actualDocMap.put("type", type);
@@ -840,7 +328,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			try {
 				Map<String, Object> properties = doc.getProperties();
 				if (properties != null && !properties.isEmpty()) {
-					log.info("CLOUDANT FIX: Adding " + properties.size() + " properties from getProperties()");
 					// Only add properties that aren't already in actualDocMap
 					for (Map.Entry<String, Object> entry : properties.entrySet()) {
 						if (!actualDocMap.containsKey(entry.getKey())) {
@@ -849,7 +336,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					}
 				}
 			} catch (Exception e) {
-				log.warn("CLOUDANT FIX: Error accessing getProperties(): " + e.getMessage());
+				log.warn("Error accessing getProperties(): " + e.getMessage());
 				
 				// Add other common CouchDB fields using different variable names
 				Object aclObj = doc.get("acl");
@@ -861,55 +348,31 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				if (aspectsObj != null) actualDocMap.put("aspects", aspectsObj);
 			}
 
-			// CRITICAL FIX (2025-12-18): Always explicitly retrieve aspects and secondaryIds
+			// Always explicitly retrieve aspects and secondaryIds
 			// These fields are essential for Solr indexing of secondary type properties
-			// The getProperties() method may not include these complex nested fields
-			// NOTE (2025-12-27): Must always overwrite, because getProperties() may return null values
+			// Must always overwrite, because getProperties() may return null values
 			{
 				Object aspectsObj = doc.get("aspects");
 				if (aspectsObj != null) {
 					actualDocMap.put("aspects", aspectsObj);
-					log.info("CLOUDANT FIX: Explicitly set aspects field in actualDocMap");
-				} else {
-					log.info("CLOUDANT FIX: aspects field is null in CouchDB document");
 				}
 			}
 			{
 				Object secondaryIdsObj = doc.get("secondaryIds");
 				if (secondaryIdsObj != null) {
 					actualDocMap.put("secondaryIds", secondaryIdsObj);
-					log.info("CLOUDANT FIX: Explicitly set secondaryIds field in actualDocMap");
-				} else {
-					log.info("CLOUDANT FIX: secondaryIds field is null in CouchDB document");
 				}
 			}
-			// CRITICAL FIX (2025-12-27): Always explicitly retrieve description field
-			// The description field was missing from getProperties() causing null values after update
-			// even though the data was correctly saved to CouchDB
-			// NOTE: Must check for null value too, because getProperties() may return {description: null}
+			// Always explicitly retrieve description field
 			{
 				Object descriptionObj = doc.get("description");
 				if (descriptionObj != null) {
 					actualDocMap.put("description", descriptionObj);
-					log.info("CLOUDANT FIX: Explicitly set description field in actualDocMap: " + descriptionObj);
-				} else {
-					log.info("CLOUDANT FIX: description field is null in CouchDB document");
 				}
 			}
-			// Log the aspects/secondaryIds status for debugging
-			log.info("CLOUDANT DEBUG: actualDocMap contains aspects=" + actualDocMap.containsKey("aspects")
-					+ ", secondaryIds=" + actualDocMap.containsKey("secondaryIds"));
-			if (actualDocMap.containsKey("aspects")) {
-				Object aspectsVal = actualDocMap.get("aspects");
-				log.info("CLOUDANT DEBUG: aspects value type=" + (aspectsVal != null ? aspectsVal.getClass().getName() : "null")
-						+ ", value=" + aspectsVal);
-			}
-
-			log.info("Type fields - type: " + type + ", objectType: " + objectType);
 			
 			// Use objectType if type is null, otherwise use type
 			String actualType = (type != null) ? type : objectType;
-			log.info("ActualType determined: " + actualType);
 			
 			// Ensure both type and objectType fields are set for consistency BEFORE mapper conversion
 			if (type == null && objectType != null) {
@@ -919,8 +382,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				actualDocMap.put("objectType", type);
 			}
 			
-			// CRITICAL FIX: Ensure objectType is set in the map before conversion
-			// This ensures CouchContent and its subclasses pick up the objectType field
+			// Ensure objectType is set in the map before conversion
 			if (!actualDocMap.containsKey("objectType") || actualDocMap.get("objectType") == null) {
 				actualDocMap.put("objectType", actualType);
 			}
@@ -929,104 +391,64 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			ObjectMapper mapper = createConfiguredObjectMapper();
 
 			if ("folder".equals(actualType) || "cmis:folder".equals(actualType)) {
-				log.info("Converting to CouchFolder for type: " + actualType);
 				CouchFolder folder = mapper.convertValue(actualDocMap, CouchFolder.class);
-
-				log.info("CouchFolder created, calling convert()");
 				Content content = folder.convert();
-				log.info("Content converted. Type: " + content.getClass().getSimpleName() + ", ObjectType: " + content.getObjectType());
-				// CRITICAL FIX (2025-12-19): Use objectType field (subtype) not actualType (base type)
-				// actualType is the "type" field (e.g., "cmis:folder") for routing purposes
-				// objectType is the actual CMIS object type (e.g., "nemaki:folder")
-				// Only set if convert() didn't already set the objectType
 				if (content.getObjectType() == null) {
 					content.setObjectType(objectType != null ? objectType : actualType);
 				}
-				log.info("Final Content - ObjectType: " + content.getObjectType() + ", isFolder: " + content.isFolder());
 				return content;
 			} else if ("document".equals(actualType) || "cmis:document".equals(actualType)) {
-				log.info("Converting to CouchDocument for type: " + actualType);
 				CouchDocument document = mapper.convertValue(actualDocMap, CouchDocument.class);
 				Content content = document.convert();
-				// CRITICAL FIX (2025-12-19): Use objectType field (subtype) not actualType (base type)
-				// actualType is the "type" field (e.g., "cmis:document") for routing purposes
-				// objectType is the actual CMIS object type (e.g., "nemaki:document")
-				// Only set if convert() didn't already set the objectType
 				if (content.getObjectType() == null) {
 					content.setObjectType(objectType != null ? objectType : actualType);
 				}
-				log.info("Final Document Content - ObjectType: " + content.getObjectType());
 				return content;
 			} else if ("cmis:item".equals(actualType)) {
-				// CRITICAL FIX (2025-11-19): Handle cmis:item by checking objectType
-				// Users and groups are cmis:item base type but need specific conversion
-				log.info("Converting cmis:item - checking objectType");
 				String objectTypeValue = (String) actualDocMap.get("objectType");
 
 				if ("nemaki:user".equals(objectTypeValue)) {
-					log.info("Converting to CouchUserItem for objectType: " + objectTypeValue);
 					CouchUserItem cui = mapper.convertValue(actualDocMap, CouchUserItem.class);
-					Content content = cui.convert();  // Returns UserItem (extends Item)
+					Content content = cui.convert();
 					content.setObjectType(objectTypeValue);
-					log.info("Final UserItem - ObjectType: " + content.getObjectType());
 					return content;
 				} else if ("nemaki:group".equals(objectTypeValue)) {
-					log.info("Converting to CouchGroupItem for objectType: " + objectTypeValue);
 					CouchGroupItem cgi = mapper.convertValue(actualDocMap, CouchGroupItem.class);
-					Content content = cgi.convert();  // Returns GroupItem (extends Item)
+					Content content = cgi.convert();
 					content.setObjectType(objectTypeValue);
-					log.info("Final GroupItem - ObjectType: " + content.getObjectType());
 					return content;
 				} else {
-					log.info("Converting to generic CouchItem for objectType: " + objectTypeValue);
-					// Generic item (fallback)
 					CouchItem ci = mapper.convertValue(actualDocMap, CouchItem.class);
 					Content content = ci.convert();
-					// CRITICAL FIX (2025-12-19): Use objectType field (subtype) not actualType (base type)
 					if (content.getObjectType() == null) {
 						content.setObjectType(objectType != null ? objectType : actualType);
 					}
-					log.info("Final Item - ObjectType: " + content.getObjectType());
 					return content;
 				}
 			} else if ("relationship".equals(actualType) || "cmis:relationship".equals(actualType)) {
-				// CRITICAL FIX (2025-12-23): Handle relationship types for CMIS query support
-				// Without this, relationships are converted to generic CouchContent and lose
-				// sourceId/targetId fields, causing ClassCastException in CompileService
-				log.info("Converting to CouchRelationship for type: " + actualType);
 				CouchRelationship cr = mapper.convertValue(actualDocMap, CouchRelationship.class);
 				Content content = cr.convert();
 				if (content.getObjectType() == null) {
 					content.setObjectType(objectType != null ? objectType : actualType);
 				}
-				log.info("Final Relationship Content - ObjectType: " + content.getObjectType());
 				return content;
 			} else if ("policy".equals(actualType) || "cmis:policy".equals(actualType)) {
-				// Handle policy types
-				log.info("Converting to CouchPolicy for type: " + actualType);
 				CouchPolicy cp = mapper.convertValue(actualDocMap, CouchPolicy.class);
 				Content content = cp.convert();
 				if (content.getObjectType() == null) {
 					content.setObjectType(objectType != null ? objectType : actualType);
 				}
-				log.info("Final Policy Content - ObjectType: " + content.getObjectType());
 				return content;
 			} else {
-				log.info("Converting to generic CouchContent for type: " + actualType);
-				// Generic content - try to convert to CouchContent
 				CouchContent content = mapper.convertValue(actualDocMap, CouchContent.class);
 				Content convertedContent = content.convert();
-				// CRITICAL FIX (2025-12-19): Use objectType field (subtype) not actualType (base type)
-				// Only set if convert() didn't already set the objectType
 				if (convertedContent.getObjectType() == null && actualType != null) {
 					convertedContent.setObjectType(objectType != null ? objectType : actualType);
 				}
-				log.info("Final Generic Content - ObjectType: " + convertedContent.getObjectType());
 				return convertedContent;
 			}
 		} catch (Exception e) {
 			log.error("ERROR in getContent for " + objectId + " in repository " + repositoryId + ": " + e.getMessage(), e);
-			e.printStackTrace();
 			return null;
 		}
 	}
@@ -1870,521 +1292,64 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 	}
 
+	// UserGroup methods (delegated to UserGroupDaoDelegate)
 	@Override
 	public UserItem getUserItem(String repositoryId, String objectId) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			CouchUserItem cui = client.get(CouchUserItem.class, objectId);
-			
-			if (cui != null) {
-				return cui.convert();
-			}
-			return null;
-		} catch (Exception e) {
-			log.error("Error getting user item: " + objectId + " in repository: " + repositoryId, e);
-			return null;
-		}
+		return userGroupDao.getUserItem(repositoryId, objectId);
 	}
 
 	@Override
 	public UserItem getUserItemById(String repositoryId, String userId) {
-		try {
-			log.info("=== getUserItemById for userId: " + userId + " in repository: " + repositoryId + " ===");
-			
-			// Use CloudantClientWrapper from connectorPool
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			ViewResult result = client.queryView("_repo", "userItemsById", userId);
-			
-			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
-				log.info("Found " + result.getRows().size() + " matching user documents");
-				
-				// Iterate through all rows to find the actual user document (nemaki:user),
-				// skipping other document types like nemaki:webauthnCredential that also
-				// have userId field and match the view.
-				for (ViewResultRow row : result.getRows()) {
-					Object rawDoc = row.getValue(); // Use getValue() not getDoc()
-					
-					if (!(rawDoc instanceof Map)) {
-						log.error("Raw document is not a Map: " + rawDoc.getClass().getName());
-						continue;
-					}
-					
-					@SuppressWarnings("unchecked")
-					Map<String, Object> docMap = (Map<String, Object>) rawDoc;
-					
-					// Skip non-user documents (e.g., WebAuthn credentials)
-					String objectType = (String) docMap.get("objectType");
-					if (!"nemaki:user".equals(objectType)) {
-						if (log.isDebugEnabled()) {
-							log.debug("Skipping non-user document with objectType: " + objectType);
-						}
-						continue;
-					}
-					
-					log.info("Document contains userId: " + docMap.get("userId") + ", admin: " + docMap.get("admin"));
-					
-					// SECURITY FIX: Validate that returned user actually matches requested userId
-					String returnedUserId = (String) docMap.get("userId");
-					if (!userId.equals(returnedUserId)) {
-						log.warn("SECURITY WARNING: Requested userId '" + userId + "' but got userId '" + returnedUserId + "' - returning null");
-						return null;
-					}
-					
-					// Use the Map-based constructor we created
-					CouchUserItem cui = new CouchUserItem(docMap);
-					
-					log.info("CouchUserItem created - userId: " + cui.getUserId() + ", admin: " + cui.isAdmin() + 
-						", id: " + cui.getId() + ", type: " + cui.getType());
-					
-					// Validate required fields
-					if (cui.getUserId() != null && cui.getId() != null && cui.getType() != null) {
-						return cui.convert();
-					} else {
-						log.error("Missing required fields - userId: " + cui.getUserId() + 
-							", id: " + cui.getId() + ", type: " + cui.getType());
-						return null;
-					}
-				}
-				
-				log.warn("No nemaki:user document found among " + result.getRows().size() + " results for userId: " + userId);
-			} else {
-				log.warn("No user found with userId: " + userId + " in repository: " + repositoryId);
-			}
-			
-			return null;
-			
-		} catch (Exception e) {
-			log.error("Error in getUserItemById for userId '" + userId + "' in repository '" + repositoryId + "'", e);
-			return null;
-		}
+		return userGroupDao.getUserItemById(repositoryId, userId);
 	}
 
 	@Override
 	public List<UserItem> getUserItems(String repositoryId){
-		log.info("=== getUserItems: Starting for repository: " + repositoryId + " ===");
-		try {
-			// Query userItemsById view to get all user items
-			log.info("getUserItems: Getting client for repository: " + repositoryId);
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			log.info("getUserItems: Client obtained, querying userItemsById view");
-
-			// FIXED: Use getValue() like getUserItemById to properly convert subTypeProperties
-			ViewResult result = client.queryView("_repo", "userItemsById");
-
-			List<UserItem> userItems = new ArrayList<UserItem>();
-			if (result != null && result.getRows() != null) {
-				log.info("getUserItems: Retrieved " + result.getRows().size() + " users from CouchDB");
-
-				for (ViewResultRow row : result.getRows()) {
-					try {
-						Object rawDoc = row.getValue(); // Use getValue() not getDoc()
-
-						if (rawDoc instanceof Map) {
-							@SuppressWarnings("unchecked")
-							Map<String, Object> docMap = (Map<String, Object>) rawDoc;
-
-							// Use Map-based constructor to ensure proper subTypeProperties conversion
-							CouchUserItem cui = new CouchUserItem(docMap);
-
-							if (cui.getUserId() != null && cui.getId() != null && cui.getType() != null) {
-								UserItem converted = cui.convert();
-								if (converted != null) {
-									userItems.add(converted);
-									log.debug("getUserItems: Successfully converted user: " + converted.getUserId());
-								}
-							} else {
-								log.warn("getUserItems: Missing required fields for user: " + cui.getUserId());
-							}
-						} else {
-							log.warn("getUserItems: Raw document is not a Map: " + (rawDoc != null ? rawDoc.getClass().getName() : "null"));
-						}
-					} catch (Exception convertException) {
-						log.error("getUserItems: Exception during conversion", convertException);
-						// Skip failed conversions
-					}
-				}
-			}
-
-			log.info("getUserItems: Returning " + userItems.size() + " converted users");
-			return userItems;
-		} catch (Exception e) {
-			log.error("=== getUserItems: Exception occurred ===");
-			log.error("Exception type: " + e.getClass().getName());
-			log.error("Exception message: " + e.getMessage());
-			if (e.getCause() != null) {
-				log.error("Caused by: " + e.getCause().getClass().getName() + ": " + e.getCause().getMessage());
-			}
-			log.error("Full stack trace:", e);
-			log.error("=== End getUserItems Exception ===");
-			
-			// 例外を握りつぶすのではなく、適切にRuntimeExceptionとして伝播
-			throw new RuntimeException("Failed to retrieve user items from repository: " + repositoryId, e);
-		}
+		return userGroupDao.getUserItems(repositoryId);
 	}
 
 	@Override
 	public List<UserItem> getUserItems(String repositoryId, int skip, int limit) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			queryParams.put("skip", skip);
-			queryParams.put("limit", limit);
-			ViewResult result = client.queryView("_repo", "userItemsById", queryParams);
-
-			List<UserItem> userItems = new ArrayList<UserItem>();
-			if (result != null && result.getRows() != null) {
-				for (ViewResultRow row : result.getRows()) {
-					try {
-						Object rawDoc = row.getValue();
-						if (rawDoc instanceof Map) {
-							@SuppressWarnings("unchecked")
-							Map<String, Object> docMap = (Map<String, Object>) rawDoc;
-							CouchUserItem cui = new CouchUserItem(docMap);
-							if (cui.getUserId() != null && cui.getId() != null && cui.getType() != null) {
-								UserItem converted = cui.convert();
-								if (converted != null) {
-									userItems.add(converted);
-								}
-							}
-						}
-					} catch (Exception convertException) {
-						log.error("getUserItems(paginated): Exception during conversion", convertException);
-					}
-				}
-			}
-			return userItems;
-		} catch (Exception e) {
-			throw new RuntimeException("Failed to retrieve user items from repository: " + repositoryId, e);
-		}
+		return userGroupDao.getUserItems(repositoryId, skip, limit);
 	}
 
 	@Override
 	public int getUserItemCount(String repositoryId) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			ViewResult result = client.queryView("_repo", "userItemsById");
-			if (result != null && result.getRows() != null) {
-				return result.getRows().size();
-			}
-			return 0;
-		} catch (Exception e) {
-			throw new RuntimeException("Failed to count user items for repository: " + repositoryId, e);
-		}
+		return userGroupDao.getUserItemCount(repositoryId);
 	}
 
 	@Override
 	public GroupItem getGroupItem(String repositoryId, String objectId) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			CouchGroupItem cgi = client.get(CouchGroupItem.class, objectId);
-			
-			if (cgi != null) {
-				return cgi.convert();
-			}
-			return null;
-		} catch (Exception e) {
-			log.error("Error getting group item: " + objectId + " in repository: " + repositoryId, e);
-			return null;
-		}
+		return userGroupDao.getGroupItem(repositoryId, objectId);
 	}
 
 	@Override
 	public GroupItem getGroupItemById(String repositoryId, String groupId) {
-		return getGroupItemByIdInternal(repositoryId, groupId, false);
+		return userGroupDao.getGroupItemById(repositoryId, groupId);
 	}
 
 	@Override
 	public GroupItem getGroupItemByIdFresh(String repositoryId, String groupId) {
-		// CRITICAL FIX: Force CouchDB view index update to get absolutely fresh data
-		// This bypasses view caching and lazy indexing to prevent stale revision issues
-		return getGroupItemByIdInternal(repositoryId, groupId, true);
-	}
-
-	/**
-	 * Internal method to get group item by ID with optional forceUpdate parameter
-	 * @param forceUpdate If true, forces CouchDB view index to update before querying (bypasses cache)
-	 */
-	private GroupItem getGroupItemByIdInternal(String repositoryId, String groupId, boolean forceUpdate) {
-		try {
-			if (forceUpdate) {
-				log.info("=== getGroupItemById FRESH (force view update) for groupId: " + groupId + " ===");
-			} else {
-				log.info("=== getGroupItemById for groupId: " + groupId + " in repository: " + repositoryId + " ===");
-			}
-
-			// Use CloudantClientWrapper from connectorPool
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			ViewResult result = client.queryView("_repo", "groupItemsById", groupId, forceUpdate);
-
-			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
-				log.info("Found " + result.getRows().size() + " matching group documents");
-
-				ViewResultRow firstRow = result.getRows().get(0);
-				// CRITICAL FIX (2025-10-13): CouchDB includeDocs returns STALE documents from view index
-				// Even with update=true, the documents are from the view snapshot, not current DB state
-				// Solution: Get document ID from view, then fetch DIRECTLY from database
-				String documentId = firstRow.getId();
-
-
-				// Fetch the absolute latest revision directly from CouchDB (NOT from view result)
-				com.ibm.cloud.cloudant.v1.model.Document freshDoc = client.get(documentId);
-
-				if (freshDoc == null) {
-					return null;
-				}
-
-
-				// Convert Cloudant Document to Map for processing
-				Map<String, Object> docMap = new HashMap<>();
-				docMap.put("_id", freshDoc.getId());
-				docMap.put("_rev", freshDoc.getRev());
-				if (freshDoc.getProperties() != null) {
-					docMap.putAll(freshDoc.getProperties());
-				}
-
-				log.info("Raw document class: " + docMap.getClass().getName());
-
-				if (docMap != null) {
-					log.info("Document contains groupId: " + docMap.get("groupId") + ", _id: " + docMap.get("_id") + ", _rev: " + docMap.get("_rev"));
-
-					// SECURITY FIX: Validate that returned group actually matches requested groupId
-					String returnedGroupId = (String) docMap.get("groupId");
-					if (!groupId.equals(returnedGroupId)) {
-						log.warn("SECURITY WARNING: Requested groupId '" + groupId + "' but got groupId '" + returnedGroupId + "' - returning null");
-						return null;
-					}
-
-					// Use the Map-based constructor we created
-					CouchGroupItem cgi = new CouchGroupItem(docMap);
-
-					log.info("CouchGroupItem created - groupId: " + cgi.getGroupId() +
-						", id: " + cgi.getId() + ", revision: " + cgi.getRevision() + ", type: " + cgi.getType());
-
-					// Validate required fields
-					if (cgi.getGroupId() != null && cgi.getId() != null && cgi.getRevision() != null && cgi.getType() != null) {
-						GroupItem result_groupItem = cgi.convert();
-						log.info("GroupItem converted - id: " + result_groupItem.getId() + ", revision: " + result_groupItem.getRevision());
-						return result_groupItem;
-					} else {
-						log.error("Missing required fields - groupId: " + cgi.getGroupId() +
-							", id: " + cgi.getId() + ", revision: " + cgi.getRevision() + ", type: " + cgi.getType());
-						return null;
-					}
-				}
-			} else {
-				log.warn("No group found with groupId: " + groupId + " in repository: " + repositoryId);
-			}
-
-			return null;
-
-		} catch (Exception e) {
-			log.error("Error in getGroupItemByIdInternal for groupId '" + groupId + "' in repository '" + repositoryId + "'", e);
-			return null;
-		}
+		return userGroupDao.getGroupItemByIdFresh(repositoryId, groupId);
 	}
 
 	@Override
 	public List<GroupItem> getGroupItems(String repositoryId) {
-		try {
-			// Use ViewQuery to get all group items from groupItemsById view
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			queryParams.put("include_docs", true);  // CRITICAL: Include full documents
-			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "groupItemsById", queryParams);
-
-			List<GroupItem> groupItems = new ArrayList<GroupItem>();
-
-			if (result.getRows() != null) {
-				for (ViewResultRow row : result.getRows()) {
-					if (row.getDoc() != null) {
-						try {
-							ObjectMapper mapper = createConfiguredObjectMapper();
-
-							// CRITICAL FIX: Use Document.getProperties() to get Map<String, Object>
-							// Cloudant SDK Document needs to be converted to Map before passing to ObjectMapper
-							com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-							Map<String, Object> docProperties = doc.getProperties();
-
-							CouchGroupItem cgi = mapper.convertValue(docProperties, CouchGroupItem.class);
-							if (cgi != null) {
-								GroupItem gi = cgi.convert();
-								groupItems.add(gi);
-							}
-						} catch (Exception e) {
-							log.error("Failed to convert group item document: " + e.getMessage(), e);
-						}
-					}
-				}
-			}
-
-			return groupItems;
-		} catch (Exception e) {
-			log.error("Error getting group items for repository: " + repositoryId + ", error: " + e.getMessage(), e);
-			return new ArrayList<GroupItem>();
-		}
+		return userGroupDao.getGroupItems(repositoryId);
 	}
 
 	@Override
 	public List<GroupItem> getGroupItems(String repositoryId, int skip, int limit) {
-		try {
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			queryParams.put("include_docs", true);
-			queryParams.put("skip", skip);
-			queryParams.put("limit", limit);
-			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "groupItemsById", queryParams);
-
-			List<GroupItem> groupItems = new ArrayList<GroupItem>();
-			if (result.getRows() != null) {
-				for (ViewResultRow row : result.getRows()) {
-					if (row.getDoc() != null) {
-						try {
-							ObjectMapper mapper = createConfiguredObjectMapper();
-							com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-							Map<String, Object> docProperties = doc.getProperties();
-							CouchGroupItem cgi = mapper.convertValue(docProperties, CouchGroupItem.class);
-							if (cgi != null) {
-								GroupItem gi = cgi.convert();
-								groupItems.add(gi);
-							}
-						} catch (Exception e) {
-							log.error("Failed to convert group item document: " + e.getMessage(), e);
-						}
-					}
-				}
-			}
-			return groupItems;
-		} catch (Exception e) {
-			log.error("Error getting group items (paginated) for repository: " + repositoryId + ", error: " + e.getMessage(), e);
-			return new ArrayList<GroupItem>();
-		}
+		return userGroupDao.getGroupItems(repositoryId, skip, limit);
 	}
 
 	@Override
 	public int getGroupItemCount(String repositoryId) {
-		try {
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			queryParams.put("include_docs", false);
-			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "groupItemsById", queryParams);
-			if (result != null && result.getRows() != null) {
-				return result.getRows().size();
-			}
-			return 0;
-		} catch (Exception e) {
-			log.error("Error counting group items for repository: " + repositoryId, e);
-			return 0;
-		}
+		return userGroupDao.getGroupItemCount(repositoryId);
 	}
 
 	public List<String> getJoinedGroupByUserId(String repositoryId, String userId) {
-		try {
-			//first get directory joined groups
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			queryParams.put("key", userId);
-			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "joinedDirectGroupsByUserId", queryParams);
-			
-			//get indirect joined group using above results
-			List<String> groupIdsToCheck = new ArrayList<String>();
-			List<String> resultGroupIds = new ArrayList<String>();
-			
-			// CRITICAL FIX: Add visited groups tracking to prevent infinite loops
-			Set<String> visitedGroups = new HashSet<String>();
-			
-			if (result.getRows() != null) {
-				for (ViewResultRow row : result.getRows()) {
-					if (row.getValue() != null) {
-						// Extract groupId from the CouchGroupItem document
-						try {
-							Map<String, Object> doc = (Map<String, Object>) row.getValue();
-							String groupId = (String) doc.get("groupId");
-							if (groupId != null) {
-								groupIdsToCheck.add(groupId);
-								resultGroupIds.add(groupId);
-								visitedGroups.add(groupId); // Track visited groups
-							}
-						} catch (Exception e) {
-							log.warn("Error parsing group document for user " + userId + ": " + e.getMessage());
-						}
-					}
-				}
-			}
-
-			// CRITICAL FIX: Add maximum iteration limit and visited tracking
-			int maxIterations = 50; // Prevent runaway loops
-			int iterations = 0;
-			
-			while(groupIdsToCheck.size() > 0 && iterations < maxIterations) {
-				List<String> newGroupIds = this.checkIndirectGroup(repositoryId, groupIdsToCheck);
-				
-				// Filter out already visited groups to prevent cycles
-				groupIdsToCheck.clear();
-				for (String groupId : newGroupIds) {
-					if (!visitedGroups.contains(groupId)) {
-						groupIdsToCheck.add(groupId);
-						resultGroupIds.add(groupId);
-						visitedGroups.add(groupId);
-					}
-				}
-				
-				iterations++;
-				
-				// Log potential infinite loop detection
-				if (iterations >= maxIterations) {
-					log.warn("Group hierarchy traversal reached maximum iterations (" + maxIterations + ") for user " + userId + " - possible circular group references");
-				}
-			}
-
-			//unique result
-			return resultGroupIds;
-		} catch (Exception e) {
-			log.error("Error getting joined groups for user: " + userId + ", error: " + e.getMessage());
-			return new ArrayList<String>();
-		}
-	}
-
-	private List<String> checkIndirectGroup(String repositoryId, List<String> groupIdsToCheck) {
-		List<String> resultGroupIds = new ArrayList<String>();
-		
-		if (groupIdsToCheck == null || groupIdsToCheck.isEmpty()) {
-			return resultGroupIds;
-		}
-
-		try {
-			// For now, implement a simplified version that doesn't do recursive group checking
-			// This prevents infinite loops and provides basic functionality
-			// Full implementation would require complex recursive group hierarchy traversal
-			
-			for (String groupId : groupIdsToCheck) {
-				// Check if this group belongs to other groups using joinedDirectGroupsByGroupId view
-				Map<String, Object> queryParams = new HashMap<String, Object>();
-				queryParams.put("startkey", "[\"" + groupId + "\",0]");
-				queryParams.put("endkey", "[\"" + groupId + "\",19]");
-				
-				try {
-					ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "joinedDirectGroupsByGroupId", queryParams);
-					if (result.getRows() != null) {
-						for (ViewResultRow row : result.getRows()) {
-							if (row.getValue() != null) {
-								try {
-									Map<String, Object> doc = (Map<String, Object>) row.getValue();
-									String parentGroupId = (String) doc.get("groupId");
-									if (parentGroupId != null && !resultGroupIds.contains(parentGroupId)) {
-										resultGroupIds.add(parentGroupId);
-									}
-								} catch (Exception e) {
-									log.warn("Error parsing group hierarchy for group " + groupId + ": " + e.getMessage());
-								}
-							}
-						}
-					}
-				} catch (Exception e) {
-					log.warn("Error checking indirect groups for " + groupId + ": " + e.getMessage());
-				}
-			}
-		} catch (Exception e) {
-			log.error("Error in checkIndirectGroup: " + e.getMessage());
-		}
-
-		return resultGroupIds;
+		return userGroupDao.getJoinedGroupByUserId(repositoryId, userId);
 	}
 
 	@Override
@@ -3065,713 +2030,64 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	// ///////////////////////////////////////
-	// Attachment
+	// Attachment (delegated to AttachmentDaoDelegate)
 	// ///////////////////////////////////////
 	@Override
 	public AttachmentNode getAttachment(String repositoryId, String attachmentId) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-
-			CouchAttachmentNode can = client.get(CouchAttachmentNode.class, attachmentId);
-
-			if (can != null) {
-				AttachmentNode result = can.convert();
-
-				// Set the actual binary stream from CouchDB attachment
-				try {
-					Object attachmentObj = client.getAttachment(attachmentId, "content");
-					if (attachmentObj != null && attachmentObj instanceof InputStream) {
-						result.setInputStream((InputStream) attachmentObj);
-					} else {
-						log.debug("No binary attachment stream found for: " + attachmentId);
-					}
-				} catch (Exception streamEx) {
-					log.warn("Error retrieving binary attachment stream for: " + attachmentId + " - " + streamEx.getMessage());
-				}
-
-				return result;
-			} else {
-				log.warn("CouchAttachmentNode is null for: " + attachmentId);
-				return null;
-			}
-		} catch (Exception e) {
-			log.error("Error getting attachment: " + attachmentId + " in repository: " + repositoryId, e);
-			return null;
-		}
+		return attachmentDao.getAttachment(repositoryId, attachmentId);
 	}
 
 	@Override
 	public void setStream(String repositoryId, AttachmentNode attachmentNode) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			
-			log.debug("=== OPTIMIZED SET STREAM ===");
-			log.debug("Attachment ID: " + attachmentNode.getId());
-			log.debug("Has binary content: " + (attachmentNode.getInputStream() != null));
-			
-			// Create or update the AttachmentNode document with stream metadata
-			CouchAttachmentNode can = new CouchAttachmentNode(attachmentNode);
-			
-			// STAGE 1: Create/update metadata document with retry logic
-			int retryCount = 0;
-			int maxRetries = 3;
-			String stage1RevisionAfterUpdate = null;
-			
-			while (retryCount < maxRetries) {
-				try {
-					if (attachmentNode.getId() != null && client.exists(attachmentNode.getId())) {
-						// Get latest revision before update
-						com.ibm.cloud.cloudant.v1.model.Document latestDoc = client.get(attachmentNode.getId());
-						if (latestDoc != null && latestDoc.getRev() != null) {
-							can.setRevision(latestDoc.getRev());
-									}
-						client.update(can);
-						// Get the updated document to obtain the new revision
-						com.ibm.cloud.cloudant.v1.model.Document updatedDoc = client.get(attachmentNode.getId());
-						stage1RevisionAfterUpdate = updatedDoc != null ? updatedDoc.getRev() : null;
-						log.debug("STAGE 1: Updated attachment metadata for: " + attachmentNode.getId() + " (new revision: " + stage1RevisionAfterUpdate + ")");
-					} else {
-						client.create(can);
-						// Get the created document to obtain the new revision
-						com.ibm.cloud.cloudant.v1.model.Document createdDoc = client.get(attachmentNode.getId());
-						stage1RevisionAfterUpdate = createdDoc != null ? createdDoc.getRev() : null;
-						log.debug("STAGE 1: Created attachment metadata for: " + attachmentNode.getId() + " (new revision: " + stage1RevisionAfterUpdate + ")");
-					}
-					break; // Success, exit retry loop
-					
-				} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
-					retryCount++;
-					log.warn("STAGE 1 RETRY " + retryCount + "/" + maxRetries + ": Metadata document conflict - " + e.getMessage());
-					
-					if (retryCount >= maxRetries) {
-						throw new RuntimeException("Failed to create/update attachment metadata after " + maxRetries + " retries", e);
-					}
-					
-					try {
-						Thread.sleep(100 * retryCount); // Progressive backoff
-					} catch (InterruptedException ie) {
-						Thread.currentThread().interrupt();
-						throw new RuntimeException("Interrupted during setStream retry", ie);
-					}
-				}
-			}
-			
-			// STAGE 2: Add binary content as CouchDB attachment (if present)
-			if (attachmentNode.getInputStream() != null) {
-				retryCount = 0;
-				
-				while (retryCount < maxRetries) {
-					try {
-						// CRITICAL FIX: Use the revision from STAGE 1 completion, not a fresh GET
-						String revisionToUse = stage1RevisionAfterUpdate;
-						if (revisionToUse == null) {
-							// Fallback: get fresh revision only if STAGE 1 revision is somehow lost
-							com.ibm.cloud.cloudant.v1.model.Document doc = client.get(attachmentNode.getId());
-							revisionToUse = doc != null ? doc.getRev() : null;
-									}
-						
-						if (revisionToUse == null) {
-							log.warn("STAGE 2: Cannot get revision for attachment: " + attachmentNode.getId());
-							break;
-						}
-						
-						// Create attachment with binary content
-						String attachmentName = "content"; // Standard attachment name for content
-						String contentType = attachmentNode.getMimeType() != null ? 
-							attachmentNode.getMimeType() : "application/octet-stream";
-						
-						log.debug("STAGE 2: Adding binary content to attachment: " + attachmentNode.getId() + " (revision: " + revisionToUse + ")");
-						
-						String newRevision = client.createAttachment(
-							attachmentNode.getId(), 
-							revisionToUse, 
-							attachmentName, 
-							attachmentNode.getInputStream(), 
-							contentType
-						);
-						
-									log.debug("STAGE 2 SUCCESS: Stored binary content for: " + attachmentNode.getId() + " (revision: " + revisionToUse + " -> " + newRevision + ")");
-						break; // Success, exit retry loop
-						
-					} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
-						retryCount++;
-						log.warn("STAGE 2 RETRY " + retryCount + "/" + maxRetries + ": Binary attachment conflict - " + e.getMessage());
-						
-						if (retryCount >= maxRetries) {
-							log.warn("STAGE 2 FAILURE: Failed to add binary content after " + maxRetries + " retries. Continuing with metadata-only attachment.");
-							break;
-						}
-						
-						try {
-							Thread.sleep(100 * retryCount); // Progressive backoff
-						} catch (InterruptedException ie) {
-							Thread.currentThread().interrupt();
-							log.warn("Interrupted during binary attachment retry - continuing with metadata-only");
-							break;
-						}
-					} catch (Exception attachmentError) {
-						log.warn("STAGE 2 ERROR: Failed to store binary content for: " + attachmentNode.getId() + ". Continuing with metadata-only attachment.", attachmentError);
-						break;
-					}
-				}
-			} else {
-				log.debug("STAGE 2 SKIPPED: No binary content to attach");
-			}
-			
-			log.debug("=== SET STREAM COMPLETED: " + attachmentNode.getId() + " ===");
-			
-		} catch (Exception e) {
-			log.error("Error setting stream for attachment: " + attachmentNode.getId() + " in repository: " + repositoryId, e);
-			throw new RuntimeException("Failed to set stream for attachment", e);
-		}
+		attachmentDao.setStream(repositoryId, attachmentNode);
 	}
 
 	@Override
 	public Rendition getRendition(String repositoryId, String objectId) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-
-			// Use regular get() - it includes _attachments as stubs with length metadata
-			// NOTE: Do NOT use getWithAttachments() with attachments=true as it downloads
-			// the actual content which causes the Cloudant SDK to not parse length properly
-			com.ibm.cloud.cloudant.v1.model.Document doc = client.get(objectId);
-			if (doc == null) {
-				return null;
-			}
-
-			// Convert Document to CouchRendition with _attachments metadata
-			ObjectMapper mapper = createConfiguredObjectMapper();
-			Map<String, Object> properties = doc.getProperties();
-			if (properties == null) {
-				return null;
-			}
-
-			// Build complete map including _attachments
-			Map<String, Object> completeMap = new HashMap<>(properties);
-			completeMap.put("_id", doc.getId());
-			completeMap.put("_rev", doc.getRev());
-
-			// The Cloudant SDK extracts _attachments into doc.getAttachments()
-			// For stubs, the length field is populated correctly
-			Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> sdkAttachments = doc.getAttachments();
-			if (sdkAttachments != null && !sdkAttachments.isEmpty()) {
-				Map<String, Object> attachmentsMap = new HashMap<>();
-				for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Attachment> entry : sdkAttachments.entrySet()) {
-					com.ibm.cloud.cloudant.v1.model.Attachment att = entry.getValue();
-					Map<String, Object> attMap = new HashMap<>();
-					attMap.put("content_type", att.contentType());
-					attMap.put("length", att.length());
-					attMap.put("digest", att.digest());
-					attMap.put("revpos", att.revpos());
-					attMap.put("stub", att.stub());
-					attachmentsMap.put(entry.getKey(), attMap);
-				}
-				completeMap.put("_attachments", attachmentsMap);
-			}
-
-			CouchRendition cr = mapper.convertValue(completeMap, CouchRendition.class);
-			if (cr != null) {
-				Rendition rendition = cr.convert();
-
-				// CRITICAL FIX: Get accurate decompressed attachment size
-				// CouchDB stores attachments gzip-compressed, so _attachments.length returns compressed size
-				// This causes Content-Length mismatch when streaming decompressed content (PDF EOF issue)
-				// Use getAttachmentSize() which downloads and counts actual decompressed bytes
-				try {
-					Long actualSize = client.getAttachmentSize(objectId, "content");
-					if (actualSize != null && actualSize > 0) {
-						long metadataLength = rendition.getLength();
-						if (metadataLength != actualSize) {
-							log.debug("Rendition length correction for " + objectId + 
-								": metadata=" + metadataLength + " -> actual=" + actualSize);
-						}
-						rendition.setLength(actualSize);
-					}
-				} catch (Exception sizeEx) {
-					log.warn("Could not get actual attachment size for rendition: " + objectId + 
-						", using metadata length: " + rendition.getLength(), sizeEx);
-				}
-
-				// Fetch binary attachment stream for the rendition content
-				try {
-					Object attachmentObj = client.getAttachment(objectId, "content");
-					if (attachmentObj != null && attachmentObj instanceof InputStream) {
-						InputStream attachmentStream = (InputStream) attachmentObj;
-						rendition.setInputStream(attachmentStream);
-						log.debug("Successfully set rendition binary stream for: " + objectId);
-					} else {
-						log.warn("No binary attachment found for rendition: " + objectId);
-					}
-				} catch (Exception streamEx) {
-					log.error("Error retrieving rendition binary stream for: " + objectId, streamEx);
-				}
-
-				return rendition;
-			}
-			return null;
-		} catch (Exception e) {
-			log.error("Error getting rendition: " + objectId + " in repository: " + repositoryId, e);
-			return null;
-		}
+		return attachmentDao.getRendition(repositoryId, objectId);
 	}
 
 	@Override
 	public String createAttachment(String repositoryId, AttachmentNode attachment, ContentStream contentStream) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			
-			// OPTIMIZED TWO-STAGE APPROACH: Following Cloudant SDK v0.8.0 design patterns
-			log.debug("=== OPTIMIZED ATTACHMENT CREATION ===");
-			log.debug("Attachment ID: " + attachment.getId());
-			log.debug("Content Stream present: " + (contentStream != null));
-			log.debug("Stream available: " + (contentStream != null && contentStream.getStream() != null));
-			
-			// STAGE 1: Create metadata document with proper error handling
-			CouchAttachmentNode can = new CouchAttachmentNode(attachment);
-			
-			// Set content stream properties if available
-			if (contentStream != null) {
-				can.setMimeType(contentStream.getMimeType());
-				can.setLength(contentStream.getLength());
-				can.setName(contentStream.getFileName());
-				log.debug("Content stream properties - MimeType: " + contentStream.getMimeType() + ", Length: " + contentStream.getLength());
-			}
-			
-			ObjectMapper mapper = createConfiguredObjectMapper();
-			@SuppressWarnings("unchecked")
-			Map<String, Object> documentMap = mapper.convertValue(can, Map.class);
-			
-			// Create metadata document with retry logic for revision conflicts
-			com.ibm.cloud.cloudant.v1.model.DocumentResult result = null;
-			String documentId = null;
-			String documentRevision = null;
-			
-			int retryCount = 0;
-			int maxRetries = 3;
-			
-			while (retryCount < maxRetries) {
-				try {
-					if (attachment.getId() != null && !attachment.getId().isEmpty()) {
-						result = client.create(attachment.getId(), documentMap);
-					} else {
-						result = client.create(documentMap);
-					}
-					
-					documentId = result.getId();
-					documentRevision = result.getRev();
-					
-					log.debug("STAGE 1 SUCCESS: Created metadata document: " + documentId + " (revision: " + documentRevision + ")");
-					break; // Success, exit retry loop
-					
-				} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
-					retryCount++;
-					log.warn("STAGE 1 RETRY " + retryCount + "/" + maxRetries + ": Document creation conflict - " + e.getMessage());
-					
-					if (retryCount >= maxRetries) {
-						throw new RuntimeException("Failed to create attachment metadata after " + maxRetries + " retries due to conflicts", e);
-					}
-					
-					// Brief wait before retry to reduce conflict probability
-					try {
-						Thread.sleep(100 * retryCount); // Progressive backoff: 100ms, 200ms, 300ms
-					} catch (InterruptedException ie) {
-						Thread.currentThread().interrupt();
-						throw new RuntimeException("Interrupted during attachment creation retry", ie);
-					}
-				}
-			}
-			
-			if (result == null) {
-				throw new RuntimeException("Failed to create attachment metadata document after all retries");
-			}
-			
-			// STAGE 2: Add binary content as CouchDB attachment (if present)
-			if (contentStream != null && contentStream.getStream() != null) {
-				try {
-					String attachmentName = "content"; // Standard attachment name
-					String contentType = contentStream.getMimeType() != null ?
-						contentStream.getMimeType() : "application/octet-stream";
-
-					// DEBUG: Log content details
-					log.error("Document ID: " + documentId);
-					log.error("Content Type: " + contentType);
-					try {
-						// Mark and reset to read content without consuming
-						InputStream debugStream = contentStream.getStream();
-						if (debugStream.markSupported()) {
-							debugStream.mark(100);
-							byte[] firstBytes = new byte[50];
-							int bytesRead = debugStream.read(firstBytes);
-							if (bytesRead > 0) {
-								String preview = new String(firstBytes, 0, bytesRead, "UTF-8");
-								log.error("Content preview: " + preview);
-							}
-							debugStream.reset();
-						}
-					} catch (Exception debugEx) {
-						log.error("Could not preview content: " + debugEx.getMessage());
-					}
-
-					log.debug("STAGE 2: Adding binary attachment to document: " + documentId + " (revision: " + documentRevision + ")");
-					
-					// Retry logic for attachment creation as well
-					retryCount = 0;
-					String finalRevision = null;
-					
-					while (retryCount < maxRetries) {
-						try {
-							String revisionToUse = documentRevision;
-							if (revisionToUse == null) {
-								try {
-									com.ibm.cloud.cloudant.v1.model.Document currentDoc = client.get(documentId);
-									revisionToUse = currentDoc != null ? currentDoc.getRev() : null;
-									if (revisionToUse == null) {
-										log.error("Unable to retrieve document revision for attachment creation - document may not exist");
-										throw new RuntimeException("Unable to retrieve document revision for attachment creation");
-									}
-								} catch (Exception getDocEx) {
-									log.error("Failed to get current document revision for " + documentId + ": " + getDocEx.getMessage(), getDocEx);
-									throw new RuntimeException("Unable to retrieve document revision for attachment creation", getDocEx);
-								}
-							}
-							
-							if (log.isDebugEnabled()) {
-								log.debug("STAGE 2 ATTEMPT " + (retryCount + 1) + ": Creating attachment with revision " + revisionToUse);
-							}
-							
-							finalRevision = client.createAttachment(
-								documentId, 
-								revisionToUse, 
-								attachmentName, 
-								contentStream.getStream(), 
-								contentType
-							);
-							
-							log.debug("STAGE 2 SUCCESS: Added binary attachment: " + documentId + 
-								" (revision: " + revisionToUse + " -> " + finalRevision + ")");
-							break;
-							
-						} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
-							retryCount++;
-							log.warn("STAGE 2 RETRY " + retryCount + "/" + maxRetries + 
-								": Attachment creation conflict - " + e.getMessage());
-							
-							if (retryCount >= maxRetries) {
-								log.error("STAGE 2 FAILURE: Failed to add binary attachment after " + 
-									maxRetries + " retries - continuing with metadata-only attachment");
-								break;
-							}
-							
-							documentRevision = null;
-							
-							try {
-								long baseBackoff = 100;
-								long backoffMs = (long) (baseBackoff * Math.pow(2, retryCount - 1) * (0.5 + Math.random() * 0.5));
-								backoffMs = Math.min(backoffMs, 5000);
-								if (log.isDebugEnabled()) {
-									log.debug("Backing off for " + backoffMs + "ms before retry " + retryCount);
-								}
-								Thread.sleep(backoffMs);
-							} catch (InterruptedException ie) {
-								Thread.currentThread().interrupt();
-								log.warn("Interrupted during attachment binary retry - continuing with metadata-only");
-								break;
-							}
-						} catch (Exception otherEx) {
-							log.error("Unexpected error during attachment creation for " + documentId + 
-								": " + otherEx.getMessage(), otherEx);
-							retryCount++;
-							if (retryCount >= maxRetries) {
-								log.error("STAGE 2 FAILURE: Failed to add binary attachment after " + 
-									maxRetries + " retries due to unexpected errors - continuing with metadata-only attachment");
-								break;
-							}
-						}
-					}
-					
-				} catch (Exception attachmentError) {
-					log.warn("STAGE 2 WARNING: Failed to add binary content for: " + documentId + ". Continuing with metadata-only attachment.", attachmentError);
-					// Don't throw exception - metadata document is successfully created
-				}
-			} else {
-				log.debug("STAGE 2 SKIPPED: No binary content to attach");
-			}
-			
-			log.debug("=== ATTACHMENT CREATION COMPLETED: " + documentId + " ===");
-			return documentId;
-			
-		} catch (Exception e) {
-			log.error("Error creating attachment in repository: " + repositoryId, e);
-			throw new RuntimeException("Failed to create attachment", e);
-		}
+		return attachmentDao.createAttachment(repositoryId, attachment, contentStream);
 	}
 
 	@Override
 	public String createRendition(String repositoryId, Rendition rendition, ContentStream contentStream) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			
-			// Create the Rendition document first
-			CouchRendition cr = new CouchRendition(rendition);
-			
-			// Set content stream properties if available
-			if (contentStream != null) {
-				cr.setMimetype(contentStream.getMimeType());
-				cr.setLength(contentStream.getLength());
-				cr.setTitle(contentStream.getFileName());
-			}
-			
-			com.ibm.cloud.cloudant.v1.model.DocumentResult result;
-			
-			// Create document
-			if (rendition.getId() != null && !rendition.getId().isEmpty()) {
-				// Create with specific ID
-				ObjectMapper mapper = createConfiguredObjectMapper();
-				@SuppressWarnings("unchecked")
-				Map<String, Object> documentMap = mapper.convertValue(cr, Map.class);
-				result = client.create(rendition.getId(), documentMap);
-			} else {
-				// Create with auto-generated ID
-				ObjectMapper mapper = createConfiguredObjectMapper();
-				@SuppressWarnings("unchecked")
-				Map<String, Object> documentMap = mapper.convertValue(cr, Map.class);
-				result = client.create(documentMap);
-			}
-			
-			String documentId = result.getId();
-			String documentRevision = result.getRev();
-			
-			log.debug("Created rendition document: " + documentId);
-			
-			// If there's binary content, store it as a CouchDB attachment
-			if (contentStream != null && contentStream.getStream() != null) {
-				try {
-					String attachmentName = "content"; // Standard attachment name for content
-					String contentType = contentStream.getMimeType() != null ? 
-						contentStream.getMimeType() : "application/octet-stream";
-					
-					String newRevision = client.createAttachment(
-						documentId, 
-						documentRevision, 
-						attachmentName, 
-						contentStream.getStream(), 
-						contentType
-					);
-					
-					log.debug("Stored binary content as attachment for rendition: " + documentId + " (revision: " + newRevision + ")");
-					
-				} catch (Exception attachmentError) {
-					log.warn("Failed to store binary content as attachment for rendition: " + documentId + ". Content stored as metadata only.", attachmentError);
-				}
-			}
-			
-			return documentId;
-			
-		} catch (Exception e) {
-			log.error("Error creating rendition in repository: " + repositoryId, e);
-			throw new RuntimeException("Failed to create rendition", e);
-		}
+		return attachmentDao.createRendition(repositoryId, rendition, contentStream);
 	}
 
 	@Override
 	public void updateAttachment(String repositoryId, AttachmentNode attachment, ContentStream contentStream) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			
-			// Update the AttachmentNode document first
-			CouchAttachmentNode can = new CouchAttachmentNode(attachment);
-
-			// CRITICAL FIX (2025-10-21): Get current revision from CouchDB before update
-			// Root cause: AttachmentNode from getAttachment() loses _rev during convert()
-			// CouchDB requires _rev for safe update (optimistic locking)
-			com.ibm.cloud.cloudant.v1.model.Document currentDoc = client.get(attachment.getId());
-			if (currentDoc != null && currentDoc.getRev() != null) {
-				can.setRevision(currentDoc.getRev());
-				log.debug("Set current revision for attachment update: " + currentDoc.getRev());
-			} else {
-				log.warn("Could not retrieve current revision for attachment: " + attachment.getId());
-			}
-
-			// Set content stream properties if available
-			if (contentStream != null) {
-				can.setMimeType(contentStream.getMimeType());
-				can.setLength(contentStream.getLength());
-				can.setName(contentStream.getFileName());
-			}
-
-			// STAGE 1: Update the document metadata and get the new revision
-			client.update(can);
-			// Get the updated document to obtain the new revision
-			com.ibm.cloud.cloudant.v1.model.Document updatedDoc = client.get(attachment.getId());
-			String stage1RevisionAfterUpdate = updatedDoc != null ? updatedDoc.getRev() : null;
-			log.debug("Updated attachment metadata for: " + attachment.getId() + " (new revision: " + stage1RevisionAfterUpdate + ")");
-			
-			// STAGE 2: If there's binary content, update it as a CouchDB attachment
-			if (contentStream != null && contentStream.getStream() != null) {
-				try {
-					// CRITICAL FIX: Use the revision from STAGE 1 completion, not a fresh GET
-					String revisionToUse = stage1RevisionAfterUpdate;
-					if (revisionToUse == null) {
-						// Fallback: get fresh revision only if STAGE 1 revision is somehow lost
-						com.ibm.cloud.cloudant.v1.model.Document doc = client.get(attachment.getId());
-						revisionToUse = doc != null ? doc.getRev() : null;
-								}
-
-					// Update attachment with binary content
-					String attachmentName = "content"; // Standard attachment name for content
-					String contentType = contentStream.getMimeType() != null ?
-						contentStream.getMimeType() : "application/octet-stream";
-					if (log.isDebugEnabled()) {
-					log.debug("UPDATE ATTACHMENT STAGE 2: Attachment ID: " + attachment.getId());
-				}
-					if (log.isDebugEnabled()) {
-					log.debug("UPDATE ATTACHMENT STAGE 2: Content length from metadata: " + contentStream.getLength());
-				}
-
-					// DEBUG: Read the InputStream and count actual bytes
-					InputStream originalStream = contentStream.getStream();
-					java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-					byte[] buffer = new byte[8192];
-					int bytesRead;
-					int totalBytesRead = 0;
-					while ((bytesRead = originalStream.read(buffer)) != -1) {
-						baos.write(buffer, 0, bytesRead);
-						totalBytesRead += bytesRead;
-					}
-					byte[] allBytes = baos.toByteArray();
-					if (log.isDebugEnabled()) {
-					log.debug("UPDATE ATTACHMENT STAGE 2: Content preview: " + new String(allBytes, 0, Math.min(100, allBytes.length), java.nio.charset.StandardCharsets.UTF_8));
-				}
-
-					// Create new InputStream from the bytes we read
-					java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(allBytes);
-
-					String newRevision = client.createAttachment(
-						attachment.getId(),
-						revisionToUse,
-						attachmentName,
-						bais,
-						contentType
-					);
-								log.debug("Updated binary content as attachment for: " + attachment.getId() + " (revision: " + newRevision + ")");
-
-				} catch (Exception attachmentError) {
-					log.warn("Failed to update binary content as attachment for: " + attachment.getId() + ". Metadata updated only.", attachmentError);
-				}
-			}
-			
-		} catch (Exception e) {
-			log.error("Error updating attachment: " + attachment.getId() + " in repository: " + repositoryId, e);
-			throw new RuntimeException("Failed to update attachment", e);
-		}
+		attachmentDao.updateAttachment(repositoryId, attachment, contentStream);
 	}
 
 	// ///////////////////////////////////////
-	// Change event
+	// Change event (delegated to ChangeEventDaoDelegate)
 	// ///////////////////////////////////////
 	@Override
 	public Change getChangeEvent(String repositoryId, String changeTokenId) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			CouchChange cc = client.get(CouchChange.class, changeTokenId);
-			
-			if (cc != null) {
-				return cc.convert();
-			}
-			return null;
-		} catch (Exception e) {
-			log.error("Error getting change event: " + changeTokenId + " in repository: " + repositoryId, e);
-			return null;
-		}
+		return changeEventDao.getChangeEvent(repositoryId, changeTokenId);
 	}
 
 	@Override
 	public Change getLatestChange(String repositoryId) {
-		try {
-			// Query changesByToken view to get the most recent change
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			// IMPORTANT: Must use "changesByToken" as specified in standard design document
-			List<CouchChange> couchChanges = client.queryView("_repo", "changesByToken", null, CouchChange.class);
-			
-			if (!couchChanges.isEmpty()) {
-				// Return the first (most recent) change
-				return couchChanges.get(0).convert();
-			}
-			
-			// If no changes found, return a default change to prevent errors
-			log.debug("No changes found in repository: " + repositoryId + ", returning null");
-			return null;
-		} catch (Exception e) {
-			log.debug("Error getting latest change in repository: " + repositoryId + " (this is normal for empty repositories)", e);
-			// Return null instead of throwing exception to prevent cascading errors
-			return null;
-		}
+		return changeEventDao.getLatestChange(repositoryId);
 	}
 
 	@Override
 	public List<Change> getLatestChanges(String repositoryId, String startToken, int maxItems) {
-		try {
-			// Query changesByToken view with pagination
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			if (maxItems > 0) {
-				queryParams.put("limit", maxItems);
-			}
-			if (startToken != null) {
-				queryParams.put("startkey", startToken);
-			}
-			
-			ViewResult result = client.queryView("_repo", "changesByToken", queryParams);
-			List<Change> changes = new ArrayList<Change>();
-			
-			if (result.getRows() != null) {
-				for (ViewResultRow row : result.getRows()) {
-					if (row.getDoc() != null) {
-						try {
-							ObjectMapper mapper = createConfiguredObjectMapper();
-							CouchChange cc = mapper.convertValue(row.getDoc(), CouchChange.class);
-							if (cc != null) {
-								changes.add(cc.convert());
-							}
-						} catch (Exception e) {
-							log.warn("Failed to convert change document: " + e.getMessage());
-						}
-					}
-				}
-			}
-			
-			return changes;
-		} catch (Exception e) {
-			log.error("Error getting latest changes in repository: " + repositoryId, e);
-			return new ArrayList<Change>();
-		}
+		return changeEventDao.getLatestChanges(repositoryId, startToken, maxItems);
 	}
 
 	@Override
 	public List<Change> getObjectChanges(String repositoryId, String objectId) {
-		try {
-			// Query changesByObjectId view with objectId
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			List<CouchChange> couchChanges = client.queryView("_repo", "changesByObjectId", objectId, CouchChange.class);
-			
-			List<Change> changes = new ArrayList<Change>();
-			for (CouchChange couchChange : couchChanges) {
-				changes.add(couchChange.convert());
-			}
-			
-			return changes;
-		} catch (Exception e) {
-			log.error("Error getting object changes for: " + objectId + " in repository: " + repositoryId, e);
-			return new ArrayList<Change>();
-		}
+		return changeEventDao.getObjectChanges(repositoryId, objectId);
 	}
-
 
 	@Override
 	public Change create(String repositoryId, Change change) {
-		CouchChange cc = new CouchChange(change);
-		connectorPool.getClient(repositoryId).create(cc);
-		return cc.convert();
+		return changeEventDao.create(repositoryId, change);
 	}
 
 	// ///////////////////////////////////////
@@ -3779,765 +2095,100 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// ///////////////////////////////////////
 	@Override
 	public Archive getArchive(String repositoryId, String objectId) {
-		String archive = repositoryInfoMap.getArchiveId(repositoryId);
-		CouchArchive ca = connectorPool.get(archive).get(CouchArchive.class, objectId);
-		if (ca == null) {
-			return null;
-		}
-		return ca.convert();
+		return archiveDao.getArchive(repositoryId, objectId);
 	}
 
 	@Override
 	public Archive getArchiveByOriginalId(String repositoryId, String originalId) {
-		try {
-			// Query 'all' view with originalId (all view emits doc.originalId as key)
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "all", originalId, CouchArchive.class);
-			
-			if (couchArchives != null && !couchArchives.isEmpty()) {
-				// Return the first (and should be only) result
-				return couchArchives.get(0).convert();
-			}
-			
-			return null;
-		} catch (Exception e) {
-			log.error("Error getting archive by original ID: " + originalId + " in repository: " + repositoryId, e);
-			return null;
-		}
+		return archiveDao.getArchiveByOriginalId(repositoryId, originalId);
 	}
 
 	@Override
 	public Archive getAttachmentArchive(String repositoryId, Archive archive) {
-		try {
-			// Use the archive's attachmentNodeId to find the attachment archive.
-			// The "attachments" view emits by originalId, and attachmentNodeId is
-			// the originalId of the attachment that was archived alongside the document.
-			String attachmentNodeId = archive.getAttachmentNodeId();
-			if (attachmentNodeId == null || attachmentNodeId.isEmpty()) {
-				log.warn("No attachmentNodeId on archive: " + archive.getId());
-				return null;
-			}
-
-
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "attachments", attachmentNodeId, CouchArchive.class);
-			
-			if (!couchArchives.isEmpty()) {
-				return couchArchives.get(0).convert();
-			}
-			
-			return null;
-		} catch (Exception e) {
-			log.error("Error getting attachment archive for: " + archive.getId() + " in repository: " + repositoryId, e);
-			return null;
-		}
+		return archiveDao.getAttachmentArchive(repositoryId, archive);
 	}
 
 	@Override
 	public List<Archive> getChildArchives(String repositoryId, Archive archive) {
-		try {
-			// Query 'children' view with archive ID (children view emits doc.parentId as key)
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "children", archive.getId(), CouchArchive.class);
-			
-			List<Archive> archives = new ArrayList<Archive>();
-			if (couchArchives != null) {
-				for (CouchArchive couchArchive : couchArchives) {
-					archives.add(couchArchive.convert());
-				}
-			}
-			
-			return archives;
-		} catch (Exception e) {
-			log.error("Error getting child archives for: " + archive.getId() + " in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
-		}
+		return archiveDao.getChildArchives(repositoryId, archive);
 	}
 
 	@Override
 	public List<Archive> getArchivesOfVersionSeries(String repositoryId, String versionSeriesId) {
-		try {
-			// Query 'versionSeries' view with versionSeriesId (versionSeries view emits doc.versionSeriesId as key)
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "versionSeries", versionSeriesId, CouchArchive.class);
-			
-			List<Archive> archives = new ArrayList<Archive>();
-			if (couchArchives != null) {
-				for (CouchArchive couchArchive : couchArchives) {
-					archives.add(couchArchive.convert());
-				}
-			}
-			
-			return archives;
-		} catch (Exception e) {
-			log.error("Error getting archives of version series: " + versionSeriesId + " in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
-		}
+		return archiveDao.getArchivesOfVersionSeries(repositoryId, versionSeriesId);
 	}
 
 	@Override
 	public List<Archive> getAllArchives(String repositoryId) {
-		try {
-			// Query 'all' view without key to get all archives (all view emits doc.originalId as key)
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "all", null, CouchArchive.class);
-			
-			List<Archive> archives = new ArrayList<Archive>();
-			if (couchArchives != null) {
-				for (CouchArchive couchArchive : couchArchives) {
-					archives.add(couchArchive.convert());
-				}
-			}
-			
-			return archives;
-		} catch (Exception e) {
-			log.error("Error getting all archives in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
-		}
+		return archiveDao.getAllArchives(repositoryId);
 	}
 
 	@Override
 	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
-		try {
-			// Query allByCreated view with pagination parameters (same as v2.4)
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			
-			if (skip != null && skip > 0) {
-				queryParams.put("skip", skip.longValue());
-			}
-			if (limit != null && limit > 0) {
-				queryParams.put("limit", limit.longValue());
-			}
-			if (desc == null) {
-				queryParams.put("descending", true);
-			} else if (desc) {
-				queryParams.put("descending", true);
-			}
-
-			ViewResult result = client.queryView("_repo", "allByCreated", queryParams);
-			List<Archive> archives = new ArrayList<Archive>();
-
-			if (result.getRows() != null) {
-				for (ViewResultRow row : result.getRows()) {
-					// The 'allByCreated' view emits: emit(doc.created, doc)
-					// So the document data is in getValue(), not getDoc() (which requires include_docs=true)
-					Object docValue = row.getValue();
-					if (docValue != null) {
-						try {
-							ObjectMapper mapper = createConfiguredObjectMapper();
-							CouchArchive ca = mapper.convertValue(docValue, CouchArchive.class);
-							if (ca != null) {
-								archives.add(ca.convert());
-							}
-						} catch (Exception e) {
-							log.warn("Failed to convert archive document: " + e.getMessage());
-						}
-					}
-				}
-			}
-			
-			return archives;
-		} catch (Exception e) {
-			log.error("Error getting archives in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
-		}
+		return archiveDao.getArchives(repositoryId, skip, limit, desc);
 	}
 
 	@Override
 	public List<Archive> getArchivesByCreator(String repositoryId, String creator) {
-		try {
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			// Cloudant SDK auto-serializes key to JSON, so pass raw string without quotes
-			queryParams.put("key", creator);
-
-			ViewResult result = client.queryView("_repo", "byCreator", queryParams);
-			List<Archive> archives = new ArrayList<Archive>();
-
-			if (result != null && result.getRows() != null) {
-				ObjectMapper mapper = createConfiguredObjectMapper();
-				for (ViewResultRow row : result.getRows()) {
-					// Use row.getDoc() instead of row.getValue() because the emit value
-					// contains raw timestamps (long) that cannot be deserialized to GregorianCalendar.
-					// includeDocs=true is set in queryView, so getDoc() returns the full document.
-					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-					if (doc != null) {
-						try {
-							Map<String, Object> docMap = doc.getProperties();
-							if (docMap != null) {
-								if (!docMap.containsKey("_id") && doc.getId() != null) {
-									docMap.put("_id", doc.getId());
-								}
-								if (!docMap.containsKey("_rev") && doc.getRev() != null) {
-									docMap.put("_rev", doc.getRev());
-								}
-								String jsonString = mapper.writeValueAsString(docMap);
-								CouchArchive ca = mapper.readValue(jsonString, CouchArchive.class);
-								if (ca != null) {
-									archives.add(ca.convert());
-								}
-							}
-						} catch (Exception e) {
-							log.warn("Failed to convert archive document: " + e.getMessage());
-						}
-					}
-				}
-			}
-
-			return archives;
-		} catch (Exception e) {
-			log.error("Error getting archives by creator in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
-		}
+		return archiveDao.getArchivesByCreator(repositoryId, creator);
 	}
 
 	@Override
 	public List<Archive> getArchivesByArchivedBy(String repositoryId, String archivedBy) {
-		try {
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			// Cloudant SDK auto-serializes key to JSON, so pass raw string without quotes
-			queryParams.put("key", archivedBy);
-
-			ViewResult result = client.queryView("_repo", "byArchivedBy", queryParams);
-			List<Archive> archives = new ArrayList<Archive>();
-
-			if (result != null && result.getRows() != null) {
-				ObjectMapper mapper = createConfiguredObjectMapper();
-				for (ViewResultRow row : result.getRows()) {
-					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-					if (doc != null) {
-						try {
-							Map<String, Object> docMap = doc.getProperties();
-							if (docMap != null) {
-								if (!docMap.containsKey("_id") && doc.getId() != null) {
-									docMap.put("_id", doc.getId());
-								}
-								if (!docMap.containsKey("_rev") && doc.getRev() != null) {
-									docMap.put("_rev", doc.getRev());
-								}
-								String jsonString = mapper.writeValueAsString(docMap);
-								CouchArchive ca = mapper.readValue(jsonString, CouchArchive.class);
-								if (ca != null) {
-									archives.add(ca.convert());
-								}
-							}
-						} catch (Exception e) {
-							log.warn("Failed to convert archive document: " + e.getMessage());
-						}
-					}
-				}
-			}
-
-			return archives;
-		} catch (Exception e) {
-			log.error("Error getting archives by archivedBy in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
-		}
+		return archiveDao.getArchivesByArchivedBy(repositoryId, archivedBy);
 	}
 
 	@Override
 	public Archive createArchive(String repositoryId, Archive archive, Boolean deletedWithParent) {
-		String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
-		CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-		CloudantClientWrapper archiveClient = connectorPool.get(archiveId);
-
-		// Read the full raw CouchDB document to preserve ALL fields
-		// (versionLabel, majorVersion, secondaryIds, aspects, subTypeProperties, etc.)
-		com.ibm.cloud.cloudant.v1.model.Document rawDoc = client.get(archive.getOriginalId());
-		String lastRevision = rawDoc != null ? rawDoc.getRev() : null;
-
-		// Build archive document from raw properties + archive metadata
-		Map<String, Object> archiveMap = new HashMap<>();
-
-		// Copy all original document properties (preserves versionLabel, secondaryIds, etc.)
-		if (rawDoc != null) {
-			Map<String, Object> originalProps = rawDoc.getProperties();
-			if (originalProps != null) {
-				archiveMap.putAll(originalProps);
-			}
-		}
-
-		// Add archive-specific metadata (overwriting any conflicts)
-		archiveMap.put("originalId", archive.getOriginalId());
-		archiveMap.put("lastRevision", lastRevision);
-		archiveMap.put("deletedWithParent", deletedWithParent);
-
-		// Copy fields from the Archive model (set by ContentServiceImpl)
-		if (archive.getName() != null) archiveMap.put("name", archive.getName());
-		if (archive.getType() != null) archiveMap.put("type", archive.getType());
-		if (archive.getParentId() != null) archiveMap.put("parentId", archive.getParentId());
-		if (archive.getPath() != null) archiveMap.put("path", archive.getPath());
-		if (archive.getAttachmentNodeId() != null) archiveMap.put("attachmentNodeId", archive.getAttachmentNodeId());
-		if (archive.getVersionSeriesId() != null) archiveMap.put("versionSeriesId", archive.getVersionSeriesId());
-		archiveMap.put("latestVersion", archive.isLatestVersion());
-		if (archive.getMimeType() != null) archiveMap.put("mimeType", archive.getMimeType());
-		archiveMap.put("contentStreamLength", archive.getContentStreamLength());
-		if (archive.getCreator() != null) archiveMap.put("creator", archive.getCreator());
-		if (archive.getModifier() != null) archiveMap.put("modifier", archive.getModifier());
-		if (archive.getAclSnapshot() != null) archiveMap.put("aclSnapshot", archive.getAclSnapshot());
-		if (archive.getArchiveState() != null) archiveMap.put("archiveState", archive.getArchiveState());
-		if (archive.getArchivedAt() != null) archiveMap.put("archivedAt", archive.getArchivedAt().getTimeInMillis());
-		if (archive.getArchivedBy() != null) archiveMap.put("archivedBy", archive.getArchivedBy());
-
-		// Remove CouchDB internal fields (new doc will get its own _id/_rev)
-		archiveMap.remove("_id");
-		archiveMap.remove("_rev");
-		archiveMap.remove("_attachments");
-
-		// Write to archive DB
-		archiveClient.create(archiveMap);
-
-		// Return the archive model for caller
-		CouchArchive ca = new CouchArchive(archive);
-		ca.setLastRevision(lastRevision);
-		return ca.convert();
+		return archiveDao.createArchive(repositoryId, archive, deletedWithParent);
 	}
 
 	@Override
 	public Archive createAttachmentArchive(String repositoryId, Archive archive) {
-		String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
-		CloudantClientWrapper sourceClient = connectorPool.getClient(repositoryId);
-		CloudantClientWrapper archiveClient = connectorPool.get(archiveId);
-
-		// Read the full raw CouchDB attachment node to preserve ALL fields
-		// (name, mimeType, length, actualLength, etc.)
-		com.ibm.cloud.cloudant.v1.model.Document rawDoc = sourceClient.get(archive.getOriginalId());
-
-		// Handle case where attachment was already deleted
-		if (rawDoc == null) {
-			log.warn(buildLogMsg(archive.getOriginalId(),
-					"attachment no longer exists (may have been deleted by another version)"));
-			CouchArchive ca = new CouchArchive(archive);
-			archiveClient.create(ca);
-			return ca.convert();
-		}
-
-		String lastRevision = rawDoc.getRev();
-
-		// Build archive document from raw properties + archive metadata
-		Map<String, Object> archiveMap = new HashMap<>();
-
-		// Copy all original attachment node properties (preserves name, mimeType, length, etc.)
-		Map<String, Object> originalProps = rawDoc.getProperties();
-		if (originalProps != null) {
-			archiveMap.putAll(originalProps);
-		}
-
-		// Add archive-specific metadata
-		archiveMap.put("originalId", archive.getOriginalId());
-		archiveMap.put("lastRevision", lastRevision);
-		archiveMap.put("deletedWithParent", archive.isDeletedWithParent());
-		if (archive.getName() != null) archiveMap.put("name", archive.getName());
-		if (archive.getType() != null) archiveMap.put("type", archive.getType());
-		if (archive.getParentId() != null) archiveMap.put("parentId", archive.getParentId());
-
-		// Remove CouchDB internal fields
-		archiveMap.remove("_id");
-		archiveMap.remove("_rev");
-		archiveMap.remove("_attachments");
-
-		// Write to archive DB
-		com.ibm.cloud.cloudant.v1.model.DocumentResult createResult = archiveClient.create(archiveMap);
-		String archiveDocId = createResult != null ? createResult.getId() : null;
-
-		// Copy binary content (_attachments) from source to archive
-		// Use getAttachments() (not getProperties()) - Cloudant SDK extracts _attachments separately
-		Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> sourceAttachments = rawDoc.getAttachments();
-		boolean hasBinary = sourceAttachments != null && !sourceAttachments.isEmpty();
-		try {
-			Object binaryContent = sourceClient.getAttachment(archive.getOriginalId(), "content");
-			if (binaryContent instanceof java.io.InputStream && archiveDocId != null) {
-				com.ibm.cloud.cloudant.v1.model.Document archiveDoc = archiveClient.get(archiveDocId);
-				String archiveRev = archiveDoc != null ? archiveDoc.getRev() : null;
-				// Use the original mimeType from the raw document
-				Object mimeTypeObj = originalProps != null ? originalProps.get("mimeType") : null;
-				String mimeType = mimeTypeObj instanceof String ? (String) mimeTypeObj : "application/octet-stream";
-				if (mimeType.isEmpty()) mimeType = "application/octet-stream";
-				archiveClient.createAttachment(archiveDocId, archiveRev, "content",
-					(java.io.InputStream) binaryContent, mimeType);
-				log.info("createAttachmentArchive: binary content copied to archive for " + archive.getOriginalId());
-			}
-		} catch (Exception e) {
-			if (hasBinary) {
-				throw new RuntimeException("createAttachmentArchive: failed to copy binary content for "
-					+ archive.getOriginalId() + " (binary exists in source)", e);
-			}
-			log.info("createAttachmentArchive: no binary content to copy for " + archive.getOriginalId());
-		}
-
-		CouchArchive ca = new CouchArchive(archive);
-		ca.setLastRevision(lastRevision);
-		return ca.convert();
+		return archiveDao.createAttachmentArchive(repositoryId, archive);
 	}
 
 	@Override
 	public String deleteArchive(String repositoryId, String archiveId) {
-		String archive = repositoryInfoMap.getArchiveId(repositoryId);
-
-		try {
-			CouchArchive ca = connectorPool.get(archive).get(CouchArchive.class, archiveId);
-			if (ca == null) {
-				// get() returned null without throwing exception
-				log.warn(buildLogMsg(archiveId, "archive not found in database (get() returned null)"));
-				return null;
-			}
-			connectorPool.get(archive).delete(ca);
-			return archiveId;
-		} catch (NotFoundException e) {
-			// Archive document does not exist - thrown by get() or delete()
-			log.warn(buildLogMsg(archiveId, "archive not found in database (NotFoundException thrown)"));
-			return null;
-		} catch (ServiceResponseException e) {
-			// CouchDB/Cloudant service error (connection, timeout, 5xx errors)
-			throw new CmisRuntimeException("deleteArchive: CouchDB service error, archiveId=" + archiveId, e);
-		} catch (Exception e) {
-			// Unexpected error
-			throw new CmisRuntimeException("deleteArchive: unexpected error, archiveId=" + archiveId, e);
-		}
+		return archiveDao.deleteArchive(repositoryId, archiveId);
 	}
 
 	@Override
 	public void deleteDocumentArchive(String repositoryId, String archiveId) {
-		Archive docArchive = getArchive(repositoryId, archiveId);
-		if (docArchive == null) {
-			log.warn(buildLogMsg(archiveId, "document archive not found"));
-			return;
-		}
-
-		// Handle attachment archive deletion
-		String attachmentNodeId = docArchive.getAttachmentNodeId();
-		if (attachmentNodeId != null) {
-			Archive attachmentArchive = getArchiveByOriginalId(repositoryId, attachmentNodeId);
-			if (attachmentArchive != null) {
-				String deletedAttachmentArchiveId = deleteArchive(repositoryId, attachmentArchive.getId());
-				if (deletedAttachmentArchiveId == null) {
-					log.warn(buildLogMsg(attachmentArchive.getId(), "attachment archive already deleted or not found"));
-				}
-			} else {
-				log.warn(buildLogMsg(attachmentNodeId, "attachment archive not found by original ID"));
-			}
-		} else {
-			log.warn(buildLogMsg(archiveId, "document archive has no attachment node ID"));
-		}
-
-		// Delete the document archive itself
-		String deletedDocArchiveId = deleteArchive(repositoryId, docArchive.getId());
-		if (deletedDocArchiveId == null) {
-			throw new CmisRuntimeException("deleteDocumentArchive: document archive deletion failed, archiveId=" + docArchive.getId());
-		}
+		archiveDao.deleteDocumentArchive(repositoryId, archiveId);
 	}
 
 	@Override
 	public void restoreContent(String repositoryId, Archive archive) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			
-			// Get the archived content document
-			String archiveId = archive.getId();
-			String originalId = archive.getOriginalId();
-			
-			log.info("restoreContent: archiveId=" + archiveId + ", originalId=" + originalId + ", repositoryId=" + repositoryId);
-			
-			// Get the archive repository
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper archiveClient = connectorPool.getClient(archiveRepositoryId);
-			
-			// Retrieve the archived document
-			com.ibm.cloud.cloudant.v1.model.Document archivedDoc = archiveClient.get(archiveId);
-			if (archivedDoc == null) {
-				log.warn("Archive document not found: " + archiveId);
-				return;
-			}
-			
-			// CLOUDANT FIX: Use Document.get() to create Map for manipulation
-			Map<String, Object> docMap = new HashMap<>();
-			
-			// Copy standard document fields
-			docMap.put("_id", originalId); // Set restored ID
-			// Skip _rev to let CouchDB assign new revision
-			
-			// CRITICAL FIX (2026-02-09): Copy all custom fields from Document using getProperties()
-			// Previously cast created/modified to String, but they are stored as Numbers (timestamps)
-			// LazilyParsedNumber cannot be cast to String, causing ClassCastException
-			try {
-				Map<String, Object> properties = archivedDoc.getProperties();
-				if (properties != null && !properties.isEmpty()) {
-					log.info("restoreContent: Copying " + properties.size() + " properties from archived doc");
-					for (Map.Entry<String, Object> entry : properties.entrySet()) {
-						String key = entry.getKey();
-						// Skip archive-specific fields and document metadata
-						if (!"isArchive".equals(key) && !"originalId".equals(key) &&
-							!"_rev".equals(key) && !"_id".equals(key) &&
-							!"archiveState".equals(key) && !"archivedAt".equals(key) &&
-							!"archivedBy".equals(key) && !"coldArchivedAt".equals(key) &&
-							!"coldMoveMode".equals(key) && !"contentRef".equals(key) &&
-							!"aclSnapshot".equals(key) && !"propsSnapshot".equals(key) &&
-							!"deletedWithParent".equals(key) && !"lastRevision".equals(key)) {
-							docMap.put(key, entry.getValue());
-						}
-					}
-				}
-			} catch (Exception e) {
-				log.warn("CLOUDANT FIX: Error accessing getProperties() during restore: " + e.getMessage());
-			}
-			
-			// FIX (2026-02-11): CouchArchive does not store 'objectType' field.
-			// Normal documents have 'objectType' (e.g. "cmis:document") which is required
-			// for CMIS operations like checkOut. Restore it from the archive's 'type' field.
-			if (!docMap.containsKey("objectType") && docMap.containsKey("type")) {
-				docMap.put("objectType", docMap.get("type"));
-				log.info("restoreContent: restored objectType from type field: " + docMap.get("type"));
-			}
-			
-			log.info("restoreContent: docMap keys=" + docMap.keySet() + ", about to purge tombstone for " + originalId);
-			
-			// CRITICAL FIX (2026-02-09): Handle CouchDB tombstone for deleted documents
-			// CouchDB keeps tombstones (_deleted=true) for deleted documents.
-			// PUT with the same ID fails with 409 Conflict even with tombstone _rev.
-			// Must purge the tombstone first, then create the document fresh.
-			boolean purged = client.purgeTombstone(originalId);
-			log.info("restoreContent: purgeTombstone result=" + purged + " for " + originalId);
-
-			// Create the restored document in the main repository
-			com.ibm.cloud.cloudant.v1.model.DocumentResult createResult = client.create(originalId, docMap);
-			log.info("restoreContent: create result=" + (createResult != null ? "id=" + createResult.getId() + ",ok=" + createResult.isOk() : "null") + " for " + originalId);
-			
-			log.info("Content restored from archive: " + archiveId + " to original ID: " + originalId);
-			
-		} catch (Exception e) {
-			log.error("Error restoring content from archive: " + archive.getId() + " in repository: " + repositoryId, e);
-			throw new RuntimeException("Failed to restore content from archive", e);
-		}
+		archiveDao.restoreContent(repositoryId, archive);
 	}
 
 	@Override
 	public void restoreAttachment(String repositoryId, Archive archive) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			String archiveId = archive.getId();
-			String originalId = archive.getOriginalId();
-
-			log.info("restoreAttachment: archiveId=" + archiveId + ", originalId=" + originalId);
-
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper archiveClient = connectorPool.getClient(archiveRepositoryId);
-
-			// Read the raw archive document to preserve ALL fields
-			com.ibm.cloud.cloudant.v1.model.Document archivedDoc = archiveClient.get(archiveId);
-			if (archivedDoc == null) {
-				log.warn("Archive attachment document not found: " + archiveId);
-				return;
-			}
-
-			// Build restored document from raw properties
-			Map<String, Object> docMap = new HashMap<>();
-			docMap.put("_id", originalId);
-			// Copy all custom fields from archive
-			Map<String, Object> properties = archivedDoc.getProperties();
-			if (properties != null) {
-				for (Map.Entry<String, Object> entry : properties.entrySet()) {
-					String key = entry.getKey();
-					// Skip archive-specific and CouchDB internal fields
-					if (!"originalId".equals(key) && !"_rev".equals(key) && !"_id".equals(key) &&
-						!"lastRevision".equals(key) && !"archiveState".equals(key) &&
-						!"archivedAt".equals(key) && !"archivedBy".equals(key) &&
-						!"deletedWithParent".equals(key) && !"aclSnapshot".equals(key) &&
-						!"propsSnapshot".equals(key) && !"coldArchivedAt".equals(key) &&
-						!"coldMoveMode".equals(key) && !"contentRef".equals(key)) {
-						docMap.put(key, entry.getValue());
-					}
-				}
-			}
-
-			// Purge tombstone
-			boolean purged = client.purgeTombstone(originalId);
-			log.info("restoreAttachment: purgeTombstone result=" + purged + " for " + originalId);
-
-			// Create the restored attachment document
-			client.create(originalId, docMap);
-
-			// Restore binary attachment from archive
-			// Use getAttachments() (not getProperties()) - Cloudant SDK extracts _attachments separately
-			Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> archiveAttachments = archivedDoc.getAttachments();
-			boolean archiveHasBinary = archiveAttachments != null && !archiveAttachments.isEmpty();
-			try {
-				Object attachmentData = archiveClient.getAttachment(archiveId, "content");
-				if (attachmentData instanceof java.io.InputStream) {
-					com.ibm.cloud.cloudant.v1.model.Document doc = client.get(originalId);
-					String revision = doc != null ? doc.getRev() : null;
-
-					// Get mimeType from the restored document properties
-					String mimeType = docMap.get("mimeType") instanceof String
-						? (String) docMap.get("mimeType") : "application/octet-stream";
-					if (mimeType.isEmpty()) mimeType = "application/octet-stream";
-
-					client.createAttachment(originalId, revision, "content",
-						(java.io.InputStream) attachmentData, mimeType);
-
-					// Update length metadata, preserving _attachments stubs
-					com.ibm.cloud.cloudant.v1.model.Document updatedDoc = client.get(originalId);
-					if (updatedDoc != null) {
-						Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> atts = updatedDoc.getAttachments();
-						if (atts != null && atts.get("content") != null) {
-							long actualLength = atts.get("content").length();
-							Map<String, Object> updateMap = new HashMap<>();
-							updateMap.put("_id", originalId);
-							updateMap.put("_rev", updatedDoc.getRev());
-							Map<String, Object> props = updatedDoc.getProperties();
-							if (props != null) {
-								updateMap.putAll(props);
-							}
-							updateMap.put("length", actualLength);
-							updateMap.put("actualLength", actualLength);
-							// Include _attachments stubs to preserve binary
-							Map<String, Object> attachmentsStubs = new HashMap<>();
-							for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Attachment> entry : atts.entrySet()) {
-								Map<String, Object> stub = new HashMap<>();
-								stub.put("stub", true);
-								stub.put("content_type", entry.getValue().contentType());
-								stub.put("length", entry.getValue().length());
-								attachmentsStubs.put(entry.getKey(), stub);
-							}
-							updateMap.put("_attachments", attachmentsStubs);
-							client.update(updateMap);
-							log.info("restoreAttachment: updated length to " + actualLength + " for " + originalId);
-						}
-					}
-
-					log.info("Binary attachment restored for: " + originalId);
-				}
-			} catch (Exception attachmentError) {
-				if (archiveHasBinary) {
-					throw new RuntimeException("Failed to restore binary attachment for: " + originalId
-						+ " (binary exists in archive)", attachmentError);
-				}
-				log.info("restoreAttachment: no binary content in archive for " + originalId);
-			}
-
-			log.info("Attachment restored from archive: " + archiveId + " to original ID: " + originalId);
-
-		} catch (Exception e) {
-			log.error("Error restoring attachment from archive: " + archive.getId() + " in repository: " + repositoryId, e);
-			throw new RuntimeException("Failed to restore attachment from archive", e);
-		}
+		archiveDao.restoreAttachment(repositoryId, archive);
 	}
 
 	@Override
 	public void restoreDocumentWithArchive(String repositoryId, Archive contentArchive) {
-		restoreContent(repositoryId, contentArchive);
-		// Restore its attachment
-		Archive attachmentArchive = getAttachmentArchive(repositoryId, contentArchive);
-		restoreAttachment(repositoryId, attachmentArchive);
-
-		// DEFENSIVE FIX: After both document and attachment are restored,
-		// ensure the document's mimeType is set correctly.
-		// Old archives (created with CouchArchive model) may have lost the mimeType field,
-		// causing contentStreamMimeType to be null/application/octet-stream after restore.
-		// In this case, read the mimeType from the restored attachment node.
-		try {
-			String originalId = contentArchive.getOriginalId();
-			String attachmentNodeId = contentArchive.getAttachmentNodeId();
-			if (originalId != null && attachmentNodeId != null) {
-				CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-				com.ibm.cloud.cloudant.v1.model.Document docNode = client.get(originalId);
-				if (docNode != null) {
-					Map<String, Object> docProps = docNode.getProperties();
-					Object currentMimeType = docProps != null ? docProps.get("mimeType") : null;
-					// If mimeType is missing or is the generic octet-stream fallback
-					if (currentMimeType == null || "application/octet-stream".equals(currentMimeType)) {
-						com.ibm.cloud.cloudant.v1.model.Document attNode = client.get(attachmentNodeId);
-						if (attNode != null) {
-							Map<String, Object> attProps = attNode.getProperties();
-							Object attMimeType = attProps != null ? attProps.get("mimeType") : null;
-							if (attMimeType instanceof String && !((String) attMimeType).isEmpty()
-									&& !"application/octet-stream".equals(attMimeType)) {
-								// Update the document with the correct mimeType from attachment
-								Map<String, Object> updateMap = new HashMap<>();
-								updateMap.put("_id", originalId);
-								updateMap.put("_rev", docNode.getRev());
-								if (docProps != null) {
-									updateMap.putAll(docProps);
-								}
-								updateMap.put("mimeType", attMimeType);
-								// Preserve _attachments stubs if any
-								Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> atts = docNode.getAttachments();
-								if (atts != null && !atts.isEmpty()) {
-									Map<String, Object> stubs = new HashMap<>();
-									for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Attachment> e : atts.entrySet()) {
-										Map<String, Object> stub = new HashMap<>();
-										stub.put("stub", true);
-										stub.put("content_type", e.getValue().contentType());
-										stub.put("length", e.getValue().length());
-										stubs.put(e.getKey(), stub);
-									}
-									updateMap.put("_attachments", stubs);
-								}
-								client.update(updateMap);
-								log.info("restoreDocumentWithArchive: Fixed mimeType from attachment node: "
-										+ currentMimeType + " -> " + attMimeType + " for " + originalId);
-							}
-						}
-					}
-				}
-			}
-		} catch (Exception e) {
-			log.warn("restoreDocumentWithArchive: Failed to fix mimeType from attachment node: " + e.getMessage());
-		}
+		archiveDao.restoreDocumentWithArchive(repositoryId, contentArchive);
 	}
 
 	@Override
 	public void restoreVersionSeries(String repositoryId, String versionSeriesId) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			
-			// Purge the tombstone left by the deleted VersionSeries
-			boolean purged = client.purgeTombstone(versionSeriesId);
-			log.info("restoreVersionSeries: purgeTombstone result=" + purged + " for " + versionSeriesId);
-			
-			// Create a new VersionSeries with checkout state cleared
-			VersionSeries newVs = new VersionSeries();
-			newVs.setId(versionSeriesId);
-			newVs.setVersionSeriesCheckedOut(false);
-			newVs.setVersionSeriesCheckedOutBy(null);
-			newVs.setVersionSeriesCheckedOutId(null);
-			
-			GregorianCalendar now = new GregorianCalendar();
-			newVs.setCreated(now);
-			newVs.setModified(now);
-			
-			CouchVersionSeries cvs = new CouchVersionSeries(newVs);
-			client.create(cvs);
-			
-			log.info("restoreVersionSeries: recreated VersionSeries " + versionSeriesId + " in repository " + repositoryId);
-		} catch (Exception e) {
-			log.error("Error restoring VersionSeries: " + versionSeriesId + " in repository: " + repositoryId, e);
-			throw new RuntimeException("Failed to restore VersionSeries", e);
-		}
+		archiveDao.restoreVersionSeries(repositoryId, versionSeriesId);
 	}
 
 	// ///////////////////////////////////////
 	// Other
 	// ///////////////////////////////////////
-	private String buildLogMsg(String objectId, String msg) {
-		return "[objectId:" + objectId + "]" + msg;
-	}
-
 	public void setConnectorPool(CloudantClientPool connectorPool) {
 		this.connectorPool = connectorPool;
+		initDelegates();
 	}
 
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
 		this.repositoryInfoMap = repositoryInfoMap;
+		initDelegates();
 	}
 
 	@Override
@@ -4545,44 +2196,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		// this method is for cached service
 	}
 	
-	/**
-	 * Convert any object to String safely, handling Gson's LazilyParsedNumber
-	 */
-	private String convertToString(Object obj) {
-		if (obj == null) {
-			return null;
-		}
-		if (obj instanceof String) {
-			return (String) obj;
-		}
-		// Handle Gson's LazilyParsedNumber and other numeric types
-		return obj.toString();
-	}
-
 	@Override
 	public Long getAttachmentActualSize(String repositoryId, String attachmentId) {
-		if (attachmentId == null || attachmentId.trim().isEmpty()) {
-			return null;
-		}
-
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			if (client == null) {
-				return null;
-			}
-
-			// CRITICAL FIX: Use HEAD request to get attachment size directly from CouchDB
-			// This bypasses Cloudant SDK limitations with _attachments metadata
-			Long size = client.getAttachmentSize(attachmentId, "content");
-			if (size != null && size > 0) {
-				return size;
-			}
-			return null;
-
-		} catch (Exception e) {
-			log.error("Error retrieving attachment size for " + attachmentId + ": " + e.getMessage(), e);
-			return null;
-		}
+		return attachmentDao.getAttachmentActualSize(repositoryId, attachmentId);
 	}
 
 	// ///////////////////////////////////////
@@ -4590,253 +2206,63 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// ///////////////////////////////////////
 	@Override
 	public List<Archive> getArchivesByState(String repositoryId, String state) {
-		try {
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = client.queryView("_repo", "byArchiveState", state, CouchArchive.class);
-			List<Archive> archives = new ArrayList<Archive>();
-			if (couchArchives != null) {
-				for (CouchArchive ca : couchArchives) {
-					archives.add(ca.convert());
-				}
-			}
-			return archives;
-		} catch (Exception e) {
-			log.error("Error getting archives by state: " + state + " in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
-		}
+		return archiveDao.getArchivesByState(repositoryId, state);
 	}
 
 	@Override
 	public List<Archive> getSearchableArchives(String repositoryId, String state) {
-		// Delegate to paged version with no skip/limit (returns all matching rows)
-		return getSearchableArchivesByStatePaged(repositoryId, state, 0, 0, true);
+		return archiveDao.getSearchableArchives(repositoryId, state);
 	}
 
 	@Override
 	public List<Archive> getSearchableArchivesPaged(String repositoryId, int skip, int limit, boolean descending) {
-		try {
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			CloudantClientWrapper.PagedViewResult<CouchArchive> paged =
-					client.queryViewPaged("_repo", "archivesByArchivedAt", CouchArchive.class, skip, limit, descending);
-			List<Archive> archives = new ArrayList<Archive>();
-			for (CouchArchive ca : paged.items) {
-				archives.add(ca.convert());
-			}
-			return archives;
-		} catch (Exception e) {
-			log.error("Error getting paged archives in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
-		}
+		return archiveDao.getSearchableArchivesPaged(repositoryId, skip, limit, descending);
 	}
 
 	@Override
 	public long getSearchableArchivesCount(String repositoryId) {
-		try {
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			// Count-only query: includeDocs=false, limit=0, returns only total_rows
-			return client.queryViewCount("_repo", "archivesByArchivedAt");
-		} catch (Exception e) {
-			log.error("Error getting archive count in repository: " + repositoryId, e);
-			return 0;
-		}
+		return archiveDao.getSearchableArchivesCount(repositoryId);
 	}
 
 	@Override
 	public List<Archive> getSearchableArchivesByStatePaged(String repositoryId, String state, int skip, int limit, boolean descending) {
-		try {
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			CloudantClientWrapper.PagedViewResult<CouchArchive> paged =
-					client.queryViewPagedWithKey("_repo", "searchableArchives", state, CouchArchive.class, skip, limit, descending);
-			List<Archive> archives = new ArrayList<Archive>();
-			for (CouchArchive ca : paged.items) {
-				archives.add(ca.convert());
-			}
-			return archives;
-		} catch (Exception e) {
-			log.error("Error getting paged archives by state" + (state != null ? " (state=" + state + ")" : "") + " in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
-		}
+		return archiveDao.getSearchableArchivesByStatePaged(repositoryId, state, skip, limit, descending);
 	}
 
 	@Override
 	public long getSearchableArchivesByStateCount(String repositoryId, String state) {
-		try {
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
-			return client.queryViewCountByKey("_repo", "searchableArchives", state);
-		} catch (Exception e) {
-			log.error("Error getting archive count by state" + (state != null ? " (state=" + state + ")" : "") + " in repository: " + repositoryId, e);
-			return 0;
-		}
+		return archiveDao.getSearchableArchivesByStateCount(repositoryId, state);
 	}
 
 	@Override
 	public List<Archive> getArchivesForColdTransition(String repositoryId, GregorianCalendar beforeDate) {
-		try {
-			// Get all ARCHIVED_LOCAL archives and filter by archivedAt
-			List<Archive> localArchives = getArchivesByState(repositoryId, Archive.STATE_ARCHIVED_LOCAL);
-			List<Archive> candidates = new ArrayList<Archive>();
-			for (Archive a : localArchives) {
-				// Skip archives that have already been copied/moved to cold storage
-				if (a.getColdArchivedAt() != null) {
-					continue;
-				}
-				if (a.getArchivedAt() != null && a.getArchivedAt().before(beforeDate)) {
-					candidates.add(a);
-				}
-			}
-			return candidates;
-		} catch (Exception e) {
-			log.error("Error getting archives for cold transition in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
-		}
+		return archiveDao.getArchivesForColdTransition(repositoryId, beforeDate);
 	}
 
 	@Override
 	public void updateArchiveState(String repositoryId, String archiveId,
 			String newState, Map<String, String> contentRef, GregorianCalendar coldArchivedAt) {
-		try {
-			String archiveRepoId = repositoryInfoMap.getArchiveId(repositoryId);
-			CouchArchive ca = connectorPool.get(archiveRepoId).get(CouchArchive.class, archiveId);
-			if (ca == null) {
-				log.warn("Archive not found for state update: " + archiveId);
-				return;
-			}
-			ca.setArchiveState(newState);
-			if (contentRef != null) {
-				ca.setContentRef(contentRef);
-			}
-			if (coldArchivedAt != null) {
-				ca.setColdArchivedAt(coldArchivedAt);
-			}
-			connectorPool.get(archiveRepoId).update(ca);
-			log.info("Updated archive state: " + archiveId + " -> " + newState);
-		} catch (Exception e) {
-			log.error("Error updating archive state for " + archiveId + ": " + e.getMessage(), e);
-			throw new RuntimeException("Failed to update archive state", e);
-		}
+		archiveDao.updateArchiveState(repositoryId, archiveId, newState, contentRef, coldArchivedAt);
 	}
 
 	@Override
 	public java.io.InputStream getArchiveContentStream(String repositoryId, Archive archive) {
-		try {
-			if (archive == null || !archive.isDocument()) {
-				return null;
-			}
-
-			// Get the attachment archive from the closet DB
-			Archive attachmentArchive = getAttachmentArchive(repositoryId, archive);
-			if (attachmentArchive == null) {
-				log.warn("No attachment archive found for archive: " + archive.getId());
-				return null;
-			}
-
-			// Get binary content from the closet DB CouchDB attachment
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper archiveClient = connectorPool.getClient(archiveRepositoryId);
-			Object streamObj = archiveClient.getAttachment(attachmentArchive.getId(), "content");
-			if (streamObj instanceof java.io.InputStream) {
-				return (java.io.InputStream) streamObj;
-			}
-
-			return null;
-		} catch (Exception e) {
-			log.error("Error getting archive content stream for: " + archive.getId() + " in repository: " + repositoryId, e);
-			return null;
-		}
+		return archiveDao.getArchiveContentStream(repositoryId, archive);
 	}
 
 	@Override
 	public boolean deleteArchiveContent(String repositoryId, Archive archive) {
-		try {
-			if (archive == null || !archive.isDocument()) {
-				return false;
-			}
-
-			// Use attachmentNodeId to find the attachment archive via "attachments" view
-			String attachmentNodeId = archive.getAttachmentNodeId();
-			if (attachmentNodeId == null || attachmentNodeId.isEmpty()) {
-				log.warn("No attachmentNodeId on archive: " + archive.getId());
-				return false;
-			}
-
-			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
-			CloudantClientWrapper archiveClient = connectorPool.getClient(archiveRepositoryId);
-			List<CouchArchive> couchArchives = archiveClient.queryView(
-					"_repo", "attachments", attachmentNodeId, CouchArchive.class);
-
-			if (couchArchives.isEmpty()) {
-				log.warn("No attachment archive found for archive: " + archive.getId()
-						+ " (attachmentNodeId=" + attachmentNodeId + ")");
-				return false;
-			}
-
-			CouchArchive attachmentArchive = couchArchives.get(0);
-			String docId = attachmentArchive.getId();
-			String revision = attachmentArchive.getRevision();
-
-			if (docId == null || revision == null) {
-				log.warn("Attachment archive missing id or revision for archive: " + archive.getId());
-				return false;
-			}
-
-			// Delete binary content attachment from the closet DB
-			archiveClient.deleteAttachment(docId, revision, "content");
-
-			log.info("Deleted archive content attachment for: " + archive.getId() + " in repository: " + repositoryId);
-			return true;
-		} catch (Exception e) {
-			log.error("Error deleting archive content for: " + archive.getId() + " in repository: " + repositoryId, e);
-			return false;
-		}
+		return archiveDao.deleteArchiveContent(repositoryId, archive);
 	}
 
 	@Override
 	public List<String> getExpiredDocumentIds(String repositoryId, GregorianCalendar beforeDate) {
-		try {
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			long endKey = beforeDate.getTimeInMillis();
-
-			Map<String, Object> params = new HashMap<String, Object>();
-			params.put("endkey", endKey);
-
-			com.ibm.cloud.cloudant.v1.model.ViewResult viewResult =
-					client.queryView("_repo", "documentsByExpirationDate", params);
-
-			List<String> ids = new ArrayList<String>();
-			if (viewResult != null && viewResult.getRows() != null) {
-				for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : viewResult.getRows()) {
-					if (row.getValue() != null) {
-						ids.add(row.getValue().toString().replace("\"", ""));
-					}
-				}
-			}
-			return ids;
-		} catch (Exception e) {
-			log.warn("Error querying documentsByExpirationDate view (may not exist yet): " + e.getMessage());
-			return new ArrayList<String>();
-		}
+		return archiveDao.getExpiredDocumentIds(repositoryId, beforeDate);
 	}
 
 	@Override
 	public void updateArchiveColdMoveMode(String repositoryId, String archiveId, String coldMoveMode) {
-		try {
-			String archiveRepoId = repositoryInfoMap.getArchiveId(repositoryId);
-			CouchArchive ca = connectorPool.get(archiveRepoId).get(CouchArchive.class, archiveId);
-			if (ca == null) {
-				log.warn("Archive not found for coldMoveMode update: " + archiveId);
-				return;
-			}
-			ca.setColdMoveMode(coldMoveMode);
-			connectorPool.get(archiveRepoId).update(ca);
-			log.info("Updated archive coldMoveMode: " + archiveId + " -> " + coldMoveMode);
-		} catch (Exception e) {
-			log.error("Error updating archive coldMoveMode for " + archiveId + ": " + e.getMessage(), e);
-		}
+		archiveDao.updateArchiveColdMoveMode(repositoryId, archiveId, coldMoveMode);
 	}
 
 	// ==========================================

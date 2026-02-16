@@ -223,48 +223,30 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 		Document document = (Document) content;
 		
-		// CRITICAL CMIS 1.1 SPECIFICATION FIX: Check constraints FIRST
-		// This will throw appropriate exceptions for:
-		// - NOTALLOWED documents (constraint exception)
-		// - REQUIRED documents without attachment (constraint exception)
-		// - ALLOWED documents without attachment (passes through)
+		// CMIS 1.1: Check constraints first
 		exceptionService.constraintContentStreamDownload(repositoryId, document);
 		
-		// CMIS 1.1 Standard Compliance: After constraint check, handle null attachmentNodeId
 		// Per CMIS 1.1 Section 2.1.10.1: If a document has no content stream, return null
-		// This is reached only for ALLOWED documents (REQUIRED would have thrown exception above)
 		if (document.getAttachmentNodeId() == null) {
 			return null;
 		}
 		
-		// After constraint check passes, get attachment
-		if (log.isDebugEnabled()) {
-			log.debug("Getting attachment: contentService=" + contentService.getClass().getName() + 
-				", repositoryId=" + repositoryId + ", attachmentNodeId=" + document.getAttachmentNodeId());
-		}
-		
+		// Get attachment
 		AttachmentNode attachment = null;
 		try {
 			attachment = contentService.getAttachment(repositoryId, document.getAttachmentNodeId());
-			if (log.isDebugEnabled()) {
-				log.debug("Attachment retrieved: " + (attachment != null ? attachment.getClass().getName() : "NULL") + 
-					", InputStream available: " + (attachment != null && attachment.getInputStream() != null));
-			}
 		} catch (CmisObjectNotFoundException e) {
-			// CloudantClientWrapper now throws proper exception when attachment not found
 			if (log.isDebugEnabled()) {
 				log.debug("Attachment not found for document " + document.getId() + 
 					" (attachmentId=" + document.getAttachmentNodeId() + ") - returning null per CMIS 1.1");
 			}
 			return null;
 		} catch (Exception e) {
-			// Handle other CloudantClientWrapper exceptions
 			log.error("Attachment retrieval error for document " + document.getId() + 
 				" (attachmentId=" + document.getAttachmentNodeId() + "): " + e.getMessage());
 			throw new RuntimeException("Failed to retrieve content stream: " + e.getMessage(), e);
 		}
 		
-		// CRITICAL FIX: Handle null attachment per CMIS 1.1 specification
 		if (attachment == null) {
 			if (log.isDebugEnabled()) {
 				log.debug("Attachment is null for document " + document.getId() + 
@@ -276,87 +258,32 @@ public class ObjectServiceImpl implements ObjectService {
 		attachment.setRangeOffset(rangeOffset);
 		attachment.setRangeLength(rangeLength);
 
-		// Set content stream with CMIS-compliant length handling
-		if (log.isDebugEnabled()) {
-			log.debug("Content stream creation debug");
-		}
-		
 		String name = attachment.getName();
-		if (log.isDebugEnabled()) {
-			log.debug("Content name: " + name);
-		}
 		String mimeType = attachment.getMimeType();
-		if (log.isDebugEnabled()) {
-			log.debug("Content mimeType: " + mimeType);
-		}
-		
-		if (log.isDebugEnabled()) {
-			log.debug("Getting input stream from attachment...");
-		}
 		InputStream is = attachment.getInputStream();
-		if (log.isDebugEnabled()) {
-			log.debug("InputStream retrieved: " + (is != null ? "SUCCESS" : "NULL"));
-		}
 
 		if (is == null) {
 			log.error("attachment.getInputStream() returned null");
 			throw new RuntimeException("Content stream InputStream is null!");
 		}
 
-		// CRITICAL TCK DEBUG: Verify InputStream contains data after getAttachment()
-		if (log.isDebugEnabled()) {
-			log.debug("InputStream class: " + is.getClass().getName());
-			log.debug("InputStream.markSupported(): " + is.markSupported());
-		}
-
-		try {
-			int available = is.available();
-			if (log.isDebugEnabled()) {
-				log.debug("InputStream.available(): " + available);
-			}
-
-			// Try to read first few bytes to verify stream contains data
-			if (is.markSupported()) {
-				is.mark(1);
-				int testBytesRead = is.read(new byte[1]);
-				is.reset();
-				if (log.isDebugEnabled()) {
-					log.debug("InputStream data check: " + (testBytesRead > 0 ? "has data" : "empty"));
-				}
-			}
-		} catch (Exception debugEx) {
-			if (log.isDebugEnabled()) {
-				log.debug("Exception during InputStream verification: " + debugEx.getMessage());
-			}
-		}
-		// CRITICAL TCK FIX: Always use actual size from CouchDB _attachments metadata
-		// This ensures we get the correct size even after appendContent operations
-		// which may update binary content without updating AttachmentNode.length field
+		// Use AttachmentNode metadata length from CouchDB _attachments metadata.
+		// No need to download the entire content again just to measure size.
+		long attachmentLength = attachment.getLength();
 		BigInteger length;
-
-		if (log.isDebugEnabled()) {
-			log.debug("Getting actual content size from CouchDB attachment metadata for: " + document.getAttachmentNodeId());
-		}
-
-		Long actualSizeFromDB = contentService.getAttachmentActualSize(repositoryId, document.getAttachmentNodeId());
-		if (actualSizeFromDB != null && actualSizeFromDB > 0) {
-			length = BigInteger.valueOf(actualSizeFromDB);
+		if (attachmentLength >= 0) {
+			length = BigInteger.valueOf(attachmentLength);
 		} else {
-			// Fallback: Use AttachmentNode.length if CouchDB metadata unavailable
-			long attachmentLength = attachment.getLength();
-			if (attachmentLength > 0) {
-				length = BigInteger.valueOf(attachmentLength);
-			} else {
-				length = BigInteger.valueOf(-1);
-				if (log.isDebugEnabled()) {
-					log.debug("Using CMIS standard -1 (unknown size) for: " + name);
-				}
+			length = BigInteger.valueOf(-1);
+			if (log.isDebugEnabled()) {
+				log.debug("Using CMIS standard -1 (unknown size) for: " + name);
 			}
 		}
-	if (log.isDebugEnabled()) {
-		log.debug("Creating ContentStreamImpl with final length: " + length);
-	}
-	ContentStream cs = new ContentStreamImpl(name, length, mimeType, is);
+
+		if (log.isDebugEnabled()) {
+			log.debug("Creating ContentStreamImpl - name: " + name + ", length: " + length + ", mimeType: " + mimeType);
+		}
+		ContentStream cs = new ContentStreamImpl(name, length, mimeType, is);
 
 		return cs;
 	}
@@ -416,10 +343,13 @@ public class ObjectServiceImpl implements ObjectService {
 
 		Rendition rendition = contentService.getRendition(repositoryId, streamId);
 
-		BigInteger length = BigInteger.valueOf(rendition.getLength());
+		// Use -1 for length to avoid CouchDB gzip compression size mismatch.
+		// CouchDB _attachments.length reports compressed size, but the SDK returns
+		// decompressed content. Setting Content-Length to compressed size causes
+		// Tomcat to truncate the response, producing "Invalid PDF structure" errors.
 		String mimeType = rendition.getMimetype();
 		InputStream is = rendition.getInputStream();
-		ContentStream cs = new ContentStreamImpl("preview_" + streamId, length, mimeType, is);
+		ContentStream cs = new ContentStreamImpl("preview_" + streamId, BigInteger.valueOf(-1), mimeType, is);
 
 		return cs;
 	}
@@ -786,7 +716,7 @@ public class ObjectServiceImpl implements ObjectService {
 				changeToken.setValue(result.getChangeToken());
 			}
 
-			nemakiCachePool.get(repositoryId).removeCmisCache(oldId);
+			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(oldId);
 		} finally {
 			lock.unlock();
 		}
@@ -821,7 +751,7 @@ public class ObjectServiceImpl implements ObjectService {
 			changeToken.setValue(updatedDocument.getChangeToken());
 		}
 
-		nemakiCachePool.get(repositoryId).removeCmisCache(objectId.getValue());
+		nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId.getValue());
 
 		} finally {
 			lock.unlock();
@@ -875,7 +805,7 @@ public class ObjectServiceImpl implements ObjectService {
 			contentService.appendAttachment(callContext, repositoryId, objectId, changeToken, contentStream,
 					isLastChunk, extension);
 
-			nemakiCachePool.get(repositoryId).removeCmisCache(objectId.getValue());
+			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId.getValue());
 		} finally {
 			lock.unlock();
 		}
@@ -1320,7 +1250,8 @@ public class ObjectServiceImpl implements ObjectService {
 					try {
 						childrenService.getService().awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
 					} catch (InterruptedException e) {
-						log.error(e, e);
+						log.error("Interrupted while waiting for children service to terminate", e);
+						Thread.currentThread().interrupt();
 					}
 
 					// Lastly, delete self

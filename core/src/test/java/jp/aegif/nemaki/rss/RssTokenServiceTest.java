@@ -114,30 +114,30 @@ public class RssTokenServiceTest {
         RssToken generatedToken = tokenService.generateToken(
             "repo1", "user1", "Test Token", null, null, null, null);
         
-        RssToken validatedToken = tokenService.validateToken(generatedToken.getToken());
-        
+        RssToken validatedToken = tokenService.validateToken("repo1", generatedToken.getToken());
+
         assertNotNull(validatedToken);
         assertEquals(generatedToken.getId(), validatedToken.getId());
         assertEquals(generatedToken.getToken(), validatedToken.getToken());
     }
-    
+
     @Test
     public void testValidateToken_NullToken() {
-        RssToken validatedToken = tokenService.validateToken(null);
-        
+        RssToken validatedToken = tokenService.validateToken("repo1", null);
+
         assertNull(validatedToken);
     }
-    
+
     @Test
     public void testValidateToken_EmptyToken() {
-        RssToken validatedToken = tokenService.validateToken("");
-        
+        RssToken validatedToken = tokenService.validateToken("repo1", "");
+
         assertNull(validatedToken);
     }
-    
+
     @Test
     public void testValidateToken_InvalidToken() {
-        RssToken validatedToken = tokenService.validateToken("invalid-token-value");
+        RssToken validatedToken = tokenService.validateToken("repo1", "invalid-token-value");
         
         assertNull(validatedToken);
     }
@@ -147,13 +147,13 @@ public class RssTokenServiceTest {
         RssToken generatedToken = tokenService.generateToken(
             "repo1", "user1", "Test Token", null, null, null, null);
         
-        RssToken validatedBefore = tokenService.validateToken(generatedToken.getToken());
+        RssToken validatedBefore = tokenService.validateToken("repo1", generatedToken.getToken());
         assertNotNull(validatedBefore);
-        
+
         boolean disabled = tokenService.disableToken("repo1", generatedToken.getId());
         assertTrue(disabled);
-        
-        RssToken validatedAfter = tokenService.validateToken(generatedToken.getToken());
+
+        RssToken validatedAfter = tokenService.validateToken("repo1", generatedToken.getToken());
         assertNull(validatedAfter);
     }
     
@@ -168,13 +168,13 @@ public class RssTokenServiceTest {
         RssToken generatedToken = tokenService.generateToken(
             "repo1", "user1", "Test Token", null, null, null, null);
         
-        RssToken validatedBefore = tokenService.validateToken(generatedToken.getToken());
+        RssToken validatedBefore = tokenService.validateToken("repo1", generatedToken.getToken());
         assertNotNull(validatedBefore);
-        
+
         boolean deleted = tokenService.deleteToken("repo1", generatedToken.getId());
         assertTrue(deleted);
-        
-        RssToken validatedAfter = tokenService.validateToken(generatedToken.getToken());
+
+        RssToken validatedAfter = tokenService.validateToken("repo1", generatedToken.getToken());
         assertNull(validatedAfter);
     }
     

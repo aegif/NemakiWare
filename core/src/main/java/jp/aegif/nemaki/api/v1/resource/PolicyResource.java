@@ -46,13 +46,13 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.text.SimpleDateFormat;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TimeZone;
 import java.util.logging.Logger;
 
 @Component
@@ -62,12 +62,7 @@ import java.util.logging.Logger;
 public class PolicyResource {
     
     private static final Logger logger = Logger.getLogger(PolicyResource.class.getName());
-    private static final SimpleDateFormat ISO_DATE_FORMAT;
-    
-    static {
-        ISO_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-        ISO_DATE_FORMAT.setTimeZone(TimeZone.getTimeZone("UTC"));
-    }
+    private static final DateTimeFormatter ISO_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
     
     @Autowired
     private PolicyService policyService;
@@ -451,9 +446,7 @@ public class PolicyResource {
         PropertyData<?> prop = properties.getProperties().get(propertyId);
         if (prop != null && prop.getFirstValue() instanceof GregorianCalendar) {
             GregorianCalendar cal = (GregorianCalendar) prop.getFirstValue();
-            synchronized (ISO_DATE_FORMAT) {
-                return ISO_DATE_FORMAT.format(cal.getTime());
-            }
+            return ISO_DATE_FORMAT.format(cal.toZonedDateTime());
         }
         return null;
     }
@@ -472,9 +465,7 @@ public class PolicyResource {
             type = "decimal";
         } else if (prop.getFirstValue() instanceof GregorianCalendar) {
             GregorianCalendar cal = (GregorianCalendar) prop.getFirstValue();
-            synchronized (ISO_DATE_FORMAT) {
-                value = ISO_DATE_FORMAT.format(cal.getTime());
-            }
+            value = ISO_DATE_FORMAT.format(cal.toZonedDateTime());
             type = "datetime";
         }
         

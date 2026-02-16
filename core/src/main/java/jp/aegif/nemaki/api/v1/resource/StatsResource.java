@@ -49,13 +49,13 @@ public class StatsResource {
     private RepositoryStats getRepositoryStats(String repositoryId) {
         RepositoryStats stats = new RepositoryStats();
         stats.setRepositoryId(repositoryId);
-        
-        // TODO: Integrate with ContentService to get actual counts
-        // For now, return placeholder values
-        stats.setNodeCount(0);
-        stats.setDocumentCount(0);
-        stats.setFolderCount(0);
-        
+
+        // Object counts are not yet instrumented (-1 = not available).
+        // TODO: Integrate with ContentDaoService views to expose actual counts.
+        stats.setNodeCount(-1);
+        stats.setDocumentCount(-1);
+        stats.setFolderCount(-1);
+
         return stats;
     }
 

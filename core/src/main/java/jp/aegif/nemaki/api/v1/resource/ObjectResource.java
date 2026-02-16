@@ -66,8 +66,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.GregorianCalendar;
@@ -85,12 +88,8 @@ import java.util.logging.Logger;
 public class ObjectResource {
     
     private static final Logger logger = Logger.getLogger(ObjectResource.class.getName());
-    private static final SimpleDateFormat ISO_DATE_FORMAT;
-    
-    static {
-        ISO_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-        ISO_DATE_FORMAT.setTimeZone(TimeZone.getTimeZone("UTC"));
-    }
+    private static final DateTimeFormatter ISO_DATE_FORMAT =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
     
     @Autowired
     private ObjectService objectService;
@@ -1080,9 +1079,7 @@ public class ObjectResource {
         PropertyData<?> prop = properties.getProperties().get(propertyId);
         if (prop != null && prop.getFirstValue() instanceof GregorianCalendar) {
             GregorianCalendar cal = (GregorianCalendar) prop.getFirstValue();
-            synchronized (ISO_DATE_FORMAT) {
-                return ISO_DATE_FORMAT.format(cal.getTime());
-            }
+            return ISO_DATE_FORMAT.format(cal.toZonedDateTime());
         }
         return null;
     }
@@ -1116,9 +1113,7 @@ public class ObjectResource {
             type = "decimal";
         } else if (prop.getFirstValue() instanceof GregorianCalendar) {
             GregorianCalendar cal = (GregorianCalendar) prop.getFirstValue();
-            synchronized (ISO_DATE_FORMAT) {
-                value = ISO_DATE_FORMAT.format(cal.getTime());
-            }
+            value = ISO_DATE_FORMAT.format(cal.toZonedDateTime());
             type = "datetime";
         }
         
@@ -1337,13 +1332,10 @@ public class ObjectResource {
         }
         String dateStr = value.toString();
         try {
-            GregorianCalendar calendar = new GregorianCalendar(TimeZone.getTimeZone("UTC"));
-            // Synchronize on ISO_DATE_FORMAT since SimpleDateFormat is not thread-safe
-            synchronized (ISO_DATE_FORMAT) {
-                calendar.setTime(ISO_DATE_FORMAT.parse(dateStr));
-            }
+            ZonedDateTime zdt = ZonedDateTime.parse(dateStr, ISO_DATE_FORMAT);
+            GregorianCalendar calendar = GregorianCalendar.from(zdt);
             return calendar;
-        } catch (ParseException e) {
+        } catch (DateTimeParseException e) {
             logger.warning("Failed to parse datetime: " + dateStr);
             throw ApiException.invalidArgument("Invalid datetime format: " + dateStr + ". Expected ISO 8601 format (e.g., 2024-01-15T10:30:00Z)");
         }

@@ -1031,8 +1031,10 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       return null;
     }
 
-    const progress = ragReindexStatus.totalDocuments > 0
-      ? Math.round((ragReindexStatus.indexedCount / ragReindexStatus.totalDocuments) * 100)
+    const totalKnown = ragReindexStatus.totalDocuments > 0;
+    const processed = ragReindexStatus.indexedCount + ragReindexStatus.skippedCount + ragReindexStatus.errorCount;
+    const progress = totalKnown
+      ? Math.round((processed / ragReindexStatus.totalDocuments) * 100)
       : 0;
 
     return (
@@ -1040,8 +1042,12 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
         <Descriptions column={2}>
           <Descriptions.Item label={t('ragMaintenance.reindexStatus.status')}>{getStatusTag(ragReindexStatus.status)}</Descriptions.Item>
           <Descriptions.Item label={t('ragMaintenance.reindexStatus.currentFolder')}>{ragReindexStatus.currentFolder || '-'}</Descriptions.Item>
-          <Descriptions.Item label={t('ragMaintenance.reindexStatus.totalDocuments')}>{ragReindexStatus.totalDocuments}</Descriptions.Item>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.totalDocuments')}>
+            {totalKnown ? ragReindexStatus.totalDocuments : t('ragMaintenance.reindexStatus.counting')}
+          </Descriptions.Item>
           <Descriptions.Item label={t('ragMaintenance.reindexStatus.indexed')}>{ragReindexStatus.indexedCount}</Descriptions.Item>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.currentDocument')}>{ragReindexStatus.currentDocument || '-'}</Descriptions.Item>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.skipped')}>{ragReindexStatus.skippedCount}</Descriptions.Item>
           <Descriptions.Item label={t('ragMaintenance.reindexStatus.errorCount')}>{ragReindexStatus.errorCount}</Descriptions.Item>
           <Descriptions.Item label={t('ragMaintenance.reindexStatus.errorMessage')}>{ragReindexStatus.errorMessage || '-'}</Descriptions.Item>
         </Descriptions>

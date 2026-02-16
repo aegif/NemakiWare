@@ -22,11 +22,12 @@
 package jp.aegif.nemaki.rss;
 
 import java.io.StringWriter;
-import java.text.SimpleDateFormat;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Locale;
-import java.util.TimeZone;
 
 import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
@@ -47,14 +48,10 @@ public class RssFeedGenerator {
     private static final String RSS_VERSION = "2.0";
     private static final String ATOM_NAMESPACE = "http://www.w3.org/2005/Atom";
     
-    private static final SimpleDateFormat RFC822_FORMAT = new SimpleDateFormat(
-        "EEE, dd MMM yyyy HH:mm:ss Z", Locale.US);
-    private static final SimpleDateFormat ISO8601_FORMAT = new SimpleDateFormat(
-        "yyyy-MM-dd'T'HH:mm:ss'Z'");
-    
-    static {
-        ISO8601_FORMAT.setTimeZone(TimeZone.getTimeZone("UTC"));
-    }
+    private static final DateTimeFormatter RFC822_FORMAT = DateTimeFormatter.ofPattern(
+        "EEE, dd MMM yyyy HH:mm:ss Z", Locale.US).withZone(ZoneId.systemDefault());
+    private static final DateTimeFormatter ISO8601_FORMAT = DateTimeFormatter.ofPattern(
+        "yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
     
     private String baseUrl;
     
@@ -249,14 +246,10 @@ public class RssFeedGenerator {
     }
     
     private String formatRfc822(Calendar calendar) {
-        synchronized (RFC822_FORMAT) {
-            return RFC822_FORMAT.format(calendar.getTime());
-        }
+        return RFC822_FORMAT.format(calendar.toInstant());
     }
-    
+
     private String formatIso8601(Calendar calendar) {
-        synchronized (ISO8601_FORMAT) {
-            return ISO8601_FORMAT.format(calendar.getTime());
-        }
+        return ISO8601_FORMAT.format(calendar.toInstant());
     }
 }

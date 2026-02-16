@@ -242,6 +242,10 @@ public class PermissionResource extends ResourceBase {
 			log.error("JSON parsing error: " + e.getMessage(), e);
 			status = false;
 			addErrMsg(errMsg, "json", "Invalid JSON format");
+		} catch (CmisPermissionDeniedException e) {
+			log.warn("Permission denied setting ACL for object " + objectId + ": " + e.getMessage());
+			status = false;
+			addErrMsg(errMsg, "acl", ErrorCode.ERR_PERMISSIONDENIED);
 		} catch (Exception e) {
 			log.error("Error setting ACL for object " + objectId + ": " + e.getMessage(), e);
 			status = false;

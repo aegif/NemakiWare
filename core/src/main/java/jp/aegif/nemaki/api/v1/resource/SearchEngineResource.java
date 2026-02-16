@@ -1149,6 +1149,7 @@ public class SearchEngineResource {
             response.setStartTime(status.getStartTime());
             response.setEndTime(status.getEndTime());
             response.setCurrentDocument(status.getCurrentDocument());
+            response.setCurrentFolder(status.getCurrentFolder());
             response.setErrorMessage(status.getErrorMessage());
             response.setErrors(status.getErrors());
 
@@ -1526,6 +1527,9 @@ public class SearchEngineResource {
         @Schema(description = "Currently processing document")
         private String currentDocument;
 
+        @Schema(description = "Currently processing folder")
+        private String currentFolder;
+
         @Schema(description = "Error message if status is error")
         private String errorMessage;
 
@@ -1553,6 +1557,8 @@ public class SearchEngineResource {
         public void setEndTime(long endTime) { this.endTime = endTime; }
         public String getCurrentDocument() { return currentDocument; }
         public void setCurrentDocument(String currentDocument) { this.currentDocument = currentDocument; }
+        public String getCurrentFolder() { return currentFolder; }
+        public void setCurrentFolder(String currentFolder) { this.currentFolder = currentFolder; }
         public String getErrorMessage() { return errorMessage; }
         public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
         public List<String> getErrors() { return errors; }

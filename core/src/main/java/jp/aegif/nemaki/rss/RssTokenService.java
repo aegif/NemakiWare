@@ -116,7 +116,7 @@ public class RssTokenService {
             rssTokenDaoService.create(repositoryId, token);
         }
         
-        tokenCache.put(tokenValue, token);
+        tokenCache.put(cacheKey(repositoryId, tokenValue), token);
         
         log.info("Generated RSS token for user: " + userId + ", name: " + name + 
                  ", expires: " + expiresAt.getTime());
@@ -127,21 +127,23 @@ public class RssTokenService {
     /**
      * Validate an RSS token and return the associated token object.
      * 
+     * @param repositoryId The repository ID to search in (may be null for global search)
      * @param tokenValue The token value to validate
      * @return The RssToken if valid, null otherwise
      */
-    public RssToken validateToken(String tokenValue) {
+    public RssToken validateToken(String repositoryId, String tokenValue) {
         if (tokenValue == null || tokenValue.isEmpty()) {
             log.debug("validateToken: token is null or empty");
             return null;
         }
         
-        RssToken token = tokenCache.get(tokenValue);
+        String key = cacheKey(repositoryId, tokenValue);
+        RssToken token = tokenCache.get(key);
         
         if (token == null && rssTokenDaoService != null) {
-            token = rssTokenDaoService.getByToken(tokenValue);
+            token = rssTokenDaoService.getByToken(repositoryId, tokenValue);
             if (token != null) {
-                tokenCache.put(tokenValue, token);
+                tokenCache.put(key, token);
             }
         }
         
@@ -152,7 +154,7 @@ public class RssTokenService {
         
         if (!token.isValid()) {
             log.debug("validateToken: token is invalid or expired");
-            tokenCache.remove(tokenValue);
+            tokenCache.remove(key);
             return null;
         }
         
@@ -219,7 +221,7 @@ public class RssTokenService {
             rssTokenDaoService.update(repositoryId, token);
         }
         
-        tokenCache.remove(token.getToken());
+        tokenCache.remove(cacheKey(repositoryId, token.getToken()));
         
         log.info("Disabled RSS token: " + tokenId);
         return true;
@@ -242,7 +244,7 @@ public class RssTokenService {
             rssTokenDaoService.delete(repositoryId, tokenId);
         }
         
-        tokenCache.remove(token.getToken());
+        tokenCache.remove(cacheKey(repositoryId, token.getToken()));
         
         log.info("Deleted RSS token: " + tokenId);
         return true;
@@ -272,7 +274,7 @@ public class RssTokenService {
             rssTokenDaoService.update(repositoryId, token);
         }
         
-        tokenCache.put(token.getToken(), token);
+        tokenCache.put(cacheKey(repositoryId, token.getToken()), token);
         
         log.info("Refreshed RSS token: " + tokenId + ", new expiry: " + newExpiresAt.getTime());
         return token;
@@ -287,6 +289,14 @@ public class RssTokenService {
         byte[] bytes = new byte[TOKEN_LENGTH];
         secureRandom.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    /**
+     * Build a cache key from repositoryId and token value.
+     * Format: "repositoryId:tokenValue"
+     */
+    private String cacheKey(String repositoryId, String tokenValue) {
+        return repositoryId + ":" + tokenValue;
     }
     
     /**

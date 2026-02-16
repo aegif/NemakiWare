@@ -52,7 +52,7 @@ public class DateUtil {
     private static final ThreadLocal<SimpleDateFormat> BULK_FORMAT = new ThreadLocal<SimpleDateFormat>() {
         @Override
         protected SimpleDateFormat initialValue() {
-            return new SimpleDateFormat("YYYY-MM-dd'T'hh:mm:ss.sssXXX");
+            return new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
         }
     };
     

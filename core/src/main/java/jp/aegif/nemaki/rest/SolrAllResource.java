@@ -149,13 +149,13 @@ public class SolrAllResource extends ResourceBase {
 			} catch (Exception e) {
 				status = false;
 				errMsg.add("Failed to clear Solr index: " + e.getMessage());
-				e.printStackTrace();
+				log.error("Failed to clear Solr index", e);
 			}
-			
+
 		} catch (Exception e) {
 			status = false;
 			errMsg.add("Reindex failed: " + e.getMessage());
-			e.printStackTrace();
+			log.error("Solr reindex failed", e);
 		}
 
 		// Output

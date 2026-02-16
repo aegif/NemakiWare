@@ -435,7 +435,13 @@ public class RepositoryServiceImpl implements RepositoryService,
 			String typeId, ExtensionsData extension) {
 		
 		log.debug("deleteType called: repositoryId=" + repositoryId + ", typeId=" + typeId + ", user=" + (callContext != null ? callContext.getUsername() : "null"));
-		
+
+		// //////////////////
+		// General Exception
+		// //////////////////
+		exceptionService.perimissionAdmin(callContext, repositoryId);
+		exceptionService.invalidArgumentRequired("typeId", typeId);
+
 		// CRITICAL FIX: Mark type as being deleted to prevent infinite recursion
 		boolean typeMarked = false;
 		try {

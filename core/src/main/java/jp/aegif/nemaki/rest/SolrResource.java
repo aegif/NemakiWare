@@ -912,6 +912,7 @@ public class SolrResource extends ResourceBase {
 		result.put("startTime", ragStatus.getStartTime());
 		result.put("endTime", ragStatus.getEndTime());
 		result.put("currentDocument", ragStatus.getCurrentDocument());
+		result.put("currentFolder", ragStatus.getCurrentFolder());
 		result.put("errorMessage", ragStatus.getErrorMessage());
 
 		List<String> errors = ragStatus.getErrors();

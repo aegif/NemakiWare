@@ -42,6 +42,7 @@ public interface RAGIndexMaintenanceService {
         private long startTime;
         private long endTime;
         private String currentDocument;
+        private String currentFolder;
         private String errorMessage;
         private List<String> errors;
 
@@ -65,6 +66,8 @@ public interface RAGIndexMaintenanceService {
         public void setEndTime(long endTime) { this.endTime = endTime; }
         public String getCurrentDocument() { return currentDocument; }
         public void setCurrentDocument(String currentDocument) { this.currentDocument = currentDocument; }
+        public String getCurrentFolder() { return currentFolder; }
+        public void setCurrentFolder(String currentFolder) { this.currentFolder = currentFolder; }
         public String getErrorMessage() { return errorMessage; }
         public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
         public List<String> getErrors() { return errors; }

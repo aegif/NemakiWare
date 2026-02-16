@@ -18,6 +18,8 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jp.aegif.nemaki.util.spring.SpringContext;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Map;
@@ -27,6 +29,7 @@ import java.util.concurrent.locks.Lock;
 
 @Path("/repo/{repositoryId}/config")
 public class ConfigResource extends ResourceBase{
+	private static final Log log = LogFactory.getLog(ConfigResource.class);
 	private ContentDaoService contentDaoService;
 	private ThreadLockService threadLockService;
 	private PropertyManager propertyManager;
@@ -59,7 +62,7 @@ public class ConfigResource extends ResourceBase{
 			result.put("configurations", configs);
 		} catch (Exception e) {
 			status = false;
-			e.printStackTrace();
+			log.error("Failed to list configurations", e);
 			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_LIST);
 		}
 
@@ -127,7 +130,7 @@ public class ConfigResource extends ResourceBase{
 			getContentDaoService().update(repositoryId, conf);
 		}catch(Exception e){
 			status = false;
-			e.printStackTrace();
+			log.error("Failed to update configuration", e);
 			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_LIST);
 		}finally{
 			lock.unlock();
@@ -189,7 +192,7 @@ public class ConfigResource extends ResourceBase{
 			result.put("properties", properties);
 		} catch (Exception e) {
 			status = false;
-			e.printStackTrace();
+			log.error("Failed to list properties", e);
 			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_LIST);
 		}
 

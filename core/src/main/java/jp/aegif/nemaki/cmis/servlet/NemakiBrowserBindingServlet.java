@@ -417,32 +417,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 }
             }
             
-            // CRITICAL FIX: Handle deleteType directly since OpenCMIS 1.2.0-SNAPSHOT bypasses service factory
+            // deleteType: Handled by normal OpenCMIS pipeline via super.service().
+            // Permission enforcement is in RepositoryServiceImpl.deleteType() (perimissionAdmin check).
             if ("deleteType".equals(cmisaction)) {
-                try {
-                    handleDeleteTypeDirectly(request, response, pathInfo);
-                    return; // Don't delegate to parent - we handled it completely
-                } catch (Exception e) {
-                    log.error("CRITICAL ERROR IN DIRECT DELETE TYPE: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
-                    try {
-                        writeErrorResponse(response, e);
-                    } catch (Exception writeException) {
-                        log.error("FAILED TO WRITE ERROR RESPONSE: " + writeException.getMessage());
-                        // Set basic error response if writeErrorResponse fails
-                        if (!response.isCommitted()) {
-                            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-                            response.setContentType("application/json");
-                            try (java.io.OutputStream out = response.getOutputStream()) {
-                                String errorJson = "{\"exception\":\"runtime\",\"message\":\"Internal server error\"}";
-                                out.write(errorJson.getBytes("UTF-8"));
-                                out.flush();
-                            } catch (IOException ioException) {
-                                log.error("COMPLETE FAILURE TO WRITE ANY RESPONSE: " + ioException.getMessage());
-                            }
-                        }
-                    }
-                    return;
-                }
+                log.debug("deleteType request detected - delegating to standard CMIS pipeline");
             }
             
             // QUERY HANDLING: Let parent CmisBrowserBindingServlet handle queries now that DeleteTypeFilter is bypassed
