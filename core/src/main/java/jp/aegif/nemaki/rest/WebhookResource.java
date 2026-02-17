@@ -26,8 +26,10 @@ import java.util.List;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -284,8 +286,9 @@ public class WebhookResource extends ResourceBase {
 
     /**
      * Get webhook configuration for a specific object.
+     * Returns all configs including disabled and invalid ones (for management UI).
      * Requires admin authorization to prevent information disclosure.
-     * 
+     *
      * GET /rest/repo/{repositoryId}/webhook/config/{objectId}
      */
     @SuppressWarnings("unchecked")
@@ -296,21 +299,20 @@ public class WebhookResource extends ResourceBase {
             @PathParam("repositoryId") String repositoryId,
             @PathParam("objectId") String objectId,
             @Context HttpServletRequest request) {
-        
+
         boolean status = true;
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
-        
-        // Admin authorization required to view webhook configurations
+
         if (!checkAdmin(errMsg, request)) {
             result = makeResult(false, result, errMsg);
             return result.toJSONString();
         }
-        
+
         try {
             ContentService cs = getContentService();
             WebhookService ws = getWebhookService();
-            
+
             if (cs == null || ws == null) {
                 status = false;
                 addErrMsg(errMsg, "service", "Required services not available");
@@ -320,7 +322,7 @@ public class WebhookResource extends ResourceBase {
                     status = false;
                     addErrMsg(errMsg, "objectId", ErrorCode.ERR_NOTFOUND);
                 } else {
-                    List<WebhookConfig> configs = ws.getWebhookConfigs(repositoryId, content);
+                    List<WebhookConfig> configs = ws.getAllWebhookConfigs(repositoryId, content);
                     JSONArray configsArray = new JSONArray();
                     for (WebhookConfig config : configs) {
                         configsArray.add(buildWebhookConfigJson(config));
@@ -334,9 +336,347 @@ public class WebhookResource extends ResourceBase {
             status = false;
             addErrMsg(errMsg, "config", "Failed to get webhook config: " + e.getMessage());
         }
-        
+
         result = makeResult(status, result, errMsg);
         return result.toJSONString();
+    }
+
+    /**
+     * Add a new webhook configuration to a specific object.
+     *
+     * POST /rest/repo/{repositoryId}/webhook/config/{objectId}
+     * Body: {"url": "https://...", "events": ["created","updated"], "enabled": true, ...}
+     */
+    @SuppressWarnings("unchecked")
+    @POST
+    @Path("/config/{objectId}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public String addWebhookConfig(
+            @PathParam("repositoryId") String repositoryId,
+            @PathParam("objectId") String objectId,
+            String requestBody,
+            @Context HttpServletRequest request) {
+
+        boolean status = true;
+        JSONObject result = new JSONObject();
+        JSONArray errMsg = new JSONArray();
+
+        if (!checkAdmin(errMsg, request)) {
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
+
+        try {
+            ContentService cs = getContentService();
+            WebhookService ws = getWebhookService();
+
+            if (cs == null || ws == null) {
+                status = false;
+                addErrMsg(errMsg, "service", "Required services not available");
+            } else {
+                Content content = cs.getContent(repositoryId, objectId);
+                if (content == null) {
+                    status = false;
+                    addErrMsg(errMsg, "objectId", ErrorCode.ERR_NOTFOUND);
+                } else {
+                    // Parse request body as a single config
+                    org.json.simple.parser.JSONParser parser = new org.json.simple.parser.JSONParser();
+                    JSONObject body = (JSONObject) parser.parse(requestBody);
+
+                    String url = (String) body.get("url");
+                    if (url == null || url.isEmpty()) {
+                        status = false;
+                        addErrMsg(errMsg, "url", "URL is required");
+                    } else {
+                        // Get existing configs
+                        List<WebhookConfig> configs = ws.getAllWebhookConfigs(repositoryId, content);
+                        configs = new ArrayList<>(configs);
+
+                        // Build new config
+                        WebhookConfig newConfig = buildWebhookConfigFromJson(body);
+                        // Generate ID if not provided
+                        if (newConfig.getId() == null || newConfig.getId().isEmpty()) {
+                            newConfig.setId("webhook-" + java.util.UUID.randomUUID().toString().substring(0, 8));
+                        }
+
+                        configs.add(newConfig);
+
+                        // Save
+                        ws.saveWebhookConfigs(repositoryId, objectId, configs);
+
+                        result.put("webhookId", newConfig.getId());
+                        result.put("objectId", objectId);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error adding webhook config: " + e.getMessage(), e);
+            status = false;
+            addErrMsg(errMsg, "config", "Failed to add webhook config: " + e.getMessage());
+        }
+
+        result = makeResult(status, result, errMsg);
+        return result.toJSONString();
+    }
+
+    /**
+     * Update an existing webhook configuration.
+     *
+     * PUT /rest/repo/{repositoryId}/webhook/config/{objectId}/{webhookId}
+     * Body: {"url": "https://...", "events": ["created","updated"], "enabled": true, ...}
+     */
+    @SuppressWarnings("unchecked")
+    @PUT
+    @Path("/config/{objectId}/{webhookId}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public String updateWebhookConfig(
+            @PathParam("repositoryId") String repositoryId,
+            @PathParam("objectId") String objectId,
+            @PathParam("webhookId") String webhookId,
+            String requestBody,
+            @Context HttpServletRequest request) {
+
+        boolean status = true;
+        JSONObject result = new JSONObject();
+        JSONArray errMsg = new JSONArray();
+
+        if (!checkAdmin(errMsg, request)) {
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
+
+        try {
+            ContentService cs = getContentService();
+            WebhookService ws = getWebhookService();
+
+            if (cs == null || ws == null) {
+                status = false;
+                addErrMsg(errMsg, "service", "Required services not available");
+            } else {
+                Content content = cs.getContent(repositoryId, objectId);
+                if (content == null) {
+                    status = false;
+                    addErrMsg(errMsg, "objectId", ErrorCode.ERR_NOTFOUND);
+                } else {
+                    List<WebhookConfig> configs = ws.getAllWebhookConfigs(repositoryId, content);
+                    configs = new ArrayList<>(configs);
+
+                    // Find and merge-update the config with matching ID
+                    boolean found = false;
+                    for (int i = 0; i < configs.size(); i++) {
+                        if (webhookId.equals(configs.get(i).getId())) {
+                            org.json.simple.parser.JSONParser parser = new org.json.simple.parser.JSONParser();
+                            JSONObject body = (JSONObject) parser.parse(requestBody);
+
+                            WebhookConfig existing = configs.get(i);
+                            mergeWebhookConfigFromJson(existing, body);
+                            configs.set(i, existing);
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    if (!found) {
+                        status = false;
+                        addErrMsg(errMsg, "webhookId", "Webhook config not found: " + webhookId);
+                    } else {
+                        ws.saveWebhookConfigs(repositoryId, objectId, configs);
+                        result.put("webhookId", webhookId);
+                        result.put("objectId", objectId);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error updating webhook config: " + e.getMessage(), e);
+            status = false;
+            addErrMsg(errMsg, "config", "Failed to update webhook config: " + e.getMessage());
+        }
+
+        result = makeResult(status, result, errMsg);
+        return result.toJSONString();
+    }
+
+    /**
+     * Delete a webhook configuration.
+     *
+     * DELETE /rest/repo/{repositoryId}/webhook/config/{objectId}/{webhookId}
+     */
+    @SuppressWarnings("unchecked")
+    @DELETE
+    @Path("/config/{objectId}/{webhookId}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public String deleteWebhookConfig(
+            @PathParam("repositoryId") String repositoryId,
+            @PathParam("objectId") String objectId,
+            @PathParam("webhookId") String webhookId,
+            @Context HttpServletRequest request) {
+
+        boolean status = true;
+        JSONObject result = new JSONObject();
+        JSONArray errMsg = new JSONArray();
+
+        if (!checkAdmin(errMsg, request)) {
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
+
+        try {
+            ContentService cs = getContentService();
+            WebhookService ws = getWebhookService();
+
+            if (cs == null || ws == null) {
+                status = false;
+                addErrMsg(errMsg, "service", "Required services not available");
+            } else {
+                Content content = cs.getContent(repositoryId, objectId);
+                if (content == null) {
+                    status = false;
+                    addErrMsg(errMsg, "objectId", ErrorCode.ERR_NOTFOUND);
+                } else {
+                    List<WebhookConfig> configs = ws.getAllWebhookConfigs(repositoryId, content);
+                    configs = new ArrayList<>(configs);
+
+                    boolean removed = configs.removeIf(c -> webhookId.equals(c.getId()));
+
+                    if (!removed) {
+                        status = false;
+                        addErrMsg(errMsg, "webhookId", "Webhook config not found: " + webhookId);
+                    } else {
+                        ws.saveWebhookConfigs(repositoryId, objectId, configs);
+                        result.put("webhookId", webhookId);
+                        result.put("objectId", objectId);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error deleting webhook config: " + e.getMessage(), e);
+            status = false;
+            addErrMsg(errMsg, "config", "Failed to delete webhook config: " + e.getMessage());
+        }
+
+        result = makeResult(status, result, errMsg);
+        return result.toJSONString();
+    }
+
+    /**
+     * Build a WebhookConfig from a JSON request body.
+     */
+    @SuppressWarnings("unchecked")
+    private WebhookConfig buildWebhookConfigFromJson(JSONObject body) {
+        WebhookConfig config = new WebhookConfig();
+
+        config.setId((String) body.get("id"));
+        config.setUrl((String) body.get("url"));
+        config.setEnabled(body.get("enabled") != null ? (Boolean) body.get("enabled") : true);
+        config.setAuthType((String) body.get("authType"));
+        config.setAuthCredential((String) body.get("authCredential"));
+        config.setSecret((String) body.get("secret"));
+        config.setIncludeChildren(body.get("includeChildren") != null ? (Boolean) body.get("includeChildren") : false);
+
+        if (body.get("maxDepth") != null) {
+            config.setMaxDepth(((Number) body.get("maxDepth")).intValue());
+        }
+        if (body.get("retryCount") != null) {
+            config.setRetryCount(((Number) body.get("retryCount")).intValue());
+        }
+
+        // Parse events array
+        List<String> events = new ArrayList<>();
+        Object eventsObj = body.get("events");
+        if (eventsObj instanceof org.json.simple.JSONArray) {
+            for (Object e : (org.json.simple.JSONArray) eventsObj) {
+                if (e != null) {
+                    events.add(e.toString());
+                }
+            }
+        }
+        config.setEvents(events);
+
+        // Parse headers
+        Object headersObj = body.get("headers");
+        if (headersObj instanceof JSONObject) {
+            java.util.Map<String, String> headers = new java.util.HashMap<>();
+            for (Object entry : ((JSONObject) headersObj).entrySet()) {
+                java.util.Map.Entry<?, ?> e = (java.util.Map.Entry<?, ?>) entry;
+                if (e.getKey() != null && e.getValue() != null) {
+                    headers.put(e.getKey().toString(), e.getValue().toString());
+                }
+            }
+            config.setHeaders(headers);
+        }
+
+        return config;
+    }
+
+    /**
+     * Merge-update an existing WebhookConfig from JSON request body.
+     * Only fields present in the JSON body are updated; absent fields retain their existing values.
+     * This prevents loss of sensitive fields (authCredential, secret, headers) that are
+     * masked in GET responses and therefore not included in UI edit requests.
+     */
+    @SuppressWarnings("unchecked")
+    private void mergeWebhookConfigFromJson(WebhookConfig existing, JSONObject body) {
+        if (body.containsKey("url")) {
+            existing.setUrl((String) body.get("url"));
+        }
+        if (body.containsKey("enabled")) {
+            existing.setEnabled(body.get("enabled") != null ? (Boolean) body.get("enabled") : existing.isEnabled());
+        }
+        if (body.containsKey("events")) {
+            List<String> events = new ArrayList<>();
+            Object eventsObj = body.get("events");
+            if (eventsObj instanceof org.json.simple.JSONArray) {
+                for (Object e : (org.json.simple.JSONArray) eventsObj) {
+                    if (e != null) {
+                        events.add(e.toString());
+                    }
+                }
+            }
+            existing.setEvents(events);
+        }
+        if (body.containsKey("authType")) {
+            existing.setAuthType((String) body.get("authType"));
+        }
+        // Update authCredential/secret when key is present in body.
+        // Empty string or null explicitly clears the value.
+        if (body.containsKey("authCredential")) {
+            String cred = (String) body.get("authCredential");
+            existing.setAuthCredential((cred != null && !cred.isEmpty()) ? cred : null);
+        }
+        if (body.containsKey("secret")) {
+            String secret = (String) body.get("secret");
+            existing.setSecret((secret != null && !secret.isEmpty()) ? secret : null);
+        }
+        if (body.containsKey("headers")) {
+            Object headersObj = body.get("headers");
+            if (headersObj instanceof JSONObject) {
+                java.util.Map<String, String> headers = new java.util.HashMap<>();
+                for (Object entry : ((JSONObject) headersObj).entrySet()) {
+                    java.util.Map.Entry<?, ?> e = (java.util.Map.Entry<?, ?>) entry;
+                    if (e.getKey() != null && e.getValue() != null) {
+                        headers.put(e.getKey().toString(), e.getValue().toString());
+                    }
+                }
+                existing.setHeaders(headers);
+            }
+        }
+        if (body.containsKey("includeChildren")) {
+            existing.setIncludeChildren(body.get("includeChildren") != null ? (Boolean) body.get("includeChildren") : existing.isIncludeChildren());
+        }
+        if (body.containsKey("maxDepth")) {
+            if (body.get("maxDepth") != null) {
+                existing.setMaxDepth(((Number) body.get("maxDepth")).intValue());
+            } else {
+                existing.setMaxDepth(null);
+            }
+        }
+        if (body.containsKey("retryCount")) {
+            if (body.get("retryCount") != null) {
+                existing.setRetryCount(((Number) body.get("retryCount")).intValue());
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -364,7 +704,7 @@ public class WebhookResource extends ResourceBase {
         json.put("id", config.getId());
         json.put("enabled", config.isEnabled());
         json.put("url", config.getUrl());
-        
+
         JSONArray events = new JSONArray();
         if (config.getEvents() != null) {
             for (String event : config.getEvents()) {
@@ -372,13 +712,25 @@ public class WebhookResource extends ResourceBase {
             }
         }
         json.put("events", events);
-        
+
         json.put("authType", config.getAuthType());
+        // Mask sensitive credentials in response
+        json.put("hasAuthCredential", config.getAuthCredential() != null && !config.getAuthCredential().isEmpty());
+        json.put("hasSecret", config.getSecret() != null && !config.getSecret().isEmpty());
         json.put("includeChildren", config.isIncludeChildren());
         json.put("maxDepth", config.getMaxDepth());
         json.put("retryCount", config.getRetryCount());
         json.put("sourceObjectId", config.getSourceObjectId());
-        
+
+        // Include custom headers (keys only for security)
+        if (config.getHeaders() != null && !config.getHeaders().isEmpty()) {
+            JSONArray headerKeys = new JSONArray();
+            for (String key : config.getHeaders().keySet()) {
+                headerKeys.add(key);
+            }
+            json.put("headerKeys", headerKeys);
+        }
+
         return json;
     }
 }

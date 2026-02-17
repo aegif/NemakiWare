@@ -482,6 +482,12 @@ public class AuthenticationFilter implements Filter {
 			case "authtoken":
 				propertyKey = PropertyKey.REST_AUTHTOKEN_ENABLED;
 				break;
+			case "webhook":
+				propertyKey = PropertyKey.WEBHOOK_ENABLED;
+				break;
+			case "rss":
+				propertyKey = PropertyKey.RSS_ENABLED;
+				break;
 			default:
 				// Resource not in the controlled list, allow by default
 				return true;

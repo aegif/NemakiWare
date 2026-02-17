@@ -280,6 +280,7 @@ import { ObjectPicker } from '../ObjectPicker/ObjectPicker';
 import { SecondaryTypeSelector } from '../SecondaryTypeSelector/SecondaryTypeSelector';
 import { TypeMigrationModal } from '../TypeMigrationModal/TypeMigrationModal';
 import { ExternalContextTab } from './ExternalContextTab';
+import { WebhookConfigTab } from './WebhookConfigTab';
 import { canPreview } from '../../utils/previewUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchCloudAuthConfig, CloudAuthConfig } from '../../services/cloud-auth';
@@ -1346,6 +1347,12 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           )}
         </div>
       ),
+    }] : []),
+    // Webhook Config Tab (only shown for folders when user is admin, matching API's checkAdmin requirement)
+    ...(object.baseType === 'cmis:folder' && authToken?.isAdmin ? [{
+      key: 'webhooks',
+      label: t('documentViewer.webhooks.tab'),
+      children: <WebhookConfigTab repositoryId={repositoryId} objectId={object.id} />,
     }] : []),
   ];
 

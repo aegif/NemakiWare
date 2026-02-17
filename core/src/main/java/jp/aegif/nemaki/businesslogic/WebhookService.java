@@ -93,6 +93,29 @@ public interface WebhookService {
     List<WebhookConfig> getInheritedWebhookConfigs(String repositoryId, Content content);
     
     /**
+     * Get all webhook configurations for a content object, including disabled and invalid ones.
+     * Used for management UI to display the complete configuration state.
+     *
+     * @param repositoryId The repository ID
+     * @param content The content
+     * @return List of all webhook configurations, or empty list if none
+     */
+    List<WebhookConfig> getAllWebhookConfigs(String repositoryId, Content content);
+
+    /**
+     * Save webhook configurations for a content object.
+     *
+     * This method updates the nemaki:webhookConfigs property on the content.
+     * If configs is empty, the nemaki:webhookable secondary type is removed.
+     * If configs is non-empty, the nemaki:webhookable secondary type is added if not present.
+     *
+     * @param repositoryId The repository ID
+     * @param objectId The content object ID
+     * @param configs The list of webhook configurations to save
+     */
+    void saveWebhookConfigs(String repositoryId, String objectId, List<WebhookConfig> configs);
+
+    /**
      * Get delivery logs for a specific object.
      * 
      * @param repositoryId The repository ID

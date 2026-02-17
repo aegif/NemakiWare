@@ -226,7 +226,8 @@ import {
   SwapOutlined,
   SendOutlined,
   SyncOutlined,
-  ControlOutlined
+  ControlOutlined,
+  WifiOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -253,6 +254,8 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [coreBuildInfo, setCoreBuildInfo] = useState<CoreBuildInfo | null>(null);
+  const [webhookEnabled, setWebhookEnabled] = useState(true);
+  const [rssEnabled, setRssEnabled] = useState(true);
   const navigate = useNavigate();
   const location = useLocation();
   const { logout, authToken } = useAuth();
@@ -301,6 +304,38 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
     };
     fetchCoreBuildInfo();
   }, []);
+
+  // Fetch feature toggle settings
+  useEffect(() => {
+    const fetchFeatureToggles = async () => {
+      if (!repositoryId || !authToken) return;
+      try {
+        const headers: Record<string, string> = {};
+        if (authToken?.token) {
+          headers['AUTH_TOKEN'] = authToken.token;
+        }
+        const response = await fetch(
+          `/core/rest/repo/${repositoryId}/config/properties`,
+          { headers, credentials: 'include' }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.properties) {
+            for (const prop of data.properties) {
+              if (prop.key === 'webhook.enabled') {
+                setWebhookEnabled(prop.value !== 'false');
+              } else if (prop.key === 'rss.enabled') {
+                setRssEnabled(prop.value !== 'false');
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch feature toggles:', error);
+      }
+    };
+    fetchFeatureToggles();
+  }, [repositoryId, authToken]);
 
   // UI build info from vite.config.ts
   const uiBuildTime = typeof __UI_BUILD_TIME__ !== 'undefined' ? __UI_BUILD_TIME__ : 'dev';
@@ -367,11 +402,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           icon: <SwapOutlined />,
           label: t('navigation.filesystemImportExport'),
         },
-        {
+        ...(webhookEnabled ? [{
           key: '/webhooks',
           icon: <SendOutlined />,
           label: t('webhookManagement.title'),
-        },
+        }] : []),
         {
           key: '/cloud-directory-sync',
           icon: <SyncOutlined />,
@@ -382,6 +417,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           icon: <ControlOutlined />,
           label: t('navigation.configViewer'),
         },
+        ...(rssEnabled ? [{
+          key: '/rss-tokens',
+          icon: <WifiOutlined />,
+          label: t('navigation.rssManagement'),
+        }] : []),
       ],
     }] : []),
   ];

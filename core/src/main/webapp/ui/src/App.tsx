@@ -217,6 +217,7 @@ import { FilesystemImportExport } from './components/FilesystemImportExport/File
 import { WebhookManagement } from './components/WebhookManagement/WebhookManagement';
 import { CloudDirectorySync } from './components/CloudDirectorySync/CloudDirectorySync';
 import { ConfigViewer } from './components/ConfigViewer/ConfigViewer';
+import { RssTokenManagement } from './components/RssTokenManagement/RssTokenManagement';
 import { AccountSettings } from './components/AccountSettings/AccountSettings';
 import { McpCloudLogin } from './components/McpCloudLogin/McpCloudLogin';
 import { Login } from './components/Login/Login';
@@ -382,6 +383,13 @@ function AppRoutes() {
             <ProtectedRoute>
               <AdminRoute>
                 <ConfigViewer repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/rss-tokens" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <RssTokenManagement repositoryId={authToken.repositoryId} />
               </AdminRoute>
             </ProtectedRoute>
           } />

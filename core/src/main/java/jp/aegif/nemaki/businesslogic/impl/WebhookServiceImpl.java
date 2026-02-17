@@ -410,6 +410,111 @@ public class WebhookServiceImpl implements WebhookService {
     }
     
     @Override
+    public List<WebhookConfig> getAllWebhookConfigs(String repositoryId, Content content) {
+        List<WebhookConfig> result = new ArrayList<>();
+
+        if (content == null) {
+            return result;
+        }
+
+        // Check for secondary type
+        List<String> secondaryTypes = content.getSecondaryIds();
+        if (secondaryTypes == null || !secondaryTypes.contains(WEBHOOKABLE_SECONDARY_TYPE)) {
+            return result;
+        }
+
+        // Get webhookConfigs property
+        Object configsValue = getSubTypePropertyValue(content, WEBHOOK_CONFIGS_PROPERTY);
+
+        if (configsValue == null) {
+            return result;
+        }
+
+        // Parse JSON configs - return ALL configs without filtering
+        String configsJson = configsValue.toString();
+        try {
+            List<WebhookConfig> configs = configParser.parse(configsJson);
+            for (WebhookConfig config : configs) {
+                config.setSourceObjectId(content.getId());
+                result.add(config);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse webhook configs for object: " + content.getId(), e);
+        }
+
+        return result;
+    }
+
+    @Override
+    public void saveWebhookConfigs(String repositoryId, String objectId, List<WebhookConfig> configs) {
+        if (contentService == null) {
+            throw new RuntimeException("ContentService not available");
+        }
+
+        Content content = contentService.getContent(repositoryId, objectId);
+        if (content == null) {
+            throw new RuntimeException("Content not found: " + objectId);
+        }
+
+        // Update secondary types
+        List<String> secondaryTypes = content.getSecondaryIds();
+        if (secondaryTypes == null) {
+            secondaryTypes = new ArrayList<>();
+        } else {
+            secondaryTypes = new ArrayList<>(secondaryTypes);
+        }
+
+        if (configs == null || configs.isEmpty()) {
+            // Remove secondary type and property
+            secondaryTypes.remove(WEBHOOKABLE_SECONDARY_TYPE);
+            content.setSecondaryIds(secondaryTypes);
+
+            // Remove webhookConfigs property
+            List<Property> subTypeProps = content.getSubTypeProperties();
+            if (subTypeProps != null) {
+                subTypeProps = new ArrayList<>(subTypeProps);
+                subTypeProps.removeIf(p -> WEBHOOK_CONFIGS_PROPERTY.equals(p.getKey()));
+                content.setSubTypeProperties(subTypeProps);
+            }
+        } else {
+            // Add secondary type if not present
+            if (!secondaryTypes.contains(WEBHOOKABLE_SECONDARY_TYPE)) {
+                secondaryTypes.add(WEBHOOKABLE_SECONDARY_TYPE);
+            }
+            content.setSecondaryIds(secondaryTypes);
+
+            // Serialize and set webhookConfigs property
+            String configsJson = configParser.serialize(configs);
+            List<Property> subTypeProps = content.getSubTypeProperties();
+            if (subTypeProps == null) {
+                subTypeProps = new ArrayList<>();
+            } else {
+                subTypeProps = new ArrayList<>(subTypeProps);
+            }
+
+            // Update or add the property
+            boolean found = false;
+            for (int i = 0; i < subTypeProps.size(); i++) {
+                if (WEBHOOK_CONFIGS_PROPERTY.equals(subTypeProps.get(i).getKey())) {
+                    subTypeProps.get(i).setValue(configsJson);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                subTypeProps.add(new Property(WEBHOOK_CONFIGS_PROPERTY, configsJson));
+            }
+            content.setSubTypeProperties(subTypeProps);
+        }
+
+        // Persist changes
+        contentService.updateInternal(repositoryId, content);
+
+        log.info("saveWebhookConfigs: saved " + (configs != null ? configs.size() : 0) +
+                 " webhook configs for object: " + objectId);
+    }
+
+    @Override
     public List<WebhookConfig> getInheritedWebhookConfigs(String repositoryId, Content content) {
         List<WebhookConfig> result = new ArrayList<>();
         
