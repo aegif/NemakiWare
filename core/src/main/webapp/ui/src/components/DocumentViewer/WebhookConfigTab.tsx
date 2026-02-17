@@ -177,17 +177,16 @@ export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId
       }
 
       // Build headers object from form list
+      // Always send headers key so server can clear existing headers when all are removed
+      const headersMap: Record<string, string> = {};
       if (values.headers && values.headers.length > 0) {
-        const headersMap: Record<string, string> = {};
         for (const h of values.headers) {
           if (h.key && h.value) {
             headersMap[h.key] = h.value;
           }
         }
-        if (Object.keys(headersMap).length > 0) {
-          body.headers = headersMap;
-        }
       }
+      body.headers = headersMap;
 
       let url: string;
       let method: string;

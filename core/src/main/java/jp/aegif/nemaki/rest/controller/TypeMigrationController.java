@@ -47,7 +47,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
-import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
@@ -429,22 +428,20 @@ public class TypeMigrationController {
             String newChangeToken = String.valueOf(System.currentTimeMillis());
             content.setChangeToken(newChangeToken);
 
-            // Use system context for the actual update operation
-            SystemCallContext systemContext = new SystemCallContext(repositoryId);
-
-            // Update the content
+            // Update the content using the authenticated user's context
+            // so that audit logs correctly attribute the change
             Content updated;
             if (content.isDocument()) {
-                updated = getContentService().update(systemContext, repositoryId, (Document) content);
+                updated = getContentService().update(callContext, repositoryId, (Document) content);
             } else if (content.isFolder()) {
-                updated = getContentService().update(systemContext, repositoryId, (Folder) content);
+                updated = getContentService().update(callContext, repositoryId, (Folder) content);
             } else {
                 // Generic update
-                updated = getContentService().update(systemContext, repositoryId, content);
+                updated = getContentService().update(callContext, repositoryId, content);
             }
 
             // Write change event (pass null for ACL as it's not changed)
-            getContentService().writeChangeEvent(systemContext, repositoryId, updated, null, ChangeType.UPDATED);
+            getContentService().writeChangeEvent(callContext, repositoryId, updated, null, ChangeType.UPDATED);
 
             log.info("[TypeMigration] Successfully migrated objectId=" + objectId +
                     " from " + currentTypeId + " to " + newTypeId);
