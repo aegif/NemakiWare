@@ -29,7 +29,6 @@ import java.util.Map;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
-import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.http.HttpStatus;
@@ -439,9 +438,8 @@ public class TypeMigrationController {
                 // Generic update
                 updated = getContentService().update(callContext, repositoryId, content);
             }
-
-            // Write change event (pass null for ACL as it's not changed)
-            getContentService().writeChangeEvent(callContext, repositoryId, updated, null, ChangeType.UPDATED);
+            // Note: ContentService.update() internally calls writeChangeEvent(UPDATED),
+            // so no additional writeChangeEvent call is needed here.
 
             log.info("[TypeMigration] Successfully migrated objectId=" + objectId +
                     " from " + currentTypeId + " to " + newTypeId);
