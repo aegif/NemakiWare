@@ -45,6 +45,7 @@ import org.springframework.web.bind.annotation.RestController;
 import jakarta.servlet.http.HttpServletRequest;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.util.constant.CallContextKey;
@@ -53,6 +54,7 @@ import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.util.spring.SpringContext;
 
+import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -80,15 +82,17 @@ public class TypeMigrationController {
     @Autowired
     private HttpServletRequest httpRequest;
 
-    private void checkAdminAuthorization() {
+    /**
+     * Check that the request is authenticated.
+     * Type migration operations require write permission on the target object,
+     * which is enforced by the UI (canUpdateProperties check).
+     */
+    private CallContext checkAuthentication() {
         CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
-        if (callContext == null) {
+        if (callContext == null || callContext.getUsername() == null) {
             throw new RuntimeException("Authentication required for type migration operations");
         }
-        Boolean isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
-        if (isAdmin == null || !isAdmin) {
-            throw new RuntimeException("Only administrators can perform type migration operations");
-        }
+        return callContext;
     }
 
     private ContentService getContentService() {
@@ -99,6 +103,26 @@ public class TypeMigrationController {
     private TypeManager getTypeManager() {
         return SpringContext.getApplicationContext()
                 .getBean("TypeManager", TypeManager.class);
+    }
+
+    private PermissionService getPermissionService() {
+        return SpringContext.getApplicationContext()
+                .getBean("PermissionService", PermissionService.class);
+    }
+
+    /**
+     * Check that the authenticated user has write permission (canUpdateProperties)
+     * on the specified content object.
+     */
+    private void checkWritePermission(CallContext callContext, String repositoryId, Content content) {
+        jp.aegif.nemaki.model.Acl acl = getContentService().calculateAcl(repositoryId, content);
+        Boolean allowed = getPermissionService().checkPermission(
+                callContext, repositoryId,
+                PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT,
+                acl, content.getType(), content);
+        if (allowed == null || !allowed) {
+            throw new RuntimeException("Permission denied: canUpdateProperties required for type migration");
+        }
     }
 
     /**
@@ -148,7 +172,7 @@ public class TypeMigrationController {
             @PathVariable String repositoryId,
             @PathVariable String objectId) {
 
-        checkAdminAuthorization();
+        CallContext callContext = checkAuthentication();
 
         Map<String, Object> response = new HashMap<>();
 
@@ -161,6 +185,9 @@ public class TypeMigrationController {
                 response.put("message", "Object not found");
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
             }
+
+            // Check write permission on the object
+            checkWritePermission(callContext, repositoryId, content);
 
             String currentTypeId = content.getObjectType();
             TypeDefinition currentType = getTypeManager().getTypeDefinition(repositoryId, currentTypeId);
@@ -190,6 +217,23 @@ public class TypeMigrationController {
 
             return ResponseEntity.ok(response);
 
+        } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException e) {
+            log.warn("[TypeMigration] Permission denied for compatible types: " + e.getMessage());
+            response.put("status", "error");
+            response.put("message", "Permission denied");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+        } catch (RuntimeException e) {
+            if (e.getMessage() != null && e.getMessage().contains("Permission denied")) {
+                log.warn("[TypeMigration] Permission denied for compatible types: " + e.getMessage());
+                response.put("status", "error");
+                response.put("message", "Permission denied");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+            }
+            log.error("[TypeMigration] Error getting compatible types", e);
+            response.put("status", "error");
+            response.put("message", "Failed to get compatible types");
+            response.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         } catch (Exception e) {
             log.error("[TypeMigration] Error getting compatible types", e);
             response.put("status", "error");
@@ -275,7 +319,7 @@ public class TypeMigrationController {
             @PathVariable String repositoryId,
             @RequestBody TypeMigrationRequest request) {
 
-        checkAdminAuthorization();
+        CallContext callContext = checkAuthentication();
 
         Map<String, Object> response = new HashMap<>();
 
@@ -305,6 +349,9 @@ public class TypeMigrationController {
                 response.put("message", "Object not found: " + objectId);
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
             }
+
+            // Check write permission on the object
+            checkWritePermission(callContext, repositoryId, content);
 
             // Get type definitions
             String currentTypeId = content.getObjectType();
@@ -382,22 +429,22 @@ public class TypeMigrationController {
             String newChangeToken = String.valueOf(System.currentTimeMillis());
             content.setChangeToken(newChangeToken);
 
-            // Set modified signature
-            SystemCallContext callContext = new SystemCallContext(repositoryId);
+            // Use system context for the actual update operation
+            SystemCallContext systemContext = new SystemCallContext(repositoryId);
 
             // Update the content
             Content updated;
             if (content.isDocument()) {
-                updated = getContentService().update(callContext, repositoryId, (Document) content);
+                updated = getContentService().update(systemContext, repositoryId, (Document) content);
             } else if (content.isFolder()) {
-                updated = getContentService().update(callContext, repositoryId, (Folder) content);
+                updated = getContentService().update(systemContext, repositoryId, (Folder) content);
             } else {
                 // Generic update
-                updated = getContentService().update(callContext, repositoryId, content);
+                updated = getContentService().update(systemContext, repositoryId, content);
             }
 
             // Write change event (pass null for ACL as it's not changed)
-            getContentService().writeChangeEvent(callContext, repositoryId, updated, null, ChangeType.UPDATED);
+            getContentService().writeChangeEvent(systemContext, repositoryId, updated, null, ChangeType.UPDATED);
 
             log.info("[TypeMigration] Successfully migrated objectId=" + objectId +
                     " from " + currentTypeId + " to " + newTypeId);
@@ -411,6 +458,23 @@ public class TypeMigrationController {
 
             return ResponseEntity.ok(response);
 
+        } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException e) {
+            log.warn("[TypeMigration] Permission denied for type migration: " + e.getMessage());
+            response.put("status", "error");
+            response.put("message", "Permission denied");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+        } catch (RuntimeException e) {
+            if (e.getMessage() != null && e.getMessage().contains("Permission denied")) {
+                log.warn("[TypeMigration] Permission denied for type migration: " + e.getMessage());
+                response.put("status", "error");
+                response.put("message", "Permission denied");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+            }
+            log.error("[TypeMigration] Error migrating type", e);
+            response.put("status", "error");
+            response.put("message", "Type migration failed");
+            response.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         } catch (Exception e) {
             log.error("[TypeMigration] Error migrating type", e);
             response.put("status", "error");

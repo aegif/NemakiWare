@@ -338,6 +338,11 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
     try {
       const typeDefinition = await cmisService.getType(repositoryId, typeId);
 
+      // Auto-set baseType from the selected objectType's baseTypeId
+      if (typeDefinition.baseTypeId) {
+        form.setFieldsValue({ baseType: typeDefinition.baseTypeId });
+      }
+
       // Filter to get only custom queryable properties (exclude cmis:* standard properties)
       const customProperties: PropertyDefinition[] = [];
       if (typeDefinition.propertyDefinitions) {
@@ -428,10 +433,11 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       // Full-text search mode
       const keyword = values.query;
       const excludeMetadata = values.excludeMetadata;
+      const fullTextBaseType = values.baseType || 'cmis:document';
 
       if (excludeMetadata) {
         // When checkbox is checked: search only full-text content
-        query = `SELECT * FROM cmis:document WHERE CONTAINS('${keyword}')`;
+        query = `SELECT * FROM ${fullTextBaseType} WHERE CONTAINS('${keyword}')`;
       } else {
         // Default behavior: search both full-text AND standard metadata properties
         // Combine CONTAINS with LIKE conditions using OR for broader search
@@ -447,7 +453,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
           `cmis:contentStreamFileName LIKE '%${keyword}%'`,
           `cmis:checkinComment LIKE '%${keyword}%'`
         ];
-        query = `SELECT * FROM cmis:document WHERE ${searchConditions.join(' OR ')}`;
+        query = `SELECT * FROM ${fullTextBaseType} WHERE ${searchConditions.join(' OR ')}`;
       }
     } else {
       const conditions: string[] = [];

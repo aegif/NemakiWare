@@ -2248,12 +2248,12 @@ export class CMISService {
 
       // Map frontend TypeDefinition field names to backend expectations
       // Backend expects "baseId" instead of "baseTypeId" for CMIS type definitions
-      const backendPayload = {
-        ...type,
-        baseId: type.baseTypeId, // Map baseTypeId to baseId for backend
-      };
-      // Remove baseTypeId to avoid confusion
-      delete (backendPayload as any).baseTypeId;
+      // Note: GUI editor already sends "baseId", while TypeDefinition objects use "baseTypeId"
+      const backendPayload: any = { ...type };
+      if (type.baseTypeId) {
+        backendPayload.baseId = type.baseTypeId;
+        delete backendPayload.baseTypeId;
+      }
 
       const response = await this.httpClient.postJson(url, backendPayload);
 
@@ -2293,12 +2293,12 @@ export class CMISService {
 
       // Map frontend TypeDefinition field names to backend expectations
       // Backend expects "baseId" instead of "baseTypeId" for CMIS type definitions
-      const backendPayload = {
-        ...type,
-        baseId: type.baseTypeId, // Map baseTypeId to baseId for backend
-      };
-      // Remove baseTypeId to avoid confusion
-      delete (backendPayload as any).baseTypeId;
+      // Note: GUI editor already sends "baseId", while TypeDefinition objects use "baseTypeId"
+      const backendPayload: any = { ...type };
+      if (type.baseTypeId) {
+        backendPayload.baseId = type.baseTypeId;
+        delete backendPayload.baseTypeId;
+      }
 
       // Use PUT method via httpClient.request()
       const response = await this.httpClient.request({
