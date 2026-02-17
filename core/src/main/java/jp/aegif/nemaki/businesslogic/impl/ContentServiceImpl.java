@@ -1908,6 +1908,15 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, item);
+			}
+		} catch (Exception e) {
+			log.warn("createItem: Solr indexing failed for item " + item.getId() + ": " + e.getMessage());
+		}
+
 		writeChangeEvent(callContext, repositoryId, item, ChangeType.CREATED);
 		return item;
 	}
@@ -1926,6 +1935,16 @@ public class ContentServiceImpl implements ContentService {
 		validateUserItem(repositoryId, userItem);
 
 		UserItem created = contentDaoService.create(repositoryId, userItem);
+
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, created);
+			}
+		} catch (Exception e) {
+			log.warn("createUserItem: Solr indexing failed for user " + created.getUserId() + ": " + e.getMessage());
+		}
+
 		writeChangeEvent(callContext, repositoryId, created, ChangeType.CREATED);
 		return created;
 	}
@@ -1942,6 +1961,16 @@ public class ContentServiceImpl implements ContentService {
 		validateGroupItem(repositoryId, groupItem);
 
 		GroupItem created = contentDaoService.create(repositoryId, groupItem);
+
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, created);
+			}
+		} catch (Exception e) {
+			log.warn("createGroupItem: Solr indexing failed for group " + created.getGroupId() + ": " + e.getMessage());
+		}
+
 		writeChangeEvent(callContext, repositoryId, created, ChangeType.CREATED);
 		return created;
 	}
@@ -1951,6 +1980,16 @@ public class ContentServiceImpl implements ContentService {
 		validateGroupItem(repositoryId, groupItem);
 
 		GroupItem created = contentDaoService.create(repositoryId, groupItem);
+
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, created);
+			}
+		} catch (Exception e) {
+			log.warn("createGroupItem: Solr indexing failed for group " + created.getGroupId() + ": " + e.getMessage());
+		}
+
 		writeChangeEvent(callContext, repositoryId, created, ChangeType.CREATED);
 		return created;
 	}

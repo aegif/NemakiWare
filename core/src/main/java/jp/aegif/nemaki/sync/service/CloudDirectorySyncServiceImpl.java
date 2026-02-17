@@ -1263,6 +1263,7 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 
 	/**
 	 * Ensure a GroupItem (cmis:item) exists for the given group so it appears in the UI management screen.
+	 * If the GroupItem already exists, update its name, users, and groups to match the cloud directory.
 	 */
 	private void ensureGroupItem(String repositoryId, String groupId, String groupName,
 			List<String> users, List<String> groups) {
@@ -1273,7 +1274,31 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 		try {
 			GroupItem existing = contentService.getGroupItemById(repositoryId, groupId);
 			if (existing != null) {
-				return; // Already exists
+				// Update existing GroupItem if name or members changed
+				boolean updated = false;
+				if (groupName != null && !groupName.equals(existing.getName())) {
+					existing.setName(groupName);
+					updated = true;
+				}
+				List<String> currentUsers = existing.getUsers() != null ? existing.getUsers() : new ArrayList<>();
+				List<String> newUsers = users != null ? users : new ArrayList<>();
+				if (!currentUsers.equals(newUsers)) {
+					existing.setUsers(newUsers);
+					updated = true;
+				}
+				List<String> currentGroups = existing.getGroups() != null ? existing.getGroups() : new ArrayList<>();
+				List<String> newGroups = groups != null ? groups : new ArrayList<>();
+				if (!currentGroups.equals(newGroups)) {
+					existing.setGroups(newGroups);
+					updated = true;
+				}
+				if (updated) {
+					existing.setModifier("system");
+					existing.setModified(new java.util.GregorianCalendar());
+					contentService.update(new SystemCallContext(repositoryId), repositoryId, existing);
+					log.info("Updated GroupItem for cloud-synced group: " + groupId);
+				}
+				return;
 			}
 			Folder groupsFolder = getOrCreateSystemSubFolder(repositoryId, "groups");
 			if (groupsFolder == null) {
@@ -1288,7 +1313,7 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 			contentService.createGroupItem(new SystemCallContext(repositoryId), repositoryId, groupItem);
 			log.info("Created GroupItem for cloud-synced group: " + groupId);
 		} catch (Exception e) {
-			log.warn("Failed to create GroupItem for " + groupId + ": " + e.getMessage());
+			log.warn("Failed to create/update GroupItem for " + groupId + ": " + e.getMessage());
 		}
 	}
 }
