@@ -683,6 +683,9 @@ public class WebhookResource extends ResourceBase {
     private JSONObject buildDeliveryLogJson(WebhookDeliveryLog deliveryLog) {
         JSONObject json = new JSONObject();
         json.put("deliveryId", deliveryLog.getDeliveryId());
+        if (deliveryLog.getAttemptId() != null) {
+            json.put("attemptId", deliveryLog.getAttemptId());
+        }
         json.put("objectId", deliveryLog.getObjectId());
         json.put("eventType", deliveryLog.getEventType());
         json.put("webhookUrl", deliveryLog.getWebhookUrl());

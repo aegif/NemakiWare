@@ -63,6 +63,7 @@ interface WebhookManagementProps {
 
 interface DeliveryLog {
   deliveryId: string;
+  attemptId?: string;
   objectId: string;
   eventType: string;
   webhookUrl: string;
@@ -125,10 +126,18 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       }
 
       const data = await response.json();
-      if (data.status === true && data.deliveries) {
+      if (data.status === 'success' && data.deliveries) {
         setDeliveryLogs(data.deliveries);
-      } else if (data.errMsg) {
-        message.error(t('webhookManagement.messages.loadError'));
+      } else if (data.status === 'failure') {
+        const errArr = data.error;
+        if (Array.isArray(errArr) && errArr.length > 0) {
+          const msg = errArr.map((e: any) =>
+            typeof e === 'string' ? e : Object.values(e).join(': ')
+          ).join('; ');
+          message.error(msg);
+        } else {
+          message.error(t('webhookManagement.messages.loadError'));
+        }
       }
     } catch (error: any) {
       console.error('Failed to load delivery logs:', error);
@@ -155,11 +164,15 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       }
 
       const data = await response.json();
-      if (data.status === true) {
+      if (data.status === 'success') {
         message.success(t('webhookManagement.messages.retryQueued'));
         loadDeliveryLogs();
       } else {
-        message.error(data.errMsg?.[0]?.msg || t('webhookManagement.messages.retryError'));
+        const errArr = data.error;
+        const msg = Array.isArray(errArr) && errArr.length > 0
+          ? errArr.map((e: any) => typeof e === 'string' ? e : Object.values(e).join(': ')).join('; ')
+          : t('webhookManagement.messages.retryError');
+        message.error(msg);
       }
     } catch (error: any) {
       console.error('Failed to retry delivery:', error);
@@ -191,7 +204,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       }
 
       const data = await response.json();
-      if (data.status === true) {
+      if (data.status === 'success') {
         setTestResult({
           success: data.success,
           statusCode: data.statusCode,
@@ -199,7 +212,11 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
           responseBody: data.responseBody || null
         });
       } else {
-        message.error(data.errMsg?.[0]?.msg || t('webhookManagement.messages.testError'));
+        const errArr = data.error;
+        const msg = Array.isArray(errArr) && errArr.length > 0
+          ? errArr.map((e: any) => typeof e === 'string' ? e : Object.values(e).join(': ')).join('; ')
+          : t('webhookManagement.messages.testError');
+        message.error(msg);
       }
     } catch (error: any) {
       console.error('Failed to test webhook:', error);
@@ -395,7 +412,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       <Table
         columns={columns}
         dataSource={filteredLogs}
-        rowKey="deliveryId"
+        rowKey={(record: DeliveryLog) => record.attemptId || record.deliveryId}
         loading={loading}
         pagination={{
           pageSize: 20,

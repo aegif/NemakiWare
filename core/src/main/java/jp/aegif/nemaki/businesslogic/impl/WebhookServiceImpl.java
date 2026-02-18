@@ -294,7 +294,7 @@ public class WebhookServiceImpl implements WebhookService {
     }
     
     /**
-     * Dispatch a webhook asynchronously
+     * Dispatch a webhook asynchronously and persist delivery log
      */
     private void dispatchWebhookAsync(CallContext callContext, String repositoryId,
                                        Content content, String eventType,
@@ -339,7 +339,51 @@ public class WebhookServiceImpl implements WebhookService {
                 
                 // Dispatch via dispatcher if available, otherwise log
                 if (dispatcher != null) {
-                    dispatcher.dispatch(config.getUrl(), payloadJson, headers, config);
+                    // Create delivery log before dispatch
+                    WebhookDeliveryLog deliveryLog = new WebhookDeliveryLog();
+                    deliveryLog.setDeliveryId(payload.getDeliveryId());
+                    deliveryLog.setWebhookId(config.getId());
+                    deliveryLog.setObjectId(content.getId());
+                    deliveryLog.setRepositoryId(repositoryId);
+                    deliveryLog.setWebhookUrl(config.getUrl());
+                    deliveryLog.setEventType(eventType);
+                    deliveryLog.setAttemptNumber(1);
+                    deliveryLog.setChangeToken(changeToken);
+                    deliveryLog.setPayloadSizeBytes((long) payloadJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
+                    deliveryLog.setStatus(WebhookDeliveryLog.DeliveryStatus.PENDING);
+                    deliveryLog.generateAttemptId();
+                    
+                    // Save initial pending log - use returned object which has the persisted id
+                    WebhookDeliveryLog persistedLog = null;
+                    if (webhookDaoService != null) {
+                        try {
+                            persistedLog = webhookDaoService.createDeliveryLog(repositoryId, deliveryLog);
+                        } catch (Exception logErr) {
+                            log.warn("Failed to create delivery log: " + logErr.getMessage());
+                        }
+                    }
+                    
+                    // Dispatch synchronously within this async thread to capture result
+                    long startTime = System.currentTimeMillis();
+                    WebhookDeliveryLog dispatchResult = dispatcher.dispatchSync(
+                        config.getUrl(), payloadJson, headers, config);
+                    long responseTime = System.currentTimeMillis() - startTime;
+                    
+                    // Update delivery log with result (use persistedLog which has the DB id)
+                    if (persistedLog != null && webhookDaoService != null) {
+                        try {
+                            if (dispatchResult.isSuccess()) {
+                                persistedLog.markSuccess(dispatchResult.getStatusCode(), dispatchResult.getResponseBody(), responseTime);
+                            } else {
+                                persistedLog.markFailed(dispatchResult.getStatusCode(),
+                                    dispatchResult.getResponseBody() != null ? dispatchResult.getResponseBody() : "Dispatch failed",
+                                    responseTime);
+                            }
+                            webhookDaoService.updateDeliveryLog(repositoryId, persistedLog);
+                        } catch (Exception logErr) {
+                            log.warn("Failed to update delivery log: " + logErr.getMessage());
+                        }
+                    }
                 } else {
                     log.info("Webhook dispatch (no dispatcher configured): " +
                              "url=" + config.getUrl() + ", event=" + eventType + 
@@ -618,10 +662,101 @@ public class WebhookServiceImpl implements WebhookService {
         retryLog.setStatus(WebhookDeliveryLog.DeliveryStatus.PENDING);
         retryLog.generateAttemptId();
         
-        // Save the new attempt log
+        // Save the new attempt log - use returned object which has the persisted id
         WebhookDeliveryLog savedLog = webhookDaoService.createDeliveryLog(repositoryId, retryLog);
         
-        // Queue for async delivery (actual dispatch would happen here)
+        // Dispatch asynchronously
+        if (dispatcher != null && executorService != null) {
+            executorService.submit(() -> {
+                try {
+                    // Resolve original WebhookConfig from the source object to get auth/secret info
+                    WebhookConfig resolvedConfig = null;
+                    if (originalLog.getObjectId() != null && contentService != null) {
+                        try {
+                            Content sourceContent = contentService.getContent(repositoryId, originalLog.getObjectId());
+                            if (sourceContent != null) {
+                                List<WebhookConfig> configs = getWebhookConfigs(repositoryId, sourceContent);
+                                for (WebhookConfig cfg : configs) {
+                                    if (cfg.getId() != null && cfg.getId().equals(originalLog.getWebhookId())) {
+                                        resolvedConfig = cfg;
+                                        break;
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            log.warn("retryDelivery: Could not resolve webhook config for retry: " + e.getMessage());
+                        }
+                    }
+                    
+                    // Build retry payload
+                    WebhookPayload payload = deliveryService.buildPayload(
+                        originalLog.getEventType(),
+                        originalLog.getObjectId(),
+                        repositoryId,
+                        new HashMap<>(),
+                        originalLog.getChangeToken()
+                    );
+                    payload.setDeliveryId(deliveryId);
+                    String payloadJson = deliveryService.serializePayload(payload);
+                    
+                    // Build headers with auth if config was resolved
+                    Map<String, String> headers;
+                    if (resolvedConfig != null) {
+                        headers = deliveryService.generateAuthHeaders(resolvedConfig);
+                    } else {
+                        headers = new HashMap<>();
+                    }
+                    headers.put("Content-Type", "application/json");
+                    headers.put("X-NemakiWare-Event", originalLog.getEventType());
+                    headers.put("X-NemakiWare-Delivery", deliveryId);
+                    headers.put("X-NemakiWare-Timestamp", String.valueOf(payload.getTimestamp()));
+                    
+                    // Compute HMAC signature if secret available
+                    String secret = resolvedConfig != null ? resolvedConfig.getSecret() : null;
+                    if (secret != null && !secret.isEmpty()) {
+                        String signature = deliveryService.computeHmacSignature(payloadJson, secret);
+                        headers.put("X-NemakiWare-Signature", "sha256=" + signature);
+                    }
+                    
+                    // Dispatch and record result
+                    WebhookConfig dispatchConfig = resolvedConfig != null ? resolvedConfig :
+                        new WebhookConfig.Builder()
+                            .id(originalLog.getWebhookId() != null ? originalLog.getWebhookId() : "retry-" + deliveryId)
+                            .url(originalLog.getWebhookUrl())
+                            .enabled(true)
+                            .retryCount(0)
+                            .build();
+                    
+                    long startTime = System.currentTimeMillis();
+                    WebhookDeliveryLog dispatchResult = dispatcher.dispatchSync(
+                        originalLog.getWebhookUrl(), payloadJson, headers, dispatchConfig);
+                    long responseTime = System.currentTimeMillis() - startTime;
+                    
+                    // Update the saved log with dispatch result (savedLog has persisted id)
+                    if (dispatchResult.isSuccess()) {
+                        savedLog.markSuccess(dispatchResult.getStatusCode(), dispatchResult.getResponseBody(), responseTime);
+                    } else {
+                        savedLog.markFailed(dispatchResult.getStatusCode(),
+                            dispatchResult.getResponseBody() != null ? dispatchResult.getResponseBody() : "Dispatch failed",
+                            responseTime);
+                    }
+                    webhookDaoService.updateDeliveryLog(repositoryId, savedLog);
+                    
+                    log.info("Retry dispatch completed for deliveryId: " + deliveryId +
+                        ", success: " + dispatchResult.isSuccess() +
+                        ", statusCode: " + dispatchResult.getStatusCode());
+                } catch (Exception e) {
+                    log.error("Retry dispatch failed for deliveryId: " + deliveryId, e);
+                    savedLog.markFailed(0, "Dispatch error: " + e.getMessage(), 0);
+                    try {
+                        webhookDaoService.updateDeliveryLog(repositoryId, savedLog);
+                    } catch (Exception updateErr) {
+                        log.warn("Failed to update retry log after dispatch error: " + updateErr.getMessage());
+                    }
+                }
+            });
+        }
+        
         log.info("Retry queued for deliveryId: " + deliveryId + ", attemptNumber: " + retryLog.getAttemptNumber());
         
         return savedLog;
