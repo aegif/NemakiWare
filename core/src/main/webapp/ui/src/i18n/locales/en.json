@@ -2199,6 +2199,14 @@
     "expired": "Expired",
     "active": "Active",
     "feedUrl": "Feed URL",
-    "copyFeedUrl": "Copy Feed URL"
+    "copyFeedUrl": "Copy Feed URL",
+    "selectFolder": "Select Folder",
+    "selectedFolders": "Selected Folders",
+    "noFolderSelected": "No folder selected",
+    "folderAlreadySelected": "This folder is already selected",
+    "feedUrls": "Feed URLs",
+    "rssFeedUrl": "RSS Feed",
+    "atomFeedUrl": "Atom Feed",
+    "urlCopied": "URL copied"
   }
 }

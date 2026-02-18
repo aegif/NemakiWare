@@ -254,8 +254,15 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [coreBuildInfo, setCoreBuildInfo] = useState<CoreBuildInfo | null>(null);
-  const [webhookEnabled, setWebhookEnabled] = useState(true);
-  const [rssEnabled, setRssEnabled] = useState(true);
+  const [featureToggles, setFeatureToggles] = useState<Record<string, boolean>>({
+    'webhook.enabled': true,
+    'rss.enabled': true,
+    'rest.solr.enabled': true,
+    'rest.type.enabled': true,
+    'rest.archive.enabled': true,
+    'rest.user.enabled': true,
+    'rest.group.enabled': true,
+  });
   const navigate = useNavigate();
   const location = useLocation();
   const { logout, authToken } = useAuth();
@@ -321,12 +328,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
         if (response.ok) {
           const data = await response.json();
           if (data.properties) {
+            const toggleKeys = Object.keys(featureToggles);
+            const updates: Record<string, boolean> = {};
             for (const prop of data.properties) {
-              if (prop.key === 'webhook.enabled') {
-                setWebhookEnabled(prop.value !== 'false');
-              } else if (prop.key === 'rss.enabled') {
-                setRssEnabled(prop.value !== 'false');
+              if (toggleKeys.includes(prop.key)) {
+                updates[prop.key] = prop.value !== 'false';
               }
+            }
+            if (Object.keys(updates).length > 0) {
+              setFeatureToggles(prev => ({ ...prev, ...updates }));
             }
           }
         }
@@ -356,37 +366,37 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
       icon: <SearchOutlined />,
       label: t('navigation.search'),
     },
-    {
+    ...(featureToggles['rest.archive.enabled'] ? [{
       key: '/archive',
       icon: <InboxOutlined />,
       label: t('navigation.archive'),
-    },
+    }] : []),
     // Only include admin menu for admin users
     ...(isAdmin ? [{
       key: 'admin',
       icon: <SettingOutlined />,
       label: t('navigation.admin'),
       children: [
-        {
+        ...(featureToggles['rest.user.enabled'] ? [{
           key: '/users',
           icon: <UserOutlined />,
           label: t('userManagement.title'),
-        },
-        {
+        }] : []),
+        ...(featureToggles['rest.group.enabled'] ? [{
           key: '/groups',
           icon: <TeamOutlined />,
           label: t('groupManagement.title'),
-        },
-        {
+        }] : []),
+        ...(featureToggles['rest.type.enabled'] ? [{
           key: '/types',
           icon: <FileOutlined />,
           label: t('typeManagement.title'),
-        },
-        {
+        }] : []),
+        ...(featureToggles['rest.solr.enabled'] ? [{
           key: '/solr',
           icon: <DatabaseOutlined />,
           label: t('navigation.solr'),
-        },
+        }] : []),
         {
           key: '/audit-dashboard',
           icon: <BarChartOutlined />,
@@ -402,7 +412,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           icon: <SwapOutlined />,
           label: t('navigation.filesystemImportExport'),
         },
-        ...(webhookEnabled ? [{
+        ...(featureToggles['webhook.enabled'] ? [{
           key: '/webhooks',
           icon: <SendOutlined />,
           label: t('webhookManagement.title'),
@@ -417,7 +427,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           icon: <ControlOutlined />,
           label: t('navigation.configViewer'),
         },
-        ...(rssEnabled ? [{
+        ...(featureToggles['rss.enabled'] ? [{
           key: '/rss-tokens',
           icon: <WifiOutlined />,
           label: t('navigation.rssManagement'),

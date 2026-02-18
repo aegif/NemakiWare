@@ -14,12 +14,15 @@ import {
   message,
   Typography,
   Tooltip,
+  Divider,
 } from 'antd';
-import { PlusOutlined, DeleteOutlined, CopyOutlined, ReloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, CopyOutlined, ReloadOutlined, FolderOutlined, LinkOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
+import { ObjectPicker } from '../ObjectPicker/ObjectPicker';
+import type { CMISObject } from '../../types/cmis';
 
-const { Paragraph } = Typography;
+const { Paragraph, Text } = Typography;
 
 interface RssTokenManagementProps {
   repositoryId: string;
@@ -38,9 +41,13 @@ interface RssTokenData {
 interface TokenFormValues {
   name: string;
   userId: string;
-  folders: string;
   events: string[];
   expiryDays: number;
+}
+
+interface SelectedFolder {
+  id: string;
+  name: string;
 }
 
 const RSS_EVENTS = ['created', 'updated', 'deleted', 'security'];
@@ -52,6 +59,9 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [newToken, setNewToken] = useState<string | null>(null);
+  const [newTokenFolders, setNewTokenFolders] = useState<SelectedFolder[]>([]);
+  const [selectedFolders, setSelectedFolders] = useState<SelectedFolder[]>([]);
+  const [folderPickerVisible, setFolderPickerVisible] = useState(false);
   const [form] = Form.useForm<TokenFormValues>();
 
   const getHeaders = useCallback(() => {
@@ -97,9 +107,8 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         expiryDays: values.expiryDays,
       };
 
-      // Parse folder IDs
-      if (values.folders) {
-        body.folders = values.folders.split(',').map((s: string) => s.trim()).filter(Boolean);
+      if (selectedFolders.length > 0) {
+        body.folders = selectedFolders.map(f => f.id);
       }
 
       if (values.events && values.events.length > 0) {
@@ -119,6 +128,7 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         message.success(t('rssManagement.createSuccess'));
         if (data.token) {
           setNewToken(data.token);
+          setNewTokenFolders([...selectedFolders]);
         }
         setModalVisible(false);
         loadTokens();
@@ -179,9 +189,27 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
     }
   };
 
-  const copyToClipboard = (text: string) => {
+  const copyToClipboard = (text: string, msgKey?: string) => {
     navigator.clipboard.writeText(text);
-    message.success(t('rssManagement.tokenCopied'));
+    message.success(t(msgKey || 'rssManagement.tokenCopied'));
+  };
+
+  const handleFolderSelect = (obj: CMISObject) => {
+    if (selectedFolders.some(f => f.id === obj.id)) {
+      message.warning(t('rssManagement.folderAlreadySelected'));
+    } else {
+      setSelectedFolders(prev => [...prev, { id: obj.id, name: obj.name }]);
+    }
+    setFolderPickerVisible(false);
+  };
+
+  const handleFolderRemove = (folderId: string) => {
+    setSelectedFolders(prev => prev.filter(f => f.id !== folderId));
+  };
+
+  const buildFeedUrl = (folderId: string, token: string, format: 'rss' | 'atom') => {
+    const base = window.location.origin;
+    return `${base}/core/rest/repo/${repositoryId}/rss/folder/${folderId}?token=${token}&format=${format}`;
   };
 
   const columns = [
@@ -269,6 +297,7 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
               expiryDays: 30,
               events: ['created', 'updated', 'deleted'],
             });
+            setSelectedFolders([]);
             setModalVisible(true);
           }}
         >
@@ -308,11 +337,32 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
             <Input />
           </Form.Item>
 
-          <Form.Item
-            name="folders"
-            label={t('rssManagement.folderIds')}
-          >
-            <Input placeholder={t('rssManagement.folderIdsPlaceholder')} />
+          <Form.Item label={t('rssManagement.selectedFolders')}>
+            <div style={{ marginBottom: 8 }}>
+              {selectedFolders.length === 0 ? (
+                <Text type="secondary">{t('rssManagement.noFolderSelected')}</Text>
+              ) : (
+                <Space wrap>
+                  {selectedFolders.map(folder => (
+                    <Tag
+                      key={folder.id}
+                      closable
+                      onClose={() => handleFolderRemove(folder.id)}
+                      icon={<FolderOutlined />}
+                    >
+                      {folder.name}
+                    </Tag>
+                  ))}
+                </Space>
+              )}
+            </div>
+            <Button
+              icon={<PlusOutlined />}
+              onClick={() => setFolderPickerVisible(true)}
+              size="small"
+            >
+              {t('rssManagement.selectFolder')}
+            </Button>
           </Form.Item>
 
           <Form.Item
@@ -337,17 +387,28 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         </Form>
       </Modal>
 
+      {/* Folder Picker */}
+      <ObjectPicker
+        repositoryId={repositoryId}
+        visible={folderPickerVisible}
+        onSelect={handleFolderSelect}
+        onCancel={() => setFolderPickerVisible(false)}
+        title={t('rssManagement.selectFolder')}
+        filterType="folder"
+      />
+
       {/* Token Display Modal */}
       <Modal
         title={t('rssManagement.token')}
         open={!!newToken}
-        onOk={() => setNewToken(null)}
-        onCancel={() => setNewToken(null)}
+        onOk={() => { setNewToken(null); setNewTokenFolders([]); }}
+        onCancel={() => { setNewToken(null); setNewTokenFolders([]); }}
+        width={640}
         footer={[
           <Button key="copy" icon={<CopyOutlined />} onClick={() => newToken && copyToClipboard(newToken)}>
             {t('rssManagement.copyFeedUrl')}
           </Button>,
-          <Button key="ok" type="primary" onClick={() => setNewToken(null)}>
+          <Button key="ok" type="primary" onClick={() => { setNewToken(null); setNewTokenFolders([]); }}>
             OK
           </Button>,
         ]}
@@ -358,6 +419,38 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         <Paragraph code copyable style={{ wordBreak: 'break-all' }}>
           {newToken}
         </Paragraph>
+
+        {newToken && newTokenFolders.length > 0 && (
+          <>
+            <Divider />
+            <Paragraph strong>
+              <LinkOutlined style={{ marginRight: 4 }} />
+              {t('rssManagement.feedUrls')}
+            </Paragraph>
+            {newTokenFolders.map(folder => (
+              <div key={folder.id} style={{ marginBottom: 12 }}>
+                <Text strong>
+                  <FolderOutlined style={{ marginRight: 4 }} />
+                  {folder.name}
+                </Text>
+                <div style={{ marginLeft: 20, marginTop: 4 }}>
+                  <div style={{ marginBottom: 4 }}>
+                    <Text type="secondary">{t('rssManagement.rssFeedUrl')}: </Text>
+                    <Text code copyable style={{ wordBreak: 'break-all', fontSize: 12 }}>
+                      {buildFeedUrl(folder.id, newToken, 'rss')}
+                    </Text>
+                  </div>
+                  <div>
+                    <Text type="secondary">{t('rssManagement.atomFeedUrl')}: </Text>
+                    <Text code copyable style={{ wordBreak: 'break-all', fontSize: 12 }}>
+                      {buildFeedUrl(folder.id, newToken, 'atom')}
+                    </Text>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
       </Modal>
     </Card>
   );

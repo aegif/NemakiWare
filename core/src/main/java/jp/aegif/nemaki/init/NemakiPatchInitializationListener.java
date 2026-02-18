@@ -92,9 +92,21 @@ public class NemakiPatchInitializationListener implements ServletContextListener
                 "patch_SystemFolderSetup",       // Creates .system folder
                 "patch_InitialContentSetup",     // Creates Sites and Technical Documents folders
                 "patch_StandardCmisViews",       // Creates CMIS views
-                "patch_TestUserInitialization",  // Creates test users
-                "patch_McpServiceAccount",       // Creates MCP service account for API access
-                "patch_RssTokenViews"            // Creates RSS token views for token persistence
+                "patch_TestUserInitialization",   // Creates test users
+                "patch_NemakiwareStandardTypes",  // NemakiWare standard types
+                "patch_WebhookableSecondaryType", // Webhookable secondary type for webhook support
+                "patch_WebhookDeliveryLogViews",  // Webhook delivery log views
+                "patch_RetentionMigrationLogViews", // Retention migration log views
+                "patch_ArchiveByCreatorView",     // Archive byCreator view
+                "patch_ArchiveByArchivedByView",  // Archive byArchivedBy view
+                "patch_SearchableArchivesView",   // Searchable archives view
+                "patch_ArchivesByArchivedAtView",  // Archives byArchivedAt view
+                "patch_CloudDriveMetadataSecondaryType", // Cloud Drive metadata secondary type
+                "patch_ExternalIntegrationSecondaryType", // External integration secondary type
+                "patch_RetentionSecondaryTypes",  // Retention secondary types
+                "patch_RetentionExpirationView",  // Retention expiration view
+                "patch_McpServiceAccount",        // Creates MCP service account for API access
+                "patch_RssTokenViews"             // Creates RSS token views for token persistence
             };
 
             for (String beanName : patchBeanNames) {

@@ -34,8 +34,8 @@ export interface CloudSyncStatus {
 }
 
 // NemakiWare REST API returns flat JSON objects (makeResult merges status into the result object)
-// e.g. {"syncId":"...","status":"success","usersCreated":0,...}
-// The "status" field from makeResult is "success" or "failure", while sync status is in the fields directly.
+// e.g. {"syncId":"...","status":"success","syncStatus":"RUNNING","usersCreated":0,...}
+// The "status" field from makeResult is "success" or "failure", while sync status is in "syncStatus".
 
 function getBaseUrl(repositoryId: string): string {
   return `/core/rest/repo/${repositoryId}/cloud-sync`;
@@ -55,11 +55,21 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
 }
 
 function parseResponse(json: Record<string, unknown>): CloudSyncStatus {
-  if (json.status === 'failure' && Array.isArray(json.errMsg) && json.errMsg.length > 0) {
-    throw new Error(json.errMsg.join('; '));
+  if (json.status === 'failure') {
+    // makeResult puts errors under the "error" key (ITEM_ERROR = "error" in ResourceBase)
+    // Each element can be a plain string or an object like {"errorCode": "message"}
+    const errArr = json.error;
+    if (Array.isArray(errArr) && errArr.length > 0) {
+      const messages = (errArr as unknown[]).map((e: unknown) =>
+        typeof e === 'string' ? e : Object.values(e as Record<string, string>).join(': ')
+      );
+      throw new Error(messages.join('; '));
+    }
+    throw new Error('Cloud sync operation failed');
   }
-  // The response is flat — CloudSyncStatus fields are at top level
-  return json as unknown as CloudSyncStatus;
+  // Map syncStatus (actual sync state) to status field for CloudSyncStatus interface
+  const syncStatus = (json.syncStatus as string) || 'IDLE';
+  return { ...json, status: syncStatus } as unknown as CloudSyncStatus;
 }
 
 export async function startDeltaSync(repositoryId: string, provider: string): Promise<CloudSyncStatus> {
@@ -126,11 +136,20 @@ function getLdapBaseUrl(repositoryId: string): string {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseLdapResponse(json: Record<string, any>): CloudSyncStatus {
-  if (json.status === 'failure' && Array.isArray(json.errMsg) && json.errMsg.length > 0) {
-    throw new Error(json.errMsg.join('; '));
+  // makeResult puts errors under the "error" key (ITEM_ERROR = "error" in ResourceBase)
+  if (json.status === 'failure') {
+    const errArr = json.error;
+    if (Array.isArray(errArr) && errArr.length > 0) {
+      const messages = (errArr as unknown[]).map((e: unknown) =>
+        typeof e === 'string' ? e : Object.values(e as Record<string, string>).join(': ')
+      );
+      throw new Error(messages.join('; '));
+    }
+    throw new Error('LDAP sync operation failed');
   }
   // Map LDAP API field names to CloudSyncStatus
-  const syncResult = json.syncResult ?? json;
+  // triggerSync puts the result under "syncResult", getStatus puts it under "lastSyncResult"
+  const syncResult = json.lastSyncResult ?? json.syncResult ?? json;
   const errors: string[] = Array.isArray(syncResult.errors)
     ? syncResult.errors.map((e: { message?: string } | string) =>
         typeof e === 'string' ? e : (e.message ?? JSON.stringify(e)))
@@ -141,6 +160,9 @@ function parseLdapResponse(json: Record<string, any>): CloudSyncStatus {
     : [];
   return {
     syncId: syncResult.syncId ?? '',
+    // syncResult.status contains the real sync status (e.g. SUCCESS, FAILED, RUNNING)
+    // This is NOT the makeResult wrapper status ("success"/"failure") because we
+    // extract syncResult from json.syncResult ?? json, and the real status is inside syncResult.
     status: mapLdapStatus(syncResult.status),
     syncMode: syncResult.dryRun ? 'DELTA' : 'FULL', // Use DELTA for dry-run display, FULL for real sync
     provider: 'ldap',
@@ -168,8 +190,11 @@ function mapLdapStatus(status: string | undefined): CloudSyncStatus['status'] {
     case 'SUCCESS': return 'COMPLETED';
     case 'PARTIAL': return 'COMPLETED';
     case 'FAILED': return 'ERROR';
+    case 'FAILURE': return 'ERROR';  // makeResult wrapper status ("failure") if syncResult is missing
+    case 'ERROR': return 'ERROR';
     case 'RUNNING': return 'RUNNING';
     case 'IDLE': return 'IDLE';
+    case 'CANCELLED': return 'CANCELLED';
     default: return 'IDLE';
   }
 }

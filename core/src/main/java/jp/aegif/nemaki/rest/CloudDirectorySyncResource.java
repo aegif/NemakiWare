@@ -198,7 +198,8 @@ public class CloudDirectorySyncResource extends ResourceBase {
 	@SuppressWarnings("unchecked")
 	private void populateResult(JSONObject result, CloudSyncResult syncResult) {
 		result.put("syncId", syncResult.getSyncId());
-		result.put("status", syncResult.getStatus().name());
+		// Use "syncStatus" to avoid collision with makeResult's "status" field ("success"/"failure")
+		result.put("syncStatus", syncResult.getStatus().name());
 		result.put("syncMode", syncResult.getSyncMode() != null ? syncResult.getSyncMode().name() : null);
 		result.put("provider", syncResult.getProvider());
 		result.put("repositoryId", syncResult.getRepositoryId());

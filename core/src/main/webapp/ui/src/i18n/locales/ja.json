@@ -2199,6 +2199,14 @@
     "expired": "期限切れ",
     "active": "有効",
     "feedUrl": "フィードURL",
-    "copyFeedUrl": "フィードURLをコピー"
+    "copyFeedUrl": "フィードURLをコピー",
+    "selectFolder": "フォルダを選択",
+    "selectedFolders": "選択済みフォルダ",
+    "noFolderSelected": "フォルダが未選択です",
+    "folderAlreadySelected": "このフォルダは既に選択されています",
+    "feedUrls": "フィードURL",
+    "rssFeedUrl": "RSS フィード",
+    "atomFeedUrl": "Atom フィード",
+    "urlCopied": "URLをコピーしました"
   }
 }

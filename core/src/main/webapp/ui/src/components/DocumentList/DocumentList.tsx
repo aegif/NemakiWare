@@ -417,7 +417,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [importProgress, setImportProgress] = useState(0);
   const [importForm] = Form.useForm();
 
-  const [form] = Form.useForm();
+  const [uploadForm] = Form.useForm();
+  const [folderForm] = Form.useForm();
+  const [checkInForm] = Form.useForm();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { handleAuthError, authToken } = useAuth();
@@ -503,7 +505,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
   // Handle document type selection change - load type definition for custom properties
   const handleDocumentTypeChange = async (typeId: string) => {
-    form.setFieldsValue({ objectTypeId: typeId });
+    uploadForm.setFieldsValue({ objectTypeId: typeId });
     try {
       const typeDef = await cmisService.getType(repositoryId, typeId);
       setSelectedDocumentTypeDefinition(typeDef);
@@ -515,7 +517,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
   // Handle folder type selection change - load type definition for custom properties
   const handleFolderTypeChange = async (typeId: string) => {
-    form.setFieldsValue({ objectTypeId: typeId });
+    folderForm.setFieldsValue({ objectTypeId: typeId });
     try {
       const typeDef = await cmisService.getType(repositoryId, typeId);
       setSelectedFolderTypeDefinition(typeDef);
@@ -690,7 +692,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setUploadModalVisible(false);
       setUploadError(null);
       setSelectedDocumentTypeDefinition(null);
-      form.resetFields();
+      uploadForm.resetFields();
 
       // FIXED: Await loadObjects() to ensure table updates before UI tests proceed
       await loadObjects();
@@ -820,7 +822,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setFolderModalVisible(false);
       setFolderError(null);
       setSelectedFolderTypeDefinition(null);
-      form.resetFields();
+      folderForm.resetFields();
       // FIXED: Await loadObjects() to ensure table updates before UI tests proceed
       await loadObjects();
     } catch (error) {
@@ -1091,7 +1093,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
       message.success(t('documentList.messages.checkinSuccess'));
       setCheckInModalVisible(false);
-      form.resetFields();
+      checkInForm.resetFields();
       await loadObjects();
     } catch (error) {
       console.error('Check-in error:', error);
@@ -1807,14 +1809,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
           setUploadModalVisible(false);
           setUploadError(null);
           setSelectedDocumentTypeDefinition(null);
-          form.resetFields();
+          uploadForm.resetFields();
         }}
         footer={null}
         maskClosable={false}
         closable={!isUploading}
         width={700}
       >
-        <Form form={form} onFinish={handleUpload} layout="vertical">
+        <Form form={uploadForm} onFinish={handleUpload} layout="vertical">
           {uploadError && (
             <Alert
               message={uploadError}
@@ -1842,7 +1844,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               maxCount={1}
               onChange={(info) => {
                 if (info.fileList.length > 0 && info.fileList[0].name) {
-                  form.setFieldsValue({ name: info.fileList[0].name });
+                  uploadForm.setFieldsValue({ name: info.fileList[0].name });
                 }
               }}
             >
@@ -1937,7 +1939,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   setUploadModalVisible(false);
                   setUploadError(null);
                   setSelectedDocumentTypeDefinition(null);
-                  form.resetFields();
+                  uploadForm.resetFields();
                 }}
                 disabled={isUploading}
               >
@@ -1955,13 +1957,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
           setFolderModalVisible(false);
           setFolderError(null);
           setSelectedFolderTypeDefinition(null);
-          form.resetFields();
+          folderForm.resetFields();
         }}
         footer={null}
         maskClosable={false}
         width={700}
       >
-        <Form form={form} onFinish={handleCreateFolder} layout="vertical">
+        <Form form={folderForm} onFinish={handleCreateFolder} layout="vertical">
           {folderError && (  // Inline Alert component
             <Alert
               message={folderError}
@@ -2050,7 +2052,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               <Button onClick={() => {
                 setFolderModalVisible(false);
                 setSelectedFolderTypeDefinition(null);
-                form.resetFields();
+                folderForm.resetFields();
               }}>
                 {t('common.cancel')}
               </Button>
@@ -2064,13 +2066,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         open={checkInModalVisible}
         onCancel={() => {
           setCheckInModalVisible(false);
-          form.resetFields();
+          checkInForm.resetFields();
         }}
         footer={null}
         width={600}
         maskClosable={false}
       >
-        <Form form={form} onFinish={handleCheckIn} layout="vertical" initialValues={{ versionType: 'minor' }}>
+        <Form form={checkInForm} onFinish={handleCheckIn} layout="vertical" initialValues={{ versionType: 'minor' }}>
           <Form.Item
             name="file"
             label={t('documentList.checkinFileLabel')}
@@ -2119,7 +2121,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               </Button>
               <Button onClick={() => {
                 setCheckInModalVisible(false);
-                form.resetFields();
+                checkInForm.resetFields();
               }}>
                 {t('common.cancel')}
               </Button>

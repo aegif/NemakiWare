@@ -113,6 +113,13 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Webhookable secondary type for webhook configuration on folders/documents -->
+				<!-- MUST run after NemakiwareStandardTypes to ensure cmis:secondary base type exists -->
+				<bean class="jp.aegif.nemaki.patch.Patch_WebhookableSecondaryType">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- Webhook delivery log views for Phase 3 DAO layer -->
 				<!-- MUST run after StandardCmisViews to ensure design document exists -->
 				<bean class="jp.aegif.nemaki.patch.Patch_WebhookDeliveryLogViews">
@@ -247,6 +254,12 @@
 		</property>
 	</bean>
 
+	<bean id="patch_WebhookableSecondaryType" class="jp.aegif.nemaki.patch.Patch_WebhookableSecondaryType">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
 	<bean id="patch_WebhookDeliveryLogViews" class="jp.aegif.nemaki.patch.Patch_WebhookDeliveryLogViews">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
@@ -308,6 +321,12 @@
 	</bean>
 
 	<bean id="patch_RssTokenViews" class="jp.aegif.nemaki.patch.Patch_RssTokenViews">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_McpServiceAccount" class="jp.aegif.nemaki.patch.Patch_McpServiceAccount">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>
