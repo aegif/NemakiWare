@@ -621,41 +621,61 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
 
         SolrClient solrClient = null;
         try {
-            // Get Solr document count (cmis:document, cmis:folder, cmis:item)
-            // Exclude RAG documents (doc_type:document/chunk)
+            // 1. Collect all CouchDB document IDs (including root folder)
+            Set<String> couchIds = new HashSet<>();
+            Folder rootFolder = contentService.getFolder(repositoryId,
+                repositoryInfoMap.get(repositoryId).getRootFolderId());
+            if (rootFolder != null) {
+                couchIds.add(rootFolder.getId());
+                collectDocumentIds(repositoryId, rootFolder.getId(), couchIds);
+            }
+            health.setCouchDbDocumentCount(couchIds.size());
+
+            // 2. Collect all Solr document IDs (cmis:document, cmis:folder, cmis:item)
+            Set<String> solrIds = new HashSet<>();
             solrClient = solrUtil.getSolrClient();
             if (solrClient != null) {
                 SolrQuery query = new SolrQuery("repository_id:" + ClientUtils.escapeQueryChars(repositoryId));
                 query.addFilterQuery("-doc_type:document -doc_type:chunk");
                 query.addFilterQuery("basetype:(cmis\\:document OR cmis\\:folder OR cmis\\:item)");
-                query.setRows(0);
-                QueryResponse response = solrClient.query(query);
-                health.setSolrDocumentCount(response.getResults().getNumFound());
+                query.setFields("object_id");
+                query.setRows(500);
+                query.addSort("id", SolrQuery.ORDER.asc);
+                String cursorMark = "*";
+                while (true) {
+                    query.set("cursorMark", cursorMark);
+                    QueryResponse response = solrClient.query(query);
+                    SolrDocumentList docs = response.getResults();
+                    if (docs.isEmpty()) break;
+                    for (SolrDocument doc : docs) {
+                        Object id = doc.getFieldValue("object_id");
+                        if (id != null) {
+                            solrIds.add(id.toString());
+                        }
+                    }
+                    String nextCursorMark = response.getNextCursorMark();
+                    if (cursorMark.equals(nextCursorMark)) break;
+                    cursorMark = nextCursorMark;
+                }
             }
+            health.setSolrDocumentCount(solrIds.size());
 
-            // Get CouchDB document count: root folder + all descendants
-            Folder rootFolder = contentService.getFolder(repositoryId,
-                repositoryInfoMap.get(repositoryId).getRootFolderId());
-            if (rootFolder != null) {
-                AtomicLong couchCount = new AtomicLong(1); // count root folder itself
-                countDocumentsRecursive(repositoryId, rootFolder.getId(), couchCount);
-                health.setCouchDbDocumentCount(couchCount.get());
-            }
+            // 3. Calculate discrepancies using set operations (accurate counts)
+            Set<String> missingIds = new HashSet<>(couchIds);
+            missingIds.removeAll(solrIds);
+            health.setMissingInSolr(missingIds.size());
 
-            // Calculate discrepancies
-            long diff = health.getCouchDbDocumentCount() - health.getSolrDocumentCount();
-            if (diff > 0) {
-                health.setMissingInSolr(diff);
-            } else if (diff < 0) {
-                health.setOrphanedInSolr(-diff);
-            }
+            Set<String> orphanedIds = new HashSet<>(solrIds);
+            orphanedIds.removeAll(couchIds);
+            health.setOrphanedInSolr(orphanedIds.size());
 
-            health.setHealthy(diff == 0);
+            health.setHealthy(missingIds.isEmpty() && orphanedIds.isEmpty());
             if (health.isHealthy()) {
                 health.setMessage("Index is healthy. Document counts match.");
             } else {
-                health.setMessage("Index mismatch detected. CouchDB: " + health.getCouchDbDocumentCount() + 
-                    ", Solr: " + health.getSolrDocumentCount());
+                health.setMessage("Index mismatch detected. CouchDB: " + couchIds.size() + 
+                    ", Solr: " + solrIds.size() +
+                    ", Missing: " + missingIds.size() + ", Orphaned: " + orphanedIds.size());
             }
 
         } catch (Exception e) {
