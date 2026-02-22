@@ -389,11 +389,12 @@ public class ArchiveServiceDelegate {
 						SolrUtil solrUtil = solrUtilSupplier.get();
 						if (solrUtil != null) {
 							solrUtil.indexDocument(repositoryId, v);
-						}
-						// Mark as indexed only on success so the safety net
-						// can retry if this attempt threw an exception
-						if (isRestoredVersion) {
-							restoredVersionIndexed = true;
+							// Mark as indexed only when solrUtil is available AND
+							// indexDocument succeeded (no exception) so the safety
+							// net can retry if solrUtil is null or indexing threw.
+							if (isRestoredVersion) {
+								restoredVersionIndexed = true;
+							}
 						}
 					} catch (Exception e) {
 						log.warn("restoreDocument: Solr indexing failed for version {}: {}", v.getId(), e.getMessage());

@@ -141,13 +141,13 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         
         List<Content> children = Arrays.asList(doc1, doc2);
         when(contentService.getChildren(TEST_REPO_ID, ROOT_FOLDER_ID)).thenReturn(children);
-        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt())).thenReturn(2);
-        
+        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt(), anyBoolean())).thenReturn(2);
+
         boolean started = service.startFullReindex(TEST_REPO_ID);
         assertTrue(started);
-        
+
         awaitReindexCompletion(TEST_REPO_ID, 5);
-        
+
         ReindexStatus status = service.getReindexStatus(TEST_REPO_ID);
         assertEquals("completed", status.getStatus());
         assertEquals(3, status.getTotalDocuments()); // root folder + 2 documents
@@ -297,8 +297,8 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         when(contentService.getFolder(TEST_REPO_ID, "sub-folder-1")).thenReturn(subFolder);
         when(contentService.getChildren(TEST_REPO_ID, "sub-folder-1")).thenReturn(new ArrayList<>());
         
-        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt())).thenReturn(1);
-        
+        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt(), anyBoolean())).thenReturn(1);
+
         boolean started = service.startFullReindex(TEST_REPO_ID);
         assertTrue(started);
         
