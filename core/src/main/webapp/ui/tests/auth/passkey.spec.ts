@@ -116,8 +116,13 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
     // Wait for passkey section to appear before CDP setup
     await expect(page.getByRole('heading', { name: /パスキー|Passkeys/ })).toBeVisible({ timeout: 10000 });
 
-    // Now setup virtual authenticator (CDP session)
-    await setupVirtualAuthenticator(page);
+    // Setup virtual authenticator (CDP session) - skip test if CDP/WebAuthn unavailable
+    try {
+      await setupVirtualAuthenticator(page);
+    } catch (e) {
+      test.skip(true, 'WebAuthn virtual authenticator not available: ' + String(e).substring(0, 100));
+      return;
+    }
 
     try {
       // Click register button to open modal

@@ -19,6 +19,7 @@ import jp.aegif.nemaki.model.Document;
 
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.response.UpdateResponse;
+import org.apache.solr.client.solrj.util.ClientUtils;
 
 /**
  * Unit tests for SolrIndexMaintenanceServiceImpl - Document Operations
@@ -60,17 +61,15 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
     public void testReindexDocumentSuccess() throws Exception {
         String objectId = "doc-123";
         Document document = mock(Document.class);
-        when(document.getId()).thenReturn(objectId);
-        
+
         when(contentService.getContent(TEST_REPO_ID, objectId)).thenReturn(document);
-        doNothing().when(solrUtil).indexDocument(eq(TEST_REPO_ID), eq(document));
-        
+
         boolean result = service.reindexDocument(TEST_REPO_ID, objectId);
-        
+
         assertTrue("reindexDocument should return true on success", result);
-        verify(solrUtil).indexDocument(TEST_REPO_ID, document);
+        verify(solrUtil).indexDocument(TEST_REPO_ID, document, true);
     }
-    
+
     @Test
     public void testReindexDocumentNotFound() {
         String objectId = "non-existent-doc";
@@ -79,7 +78,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         boolean result = service.reindexDocument(TEST_REPO_ID, objectId);
         
         assertFalse("reindexDocument should return false when document not found", result);
-        verify(solrUtil, never()).indexDocument(anyString(), any(Content.class));
+        verify(solrUtil, never()).indexDocument(anyString(), any(Content.class), anyBoolean());
     }
     
     @Test
@@ -88,7 +87,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         Document document = mock(Document.class);
         
         when(contentService.getContent(TEST_REPO_ID, objectId)).thenReturn(document);
-        doThrow(new RuntimeException("Index failed")).when(solrUtil).indexDocument(eq(TEST_REPO_ID), eq(document));
+        doThrow(new RuntimeException("Index failed")).when(solrUtil).indexDocument(eq(TEST_REPO_ID), eq(document), eq(true));
         
         boolean result = service.reindexDocument(TEST_REPO_ID, objectId);
         
@@ -98,18 +97,17 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
     @Test
     public void testDeleteFromIndexSuccess() throws Exception {
         String objectId = "doc-123";
-        doNothing().when(solrUtil).deleteDocument(TEST_REPO_ID, objectId);
-        
+
         boolean result = service.deleteFromIndex(TEST_REPO_ID, objectId);
-        
+
         assertTrue("deleteFromIndex should return true on success", result);
-        verify(solrUtil).deleteDocument(TEST_REPO_ID, objectId);
+        verify(solrUtil).deleteDocument(TEST_REPO_ID, objectId, true);
     }
     
     @Test
     public void testDeleteFromIndexWithException() throws Exception {
         String objectId = "doc-123";
-        doThrow(new RuntimeException("Delete failed")).when(solrUtil).deleteDocument(TEST_REPO_ID, objectId);
+        doThrow(new RuntimeException("Delete failed")).when(solrUtil).deleteDocument(eq(TEST_REPO_ID), eq(objectId), eq(true));
         
         boolean result = service.deleteFromIndex(TEST_REPO_ID, objectId);
         
@@ -125,7 +123,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         boolean result = service.clearIndex(TEST_REPO_ID);
         
         assertTrue("clearIndex should return true on success", result);
-        verify(solrClient).deleteByQuery("repository_id:" + TEST_REPO_ID);
+        verify(solrClient).deleteByQuery("repository_id:" + ClientUtils.escapeQueryChars(TEST_REPO_ID));
         verify(solrClient).commit();
         verify(solrClient).close();
     }
@@ -218,24 +216,21 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
     public void testReindexDocumentWithDifferentContentTypes() throws Exception {
         String objectId = "content-123";
         Content content = mock(Content.class);
-        when(content.getId()).thenReturn(objectId);
-        
+
         when(contentService.getContent(TEST_REPO_ID, objectId)).thenReturn(content);
-        doNothing().when(solrUtil).indexDocument(eq(TEST_REPO_ID), eq(content));
-        
+
         boolean result = service.reindexDocument(TEST_REPO_ID, objectId);
-        
+
         assertTrue(result);
-        verify(solrUtil).indexDocument(TEST_REPO_ID, content);
+        verify(solrUtil).indexDocument(TEST_REPO_ID, content, true);
     }
     
     @Test
     public void testDeleteFromIndexWithEmptyObjectId() throws Exception {
         String objectId = "";
-        doNothing().when(solrUtil).deleteDocument(TEST_REPO_ID, objectId);
-        
+
         boolean result = service.deleteFromIndex(TEST_REPO_ID, objectId);
-        
+
         assertTrue(result);
     }
     
@@ -247,23 +242,21 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         
         service.clearIndex(TEST_REPO_ID);
         
-        verify(solrClient).deleteByQuery("repository_id:" + TEST_REPO_ID);
+        verify(solrClient).deleteByQuery("repository_id:" + ClientUtils.escapeQueryChars(TEST_REPO_ID));
     }
     
     @Test
     public void testOperationsWithSpecialCharactersInIds() throws Exception {
         String objectId = "doc-with-special:chars/and\\slashes";
         Document document = mock(Document.class);
-        when(document.getId()).thenReturn(objectId);
-        
+
         when(contentService.getContent(TEST_REPO_ID, objectId)).thenReturn(document);
-        doNothing().when(solrUtil).indexDocument(eq(TEST_REPO_ID), eq(document));
-        
+
         boolean result = service.reindexDocument(TEST_REPO_ID, objectId);
-        
+
         assertTrue(result);
     }
-    
+
     @Test
     public void testClearIndexClosesClientOnSuccess() throws Exception {
         when(solrUtil.getSolrClient()).thenReturn(solrClient);

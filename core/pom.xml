@@ -1109,6 +1109,10 @@
 					<systemPropertyVariables>
 						<test.timeout>600000</test.timeout>
 					</systemPropertyVariables>
+					<!-- Environment variables for test execution -->
+					<environmentVariables>
+						<NEMAKI_ENCRYPTION_KEY>test-encryption-key-for-unit-tests-32chars!</NEMAKI_ENCRYPTION_KEY>
+					</environmentVariables>
 				</configuration>
 			</plugin>
 

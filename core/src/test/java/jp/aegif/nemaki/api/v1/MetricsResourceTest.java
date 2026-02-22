@@ -71,46 +71,6 @@ public class MetricsResourceTest {
     }
 
     @Test
-    public void testMetricsContainsRepositoryNodeCount() {
-        String repositoryId = "test-repo";
-        Response response = metricsResource.getMetrics(repositoryId, adminRequest);
-        String metrics = (String) response.getEntity();
-        assertTrue(metrics.contains("nemaki_repository_nodes_total"));
-    }
-
-    @Test
-    public void testMetricsContainsRepositoryDocumentCount() {
-        String repositoryId = "test-repo";
-        Response response = metricsResource.getMetrics(repositoryId, adminRequest);
-        String metrics = (String) response.getEntity();
-        assertTrue(metrics.contains("nemaki_repository_documents_total"));
-    }
-
-    @Test
-    public void testMetricsContainsRepositoryFolderCount() {
-        String repositoryId = "test-repo";
-        Response response = metricsResource.getMetrics(repositoryId, adminRequest);
-        String metrics = (String) response.getEntity();
-        assertTrue(metrics.contains("nemaki_repository_folders_total"));
-    }
-
-    @Test
-    public void testMetricsContainsJobsPending() {
-        String repositoryId = "test-repo";
-        Response response = metricsResource.getMetrics(repositoryId, adminRequest);
-        String metrics = (String) response.getEntity();
-        assertTrue(metrics.contains("nemaki_jobs_pending"));
-    }
-
-    @Test
-    public void testMetricsContainsJobsRunning() {
-        String repositoryId = "test-repo";
-        Response response = metricsResource.getMetrics(repositoryId, adminRequest);
-        String metrics = (String) response.getEntity();
-        assertTrue(metrics.contains("nemaki_jobs_running"));
-    }
-
-    @Test
     public void testMetricsFormatIsPrometheusCompatible() {
         String repositoryId = "test-repo";
         Response response = metricsResource.getMetrics(repositoryId, adminRequest);

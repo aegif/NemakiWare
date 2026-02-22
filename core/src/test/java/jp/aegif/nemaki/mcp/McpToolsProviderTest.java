@@ -4,6 +4,8 @@ import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -78,6 +80,41 @@ public class McpToolsProviderTest {
         toolsProvider = new McpToolsProvider(authHandler, vectorSearchService, contentService,
                 textExtractionService, permissionService, typeManager, discoveryService,
                 resultFactory, objectMapper, "http://localhost:8080/core", DEFAULT_REPOSITORY);
+
+        // Setup ACL filter mocks: allow all documents through permission checks
+        // getContentsByIds returns a map with mock Content for any requested IDs
+        when(contentService.getContentsByIds(anyString(), anyList())).thenAnswer(invocation -> {
+            List<String> ids = invocation.getArgument(1);
+            Map<String, jp.aegif.nemaki.model.Content> map = new HashMap<>();
+            for (String id : ids) {
+                jp.aegif.nemaki.model.Content c = mock(jp.aegif.nemaki.model.Content.class);
+                when(c.getId()).thenReturn(id);
+                map.put(id, c);
+            }
+            return map;
+        });
+        org.apache.chemistry.opencmis.commons.definitions.TypeDefinition mockTypeDef =
+                mock(org.apache.chemistry.opencmis.commons.definitions.TypeDefinition.class);
+        when(mockTypeDef.getBaseTypeId()).thenReturn(org.apache.chemistry.opencmis.commons.enums.BaseTypeId.CMIS_DOCUMENT);
+        when(typeManager.getTypeDefinition(anyString(), any(jp.aegif.nemaki.model.Content.class))).thenReturn(mockTypeDef);
+        when(contentService.calculateAcls(anyString(), anyCollection())).thenAnswer(invocation -> {
+            java.util.Collection<jp.aegif.nemaki.model.Content> contents = invocation.getArgument(1);
+            Map<String, org.apache.chemistry.opencmis.commons.data.Acl> aclMap = new HashMap<>();
+            for (jp.aegif.nemaki.model.Content c : contents) {
+                aclMap.put(c.getId(), mock(org.apache.chemistry.opencmis.commons.data.Acl.class));
+            }
+            return aclMap;
+        });
+        when(contentService.getGroupIdsContainingUser(anyString(), anyString())).thenReturn(new HashSet<>());
+        when(permissionService.checkPermissions(any(), anyString(), anyString(), anyMap(), anyMap(), anyMap()))
+                .thenAnswer(invocation -> {
+                    Map<String, ?> contents = invocation.getArgument(5);
+                    Map<String, Boolean> result = new HashMap<>();
+                    for (String id : contents.keySet()) {
+                        result.put(id, true);
+                    }
+                    return result;
+                });
     }
 
     // ========== Login Tool Tests ==========
@@ -400,10 +437,13 @@ public class McpToolsProviderTest {
         List<McpToolDefinition> tools = toolsProvider.getToolDefinitions();
 
         // Then
-        assertEquals(6, tools.size());
+        assertEquals(9, tools.size());
 
         // Verify tool names
         assertTrue(tools.stream().anyMatch(t -> t.getName().equals("nemakiware_login")));
+        assertTrue(tools.stream().anyMatch(t -> t.getName().equals("nemakiware_apikey_login")));
+        assertTrue(tools.stream().anyMatch(t -> t.getName().equals("nemakiware_cloud_login")));
+        assertTrue(tools.stream().anyMatch(t -> t.getName().equals("nemakiware_cloud_login_status")));
         assertTrue(tools.stream().anyMatch(t -> t.getName().equals("nemakiware_logout")));
         assertTrue(tools.stream().anyMatch(t -> t.getName().equals("nemakiware_search")));
         assertTrue(tools.stream().anyMatch(t -> t.getName().equals("nemakiware_rag_search")));

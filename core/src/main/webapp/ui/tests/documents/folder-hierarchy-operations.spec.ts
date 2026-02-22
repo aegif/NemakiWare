@@ -730,7 +730,13 @@ test.describe('Folder Hierarchy Operations', () => {
         return loadingButton === null;
       }, { timeout: 30000 });
 
-      await page.waitForSelector('.ant-message-success', { timeout: 15000 });
+      // Handle possible cascade delete confirmation dialog
+      const cascadeConfirm = page.locator('.ant-modal-confirm-btns button.ant-btn-primary, button:has-text("削除する")');
+      if (await cascadeConfirm.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await cascadeConfirm.click();
+      }
+
+      await page.waitForSelector('.ant-message-success', { timeout: 30000 });
       await waitForUIStable(page);
 
       // Verify folder is deleted from table
