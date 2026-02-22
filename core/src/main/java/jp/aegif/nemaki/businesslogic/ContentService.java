@@ -466,6 +466,16 @@ public interface ContentService {
 	Content updateInternal(String repositoryId, Content content);
 
 	/**
+	 * Update a content(for general-purpose)
+	 * @param repositoryId the repository ID
+	 * @param content the content to update
+	 * @param skipRAGIndexing if true, skip RAG re-indexing (TEI embedding) during Solr indexing.
+	 *                        Use for metadata-only changes (e.g. ACL) where document content is unchanged.
+	 * @return the updated content
+	 */
+	Content updateInternal(String repositoryId, Content content, boolean skipRAGIndexing);
+
+	/**
 	 * Update properties of a content
 	 *
 	 * @param callContext

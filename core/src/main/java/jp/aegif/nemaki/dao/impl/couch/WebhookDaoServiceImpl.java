@@ -138,20 +138,26 @@ public class WebhookDaoServiceImpl implements WebhookDaoService {
             Map<String, Object> queryParams = new HashMap<>();
             queryParams.put("key", deliveryId);
             queryParams.put("include_docs", true);
-            queryParams.put("limit", 1);
+            // No limit: fetch all attempts for this deliveryId to find the one with highest attemptNumber
             
             ViewResult result = connectorPool.getClient(repositoryId)
                 .queryView("_repo", "webhookDeliveryLogsByDeliveryId", queryParams);
             
             if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
-                ViewResultRow row = result.getRows().get(0);
-                if (row.getDoc() != null) {
-                    Map<String, Object> docMap = extractDocMap(row.getDoc());
-                    if (docMap != null) {
-                        CouchWebhookDeliveryLog couchLog = new CouchWebhookDeliveryLog(docMap);
-                        return couchLog.convertToDeliveryLog();
+                WebhookDeliveryLog best = null;
+                for (ViewResultRow row : result.getRows()) {
+                    if (row.getDoc() != null) {
+                        Map<String, Object> docMap = extractDocMap(row.getDoc());
+                        if (docMap != null) {
+                            CouchWebhookDeliveryLog couchLog = new CouchWebhookDeliveryLog(docMap);
+                            WebhookDeliveryLog candidate = couchLog.convertToDeliveryLog();
+                            if (best == null || candidate.getAttemptNumber() > best.getAttemptNumber()) {
+                                best = candidate;
+                            }
+                        }
                     }
                 }
+                return best;
             }
             return null;
         } catch (Exception e) {

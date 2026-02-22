@@ -192,7 +192,9 @@ public class AclServiceImpl implements AclService {
 				content.setAclInherited(inherited);
 			}
 	
-			contentService.updateInternal(repositoryId, content);
+			// skipRAGIndexing=true: ACL change does not alter document content,
+			// so TEI re-embedding is unnecessary. RAG ACL is updated separately below.
+			contentService.updateInternal(repositoryId, content, true);
 			contentService.writeChangeEvent(callContext, repositoryId, content, nemakiAcl, ChangeType.SECURITY );
 
 			// CRITICAL FIX (2025-01-23): Synchronously clear ACL caches for this object and all descendants

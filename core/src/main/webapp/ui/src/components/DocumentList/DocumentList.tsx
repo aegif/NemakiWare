@@ -219,6 +219,7 @@ import {
   Select,
   message,
   Tooltip,
+  Popconfirm,
   Row,
   Col,
   Card,
@@ -1131,6 +1132,21 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     } catch (error) {
       console.error('Version history error:', error);
       message.error(t('documentList.messages.versionHistoryError'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteLatestVersion = async (objectId: string, versionLabel: string) => {
+    try {
+      setLoading(true);
+      await cmisService.deleteLatestVersion(repositoryId, objectId);
+      message.success(t('documentList.messages.deleteVersionSuccess', { version: versionLabel }));
+      setVersionHistoryModalVisible(false);
+      await loadObjects();
+    } catch (error) {
+      console.error('Delete latest version error:', error);
+      message.error(t('documentList.messages.deleteVersionError'));
     } finally {
       setLoading(false);
     }
@@ -2148,7 +2164,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               title: t('documentList.columns.version'),
               dataIndex: 'versionLabel',
               key: 'version',
-              width: 100,
+              width: 150,
+              render: (versionLabel: string, record: CMISObject) => (
+                <Space>
+                  {versionLabel}
+                  {record.isLatestVersion && <Tag color="blue">{t('documentList.versionHistoryModal.latest')}</Tag>}
+                </Space>
+              ),
             },
             {
               title: t('documentList.columns.modifiedDate'),
@@ -2171,16 +2193,50 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             {
               title: t('common.actions'),
               key: 'actions',
-              width: 100,
-              render: (_: any, record: CMISObject) => (
-                <Tooltip title={t('common.download')}>
-                  <Button
-                    icon={<DownloadOutlined />}
-                    size="small"
-                    onClick={() => handleDownload(record.id)}
-                  />
-                </Tooltip>
-              ),
+              width: 160,
+              render: (_: any, record: CMISObject) => {
+                const nonPwcVersions = versionHistory.filter(
+                  v => v.properties?.['cmis:isPrivateWorkingCopy'] !== true
+                );
+                const canDelete = record.isLatestVersion
+                  && nonPwcVersions.length >= 2
+                  && record.allowableActions?.canDeleteObject;
+                const previousVersion = nonPwcVersions
+                  .filter(v => !v.isLatestVersion)
+                  .sort((a, b) => parseFloat(b.versionLabel || '0') - parseFloat(a.versionLabel || '0'))[0];
+                return (
+                  <Space>
+                    <Tooltip title={t('common.download')}>
+                      <Button
+                        icon={<DownloadOutlined />}
+                        size="small"
+                        onClick={() => handleDownload(record.id)}
+                      />
+                    </Tooltip>
+                    {canDelete && previousVersion && (
+                      <Popconfirm
+                        title={t('documentList.versionHistoryModal.deleteVersionConfirmTitle')}
+                        description={t('documentList.versionHistoryModal.deleteVersionConfirmMessage', {
+                          version: record.versionLabel,
+                          previousVersion: previousVersion.versionLabel,
+                        })}
+                        onConfirm={() => handleDeleteLatestVersion(record.id, record.versionLabel || '')}
+                        okText={t('documentList.deleteButton')}
+                        cancelText={t('common.cancel')}
+                        okButtonProps={{ danger: true }}
+                      >
+                        <Tooltip title={t('documentList.versionHistoryModal.deleteVersion')}>
+                          <Button
+                            icon={<DeleteOutlined />}
+                            size="small"
+                            danger
+                          />
+                        </Tooltip>
+                      </Popconfirm>
+                    )}
+                  </Space>
+                );
+              },
             },
           ]}
         />

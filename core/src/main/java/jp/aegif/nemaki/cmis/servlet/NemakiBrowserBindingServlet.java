@@ -866,18 +866,33 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
         
         String repositoryId = pathFragments[0];
-        String objectId = pathFragments[1];
-        
+        String pathObjectId = pathFragments[1];
+
         if (repositoryId == null || repositoryId.trim().isEmpty()) {
             throw new IllegalArgumentException("Repository ID cannot be empty");
         }
-        
-        if (objectId == null || objectId.trim().isEmpty()) {
+
+        if (pathObjectId == null || pathObjectId.trim().isEmpty()) {
             throw new IllegalArgumentException("Object ID cannot be empty");
         }
-        
+
+        // CMIS Browser Binding compliance: "root" is the root folder URL path marker,
+        // not an actual object ID. When the path segment is the root marker,
+        // the actual target objectId comes from the query parameter.
+        final String objectId;
+        if (AbstractBrowserServiceCall.ROOT_PATH_FRAGMENT.equals(pathObjectId)) {
+            String queryObjectId = request.getParameter(Constants.PARAM_OBJECT_ID);
+            if (queryObjectId != null && !queryObjectId.isEmpty()) {
+                objectId = queryObjectId;
+            } else {
+                objectId = pathObjectId;
+            }
+        } else {
+            objectId = pathObjectId;
+        }
+
         log.info("NEMAKI CMIS: Handling object-specific GET operation via standard OpenCMIS delegation");
-        log.info("NEMAKI CMIS: repositoryId=" + repositoryId + ", objectId=" + objectId + ", cmisselector=" + cmisselector);
+        log.info("NEMAKI CMIS: repositoryId=" + repositoryId + ", pathObjectId=" + pathObjectId + ", resolvedObjectId=" + objectId + ", cmisselector=" + cmisselector);
         
         try {
             // SPRING 6.X COMPATIBILITY: Enhanced request wrapper with robust parameter handling
@@ -1032,7 +1047,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     }
     
     /**
-     * Handle descendants operation - equivalent to getFolderTree CMIS service call
+     * Handle descendants operation - uses getDescendants (not getFolderTree) to include non-folder objects
      */
     private Object handleDescendantsOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
         // CMIS 1.1 Browser Binding: Support objectId query parameter
@@ -1056,8 +1071,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String renditionFilter = HttpUtils.getStringParameter(request, "renditionFilter");
         Boolean includePathSegment = getBooleanParameterSafe(request, "includePathSegment");
 
-        // Call CMIS service
-        java.util.List<org.apache.chemistry.opencmis.commons.data.ObjectInFolderContainer> descendants = service.getFolderTree(
+        // Call CMIS service - getDescendants returns all object types (not just folders like getFolderTree)
+        java.util.List<org.apache.chemistry.opencmis.commons.data.ObjectInFolderContainer> descendants = service.getDescendants(
             repositoryId, objectId, depth, filter,
             includeAllowableActions, includeRelationships, renditionFilter,
             includePathSegment, null
@@ -1071,7 +1086,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      */
     private Object handleObjectOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
         // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
-        if ("root".equals(objectId)) {
+        if (AbstractBrowserServiceCall.ROOT_PATH_FRAGMENT.equals(objectId)) {
             org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = service.getRepositoryInfo(repositoryId, null);
             objectId = repoInfo.getRootFolderId();
             log.debug("Translated 'root' marker to actual root folder ID: " + objectId);
@@ -1100,7 +1115,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      */
     private Object handlePropertiesOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
         // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
-        if ("root".equals(objectId)) {
+        if (AbstractBrowserServiceCall.ROOT_PATH_FRAGMENT.equals(objectId)) {
             org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = service.getRepositoryInfo(repositoryId, null);
             objectId = repoInfo.getRootFolderId();
             log.debug("Translated 'root' marker to actual root folder ID: " + objectId);
@@ -1122,7 +1137,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      */
     private Object handleAllowableActionsOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
         // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
-        if ("root".equals(objectId)) {
+        if (AbstractBrowserServiceCall.ROOT_PATH_FRAGMENT.equals(objectId)) {
             org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = service.getRepositoryInfo(repositoryId, null);
             objectId = repoInfo.getRootFolderId();
             log.debug("Translated 'root' marker to actual root folder ID: " + objectId);
@@ -1143,7 +1158,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      */
     private Object handleAclOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
         // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
-        if ("root".equals(objectId)) {
+        if (AbstractBrowserServiceCall.ROOT_PATH_FRAGMENT.equals(objectId)) {
             org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = service.getRepositoryInfo(repositoryId, null);
             objectId = repoInfo.getRootFolderId();
             log.debug("Translated 'root' marker to actual root folder ID: " + objectId);
@@ -1458,9 +1473,52 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     String json = objectMapper.writeValueAsString(result);
                     writer.write(json);
                 }
+            } else if (result instanceof org.apache.chemistry.opencmis.commons.data.AllowableActions) {
+                // Use OpenCMIS JSONConverter for CMIS 1.1 compliant allowable actions format
+                // Each action is a boolean key (e.g., "canGetProperties": true, "canDeleteObject": true)
+                org.apache.chemistry.opencmis.commons.data.AllowableActions allowableActions =
+                    (org.apache.chemistry.opencmis.commons.data.AllowableActions) result;
+
+                org.apache.chemistry.opencmis.commons.impl.json.JSONObject jsonObject =
+                    org.apache.chemistry.opencmis.commons.impl.JSONConverter.convert(allowableActions);
+
+                writer.write(jsonObject.toJSONString());
+            } else if (result instanceof org.apache.chemistry.opencmis.commons.data.Acl) {
+                // Use OpenCMIS JSONConverter for CMIS 1.1 compliant ACL format
+                org.apache.chemistry.opencmis.commons.data.Acl acl =
+                    (org.apache.chemistry.opencmis.commons.data.Acl) result;
+
+                org.apache.chemistry.opencmis.commons.impl.json.JSONObject jsonObject =
+                    org.apache.chemistry.opencmis.commons.impl.JSONConverter.convert(acl);
+
+                writer.write(jsonObject.toJSONString());
+            } else if (result instanceof java.util.List) {
+                // Handle List results: distinguish element types
+                java.util.List<?> listResult = (java.util.List<?>) result;
+                org.apache.chemistry.opencmis.commons.impl.json.JSONArray jsonArray =
+                    new org.apache.chemistry.opencmis.commons.impl.json.JSONArray();
+
+                if (!listResult.isEmpty() && listResult.get(0) instanceof org.apache.chemistry.opencmis.commons.data.ObjectInFolderContainer) {
+                    // List<ObjectInFolderContainer> from getDescendants/getFolderTree
+                    for (Object item : listResult) {
+                        jsonArray.add(org.apache.chemistry.opencmis.commons.impl.JSONConverter.convert(
+                            (org.apache.chemistry.opencmis.commons.data.ObjectInFolderContainer) item,
+                            null, false, org.apache.chemistry.opencmis.commons.enums.DateTimeFormat.SIMPLE));
+                    }
+                } else {
+                    // List<ObjectData> from getAllVersions etc.
+                    for (Object item : listResult) {
+                        if (item instanceof org.apache.chemistry.opencmis.commons.data.ObjectData) {
+                            jsonArray.add(org.apache.chemistry.opencmis.commons.impl.JSONConverter.convert(
+                                (org.apache.chemistry.opencmis.commons.data.ObjectData) item, null,
+                                org.apache.chemistry.opencmis.commons.impl.JSONConverter.PropertyMode.OBJECT, false,
+                                org.apache.chemistry.opencmis.commons.enums.DateTimeFormat.SIMPLE));
+                        }
+                    }
+                }
+                writer.write(jsonArray.toJSONString());
             } else {
                 // For other types, use Jackson as fallback but this should be rare
-                // MOST Browser Binding responses should be ObjectData, ObjectInFolderList, ObjectList, or RepositoryInfo
                 com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 String json = objectMapper.writeValueAsString(result);
                 writer.write(json);

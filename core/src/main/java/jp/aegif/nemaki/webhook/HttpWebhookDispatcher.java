@@ -112,10 +112,15 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
      * Build an HTTP POST connection, validate the URL (SSRF protection), set headers,
      * and write the payload. Returns the opened connection ready for reading the response.
      *
-     * Both HTTP and HTTPS connect via the SSRF-validated resolved IP address.
-     * For HTTPS, a custom HostnameVerifier validates TLS certificates against the
-     * original hostname (not the IP), and SNI is set via the Host header and
-     * SSLSocket.setSSLParameters.
+     * <p>SSRF protection strategy differs by protocol:
+     * <ul>
+     *   <li><b>HTTP</b>: Connect via the pre-resolved IP address to prevent DNS rebinding attacks.
+     *       The Host header is set to the original hostname for virtual hosting.</li>
+     *   <li><b>HTTPS</b>: Validate the resolved IP (block private/internal addresses), then connect
+     *       using the original hostname URL. TLS certificate verification inherently prevents DNS
+     *       rebinding because the attacker would need a valid certificate for the target hostname.
+     *       This avoids Java's internal hostname-vs-certificate mismatch when the URL uses an IP.</li>
+     * </ul>
      *
      * @throws IllegalArgumentException if url/payload is invalid or blocked by SSRF protection
      * @throws MalformedURLException if the URL is malformed
@@ -138,79 +143,29 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
             throw new IllegalArgumentException("unsupported protocol " + protocol);
         }
 
-        // SSRF protection: resolve and validate hostname
-        // Returns the resolved IP address to prevent DNS rebinding attacks
+        // SSRF protection: resolve and validate hostname (blocks private/internal IPs)
         InetAddress resolvedAddress = resolveAndValidateUrl(targetUrl);
         if (resolvedAddress == null) {
             throw new IllegalArgumentException("URL blocked for security reasons (SSRF protection) - " + url);
         }
 
-        // Build URL using resolved IP to prevent DNS rebinding
-        int port = targetUrl.getPort() != -1 ? targetUrl.getPort() : targetUrl.getDefaultPort();
-        URL resolvedUrl = new URL(protocol, resolvedAddress.getHostAddress(), port,
-                targetUrl.getFile());
+        HttpURLConnection connection;
 
-        HttpURLConnection connection = (HttpURLConnection) resolvedUrl.openConnection();
+        if (protocol.equals("https")) {
+            // HTTPS: Connect using the original hostname URL.
+            // TLS certificate validation prevents DNS rebinding (attacker cannot present
+            // a valid cert for the target hostname on an internal server).
+            connection = (HttpURLConnection) targetUrl.openConnection();
+        } else {
+            // HTTP: Connect via resolved IP to prevent DNS rebinding attacks.
+            int port = targetUrl.getPort() != -1 ? targetUrl.getPort() : targetUrl.getDefaultPort();
+            URL resolvedUrl = new URL(protocol, resolvedAddress.getHostAddress(), port,
+                    targetUrl.getFile());
+            connection = (HttpURLConnection) resolvedUrl.openConnection();
 
-        // For HTTPS, configure SNI and hostname verification for the original hostname
-        if (protocol.equals("https") && connection instanceof javax.net.ssl.HttpsURLConnection) {
-            javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) connection;
-            final String originalHost = targetUrl.getHost();
-            
-            // Custom HostnameVerifier that checks against the original hostname, not the IP
-            httpsConn.setHostnameVerifier((hostname, session) -> {
-                // Use the default verifier logic against the original hostname
-                javax.net.ssl.HostnameVerifier defaultVerifier = javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier();
-                return defaultVerifier.verify(originalHost, session);
-            });
-            
-            // Set SNI server name via SSLSocketFactory wrapper
-            javax.net.ssl.SSLSocketFactory defaultFactory = httpsConn.getSSLSocketFactory();
-            httpsConn.setSSLSocketFactory(new javax.net.ssl.SSLSocketFactory() {
-                @Override
-                public String[] getDefaultCipherSuites() { return defaultFactory.getDefaultCipherSuites(); }
-                @Override
-                public String[] getSupportedCipherSuites() { return defaultFactory.getSupportedCipherSuites(); }
-                @Override
-                public java.net.Socket createSocket(java.net.Socket s, String host, int p, boolean autoClose) throws IOException {
-                    java.net.Socket socket = defaultFactory.createSocket(s, originalHost, p, autoClose);
-                    setSniHostname(socket, originalHost);
-                    return socket;
-                }
-                @Override
-                public java.net.Socket createSocket(String host, int p) throws IOException {
-                    java.net.Socket socket = defaultFactory.createSocket(host, p);
-                    setSniHostname(socket, originalHost);
-                    return socket;
-                }
-                @Override
-                public java.net.Socket createSocket(String host, int p, InetAddress localHost, int localPort) throws IOException {
-                    java.net.Socket socket = defaultFactory.createSocket(host, p, localHost, localPort);
-                    setSniHostname(socket, originalHost);
-                    return socket;
-                }
-                @Override
-                public java.net.Socket createSocket(InetAddress host, int p) throws IOException {
-                    java.net.Socket socket = defaultFactory.createSocket(host, p);
-                    setSniHostname(socket, originalHost);
-                    return socket;
-                }
-                @Override
-                public java.net.Socket createSocket(InetAddress host, int p, InetAddress localHost, int localPort) throws IOException {
-                    java.net.Socket socket = defaultFactory.createSocket(host, p, localHost, localPort);
-                    setSniHostname(socket, originalHost);
-                    return socket;
-                }
-                private void setSniHostname(java.net.Socket socket, String hostname) {
-                    if (socket instanceof javax.net.ssl.SSLSocket) {
-                        javax.net.ssl.SSLSocket sslSocket = (javax.net.ssl.SSLSocket) socket;
-                        javax.net.ssl.SSLParameters params = sslSocket.getSSLParameters();
-                        params.setServerNames(java.util.Collections.singletonList(
-                            new javax.net.ssl.SNIHostName(hostname)));
-                        sslSocket.setSSLParameters(params);
-                    }
-                }
-            });
+            // Set Host header to original hostname (required for virtual hosting)
+            connection.setRequestProperty("Host", targetUrl.getHost() +
+                    (targetUrl.getPort() != -1 ? ":" + targetUrl.getPort() : ""));
         }
 
         connection.setRequestMethod("POST");
@@ -220,10 +175,6 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
 
         // SSRF protection: Disable automatic redirect following
         connection.setInstanceFollowRedirects(false);
-
-        // Set Host header to original hostname (required for virtual hosting and HTTPS SNI)
-        connection.setRequestProperty("Host", targetUrl.getHost() +
-                (targetUrl.getPort() != -1 ? ":" + targetUrl.getPort() : ""));
 
         // Set default headers
         connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");

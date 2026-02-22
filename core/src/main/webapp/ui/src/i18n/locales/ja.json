@@ -1180,6 +1180,8 @@
       "cancelCheckoutSuccess": "チェックアウトをキャンセルしました",
       "cancelCheckoutError": "チェックアウトのキャンセルに失敗しました",
       "versionHistoryError": "バージョン履歴の取得に失敗しました",
+      "deleteVersionSuccess": "バージョン {{version}} を削除しました",
+      "deleteVersionError": "バージョンの削除に失敗しました",
       "enterSearchKeyword": "検索キーワードを入力してください",
       "searchError": "検索に失敗しました",
       "folderNavigationError": "フォルダへの移動に失敗しました",
@@ -1226,7 +1228,11 @@
       "version": "バージョン",
       "updatedAt": "更新日時",
       "updatedBy": "更新者",
-      "comment": "コメント"
+      "comment": "コメント",
+      "latest": "最新",
+      "deleteVersion": "このバージョンを削除",
+      "deleteVersionConfirmTitle": "最新バージョンの削除",
+      "deleteVersionConfirmMessage": "バージョン {{version}} を削除し、バージョン {{previousVersion}} に戻します。"
     },
     "checkinModal": {
       "title": "チェックイン",

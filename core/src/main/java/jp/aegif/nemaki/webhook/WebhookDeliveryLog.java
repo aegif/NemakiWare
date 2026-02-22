@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.webhook;
 
 import java.util.GregorianCalendar;
+import java.util.Map;
 
 /**
  * Represents a single webhook delivery attempt log entry.
@@ -124,6 +125,13 @@ public class WebhookDeliveryLog {
      * Delivery status for tracking
      */
     private DeliveryStatus status;
+
+    // Auth snapshot: saved at initial delivery time so retries can use auth
+    // even when the source object or config is no longer available.
+    private String authType;
+    private String authCredential;
+    private String secret;
+    private Map<String, String> customHeaders;
     
     /**
      * Enum for delivery status tracking
@@ -287,6 +295,38 @@ public class WebhookDeliveryLog {
     public void setStatus(DeliveryStatus status) {
         this.status = status;
     }
+
+    public String getAuthType() {
+        return authType;
+    }
+
+    public void setAuthType(String authType) {
+        this.authType = authType;
+    }
+
+    public String getAuthCredential() {
+        return authCredential;
+    }
+
+    public void setAuthCredential(String authCredential) {
+        this.authCredential = authCredential;
+    }
+
+    public String getSecret() {
+        return secret;
+    }
+
+    public void setSecret(String secret) {
+        this.secret = secret;
+    }
+
+    public Map<String, String> getCustomHeaders() {
+        return customHeaders;
+    }
+
+    public void setCustomHeaders(Map<String, String> customHeaders) {
+        this.customHeaders = customHeaders;
+    }
     
     /**
      * Generate attempt ID from delivery ID and attempt number
@@ -309,12 +349,15 @@ public class WebhookDeliveryLog {
     }
     
     /**
-     * Mark this delivery as failed
+     * Mark this delivery as failed.
+     * Sets both errorMessage and responseBody so that API consumers
+     * can access failure details via the responseBody field.
      */
     public void markFailed(Integer statusCode, String errorMessage, long responseTimeMs) {
         this.success = false;
         this.statusCode = statusCode;
         this.errorMessage = errorMessage;
+        this.responseBody = truncateResponse(errorMessage);
         this.responseTimeMs = responseTimeMs;
         this.status = DeliveryStatus.FAILED;
     }

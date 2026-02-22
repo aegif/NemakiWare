@@ -1180,6 +1180,8 @@
       "cancelCheckoutSuccess": "Check out cancelled successfully",
       "cancelCheckoutError": "Failed to cancel check out",
       "versionHistoryError": "Failed to get version history",
+      "deleteVersionSuccess": "Version {{version}} deleted",
+      "deleteVersionError": "Failed to delete version",
       "enterSearchKeyword": "Please enter search keywords",
       "searchError": "Search failed",
       "folderNavigationError": "Failed to navigate to folder",
@@ -1226,7 +1228,11 @@
       "version": "Version",
       "updatedAt": "Updated At",
       "updatedBy": "Updated By",
-      "comment": "Comment"
+      "comment": "Comment",
+      "latest": "Latest",
+      "deleteVersion": "Delete This Version",
+      "deleteVersionConfirmTitle": "Delete Latest Version",
+      "deleteVersionConfirmMessage": "Delete version {{version}} and revert to version {{previousVersion}}."
     },
     "checkinModal": {
       "title": "Check In",

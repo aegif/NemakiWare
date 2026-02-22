@@ -92,12 +92,26 @@ public class CouchWebhookDeliveryLog extends CouchNodeBase {
     
     @JsonProperty("deliveryStatus")
     private String deliveryStatus;
+
+    // Auth snapshot for retry
+    @JsonProperty("authType")
+    private String authType;
+
+    @JsonProperty("authCredential")
+    private String authCredential;
+
+    @JsonProperty("secret")
+    private String secret;
+
+    @JsonProperty("customHeaders")
+    private Map<String, String> customHeaders;
     
     public CouchWebhookDeliveryLog() {
         setType(TYPE);
     }
     
     @JsonCreator
+    @SuppressWarnings("unchecked")
     public CouchWebhookDeliveryLog(Map<String, Object> properties) {
         super(properties);
         setType(TYPE);
@@ -172,6 +186,21 @@ public class CouchWebhookDeliveryLog extends CouchNodeBase {
             if (properties.containsKey("deliveryStatus")) {
                 this.deliveryStatus = (String) properties.get("deliveryStatus");
             }
+            if (properties.containsKey("authType")) {
+                this.authType = (String) properties.get("authType");
+            }
+            if (properties.containsKey("authCredential")) {
+                this.authCredential = (String) properties.get("authCredential");
+            }
+            if (properties.containsKey("secret")) {
+                this.secret = (String) properties.get("secret");
+            }
+            if (properties.containsKey("customHeaders")) {
+                Object ch = properties.get("customHeaders");
+                if (ch instanceof Map) {
+                    this.customHeaders = (Map<String, String>) ch;
+                }
+            }
         }
     }
     
@@ -195,6 +224,10 @@ public class CouchWebhookDeliveryLog extends CouchNodeBase {
         this.responseTimeMs = log.getResponseTimeMs();
         this.payloadSizeBytes = log.getPayloadSizeBytes();
         this.changeToken = log.getChangeToken();
+        this.authType = log.getAuthType();
+        this.authCredential = log.getAuthCredential();
+        this.secret = log.getSecret();
+        this.customHeaders = log.getCustomHeaders();
         
         if (log.getTimestamp() != null) {
             this.deliveryTimestamp = log.getTimestamp().getTimeInMillis();
@@ -222,6 +255,10 @@ public class CouchWebhookDeliveryLog extends CouchNodeBase {
         log.setResponseTimeMs(responseTimeMs);
         log.setPayloadSizeBytes(payloadSizeBytes);
         log.setChangeToken(changeToken);
+        log.setAuthType(authType);
+        log.setAuthCredential(authCredential);
+        log.setSecret(secret);
+        log.setCustomHeaders(customHeaders);
         
         if (deliveryTimestamp != null) {
             GregorianCalendar cal = new GregorianCalendar();
@@ -375,5 +412,37 @@ public class CouchWebhookDeliveryLog extends CouchNodeBase {
     
     public void setDeliveryStatus(String deliveryStatus) {
         this.deliveryStatus = deliveryStatus;
+    }
+
+    public String getAuthType() {
+        return authType;
+    }
+    
+    public void setAuthType(String authType) {
+        this.authType = authType;
+    }
+    
+    public String getAuthCredential() {
+        return authCredential;
+    }
+    
+    public void setAuthCredential(String authCredential) {
+        this.authCredential = authCredential;
+    }
+    
+    public String getSecret() {
+        return secret;
+    }
+    
+    public void setSecret(String secret) {
+        this.secret = secret;
+    }
+
+    public Map<String, String> getCustomHeaders() {
+        return customHeaders;
+    }
+    
+    public void setCustomHeaders(Map<String, String> customHeaders) {
+        this.customHeaders = customHeaders;
     }
 }

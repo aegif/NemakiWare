@@ -637,29 +637,45 @@ public class CloudantClientWrapper {
 	}
 
 	/**
-	 * Get attachment content length from CouchDB _attachments metadata.
-	 * This avoids downloading the entire attachment just to measure its size.
-	 * Falls back to stream counting only if metadata is unavailable.
+	 * Get the uncompressed content length of a CouchDB attachment.
+	 * CouchDB may store attachments with gzip encoding, in which case
+	 * _attachments.length reflects the compressed size, not the original size.
+	 * This method detects gzip encoding and falls back to stream counting
+	 * to return the true uncompressed size.
 	 * @param docId Document ID
 	 * @param attachmentName Attachment name (e.g., "content")
-	 * @return Attachment size in bytes, or null if not found
+	 * @return Uncompressed attachment size in bytes, or null if not found
 	 */
 	public Long getAttachmentSize(String docId, String attachmentName) {
-		// Primary: Use _attachments metadata (no I/O required)
+		// Primary: Use _attachments metadata with encoding info
 		try {
 			GetDocumentOptions options = new GetDocumentOptions.Builder()
 				.db(databaseName)
 				.docId(docId)
+				.attEncodingInfo(true)
 				.build();
 
 			com.ibm.cloud.cloudant.v1.model.Document doc = client.getDocument(options).execute().getResult();
 			if (doc != null && doc.getAttachments() != null) {
 				com.ibm.cloud.cloudant.v1.model.Attachment att = doc.getAttachments().get(attachmentName);
-				if (att != null && att.length() != null) {
-					if (log.isDebugEnabled()) {
-						log.debug("getAttachmentSize (metadata) for " + docId + "/" + attachmentName + ": " + att.length() + " bytes");
+				if (att != null) {
+					String encoding = att.encoding();
+					if (encoding != null && !encoding.isEmpty()) {
+						// Attachment is compressed (e.g., gzip).
+						// att.length() returns the compressed size, which is NOT the
+						// actual content size. Fall through to stream-based measurement.
+						if (log.isDebugEnabled()) {
+							log.debug("getAttachmentSize: " + docId + "/" + attachmentName +
+								" has encoding=" + encoding + ", length=" + att.length() +
+								" (compressed) - falling back to stream measurement");
+						}
+					} else if (att.length() != null) {
+						// No compression: att.length() is the true uncompressed size
+						if (log.isDebugEnabled()) {
+							log.debug("getAttachmentSize (metadata) for " + docId + "/" + attachmentName + ": " + att.length() + " bytes");
+						}
+						return att.length();
 					}
-					return att.length();
 				}
 			}
 		} catch (NotFoundException e) {
@@ -670,7 +686,9 @@ public class CloudantClientWrapper {
 			// Fall through to stream-based fallback
 		}
 
-		// Fallback: Download and count bytes (for edge cases where metadata is missing)
+		// Fallback: Download and count bytes.
+		// Used when metadata is missing or when attachment is gzip-compressed
+		// (CouchDB transparently decompresses on GET, so stream size = true size).
 		try {
 			GetAttachmentOptions options = new GetAttachmentOptions.Builder()
 				.db(databaseName)
@@ -688,7 +706,7 @@ public class CloudantClientWrapper {
 				}
 
 				if (log.isDebugEnabled()) {
-					log.debug("getAttachmentSize (stream fallback) for " + docId + "/" + attachmentName + ": " + totalBytes + " bytes");
+					log.debug("getAttachmentSize (stream) for " + docId + "/" + attachmentName + ": " + totalBytes + " bytes");
 				}
 				return totalBytes;
 			}

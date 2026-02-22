@@ -157,15 +157,16 @@ public class CouchAttachmentNode extends CouchNodeBase{
 	
 	/**
 	 * Gets the actual file length from CouchDB _attachments or falls back to stored length.
-	 * CRITICAL: When CouchDB uses gzip encoding, _attachments.length is the compressed size,
-	 * not the actual content size. The stored metadata length field may also be the compressed size
-	 * (set from _attachments at creation time). In that case, return -1 (unknown) to avoid
-	 * truncating the content stream during download.
-	 * @return actual file length, or -1 if unknown (e.g. gzip-encoded)
+	 * 
+	 * Fallback order:
+	 * 1. _attachments metadata length (non-gzip: this is the true uncompressed size)
+	 * 2. Stored metadata length field (set from uncompressed ContentStream at upload time)
+	 * 3. -1 (unknown) as last resort
+	 * 
+	 * @return actual file length, or -1 if unknown
 	 */
 	public long getActualLength() {
-		// Check if any attachment uses gzip encoding
-		boolean hasGzipEncoding = false;
+		// Check _attachments metadata first
 		if (attachments != null && !attachments.isEmpty()) {
 			for (AttachmentInfo info : attachments.values()) {
 				if (info != null) {
@@ -174,21 +175,19 @@ public class CouchAttachmentNode extends CouchNodeBase{
 						// Non-gzip: _attachments length is the true uncompressed size
 						return contentLength;
 					}
-					// contentLength == -1 means gzip-encoded
-					hasGzipEncoding = true;
 				}
 			}
 		}
 
-		if (hasGzipEncoding) {
-			// When gzip encoding is present, the stored metadata length field is also unreliable
-			// because it was likely set from the compressed _attachments.length at upload time.
-			// Return -1 (unknown) so HTTP response uses chunked transfer instead of truncating.
-			return -1;
+		// Fallback to stored metadata length field.
+		// This value was set from the uncompressed ContentStream at upload time
+		// (see AttachmentServiceDelegate.createAttachment), so it is reliable
+		// even when CouchDB uses gzip encoding for the stored attachment.
+		if (length >= 0) {
+			return length;
 		}
-		
-		// No _attachments info available: use stored length field
-		return length >= 0 ? length : 0;
+
+		return -1;
 	}
 	
 	/**

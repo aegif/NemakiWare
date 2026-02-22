@@ -66,6 +66,7 @@ public class Archive extends NodeBase {
 	private String attachmentNodeId;
 	private List<String> renditionIds;
 	private String versionSeriesId;
+	private String versionLabel;
 	private Boolean latestVersion;
 	private String mimeType;
 	private String path;
@@ -190,6 +191,14 @@ public class Archive extends NodeBase {
 		this.latestVersion = latestVersion;
 	}
 
+	public String getVersionLabel() {
+		return versionLabel;
+	}
+
+	public void setVersionLabel(String versionLabel) {
+		this.versionLabel = versionLabel;
+	}
+
 	public String getMimeType() {
 		return mimeType;
 	}
@@ -299,6 +308,7 @@ public class Archive extends NodeBase {
 		if(getAttachmentNodeId() != null) m.put("nemakiAttachments", getAttachmentNodeId().toString());
 		if(getVersionSeriesId() != null) m.put("versionSeriesId", getVersionSeriesId());
 		if(isLatestVersion() != null) m.put("isLatestVersion", isLatestVersion());
+		if(getVersionLabel() != null) m.put("versionLabel", getVersionLabel());
 		if(getCreated() != null) m.put("created", DataUtil.convertToDateFormat(getCreated()));
 		if(getCreator() != null) m.put("creator", getCreator());
 		if(getArchivedBy() != null) m.put("archivedBy", getArchivedBy());

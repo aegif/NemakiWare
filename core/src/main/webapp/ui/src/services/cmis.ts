@@ -1252,7 +1252,7 @@ export class CMISService {
    * @param objectId Object ID to delete
    * @returns Promise resolving when deletion is complete
    */
-  async deleteObject(repositoryId: string, objectId: string, isFolder: boolean = false): Promise<void> {
+  async deleteObject(repositoryId: string, objectId: string, isFolder: boolean = false, allVersions: boolean = true): Promise<void> {
     try {
       const url = `${this.baseUrl}/${repositoryId}`;
       const params = new URLSearchParams();
@@ -1266,6 +1266,7 @@ export class CMISService {
       } else {
         params.append('cmisaction', 'deleteObject');
         params.append('objectId', objectId);
+        params.append('allVersions', String(allVersions));
       }
 
       const response = await this.httpClient.postUrlEncoded(url, params);
@@ -1287,6 +1288,13 @@ export class CMISService {
       }
       throw new Error('Network error');
     }
+  }
+
+  /**
+   * Delete only the latest version of a document, reverting to the previous version.
+   */
+  async deleteLatestVersion(repositoryId: string, objectId: string): Promise<void> {
+    return this.deleteObject(repositoryId, objectId, false, false);
   }
 
   /**

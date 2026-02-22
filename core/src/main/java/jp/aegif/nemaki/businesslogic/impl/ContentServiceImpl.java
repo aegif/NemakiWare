@@ -2453,6 +2453,11 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Content updateInternal(String repositoryId, Content content) {
+		return updateInternal(repositoryId, content, false);
+	}
+
+	@Override
+	public Content updateInternal(String repositoryId, Content content, boolean skipRAGIndexing) {
 		Content result = null;
 		
 
@@ -2476,7 +2481,7 @@ public class ContentServiceImpl implements ContentService {
 		// Call Solr indexing(optional) - CRITICAL FIX (2025-12-18): Enable Solr indexing on update
 		// This ensures secondary type properties are indexed after updates
 		if (solrUtil != null && result != null) {
-			solrUtil.indexDocument(repositoryId, result);
+			solrUtil.indexDocument(repositoryId, result, false, skipRAGIndexing);
 		}
 
 		return result;
@@ -2818,6 +2823,13 @@ public class ContentServiceImpl implements ContentService {
 		// For non-versioned documents, return the same id
 		// For versioned documents, this would create a PWC and return its id
 		objectId.setValue(updated.getId());
+
+		// Re-index in Solr to clear text fields (content is gone); skip RAG re-embedding
+		// and separately delete RAG embeddings since content stream no longer exists
+		if (solrUtil != null) {
+			solrUtil.indexDocument(repositoryId, updated, false, true);
+			solrUtil.triggerRAGDeletion(repositoryId, docId);
+		}
 
 		// Write change event
 		writeChangeEvent(callContext, repositoryId, updated, ChangeType.UPDATED);
@@ -3329,6 +3341,11 @@ public class ContentServiceImpl implements ContentService {
 		}
 		if (objectId != null) {
 			objectId.setValue(updatedDocument.getId());
+		}
+
+		// Re-index in Solr and RAG (content has changed, full re-index needed)
+		if (solrUtil != null) {
+			solrUtil.indexDocument(repositoryId, updatedDocument);
 		}
 
 		writeChangeEvent(callContext, repositoryId, updatedDocument, ChangeType.UPDATED);
