@@ -24,6 +24,7 @@ package jp.aegif.nemaki.cmis.aspect.query.solr;
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.TextExtractionService;
+import jp.aegif.nemaki.businesslogic.RAGIndexMaintenanceService;
 import jp.aegif.nemaki.rag.indexing.RAGIndexingService;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.util.PropertyManager;
@@ -222,7 +223,7 @@ public class SolrUtil implements ApplicationContextAware {
 	 * Index a single document in Solr using standard SolrJ API
 	 */
 	public void indexDocument(String repositoryId, Content content) {
-		indexDocument(repositoryId, content, false);
+		indexDocument(repositoryId, content, false, false);
 	}
 
 	/**
@@ -233,6 +234,18 @@ public class SolrUtil implements ApplicationContextAware {
 	 *                  (used for maintenance operations)
 	 */
 	public void indexDocument(String repositoryId, Content content, boolean forceSync) {
+		indexDocument(repositoryId, content, forceSync, false);
+	}
+
+	/**
+	 * Index a single document in Solr using standard SolrJ API
+	 * @param repositoryId the repository ID
+	 * @param content the content to index
+	 * @param forceSync if true, bypasses the solr.indexing.force setting and indexes synchronously
+	 * @param skipRAGIndexing if true, skip RAG re-indexing (TEI embedding).
+	 *                        Use this for metadata-only changes (e.g. ACL) where document content has not changed.
+	 */
+	public void indexDocument(String repositoryId, Content content, boolean forceSync, boolean skipRAGIndexing) {
 		if (log.isDebugEnabled()) {
 			log.debug("indexDocument called for " + content.getId());
 		}
@@ -252,14 +265,14 @@ public class SolrUtil implements ApplicationContextAware {
 
 		// For maintenance operations, execute synchronously to track progress accurately
 		if (forceSync) {
-			indexDocumentInternal(repositoryId, content);
+			indexDocumentInternal(repositoryId, content, skipRAGIndexing);
 		} else {
 			// Execute Solr indexing asynchronously to avoid blocking CMIS operations
 			CompletableFuture.runAsync(() -> {
-				indexDocumentInternal(repositoryId, content);
+				indexDocumentInternal(repositoryId, content, skipRAGIndexing);
 			}).exceptionally(ex -> {
 				log.warn("Solr async indexing failed for {}, scheduling retry: {}", content.getId(), ex.getMessage());
-				scheduleRetry(() -> indexDocumentInternal(repositoryId, content), content.getId(), 1);
+				scheduleRetry(() -> indexDocumentInternal(repositoryId, content, skipRAGIndexing), content.getId(), 1);
 				return null;
 			});
 		}
@@ -364,16 +377,16 @@ public class SolrUtil implements ApplicationContextAware {
 
 	/**
 	 * Internal method to perform the actual Solr indexing
+	 * @param skipRAGIndexing if true, skip RAG re-indexing after Solr update
 	 */
-	private void indexDocumentInternal(String repositoryId, Content content) {
+	private void indexDocumentInternal(String repositoryId, Content content, boolean skipRAGIndexing) {
 		SolrClient solrClient = null;
 		try {
 			log.info("Starting Solr indexing for document: " + content.getId());
 			solrClient = getSolrClient();
 			
 			if (solrClient == null) {
-				log.warn("Solr client is null, skipping indexing for document: " + content.getId());
-				return;
+				throw new RuntimeException("Solr client is not available, cannot index document: " + content.getId());
 			}
 			
 			SolrInputDocument doc = createSolrDocument(repositoryId, content);
@@ -395,16 +408,27 @@ public class SolrUtil implements ApplicationContextAware {
 			
 			if (response.getStatus() == 0) {
 				log.info("Document indexed successfully in Solr: " + content.getId() + " for repository: " + repositoryId);
-				// Trigger RAG indexing asynchronously if enabled
-				triggerRAGIndexing(repositoryId, content);
+				// Trigger RAG indexing asynchronously if enabled (skip for metadata-only changes like ACL)
+				if (!skipRAGIndexing) {
+					triggerRAGIndexing(repositoryId, content);
+				} else {
+					log.debug("Skipping RAG re-indexing for document: " + content.getId() + " (metadata-only change)");
+				}
 			} else {
-				log.error("Document indexing failed with status: " + response.getStatus() + " for document: " + content.getId());
+				throw new RuntimeException("Solr indexing failed with status: " + response.getStatus() + " for document: " + content.getId());
 			}
 		} catch (SolrServerException e) {
 			log.error("Solr server error during indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
 			throw new RuntimeException("Solr indexing failed: " + e.getMessage(), e);
 		} catch (IOException e) {
 			log.error("IO error during Solr indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
+			throw new RuntimeException("Solr indexing failed: " + e.getMessage(), e);
+		} catch (RuntimeException e) {
+			// Re-throw RuntimeExceptions (including the non-zero status one above)
+			if (e.getMessage() != null && e.getMessage().startsWith("Solr")) {
+				throw e;
+			}
+			log.error("Unexpected error during Solr indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
 			throw new RuntimeException("Solr indexing failed: " + e.getMessage(), e);
 		} catch (Exception e) {
 			log.error("Unexpected error during Solr indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
@@ -448,8 +472,10 @@ public class SolrUtil implements ApplicationContextAware {
 
 	/**
 	 * Trigger RAG document deletion asynchronously if RAG is enabled.
+	 * Public so that callers like deleteContentStream can remove stale RAG embeddings
+	 * without deleting the Solr document itself.
 	 */
-	private void triggerRAGDeletion(String repositoryId, String documentId) {
+	public void triggerRAGDeletion(String repositoryId, String documentId) {
 		CompletableFuture.runAsync(() -> {
 			try {
 				RAGIndexingService ragService = getRAGIndexingServiceSafely();
@@ -462,6 +488,32 @@ public class SolrUtil implements ApplicationContextAware {
 				log.warn("RAG document deletion failed for: " + documentId + ", error: " + e.getMessage());
 			}
 		});
+	}
+
+	/**
+	 * Trigger a full RAG re-index for the given repository.
+	 * Called after a full Solr re-index to rebuild RAG embeddings that were
+	 * deleted together with the Solr index (both share the same Solr core).
+	 * No-op if RAG is not enabled.
+	 */
+	public void triggerFullRAGReindex(String repositoryId) {
+		if (applicationContext == null) {
+			return;
+		}
+		try {
+			RAGIndexMaintenanceService ragMaintenance =
+				applicationContext.getBean(RAGIndexMaintenanceService.class);
+			if (ragMaintenance != null && ragMaintenance.isRAGEnabled()) {
+				boolean started = ragMaintenance.startFullRAGReindex(repositoryId);
+				if (started) {
+					log.info("Full RAG re-index triggered for repository: " + repositoryId);
+				} else {
+					log.info("Full RAG re-index skipped (already running or not available) for repository: " + repositoryId);
+				}
+			}
+		} catch (Exception e) {
+			log.debug("RAGIndexMaintenanceService not available: " + e.getMessage());
+		}
 	}
 
 	/**
@@ -743,12 +795,48 @@ public class SolrUtil implements ApplicationContextAware {
 	 * Delete a document from Solr
 	 */
 	public void deleteDocument(String repositoryId, String documentId) {
+		deleteDocument(repositoryId, documentId, false);
+	}
+
+	/**
+	 * Delete a document from Solr
+	 * @param forceSync if true, bypass solr.indexing.force setting and execute synchronously
+	 */
+	public void deleteDocument(String repositoryId, String documentId, boolean forceSync) {
 		String _force = propertyManager
 				.readValue(PropertyKey.SOLR_INDEXING_FORCE);
 		boolean force = (Boolean.TRUE.toString().equals(_force)) ? true : false;
 
-		if (!force)
+		if (!force && !forceSync)
 			return;
+
+		if (forceSync) {
+			// Synchronous execution for admin/maintenance operations — propagate failures
+			SolrClient solrClient = getSolrClient();
+			if (solrClient == null) {
+				throw new RuntimeException("Solr client is not available, cannot delete document: " + documentId);
+			}
+			try {
+				UpdateRequest updateRequest = new UpdateRequest();
+				updateRequest.deleteById(documentId);
+				updateRequest.setCommitWithin(1000);
+				UpdateResponse response = updateRequest.process(solrClient);
+
+				if (response.getStatus() == 0) {
+					log.debug("Document deleted successfully from Solr: " + documentId + " for repository: " + repositoryId);
+					triggerRAGDeletion(repositoryId, documentId);
+				} else {
+					throw new RuntimeException("Solr deletion failed with status: " + response.getStatus() + " for document: " + documentId);
+				}
+			} catch (RuntimeException e) {
+				throw e;
+			} catch (Exception e) {
+				throw new RuntimeException("Solr document deletion failed for document: " + documentId + ": " + e.getMessage(), e);
+			} finally {
+				try { solrClient.close(); } catch (IOException ignored) {}
+			}
+			return;
+		}
 
 		CompletableFuture.runAsync(() -> {
 			try {
@@ -758,13 +846,10 @@ public class SolrUtil implements ApplicationContextAware {
 				updateRequest.deleteById(documentId);
 				updateRequest.setCommitWithin(1000);
 
-				// DIRECT FIX: Don't pass core name to avoid URL duplication
-				// getSolrUrl() already returns full URL with core path
 				UpdateResponse response = updateRequest.process(solrClient);
 
 				if (response.getStatus() == 0) {
 					log.debug("Document deleted successfully from Solr: " + documentId + " for repository: " + repositoryId);
-					// Trigger RAG deletion
 					triggerRAGDeletion(repositoryId, documentId);
 				} else {
 					log.warn("Document deletion failed with status: " + response.getStatus() + " for document: " + documentId);
@@ -787,6 +872,7 @@ public class SolrUtil implements ApplicationContextAware {
 					req.process(solrClient);
 					solrClient.close();
 					log.info("Solr deletion retry succeeded for document: {}", documentId);
+					triggerRAGDeletion(repositoryId, documentId);
 				} catch (Exception retryEx) {
 					throw new RuntimeException("Solr deletion retry failed: " + retryEx.getMessage(), retryEx);
 				}
@@ -798,9 +884,34 @@ public class SolrUtil implements ApplicationContextAware {
 	public String getSolrUrl(){
 		String protocol = propertyManager.readValue(PropertyKey.SOLR_PROTOCOL);
 		String host = propertyManager.readValue(PropertyKey.SOLR_HOST);
-		int port = Integer.parseInt(propertyManager
-				.readValue(PropertyKey.SOLR_PORT));
+		String portStr = propertyManager.readValue(PropertyKey.SOLR_PORT);
 		String context = propertyManager.readValue(PropertyKey.SOLR_CONTEXT);
+
+		// Validate required properties to avoid NPE
+		if (protocol == null || protocol.isEmpty()) {
+			log.error("SolrUtil.getSolrUrl: solr.protocol is not configured");
+			return null;
+		}
+		if (host == null || host.isEmpty()) {
+			log.error("SolrUtil.getSolrUrl: solr.host is not configured");
+			return null;
+		}
+		if (portStr == null || portStr.isEmpty()) {
+			log.error("SolrUtil.getSolrUrl: solr.port is not configured");
+			return null;
+		}
+
+		int port;
+		try {
+			port = Integer.parseInt(portStr);
+		} catch (NumberFormatException e) {
+			log.error("SolrUtil.getSolrUrl: solr.port is not a valid integer: " + portStr);
+			return null;
+		}
+
+		if (context == null || context.isEmpty()) {
+			context = "solr";
+		}
 
 		if (log.isDebugEnabled()) {
 			log.debug("PropertyManager class: " + propertyManager.getClass().getName());

@@ -233,7 +233,7 @@ public class SolrResource extends ResourceBase {
 		// Call Solr
 		HttpClient httpClient = HttpClientBuilder.create().build();
 		String solrUrl = util.getSolrUrl();
-		String url = solrUrl + "admin/cores?core=nemaki&action=init&repositoryId=" + repositoryId;
+		String url = solrUrl + "/admin/cores?core=nemaki&action=init&repositoryId=" + repositoryId;
 		HttpGet httpGet = new HttpGet(url);
 		try {
 			String body = httpClient.execute(httpGet, response -> {
@@ -318,21 +318,17 @@ public class SolrResource extends ResourceBase {
 			return makeResult(status, result, errMsg);
 		}
 
-		// Call Solr
+		// Call Solr via POST to avoid passwords in URL query parameters
 		HttpClient httpClient = HttpClientBuilder.create().build();
 		String solrUrl = getSolrUtil().getSolrUrl();
-		String url = solrUrl + "admin/cores?core=nemaki&action=CHANGE_PASSWORD&tracking=FULL&repositoryId="
-				+ repositoryId + "&password=" + password + "&currentPassword=" + currentPassword;
-		HttpGet httpAction = new HttpGet(url);
-
-		/*
-		HttpPost httpAction = new HttpPost(url);
-		List<BasicNameValuePair> requestParams = new ArrayList<BasicNameValuePair>();
-		requestParams.add(new BasicNameValuePair("repositoryId",repositoryId));
-		requestParams.add(new BasicNameValuePair("password",password));
-		requestParams.add(new BasicNameValuePair("currentPassword",currentPassword));
-		httpAction.setEntity(new UrlEncodedFormEntity(requestParams));
-		 */
+		String url = solrUrl + "/admin/cores?core=nemaki&action=CHANGE_PASSWORD&tracking=FULL";
+		org.apache.hc.client5.http.classic.methods.HttpPost httpAction =
+			new org.apache.hc.client5.http.classic.methods.HttpPost(url);
+		List<org.apache.hc.core5.http.NameValuePair> requestParams = new java.util.ArrayList<>();
+		requestParams.add(new org.apache.hc.core5.http.message.BasicNameValuePair("repositoryId", repositoryId));
+		requestParams.add(new org.apache.hc.core5.http.message.BasicNameValuePair("password", password));
+		requestParams.add(new org.apache.hc.core5.http.message.BasicNameValuePair("currentPassword", currentPassword));
+		httpAction.setEntity(new org.apache.hc.client5.http.entity.UrlEncodedFormEntity(requestParams));
 
 		try {
 			String body = httpClient.execute(httpAction, response -> {

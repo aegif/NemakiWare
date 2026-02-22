@@ -71,15 +71,10 @@ public class TokenServiceImpl implements TokenService{
 			long currentTime = System.currentTimeMillis();
 			long expiration = currentTime + expirationMillis;
 
-			// TOKEN DEBUG: Log token creation details
-			log.info("=== TOKEN CREATION DEBUG ===");
-			log.info("User: " + userName + ", Repository: " + repositoryId + ", App: " + app);
-			log.info("Config value (auth.token.expiration): " + expirationConfig + " ms");
-			log.info("Current time: " + currentTime + " (" + new java.util.Date(currentTime) + ")");
-			log.info("Expiration time: " + expiration + " (" + new java.util.Date(expiration) + ")");
-			log.info("Token will expire in: " + (expirationMillis / 1000) + " seconds (" + (expirationMillis / 60000) + " minutes)");
-			log.info("Token: " + token);
-			log.info("===========================");
+			if (log.isDebugEnabled()) {
+				log.debug("Token created for user: " + userName + ", repository: " + repositoryId
+						+ ", expires in: " + (expirationMillis / 60000) + " minutes");
+			}
 
 			repoMap.put(userName, new Token(userName, token, expiration));
 
