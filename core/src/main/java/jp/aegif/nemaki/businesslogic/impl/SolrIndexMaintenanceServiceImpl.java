@@ -421,7 +421,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         }
         
         try {
-            int successCount = solrUtil.indexDocumentsBatch(repositoryId, batch, BATCH_COMMIT_WITHIN_MS);
+            int successCount = solrUtil.indexDocumentsBatch(repositoryId, batch, BATCH_COMMIT_WITHIN_MS, skipRAGIndexing);
             indexedCount.addAndGet(successCount);
             status.setIndexedCount(indexedCount.get());
             

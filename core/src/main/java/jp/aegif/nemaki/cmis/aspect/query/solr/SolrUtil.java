@@ -315,6 +315,19 @@ public class SolrUtil implements ApplicationContextAware {
 	 * @return number of successfully indexed documents
 	 */
 	public int indexDocumentsBatch(String repositoryId, List<Content> contents, int commitWithinMs) {
+		return indexDocumentsBatch(repositoryId, contents, commitWithinMs, false);
+	}
+
+	/**
+	 * Batch index multiple documents in Solr for improved performance.
+	 * Uses a single UpdateRequest with commitWithin for efficient bulk indexing.
+	 * @param repositoryId the repository ID
+	 * @param contents list of contents to index
+	 * @param commitWithinMs commit within milliseconds (default 5000 for batch operations)
+	 * @param skipRAGIndexing if true, skip RAG re-indexing after batch Solr update
+	 * @return number of successfully indexed documents
+	 */
+	public int indexDocumentsBatch(String repositoryId, List<Content> contents, int commitWithinMs, boolean skipRAGIndexing) {
 		if (contents == null || contents.isEmpty()) {
 			return 0;
 		}
@@ -323,6 +336,7 @@ public class SolrUtil implements ApplicationContextAware {
 		
 		SolrClient solrClient = null;
 		int successCount = 0;
+		List<Content> indexedContents = new ArrayList<>();
 		try {
 			solrClient = getSolrClient();
 			if (solrClient == null) {
@@ -337,6 +351,7 @@ public class SolrUtil implements ApplicationContextAware {
 				try {
 					SolrInputDocument doc = createSolrDocument(repositoryId, content);
 					updateRequest.add(doc);
+					indexedContents.add(content);
 					successCount++;
 				} catch (Exception e) {
 					log.warn("Failed to create Solr document for " + content.getId() + ": " + e.getMessage());
@@ -347,6 +362,12 @@ public class SolrUtil implements ApplicationContextAware {
 				UpdateResponse response = updateRequest.process(solrClient);
 				if (response.getStatus() == 0) {
 					log.info("Batch indexed " + successCount + " documents successfully");
+					// Trigger RAG indexing for each document if not skipped
+					if (!skipRAGIndexing) {
+						for (Content content : indexedContents) {
+							triggerRAGIndexing(repositoryId, content);
+						}
+					}
 				} else {
 					// Throw exception to trigger fallback to individual indexing in caller
 					log.error("Batch indexing failed with status: " + response.getStatus());
