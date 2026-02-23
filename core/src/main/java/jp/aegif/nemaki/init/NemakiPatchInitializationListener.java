@@ -55,17 +55,17 @@ public class NemakiPatchInitializationListener implements ServletContextListener
     public void contextInitialized(ServletContextEvent sce) {
         // Ensure this runs only once
         if (!initialized.compareAndSet(false, true)) {
-            log.info("*** NemakiPatchInitializationListener: Patches already applied (own guard), skipping ***");
+            log.error("*** NemakiPatchInitializationListener: Patches already applied (own guard), skipping ***");
             return;
         }
 
         // Skip if CMISPostInitializer already applied patches via ContextRefreshedEvent
         if (CMISPostInitializer.isPatchesApplied()) {
-            log.info("*** NemakiPatchInitializationListener: CMISPostInitializer already applied patches, skipping ***");
+            log.error("*** NemakiPatchInitializationListener: CMISPostInitializer already applied patches (isPatchesApplied=true), skipping ***");
             return;
         }
 
-        log.info("=== NemakiPatchInitializationListener: STARTING PATCH INITIALIZATION ===");
+        log.error("=== NemakiPatchInitializationListener: STARTING PATCH INITIALIZATION (CMISPostInitializer did NOT succeed) ===");
 
         try {
             ServletContext servletContext = sce.getServletContext();
@@ -78,12 +78,12 @@ public class NemakiPatchInitializationListener implements ServletContextListener
                 return;
             }
 
-            log.info("Spring WebApplicationContext retrieved successfully");
+            log.error("Spring WebApplicationContext retrieved successfully");
 
             // Apply patches in order
             applyPatchesFromSpringContext(springContext);
 
-            log.info("=== NemakiPatchInitializationListener: PATCH INITIALIZATION COMPLETED ===");
+            log.error("=== NemakiPatchInitializationListener: PATCH INITIALIZATION COMPLETED ===");
 
         } catch (Exception e) {
             log.error("Failed to apply patches during servlet context initialization", e);
@@ -137,8 +137,12 @@ public class NemakiPatchInitializationListener implements ServletContextListener
                     AbstractNemakiPatch patch = (AbstractNemakiPatch) patchBean;
 
                     log.info("Applying patch: " + patch.getClass().getSimpleName());
-                    patch.apply();
-                    log.info("Successfully applied patch: " + patch.getClass().getSimpleName());
+                    boolean success = patch.apply();
+                    if (success) {
+                        log.info("Successfully applied patch: " + patch.getClass().getSimpleName());
+                    } else {
+                        log.warn("Patch returned failure: " + patch.getClass().getSimpleName());
+                    }
 
                 } catch (Exception e) {
                     log.error("Failed to apply patch: " + beanName, e);

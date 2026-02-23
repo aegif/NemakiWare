@@ -115,14 +115,11 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
     public void onApplicationEvent(ContextRefreshedEvent event) {
         // Ensure this runs only once
         if (!started.compareAndSet(false, true)) {
+            log.error("=== PHASE 2: CMISPostInitializer already started, skipping ===");
             return;
         }
 
-        if (log.isDebugEnabled()) {
-            log.debug("CMISPostInitializer.onApplicationEvent() called, event source: " + event.getSource().getClass().getName());
-        }
-
-        log.info("=== PHASE 2: CMIS POST-INITIALIZATION STARTED ===");
+        log.error("=== PHASE 2: CMIS POST-INITIALIZATION STARTED ===");
 
         try {
             // Phase 2: CMIS-specific patches that require running services
@@ -131,19 +128,19 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
 
             boolean allSucceeded = true;
             if (cmisPatchList != null && !cmisPatchList.isEmpty()) {
-                log.info("Applying " + cmisPatchList.size() + " CMIS patches");
+                log.error("Applying " + cmisPatchList.size() + " CMIS patches");
                 allSucceeded = applyCMISPatches();
             } else {
-                log.info("No CMIS patches to apply");
+                log.error("No CMIS patches to apply");
             }
 
             // Mark as successfully completed ONLY when all patches succeeded
             // NemakiPatchInitializationListener checks this flag — if false, it retries
             if (allSucceeded) {
                 completedSuccessfully.set(true);
-                log.info("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED ===");
+                log.error("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED (allSucceeded=true) ===");
             } else {
-                log.warn("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED WITH FAILURES ===");
+                log.error("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED WITH FAILURES (allSucceeded=false) ===");
                 // completedSuccessfully stays false → NemakiPatchInitializationListener can retry
             }
 
@@ -164,8 +161,11 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
                 if (log.isDebugEnabled()) {
                     log.debug("Applying CMIS patch: " + patch.getClass().getSimpleName());
                 }
-                patch.apply();
-                if (log.isDebugEnabled()) {
+                boolean patchSuccess = patch.apply();
+                if (!patchSuccess) {
+                    log.warn("CMIS patch returned failure: " + patch.getClass().getSimpleName());
+                    allSucceeded = false;
+                } else if (log.isDebugEnabled()) {
                     log.debug("Successfully applied CMIS patch: " + patch.getClass().getSimpleName());
                 }
             } catch (Exception e) {

@@ -197,9 +197,11 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                 }
                 
                 // Query children view with parent ID
+                // CRITICAL: Must set reduce=false because children view has _count reduce
                 java.util.Map<String, Object> queryParams = new java.util.HashMap<>();
                 queryParams.put("key", rootFolderId);
                 queryParams.put("include_docs", true);
+                queryParams.put("reduce", false);
                 
                 if (log.isDebugEnabled()) {
                     log.debug("Executing direct CouchDB view query: _repo/children with key=" + rootFolderId);

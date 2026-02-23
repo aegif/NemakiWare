@@ -391,7 +391,10 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	public void apply(){
 		createPathView();
 		for(AbstractNemakiPatch patch : patchList){
-			patch.apply();
+			boolean success = patch.apply();
+			if (!success) {
+				log.warn("Patch returned failure: " + patch.getClass().getSimpleName());
+			}
 		}
 	}
 

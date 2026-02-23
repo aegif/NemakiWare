@@ -1414,14 +1414,28 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			queryParams.put("key", name);
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "patch", queryParams);
 			
-			if (result.getRows() != null && !result.getRows().isEmpty()) {
+			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
 				ViewResultRow row = result.getRows().get(0);
 				if (row.getDoc() != null) {
 					try {
-						ObjectMapper mapper = createConfiguredObjectMapper();
-						CouchPatchHistory cph = mapper.convertValue(row.getDoc(), CouchPatchHistory.class);
-						if (cph != null) {
-							return cph.convert();
+						// CRITICAL FIX: Use getProperties() + writeValueAsString/readValue
+						// instead of convertValue(Document, ...) which doesn't map custom properties
+						// from IBM Cloudant SDK's Document object to CouchPatchHistory fields.
+						com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+						Map<String, Object> docMap = doc.getProperties();
+						if (docMap != null) {
+							if (!docMap.containsKey("_id") && doc.getId() != null) {
+								docMap.put("_id", doc.getId());
+							}
+							if (!docMap.containsKey("_rev") && doc.getRev() != null) {
+								docMap.put("_rev", doc.getRev());
+							}
+							ObjectMapper mapper = createConfiguredObjectMapper();
+							String jsonString = mapper.writeValueAsString(docMap);
+							CouchPatchHistory cph = mapper.readValue(jsonString, CouchPatchHistory.class);
+							if (cph != null) {
+								return cph.convert();
+							}
 						}
 					} catch (Exception e) {
 						log.warn("Failed to convert patch history document: " + e.getMessage());
