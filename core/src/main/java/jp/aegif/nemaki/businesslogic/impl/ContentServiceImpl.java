@@ -303,6 +303,21 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 
+	@Override
+	public List<Content> getChildrenPaged(String repositoryId, String folderId, int skip, int limit) {
+		List<Content> result = new ArrayList<Content>();
+		List<Content> daoContentList = contentDaoService.getChildrenPaged(repositoryId, folderId, skip, limit);
+		for (Content content : daoContentList) {
+			result.add(getContentInternal(repositoryId, content));
+		}
+		return result;
+	}
+
+	@Override
+	public long getChildrenCount(String repositoryId, String folderId) {
+		return contentDaoService.getChildrenCount(repositoryId, folderId);
+	}
+
 	/**
 	 * content / user or group items are
 	 *

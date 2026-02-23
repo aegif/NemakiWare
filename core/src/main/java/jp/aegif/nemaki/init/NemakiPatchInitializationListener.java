@@ -55,7 +55,13 @@ public class NemakiPatchInitializationListener implements ServletContextListener
     public void contextInitialized(ServletContextEvent sce) {
         // Ensure this runs only once
         if (!initialized.compareAndSet(false, true)) {
-            log.info("*** NemakiPatchInitializationListener: Patches already applied, skipping ***");
+            log.info("*** NemakiPatchInitializationListener: Patches already applied (own guard), skipping ***");
+            return;
+        }
+
+        // Skip if CMISPostInitializer already applied patches via ContextRefreshedEvent
+        if (CMISPostInitializer.isPatchesApplied()) {
+            log.info("*** NemakiPatchInitializationListener: CMISPostInitializer already applied patches, skipping ***");
             return;
         }
 
@@ -92,6 +98,7 @@ public class NemakiPatchInitializationListener implements ServletContextListener
                 "patch_SystemFolderSetup",       // Creates .system folder
                 "patch_InitialContentSetup",     // Creates Sites and Technical Documents folders
                 "patch_StandardCmisViews",       // Creates CMIS views
+                "patch_ChildrenViewReduceCount", // Adds _count reduce to children view (2.4 upgrade compatibility)
                 "patch_TestUserInitialization",   // Creates test users
                 "patch_NemakiwareStandardTypes",  // NemakiWare standard types
                 "patch_WebhookableSecondaryType", // Webhookable secondary type for webhook support

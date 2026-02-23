@@ -81,8 +81,20 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
 
     private List<AbstractNemakiPatch> cmisPatchList;
 
-    // AtomicBoolean to ensure patches are applied only once even if ContextRefreshedEvent fires multiple times
-    private final AtomicBoolean initialized = new AtomicBoolean(false);
+    // Guard to ensure onApplicationEvent runs at most once
+    private static final AtomicBoolean started = new AtomicBoolean(false);
+    // Set to true only after all patches have been applied successfully
+    private static final AtomicBoolean completedSuccessfully = new AtomicBoolean(false);
+
+    /**
+     * Check if CMISPostInitializer has successfully applied all patches.
+     * Used by NemakiPatchInitializationListener to avoid duplicate patch execution.
+     * Returns true only when patches completed without exception, so the Listener
+     * can still act as a fallback if CMISPostInitializer fails.
+     */
+    public static boolean isPatchesApplied() {
+        return completedSuccessfully.get();
+    }
 
     /**
      * Constructor - log bean instantiation for debugging
@@ -102,7 +114,7 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
     @Override
     public void onApplicationEvent(ContextRefreshedEvent event) {
         // Ensure this runs only once
-        if (!initialized.compareAndSet(false, true)) {
+        if (!started.compareAndSet(false, true)) {
             return;
         }
 
@@ -117,26 +129,36 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
             // These patches should ONLY contain operations that require CMIS API access
             // Database-level operations should be handled by DatabasePreInitializer (Phase 1)
 
+            boolean allSucceeded = true;
             if (cmisPatchList != null && !cmisPatchList.isEmpty()) {
                 log.info("Applying " + cmisPatchList.size() + " CMIS patches");
-                applyCMISPatches();
+                allSucceeded = applyCMISPatches();
             } else {
                 log.info("No CMIS patches to apply");
             }
 
-            log.info("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED ===");
+            // Mark as successfully completed ONLY when all patches succeeded
+            // NemakiPatchInitializationListener checks this flag — if false, it retries
+            if (allSucceeded) {
+                completedSuccessfully.set(true);
+                log.info("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED ===");
+            } else {
+                log.warn("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED WITH FAILURES ===");
+                // completedSuccessfully stays false → NemakiPatchInitializationListener can retry
+            }
 
         } catch (Exception e) {
             log.error("Phase 2 CMIS post-initialization failed", e);
-            // Don't fail the entire startup process for CMIS patch failures
-            // This allows the application to start even if some patches fail
+            // completedSuccessfully stays false → NemakiPatchInitializationListener can retry
         }
     }
     
     /**
-     * Apply CMIS-specific patches using fully initialized services
+     * Apply CMIS-specific patches using fully initialized services.
+     * @return true if ALL patches succeeded, false if any patch failed
      */
-    private void applyCMISPatches() {
+    private boolean applyCMISPatches() {
+        boolean allSucceeded = true;
         for (AbstractNemakiPatch patch : cmisPatchList) {
             try {
                 if (log.isDebugEnabled()) {
@@ -148,9 +170,11 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
                 }
             } catch (Exception e) {
                 log.error("Failed to apply CMIS patch: " + patch.getClass().getSimpleName(), e);
+                allSucceeded = false;
                 // Continue with other patches even if one fails
             }
         }
+        return allSucceeded;
     }
 
     /**

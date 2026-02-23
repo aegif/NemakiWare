@@ -44,6 +44,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
 import jp.aegif.nemaki.util.spring.SpringContext;
 
@@ -138,6 +139,29 @@ public class TypeResource extends ResourceBase {
 						.entity(errorResult.toJSONString()).build();
 			}
 
+			// Pre-load all property definition cores into a Map to avoid N+1 queries
+			Map<String, NemakiPropertyDefinitionCore> coreMap = new java.util.HashMap<>();
+			List<NemakiPropertyDefinitionCore> allCores = typeService.getPropertyDefinitionCores(repositoryId);
+			if (allCores != null) {
+				for (NemakiPropertyDefinitionCore core : allCores) {
+					if (core != null && core.getId() != null) {
+						coreMap.put(core.getId(), core);
+					}
+				}
+			}
+
+			// Pre-load all property definition details into a Map to avoid N+1 queries
+			List<NemakiTypeDefinition> customTypes = typeService.getTypeDefinitions(repositoryId);
+			Map<String, NemakiPropertyDefinitionDetail> detailMap = new java.util.HashMap<>();
+			List<NemakiPropertyDefinitionDetail> allDetails = typeService.getPropertyDefinitionDetails(repositoryId);
+			if (allDetails != null) {
+				for (NemakiPropertyDefinitionDetail detail : allDetails) {
+					if (detail != null && detail.getId() != null) {
+						detailMap.put(detail.getId(), detail);
+					}
+				}
+			}
+
 			JSONArray typesArray = new JSONArray();
 			// CRITICAL FIX (2025-12-22): Track added type IDs to prevent duplicates
 			// This prevents nemaki:parentChildRelationship and other types from appearing twice
@@ -168,15 +192,14 @@ public class TypeResource extends ResourceBase {
 				log.warn("RepositoryService not available, skipping base types");
 			}
 
-			// Get custom types from TypeService
-			List<NemakiTypeDefinition> customTypes = typeService.getTypeDefinitions(repositoryId);
+			// Get custom types from TypeService (already loaded above)
 			log.info("Found " + customTypes.size() + " custom types");
 
 			for (NemakiTypeDefinition nemakiType : customTypes) {
 				String typeId = nemakiType.getTypeId();
 				// CRITICAL FIX: Skip types already added from base types to prevent duplicates
 				if (!addedTypeIds.contains(typeId)) {
-					JSONObject typeJson = convertTypeToJson(repositoryId, nemakiType);
+					JSONObject typeJson = convertTypeToJsonBulk(repositoryId, nemakiType, detailMap, coreMap);
 					typesArray.add(typeJson);
 					addedTypeIds.add(typeId);
 				} else {
@@ -668,6 +691,50 @@ public class TypeResource extends ResourceBase {
 		}
 		typeJson.put("propertyDefinitions", propertiesArray);
 		
+		return typeJson;
+	}
+
+	/**
+	 * Convert NemakiTypeDefinition to JSON using pre-loaded property definition maps.
+	 * This avoids N+1 queries by looking up detail and core from pre-built maps.
+	 */
+	@SuppressWarnings("unchecked")
+	private JSONObject convertTypeToJsonBulk(String repositoryId, NemakiTypeDefinition nemakiType,
+			Map<String, NemakiPropertyDefinitionDetail> detailMap,
+			Map<String, NemakiPropertyDefinitionCore> coreMap) {
+		JSONObject typeJson = new JSONObject();
+
+		typeJson.put("id", nemakiType.getTypeId());
+		typeJson.put("localName", nemakiType.getLocalName());
+		typeJson.put("displayName", nemakiType.getDisplayName());
+		typeJson.put("description", nemakiType.getDescription());
+		typeJson.put("baseTypeId", nemakiType.getBaseId() != null ? nemakiType.getBaseId().value() : null);
+		typeJson.put("parentTypeId", nemakiType.getParentId());
+
+		typeJson.put("creatable", nemakiType.isCreatable());
+		typeJson.put("queryable", nemakiType.isQueryable());
+		typeJson.put("controllableAcl", nemakiType.isControllableACL());
+		typeJson.put("controllablePolicy", nemakiType.isControllablePolicy());
+		typeJson.put("fulltextIndexed", nemakiType.isFulltextIndexed());
+		typeJson.put("includedInSupertypeQuery", nemakiType.isIncludedInSupertypeQuery());
+
+		// Property definitions from pre-loaded maps
+		JSONArray propertiesArray = new JSONArray();
+		List<String> propertyIds = nemakiType.getProperties();
+		if (propertyIds != null) {
+			for (String propertyId : propertyIds) {
+				NemakiPropertyDefinitionDetail detail = detailMap.get(propertyId);
+				if (detail != null) {
+					NemakiPropertyDefinitionCore core = coreMap.get(detail.getCoreNodeId());
+					if (core != null) {
+						JSONObject propJson = convertPropertyToJson(core, detail);
+						propertiesArray.add(propJson);
+					}
+				}
+			}
+		}
+		typeJson.put("propertyDefinitions", propertiesArray);
+
 		return typeJson;
 	}
 

@@ -392,6 +392,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [renameTargetName, setRenameTargetName] = useState<string>('');
   const [renameForm] = Form.useForm();
 
+  // Server-side pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(100);
+  const [totalItems, setTotalItems] = useState(-1);
+  const [hasMoreItems, setHasMoreItems] = useState(false);
+
   // Bulk operation states (2026-01-28)
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [bulkDeleteModalVisible, setBulkDeleteModalVisible] = useState(false);
@@ -531,11 +537,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // Load objects when selectedFolderId changes (the folder displayed in list pane)
   useEffect(() => {
     if (selectedFolderId) {
-      loadObjects();
+      setCurrentPage(1);
+      loadObjects(1);
     }
   }, [selectedFolderId]);
 
-  const loadObjects = async () => {
+  const loadObjects = async (page: number = currentPage) => {
     // Load objects for the selected folder (the one displayed in list pane)
     if (!selectedFolderId) {
       return;
@@ -543,8 +550,15 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
     setLoading(true);
     try {
-      const children = await cmisService.getChildren(repositoryId, selectedFolderId);
-      setObjects(children);
+      const skipCount = (page - 1) * pageSize;
+      const result = await cmisService.getChildrenPaged(repositoryId, selectedFolderId, {
+        maxItems: pageSize,
+        skipCount,
+      });
+      setObjects(result.items);
+      setTotalItems(result.numItems);
+      setHasMoreItems(result.hasMoreItems);
+      setCurrentPage(page);
 
       // CRITICAL FIX (2025-11-26): Get selected folder's path from CMIS properties
       // This ensures currentFolderPath is always accurate, not just for root folder
@@ -1803,7 +1817,22 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 dataSource={objects}
                 rowKey="id"
                 loading={loading}
-                pagination={{ pageSize: 20 }}
+                pagination={isSearchMode ? { pageSize: 20 } : {
+                  current: currentPage,
+                  pageSize,
+                  // When numItems is known (admin), use exact total.
+                  // When unknown (-1, non-admin), use a synthetic total:
+                  //   If hasMoreItems, pretend there's at least one more page so "Next" is enabled.
+                  //   If not, total = items seen so far (current page is the last).
+                  total: totalItems > 0
+                    ? totalItems
+                    : hasMoreItems
+                      ? currentPage * pageSize + 1
+                      : (currentPage - 1) * pageSize + objects.length,
+                  onChange: (page) => loadObjects(page),
+                  showSizeChanger: false,
+                  showTotal: totalItems > 0 ? (total) => `${total} 件` : undefined,
+                }}
                 size="small"
                 rowSelection={{
                   selectedRowKeys,

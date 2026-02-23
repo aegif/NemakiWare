@@ -111,6 +111,24 @@ public interface ContentService {
 	List<Content> getChildren(String repositoryId, String folderId);
 
 	/**
+	 * Get a page of children under a folder
+	 * @param repositoryId repository ID
+	 * @param folderId parent folder ID
+	 * @param skip number of items to skip
+	 * @param limit maximum number of items to return
+	 * @return list of child contents
+	 */
+	List<Content> getChildrenPaged(String repositoryId, String folderId, int skip, int limit);
+
+	/**
+	 * Get the count of children under a folder
+	 * @param repositoryId repository ID
+	 * @param folderId parent folder ID
+	 * @return number of children
+	 */
+	long getChildrenCount(String repositoryId, String folderId);
+
+	/**
 	 * Get a document
 	 * @param repositoryId TODO
 	 * @param objectId

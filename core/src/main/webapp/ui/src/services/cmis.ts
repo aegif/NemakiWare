@@ -834,8 +834,52 @@ export class CMISService {
   }
 
   /**
+   * Get children of a folder with server-side pagination.
+   * Returns items along with pagination metadata (numItems, hasMoreItems).
+   * Use this for large folder listings where client-side pagination is needed.
+   *
+   * @param repositoryId Repository ID (e.g., 'bedroom')
+   * @param folderId Folder ID to get children from
+   * @param options Pagination options (maxItems, skipCount)
+   * @returns Promise resolving to paginated result
+   */
+  async getChildrenPaged(
+    repositoryId: string,
+    folderId: string,
+    options?: { maxItems?: number; skipCount?: number }
+  ): Promise<{ items: CMISObject[]; numItems: number; hasMoreItems: boolean }> {
+    try {
+      const result = await this.atomPubClient.getChildren(repositoryId, folderId, {
+        filter: '*',
+        includeAllowableActions: true,
+        maxItems: options?.maxItems ?? 100,
+        skipCount: options?.skipCount ?? 0,
+      });
+
+      if (!result.success) {
+        if (result.status === 401 || result.status === 403) {
+          const error = this.handleHttpError(result.status, result.error || 'Unauthorized', '');
+          throw error;
+        }
+        throw new Error(result.error || `HTTP ${result.status}`);
+      }
+
+      return {
+        items: result.data?.entries.map(convertParsedEntryToCmisObject) || [],
+        numItems: result.data?.pagination.numItems ?? -1,
+        hasMoreItems: result.data?.pagination.hasMoreItems ?? false,
+      };
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
+  }
+
+  /**
    * Get a single CMIS object by ID using the new AtomPubClient
-   * 
+   *
    * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
    * which provides better separation of concerns and testability.
    * The behavior is preserved: uses AtomPub binding with includeAllowableActions=true

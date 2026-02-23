@@ -99,6 +99,13 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Children view _count reduce for server-side pagination (3.1.0) -->
+				<!-- Separate from StandardCmisViews to ensure execution on 2.4 upgrades -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ChildrenViewReduceCount">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- Initial users and groups: testgroup, testuser with firstName/lastName -->
 				<!-- Enhanced version with proper user properties -->
 				<bean class="jp.aegif.nemaki.patch.Patch_TestUserInitialization">
@@ -327,6 +334,12 @@
 	</bean>
 
 	<bean id="patch_McpServiceAccount" class="jp.aegif.nemaki.patch.Patch_McpServiceAccount">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_ChildrenViewReduceCount" class="jp.aegif.nemaki.patch.Patch_ChildrenViewReduceCount">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

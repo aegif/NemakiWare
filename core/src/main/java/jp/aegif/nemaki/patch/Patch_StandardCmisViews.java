@@ -66,7 +66,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
 
             addViewIfMissing(views, "propertyDefinitionCoresByPropertyId", "function(doc) { if (doc.type == 'propertyDefinitionCore')  emit(doc.propertyId, doc) }", null, repositoryId);
 
-            addViewIfMissing(views, "children", "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion || doc.type == 'cmis:item') emit(doc.parentId, doc) }", null, repositoryId);
+            addOrUpdateView(views, "children", "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion || doc.type == 'cmis:item') emit(doc.parentId, doc) }", "_count", repositoryId);
 
             addViewIfMissing(views, "relationships", "function(doc) { if (doc.type == 'cmis:relationship')  emit(doc._id, doc) }", null, repositoryId);
 
@@ -177,14 +177,16 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
     }
 
     /**
-     * Add or update a view. If the view exists but has a different map function, update it.
+     * Add or update a view. If the view exists but has a different map or reduce function, update it.
      */
     private void addOrUpdateView(ObjectNode views, String viewName, String mapFunction, String reduceFunction, String repositoryId) {
         ObjectMapper mapper = new ObjectMapper();
         if (views.has(viewName)) {
             JsonNode existing = views.get(viewName);
             String existingMap = existing.has("map") ? existing.get("map").asText() : "";
-            if (!existingMap.equals(mapFunction)) {
+            String existingReduce = existing.has("reduce") ? existing.get("reduce").asText() : "";
+            String newReduce = (reduceFunction != null) ? reduceFunction : "";
+            if (!existingMap.equals(mapFunction) || !existingReduce.equals(newReduce)) {
                 ObjectNode viewDef = mapper.createObjectNode();
                 viewDef.put("map", mapFunction);
                 if (reduceFunction != null && !reduceFunction.isEmpty()) {
