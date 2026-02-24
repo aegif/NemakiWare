@@ -119,11 +119,10 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 			return;
 		}
 
-		// Use ERROR level for critical lifecycle logs to ensure visibility regardless of logging framework config
-		log.error("=== PHASE 3: PatchService initialization starting ===");
+		log.info("=== PHASE 3: PatchService initialization starting ===");
 
 		try {
-			log.error("Starting CMIS patch application (Phase 3)");
+			log.info("Starting CMIS patch application (Phase 3)");
 
 			// CRITICAL FIX: Create PropertyDefinitionDetail records for system CMIS properties
 			initializeSystemPropertyDefinitionDetails();
@@ -139,13 +138,13 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 
 			// Apply any future patches if they exist
 			if (patchList != null && !patchList.isEmpty()) {
-				log.error("Applying " + patchList.size() + " CMIS patches from patchList");
+				log.info("Applying " + patchList.size() + " CMIS patches from patchList");
 				apply();
 			} else {
-				log.error("No CMIS patches to apply (patchList is " + (patchList == null ? "null" : "empty") + ") - Phase 3 completed");
+				log.info("No CMIS patches to apply (patchList is " + (patchList == null ? "null" : "empty") + ") - Phase 3 completed");
 			}
 
-			log.error("=== CMIS patch application completed successfully ===");
+			log.info("=== CMIS patch application completed successfully ===");
 		} catch (Exception e) {
 			log.error("Failed to apply CMIS patches on startup", e);
 		}
@@ -633,6 +632,7 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 			java.util.Map<String, Object> queryParams = new java.util.HashMap<>();
 			queryParams.put("key", parentFolderId);
 			queryParams.put("include_docs", true);
+			queryParams.put("reduce", false);
 
 			com.ibm.cloud.cloudant.v1.model.ViewResult result = client.queryView("_repo", "children", queryParams);
 

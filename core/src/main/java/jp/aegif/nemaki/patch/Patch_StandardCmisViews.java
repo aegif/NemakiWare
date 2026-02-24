@@ -34,8 +34,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
         try {
             CloudantClientWrapper client = patchUtil.getConnectorPool().getClient(repositoryId);
             if (client == null) {
-                log.error("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Could not get client for repository");
-                return;
+                throw new RuntimeException("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Could not get client for repository");
             }
 
             // Get current design document
@@ -45,8 +44,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
             // Read current design document
             JsonNode currentDoc = client.get(JsonNode.class, designDocId);
             if (currentDoc == null) {
-                log.error("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Design document not found");
-                return;
+                throw new RuntimeException("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Design document not found");
             }
 
             // Clone the document as ObjectNode for modification
@@ -130,7 +128,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
 
             addOrUpdateView(views, "userItemsById", "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:user' && doc.userId)  emit(doc.userId, doc) }", null, repositoryId);
 
-            addViewIfMissing(views, "groupItemsById", "function(doc) { if (doc.type == 'cmis:item' && doc.groupId)  emit(doc.groupId, doc) }", null, repositoryId);
+            addOrUpdateView(views, "groupItemsById", "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groupId)  emit(doc.groupId, doc) }", null, repositoryId);
 
             addViewIfMissing(views, "joinedDirectGroupsByUserId", "function(doc) {if (doc.type == 'cmis:item' && doc.groupId) {if ( doc.subTypeProperties ) {for(var i in doc.subTypeProperties ) {if ( doc.subTypeProperties[i].key == 'nemaki:users' ) {for(var user in doc.subTypeProperties[i].value) {emit(doc.subTypeProperties[i].value[user], doc)}}}}}}", null, repositoryId);
 

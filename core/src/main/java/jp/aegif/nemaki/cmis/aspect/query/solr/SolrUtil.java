@@ -778,6 +778,28 @@ public class SolrUtil implements ApplicationContextAware {
 			}
 		}
 
+		// User/Group search: index userId/groupId with lowercase normalized versions
+		if (content instanceof jp.aegif.nemaki.model.UserItem) {
+			jp.aegif.nemaki.model.UserItem userItem = (jp.aegif.nemaki.model.UserItem) content;
+			if (userItem.getUserId() != null) {
+				doc.addField("dynamic.usersearch.user_id", userItem.getUserId());
+				doc.addField("dynamic.usersearch.user_id_lc", userItem.getUserId().toLowerCase(java.util.Locale.ROOT));
+			}
+			if (content.getName() != null) {
+				doc.addField("dynamic.usersearch.name_lc", content.getName().toLowerCase(java.util.Locale.ROOT));
+			}
+		}
+		if (content instanceof jp.aegif.nemaki.model.GroupItem) {
+			jp.aegif.nemaki.model.GroupItem groupItem = (jp.aegif.nemaki.model.GroupItem) content;
+			if (groupItem.getGroupId() != null) {
+				doc.addField("dynamic.usersearch.group_id", groupItem.getGroupId());
+				doc.addField("dynamic.usersearch.group_id_lc", groupItem.getGroupId().toLowerCase(java.util.Locale.ROOT));
+			}
+			if (content.getName() != null) {
+				doc.addField("dynamic.usersearch.name_lc", content.getName().toLowerCase(java.util.Locale.ROOT));
+			}
+		}
+
 		if (log.isDebugEnabled()) {
 			log.debug("Created Solr document for content: {} with {} fields", content.getId(), doc.size());
 		}

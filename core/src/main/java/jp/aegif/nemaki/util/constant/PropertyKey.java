@@ -47,6 +47,9 @@ public interface PropertyKey {
 	final String CAPABILITY_EXTENDED_USER_ITEM_FOLDER = "capability.extended.user.item.folder";
 	final String SYSTEM_FOLDER = "system.folder";
 
+	//Search
+	final String SEARCH_USERGROUP_SOLR_ENABLED = "search.usergroup.solr.enabled";
+
 	//Rest
 	final String REST_USER_ENABLED = "rest.user.enabled";
 	final String REST_GROUP_ENABLED = "rest.group.enabled";

@@ -1,12 +1,12 @@
 package jp.aegif.nemaki.patch;
 
 import static org.junit.Assert.*;
-import static org.mockito.Mockito.*;
 
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
-import org.junit.Before;
 import org.junit.Test;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
@@ -19,22 +19,69 @@ import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
  * 2. createPathHistory is NOT called for failed repositories
  * 3. apply() returns true when all repositories succeed
  * 4. Already-applied patches are skipped without affecting success status
+ *
+ * Uses hand-written stubs instead of Mockito to avoid JVM attach dependency
+ * (Byte Buddy inline mock maker requires -XX:+EnableDynamicAgentLoading).
  */
 public class AbstractNemakiPatchTest {
 
-    private PatchUtil mockPatchUtil;
-    private RepositoryInfoMap mockRepoInfoMap;
+    // ========================================================================
+    // Stub: RepositoryInfoMap that returns a configurable set of repository IDs
+    // ========================================================================
+    private static class StubRepositoryInfoMap extends RepositoryInfoMap {
+        private final Set<String> repos;
 
-    @Before
-    public void setUp() {
-        mockPatchUtil = mock(PatchUtil.class);
-        mockRepoInfoMap = mock(RepositoryInfoMap.class);
-        when(mockPatchUtil.getRepositoryInfoMap()).thenReturn(mockRepoInfoMap);
+        StubRepositoryInfoMap(Set<String> repos) {
+            this.repos = repos;
+        }
+
+        @Override
+        public Set<String> keys() {
+            return repos;
+        }
     }
 
-    /**
-     * A test subclass that always succeeds.
-     */
+    // ========================================================================
+    // Stub: PatchUtil that records isApplied/createPathHistory calls
+    // ========================================================================
+    private static class StubPatchUtil extends PatchUtil {
+        private final Set<String> appliedPatches; // "repoId:patchName" entries
+        private final List<String> createPathHistoryCalls = new ArrayList<>();
+        private final RepositoryInfoMap repoInfoMap;
+
+        StubPatchUtil(Set<String> appliedPatches, RepositoryInfoMap repoInfoMap) {
+            this.appliedPatches = appliedPatches;
+            this.repoInfoMap = repoInfoMap;
+        }
+
+        @Override
+        public RepositoryInfoMap getRepositoryInfoMap() {
+            return repoInfoMap;
+        }
+
+        @Override
+        protected boolean isApplied(String repositoryId, String name) {
+            return appliedPatches.contains(repositoryId + ":" + name);
+        }
+
+        @Override
+        protected void createPathHistory(String repositoryId, String name) {
+            createPathHistoryCalls.add(repositoryId + ":" + name);
+        }
+
+        boolean wasCreatePathHistoryCalled(String repositoryId, String name) {
+            return createPathHistoryCalls.contains(repositoryId + ":" + name);
+        }
+
+        int getCreatePathHistoryCallCount() {
+            return createPathHistoryCalls.size();
+        }
+    }
+
+    // ========================================================================
+    // Patch subclasses for testing
+    // ========================================================================
+
     private static class SuccessPatch extends AbstractNemakiPatch {
         @Override protected void applySystemPatch() {}
         @Override protected void applyPerRepositoryPatch(String repositoryId) {
@@ -43,9 +90,6 @@ public class AbstractNemakiPatchTest {
         @Override public String getName() { return "test_success"; }
     }
 
-    /**
-     * A test subclass that always throws.
-     */
     private static class FailingPatch extends AbstractNemakiPatch {
         @Override protected void applySystemPatch() {}
         @Override protected void applyPerRepositoryPatch(String repositoryId) {
@@ -54,9 +98,6 @@ public class AbstractNemakiPatchTest {
         @Override public String getName() { return "test_failing"; }
     }
 
-    /**
-     * A test subclass that fails for a specific repository.
-     */
     private static class PartialFailPatch extends AbstractNemakiPatch {
         private final String failRepo;
         PartialFailPatch(String failRepo) { this.failRepo = failRepo; }
@@ -69,36 +110,46 @@ public class AbstractNemakiPatchTest {
         @Override public String getName() { return "test_partial_fail"; }
     }
 
+    // ========================================================================
+    // Tests
+    // ========================================================================
+
     @Test
     public void testApplyReturnsTrueWhenAllSucceed() {
         Set<String> repos = new LinkedHashSet<>();
         repos.add("bedroom");
-        when(mockRepoInfoMap.keys()).thenReturn(repos);
-        when(mockPatchUtil.isApplied("bedroom", "test_success")).thenReturn(false);
+
+        StubPatchUtil stubPatchUtil = new StubPatchUtil(
+                new LinkedHashSet<>(), // no patches applied yet
+                new StubRepositoryInfoMap(repos));
 
         SuccessPatch patch = new SuccessPatch();
-        patch.patchUtil = mockPatchUtil;
+        patch.patchUtil = stubPatchUtil;
 
         boolean result = patch.apply();
 
         assertTrue("apply() should return true when all repositories succeed", result);
-        verify(mockPatchUtil).createPathHistory("bedroom", "test_success");
+        assertTrue("createPathHistory should be called for bedroom",
+                stubPatchUtil.wasCreatePathHistoryCalled("bedroom", "test_success"));
     }
 
     @Test
     public void testApplyReturnsFalseWhenPatchThrows() {
         Set<String> repos = new LinkedHashSet<>();
         repos.add("bedroom");
-        when(mockRepoInfoMap.keys()).thenReturn(repos);
-        when(mockPatchUtil.isApplied("bedroom", "test_failing")).thenReturn(false);
+
+        StubPatchUtil stubPatchUtil = new StubPatchUtil(
+                new LinkedHashSet<>(),
+                new StubRepositoryInfoMap(repos));
 
         FailingPatch patch = new FailingPatch();
-        patch.patchUtil = mockPatchUtil;
+        patch.patchUtil = stubPatchUtil;
 
         boolean result = patch.apply();
 
         assertFalse("apply() should return false when applyPerRepositoryPatch throws", result);
-        verify(mockPatchUtil, never()).createPathHistory(eq("bedroom"), anyString());
+        assertFalse("createPathHistory should NOT be called for failed repository",
+                stubPatchUtil.wasCreatePathHistoryCalled("bedroom", "test_failing"));
     }
 
     @Test
@@ -106,34 +157,44 @@ public class AbstractNemakiPatchTest {
         Set<String> repos = new LinkedHashSet<>();
         repos.add("bedroom");
         repos.add("canopy");
-        when(mockRepoInfoMap.keys()).thenReturn(repos);
-        when(mockPatchUtil.isApplied(anyString(), eq("test_partial_fail"))).thenReturn(false);
+
+        StubPatchUtil stubPatchUtil = new StubPatchUtil(
+                new LinkedHashSet<>(),
+                new StubRepositoryInfoMap(repos));
 
         PartialFailPatch patch = new PartialFailPatch("canopy");
-        patch.patchUtil = mockPatchUtil;
+        patch.patchUtil = stubPatchUtil;
 
         boolean result = patch.apply();
 
         assertFalse("apply() should return false when any repository fails", result);
         // bedroom succeeded → history created
-        verify(mockPatchUtil).createPathHistory("bedroom", "test_partial_fail");
+        assertTrue("createPathHistory should be called for bedroom (succeeded)",
+                stubPatchUtil.wasCreatePathHistoryCalled("bedroom", "test_partial_fail"));
         // canopy failed → history NOT created
-        verify(mockPatchUtil, never()).createPathHistory("canopy", "test_partial_fail");
+        assertFalse("createPathHistory should NOT be called for canopy (failed)",
+                stubPatchUtil.wasCreatePathHistoryCalled("canopy", "test_partial_fail"));
     }
 
     @Test
     public void testAlreadyAppliedSkippedWithoutFailure() {
         Set<String> repos = new LinkedHashSet<>();
         repos.add("bedroom");
-        when(mockRepoInfoMap.keys()).thenReturn(repos);
-        when(mockPatchUtil.isApplied("bedroom", "test_success")).thenReturn(true);
+
+        Set<String> alreadyApplied = new LinkedHashSet<>();
+        alreadyApplied.add("bedroom:test_success");
+
+        StubPatchUtil stubPatchUtil = new StubPatchUtil(
+                alreadyApplied,
+                new StubRepositoryInfoMap(repos));
 
         SuccessPatch patch = new SuccessPatch();
-        patch.patchUtil = mockPatchUtil;
+        patch.patchUtil = stubPatchUtil;
 
         boolean result = patch.apply();
 
         assertTrue("apply() should return true when patch is already applied (skipped)", result);
-        verify(mockPatchUtil, never()).createPathHistory(anyString(), anyString());
+        assertEquals("createPathHistory should NOT be called when patch already applied",
+                0, stubPatchUtil.getCreatePathHistoryCallCount());
     }
 }

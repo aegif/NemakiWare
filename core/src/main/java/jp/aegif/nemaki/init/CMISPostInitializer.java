@@ -115,32 +115,28 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
     public void onApplicationEvent(ContextRefreshedEvent event) {
         // Ensure this runs only once
         if (!started.compareAndSet(false, true)) {
-            log.error("=== PHASE 2: CMISPostInitializer already started, skipping ===");
+            log.info("=== PHASE 2: CMISPostInitializer already started, skipping ===");
             return;
         }
 
-        log.error("=== PHASE 2: CMIS POST-INITIALIZATION STARTED ===");
+        log.info("=== PHASE 2: CMIS POST-INITIALIZATION STARTED ===");
 
         try {
-            // Phase 2: CMIS-specific patches that require running services
-            // These patches should ONLY contain operations that require CMIS API access
-            // Database-level operations should be handled by DatabasePreInitializer (Phase 1)
-
             boolean allSucceeded = true;
             if (cmisPatchList != null && !cmisPatchList.isEmpty()) {
-                log.error("Applying " + cmisPatchList.size() + " CMIS patches");
+                log.info("Applying " + cmisPatchList.size() + " CMIS patches");
                 allSucceeded = applyCMISPatches();
             } else {
-                log.error("No CMIS patches to apply");
+                log.info("No CMIS patches to apply");
             }
 
             // Mark as successfully completed ONLY when all patches succeeded
             // NemakiPatchInitializationListener checks this flag — if false, it retries
             if (allSucceeded) {
                 completedSuccessfully.set(true);
-                log.error("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED (allSucceeded=true) ===");
+                log.info("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED (allSucceeded=true) ===");
             } else {
-                log.error("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED WITH FAILURES (allSucceeded=false) ===");
+                log.warn("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED WITH FAILURES (allSucceeded=false) ===");
                 // completedSuccessfully stays false → NemakiPatchInitializationListener can retry
             }
 

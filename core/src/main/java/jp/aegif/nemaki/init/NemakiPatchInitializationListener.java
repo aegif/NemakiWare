@@ -55,17 +55,17 @@ public class NemakiPatchInitializationListener implements ServletContextListener
     public void contextInitialized(ServletContextEvent sce) {
         // Ensure this runs only once
         if (!initialized.compareAndSet(false, true)) {
-            log.error("*** NemakiPatchInitializationListener: Patches already applied (own guard), skipping ***");
+            log.info("NemakiPatchInitializationListener: Patches already applied (own guard), skipping");
             return;
         }
 
         // Skip if CMISPostInitializer already applied patches via ContextRefreshedEvent
         if (CMISPostInitializer.isPatchesApplied()) {
-            log.error("*** NemakiPatchInitializationListener: CMISPostInitializer already applied patches (isPatchesApplied=true), skipping ***");
+            log.info("NemakiPatchInitializationListener: CMISPostInitializer already applied patches, skipping");
             return;
         }
 
-        log.error("=== NemakiPatchInitializationListener: STARTING PATCH INITIALIZATION (CMISPostInitializer did NOT succeed) ===");
+        log.warn("NemakiPatchInitializationListener: STARTING PATCH INITIALIZATION (CMISPostInitializer did NOT succeed)");
 
         try {
             ServletContext servletContext = sce.getServletContext();
@@ -78,12 +78,12 @@ public class NemakiPatchInitializationListener implements ServletContextListener
                 return;
             }
 
-            log.error("Spring WebApplicationContext retrieved successfully");
+            log.info("Spring WebApplicationContext retrieved successfully");
 
             // Apply patches in order
             applyPatchesFromSpringContext(springContext);
 
-            log.error("=== NemakiPatchInitializationListener: PATCH INITIALIZATION COMPLETED ===");
+            log.info("NemakiPatchInitializationListener: PATCH INITIALIZATION COMPLETED");
 
         } catch (Exception e) {
             log.error("Failed to apply patches during servlet context initialization", e);
@@ -98,6 +98,7 @@ public class NemakiPatchInitializationListener implements ServletContextListener
                 "patch_SystemFolderSetup",       // Creates .system folder
                 "patch_InitialContentSetup",     // Creates Sites and Technical Documents folders
                 "patch_StandardCmisViews",       // Creates CMIS views
+                "patch_NarrowUserGroupViews",    // Narrows userItemsById/groupItemsById views with objectType filter (3.1 upgrade)
                 "patch_ChildrenViewReduceCount", // Adds _count reduce to children view (2.4 upgrade compatibility)
                 "patch_TestUserInitialization",   // Creates test users
                 "patch_NemakiwareStandardTypes",  // NemakiWare standard types

@@ -99,6 +99,13 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Narrow userItemsById/groupItemsById views with objectType filter (3.1 upgrade) -->
+				<!-- Separate from StandardCmisViews to ensure execution on existing environments -->
+				<bean class="jp.aegif.nemaki.patch.Patch_NarrowUserGroupViews">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- Children view _count reduce for server-side pagination (3.1.0) -->
 				<!-- Separate from StandardCmisViews to ensure execution on 2.4 upgrades -->
 				<bean class="jp.aegif.nemaki.patch.Patch_ChildrenViewReduceCount">
@@ -340,6 +347,12 @@
 	</bean>
 
 	<bean id="patch_ChildrenViewReduceCount" class="jp.aegif.nemaki.patch.Patch_ChildrenViewReduceCount">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_NarrowUserGroupViews" class="jp.aegif.nemaki.patch.Patch_NarrowUserGroupViews">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>
