@@ -5,7 +5,6 @@ import jp.aegif.nemaki.rest.importexport.ZipImporter;
 
 import org.junit.Test;
 import org.junit.Before;
-import org.junit.Ignore;
 import static org.junit.Assert.*;
 
 import java.io.File;
@@ -292,28 +291,24 @@ public class ImportExportResourceTest {
     }
 
     @Test
-    @Ignore("Integration test - creates 100MB+ file, too slow for regular CI")
     public void testReadZipEntryExceedsSizeLimit() throws Exception {
+        // Use a small custom limit instead of MAX_SINGLE_FILE_SIZE to avoid creating huge files
         File tempZip = File.createTempFile("test", ".zip");
         tempZip.deleteOnExit();
 
-        long maxSize = ImportExportUtils.MAX_SINGLE_FILE_SIZE;
+        long customLimit = 500; // 500 bytes
 
         try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(tempZip))) {
             ZipEntry entry = new ZipEntry("large.txt");
             zos.putNextEntry(entry);
-            byte[] chunk = new byte[1024 * 1024]; // 1MB chunk
-            java.util.Arrays.fill(chunk, (byte) 'A');
-            long written = 0;
-            while (written < maxSize + 1024) {
-                zos.write(chunk);
-                written += chunk.length;
-            }
+            byte[] content = new byte[1024]; // 1KB - exceeds the 500 byte limit
+            java.util.Arrays.fill(content, (byte) 'A');
+            zos.write(content);
             zos.closeEntry();
         }
 
         try (ZipFile zf = new ZipFile(tempZip)) {
-            byte[] result = zipImporter.readZipEntryWithLimit(zf, "large.txt", maxSize);
+            byte[] result = zipImporter.readZipEntryWithLimit(zf, "large.txt", customLimit);
             assertNull("Should return null for file exceeding size limit", result);
         }
     }
