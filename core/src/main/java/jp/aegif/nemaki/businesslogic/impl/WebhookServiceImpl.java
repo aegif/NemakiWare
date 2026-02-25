@@ -1082,7 +1082,7 @@ public class WebhookServiceImpl implements WebhookService {
         // Event metadata
         Map<String, Object> eventInfo = new HashMap<>();
         eventInfo.put("type", "CHILD_BATCH");
-        eventInfo.put("timestamp", java.time.Instant.now().toString());
+        eventInfo.put("timestamp", System.currentTimeMillis());
         eventInfo.put("deliveryId", batch.getBatchId());
         payload.put("event", eventInfo);
         
@@ -1127,8 +1127,8 @@ public class WebhookServiceImpl implements WebhookService {
         
         // Batch info
         Map<String, Object> batchInfo = new HashMap<>();
-        batchInfo.put("windowStart", java.time.Instant.ofEpochMilli(batch.getWindowStart()).toString());
-        batchInfo.put("windowEnd", java.time.Instant.ofEpochMilli(batch.getWindowEnd()).toString());
+        batchInfo.put("windowStart", batch.getWindowStart());
+        batchInfo.put("windowEnd", batch.getWindowEnd());
         batchInfo.put("eventCount", batch.getEventCount());
         payload.put("batchInfo", batchInfo);
         

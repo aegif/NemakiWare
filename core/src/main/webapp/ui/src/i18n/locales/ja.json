@@ -16,6 +16,7 @@
       "no": "いいえ",
       "search": "検索",
       "actions": "アクション",
+      "ok": "OK",
       "import": "インポート",
       "more": "件以上",
     "name": "名前",
@@ -648,9 +649,9 @@
         "updated": "更新",
         "deleted": "削除",
         "security": "権限変更",
-        "child_created": "子要素作成",
-        "child_updated": "子要素更新",
-        "child_deleted": "子要素削除"
+        "child_created": "子要素バッチ（作成）",
+        "child_updated": "子要素バッチ（更新）",
+        "child_deleted": "子要素バッチ（削除）"
       }
     }
   },

@@ -94,20 +94,20 @@ RSS機能は全オブジェクトが対象となりうるため、プライマ�
 
 `nemaki:webhookConfigs`内の各Webhook設定で指定可能なイベントタイプ：
 
-| イベントタイプ | 説明 | 対応CMISイベント |
-|---------------|------|-----------------|
-| `CREATED` | オブジェクト作成 | ChangeType.CREATED |
-| `UPDATED` | プロパティ更新 | ChangeType.UPDATED |
-| `DELETED` | オブジェクト削除 | ChangeType.DELETED |
-| `SECURITY` | ACL変更 | ChangeType.SECURITY |
-| `CONTENT_UPDATED` | コンテンツストリーム更新 | ChangeType.UPDATED (content) |
-| `CHECKED_OUT` | チェックアウト | - |
-| `CHECKED_IN` | チェックイン | - |
-| `VERSION_CREATED` | 新バージョン作成 | ChangeType.CREATED (version) |
-| `MOVED` | 移動 | ChangeType.UPDATED (parent) |
-| `CHILD_CREATED` | 子要素作成（フォルダのみ） | - |
-| `CHILD_DELETED` | 子要素削除（フォルダのみ） | - |
-| `CHILD_UPDATED` | 子要素更新（フォルダのみ） | - |
+| イベントタイプ | 説明 | 対応CMISイベント | 状態 |
+|---------------|------|-----------------|------|
+| `CREATED` | オブジェクト作成 | ChangeType.CREATED | ✅ 実装済み |
+| `UPDATED` | プロパティ更新 | ChangeType.UPDATED | ✅ 実装済み |
+| `DELETED` | オブジェクト削除 | ChangeType.DELETED | ✅ 実装済み |
+| `SECURITY` | ACL変更 | ChangeType.SECURITY | ✅ 実装済み |
+| `CHILD_CREATED` | 子要素作成（フォルダのみ） | - | ✅ 実装済み |
+| `CHILD_UPDATED` | 子要素更新（フォルダのみ） | - | ✅ 実装済み |
+| `CHILD_DELETED` | 子要素削除（フォルダのみ） | - | ✅ 実装済み |
+| `CHILD_BATCH` | 子イベントバッチ配送 | - | ✅ 実装済み |
+| `CONTENT_UPDATED` | コンテンツストリーム更新 | ChangeType.UPDATED (content) | 🔜 将来実装 |
+| `CHECKED_OUT` / `CHECKED_IN` | チェックアウト/イン | - | 🔜 将来実装 |
+| `VERSION_CREATED` | 新バージョン作成 | ChangeType.CREATED (version) | 🔜 将来実装 |
+| `MOVED` | 移動 | ChangeType.UPDATED (parent) | 🔜 将来実装 |
 
 ### 2.4 nemaki:webhookConfigs プロパティ仕様
 
@@ -725,59 +725,113 @@ Content-Type: application/json
 X-NemakiWare-Event: {eventType}
 X-NemakiWare-Signature: {HMAC-SHA256署名}
 X-NemakiWare-Delivery: {配信ID}
-X-NemakiWare-Timestamp: {ISO8601タイムスタンプ}
+X-NemakiWare-Timestamp: {epoch millis (Unix時間ミリ秒)}
 {カスタムヘッダー}
 ```
 
+**CHILD_BATCH 配送について**:
+
+- `CHILD_CREATED`/`CHILD_UPDATED`/`CHILD_DELETED` を購読した場合、HTTP ヘッダ `X-NemakiWare-Event` は `CHILD_BATCH` で届きます
+- 個別の CHILD_* イベントタイプは `changes[]` 配列内の各要素の `type` フィールドに格納されます
+- `CHILD_BATCH` を直接購読することも可能です（全子イベントを受信）
+
 ### 3.2 ペイロード構造
+
+#### 3.2.1 単発イベントペイロード
+
+`CREATED`、`UPDATED`、`DELETED`、`SECURITY` イベントで使用されるフラット型ペイロード：
+
+```json
+{
+  "eventType": "UPDATED",
+  "objectId": "object-uuid",
+  "repositoryId": "bedroom",
+  "deliveryId": "uuid-delivery-id",
+  "timestamp": 1706365800000,
+  "changeToken": "1706365800000",
+  "parentId": "parent-folder-uuid",
+  "userId": "user1",
+  "properties": {
+    "cmis:objectId": "object-uuid",
+    "cmis:name": "example.pdf",
+    "cmis:objectTypeId": "nemaki:document",
+    "cmis:baseTypeId": "cmis:document",
+    "cmis:parentId": "parent-folder-uuid",
+    "cmis:createdBy": "admin",
+    "cmis:lastModifiedBy": "user1",
+    "cmis:creationDate": 1705744800000,
+    "cmis:lastModificationDate": 1706365800000,
+    "cmis:changeToken": "1706365800000"
+  }
+}
+```
+
+**フィールド説明**:
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `eventType` | String | イベントタイプ（`CREATED`/`UPDATED`/`DELETED`/`SECURITY`） |
+| `objectId` | String | 対象オブジェクトのCMIS ID |
+| `repositoryId` | String | リポジトリID |
+| `deliveryId` | String | 配信ごとの一意なUUID |
+| `timestamp` | Number | イベント発生時刻（epoch millis） |
+| `changeToken` | String | CMISチェンジトークン |
+| `parentId` | String | 親フォルダのCMIS ID |
+| `userId` | String | 操作実行ユーザーID |
+| `properties` | Object | CMIS基本プロパティのスナップショット（現在値） |
+
+> **注**: `objectPath` フィールドは将来拡張として予約されています。NemakiWare の Content モデルにはパスフィールドがなく、ContentService 経由でのパス取得はコストが高いため、現時点では未設定です。
+
+> **注**: ペイロードは現在値のスナップショットであり、変更前後の差分（old/new）は含みません。`additionalProperties` は将来拡張用に予約されています（現時点では未使用）。
+
+#### 3.2.2 CHILD_BATCH ペイロード
+
+`CHILD_CREATED`/`CHILD_UPDATED`/`CHILD_DELETED` イベントは、バッチとしてまとめて配送されます：
 
 ```json
 {
   "event": {
-    "type": "UPDATED",
-    "timestamp": "2026-01-27T14:30:00.000Z",
-    "deliveryId": "uuid-delivery-id"
+    "type": "CHILD_BATCH",
+    "timestamp": 1706365800000,
+    "deliveryId": "batch-uuid"
   },
-  "repository": {
-    "id": "bedroom",
-    "name": "Default Repository"
-  },
-  "object": {
-    "id": "object-uuid",
-    "name": "example.pdf",
-    "objectTypeId": "nemaki:document",
-    "baseTypeId": "cmis:document",
-    "parentId": "parent-folder-uuid",
-    "path": "/Sites/Documents/example.pdf",
-    "createdBy": "admin",
-    "creationDate": "2026-01-20T10:00:00.000Z",
-    "lastModifiedBy": "user1",
-    "lastModificationDate": "2026-01-27T14:30:00.000Z",
-    "changeToken": "1706365800000"
-  },
-  "changes": {
-    "properties": {
-      "cmis:name": {
-        "oldValue": "old-name.pdf",
-        "newValue": "example.pdf"
-      }
-    },
-    "contentStream": {
-      "updated": true,
-      "mimeType": "application/pdf",
-      "length": 102400
+  "repository": { "id": "bedroom" },
+  "parentFolder": { "id": "folder-uuid", "name": "Documents" },
+  "changes": [
+    {
+      "type": "CHILD_CREATED",
+      "objectId": "child-uuid",
+      "name": "new-file.pdf",
+      "objectType": "cmis:document",
+      "timestamp": 1706365790000,
+      "userId": "user1",
+      "changeToken": "...",
+      "properties": { "..." : "..." }
     }
-  },
-  "actor": {
-    "userId": "user1",
-    "displayName": "User One"
-  },
-  "webhookConfig": {
-    "sourceObjectId": "webhook-config-object-id",
-    "sourceObjectPath": "/Sites/Documents"
+  ],
+  "batchInfo": {
+    "windowStart": 1706365700000,
+    "windowEnd": 1706365800000,
+    "eventCount": 3
   }
 }
 ```
+
+**CHILD_BATCH 固有フィールド**:
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `event.type` | String | 常に `"CHILD_BATCH"` |
+| `event.timestamp` | Number | バッチ生成時刻（epoch millis） |
+| `event.deliveryId` | String | バッチ配信の一意なUUID |
+| `parentFolder.id` | String | 監視対象フォルダのCMIS ID |
+| `parentFolder.name` | String | 監視対象フォルダ名 |
+| `changes[]` | Array | 子イベントの配列 |
+| `changes[].type` | String | 個別イベントタイプ（`CHILD_CREATED`/`CHILD_UPDATED`/`CHILD_DELETED`） |
+| `changes[].properties` | Object | 子オブジェクトのCMIS基本プロパティ（オプション） |
+| `batchInfo.windowStart` | Number | バッチウィンドウ開始時刻（epoch millis） |
+| `batchInfo.windowEnd` | Number | バッチウィンドウ終了時刻（epoch millis） |
+| `batchInfo.eventCount` | Number | バッチ内のイベント数 |
 
 ### 3.3 署名検証
 
@@ -787,6 +841,16 @@ Webhook受信側でリクエストの正当性を検証するため、HMAC-SHA25
 signature = HMAC-SHA256(webhookSecret, requestBody)
 X-NemakiWare-Signature: sha256={signature}
 ```
+
+### 3.4 受信側実装ガイド
+
+Webhook受信側を実装する際の注意事項：
+
+- **複数通知の可能性**: 1つの業務操作で複数の通知が発生しうる。例えば、ドキュメント作成時には対象オブジェクト自身の `CREATED` Webhookと、親フォルダの `CHILD_BATCH` Webhookの両方が送信される可能性がある
+- **CHILD_* イベントのバッチ配送**: `CHILD_CREATED`/`CHILD_UPDATED`/`CHILD_DELETED` イベントは必ず `CHILD_BATCH` としてバッチ到着する。個別の CHILD_* イベントが単独で配送されることはない
+- **タイムスタンプ形式**: 全てのタイムスタンプは epoch millis（Unix時間ミリ秒、`long` 型の数値）で統一されている
+- **objectPath**: 現時点では未設定（将来拡張予定）。NemakiWare の Content モデルにはパスフィールドがなく、実行時のパス解決はコストが高いため
+- **スナップショット方式**: ペイロードは現在値のスナップショットであり、変更前後の差分（old/new）は含まない。変更差分が必要な場合は、受信側で前回の状態を保持して比較する必要がある
 
 ---
 

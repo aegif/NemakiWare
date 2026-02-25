@@ -42,8 +42,7 @@ public class Patch_ChildrenViewReduceCount extends AbstractNemakiPatch {
 		ObjectNode updatedDoc = currentDoc.deepCopy();
 		ObjectNode views = (ObjectNode) updatedDoc.get("views");
 		if (views == null || !views.has("children")) {
-			log.warn("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] children view not found, skipping");
-			return;
+			throw new RuntimeException("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] children view not found in design document");
 		}
 
 		JsonNode childrenView = views.get("children");

@@ -16,6 +16,7 @@
       "no": "No",
       "search": "Search",
       "actions": "Actions",
+      "ok": "OK",
       "import": "Import",
       "more": "more",
     "name": "Name",
@@ -648,9 +649,9 @@
         "updated": "Updated",
         "deleted": "Deleted",
         "security": "Security Change",
-        "child_created": "Child Created",
-        "child_updated": "Child Updated",
-        "child_deleted": "Child Deleted"
+        "child_created": "Child Batch (Created)",
+        "child_updated": "Child Batch (Updated)",
+        "child_deleted": "Child Batch (Deleted)"
       }
     }
   },
