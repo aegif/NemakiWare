@@ -198,19 +198,20 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ---
 
-## セキュリティステータス (2026-02-13) ✅
+## セキュリティステータス (2026-02-25) ✅
 
 - npm脆弱性: 0件
 - Maven依存関係: 最新化済み
 - PDF.js CVE-2024-4367: 対応済み (react-pdf 10.0.1)
 - エクスポートACLリーク: 対応済み (CAN_GET_ACL権限チェック追加)
 - アーカイブDAO例外伝播: 対応済み (null返却→CmisRuntimeException)
+- Webhook REST API: CMIS権限チェックに移行済み (admin限定→CAN_GET/UPDATE_PROPERTIES)
 
 ---
 
 ## 現在のバージョン
 
-**3.1.0** (2026-02-01)
+**3.1.0-RC3** (2026-02-25)
 - クラウド統合 (Google Workspace / Microsoft Entra ID ディレクトリ同期、Cloud Drive連携)
 - OIDC認証 (Google / Microsoft)
 - 多言語対応 (日本語/英語)
@@ -218,11 +219,13 @@ curl -u admin:password http://localhost:5984/_all_dbs
 - タイプ管理機能強化
 - React 18 + Vite 7 移行完了
 - インポート/エクスポート機能改善 (同名上書き、リレーションシップ対応、ID読替)
-- Webhook機能
+- Webhook機能 (CMIS権限チェック、CHILD_BATCH配送、設計書整合)
 - MCP (Model Context Protocol) サーバー
 - RAGセマンティック検索
 - アーカイブ管理強化 (検索・一括操作・ダウンロード)
 - WebAuthnパスキー認証
+- サーバーサイドページネーション + スケーラビリティ改善
+- パッチ冪等性・障害伝播修正
 
 ---
 
@@ -232,4 +235,5 @@ curl -u admin:password http://localhost:5984/_all_dbs
 - `README.md`: プロジェクト概要
 - `docs/ARCHITECTURE.md`: システムアーキテクチャ概要
 - `docs/CLOUD_INTEGRATION.md`: クラウド統合設定ガイド
+- `docs/design/webhook-feature-proposal.md`: Webhook機能設計書
 - `docs/AWS-DEPLOYMENT-GUIDE.md`: AWS本番デプロイガイド
