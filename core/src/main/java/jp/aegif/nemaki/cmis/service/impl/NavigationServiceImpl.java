@@ -58,7 +58,12 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.locks.Lock;
+
+import jp.aegif.nemaki.model.Acl;
+import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.util.PropertyManager;
 
 public class NavigationServiceImpl implements NavigationService {
 	private static final Log log = LogFactory.getLog(NavigationServiceImpl.class);
@@ -68,6 +73,7 @@ public class NavigationServiceImpl implements NavigationService {
 	private CompileService compileService;
 	private PermissionService permissionService;
 	private ThreadLockService threadLockService;
+	private PropertyManager propertyManager;
 
 	@Override
 	public ObjectInFolderList getChildren(CallContext callContext,
@@ -127,40 +133,188 @@ public class NavigationServiceImpl implements NavigationService {
 		result.setObjects(new ArrayList<ObjectInFolderData>());
 		result.setHasMoreItems(false);
 
-		// Build ObjectList
-		List<Content> contents = contentService.getChildren(repositoryId, folderId);
-		
-		
-		List<Lock> locks = threadLockService.readLocks(repositoryId, contents);
-		
-		try{
-			threadLockService.bulkLock(locks);
-			
-			contents = permissionService.getFiltered(callContext, repositoryId, contents);
+		// Threshold for switching to oversampling pagination
+		final int FULL_FETCH_THRESHOLD = 500;
+		// Default maxItems when not specified by client (prevents overflow with oversampleFactor)
+		final int DEFAULT_MAX_ITEMS = 100;
 
-			ObjectList ol = compileService.compileObjectDataList(callContext,
-					repositoryId, contents, filter,
-					includeAllowableActions, includeRelationships, renditionFilter, false,
-					maxItems, skipCount, folderOnly, orderBy);
-			
-			
-			// Build ObjectInFolderList
-			for (ObjectData od : ol.getObjects()) {
-				ObjectInFolderDataImpl objectInFolder = new ObjectInFolderDataImpl();
-				objectInFolder.setObject(od);
-				if (includePathSegments) {
-					String name = DataUtil.getStringProperty(od.getProperties(),
-							PropertyIds.NAME);
-					objectInFolder.setPathSegment(name);
-				}
-				result.getObjects().add(objectInFolder);
+		long totalCount = contentService.getChildrenCount(repositoryId, folderId);
+		int _maxItems = (maxItems != null) ? maxItems.intValue() : DEFAULT_MAX_ITEMS;
+		int _skipCount = (skipCount != null) ? skipCount.intValue() : 0;
+
+		// Whether totalCount is an accurate DB-level count (from _count reduce)
+		boolean totalCountAccurate = (totalCount > 0);
+
+		// Fallback: if getChildrenCount returns 0, the _count reduce may not be applied yet.
+		// Use a lightweight probe to decide whether to use the legacy or pagination path.
+		if (totalCount == 0) {
+			List<Content> probe = contentService.getChildrenPaged(repositoryId, folderId, 0, FULL_FETCH_THRESHOLD + 1);
+			if (probe.isEmpty()) {
+				// Folder is genuinely empty
+				ObjectInFolderListImpl emptyResult = new ObjectInFolderListImpl();
+				emptyResult.setObjects(new ArrayList<ObjectInFolderData>());
+				emptyResult.setNumItems(BigInteger.ZERO);
+				emptyResult.setHasMoreItems(false);
+				return emptyResult;
 			}
-			result.setNumItems(ol.getNumItems());
-			result.setHasMoreItems(ol.hasMoreItems());
+			if (probe.size() <= FULL_FETCH_THRESHOLD) {
+				// Small folder: use the probe result as total count
+				totalCount = probe.size();
+			} else {
+				// Large folder with reduce not applied: exact count unknown.
+				// Set to Long.MAX_VALUE so the oversampling loop relies on batch.isEmpty() to terminate.
+				totalCount = Long.MAX_VALUE;
+			}
+		}
 
-			return result;
-		}finally{
-			threadLockService.bulkUnlock(locks);
+		if (totalCount <= FULL_FETCH_THRESHOLD || orderBy != null) {
+			// Legacy path: fetch all, filter, sort, subList
+			// Used for small folders (accurate global sort) or when client specifies explicit orderBy
+			List<Content> contents = contentService.getChildren(repositoryId, folderId);
+
+			List<Lock> locks = threadLockService.readLocks(repositoryId, contents);
+
+			try {
+				threadLockService.bulkLock(locks);
+
+				contents = permissionService.getFiltered(callContext, repositoryId, contents);
+
+				ObjectList ol = compileService.compileObjectDataList(callContext,
+						repositoryId, contents, filter,
+						includeAllowableActions, includeRelationships, renditionFilter, false,
+						maxItems, skipCount, folderOnly, orderBy);
+
+				// Build ObjectInFolderList
+				for (ObjectData od : ol.getObjects()) {
+					ObjectInFolderDataImpl objectInFolder = new ObjectInFolderDataImpl();
+					objectInFolder.setObject(od);
+					if (includePathSegments) {
+						String name = DataUtil.getStringProperty(od.getProperties(),
+								PropertyIds.NAME);
+						objectInFolder.setPathSegment(name);
+					}
+					result.getObjects().add(objectInFolder);
+				}
+				result.setNumItems(ol.getNumItems());
+				result.setHasMoreItems(ol.hasMoreItems());
+
+				return result;
+			} finally {
+				threadLockService.bulkUnlock(locks);
+			}
+		} else {
+			// Oversampling pagination path for large folders
+			String userName = callContext.getUsername();
+			UserItem userItem = contentService.getUserItemById(repositoryId, userName);
+			boolean isAdmin = (userItem != null && Boolean.TRUE.equals(userItem.isAdmin()));
+			Set<String> userGroups = isAdmin ? null : contentService.getGroupIdsContainingUser(repositoryId, userName);
+
+			int oversampleFactor = isAdmin ? 1 : 3;
+			int dbLimit = _maxItems * oversampleFactor;
+			int dbSkip = 0;
+			int filteredSkipped = 0;
+
+			List<Content> pageContents = new ArrayList<>();
+			long scanned = 0;
+			boolean pageFilled = false;
+
+			while (!pageFilled) {
+				List<Content> batch = contentService.getChildrenPaged(repositoryId, folderId, dbSkip, dbLimit);
+				if (batch.isEmpty()) {
+					break;
+				}
+
+				int processedInBatch = 0;
+				for (Content c : batch) {
+					processedInBatch++;
+					if (!isAdmin) {
+						Acl acl = contentService.calculateAcl(repositoryId, c);
+						Boolean allowed = permissionService.checkPermissionWithGivenList(
+								callContext, repositoryId,
+								PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
+								acl, c.getType(), c, userName, userGroups);
+						if (!Boolean.TRUE.equals(allowed)) continue;
+					}
+
+					if (filteredSkipped < _skipCount) {
+						filteredSkipped++;
+						continue;
+					}
+
+					pageContents.add(c);
+					if (pageContents.size() >= _maxItems) {
+						pageFilled = true;
+						break;
+					}
+				}
+
+				// Only count actually processed rows (not the full batch on early break)
+				scanned += processedInBatch;
+				dbSkip += processedInBatch;
+
+				// Safety: if batch returned fewer than requested, we've reached the end
+				if (batch.size() < dbLimit) {
+					break;
+				}
+			}
+
+			// hasMore: true if page was filled AND there are unscanned rows,
+			// or if totalCount is accurate and there are unscanned rows.
+			boolean hasMore;
+			if (pageFilled) {
+				// Page is full — check if we've exhausted all rows
+				if (totalCountAccurate && scanned >= totalCount) {
+					// We know the exact count and have scanned everything: this is the last page
+					hasMore = false;
+				} else {
+					// Unknown total or unscanned rows remain
+					hasMore = true;
+				}
+			} else if (totalCountAccurate) {
+				hasMore = scanned < totalCount;
+			} else {
+				// reduce not applied, page not filled, batch exhausted → no more
+				hasMore = false;
+			}
+
+			List<Lock> locks = threadLockService.readLocks(repositoryId, pageContents);
+
+			try {
+				threadLockService.bulkLock(locks);
+
+				// Compile with skipCount=0 (already handled), maxItems=size, orderBy=null
+				// Passing null lets SortUtil apply the configured default orderBy within the page.
+				// This is a best-effort intra-page sort — globally perfect ordering requires the
+				// large-folder performance. Use "NONE" to skip sorting entirely — intra-page
+				// sorting would reorder items differently per page, causing boundary instability.
+				ObjectList ol = compileService.compileObjectDataList(callContext, repositoryId,
+						pageContents, filter, includeAllowableActions, includeRelationships,
+						renditionFilter, false,
+						BigInteger.valueOf(pageContents.size()), BigInteger.ZERO, folderOnly, "NONE");
+
+				for (ObjectData od : ol.getObjects()) {
+					ObjectInFolderDataImpl objectInFolder = new ObjectInFolderDataImpl();
+					objectInFolder.setObject(od);
+					if (includePathSegments) {
+						String name = DataUtil.getStringProperty(od.getProperties(),
+								PropertyIds.NAME);
+						objectInFolder.setPathSegment(name);
+					}
+					result.getObjects().add(objectInFolder);
+				}
+
+				// numItems: admin gets accurate totalCount; non-admin omits (null) per CMIS spec
+				if (isAdmin && totalCountAccurate) {
+					result.setNumItems(BigInteger.valueOf(totalCount));
+				}
+				// Non-admin or inaccurate count: do not call setNumItems — leaves it null (unknown),
+				// which is CMIS-compliant and avoids -1 breaking AtomPub client calculations
+				result.setHasMoreItems(hasMore);
+
+				return result;
+			} finally {
+				threadLockService.bulkUnlock(locks);
+			}
 		}
 	}
 	
@@ -434,5 +588,9 @@ public class NavigationServiceImpl implements NavigationService {
 
 	public void setThreadLockService(ThreadLockService threadLockService) {
 		this.threadLockService = threadLockService;
+	}
+
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 }

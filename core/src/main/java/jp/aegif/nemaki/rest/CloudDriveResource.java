@@ -775,19 +775,13 @@ public class CloudDriveResource extends ResourceBase {
 			// Fetch and save comments from cloud file (if access token provided)
 			log.debug("Checking comments: accessToken=" + (accessToken != null ? "present" : "null") +
 					", service=" + (service != null ? "present" : "null"));
+			String commentsJson = null;
 			if (accessToken != null && !accessToken.isEmpty() && service != null) {
 				try {
 					log.debug("Fetching comments from cloud file: " + cloudFileId);
-					String comments = service.getCloudComments(provider, cloudFileId, accessToken);
+					commentsJson = service.getCloudComments(provider, cloudFileId, accessToken);
 					// Log presence and size only - never log content (PII risk)
-					log.debug("Comments result: present=" + (comments != null) + ", length=" + (comments != null ? comments.length() : 0));
-					if (comments != null && !comments.isEmpty()) {
-						saveCloudComments(callContext, repositoryId, newObjectId, comments);
-						result.put("commentsImported", true);
-						log.debug("Imported cloud comments to object " + newObjectId + " (length=" + comments.length() + ")");
-					} else {
-						log.debug("No comments found for cloud file: " + cloudFileId);
-					}
+					log.debug("Comments result: present=" + (commentsJson != null) + ", length=" + (commentsJson != null ? commentsJson.length() : 0));
 				} catch (Exception e) {
 					// Don't fail the import just because comments fetch failed
 					log.warn("Failed to fetch/save cloud comments: " + e.getClass().getSimpleName());
@@ -795,6 +789,18 @@ public class CloudDriveResource extends ResourceBase {
 				}
 			} else {
 				log.debug("Skipping comments fetch: accessToken or service not available");
+			}
+
+			// Always save external context for cloud-imported files (both Google and OneDrive)
+			// This ensures nemaki:externalIntegration secondary type is consistently applied
+			if (commentsJson != null && !commentsJson.isEmpty()) {
+				saveCloudComments(callContext, repositoryId, newObjectId, commentsJson);
+				result.put("commentsImported", true);
+				log.debug("Imported cloud comments to object " + newObjectId + " (length=" + commentsJson.length() + ")");
+			} else {
+				// No comments available, but still set externalIntegration with empty context
+				saveExternalContext(callContext, repositoryId, newObjectId, "{}", "cloud_sync", provider);
+				log.debug("No comments found, set empty externalIntegration for cloud file: " + cloudFileId);
 			}
 
 			result.put("objectId", newObjectId);

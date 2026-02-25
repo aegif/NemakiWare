@@ -173,6 +173,9 @@
         <property name="threadLockService">
             <ref bean="ThreadLockService" />
         </property>
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
     </bean>
 
     <bean id="sortUtil" class="jp.aegif.nemaki.cmis.aspect.SortUtil">
@@ -781,10 +784,12 @@
     <bean id="userItemResource" class="jp.aegif.nemaki.rest.UserItemResource">
         <property name="contentService" ref="ContentService" />
         <property name="propertyManager" ref="propertyManager" />
+        <property name="userGroupSearchService" ref="UserGroupSearchService" />
     </bean>
 
     <bean id="groupItemResource" class="jp.aegif.nemaki.rest.GroupItemResource">
         <property name="contentService" ref="ContentService" />
+        <property name="userGroupSearchService" ref="UserGroupSearchService" />
     </bean>
 
     <bean id="permissionResource" class="jp.aegif.nemaki.rest.PermissionResource">
@@ -807,6 +812,19 @@
         <property name="contentService" ref="ContentService" />
         <property name="solrUtil" ref="solrUtil" />
         <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+    </bean>
+
+    <!-- User/Group Search Service (Solr-based with CouchDB fallback) -->
+    <bean id="UserGroupSearchService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
+        <property name="proxyInterfaces">
+            <list><value>jp.aegif.nemaki.businesslogic.UserGroupSearchService</value></list>
+        </property>
+        <property name="target"><ref bean="userGroupSearchServiceImpl" /></property>
+    </bean>
+    <bean id="userGroupSearchServiceImpl" class="jp.aegif.nemaki.businesslogic.impl.UserGroupSearchServiceImpl">
+        <property name="contentService" ref="ContentService" />
+        <property name="solrIndexMaintenanceService" ref="SolrIndexMaintenanceService" />
+        <property name="propertyManager" ref="propertyManager" />
     </bean>
 
     <bean id="solrResource" class="jp.aegif.nemaki.rest.SolrResource">

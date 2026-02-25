@@ -197,9 +197,11 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                 }
                 
                 // Query children view with parent ID
+                // CRITICAL: Must set reduce=false because children view has _count reduce
                 java.util.Map<String, Object> queryParams = new java.util.HashMap<>();
                 queryParams.put("key", rootFolderId);
                 queryParams.put("include_docs", true);
+                queryParams.put("reduce", false);
                 
                 if (log.isDebugEnabled()) {
                     log.debug("Executing direct CouchDB view query: _repo/children with key=" + rootFolderId);
@@ -323,7 +325,34 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                 return null;
                 
             } catch (Exception directEx) {
-                log.error("Direct CouchDB query failed, system folder detection not possible during initialization", directEx);
+                log.error("Direct CouchDB query failed, falling back to ContentService.getChildren()", directEx);
+
+                // Fallback: use ContentService.getChildren() which works even without views
+                // (the cached DAO falls back to nonCachedContentDaoService when tree cache is empty)
+                try {
+                    java.util.List<jp.aegif.nemaki.model.Content> children = contentService.getChildren(repositoryId, rootFolderId);
+                    if (children != null) {
+                        for (jp.aegif.nemaki.model.Content child : children) {
+                            if (child != null && ".system".equals(child.getName()) && child.isFolder()) {
+                                log.info("Found existing .system folder via ContentService fallback: " + child.getId());
+                                jp.aegif.nemaki.model.Folder systemFolder = new jp.aegif.nemaki.model.Folder();
+                                systemFolder.setId(child.getId());
+                                systemFolder.setName(child.getName());
+                                return systemFolder;
+                            }
+                            if (child != null && "System".equals(child.getName()) && child.isFolder()) {
+                                log.info("Found existing legacy System folder via ContentService fallback: " + child.getId());
+                                jp.aegif.nemaki.model.Folder systemFolder = new jp.aegif.nemaki.model.Folder();
+                                systemFolder.setId(child.getId());
+                                systemFolder.setName(child.getName());
+                                return systemFolder;
+                            }
+                        }
+                    }
+                } catch (Exception fallbackEx) {
+                    log.warn("ContentService fallback also failed: " + fallbackEx.getMessage());
+                }
+
                 return null;
             }
             

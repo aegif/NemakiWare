@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 
 import java.util.List;
 
@@ -48,157 +49,173 @@ public class CloudDirectorySyncResource extends ResourceBase {
 	@Path("/trigger")
 	@Produces(MediaType.APPLICATION_JSON)
 	@SuppressWarnings("unchecked")
-	public String triggerDeltaSync(@PathParam("repositoryId") String repositoryId,
+	public Response triggerDeltaSync(@PathParam("repositoryId") String repositoryId,
 			@FormParam("provider") String provider,
 			@Context HttpServletRequest request) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
 		if (!checkAdmin(errMsg, request)) {
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.FORBIDDEN)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		if (provider == null || provider.trim().isEmpty()) {
 			errMsg.add("Provider is required");
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.BAD_REQUEST)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		CloudDirectorySyncService service = getService();
 		if (service == null) {
 			errMsg.add("Cloud directory sync service is not available");
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		CloudSyncResult syncResult = service.startDeltaSync(repositoryId, provider.trim());
 		populateResult(result, syncResult);
-		return makeResult(true, result, errMsg).toString();
+		return Response.ok(makeResult(true, result, errMsg).toString()).build();
 	}
 
 	@POST
 	@Path("/full-reconciliation")
 	@Produces(MediaType.APPLICATION_JSON)
 	@SuppressWarnings("unchecked")
-	public String triggerFullReconciliation(@PathParam("repositoryId") String repositoryId,
+	public Response triggerFullReconciliation(@PathParam("repositoryId") String repositoryId,
 			@FormParam("provider") String provider,
 			@Context HttpServletRequest request) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
 		if (!checkAdmin(errMsg, request)) {
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.FORBIDDEN)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		if (provider == null || provider.trim().isEmpty()) {
 			errMsg.add("Provider is required");
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.BAD_REQUEST)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		CloudDirectorySyncService service = getService();
 		if (service == null) {
 			errMsg.add("Cloud directory sync service is not available");
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		CloudSyncResult syncResult = service.startFullReconciliation(repositoryId, provider.trim());
 		populateResult(result, syncResult);
-		return makeResult(true, result, errMsg).toString();
+		return Response.ok(makeResult(true, result, errMsg).toString()).build();
 	}
 
 	@GET
 	@Path("/status")
 	@Produces(MediaType.APPLICATION_JSON)
 	@SuppressWarnings("unchecked")
-	public String getStatus(@PathParam("repositoryId") String repositoryId,
+	public Response getStatus(@PathParam("repositoryId") String repositoryId,
 			@QueryParam("provider") String provider,
 			@Context HttpServletRequest request) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
 		if (!checkAdmin(errMsg, request)) {
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.FORBIDDEN)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		if (provider == null || provider.trim().isEmpty()) {
 			errMsg.add("Provider query parameter is required");
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.BAD_REQUEST)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		CloudDirectorySyncService service = getService();
 		if (service == null) {
 			errMsg.add("Cloud directory sync service is not available");
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		CloudSyncResult syncResult = service.getSyncStatus(repositoryId, provider.trim());
 		populateResult(result, syncResult);
-		return makeResult(true, result, errMsg).toString();
+		return Response.ok(makeResult(true, result, errMsg).toString()).build();
 	}
 
 	@POST
 	@Path("/cancel")
 	@Produces(MediaType.APPLICATION_JSON)
 	@SuppressWarnings("unchecked")
-	public String cancelSync(@PathParam("repositoryId") String repositoryId,
+	public Response cancelSync(@PathParam("repositoryId") String repositoryId,
 			@FormParam("provider") String provider,
 			@Context HttpServletRequest request) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
 		if (!checkAdmin(errMsg, request)) {
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.FORBIDDEN)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		if (provider == null || provider.trim().isEmpty()) {
 			errMsg.add("Provider is required");
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.BAD_REQUEST)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		CloudDirectorySyncService service = getService();
 		if (service == null) {
 			errMsg.add("Cloud directory sync service is not available");
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		service.cancelSync(repositoryId, provider.trim());
 		result.put("cancelled", true);
-		return makeResult(true, result, errMsg).toString();
+		return Response.ok(makeResult(true, result, errMsg).toString()).build();
 	}
 
 	@GET
 	@Path("/test-connection")
 	@Produces(MediaType.APPLICATION_JSON)
 	@SuppressWarnings("unchecked")
-	public String testConnection(@PathParam("repositoryId") String repositoryId,
+	public Response testConnection(@PathParam("repositoryId") String repositoryId,
 			@QueryParam("provider") String provider,
 			@Context HttpServletRequest request) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
 		if (!checkAdmin(errMsg, request)) {
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.FORBIDDEN)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		if (provider == null || provider.trim().isEmpty()) {
 			errMsg.add("Provider query parameter is required");
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.BAD_REQUEST)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		CloudDirectorySyncService service = getService();
 		if (service == null) {
 			errMsg.add("Cloud directory sync service is not available");
-			return makeResult(false, result, errMsg).toString();
+			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+					.entity(makeResult(false, result, errMsg).toString()).build();
 		}
 
 		boolean connected = service.testConnection(provider.trim());
 		result.put("connected", connected);
 		result.put("provider", provider.trim());
-		return makeResult(true, result, errMsg).toString();
+		return Response.ok(makeResult(true, result, errMsg).toString()).build();
 	}
 
 	@SuppressWarnings("unchecked")
 	private void populateResult(JSONObject result, CloudSyncResult syncResult) {
 		result.put("syncId", syncResult.getSyncId());
-		result.put("status", syncResult.getStatus().name());
+		// Use "syncStatus" to avoid collision with makeResult's "status" field ("success"/"failure")
+		result.put("syncStatus", syncResult.getStatus().name());
 		result.put("syncMode", syncResult.getSyncMode() != null ? syncResult.getSyncMode().name() : null);
 		result.put("provider", syncResult.getProvider());
 		result.put("repositoryId", syncResult.getRepositoryId());

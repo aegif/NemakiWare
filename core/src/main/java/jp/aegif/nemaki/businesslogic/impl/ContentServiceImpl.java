@@ -303,6 +303,21 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 
+	@Override
+	public List<Content> getChildrenPaged(String repositoryId, String folderId, int skip, int limit) {
+		List<Content> result = new ArrayList<Content>();
+		List<Content> daoContentList = contentDaoService.getChildrenPaged(repositoryId, folderId, skip, limit);
+		for (Content content : daoContentList) {
+			result.add(getContentInternal(repositoryId, content));
+		}
+		return result;
+	}
+
+	@Override
+	public long getChildrenCount(String repositoryId, String folderId) {
+		return contentDaoService.getChildrenCount(repositoryId, folderId);
+	}
+
 	/**
 	 * content / user or group items are
 	 *
@@ -1908,6 +1923,15 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, item);
+			}
+		} catch (Exception e) {
+			log.warn("createItem: Solr indexing failed for item " + item.getId() + ": " + e.getMessage());
+		}
+
 		writeChangeEvent(callContext, repositoryId, item, ChangeType.CREATED);
 		return item;
 	}
@@ -1926,6 +1950,16 @@ public class ContentServiceImpl implements ContentService {
 		validateUserItem(repositoryId, userItem);
 
 		UserItem created = contentDaoService.create(repositoryId, userItem);
+
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, created);
+			}
+		} catch (Exception e) {
+			log.warn("createUserItem: Solr indexing failed for user " + created.getUserId() + ": " + e.getMessage());
+		}
+
 		writeChangeEvent(callContext, repositoryId, created, ChangeType.CREATED);
 		return created;
 	}
@@ -1942,6 +1976,16 @@ public class ContentServiceImpl implements ContentService {
 		validateGroupItem(repositoryId, groupItem);
 
 		GroupItem created = contentDaoService.create(repositoryId, groupItem);
+
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, created);
+			}
+		} catch (Exception e) {
+			log.warn("createGroupItem: Solr indexing failed for group " + created.getGroupId() + ": " + e.getMessage());
+		}
+
 		writeChangeEvent(callContext, repositoryId, created, ChangeType.CREATED);
 		return created;
 	}
@@ -1951,6 +1995,16 @@ public class ContentServiceImpl implements ContentService {
 		validateGroupItem(repositoryId, groupItem);
 
 		GroupItem created = contentDaoService.create(repositoryId, groupItem);
+
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, created);
+			}
+		} catch (Exception e) {
+			log.warn("createGroupItem: Solr indexing failed for group " + created.getGroupId() + ": " + e.getMessage());
+		}
+
 		writeChangeEvent(callContext, repositoryId, created, ChangeType.CREATED);
 		return created;
 	}
@@ -2414,6 +2468,11 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Content updateInternal(String repositoryId, Content content) {
+		return updateInternal(repositoryId, content, false);
+	}
+
+	@Override
+	public Content updateInternal(String repositoryId, Content content, boolean skipRAGIndexing) {
 		Content result = null;
 		
 
@@ -2437,7 +2496,7 @@ public class ContentServiceImpl implements ContentService {
 		// Call Solr indexing(optional) - CRITICAL FIX (2025-12-18): Enable Solr indexing on update
 		// This ensures secondary type properties are indexed after updates
 		if (solrUtil != null && result != null) {
-			solrUtil.indexDocument(repositoryId, result);
+			solrUtil.indexDocument(repositoryId, result, false, skipRAGIndexing);
 		}
 
 		return result;
@@ -2779,6 +2838,13 @@ public class ContentServiceImpl implements ContentService {
 		// For non-versioned documents, return the same id
 		// For versioned documents, this would create a PWC and return its id
 		objectId.setValue(updated.getId());
+
+		// Re-index in Solr to clear text fields (content is gone); skip RAG re-embedding
+		// and separately delete RAG embeddings since content stream no longer exists
+		if (solrUtil != null) {
+			solrUtil.indexDocument(repositoryId, updated, false, true);
+			solrUtil.triggerRAGDeletion(repositoryId, docId);
+		}
 
 		// Write change event
 		writeChangeEvent(callContext, repositoryId, updated, ChangeType.UPDATED);
@@ -3290,6 +3356,11 @@ public class ContentServiceImpl implements ContentService {
 		}
 		if (objectId != null) {
 			objectId.setValue(updatedDocument.getId());
+		}
+
+		// Re-index in Solr and RAG (content has changed, full re-index needed)
+		if (solrUtil != null) {
+			solrUtil.indexDocument(repositoryId, updatedDocument);
 		}
 
 		writeChangeEvent(callContext, repositoryId, updatedDocument, ChangeType.UPDATED);

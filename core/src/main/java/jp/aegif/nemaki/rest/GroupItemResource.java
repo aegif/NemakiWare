@@ -22,6 +22,8 @@
 package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.UserGroupSearchService;
+import jp.aegif.nemaki.businesslogic.UserGroupSearchService.SearchResult;
 import jp.aegif.nemaki.util.spring.SpringContext;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.common.ErrorCode;
@@ -63,6 +65,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -73,6 +76,7 @@ public class GroupItemResource extends ResourceBase{
 
 	private static final Log log = LogFactory.getLog(GroupItemResource.class);
 	private ContentService contentService;
+	private UserGroupSearchService userGroupSearchService;
 
 	private ContentService getContentService() {
 		if (contentService != null) {
@@ -114,22 +118,35 @@ public class GroupItemResource extends ResourceBase{
 			return makeResult(status, result, errMsg).toJSONString();
 		}
 
-		List<GroupItem> groups = ObjectUtils.defaultIfNull(
-				getContentServiceSafe().getGroupItems(repositoryId), Collections.emptyList());
 		JSONArray queriedGroups = new JSONArray();
 
-		for(GroupItem g : groups) {
-			String groupId = g.getGroupId();
-			String groupName = g.getName();
-			boolean matches = (StringUtils.isNotEmpty(groupId) && groupId.contains(query)) ||
-			                  (StringUtils.isNotEmpty(groupName) && groupName.contains(query));
-			if (matches) {
-				if(queriedGroups.size()<50){
-					queriedGroups.add(this.convertGroupToJson(g));
-				}else{
-					break;
+		if (userGroupSearchService != null && userGroupSearchService.isSolrGroupSearchEffective(repositoryId)) {
+			SearchResult sr = userGroupSearchService.searchGroupsCaseSensitive(repositoryId, query, 50);
+			if (!sr.hasError()) {
+				List<String> solrIds = sr.getObjectIds();
+				Map<String, Content> contents = getContentServiceSafe().getContentsByIds(repositoryId, solrIds);
+				int addedCount = 0;
+				for (String oid : solrIds) {
+					Content c = contents.get(oid);
+					if (c instanceof GroupItem) {
+						queriedGroups.add(this.convertGroupToJson((GroupItem) c));
+						addedCount++;
+					}
 				}
+				if (addedCount < solrIds.size()) {
+					log.warn("Solr→CouchDB hydrate gap for groups in repository " + repositoryId
+							+ ": solrIds=" + solrIds.size() + ", returned=" + addedCount
+							+ ", missing=" + (solrIds.size() - addedCount)
+							+ " — falling back to CouchDB");
+					queriedGroups.clear();
+					searchGroupsCaseSensitiveCouchDB(query, repositoryId, queriedGroups);
+				}
+			} else {
+				log.warn("Solr group search failed, falling back to CouchDB: " + sr.getErrorMessage());
+				searchGroupsCaseSensitiveCouchDB(query, repositoryId, queriedGroups);
 			}
+		} else {
+			searchGroupsCaseSensitiveCouchDB(query, repositoryId, queriedGroups);
 		}
 
 		if( queriedGroups.size() == 0 ){
@@ -173,19 +190,35 @@ public class GroupItemResource extends ResourceBase{
 			int totalCount;
 
 			if (hasQuery) {
-				String queryLower = query.trim().toLowerCase();
-				List<GroupItem> allGroups = getContentService().getGroupItems(repositoryId);
-				List<GroupItem> filtered = new java.util.ArrayList<>();
-				for (GroupItem group : allGroups) {
-					if (matchesGroupQuery(group, queryLower)) {
-						filtered.add(group);
+				if (userGroupSearchService != null && userGroupSearchService.isSolrGroupSearchEffective(repositoryId)) {
+					SearchResult sr = userGroupSearchService.searchGroups(repositoryId, query.trim(),
+							paginated ? offset : 0, paginated ? limit : 0);
+					if (!sr.hasError()) {
+						totalCount = (int) sr.getTotalCount();
+						List<String> solrIds = sr.getObjectIds();
+						Map<String, Content> contents = getContentServiceSafe().getContentsByIds(repositoryId, solrIds);
+						int addedCount = 0;
+						for (String oid : solrIds) {
+							Content c = contents.get(oid);
+							if (c instanceof GroupItem) {
+								listJSON.add(convertGroupToJson((GroupItem) c));
+								addedCount++;
+							}
+						}
+						if (addedCount < solrIds.size()) {
+							log.warn("Solr→CouchDB hydrate gap for groups in repository " + repositoryId
+									+ ": solrIds=" + solrIds.size() + ", returned=" + addedCount
+									+ ", missing=" + (solrIds.size() - addedCount)
+									+ " — falling back to CouchDB");
+							listJSON.clear();
+							totalCount = searchGroupsCouchDB(query, repositoryId, paginated, offset, limit, listJSON);
+						}
+					} else {
+						log.warn("Solr group search failed, falling back to CouchDB: " + sr.getErrorMessage());
+						totalCount = searchGroupsCouchDB(query, repositoryId, paginated, offset, limit, listJSON);
 					}
-				}
-				totalCount = filtered.size();
-				int start = paginated ? Math.min(offset, totalCount) : 0;
-				int end = paginated ? Math.min(start + limit, totalCount) : totalCount;
-				for (int i = start; i < end; i++) {
-					listJSON.add(convertGroupToJson(filtered.get(i)));
+				} else {
+					totalCount = searchGroupsCouchDB(query, repositoryId, paginated, offset, limit, listJSON);
 				}
 			} else if (paginated) {
 				totalCount = getContentService().getGroupItemCount(repositoryId);
@@ -709,6 +742,51 @@ public class GroupItemResource extends ResourceBase{
 
 
 
+	/**
+	 * CouchDB fallback for case-insensitive group search (list endpoint).
+	 */
+	@SuppressWarnings("unchecked")
+	private int searchGroupsCouchDB(String query, String repositoryId, boolean paginated,
+			int offset, int limit, JSONArray listJSON) {
+		String queryLower = query.trim().toLowerCase();
+		List<GroupItem> allGroups = getContentServiceSafe().getGroupItems(repositoryId);
+		List<GroupItem> filtered = new java.util.ArrayList<>();
+		for (GroupItem group : allGroups) {
+			if (matchesGroupQuery(group, queryLower)) {
+				filtered.add(group);
+			}
+		}
+		int totalCount = filtered.size();
+		int start = paginated ? Math.min(offset, totalCount) : 0;
+		int end = paginated ? Math.min(start + limit, totalCount) : totalCount;
+		for (int i = start; i < end; i++) {
+			listJSON.add(convertGroupToJson(filtered.get(i)));
+		}
+		return totalCount;
+	}
+
+	/**
+	 * CouchDB fallback for case-sensitive group search (search endpoint).
+	 */
+	@SuppressWarnings("unchecked")
+	private void searchGroupsCaseSensitiveCouchDB(String query, String repositoryId, JSONArray queriedGroups) {
+		List<GroupItem> groups = ObjectUtils.defaultIfNull(
+				getContentServiceSafe().getGroupItems(repositoryId), Collections.emptyList());
+		for (GroupItem g : groups) {
+			String groupId = g.getGroupId();
+			String groupName = g.getName();
+			boolean matches = (StringUtils.isNotEmpty(groupId) && groupId.contains(query)) ||
+			                  (StringUtils.isNotEmpty(groupName) && groupName.contains(query));
+			if (matches) {
+				if (queriedGroups.size() < 50) {
+					queriedGroups.add(this.convertGroupToJson(g));
+				} else {
+					break;
+				}
+			}
+		}
+	}
+
 	private boolean matchesGroupQuery(GroupItem group, String queryLower) {
 		if (group.getGroupId() != null && group.getGroupId().toLowerCase().contains(queryLower)) return true;
 		if (group.getName() != null && group.getName().toLowerCase().contains(queryLower)) return true;
@@ -760,6 +838,10 @@ public class GroupItemResource extends ResourceBase{
 
 	public void setContentService(ContentService contentService) {
 		this.contentService = contentService;
+	}
+
+	public void setUserGroupSearchService(UserGroupSearchService userGroupSearchService) {
+		this.userGroupSearchService = userGroupSearchService;
 	}
 
 }

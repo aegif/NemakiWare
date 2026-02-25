@@ -219,6 +219,7 @@ import {
   Select,
   message,
   Tooltip,
+  Popconfirm,
   Row,
   Col,
   Card,
@@ -391,6 +392,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [renameTargetName, setRenameTargetName] = useState<string>('');
   const [renameForm] = Form.useForm();
 
+  // Server-side pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(100);
+  const [totalItems, setTotalItems] = useState(-1);
+  const [hasMoreItems, setHasMoreItems] = useState(false);
+
   // Bulk operation states (2026-01-28)
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [bulkDeleteModalVisible, setBulkDeleteModalVisible] = useState(false);
@@ -417,7 +424,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [importProgress, setImportProgress] = useState(0);
   const [importForm] = Form.useForm();
 
-  const [form] = Form.useForm();
+  const [uploadForm] = Form.useForm();
+  const [folderForm] = Form.useForm();
+  const [checkInForm] = Form.useForm();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { handleAuthError, authToken } = useAuth();
@@ -503,7 +512,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
   // Handle document type selection change - load type definition for custom properties
   const handleDocumentTypeChange = async (typeId: string) => {
-    form.setFieldsValue({ objectTypeId: typeId });
+    uploadForm.setFieldsValue({ objectTypeId: typeId });
     try {
       const typeDef = await cmisService.getType(repositoryId, typeId);
       setSelectedDocumentTypeDefinition(typeDef);
@@ -515,7 +524,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
   // Handle folder type selection change - load type definition for custom properties
   const handleFolderTypeChange = async (typeId: string) => {
-    form.setFieldsValue({ objectTypeId: typeId });
+    folderForm.setFieldsValue({ objectTypeId: typeId });
     try {
       const typeDef = await cmisService.getType(repositoryId, typeId);
       setSelectedFolderTypeDefinition(typeDef);
@@ -528,11 +537,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // Load objects when selectedFolderId changes (the folder displayed in list pane)
   useEffect(() => {
     if (selectedFolderId) {
-      loadObjects();
+      setCurrentPage(1);
+      loadObjects(1);
     }
   }, [selectedFolderId]);
 
-  const loadObjects = async () => {
+  const loadObjects = async (page: number = currentPage) => {
     // Load objects for the selected folder (the one displayed in list pane)
     if (!selectedFolderId) {
       return;
@@ -540,8 +550,15 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
     setLoading(true);
     try {
-      const children = await cmisService.getChildren(repositoryId, selectedFolderId);
-      setObjects(children);
+      const skipCount = (page - 1) * pageSize;
+      const result = await cmisService.getChildrenPaged(repositoryId, selectedFolderId, {
+        maxItems: pageSize,
+        skipCount,
+      });
+      setObjects(result.items);
+      setTotalItems(result.numItems);
+      setHasMoreItems(result.hasMoreItems);
+      setCurrentPage(page);
 
       // CRITICAL FIX (2025-11-26): Get selected folder's path from CMIS properties
       // This ensures currentFolderPath is always accurate, not just for root folder
@@ -690,7 +707,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setUploadModalVisible(false);
       setUploadError(null);
       setSelectedDocumentTypeDefinition(null);
-      form.resetFields();
+      uploadForm.resetFields();
 
       // FIXED: Await loadObjects() to ensure table updates before UI tests proceed
       await loadObjects();
@@ -820,7 +837,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setFolderModalVisible(false);
       setFolderError(null);
       setSelectedFolderTypeDefinition(null);
-      form.resetFields();
+      folderForm.resetFields();
       // FIXED: Await loadObjects() to ensure table updates before UI tests proceed
       await loadObjects();
     } catch (error) {
@@ -1091,7 +1108,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
       message.success(t('documentList.messages.checkinSuccess'));
       setCheckInModalVisible(false);
-      form.resetFields();
+      checkInForm.resetFields();
       await loadObjects();
     } catch (error) {
       console.error('Check-in error:', error);
@@ -1129,6 +1146,21 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     } catch (error) {
       console.error('Version history error:', error);
       message.error(t('documentList.messages.versionHistoryError'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteLatestVersion = async (objectId: string, versionLabel: string) => {
+    try {
+      setLoading(true);
+      await cmisService.deleteLatestVersion(repositoryId, objectId);
+      message.success(t('documentList.messages.deleteVersionSuccess', { version: versionLabel }));
+      setVersionHistoryModalVisible(false);
+      await loadObjects();
+    } catch (error) {
+      console.error('Delete latest version error:', error);
+      message.error(t('documentList.messages.deleteVersionError'));
     } finally {
       setLoading(false);
     }
@@ -1785,7 +1817,22 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 dataSource={objects}
                 rowKey="id"
                 loading={loading}
-                pagination={{ pageSize: 20 }}
+                pagination={isSearchMode ? { pageSize: 20 } : {
+                  current: currentPage,
+                  pageSize,
+                  // When numItems is known (admin), use exact total.
+                  // When unknown (-1, non-admin), use a synthetic total:
+                  //   If hasMoreItems, pretend there's at least one more page so "Next" is enabled.
+                  //   If not, total = items seen so far (current page is the last).
+                  total: totalItems > 0
+                    ? totalItems
+                    : hasMoreItems
+                      ? currentPage * pageSize + 1
+                      : (currentPage - 1) * pageSize + objects.length,
+                  onChange: (page) => loadObjects(page),
+                  showSizeChanger: false,
+                  showTotal: totalItems > 0 ? (total) => `${total} 件` : undefined,
+                }}
                 size="small"
                 rowSelection={{
                   selectedRowKeys,
@@ -1807,14 +1854,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
           setUploadModalVisible(false);
           setUploadError(null);
           setSelectedDocumentTypeDefinition(null);
-          form.resetFields();
+          uploadForm.resetFields();
         }}
         footer={null}
         maskClosable={false}
         closable={!isUploading}
         width={700}
       >
-        <Form form={form} onFinish={handleUpload} layout="vertical">
+        <Form form={uploadForm} onFinish={handleUpload} layout="vertical">
           {uploadError && (
             <Alert
               message={uploadError}
@@ -1842,7 +1889,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               maxCount={1}
               onChange={(info) => {
                 if (info.fileList.length > 0 && info.fileList[0].name) {
-                  form.setFieldsValue({ name: info.fileList[0].name });
+                  uploadForm.setFieldsValue({ name: info.fileList[0].name });
                 }
               }}
             >
@@ -1937,7 +1984,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   setUploadModalVisible(false);
                   setUploadError(null);
                   setSelectedDocumentTypeDefinition(null);
-                  form.resetFields();
+                  uploadForm.resetFields();
                 }}
                 disabled={isUploading}
               >
@@ -1955,13 +2002,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
           setFolderModalVisible(false);
           setFolderError(null);
           setSelectedFolderTypeDefinition(null);
-          form.resetFields();
+          folderForm.resetFields();
         }}
         footer={null}
         maskClosable={false}
         width={700}
       >
-        <Form form={form} onFinish={handleCreateFolder} layout="vertical">
+        <Form form={folderForm} onFinish={handleCreateFolder} layout="vertical">
           {folderError && (  // Inline Alert component
             <Alert
               message={folderError}
@@ -2050,7 +2097,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               <Button onClick={() => {
                 setFolderModalVisible(false);
                 setSelectedFolderTypeDefinition(null);
-                form.resetFields();
+                folderForm.resetFields();
               }}>
                 {t('common.cancel')}
               </Button>
@@ -2064,13 +2111,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         open={checkInModalVisible}
         onCancel={() => {
           setCheckInModalVisible(false);
-          form.resetFields();
+          checkInForm.resetFields();
         }}
         footer={null}
         width={600}
         maskClosable={false}
       >
-        <Form form={form} onFinish={handleCheckIn} layout="vertical" initialValues={{ versionType: 'minor' }}>
+        <Form form={checkInForm} onFinish={handleCheckIn} layout="vertical" initialValues={{ versionType: 'minor' }}>
           <Form.Item
             name="file"
             label={t('documentList.checkinFileLabel')}
@@ -2119,7 +2166,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               </Button>
               <Button onClick={() => {
                 setCheckInModalVisible(false);
-                form.resetFields();
+                checkInForm.resetFields();
               }}>
                 {t('common.cancel')}
               </Button>
@@ -2146,7 +2193,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               title: t('documentList.columns.version'),
               dataIndex: 'versionLabel',
               key: 'version',
-              width: 100,
+              width: 150,
+              render: (versionLabel: string, record: CMISObject) => (
+                <Space>
+                  {versionLabel}
+                  {record.isLatestVersion && <Tag color="blue">{t('documentList.versionHistoryModal.latest')}</Tag>}
+                </Space>
+              ),
             },
             {
               title: t('documentList.columns.modifiedDate'),
@@ -2169,16 +2222,50 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             {
               title: t('common.actions'),
               key: 'actions',
-              width: 100,
-              render: (_: any, record: CMISObject) => (
-                <Tooltip title={t('common.download')}>
-                  <Button
-                    icon={<DownloadOutlined />}
-                    size="small"
-                    onClick={() => handleDownload(record.id)}
-                  />
-                </Tooltip>
-              ),
+              width: 160,
+              render: (_: any, record: CMISObject) => {
+                const nonPwcVersions = versionHistory.filter(
+                  v => v.properties?.['cmis:isPrivateWorkingCopy'] !== true
+                );
+                const canDelete = record.isLatestVersion
+                  && nonPwcVersions.length >= 2
+                  && record.allowableActions?.canDeleteObject;
+                const previousVersion = nonPwcVersions
+                  .filter(v => !v.isLatestVersion)
+                  .sort((a, b) => parseFloat(b.versionLabel || '0') - parseFloat(a.versionLabel || '0'))[0];
+                return (
+                  <Space>
+                    <Tooltip title={t('common.download')}>
+                      <Button
+                        icon={<DownloadOutlined />}
+                        size="small"
+                        onClick={() => handleDownload(record.id)}
+                      />
+                    </Tooltip>
+                    {canDelete && previousVersion && (
+                      <Popconfirm
+                        title={t('documentList.versionHistoryModal.deleteVersionConfirmTitle')}
+                        description={t('documentList.versionHistoryModal.deleteVersionConfirmMessage', {
+                          version: record.versionLabel,
+                          previousVersion: previousVersion.versionLabel,
+                        })}
+                        onConfirm={() => handleDeleteLatestVersion(record.id, record.versionLabel || '')}
+                        okText={t('documentList.deleteButton')}
+                        cancelText={t('common.cancel')}
+                        okButtonProps={{ danger: true }}
+                      >
+                        <Tooltip title={t('documentList.versionHistoryModal.deleteVersion')}>
+                          <Button
+                            icon={<DeleteOutlined />}
+                            size="small"
+                            danger
+                          />
+                        </Tooltip>
+                      </Popconfirm>
+                    )}
+                  </Space>
+                );
+              },
             },
           ]}
         />

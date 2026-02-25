@@ -237,6 +237,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetails(String repositoryId) {
+		return typeDefinitionDao.getPropertyDefinitionDetails(repositoryId);
+	}
+
+	@Override
 	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(String repositoryId,
 			String coreNodeId) {
 		return typeDefinitionDao.getPropertyDefinitionDetailByCoreNodeId(repositoryId, coreNodeId);
@@ -1003,6 +1008,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			Map<String, Object> queryParams = new HashMap<String, Object>();
 			queryParams.put("key", parentId);
 			queryParams.put("include_docs", true);
+			queryParams.put("reduce", false);
 			
 			log.debug("DEBUG getChildren: repositoryId=" + repositoryId + ", parentId=" + parentId);
 			
@@ -1015,32 +1021,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
 						try {
-							// Convert document to appropriate Content type
-							Object docObj = row.getDoc();
-							String objectId = null;
-							String type = null;
-
-							if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
-								com.ibm.cloud.cloudant.v1.model.Document document = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
-								objectId = document.getId();
-								Map<String, Object> props = document.getProperties();
-								if (props != null) {
-									type = (String) props.get("type");
-								}
-							} else if (docObj instanceof Map) {
-								Map<String, Object> doc = (Map<String, Object>) docObj;
-								objectId = (String) doc.get("_id");
-								type = (String) doc.get("type");
-							}
-							
-							log.debug("DEBUG getChildren: processing objectId=" + objectId + ", type=" + type);
-							
-							Content content = getContent(repositoryId, objectId);
+							// Convert document inline using convertCloudantDocumentToContent
+							// instead of N+1 getContent() calls
+							Content content = convertCloudantDocumentToContent(row.getDoc());
 							if (content != null) {
-								log.debug("DEBUG getChildren: successfully got content for objectId=" + objectId);
+								log.debug("DEBUG getChildren: successfully converted content for id=" + row.getDoc().getId());
 								children.add(content);
 							} else {
-								log.debug("DEBUG getChildren: getContent returned NULL for objectId=" + objectId);
+								log.debug("DEBUG getChildren: convertCloudantDocumentToContent returned NULL for id=" + row.getDoc().getId());
 							}
 						} catch (Exception e) {
 							log.warn("Failed to convert child document: " + e.getMessage());
@@ -1059,6 +1047,71 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<Content> getChildrenPaged(String repositoryId, String parentId, int skip, int limit) {
+		try {
+			Map<String, Object> queryParams = new HashMap<String, Object>();
+			queryParams.put("key", parentId);
+			queryParams.put("include_docs", true);
+			queryParams.put("reduce", false);
+			queryParams.put("skip", skip);
+			queryParams.put("limit", limit);
+
+			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "children", queryParams);
+
+			List<Content> children = new ArrayList<Content>();
+			if (result != null && result.getRows() != null) {
+				for (ViewResultRow row : result.getRows()) {
+					if (row.getDoc() != null) {
+						try {
+							Content content = convertCloudantDocumentToContent(row.getDoc());
+							if (content != null) {
+								children.add(content);
+							}
+						} catch (Exception e) {
+							log.warn("Failed to convert child document in paged query: " + e.getMessage());
+						}
+					}
+				}
+			}
+			return children;
+		} catch (Exception e) {
+			log.error("Error retrieving paged children for parent '" + parentId + "' from repository '" + repositoryId + "': " + e.getMessage(), e);
+			return new ArrayList<Content>();
+		}
+	}
+
+	@Override
+	public long getChildrenCount(String repositoryId, String parentId) {
+		try {
+			Map<String, Object> queryParams = new HashMap<String, Object>();
+			queryParams.put("key", parentId);
+			queryParams.put("reduce", true);
+			queryParams.put("group", true);
+
+			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "children", queryParams);
+
+			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
+				Object value = result.getRows().get(0).getValue();
+				if (value instanceof Number) {
+					return ((Number) value).longValue();
+				}
+				// Handle string representation of number
+				if (value != null) {
+					try {
+						return Long.parseLong(value.toString().replace("\"", ""));
+					} catch (NumberFormatException nfe) {
+						log.warn("Could not parse children count value: " + value);
+					}
+				}
+			}
+			return 0;
+		} catch (Exception e) {
+			log.error("Error counting children for parent '" + parentId + "' from repository '" + repositoryId + "': " + e.getMessage(), e);
+			return 0;
+		}
+	}
+
+	@Override
 	public Content getChildByName(String repositoryId, String parentId, String name) {
 		try {
 				log.debug("DEBUG getChildByName: searching for child '" + name + "' under parent '" + parentId + "' in repository: " + repositoryId);
@@ -1071,6 +1124,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			Map<String, Object> queryParams = new HashMap<String, Object>();
 			queryParams.put("key", parentId);
 			queryParams.put("include_docs", true);
+			queryParams.put("reduce", false);
 				ViewResult result = client.queryView("_repo", "children", queryParams);
 				
 			if (result.getRows() != null && !result.getRows().isEmpty()) {
@@ -1360,14 +1414,28 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			queryParams.put("key", name);
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "patch", queryParams);
 			
-			if (result.getRows() != null && !result.getRows().isEmpty()) {
+			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
 				ViewResultRow row = result.getRows().get(0);
 				if (row.getDoc() != null) {
 					try {
-						ObjectMapper mapper = createConfiguredObjectMapper();
-						CouchPatchHistory cph = mapper.convertValue(row.getDoc(), CouchPatchHistory.class);
-						if (cph != null) {
-							return cph.convert();
+						// CRITICAL FIX: Use getProperties() + writeValueAsString/readValue
+						// instead of convertValue(Document, ...) which doesn't map custom properties
+						// from IBM Cloudant SDK's Document object to CouchPatchHistory fields.
+						com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+						Map<String, Object> docMap = doc.getProperties();
+						if (docMap != null) {
+							if (!docMap.containsKey("_id") && doc.getId() != null) {
+								docMap.put("_id", doc.getId());
+							}
+							if (!docMap.containsKey("_rev") && doc.getRev() != null) {
+								docMap.put("_rev", doc.getRev());
+							}
+							ObjectMapper mapper = createConfiguredObjectMapper();
+							String jsonString = mapper.writeValueAsString(docMap);
+							CouchPatchHistory cph = mapper.readValue(jsonString, CouchPatchHistory.class);
+							if (cph != null) {
+								return cph.convert();
+							}
 						}
 					} catch (Exception e) {
 						log.warn("Failed to convert patch history document: " + e.getMessage());

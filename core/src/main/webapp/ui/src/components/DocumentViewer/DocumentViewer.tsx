@@ -280,6 +280,7 @@ import { ObjectPicker } from '../ObjectPicker/ObjectPicker';
 import { SecondaryTypeSelector } from '../SecondaryTypeSelector/SecondaryTypeSelector';
 import { TypeMigrationModal } from '../TypeMigrationModal/TypeMigrationModal';
 import { ExternalContextTab } from './ExternalContextTab';
+import { WebhookConfigTab } from './WebhookConfigTab';
 import { canPreview } from '../../utils/previewUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchCloudAuthConfig, CloudAuthConfig } from '../../services/cloud-auth';
@@ -1347,6 +1348,14 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         </div>
       ),
     }] : []),
+    // Webhook Config Tab
+    // UI制御: canApplyACL (cmis:all) で表示判断。サービス側は CAN_UPDATE_PROPERTIES (cmis:write) で許可。
+    // 意図的にUIを厳しくし、管理UIでの表示を cmis:all 保有者に限定している。
+    ...(object.baseType === 'cmis:folder' && object.allowableActions?.canApplyACL ? [{
+      key: 'webhooks',
+      label: t('documentViewer.webhooks.tab'),
+      children: <WebhookConfigTab repositoryId={repositoryId} objectId={object.id} />,
+    }] : []),
   ];
 
   return (
@@ -1510,7 +1519,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 </Button>
               )}
 
-              {object.allowableActions?.canGetACL && (
+              {object.allowableActions?.canApplyACL && object.allowableActions?.canUpdateProperties && (
                 <Button
                   icon={<EditOutlined />}
                   onClick={() => {

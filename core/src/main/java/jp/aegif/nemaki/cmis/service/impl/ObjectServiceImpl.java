@@ -553,7 +553,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequired("properties", properties);
 		exceptionService.invalidArgumentRequiredParentFolderId(repositoryId, folderId);
 		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parentFolder);
-		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_CREATE_FOLDER_FOLDER,
+		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_CREATE_DOCUMENT_FOLDER,
 				parentFolder);
 
 		// //////////////////
@@ -616,7 +616,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequiredParentFolderId(repositoryId, folderId);
 		Folder parentFolder = contentService.getFolder(repositoryId, folderId);
 		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parentFolder);
-		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_CREATE_FOLDER_FOLDER,
+		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_CREATE_DOCUMENT_FOLDER,
 				parentFolder);
 
 		// //////////////////
@@ -905,7 +905,7 @@ public class ObjectServiceImpl implements ObjectService {
 		Folder parentFolder = contentService.getFolder(repositoryId, folderId);
 		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parentFolder);
 		exceptionService.invalidArgumentRequired("properties", properties);
-		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_CREATE_FOLDER_FOLDER,
+		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_CREATE_DOCUMENT_FOLDER,
 				parentFolder);
 
 		// //////////////////

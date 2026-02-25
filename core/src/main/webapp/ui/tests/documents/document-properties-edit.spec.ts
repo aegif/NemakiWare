@@ -372,48 +372,49 @@ test.describe('Document Properties Edit and Persistence', () => {
 
     const docRow = page.locator('tr').filter({ hasText: testDocName });
 
-    if (await docRow.count() > 0) {
-      console.log(`Cleanup test: Found document row`);
-      const deleteButton = docRow.locator('button').filter({
-        has: page.locator('[data-icon="delete"]')
-      });
+    if (await docRow.count() === 0) {
+      console.log('Cleanup: Test document not found (may have been cleaned up already)');
+      return;
+    }
 
-      if (await deleteButton.count() > 0) {
-        console.log(`Cleanup test: Found delete button, clicking...`);
-        await deleteButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+    console.log(`Cleanup test: Found document row`);
+    const deleteButton = docRow.locator('button').filter({
+      has: page.locator('[data-icon="delete"]')
+    });
 
-        const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button:has-text("OK")');
-        console.log(`Cleanup test: Looking for confirm button, count: ${await confirmButton.count()}`);
-        if (await confirmButton.count() > 0) {
-          console.log(`Cleanup test: Clicking confirm button...`);
-          await confirmButton.click(isMobile ? { force: true } : {});
+    if (await deleteButton.count() > 0) {
+      console.log(`Cleanup test: Found delete button, clicking...`);
+      await deleteButton.click(isMobile ? { force: true } : {});
+      await page.waitForTimeout(500);
 
-          // Check for both success and error messages
-          console.log(`Cleanup test: Waiting for response message...`);
-          try {
-            await page.waitForSelector('.ant-message-success, .ant-message-error', { timeout: 30000 });
+      const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button:has-text("OK")');
+      console.log(`Cleanup test: Looking for confirm button, count: ${await confirmButton.count()}`);
+      if (await confirmButton.count() > 0) {
+        console.log(`Cleanup test: Clicking confirm button...`);
+        await confirmButton.click(isMobile ? { force: true } : {});
 
-            // Check which message appeared
-            const successMsg = await page.locator('.ant-message-success').count();
-            const errorMsg = await page.locator('.ant-message-error').count();
+        // Check for both success and error messages
+        console.log(`Cleanup test: Waiting for response message...`);
+        try {
+          await page.waitForSelector('.ant-message-success, .ant-message-error', { timeout: 30000 });
 
-            console.log(`Cleanup test: Success message: ${successMsg > 0}, Error message: ${errorMsg > 0}`);
+          // Check which message appeared
+          const successMsg = await page.locator('.ant-message-success').count();
+          const errorMsg = await page.locator('.ant-message-error').count();
 
-            if (errorMsg > 0) {
-              const errorText = await page.locator('.ant-message-error').textContent();
-              console.log(`Cleanup test: ERROR - ${errorText}`);
-            }
-          } catch (e) {
-            console.log(`Cleanup test: No success or error message appeared - timeout`);
-            throw e;
+          console.log(`Cleanup test: Success message: ${successMsg > 0}, Error message: ${errorMsg > 0}`);
+
+          if (errorMsg > 0) {
+            const errorText = await page.locator('.ant-message-error').textContent();
+            console.log(`Cleanup test: ERROR - ${errorText}`);
           }
+        } catch (e) {
+          console.log(`Cleanup test: No success or error message appeared - timeout`);
+          throw e;
         }
-      } else {
-        console.log(`Cleanup test: Delete button not found`);
       }
     } else {
-      console.log(`Cleanup test: Document row not found`);
+      console.log(`Cleanup test: Delete button not found`);
     }
   });
 });

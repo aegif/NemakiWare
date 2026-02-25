@@ -189,6 +189,19 @@ public class WebhookServiceImpl implements WebhookService {
             return;
         }
         
+        // Trigger CHILD_* events on parent folder BEFORE checking own/inherited configs.
+        // This must run independently because CHILD_* configs live on the parent folder
+        // and are matched via a separate path (triggerChildEventOnParent), not via
+        // getInheritedWebhookConfigs which requires includeChildren=true.
+        // Wrapped in try/catch so that a failure here does not prevent
+        // the normal (self/inherited) webhook dispatch below.
+        try {
+            triggerChildEventOnParent(callContext, repositoryId, content, eventType, additionalProperties);
+        } catch (Exception e) {
+            log.warn("triggerWebhook: CHILD event processing failed for object "
+                     + content.getId() + ": " + e.getMessage());
+        }
+        
         // Get webhook configurations for this content
         List<WebhookConfig> configs = getWebhookConfigs(repositoryId, content);
         
@@ -223,9 +236,6 @@ public class WebhookServiceImpl implements WebhookService {
             dispatchWebhookAsync(callContext, repositoryId, content, eventType, 
                                  config, properties, changeToken);
         }
-        
-        // Trigger CHILD_* events on parent folder if applicable
-        triggerChildEventOnParent(callContext, repositoryId, content, eventType, additionalProperties);
     }
     
     /**
@@ -294,7 +304,7 @@ public class WebhookServiceImpl implements WebhookService {
     }
     
     /**
-     * Dispatch a webhook asynchronously
+     * Dispatch a webhook asynchronously and persist delivery log
      */
     private void dispatchWebhookAsync(CallContext callContext, String repositoryId,
                                        Content content, String eventType,
@@ -339,7 +349,58 @@ public class WebhookServiceImpl implements WebhookService {
                 
                 // Dispatch via dispatcher if available, otherwise log
                 if (dispatcher != null) {
-                    dispatcher.dispatch(config.getUrl(), payloadJson, headers, config);
+                    // Create delivery log before dispatch
+                    WebhookDeliveryLog deliveryLog = new WebhookDeliveryLog();
+                    deliveryLog.setDeliveryId(payload.getDeliveryId());
+                    deliveryLog.setWebhookId(config.getId());
+                    deliveryLog.setObjectId(content.getId());
+                    deliveryLog.setRepositoryId(repositoryId);
+                    deliveryLog.setWebhookUrl(config.getUrl());
+                    deliveryLog.setEventType(eventType);
+                    deliveryLog.setAttemptNumber(1);
+                    deliveryLog.setChangeToken(changeToken);
+                    deliveryLog.setPayloadSizeBytes((long) payloadJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
+                    deliveryLog.setStatus(WebhookDeliveryLog.DeliveryStatus.PENDING);
+                    deliveryLog.generateAttemptId();
+                    
+                    // Save auth/headers snapshot so retries can restore auth even when
+                    // the source object or config is no longer available.
+                    deliveryLog.setAuthType(config.getAuthType());
+                    deliveryLog.setAuthCredential(config.getAuthCredential());
+                    deliveryLog.setSecret(config.getSecret());
+                    deliveryLog.setCustomHeaders(config.getHeaders());
+                    
+                    // Save initial pending log - use returned object which has the persisted id
+                    WebhookDeliveryLog persistedLog = null;
+                    if (webhookDaoService != null) {
+                        try {
+                            persistedLog = webhookDaoService.createDeliveryLog(repositoryId, deliveryLog);
+                        } catch (Exception logErr) {
+                            log.warn("Failed to create delivery log: " + logErr.getMessage());
+                        }
+                    }
+                    
+                    // Dispatch synchronously within this async thread to capture result
+                    long startTime = System.currentTimeMillis();
+                    WebhookDeliveryLog dispatchResult = dispatcher.dispatchSync(
+                        config.getUrl(), payloadJson, headers, config);
+                    long responseTime = System.currentTimeMillis() - startTime;
+                    
+                    // Update delivery log with result (use persistedLog which has the DB id)
+                    if (persistedLog != null && webhookDaoService != null) {
+                        try {
+                            if (dispatchResult.isSuccess()) {
+                                persistedLog.markSuccess(dispatchResult.getStatusCode(), dispatchResult.getResponseBody(), responseTime);
+                            } else {
+                                persistedLog.markFailed(dispatchResult.getStatusCode(),
+                                    dispatchResult.getResponseBody() != null ? dispatchResult.getResponseBody() : "Dispatch failed",
+                                    responseTime);
+                            }
+                            webhookDaoService.updateDeliveryLog(repositoryId, persistedLog);
+                        } catch (Exception logErr) {
+                            log.warn("Failed to update delivery log: " + logErr.getMessage());
+                        }
+                    }
                 } else {
                     log.info("Webhook dispatch (no dispatcher configured): " +
                              "url=" + config.getUrl() + ", event=" + eventType + 
@@ -409,6 +470,111 @@ public class WebhookServiceImpl implements WebhookService {
         return result;
     }
     
+    @Override
+    public List<WebhookConfig> getAllWebhookConfigs(String repositoryId, Content content) {
+        List<WebhookConfig> result = new ArrayList<>();
+
+        if (content == null) {
+            return result;
+        }
+
+        // Check for secondary type
+        List<String> secondaryTypes = content.getSecondaryIds();
+        if (secondaryTypes == null || !secondaryTypes.contains(WEBHOOKABLE_SECONDARY_TYPE)) {
+            return result;
+        }
+
+        // Get webhookConfigs property
+        Object configsValue = getSubTypePropertyValue(content, WEBHOOK_CONFIGS_PROPERTY);
+
+        if (configsValue == null) {
+            return result;
+        }
+
+        // Parse JSON configs - return ALL configs without filtering
+        String configsJson = configsValue.toString();
+        try {
+            List<WebhookConfig> configs = configParser.parse(configsJson);
+            for (WebhookConfig config : configs) {
+                config.setSourceObjectId(content.getId());
+                result.add(config);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse webhook configs for object: " + content.getId(), e);
+        }
+
+        return result;
+    }
+
+    @Override
+    public void saveWebhookConfigs(String repositoryId, String objectId, List<WebhookConfig> configs) {
+        if (contentService == null) {
+            throw new RuntimeException("ContentService not available");
+        }
+
+        Content content = contentService.getContent(repositoryId, objectId);
+        if (content == null) {
+            throw new RuntimeException("Content not found: " + objectId);
+        }
+
+        // Update secondary types
+        List<String> secondaryTypes = content.getSecondaryIds();
+        if (secondaryTypes == null) {
+            secondaryTypes = new ArrayList<>();
+        } else {
+            secondaryTypes = new ArrayList<>(secondaryTypes);
+        }
+
+        if (configs == null || configs.isEmpty()) {
+            // Remove secondary type and property
+            secondaryTypes.remove(WEBHOOKABLE_SECONDARY_TYPE);
+            content.setSecondaryIds(secondaryTypes);
+
+            // Remove webhookConfigs property
+            List<Property> subTypeProps = content.getSubTypeProperties();
+            if (subTypeProps != null) {
+                subTypeProps = new ArrayList<>(subTypeProps);
+                subTypeProps.removeIf(p -> WEBHOOK_CONFIGS_PROPERTY.equals(p.getKey()));
+                content.setSubTypeProperties(subTypeProps);
+            }
+        } else {
+            // Add secondary type if not present
+            if (!secondaryTypes.contains(WEBHOOKABLE_SECONDARY_TYPE)) {
+                secondaryTypes.add(WEBHOOKABLE_SECONDARY_TYPE);
+            }
+            content.setSecondaryIds(secondaryTypes);
+
+            // Serialize and set webhookConfigs property
+            String configsJson = configParser.serialize(configs);
+            List<Property> subTypeProps = content.getSubTypeProperties();
+            if (subTypeProps == null) {
+                subTypeProps = new ArrayList<>();
+            } else {
+                subTypeProps = new ArrayList<>(subTypeProps);
+            }
+
+            // Update or add the property
+            boolean found = false;
+            for (int i = 0; i < subTypeProps.size(); i++) {
+                if (WEBHOOK_CONFIGS_PROPERTY.equals(subTypeProps.get(i).getKey())) {
+                    subTypeProps.get(i).setValue(configsJson);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                subTypeProps.add(new Property(WEBHOOK_CONFIGS_PROPERTY, configsJson));
+            }
+            content.setSubTypeProperties(subTypeProps);
+        }
+
+        // Persist changes
+        contentService.updateInternal(repositoryId, content);
+
+        log.info("saveWebhookConfigs: saved " + (configs != null ? configs.size() : 0) +
+                 " webhook configs for object: " + objectId);
+    }
+
     @Override
     public List<WebhookConfig> getInheritedWebhookConfigs(String repositoryId, Content content) {
         List<WebhookConfig> result = new ArrayList<>();
@@ -511,12 +677,134 @@ public class WebhookServiceImpl implements WebhookService {
         retryLog.setAttemptNumber(originalLog.getAttemptNumber() + 1);
         retryLog.setChangeToken(originalLog.getChangeToken());
         retryLog.setStatus(WebhookDeliveryLog.DeliveryStatus.PENDING);
+        // Carry forward auth/headers snapshot for subsequent retries
+        retryLog.setAuthType(originalLog.getAuthType());
+        retryLog.setAuthCredential(originalLog.getAuthCredential());
+        retryLog.setSecret(originalLog.getSecret());
+        retryLog.setCustomHeaders(originalLog.getCustomHeaders());
         retryLog.generateAttemptId();
         
-        // Save the new attempt log
+        // Save the new attempt log - use returned object which has the persisted id
         WebhookDeliveryLog savedLog = webhookDaoService.createDeliveryLog(repositoryId, retryLog);
         
-        // Queue for async delivery (actual dispatch would happen here)
+        // Dispatch asynchronously
+        if (dispatcher != null && executorService != null) {
+            executorService.submit(() -> {
+                try {
+                    // Resolve original WebhookConfig from the source object to get auth/secret info.
+                    // Search both direct configs and inherited configs from parent folders.
+                    WebhookConfig resolvedConfig = null;
+                    if (originalLog.getObjectId() != null && contentService != null) {
+                        try {
+                            Content sourceContent = contentService.getContent(repositoryId, originalLog.getObjectId());
+                            if (sourceContent != null) {
+                                // Collect direct configs and inherited configs from parent folders
+                                List<WebhookConfig> allConfigs = new ArrayList<>(getWebhookConfigs(repositoryId, sourceContent));
+                                allConfigs.addAll(getInheritedWebhookConfigs(repositoryId, sourceContent));
+                                
+                                for (WebhookConfig cfg : allConfigs) {
+                                    if (cfg.getId() != null && cfg.getId().equals(originalLog.getWebhookId())) {
+                                        resolvedConfig = cfg;
+                                        break;
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            log.warn("retryDelivery: Could not resolve webhook config for retry: " + e.getMessage());
+                        }
+                    }
+                    
+                    // Build retry payload
+                    WebhookPayload payload = deliveryService.buildPayload(
+                        originalLog.getEventType(),
+                        originalLog.getObjectId(),
+                        repositoryId,
+                        new HashMap<>(),
+                        originalLog.getChangeToken()
+                    );
+                    payload.setDeliveryId(deliveryId);
+                    String payloadJson = deliveryService.serializePayload(payload);
+                    
+                    // Build headers with auth: prefer resolved config, fall back to snapshot
+                    Map<String, String> headers;
+                    if (resolvedConfig != null) {
+                        headers = deliveryService.generateAuthHeaders(resolvedConfig);
+                    } else {
+                        // Use auth/headers snapshot from original delivery log
+                        WebhookConfig.Builder snapshotBuilder = new WebhookConfig.Builder();
+                        if (originalLog.getAuthType() != null) {
+                            snapshotBuilder.authType(originalLog.getAuthType());
+                        }
+                        if (originalLog.getAuthCredential() != null) {
+                            snapshotBuilder.authCredential(originalLog.getAuthCredential());
+                        }
+                        if (originalLog.getSecret() != null) {
+                            snapshotBuilder.secret(originalLog.getSecret());
+                        }
+                        if (originalLog.getCustomHeaders() != null) {
+                            snapshotBuilder.headers(originalLog.getCustomHeaders());
+                        }
+                        headers = deliveryService.generateAuthHeaders(snapshotBuilder.build());
+                    }
+                    headers.put("Content-Type", "application/json");
+                    headers.put("X-NemakiWare-Event", originalLog.getEventType());
+                    headers.put("X-NemakiWare-Delivery", deliveryId);
+                    headers.put("X-NemakiWare-Timestamp", String.valueOf(payload.getTimestamp()));
+                    
+                    // Compute HMAC signature if secret available (prefer config, fall back to snapshot)
+                    String secret = resolvedConfig != null ? resolvedConfig.getSecret() : originalLog.getSecret();
+                    if (secret != null && !secret.isEmpty()) {
+                        String signature = deliveryService.computeHmacSignature(payloadJson, secret);
+                        headers.put("X-NemakiWare-Signature", "sha256=" + signature);
+                    }
+                    
+                    // Dispatch and record result
+                    WebhookConfig dispatchConfig = resolvedConfig != null ? resolvedConfig :
+                        new WebhookConfig.Builder()
+                            .id(originalLog.getWebhookId() != null ? originalLog.getWebhookId() : "retry-" + deliveryId)
+                            .url(originalLog.getWebhookUrl())
+                            .enabled(true)
+                            .retryCount(0)
+                            .build();
+                    
+                    long startTime = System.currentTimeMillis();
+                    WebhookDeliveryLog dispatchResult = dispatcher.dispatchSync(
+                        originalLog.getWebhookUrl(), payloadJson, headers, dispatchConfig);
+                    long responseTime = System.currentTimeMillis() - startTime;
+                    
+                    // Update the saved log with dispatch result (savedLog has persisted id)
+                    if (dispatchResult.isSuccess()) {
+                        savedLog.markSuccess(dispatchResult.getStatusCode(), dispatchResult.getResponseBody(), responseTime);
+                    } else {
+                        savedLog.markFailed(dispatchResult.getStatusCode(),
+                            dispatchResult.getResponseBody() != null ? dispatchResult.getResponseBody() : "Dispatch failed",
+                            responseTime);
+                    }
+                    // resolvedConfig が取得できた場合、savedLog のスナップショットを最新設定で更新
+                    // → 次回の再試行が最新の認証情報にフォールバックできるようにする
+                    if (resolvedConfig != null) {
+                        savedLog.setAuthType(resolvedConfig.getAuthType());
+                        savedLog.setAuthCredential(resolvedConfig.getAuthCredential());
+                        savedLog.setSecret(resolvedConfig.getSecret());
+                        savedLog.setCustomHeaders(resolvedConfig.getHeaders());
+                    }
+                    webhookDaoService.updateDeliveryLog(repositoryId, savedLog);
+
+                    log.info("Retry dispatch completed for deliveryId: " + deliveryId +
+                        ", success: " + dispatchResult.isSuccess() +
+                        ", statusCode: " + dispatchResult.getStatusCode());
+                } catch (Exception e) {
+                    log.error("Retry dispatch failed for deliveryId: " + deliveryId, e);
+                    savedLog.markFailed(0, "Dispatch error: " + e.getMessage(), 0);
+                    try {
+                        webhookDaoService.updateDeliveryLog(repositoryId, savedLog);
+                    } catch (Exception updateErr) {
+                        log.warn("Failed to update retry log after dispatch error: " + updateErr.getMessage());
+                    }
+                }
+            });
+        }
+        
         log.info("Retry queued for deliveryId: " + deliveryId + ", attemptNumber: " + retryLog.getAttemptNumber());
         
         return savedLog;
@@ -794,7 +1082,7 @@ public class WebhookServiceImpl implements WebhookService {
         // Event metadata
         Map<String, Object> eventInfo = new HashMap<>();
         eventInfo.put("type", "CHILD_BATCH");
-        eventInfo.put("timestamp", java.time.Instant.now().toString());
+        eventInfo.put("timestamp", System.currentTimeMillis());
         eventInfo.put("deliveryId", batch.getBatchId());
         payload.put("event", eventInfo);
         
@@ -839,8 +1127,8 @@ public class WebhookServiceImpl implements WebhookService {
         
         // Batch info
         Map<String, Object> batchInfo = new HashMap<>();
-        batchInfo.put("windowStart", java.time.Instant.ofEpochMilli(batch.getWindowStart()).toString());
-        batchInfo.put("windowEnd", java.time.Instant.ofEpochMilli(batch.getWindowEnd()).toString());
+        batchInfo.put("windowStart", batch.getWindowStart());
+        batchInfo.put("windowEnd", batch.getWindowEnd());
         batchInfo.put("eventCount", batch.getEventCount());
         payload.put("batchInfo", batchInfo);
         

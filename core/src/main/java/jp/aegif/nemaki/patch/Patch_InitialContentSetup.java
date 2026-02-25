@@ -215,6 +215,7 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
             Map<String, Object> queryParams = new HashMap<>();
             queryParams.put("key", parentFolderId);
             queryParams.put("include_docs", true);
+            queryParams.put("reduce", false);
 
             com.ibm.cloud.cloudant.v1.model.ViewResult result = client.queryView("_repo", "children", queryParams);
 
@@ -417,6 +418,7 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
             Map<String, Object> queryParams = new HashMap<>();
             queryParams.put("key", parentFolderId);
             queryParams.put("include_docs", true);
+            queryParams.put("reduce", false);
 
             com.ibm.cloud.cloudant.v1.model.ViewResult result = client.queryView("_repo", "children", queryParams);
 

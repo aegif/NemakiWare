@@ -47,6 +47,9 @@ public interface PropertyKey {
 	final String CAPABILITY_EXTENDED_USER_ITEM_FOLDER = "capability.extended.user.item.folder";
 	final String SYSTEM_FOLDER = "system.folder";
 
+	//Search
+	final String SEARCH_USERGROUP_SOLR_ENABLED = "search.usergroup.solr.enabled";
+
 	//Rest
 	final String REST_USER_ENABLED = "rest.user.enabled";
 	final String REST_GROUP_ENABLED = "rest.group.enabled";
@@ -54,6 +57,12 @@ public interface PropertyKey {
 	final String REST_ARCHIVE_ENABLED = "rest.archive.enabled";
 	final String REST_SOLR_ENABLED = "rest.solr.enabled";
 	final String REST_AUTHTOKEN_ENABLED = "rest.authtoken.enabled";
+
+	//Webhook
+	final String WEBHOOK_ENABLED = "webhook.enabled";
+
+	//RSS Feed
+	final String RSS_ENABLED = "rss.enabled";
 
 	//Capabilities
 	final String CAPABILITY_GET_DESCENDENTS = "capability.getDescendants";

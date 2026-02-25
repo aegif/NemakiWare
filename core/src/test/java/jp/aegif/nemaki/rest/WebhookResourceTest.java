@@ -200,6 +200,185 @@ public class WebhookResourceTest {
         assertEquals(0, events.size());
     }
 
+    // ---------------------------------------------------------------
+    // mergeWebhookConfigFromJson tests
+    // ---------------------------------------------------------------
+
+    private void invokeMerge(WebhookConfig existing, org.json.simple.JSONObject body) throws Exception {
+        java.lang.reflect.Method method = WebhookResource.class.getDeclaredMethod(
+            "mergeWebhookConfigFromJson", WebhookConfig.class, org.json.simple.JSONObject.class);
+        method.setAccessible(true);
+        method.invoke(resource, existing, body);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testMerge_AuthTypeBearerToNone_ClearsCredentials() throws Exception {
+        // Setup: existing config with bearer auth
+        WebhookConfig existing = new WebhookConfig.Builder()
+            .id("wh-1")
+            .enabled(true)
+            .url("https://example.com/hook")
+            .events(Arrays.asList("CREATED"))
+            .authType("bearer")
+            .build();
+        existing.setAuthCredential("my-bearer-token");
+
+        // Simulate UI sending authType=none with empty credentials
+        org.json.simple.JSONObject body = new org.json.simple.JSONObject();
+        body.put("authType", "none");
+        body.put("authCredential", "");
+        body.put("secret", "");
+
+        invokeMerge(existing, body);
+
+        assertEquals("none", existing.getAuthType());
+        assertNull(existing.getAuthCredential());
+        assertNull(existing.getSecret());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testMerge_AuthTypeBasicToNone_ClearsCredentials() throws Exception {
+        WebhookConfig existing = new WebhookConfig.Builder()
+            .id("wh-2")
+            .enabled(true)
+            .url("https://example.com/hook")
+            .events(Arrays.asList("UPDATED"))
+            .authType("basic")
+            .build();
+        existing.setAuthCredential("dXNlcjpwYXNz");
+
+        org.json.simple.JSONObject body = new org.json.simple.JSONObject();
+        body.put("authType", "none");
+        body.put("authCredential", "");
+
+        invokeMerge(existing, body);
+
+        assertEquals("none", existing.getAuthType());
+        assertNull(existing.getAuthCredential());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testMerge_AuthTypeHmacToNone_ClearsSecret() throws Exception {
+        WebhookConfig existing = new WebhookConfig.Builder()
+            .id("wh-3")
+            .enabled(true)
+            .url("https://example.com/hook")
+            .events(Arrays.asList("DELETED"))
+            .authType("hmac")
+            .build();
+        existing.setSecret("hmac-secret-key");
+
+        org.json.simple.JSONObject body = new org.json.simple.JSONObject();
+        body.put("authType", "none");
+        body.put("secret", "");
+
+        invokeMerge(existing, body);
+
+        assertEquals("none", existing.getAuthType());
+        assertNull(existing.getSecret());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testMerge_AuthCredentialUpdate_PreservesNewValue() throws Exception {
+        WebhookConfig existing = new WebhookConfig.Builder()
+            .id("wh-4")
+            .enabled(true)
+            .url("https://example.com/hook")
+            .events(Arrays.asList("CREATED"))
+            .authType("bearer")
+            .build();
+        existing.setAuthCredential("old-token");
+
+        org.json.simple.JSONObject body = new org.json.simple.JSONObject();
+        body.put("authCredential", "new-token");
+
+        invokeMerge(existing, body);
+
+        assertEquals("new-token", existing.getAuthCredential());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testMerge_AbsentCredential_PreservesExisting() throws Exception {
+        WebhookConfig existing = new WebhookConfig.Builder()
+            .id("wh-5")
+            .enabled(true)
+            .url("https://example.com/hook")
+            .events(Arrays.asList("CREATED"))
+            .authType("bearer")
+            .build();
+        existing.setAuthCredential("existing-token");
+        existing.setSecret("existing-secret");
+
+        // Body does NOT contain authCredential or secret keys
+        org.json.simple.JSONObject body = new org.json.simple.JSONObject();
+        body.put("url", "https://example.com/hook-v2");
+
+        invokeMerge(existing, body);
+
+        assertEquals("https://example.com/hook-v2", existing.getUrl());
+        assertEquals("existing-token", existing.getAuthCredential());
+        assertEquals("existing-secret", existing.getSecret());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testMerge_NullCredential_ClearsValue() throws Exception {
+        WebhookConfig existing = new WebhookConfig.Builder()
+            .id("wh-6")
+            .enabled(true)
+            .url("https://example.com/hook")
+            .events(Arrays.asList("CREATED"))
+            .authType("basic")
+            .build();
+        existing.setAuthCredential("old-cred");
+
+        org.json.simple.JSONObject body = new org.json.simple.JSONObject();
+        body.put("authCredential", null);
+
+        invokeMerge(existing, body);
+
+        assertNull(existing.getAuthCredential());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testMerge_PartialUpdate_OnlyUpdatesProvidedFields() throws Exception {
+        WebhookConfig existing = new WebhookConfig.Builder()
+            .id("wh-7")
+            .enabled(true)
+            .url("https://example.com/hook")
+            .events(Arrays.asList("CREATED", "UPDATED"))
+            .authType("bearer")
+            .includeChildren(true)
+            .maxDepth(10)
+            .retryCount(3)
+            .build();
+        existing.setAuthCredential("bearer-token");
+
+        // Only update enabled and retryCount
+        org.json.simple.JSONObject body = new org.json.simple.JSONObject();
+        body.put("enabled", false);
+        body.put("retryCount", 5L);
+
+        invokeMerge(existing, body);
+
+        // Updated fields
+        assertFalse(existing.isEnabled());
+        assertEquals(5, (int) existing.getRetryCount());
+        // Preserved fields
+        assertEquals("https://example.com/hook", existing.getUrl());
+        assertEquals(2, existing.getEvents().size());
+        assertEquals("bearer", existing.getAuthType());
+        assertEquals("bearer-token", existing.getAuthCredential());
+        assertTrue(existing.isIncludeChildren());
+        assertEquals(Integer.valueOf(10), existing.getMaxDepth());
+    }
+
     @Test
     public void testBuildWebhookConfigJsonWithNullMaxDepth() throws Exception {
         WebhookConfig config = new WebhookConfig.Builder()

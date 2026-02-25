@@ -145,6 +145,13 @@ public interface ContentDaoService {
 	NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String repositoryId, String nodeId);
 
 	/**
+	 * Get all property definition details in the repository.
+	 * @param repositoryId repository ID
+	 * @return list of all property definition details
+	 */
+	List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetails(String repositoryId);
+
+	/**
 	 * Get a user-defined property definition detail by coreNodeId
 	 * That is, all the other attributes than core
 	 * @param repositoryId TODO
@@ -358,6 +365,24 @@ public interface ContentDaoService {
 	 * @return
 	 */
 	List<Content> getChildren(String repositoryId, String parentId);
+
+	/**
+	 * Get a page of children in a folder using CouchDB skip/limit.
+	 * @param repositoryId repository ID
+	 * @param parentId parent folder ID
+	 * @param skip number of rows to skip
+	 * @param limit maximum number of rows to return
+	 * @return list of child contents
+	 */
+	List<Content> getChildrenPaged(String repositoryId, String parentId, int skip, int limit);
+
+	/**
+	 * Get the count of children in a folder using CouchDB reduce.
+	 * @param repositoryId repository ID
+	 * @param parentId parent folder ID
+	 * @return number of children
+	 */
+	long getChildrenCount(String repositoryId, String parentId);
 
 	/**
 	 * Get a child content by name

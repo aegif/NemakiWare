@@ -125,7 +125,7 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         
         ReindexStatus status = service.getReindexStatus(TEST_REPO_ID);
         assertEquals("completed", status.getStatus());
-        assertEquals(0, status.getTotalDocuments());
+        assertEquals(1, status.getTotalDocuments()); // root folder itself is counted
     }
     
     @Test
@@ -141,23 +141,22 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         
         List<Content> children = Arrays.asList(doc1, doc2);
         when(contentService.getChildren(TEST_REPO_ID, ROOT_FOLDER_ID)).thenReturn(children);
-        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt())).thenReturn(2);
-        
+        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt(), anyBoolean())).thenReturn(2);
+
         boolean started = service.startFullReindex(TEST_REPO_ID);
         assertTrue(started);
-        
+
         awaitReindexCompletion(TEST_REPO_ID, 5);
-        
+
         ReindexStatus status = service.getReindexStatus(TEST_REPO_ID);
         assertEquals("completed", status.getStatus());
-        assertEquals(2, status.getTotalDocuments());
+        assertEquals(3, status.getTotalDocuments()); // root folder + 2 documents
     }
     
     @Test
     public void testStartFolderReindexReturnsTrue() {
         String folderId = "folder-123";
         Folder folder = mock(Folder.class);
-        when(folder.getId()).thenReturn(folderId);
         when(contentService.getFolder(TEST_REPO_ID, folderId)).thenReturn(folder);
         when(contentService.getChildren(eq(TEST_REPO_ID), anyString())).thenReturn(new ArrayList<>());
         
@@ -170,7 +169,6 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
     public void testStartFolderReindexRecursive() throws Exception {
         String folderId = "folder-123";
         Folder folder = mock(Folder.class);
-        when(folder.getId()).thenReturn(folderId);
         when(folder.getName()).thenReturn("TestFolder");
         when(contentService.getFolder(TEST_REPO_ID, folderId)).thenReturn(folder);
         when(contentService.getChildren(eq(TEST_REPO_ID), anyString())).thenReturn(new ArrayList<>());
@@ -188,7 +186,6 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
     public void testStartFolderReindexNonRecursive() throws Exception {
         String folderId = "folder-456";
         Folder folder = mock(Folder.class);
-        when(folder.getId()).thenReturn(folderId);
         when(folder.getName()).thenReturn("TestFolder");
         when(contentService.getFolder(TEST_REPO_ID, folderId)).thenReturn(folder);
         when(contentService.getChildren(eq(TEST_REPO_ID), anyString())).thenReturn(new ArrayList<>());
@@ -252,7 +249,7 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         List<Content> manyDocs = new ArrayList<>();
         for (int i = 0; i < 1000; i++) {
             Document doc = mock(Document.class);
-            when(doc.getId()).thenReturn("doc-" + i);
+            lenient().when(doc.getId()).thenReturn("doc-" + i);
             manyDocs.add(doc);
         }
         when(contentService.getChildren(TEST_REPO_ID, ROOT_FOLDER_ID)).thenReturn(manyDocs);
@@ -300,8 +297,8 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         when(contentService.getFolder(TEST_REPO_ID, "sub-folder-1")).thenReturn(subFolder);
         when(contentService.getChildren(TEST_REPO_ID, "sub-folder-1")).thenReturn(new ArrayList<>());
         
-        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt())).thenReturn(1);
-        
+        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt(), anyBoolean())).thenReturn(1);
+
         boolean started = service.startFullReindex(TEST_REPO_ID);
         assertTrue(started);
         

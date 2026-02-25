@@ -34,8 +34,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
         try {
             CloudantClientWrapper client = patchUtil.getConnectorPool().getClient(repositoryId);
             if (client == null) {
-                log.error("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Could not get client for repository");
-                return;
+                throw new RuntimeException("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Could not get client for repository");
             }
 
             // Get current design document
@@ -45,8 +44,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
             // Read current design document
             JsonNode currentDoc = client.get(JsonNode.class, designDocId);
             if (currentDoc == null) {
-                log.error("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Design document not found");
-                return;
+                throw new RuntimeException("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Design document not found");
             }
 
             // Clone the document as ObjectNode for modification
@@ -66,7 +64,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
 
             addViewIfMissing(views, "propertyDefinitionCoresByPropertyId", "function(doc) { if (doc.type == 'propertyDefinitionCore')  emit(doc.propertyId, doc) }", null, repositoryId);
 
-            addViewIfMissing(views, "children", "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion || doc.type == 'cmis:item') emit(doc.parentId, doc) }", null, repositoryId);
+            addOrUpdateView(views, "children", "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion || doc.type == 'cmis:item') emit(doc.parentId, doc) }", "_count", repositoryId);
 
             addViewIfMissing(views, "relationships", "function(doc) { if (doc.type == 'cmis:relationship')  emit(doc._id, doc) }", null, repositoryId);
 
@@ -130,7 +128,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
 
             addOrUpdateView(views, "userItemsById", "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:user' && doc.userId)  emit(doc.userId, doc) }", null, repositoryId);
 
-            addViewIfMissing(views, "groupItemsById", "function(doc) { if (doc.type == 'cmis:item' && doc.groupId)  emit(doc.groupId, doc) }", null, repositoryId);
+            addOrUpdateView(views, "groupItemsById", "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groupId)  emit(doc.groupId, doc) }", null, repositoryId);
 
             addViewIfMissing(views, "joinedDirectGroupsByUserId", "function(doc) {if (doc.type == 'cmis:item' && doc.groupId) {if ( doc.subTypeProperties ) {for(var i in doc.subTypeProperties ) {if ( doc.subTypeProperties[i].key == 'nemaki:users' ) {for(var user in doc.subTypeProperties[i].value) {emit(doc.subTypeProperties[i].value[user], doc)}}}}}}", null, repositoryId);
 
@@ -177,14 +175,16 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
     }
 
     /**
-     * Add or update a view. If the view exists but has a different map function, update it.
+     * Add or update a view. If the view exists but has a different map or reduce function, update it.
      */
     private void addOrUpdateView(ObjectNode views, String viewName, String mapFunction, String reduceFunction, String repositoryId) {
         ObjectMapper mapper = new ObjectMapper();
         if (views.has(viewName)) {
             JsonNode existing = views.get(viewName);
             String existingMap = existing.has("map") ? existing.get("map").asText() : "";
-            if (!existingMap.equals(mapFunction)) {
+            String existingReduce = existing.has("reduce") ? existing.get("reduce").asText() : "";
+            String newReduce = (reduceFunction != null) ? reduceFunction : "";
+            if (!existingMap.equals(mapFunction) || !existingReduce.equals(newReduce)) {
                 ObjectNode viewDef = mapper.createObjectNode();
                 viewDef.put("map", mapFunction);
                 if (reduceFunction != null && !reduceFunction.isEmpty()) {

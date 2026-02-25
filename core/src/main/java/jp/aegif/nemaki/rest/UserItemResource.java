@@ -49,6 +49,8 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.UserGroupSearchService;
+import jp.aegif.nemaki.businesslogic.UserGroupSearchService.SearchResult;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.common.ErrorCode;
 import jp.aegif.nemaki.model.Content;
@@ -94,6 +96,8 @@ public class UserItemResource extends ResourceBase {
 	private PropertyManager propertyManager;
 
 	private ThreadLockService threadLockService;
+
+	private UserGroupSearchService userGroupSearchService;
 
 	public UserItemResource() {
 		super();
@@ -265,21 +269,35 @@ private ContentService getContentServiceSafe() {
 			List<jp.aegif.nemaki.model.GroupItem> allGroups = contentService.getGroupItems(repositoryId);
 
 			if (hasQuery) {
-				// Server-side search: fetch all, filter, then paginate
-				String queryLower = query.trim().toLowerCase();
-				List<UserItem> allUsers = contentService.getUserItems(repositoryId);
-				List<UserItem> filtered = new java.util.ArrayList<>();
-				for (UserItem user : allUsers) {
-					if (matchesQuery(user, queryLower)) {
-						filtered.add(user);
+				if (userGroupSearchService != null && userGroupSearchService.isSolrUserSearchEffective(repositoryId)) {
+					SearchResult sr = userGroupSearchService.searchUsers(repositoryId, query.trim(),
+							paginated ? offset : 0, paginated ? limit : 0);
+					if (!sr.hasError()) {
+						totalCount = (int) sr.getTotalCount();
+						List<String> solrIds = sr.getObjectIds();
+						Map<String, Content> contents = contentService.getContentsByIds(repositoryId, solrIds);
+						int addedCount = 0;
+						for (String oid : solrIds) {
+							Content c = contents.get(oid);
+							if (c instanceof UserItem) {
+								listJSON.add(convertUserToJsonWithGroups((UserItem) c, allGroups));
+								addedCount++;
+							}
+						}
+						if (addedCount < solrIds.size()) {
+							log.warn("Solr→CouchDB hydrate gap for users in repository " + repositoryId
+									+ ": solrIds=" + solrIds.size() + ", returned=" + addedCount
+									+ ", missing=" + (solrIds.size() - addedCount)
+									+ " — falling back to CouchDB");
+							listJSON.clear();
+							totalCount = searchUsersCouchDB(query, repositoryId, paginated, offset, limit, allGroups, listJSON);
+						}
+					} else {
+						log.warn("Solr user search failed, falling back to CouchDB: " + sr.getErrorMessage());
+						totalCount = searchUsersCouchDB(query, repositoryId, paginated, offset, limit, allGroups, listJSON);
 					}
-				}
-				totalCount = filtered.size();
-
-				int start = paginated ? Math.min(offset, totalCount) : 0;
-				int end = paginated ? Math.min(start + limit, totalCount) : totalCount;
-				for (int i = start; i < end; i++) {
-					listJSON.add(convertUserToJsonWithGroups(filtered.get(i), allGroups));
+				} else {
+					totalCount = searchUsersCouchDB(query, repositoryId, paginated, offset, limit, allGroups, listJSON);
 				}
 			} else if (paginated) {
 				// No query, paginated: use CouchDB skip/limit
@@ -425,21 +443,34 @@ private ContentService getContentServiceSafe() {
 		List<jp.aegif.nemaki.model.GroupItem> allGroups = getContentServiceSafe().getGroupItems(repositoryId);
 
 		JSONArray queriedUsers = new JSONArray();
-		List<UserItem> users = ObjectUtils.defaultIfNull(
-				getContentServiceSafe().getUserItems(repositoryId), Collections.emptyList());
-		for (UserItem user : users) {
-			String userId = user.getUserId();
-			String userName = user.getName();
-			boolean matches = (StringUtils.isNotEmpty(userId) && userId.contains(query)) ||
-			                  (StringUtils.isNotEmpty(userName) && userName.contains(query));
-			if (matches) {
-				JSONObject userJSON = convertUserToJsonWithGroups(user, allGroups);
-				if(queriedUsers.size() < 50){
-					queriedUsers.add(userJSON);
-				}else{
-					break;
+
+		if (userGroupSearchService != null && userGroupSearchService.isSolrUserSearchEffective(repositoryId)) {
+			SearchResult sr = userGroupSearchService.searchUsersCaseSensitive(repositoryId, query, 50);
+			if (!sr.hasError()) {
+				List<String> solrIds = sr.getObjectIds();
+				Map<String, Content> contents = getContentServiceSafe().getContentsByIds(repositoryId, solrIds);
+				int addedCount = 0;
+				for (String oid : solrIds) {
+					Content c = contents.get(oid);
+					if (c instanceof UserItem) {
+						queriedUsers.add(convertUserToJsonWithGroups((UserItem) c, allGroups));
+						addedCount++;
+					}
 				}
+				if (addedCount < solrIds.size()) {
+					log.warn("Solr→CouchDB hydrate gap for users in repository " + repositoryId
+							+ ": solrIds=" + solrIds.size() + ", returned=" + addedCount
+							+ ", missing=" + (solrIds.size() - addedCount)
+							+ " — falling back to CouchDB");
+					queriedUsers.clear();
+					searchUsersCaseSensitiveCouchDB(query, repositoryId, allGroups, queriedUsers);
+				}
+			} else {
+				log.warn("Solr user search failed, falling back to CouchDB: " + sr.getErrorMessage());
+				searchUsersCaseSensitiveCouchDB(query, repositoryId, allGroups, queriedUsers);
 			}
+		} else {
+			searchUsersCaseSensitiveCouchDB(query, repositoryId, allGroups, queriedUsers);
 		}
 
 		if (queriedUsers.isEmpty()) {
@@ -1249,6 +1280,53 @@ private ContentService getContentServiceSafe() {
 
 
 	/**
+	 * CouchDB fallback for case-insensitive user search (list endpoint).
+	 */
+	@SuppressWarnings("unchecked")
+	private int searchUsersCouchDB(String query, String repositoryId, boolean paginated,
+			int offset, int limit, List<jp.aegif.nemaki.model.GroupItem> allGroups, JSONArray listJSON) {
+		String queryLower = query.trim().toLowerCase();
+		List<UserItem> allUsers = getContentServiceSafe().getUserItems(repositoryId);
+		List<UserItem> filtered = new java.util.ArrayList<>();
+		for (UserItem user : allUsers) {
+			if (matchesQuery(user, queryLower)) {
+				filtered.add(user);
+			}
+		}
+		int totalCount = filtered.size();
+		int start = paginated ? Math.min(offset, totalCount) : 0;
+		int end = paginated ? Math.min(start + limit, totalCount) : totalCount;
+		for (int i = start; i < end; i++) {
+			listJSON.add(convertUserToJsonWithGroups(filtered.get(i), allGroups));
+		}
+		return totalCount;
+	}
+
+	/**
+	 * CouchDB fallback for case-sensitive user search (search endpoint).
+	 */
+	@SuppressWarnings("unchecked")
+	private void searchUsersCaseSensitiveCouchDB(String query, String repositoryId,
+			List<jp.aegif.nemaki.model.GroupItem> allGroups, JSONArray queriedUsers) {
+		List<UserItem> users = ObjectUtils.defaultIfNull(
+				getContentServiceSafe().getUserItems(repositoryId), Collections.emptyList());
+		for (UserItem user : users) {
+			String userId = user.getUserId();
+			String userName = user.getName();
+			boolean matches = (StringUtils.isNotEmpty(userId) && userId.contains(query)) ||
+			                  (StringUtils.isNotEmpty(userName) && userName.contains(query));
+			if (matches) {
+				JSONObject userJSON = convertUserToJsonWithGroups(user, allGroups);
+				if (queriedUsers.size() < 50) {
+					queriedUsers.add(userJSON);
+				} else {
+					break;
+				}
+			}
+		}
+	}
+
+	/**
 	 * Checks if a user matches the given search query (case-insensitive).
 	 */
 	private boolean matchesQuery(UserItem user, String queryLower) {
@@ -1451,6 +1529,10 @@ private ContentService getContentServiceSafe() {
 
 	public void setThreadLockService(ThreadLockService threadLockService) {
 		this.threadLockService = threadLockService;
+	}
+
+	public void setUserGroupSearchService(UserGroupSearchService userGroupSearchService) {
+		this.userGroupSearchService = userGroupSearchService;
 	}
 
 	/**

@@ -40,6 +40,11 @@ public class SortUtil {
 			return;
 		}
 		
+		// Special marker: skip sorting entirely (used by oversampling pagination)
+		if ("NONE".equals(orderBy)) {
+			return;
+		}
+
 		// Check orderBy argument
 		if (StringUtils.isEmpty(orderBy)) {
 			String defaultOrderBy = propertyManager

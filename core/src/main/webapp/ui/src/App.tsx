@@ -199,6 +199,7 @@
  * - Route component throws: ErrorBoundary implemented in ProtectedRoute (catches 401 errors)
  */
 
+import { useState, useEffect, useCallback } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ConfigProvider, App as AntApp } from 'antd';
 import { Layout } from './components/Layout/Layout';
@@ -217,6 +218,7 @@ import { FilesystemImportExport } from './components/FilesystemImportExport/File
 import { WebhookManagement } from './components/WebhookManagement/WebhookManagement';
 import { CloudDirectorySync } from './components/CloudDirectorySync/CloudDirectorySync';
 import { ConfigViewer } from './components/ConfigViewer/ConfigViewer';
+import { RssTokenManagement } from './components/RssTokenManagement/RssTokenManagement';
 import { AccountSettings } from './components/AccountSettings/AccountSettings';
 import { McpCloudLogin } from './components/McpCloudLogin/McpCloudLogin';
 import { Login } from './components/Login/Login';
@@ -241,9 +243,50 @@ const MCP_PENDING_LOGIN_KEY = 'mcp_pending_login_code';
  * Inner component that handles routing logic based on authentication state.
  * Uses useLocation to check if current path is a public route.
  */
+// Route-to-feature-toggle mapping for disabled feature route guards
+const ROUTE_FEATURE_MAP: Record<string, string> = {
+  '/webhooks': 'webhook.enabled',
+  '/rss-tokens': 'rss.enabled',
+  '/solr': 'rest.solr.enabled',
+  '/types': 'rest.type.enabled',
+  '/archive': 'rest.archive.enabled',
+  '/users': 'rest.user.enabled',
+  '/groups': 'rest.group.enabled',
+};
+
 function AppRoutes() {
   const { isAuthenticated, authToken } = useAuth();
   const location = useLocation();
+  const [featureToggles, setFeatureToggles] = useState<Record<string, boolean>>({});
+
+  const fetchToggles = useCallback(async () => {
+    if (!authToken?.token || !authToken?.repositoryId) return;
+    try {
+      const response = await fetch(
+        `/core/rest/repo/${authToken.repositoryId}/config/properties`,
+        { headers: { 'AUTH_TOKEN': authToken.token }, credentials: 'include' }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        if (data.properties) {
+          const toggleKeys = Object.values(ROUTE_FEATURE_MAP);
+          const updates: Record<string, boolean> = {};
+          for (const prop of data.properties) {
+            if (toggleKeys.includes(prop.key)) {
+              updates[prop.key] = prop.value !== 'false';
+            }
+          }
+          setFeatureToggles(updates);
+        }
+      }
+    } catch {
+      // Feature toggle fetch failure is non-critical; all features remain accessible
+    }
+  }, [authToken]);
+
+  useEffect(() => {
+    fetchToggles();
+  }, [fetchToggles]);
 
   // Public routes that don't require authentication
   // cloud-login needs to be accessible for MCP cloud authentication flow
@@ -275,6 +318,12 @@ function AppRoutes() {
     console.log('MCP: Found pending login code, redirecting to cloud-login:', pendingCode);
     // Return a Navigate component to redirect to cloud-login
     return <Navigate to={`/cloud-login?code=${pendingCode}`} replace />;
+  }
+
+  // Route guard: redirect to /documents if the feature for the current path is disabled
+  const featureKey = ROUTE_FEATURE_MAP[location.pathname];
+  if (featureKey && featureToggles[featureKey] === false) {
+    return <Navigate to="/documents" replace />;
   }
 
   // Authenticated routes
@@ -382,6 +431,13 @@ function AppRoutes() {
             <ProtectedRoute>
               <AdminRoute>
                 <ConfigViewer repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/rss-tokens" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <RssTokenManagement repositoryId={authToken.repositoryId} />
               </AdminRoute>
             </ProtectedRoute>
           } />

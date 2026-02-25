@@ -189,6 +189,12 @@ import { TestHelper } from '../utils/test-helper';
  * Re-enable after implementing more robust async handling.
  */
 test.describe('Advanced Search', () => {
+  // Use same env vars as playwright.config.ts (PW_BASIC_USER / PW_BASIC_PASS)
+  const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:8080';
+  const PW_USER = process.env.PW_BASIC_USER || 'admin';
+  const PW_PASS = process.env.PW_BASIC_PASS || 'admin';
+  const AUTH_HEADER = 'Basic ' + Buffer.from(`${PW_USER}:${PW_PASS}`).toString('base64');
+
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
@@ -488,6 +494,25 @@ test.describe('Advanced Search', () => {
   test('should find PDF by full-text search on content', async ({ page, browserName }) => {
     console.log('Test: PDF full-text indexing verification');
 
+    // Early check: verify PDF exists via CMIS API before attempting UI search
+    {
+      const queryRes = await page.request.post(`${BASE_URL}/core/browser/bedroom`, {
+        headers: { 'Authorization': AUTH_HEADER },
+        form: {
+          cmisaction: 'query',
+          q: "SELECT cmis:objectId FROM cmis:document WHERE cmis:name = 'CMIS-v1.1-Specification-Sample.pdf'",
+          maxItems: '1'
+        }
+      });
+      // Auth/server errors should fail the test, not be silently skipped
+      expect(queryRes.ok(), `CMIS query failed with status ${queryRes.status()}`).toBeTruthy();
+      const queryData = await queryRes.json();
+      if (!queryData.results || queryData.results.length === 0) {
+        test.skip(true, 'CMIS spec PDF not available in this environment');
+        return;
+      }
+    }
+
     // Detect mobile browsers for force click if needed
     const isMobile = testHelper.isMobile(browserName);
 
@@ -540,11 +565,12 @@ test.describe('Advanced Search', () => {
 
     // Assert PDF is found in search results
     if (await pdfResult.count() > 0) {
-      await expect(pdfResult).toBeVisible({ timeout: 5000 });
+      // Use .first() in case multiple versions of the PDF exist
+      await expect(pdfResult.first()).toBeVisible({ timeout: 5000 });
       console.log('✅ PDF found in full-text search results');
 
       // Verify result contains PDF indicator (file extension or MIME type)
-      const resultText = await pdfResult.textContent();
+      const resultText = await pdfResult.first().textContent();
       expect(resultText).toContain('pdf'); // Should show .pdf extension or PDF type
     } else {
       // If PDF still not found after retry, skip test (PDF may not be uploaded yet)
@@ -607,6 +633,25 @@ test.describe('Advanced Search', () => {
   test('should verify search result details and PDF preview navigation', async ({ page, browserName }) => {
     console.log('Test 8: Search result metadata and PDF preview navigation');
 
+    // Early check: verify PDF exists via CMIS API before attempting UI search
+    {
+      const queryRes = await page.request.post(`${BASE_URL}/core/browser/bedroom`, {
+        headers: { 'Authorization': AUTH_HEADER },
+        form: {
+          cmisaction: 'query',
+          q: "SELECT cmis:objectId FROM cmis:document WHERE cmis:name = 'CMIS-v1.1-Specification-Sample.pdf'",
+          maxItems: '1'
+        }
+      });
+      // Auth/server errors should fail the test, not be silently skipped
+      expect(queryRes.ok(), `CMIS query failed with status ${queryRes.status()}`).toBeTruthy();
+      const queryData = await queryRes.json();
+      if (!queryData.results || queryData.results.length === 0) {
+        test.skip(true, 'CMIS spec PDF not available in this environment');
+        return;
+      }
+    }
+
     // Detect mobile browsers for force click if needed
     const isMobile = testHelper.isMobile(browserName);
 
@@ -653,11 +698,12 @@ test.describe('Advanced Search', () => {
 
     // Verify PDF is found in search results
     if (await pdfResult.count() > 0) {
-      await expect(pdfResult).toBeVisible({ timeout: 5000 });
+      // Use .first() in case multiple versions of the PDF exist
+      await expect(pdfResult.first()).toBeVisible({ timeout: 5000 });
       console.log('✅ PDF found with "content stream" keyword');
 
       // Verify search result metadata
-      const resultText = await pdfResult.textContent();
+      const resultText = await pdfResult.first().textContent();
 
       // Check for PDF file type indicator
       const hasPdfIndicator = resultText && (
@@ -676,7 +722,7 @@ test.describe('Advanced Search', () => {
       }
 
       // Verify PDF icon/type indicator (if present)
-      const pdfIcon = pdfResult.locator('[data-icon="file-pdf"], .pdf-icon, [class*="pdf"], img[alt*="pdf"]');
+      const pdfIcon = pdfResult.first().locator('[data-icon="file-pdf"], .pdf-icon, [class*="pdf"], img[alt*="pdf"]');
       if (await pdfIcon.count() > 0) {
         console.log('✅ PDF file type icon displayed');
       } else {
@@ -733,6 +779,25 @@ test.describe('Advanced Search', () => {
 
   test('should find PDF by filename search', async ({ page, browserName }) => {
     console.log('Test 9: PDF filename search verification');
+
+    // Early check: verify PDF exists via CMIS API before attempting UI search
+    {
+      const queryRes = await page.request.post(`${BASE_URL}/core/browser/bedroom`, {
+        headers: { 'Authorization': AUTH_HEADER },
+        form: {
+          cmisaction: 'query',
+          q: "SELECT cmis:objectId FROM cmis:document WHERE cmis:name = 'CMIS-v1.1-Specification-Sample.pdf'",
+          maxItems: '1'
+        }
+      });
+      // Auth/server errors should fail the test, not be silently skipped
+      expect(queryRes.ok(), `CMIS query failed with status ${queryRes.status()}`).toBeTruthy();
+      const queryData = await queryRes.json();
+      if (!queryData.results || queryData.results.length === 0) {
+        test.skip(true, 'CMIS spec PDF not available in this environment');
+        return;
+      }
+    }
 
     // Detect mobile browsers for force click if needed
     const isMobile = testHelper.isMobile(browserName);
@@ -804,11 +869,12 @@ test.describe('Advanced Search', () => {
 
     // Verify PDF is found by filename
     if (await pdfResult.count() > 0) {
-      await expect(pdfResult).toBeVisible({ timeout: 5000 });
+      // Use .first() in case multiple versions of the PDF exist
+      await expect(pdfResult.first()).toBeVisible({ timeout: 5000 });
       console.log('✅ PDF found by filename search');
 
       // Verify the result is the correct PDF
-      const resultText = await pdfResult.textContent();
+      const resultText = await pdfResult.first().textContent();
       expect(resultText).toContain('CMIS-v1.1-Specification-Sample.pdf');
       console.log('✅ Search result contains correct filename');
 

@@ -425,6 +425,64 @@ public class TypeDefinitionDaoDelegate {
 	}
 
 	@SuppressWarnings("unchecked")
+	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetails(String repositoryId) {
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			Map<String, Object> queryParams = new HashMap<String, Object>();
+			queryParams.put("include_docs", true);
+
+			ViewResult result = client.queryView("_repo", "propertyDefinitionDetails", queryParams);
+			List<NemakiPropertyDefinitionDetail> details = new ArrayList<NemakiPropertyDefinitionDetail>();
+
+			if (result != null && result.getRows() != null) {
+				com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+				mapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+				for (ViewResultRow row : result.getRows()) {
+					if (row.getDoc() != null) {
+						try {
+							Object docObj = row.getDoc();
+							if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
+								com.ibm.cloud.cloudant.v1.model.Document cloudantDoc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
+								// Inline conversion: use already-fetched doc instead of client.get() per row
+								Map<String, Object> properties = cloudantDoc.getProperties();
+								if (properties != null) {
+									Map<String, Object> completeMap = new HashMap<>();
+									completeMap.put("_id", cloudantDoc.getId());
+									completeMap.put("_rev", cloudantDoc.getRev());
+									for (Map.Entry<String, Object> entry : properties.entrySet()) {
+										String key = entry.getKey();
+										Object value = entry.getValue();
+										if (("created".equals(key) || "modified".equals(key)) && value instanceof Number) {
+											long timestamp = ((Number) value).longValue();
+											java.util.GregorianCalendar calendar = new java.util.GregorianCalendar();
+											calendar.setTimeInMillis(timestamp);
+											completeMap.put(key, calendar);
+										} else {
+											completeMap.put(key, value);
+										}
+									}
+									CouchPropertyDefinitionDetail cpdd = mapper.convertValue(completeMap, CouchPropertyDefinitionDetail.class);
+									if (cpdd != null) {
+										details.add(cpdd.convert());
+									}
+								}
+							}
+						} catch (Exception e) {
+							log.warn("Failed to convert property definition detail: " + e.getMessage());
+						}
+					}
+				}
+			}
+
+			log.debug("Retrieved " + details.size() + " property definition details from repository: " + repositoryId);
+			return details;
+		} catch (Exception e) {
+			log.error("Error retrieving all property definition details from repository '" + repositoryId + "': " + e.getMessage(), e);
+			return new ArrayList<NemakiPropertyDefinitionDetail>();
+		}
+	}
+
+	@SuppressWarnings("unchecked")
 	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(String repositoryId,
 			String coreNodeId) {
 		try {

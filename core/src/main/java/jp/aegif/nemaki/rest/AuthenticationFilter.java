@@ -482,6 +482,12 @@ public class AuthenticationFilter implements Filter {
 			case "authtoken":
 				propertyKey = PropertyKey.REST_AUTHTOKEN_ENABLED;
 				break;
+			case "webhook":
+				propertyKey = PropertyKey.WEBHOOK_ENABLED;
+				break;
+			case "rss":
+				propertyKey = PropertyKey.RSS_ENABLED;
+				break;
 			default:
 				// Resource not in the controlled list, allow by default
 				return true;
@@ -497,6 +503,7 @@ public class AuthenticationFilter implements Filter {
 	 *   /repo/{repositoryId}/{resource}/...  → resource
 	 *   /all/{resource}/...                  → resource
 	 *   /v1/repo/{repositoryId}/{resource}/... → resource
+	 *   /repositories/{repositoryId}/{resource}/... → resource (API v1 CMIS)
 	 *
 	 * @param pathInfo the servlet path info (may be null)
 	 * @return the resource name, or null if it cannot be determined
@@ -522,6 +529,10 @@ public class AuthenticationFilter implements Filter {
 		// /all/{resource}/...
 		if (ApiType.ALL.equals(parts[0]) && parts.length > 1) {
 			return parts[1];
+		}
+		// /repositories/{id}/{resource}/... (API v1 CMIS endpoints)
+		if ("repositories".equals(parts[0]) && parts.length > 2) {
+			return parts[2];
 		}
 		return null;
 	}

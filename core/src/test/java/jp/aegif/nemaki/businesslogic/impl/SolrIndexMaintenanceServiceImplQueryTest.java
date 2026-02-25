@@ -564,16 +564,22 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
     // Tests for improved escape detection with consecutive backslashes
     
     @Test
-    public void testExecuteSolrQueryWithDoubleBackslashBeforeQuote() {
-        // Query with \\" - the backslash is escaped, so the quote is NOT escaped (unclosed quote)
-        // Two backslashes (even number) means the quote is not escaped
+    public void testExecuteSolrQueryWithDoubleBackslashBeforeQuote() throws Exception {
+        // Query with \\" - two backslashes (even number) escape each other,
+        // so the trailing quote is NOT escaped and acts as a valid closing quote.
+        // The query name:"test\\" is valid (quoted string containing "test\").
+        when(solrUtil.getSolrClient()).thenReturn(solrClient);
+        when(solrClient.query(any(SolrQuery.class))).thenReturn(queryResponse);
+        when(queryResponse.getResults()).thenReturn(solrDocumentList);
+        when(solrDocumentList.getNumFound()).thenReturn(5L);
+        when(solrDocumentList.getStart()).thenReturn(0L);
+        when(solrDocumentList.iterator()).thenReturn(new ArrayList<SolrDocument>().iterator());
+
         SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"test\\\\\"", 0, 10, null, null);
-        
+
         assertNotNull(result);
-        assertNotNull("Double backslash before quote should leave quote unescaped (unclosed)", 
+        assertNull("Double backslash before quote = even count = quote closes string (valid query)",
             result.getErrorMessage());
-        assertTrue("Error should mention unclosed quote", 
-            result.getErrorMessage().contains("quote") || result.getErrorMessage().contains("Unclosed"));
     }
     
     @Test
@@ -594,15 +600,22 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
     }
     
     @Test
-    public void testExecuteSolrQueryWithQuadrupleBackslashBeforeQuote() {
-        // Query with \\\\" - four backslashes (even number) means quote is NOT escaped
+    public void testExecuteSolrQueryWithQuadrupleBackslashBeforeQuote() throws Exception {
+        // Query with \\\\" - four backslashes (even number) escape each other pairwise,
+        // so the trailing quote is NOT escaped and acts as a valid closing quote.
+        // The query name:"test\\\\" is valid (quoted string containing "test\\").
+        when(solrUtil.getSolrClient()).thenReturn(solrClient);
+        when(solrClient.query(any(SolrQuery.class))).thenReturn(queryResponse);
+        when(queryResponse.getResults()).thenReturn(solrDocumentList);
+        when(solrDocumentList.getNumFound()).thenReturn(5L);
+        when(solrDocumentList.getStart()).thenReturn(0L);
+        when(solrDocumentList.iterator()).thenReturn(new ArrayList<SolrDocument>().iterator());
+
         SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"test\\\\\\\\\"", 0, 10, null, null);
-        
+
         assertNotNull(result);
-        assertNotNull("Quadruple backslash before quote should leave quote unescaped (unclosed)", 
+        assertNull("Quadruple backslash before quote = even count = quote closes string (valid query)",
             result.getErrorMessage());
-        assertTrue("Error should mention unclosed quote", 
-            result.getErrorMessage().contains("quote") || result.getErrorMessage().contains("Unclosed"));
     }
     
     @Test

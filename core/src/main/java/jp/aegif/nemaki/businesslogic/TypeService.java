@@ -14,6 +14,8 @@ public interface TypeService {
 	NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(String repositoryId, String propertyId);
 	List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores(String repositoryId);
 	NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String repositoryId, String detailId);
+
+	List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetails(String repositoryId);
 	List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(
 			String repositoryId, String coreNodeId);
 	NemakiTypeDefinition createTypeDefinition(

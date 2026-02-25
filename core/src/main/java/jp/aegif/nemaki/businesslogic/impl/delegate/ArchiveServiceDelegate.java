@@ -17,6 +17,7 @@ import jp.aegif.nemaki.util.constant.PrincipalId;
 
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisNotSupportedException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
@@ -94,6 +95,7 @@ public class ArchiveServiceDelegate {
 			Document document = (Document) content;
 			a.setAttachmentNodeId(document.getAttachmentNodeId());
 			a.setVersionSeriesId(document.getVersionSeriesId());
+			a.setVersionLabel(document.getVersionLabel());
 			a.setIsLatestVersion(document.isLatestVersion());
 
 			// Set mimeType and contentStreamLength from AttachmentNode
@@ -130,6 +132,7 @@ public class ArchiveServiceDelegate {
 			Document document = (Document) content;
 			a.setAttachmentNodeId(document.getAttachmentNodeId());
 			a.setVersionSeriesId(document.getVersionSeriesId());
+			a.setVersionLabel(document.getVersionLabel());
 			a.setIsLatestVersion(document.isLatestVersion());
 
 			if (mimeType != null) {
@@ -248,8 +251,7 @@ public class ArchiveServiceDelegate {
 			throw new CmisRuntimeException("restoreDocument: archive has no versionSeriesId, archiveId=" + archive.getId());
 		}
 
-		List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId, versionSeriesId);
-
+		// Ensure VersionSeries exists
 		VersionSeries vs = contentDaoService.getVersionSeries(repositoryId, versionSeriesId);
 		if (vs == null) {
 			log.info("restoreDocument: VersionSeries {} not found, recreating it", versionSeriesId);
@@ -257,34 +259,168 @@ public class ArchiveServiceDelegate {
 			vs = contentDaoService.getVersionSeries(repositoryId, versionSeriesId);
 		}
 
-		for (Archive version : versions) {
-			contentDaoService.restoreDocumentWithArchive(repositoryId, version);
-			contentDaoService.deleteDocumentArchive(repositoryId, version.getId());
+		// Validation 1: Reject if version series is checked out
+		if (vs != null && vs.isVersionSeriesCheckedOut()) {
+			throw new CmisConstraintException(
+				"Cannot restore: version series is checked out. Cancel checkout first.");
 		}
 
-		// After restoring all versions, clean up checkout state
-		List<Document> restoredVersions = contentDaoService.getAllVersions(repositoryId, versionSeriesId);
-		if (CollectionUtils.isNotEmpty(restoredVersions)) {
-			for (Document version : restoredVersions) {
-				if (version.isPrivateWorkingCopy()) {
-					contentDaoService.delete(repositoryId, version.getAttachmentNodeId());
-					contentDaoService.delete(repositoryId, version.getId());
-				} else if (version.isVersionSeriesCheckedOut()) {
-					version.setVersionSeriesCheckedOut(false);
-					version.setVersionSeriesCheckedOutBy(null);
-					version.setVersionSeriesCheckedOutId(null);
-					contentDaoService.update(repositoryId, version);
+		// Validation 2: Reject if any live version has a version number >= the archive's version number.
+		// Restoration must only "stack on top" — the restored version must be strictly higher
+		// than all existing live versions, mirroring the rule that only the latest version can be deleted.
+		double archiveVersionNum = -1;
+		String archiveVersionLabel = archive.getVersionLabel();
+		if (archiveVersionLabel != null) {
+			try {
+				archiveVersionNum = Double.parseDouble(archiveVersionLabel);
+			} catch (NumberFormatException e) {
+				log.warn("restoreDocument: Could not parse archive versionLabel '{}', skipping version check", archiveVersionLabel);
+			}
+		} else {
+			log.warn("restoreDocument: Archive has no versionLabel (archiveId={}), skipping version check", archive.getId());
+		}
+
+		List<Document> liveVersions = contentDaoService.getAllVersions(repositoryId, versionSeriesId);
+		if (archiveVersionNum >= 0 && CollectionUtils.isNotEmpty(liveVersions)) {
+			for (Document live : liveVersions) {
+				if (live.isPrivateWorkingCopy()) continue;
+				String liveLabel = live.getVersionLabel();
+				if (liveLabel == null) continue;
+				try {
+					double liveVersionNum = Double.parseDouble(liveLabel);
+					if (liveVersionNum >= archiveVersionNum) {
+						throw new CmisConstraintException(
+							"Cannot restore version " + archiveVersionLabel
+							+ ": a live version with the same or higher number ("
+							+ liveLabel + ") already exists. "
+							+ "Delete newer versions first, then restore.");
+					}
+				} catch (NumberFormatException e) {
+					// Skip live versions with unparseable labels
 				}
 			}
 		}
-		if (vs != null && vs.isVersionSeriesCheckedOut()) {
-			vs.setVersionSeriesCheckedOut(false);
-			vs.setVersionSeriesCheckedOutBy(null);
-			vs.setVersionSeriesCheckedOutId(null);
-			contentDaoService.update(repositoryId, vs);
+
+		// Restore only the specific requested archive (not all archived versions of the series).
+		// This enforces one-at-a-time restoration consistent with one-at-a-time deletion.
+		contentDaoService.restoreDocumentWithArchive(repositoryId, archive);
+		contentDaoService.deleteDocumentArchive(repositoryId, archive.getId());
+
+		// Track the restored document's ID so we can ensure it gets indexed
+		String restoredDocId = archive.getOriginalId();
+
+		// Recalculate version flags to ensure consistency.
+		// This runs unconditionally (including for a single version) because an archive
+		// restored after a full-delete may carry a stale isLatestVersion=false that must
+		// be corrected — otherwise the series has no latest version.
+		boolean restoredVersionIndexed = false;
+		List<Document> allVersions = contentDaoService.getAllVersions(repositoryId, versionSeriesId);
+		if (CollectionUtils.isNotEmpty(allVersions)) {
+			Document highestVersion = null;
+			double highestVersionNum = -1;
+			Document highestMajorVersion = null;
+			double highestMajorVersionNum = -1;
+
+			for (Document v : allVersions) {
+				if (v.isPrivateWorkingCopy()) continue;
+				double versionNum = 0;
+				try {
+					versionNum = Double.parseDouble(v.getVersionLabel());
+				} catch (NumberFormatException | NullPointerException e) {
+					continue;
+				}
+				if (versionNum > highestVersionNum) {
+					highestVersionNum = versionNum;
+					highestVersion = v;
+				}
+				if (Boolean.TRUE.equals(v.isMajorVersion()) && versionNum > highestMajorVersionNum) {
+					highestMajorVersionNum = versionNum;
+					highestMajorVersion = v;
+				}
+			}
+
+			// If no version had a parseable versionLabel, skip flag updates entirely
+			// to avoid wiping all isLatestVersion flags to false.
+			if (highestVersion == null) {
+				log.warn("restoreDocument: No version with a parseable versionLabel found in series {}; skipping flag recalculation", versionSeriesId);
+			} else {
+
+			for (Document v : allVersions) {
+				if (v.isPrivateWorkingCopy()) continue;
+				boolean shouldBeLatest = v.getId().equals(highestVersion.getId());
+				boolean shouldBeLatestMajor = (highestMajorVersion != null && v.getId().equals(highestMajorVersion.getId()));
+
+				boolean changed = false;
+				if (!Boolean.valueOf(shouldBeLatest).equals(v.isLatestVersion())) {
+					v.setLatestVersion(shouldBeLatest);
+					changed = true;
+				}
+				if (!Boolean.valueOf(shouldBeLatestMajor).equals(v.isLatestMajorVersion())) {
+					v.setLatestMajorVersion(shouldBeLatestMajor);
+					changed = true;
+				}
+
+				boolean isRestoredVersion = v.getId().equals(restoredDocId);
+
+				if (changed) {
+					try {
+						contentDaoService.update(repositoryId, v);
+					} catch (Exception e) {
+						// CouchDB optimistic lock conflict: re-fetch and retry once
+						log.warn("restoreDocument: update conflict for version " + v.getId() + ", retrying: " + e.getMessage());
+						try {
+							Document fresh = contentService.getDocument(repositoryId, v.getId());
+							if (fresh != null) {
+								fresh.setLatestVersion(shouldBeLatest);
+								fresh.setLatestMajorVersion(shouldBeLatestMajor);
+								contentDaoService.update(repositoryId, fresh);
+							}
+						} catch (Exception retryErr) {
+							log.error("restoreDocument: retry update also failed for version " + v.getId() + ": " + retryErr.getMessage());
+						}
+					}
+				}
+
+				// Re-index if version flags changed OR if this is the restored version itself.
+				// The restored version was removed from Solr at delete time and must always
+				// be re-indexed, regardless of whether its version flags changed.
+				if (changed || isRestoredVersion) {
+					try {
+						SolrUtil solrUtil = solrUtilSupplier.get();
+						if (solrUtil != null) {
+							solrUtil.indexDocument(repositoryId, v);
+							// Mark as indexed only when solrUtil is available AND
+							// indexDocument succeeded (no exception) so the safety
+							// net can retry if solrUtil is null or indexing threw.
+							if (isRestoredVersion) {
+								restoredVersionIndexed = true;
+							}
+						}
+					} catch (Exception e) {
+						log.warn("restoreDocument: Solr indexing failed for version {}: {}", v.getId(), e.getMessage());
+					}
+				}
+			}
+			} // end if (highestVersion != null)
 		}
 
-		return contentService.getDocument(repositoryId, archive.getOriginalId());
+		// Safety net: if the restored version was not part of the allVersions loop
+		// (e.g. unparseable versionLabel), ensure it still gets indexed
+		if (!restoredVersionIndexed) {
+			try {
+				Document restoredDoc = contentService.getDocument(repositoryId, restoredDocId);
+				if (restoredDoc != null) {
+					SolrUtil solrUtil = solrUtilSupplier.get();
+					if (solrUtil != null) {
+						solrUtil.indexDocument(repositoryId, restoredDoc);
+					}
+				}
+			} catch (Exception e) {
+				log.warn("restoreDocument: Solr safety-net indexing failed for {}: {}", restoredDocId, e.getMessage());
+			}
+		}
+
+		return contentService.getDocument(repositoryId, restoredDocId);
 	}
 
 	private Folder restoreFolder(String repositoryId, Archive archive) throws ParentNoLongerExistException {

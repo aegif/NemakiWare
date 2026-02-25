@@ -54,7 +54,8 @@
           "map": "function(doc) { if (doc.type == 'propertyDefinitionCore')  emit(doc.propertyId, doc) }"
         },
         "children": {
-          "map": "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion || doc.type == 'cmis:item') emit(doc.parentId, doc) }"
+          "map": "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion || doc.type == 'cmis:item') emit(doc.parentId, doc) }",
+          "reduce": "_count"
         },
         "relationships": {
           "map": "function(doc) { if (doc.type == 'cmis:relationship')  emit(doc._id, doc) }"

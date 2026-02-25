@@ -48,6 +48,7 @@ public class CouchArchive extends CouchNodeBase{
 	private String attachmentNodeId;
 	private List<String> renditionIds;
 	private String versionSeriesId;
+	private String versionLabel;
 	private Boolean latestVersion;
 	private String mimeType;
 	private Long contentStreamLength;
@@ -77,6 +78,7 @@ public class CouchArchive extends CouchNodeBase{
 		setAttachmentNodeId(a.getAttachmentNodeId());
 		setRenditionIds(a.getRenditionIds());
 		setVersionSeriesId(a.getVersionSeriesId());
+		setVersionLabel(a.getVersionLabel());
 		setLatestVersion(a.isLatestVersion());
 		setMimeType(a.getMimeType());
 		setContentStreamLength(a.getContentStreamLength());
@@ -164,6 +166,14 @@ public class CouchArchive extends CouchNodeBase{
 
 	public void setVersionSeriesId(String versionSeriesId) {
 		this.versionSeriesId = versionSeriesId;
+	}
+
+	public String getVersionLabel() {
+		return versionLabel;
+	}
+
+	public void setVersionLabel(String versionLabel) {
+		this.versionLabel = versionLabel;
 	}
 
 	public Boolean isLatestVersion() {
@@ -267,6 +277,7 @@ public class CouchArchive extends CouchNodeBase{
 		if(getAttachmentNodeId() != null) m.put("nemakiAttachments", getAttachmentNodeId().toString());
 		if(getVersionSeriesId() != null) m.put("versionSeriesId", getVersionSeriesId());
 		if(isLatestVersion() != null) m.put("isLatestVersion", isLatestVersion());
+		if(getVersionLabel() != null) m.put("versionLabel", getVersionLabel());
 		if(getCreated() != null) m.put("created", convertToDateFormat(getCreated()));
 		if(getCreator() != null) m.put("creator", getCreator());
 		return m.toString();
@@ -323,6 +334,7 @@ public class CouchArchive extends CouchNodeBase{
 		a.setAttachmentNodeId(getAttachmentNodeId());
 		a.setRenditionIds(getRenditionIds());
 		a.setVersionSeriesId(getVersionSeriesId());
+		a.setVersionLabel(getVersionLabel());
 		a.setIsLatestVersion(isLatestVersion());
 		a.setMimeType(getMimeType());
 		a.setContentStreamLength(getContentStreamLength());

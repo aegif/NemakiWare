@@ -112,6 +112,16 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
      * Build an HTTP POST connection, validate the URL (SSRF protection), set headers,
      * and write the payload. Returns the opened connection ready for reading the response.
      *
+     * <p>SSRF protection strategy differs by protocol:
+     * <ul>
+     *   <li><b>HTTP</b>: Connect via the pre-resolved IP address to prevent DNS rebinding attacks.
+     *       The Host header is set to the original hostname for virtual hosting.</li>
+     *   <li><b>HTTPS</b>: Validate the resolved IP (block private/internal addresses), then connect
+     *       using the original hostname URL. TLS certificate verification inherently prevents DNS
+     *       rebinding because the attacker would need a valid certificate for the target hostname.
+     *       This avoids Java's internal hostname-vs-certificate mismatch when the URL uses an IP.</li>
+     * </ul>
+     *
      * @throws IllegalArgumentException if url/payload is invalid or blocked by SSRF protection
      * @throws MalformedURLException if the URL is malformed
      * @throws IOException if an I/O error occurs during connection or payload write
@@ -133,19 +143,31 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
             throw new IllegalArgumentException("unsupported protocol " + protocol);
         }
 
-        // SSRF protection: resolve and validate hostname
-        // Returns the resolved IP address to prevent DNS rebinding attacks
+        // SSRF protection: resolve and validate hostname (blocks private/internal IPs)
         InetAddress resolvedAddress = resolveAndValidateUrl(targetUrl);
         if (resolvedAddress == null) {
             throw new IllegalArgumentException("URL blocked for security reasons (SSRF protection) - " + url);
         }
 
-        // Build URL using resolved IP to prevent DNS rebinding
-        int port = targetUrl.getPort() != -1 ? targetUrl.getPort() : targetUrl.getDefaultPort();
-        URL resolvedUrl = new URL(protocol, resolvedAddress.getHostAddress(), port,
-                targetUrl.getFile());
+        HttpURLConnection connection;
 
-        HttpURLConnection connection = (HttpURLConnection) resolvedUrl.openConnection();
+        if (protocol.equals("https")) {
+            // HTTPS: Connect using the original hostname URL.
+            // TLS certificate validation prevents DNS rebinding (attacker cannot present
+            // a valid cert for the target hostname on an internal server).
+            connection = (HttpURLConnection) targetUrl.openConnection();
+        } else {
+            // HTTP: Connect via resolved IP to prevent DNS rebinding attacks.
+            int port = targetUrl.getPort() != -1 ? targetUrl.getPort() : targetUrl.getDefaultPort();
+            URL resolvedUrl = new URL(protocol, resolvedAddress.getHostAddress(), port,
+                    targetUrl.getFile());
+            connection = (HttpURLConnection) resolvedUrl.openConnection();
+
+            // Set Host header to original hostname (required for virtual hosting)
+            connection.setRequestProperty("Host", targetUrl.getHost() +
+                    (targetUrl.getPort() != -1 ? ":" + targetUrl.getPort() : ""));
+        }
+
         connection.setRequestMethod("POST");
         connection.setDoOutput(true);
         connection.setConnectTimeout(connectTimeout);
@@ -153,10 +175,6 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
 
         // SSRF protection: Disable automatic redirect following
         connection.setInstanceFollowRedirects(false);
-
-        // Set Host header to original hostname (required for virtual hosting)
-        connection.setRequestProperty("Host", targetUrl.getHost() +
-                (targetUrl.getPort() != -1 ? ":" + targetUrl.getPort() : ""));
 
         // Set default headers
         connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");

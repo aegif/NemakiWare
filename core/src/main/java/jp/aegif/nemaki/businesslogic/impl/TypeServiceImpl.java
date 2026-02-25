@@ -91,6 +91,11 @@ public class TypeServiceImpl implements TypeService{
 	}
 
 	@Override
+	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetails(String repositoryId) {
+		return contentDaoService.getPropertyDefinitionDetails(repositoryId);
+	}
+
+	@Override
 	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(
 			String repositoryId, String coreNodeId){
 		return contentDaoService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, coreNodeId);

@@ -834,8 +834,52 @@ export class CMISService {
   }
 
   /**
+   * Get children of a folder with server-side pagination.
+   * Returns items along with pagination metadata (numItems, hasMoreItems).
+   * Use this for large folder listings where client-side pagination is needed.
+   *
+   * @param repositoryId Repository ID (e.g., 'bedroom')
+   * @param folderId Folder ID to get children from
+   * @param options Pagination options (maxItems, skipCount)
+   * @returns Promise resolving to paginated result
+   */
+  async getChildrenPaged(
+    repositoryId: string,
+    folderId: string,
+    options?: { maxItems?: number; skipCount?: number }
+  ): Promise<{ items: CMISObject[]; numItems: number; hasMoreItems: boolean }> {
+    try {
+      const result = await this.atomPubClient.getChildren(repositoryId, folderId, {
+        filter: '*',
+        includeAllowableActions: true,
+        maxItems: options?.maxItems ?? 100,
+        skipCount: options?.skipCount ?? 0,
+      });
+
+      if (!result.success) {
+        if (result.status === 401 || result.status === 403) {
+          const error = this.handleHttpError(result.status, result.error || 'Unauthorized', '');
+          throw error;
+        }
+        throw new Error(result.error || `HTTP ${result.status}`);
+      }
+
+      return {
+        items: result.data?.entries.map(convertParsedEntryToCmisObject) || [],
+        numItems: result.data?.pagination.numItems ?? -1,
+        hasMoreItems: result.data?.pagination.hasMoreItems ?? false,
+      };
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
+  }
+
+  /**
    * Get a single CMIS object by ID using the new AtomPubClient
-   * 
+   *
    * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
    * which provides better separation of concerns and testability.
    * The behavior is preserved: uses AtomPub binding with includeAllowableActions=true
@@ -1252,7 +1296,7 @@ export class CMISService {
    * @param objectId Object ID to delete
    * @returns Promise resolving when deletion is complete
    */
-  async deleteObject(repositoryId: string, objectId: string, isFolder: boolean = false): Promise<void> {
+  async deleteObject(repositoryId: string, objectId: string, isFolder: boolean = false, allVersions: boolean = true): Promise<void> {
     try {
       const url = `${this.baseUrl}/${repositoryId}`;
       const params = new URLSearchParams();
@@ -1266,6 +1310,7 @@ export class CMISService {
       } else {
         params.append('cmisaction', 'deleteObject');
         params.append('objectId', objectId);
+        params.append('allVersions', String(allVersions));
       }
 
       const response = await this.httpClient.postUrlEncoded(url, params);
@@ -1287,6 +1332,13 @@ export class CMISService {
       }
       throw new Error('Network error');
     }
+  }
+
+  /**
+   * Delete only the latest version of a document, reverting to the previous version.
+   */
+  async deleteLatestVersion(repositoryId: string, objectId: string): Promise<void> {
+    return this.deleteObject(repositoryId, objectId, false, false);
   }
 
   /**
@@ -2248,12 +2300,12 @@ export class CMISService {
 
       // Map frontend TypeDefinition field names to backend expectations
       // Backend expects "baseId" instead of "baseTypeId" for CMIS type definitions
-      const backendPayload = {
-        ...type,
-        baseId: type.baseTypeId, // Map baseTypeId to baseId for backend
-      };
-      // Remove baseTypeId to avoid confusion
-      delete (backendPayload as any).baseTypeId;
+      // Note: GUI editor already sends "baseId", while TypeDefinition objects use "baseTypeId"
+      const backendPayload: any = { ...type };
+      if (type.baseTypeId) {
+        backendPayload.baseId = type.baseTypeId;
+        delete backendPayload.baseTypeId;
+      }
 
       const response = await this.httpClient.postJson(url, backendPayload);
 
@@ -2293,12 +2345,12 @@ export class CMISService {
 
       // Map frontend TypeDefinition field names to backend expectations
       // Backend expects "baseId" instead of "baseTypeId" for CMIS type definitions
-      const backendPayload = {
-        ...type,
-        baseId: type.baseTypeId, // Map baseTypeId to baseId for backend
-      };
-      // Remove baseTypeId to avoid confusion
-      delete (backendPayload as any).baseTypeId;
+      // Note: GUI editor already sends "baseId", while TypeDefinition objects use "baseTypeId"
+      const backendPayload: any = { ...type };
+      if (type.baseTypeId) {
+        backendPayload.baseId = type.baseTypeId;
+        delete backendPayload.baseTypeId;
+      }
 
       // Use PUT method via httpClient.request()
       const response = await this.httpClient.request({

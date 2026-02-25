@@ -6,7 +6,8 @@ Thumbs.db
 # Cloud credentials (never commit)
 docker/.env
 docker/.env.cloud
-docker/secrets/
+docker/secrets/*
+!docker/secrets/*.example
 
 # IDE and Editor files
 .classpath

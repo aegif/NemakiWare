@@ -146,7 +146,8 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
 
                 // Index root folder itself
                 try {
-                    solrUtil.indexDocument(repositoryId, rootFolder, true);
+                    // skipRAGIndexing=true: triggerFullRAGReindex() runs after completion
+                    solrUtil.indexDocument(repositoryId, rootFolder, true, true);
                     indexedCount.incrementAndGet();
                 } catch (Exception e) {
                     log.warn("Failed to index root folder: " + e.getMessage());
@@ -156,8 +157,9 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 AtomicLong reindexedSuccessCount = new AtomicLong(0);
                 List<String> errors = new ArrayList<>();
 
+                // skipRAGIndexing=true: triggerFullRAGReindex() runs after completion
                 reindexFolderRecursive(repositoryId, rootFolder.getId(), true, 
-                    status, indexedCount, errorCount, errors, silentDropCount, reindexedSuccessCount);
+                    status, indexedCount, errorCount, errors, silentDropCount, reindexedSuccessCount, true);
 
                 status.setIndexedCount(indexedCount.get());
                 status.setErrorCount(errorCount.get());
@@ -175,6 +177,10 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                     // Force commit and wait for Solr to fully process before health check
                     forceCommitAndWait(repositoryId);
                     runPostReindexHealthCheck(repositoryId, status, errors);
+
+                    // Trigger full RAG re-index asynchronously.
+                    // clearIndex deleted RAG documents (same Solr core), so they need rebuilding.
+                    solrUtil.triggerFullRAGReindex(repositoryId);
                 }
 
             } catch (Exception e) {
@@ -235,8 +241,10 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 AtomicLong reindexedSuccessCount = new AtomicLong(0);
                 List<String> errors = new ArrayList<>();
 
+                // skipRAGIndexing=false: folder reindex does not call triggerFullRAGReindex(),
+                // so each document must update its RAG embedding individually
                 reindexFolderRecursive(repositoryId, folderId, recursive, 
-                    status, indexedCount, errorCount, errors, silentDropCount, reindexedSuccessCount);
+                    status, indexedCount, errorCount, errors, silentDropCount, reindexedSuccessCount, false);
 
                 status.setIndexedCount(indexedCount.get());
                 status.setErrorCount(errorCount.get());
@@ -336,7 +344,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
 
     private void reindexFolderRecursive(String repositoryId, String folderId, boolean recursive,
             ReindexStatus status, AtomicLong indexedCount, AtomicLong errorCount, List<String> errors,
-            AtomicLong silentDropCount, AtomicLong reindexedSuccessCount) {
+            AtomicLong silentDropCount, AtomicLong reindexedSuccessCount, boolean skipRAGIndexing) {
         
         if (cancelFlags.get(repositoryId).get()) {
             return;
@@ -358,7 +366,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 if (cancelFlags.get(repositoryId).get()) {
                     // Flush remaining batch before cancellation
                     if (!batchBuffer.isEmpty()) {
-                        flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
+                        flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount, skipRAGIndexing);
                     }
                     return;
                 }
@@ -373,14 +381,14 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 
                 // Flush batch when it reaches BATCH_SIZE
                 if (batchBuffer.size() >= BATCH_SIZE) {
-                    flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
+                    flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount, skipRAGIndexing);
                     batchBuffer.clear();
                 }
             }
             
             // Flush remaining documents in buffer
             if (!batchBuffer.isEmpty()) {
-                flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
+                flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount, skipRAGIndexing);
             }
             
             // Process subfolders recursively
@@ -389,7 +397,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                     return;
                 }
                 reindexFolderRecursive(repositoryId, subFolder.getId(), true, 
-                    status, indexedCount, errorCount, errors, silentDropCount, reindexedSuccessCount);
+                    status, indexedCount, errorCount, errors, silentDropCount, reindexedSuccessCount, skipRAGIndexing);
             }
         } catch (Exception e) {
             log.error("Error reindexing folder: " + folderId, e);
@@ -403,16 +411,17 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
     /**
      * Flush a batch of documents to Solr index.
      * Uses batch indexing for improved performance with verification for silent drops.
+     * @param skipRAGIndexing if true, skip RAG embedding (used during full reindex where triggerFullRAGReindex runs after)
      */
     private void flushBatch(String repositoryId, List<Content> batch, 
             AtomicLong indexedCount, AtomicLong errorCount, List<String> errors, ReindexStatus status,
-            AtomicLong silentDropCount, AtomicLong reindexedSuccessCount) {
+            AtomicLong silentDropCount, AtomicLong reindexedSuccessCount, boolean skipRAGIndexing) {
         if (batch.isEmpty()) {
             return;
         }
         
         try {
-            int successCount = solrUtil.indexDocumentsBatch(repositoryId, batch, BATCH_COMMIT_WITHIN_MS);
+            int successCount = solrUtil.indexDocumentsBatch(repositoryId, batch, BATCH_COMMIT_WITHIN_MS, skipRAGIndexing);
             indexedCount.addAndGet(successCount);
             status.setIndexedCount(indexedCount.get());
             
@@ -428,14 +437,14 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             log.info("Batch indexed " + successCount + "/" + batch.size() + " documents, total: " + indexedCount.get());
             
             // Verify batch indexing and re-index any silently dropped documents
-            verifyAndReindexMissing(repositoryId, batch, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
+            verifyAndReindexMissing(repositoryId, batch, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount, skipRAGIndexing);
             
         } catch (Exception e) {
             // Fall back to individual indexing on batch failure
             log.warn("Batch indexing failed, falling back to individual indexing: " + e.getMessage());
             for (Content content : batch) {
                 try {
-                    solrUtil.indexDocument(repositoryId, content, true);
+                    solrUtil.indexDocument(repositoryId, content, true, skipRAGIndexing);
                     indexedCount.incrementAndGet();
                     status.setIndexedCount(indexedCount.get());
                 } catch (Exception ex) {
@@ -475,10 +484,11 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
      * Re-indexes any documents that were silently dropped by Solr.
      * If the query would be too long, splits the batch into smaller chunks.
      * Tracks silentDropCount and reindexedCount in the status object.
+     * @param skipRAGIndexing if true, skip RAG embedding during re-index
      */
     private void verifyAndReindexMissing(String repositoryId, List<Content> batch,
             AtomicLong indexedCount, AtomicLong errorCount, List<String> errors, ReindexStatus status,
-            AtomicLong silentDropCount, AtomicLong reindexedSuccessCount) {
+            AtomicLong silentDropCount, AtomicLong reindexedSuccessCount, boolean skipRAGIndexing) {
         if (batch.isEmpty()) {
             return;
         }
@@ -495,8 +505,8 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 List<Content> secondHalf = batch.subList(mid, batch.size());
                 log.info("Splitting batch verification due to query length (" + queryString.length() + " chars): " + 
                     batch.size() + " -> " + firstHalf.size() + " + " + secondHalf.size());
-                verifyAndReindexMissing(repositoryId, new ArrayList<>(firstHalf), indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
-                verifyAndReindexMissing(repositoryId, new ArrayList<>(secondHalf), indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
+                verifyAndReindexMissing(repositoryId, new ArrayList<>(firstHalf), indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount, skipRAGIndexing);
+                verifyAndReindexMissing(repositoryId, new ArrayList<>(secondHalf), indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount, skipRAGIndexing);
                 return;
             } else {
                 // Single document with very long ID - skip verification to avoid Solr query length limit
@@ -553,7 +563,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 for (Content content : batch) {
                     if (!existingIds.contains(content.getId())) {
                         try {
-                            solrUtil.indexDocument(repositoryId, content, true);
+                            solrUtil.indexDocument(repositoryId, content, true, skipRAGIndexing);
                             batchReindexedCount++;
                             reindexedSuccessCount.incrementAndGet();
                             status.setReindexedCount(reindexedSuccessCount.get());
@@ -621,41 +631,61 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
 
         SolrClient solrClient = null;
         try {
-            // Get Solr document count (cmis:document, cmis:folder, cmis:item)
-            // Exclude RAG documents (doc_type:document/chunk)
+            // 1. Collect all CouchDB document IDs (including root folder)
+            Set<String> couchIds = new HashSet<>();
+            Folder rootFolder = contentService.getFolder(repositoryId,
+                repositoryInfoMap.get(repositoryId).getRootFolderId());
+            if (rootFolder != null) {
+                couchIds.add(rootFolder.getId());
+                collectDocumentIds(repositoryId, rootFolder.getId(), couchIds);
+            }
+            health.setCouchDbDocumentCount(couchIds.size());
+
+            // 2. Collect all Solr document IDs (cmis:document, cmis:folder, cmis:item)
+            Set<String> solrIds = new HashSet<>();
             solrClient = solrUtil.getSolrClient();
             if (solrClient != null) {
                 SolrQuery query = new SolrQuery("repository_id:" + ClientUtils.escapeQueryChars(repositoryId));
                 query.addFilterQuery("-doc_type:document -doc_type:chunk");
                 query.addFilterQuery("basetype:(cmis\\:document OR cmis\\:folder OR cmis\\:item)");
-                query.setRows(0);
-                QueryResponse response = solrClient.query(query);
-                health.setSolrDocumentCount(response.getResults().getNumFound());
+                query.setFields("object_id");
+                query.setRows(500);
+                query.addSort("id", SolrQuery.ORDER.asc);
+                String cursorMark = "*";
+                while (true) {
+                    query.set("cursorMark", cursorMark);
+                    QueryResponse response = solrClient.query(query);
+                    SolrDocumentList docs = response.getResults();
+                    if (docs.isEmpty()) break;
+                    for (SolrDocument doc : docs) {
+                        Object id = doc.getFieldValue("object_id");
+                        if (id != null) {
+                            solrIds.add(id.toString());
+                        }
+                    }
+                    String nextCursorMark = response.getNextCursorMark();
+                    if (cursorMark.equals(nextCursorMark)) break;
+                    cursorMark = nextCursorMark;
+                }
             }
+            health.setSolrDocumentCount(solrIds.size());
 
-            // Get CouchDB document count: root folder + all descendants
-            Folder rootFolder = contentService.getFolder(repositoryId,
-                repositoryInfoMap.get(repositoryId).getRootFolderId());
-            if (rootFolder != null) {
-                AtomicLong couchCount = new AtomicLong(1); // count root folder itself
-                countDocumentsRecursive(repositoryId, rootFolder.getId(), couchCount);
-                health.setCouchDbDocumentCount(couchCount.get());
-            }
+            // 3. Calculate discrepancies using set operations (accurate counts)
+            Set<String> missingIds = new HashSet<>(couchIds);
+            missingIds.removeAll(solrIds);
+            health.setMissingInSolr(missingIds.size());
 
-            // Calculate discrepancies
-            long diff = health.getCouchDbDocumentCount() - health.getSolrDocumentCount();
-            if (diff > 0) {
-                health.setMissingInSolr(diff);
-            } else if (diff < 0) {
-                health.setOrphanedInSolr(-diff);
-            }
+            Set<String> orphanedIds = new HashSet<>(solrIds);
+            orphanedIds.removeAll(couchIds);
+            health.setOrphanedInSolr(orphanedIds.size());
 
-            health.setHealthy(diff == 0);
+            health.setHealthy(missingIds.isEmpty() && orphanedIds.isEmpty());
             if (health.isHealthy()) {
                 health.setMessage("Index is healthy. Document counts match.");
             } else {
-                health.setMessage("Index mismatch detected. CouchDB: " + health.getCouchDbDocumentCount() + 
-                    ", Solr: " + health.getSolrDocumentCount());
+                health.setMessage("Index mismatch detected. CouchDB: " + couchIds.size() + 
+                    ", Solr: " + solrIds.size() +
+                    ", Missing: " + missingIds.size() + ", Orphaned: " + orphanedIds.size());
             }
 
         } catch (Exception e) {
@@ -938,7 +968,8 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 log.warn("Content not found for reindexing: " + objectId);
                 return false;
             }
-            solrUtil.indexDocument(repositoryId, content);
+            // forceSync=true: explicit admin operation should always index regardless of solr.indexing.force
+            solrUtil.indexDocument(repositoryId, content, true);
             log.info("Document reindexed: " + objectId);
             return true;
         } catch (Exception e) {
@@ -950,7 +981,8 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
     @Override
     public boolean deleteFromIndex(String repositoryId, String objectId) {
         try {
-            solrUtil.deleteDocument(repositoryId, objectId);
+            // forceSync=true: explicit admin operation should always delete regardless of solr.indexing.force
+            solrUtil.deleteDocument(repositoryId, objectId, true);
             log.info("Document deleted from index: " + objectId);
             return true;
         } catch (Exception e) {

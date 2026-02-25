@@ -55,11 +55,17 @@ public class NemakiPatchInitializationListener implements ServletContextListener
     public void contextInitialized(ServletContextEvent sce) {
         // Ensure this runs only once
         if (!initialized.compareAndSet(false, true)) {
-            log.info("*** NemakiPatchInitializationListener: Patches already applied, skipping ***");
+            log.info("NemakiPatchInitializationListener: Patches already applied (own guard), skipping");
             return;
         }
 
-        log.info("=== NemakiPatchInitializationListener: STARTING PATCH INITIALIZATION ===");
+        // Skip if CMISPostInitializer already applied patches via ContextRefreshedEvent
+        if (CMISPostInitializer.isPatchesApplied()) {
+            log.info("NemakiPatchInitializationListener: CMISPostInitializer already applied patches, skipping");
+            return;
+        }
+
+        log.warn("NemakiPatchInitializationListener: STARTING PATCH INITIALIZATION (CMISPostInitializer did NOT succeed)");
 
         try {
             ServletContext servletContext = sce.getServletContext();
@@ -77,7 +83,7 @@ public class NemakiPatchInitializationListener implements ServletContextListener
             // Apply patches in order
             applyPatchesFromSpringContext(springContext);
 
-            log.info("=== NemakiPatchInitializationListener: PATCH INITIALIZATION COMPLETED ===");
+            log.info("NemakiPatchInitializationListener: PATCH INITIALIZATION COMPLETED");
 
         } catch (Exception e) {
             log.error("Failed to apply patches during servlet context initialization", e);
@@ -92,9 +98,23 @@ public class NemakiPatchInitializationListener implements ServletContextListener
                 "patch_SystemFolderSetup",       // Creates .system folder
                 "patch_InitialContentSetup",     // Creates Sites and Technical Documents folders
                 "patch_StandardCmisViews",       // Creates CMIS views
-                "patch_TestUserInitialization",  // Creates test users
-                "patch_McpServiceAccount",       // Creates MCP service account for API access
-                "patch_RssTokenViews"            // Creates RSS token views for token persistence
+                "patch_NarrowUserGroupViews",    // Narrows userItemsById/groupItemsById views with objectType filter (3.1 upgrade)
+                "patch_ChildrenViewReduceCount", // Adds _count reduce to children view (2.4 upgrade compatibility)
+                "patch_TestUserInitialization",   // Creates test users
+                "patch_NemakiwareStandardTypes",  // NemakiWare standard types
+                "patch_WebhookableSecondaryType", // Webhookable secondary type for webhook support
+                "patch_WebhookDeliveryLogViews",  // Webhook delivery log views
+                "patch_RetentionMigrationLogViews", // Retention migration log views
+                "patch_ArchiveByCreatorView",     // Archive byCreator view
+                "patch_ArchiveByArchivedByView",  // Archive byArchivedBy view
+                "patch_SearchableArchivesView",   // Searchable archives view
+                "patch_ArchivesByArchivedAtView",  // Archives byArchivedAt view
+                "patch_CloudDriveMetadataSecondaryType", // Cloud Drive metadata secondary type
+                "patch_ExternalIntegrationSecondaryType", // External integration secondary type
+                "patch_RetentionSecondaryTypes",  // Retention secondary types
+                "patch_RetentionExpirationView",  // Retention expiration view
+                "patch_McpServiceAccount",        // Creates MCP service account for API access
+                "patch_RssTokenViews"             // Creates RSS token views for token persistence
             };
 
             for (String beanName : patchBeanNames) {
@@ -118,8 +138,12 @@ public class NemakiPatchInitializationListener implements ServletContextListener
                     AbstractNemakiPatch patch = (AbstractNemakiPatch) patchBean;
 
                     log.info("Applying patch: " + patch.getClass().getSimpleName());
-                    patch.apply();
-                    log.info("Successfully applied patch: " + patch.getClass().getSimpleName());
+                    boolean success = patch.apply();
+                    if (success) {
+                        log.info("Successfully applied patch: " + patch.getClass().getSimpleName());
+                    } else {
+                        log.warn("Patch returned failure: " + patch.getClass().getSimpleName());
+                    }
 
                 } catch (Exception e) {
                     log.error("Failed to apply patch: " + beanName, e);

@@ -277,6 +277,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetails(String repositoryId) {
+		return nonCachedContentDaoService.getPropertyDefinitionDetails(repositoryId);
+	}
+
+	@Override
 	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(String repositoryId,
 			String coreNodeId) {
 		return nonCachedContentDaoService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, coreNodeId);
@@ -670,6 +675,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}else{
 			return nonCachedContentDaoService.getChildren(repositoryId, parentId);
 		}
+	}
+
+	@Override
+	public List<Content> getChildrenPaged(String repositoryId, String parentId, int skip, int limit) {
+		// Bypass cache for paged queries — cache benefit is minimal for paginated access
+		return nonCachedContentDaoService.getChildrenPaged(repositoryId, parentId, skip, limit);
+	}
+
+	@Override
+	public long getChildrenCount(String repositoryId, String parentId) {
+		// Bypass cache — use CouchDB reduce for accurate count
+		return nonCachedContentDaoService.getChildrenCount(repositoryId, parentId);
 	}
 
 	@Override

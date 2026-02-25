@@ -361,6 +361,8 @@ public class RssFeedService {
     
     /**
      * Check if a change matches the event filter.
+     * Case-insensitive comparison to support both UI lowercase events
+     * and backend uppercase ChangeType-derived event names.
      */
     private boolean matchesEventFilter(Change change, Set<String> events) {
         if (events == null || events.isEmpty()) {
@@ -368,7 +370,12 @@ public class RssFeedService {
         }
         
         String eventType = convertChangeTypeToEventType(change.getChangeType());
-        return events.contains(eventType);
+        for (String event : events) {
+            if (event != null && event.equalsIgnoreCase(eventType)) {
+                return true;
+            }
+        }
+        return false;
     }
     
     /**
@@ -505,33 +512,33 @@ public class RssFeedService {
     }
     
     /**
-     * Build link to folder.
+     * Build link to folder in the React UI.
      */
     private String buildFolderLink(String repositoryId, String folderId) {
         if (baseUrl == null) {
             return "#";
         }
-        return baseUrl + "/ui/#/repository/" + repositoryId + "/folder/" + folderId;
+        return baseUrl + "/ui/#/documents/" + folderId;
     }
     
     /**
-     * Build link to document.
+     * Build link to document in the React UI.
      */
     private String buildDocumentLink(String repositoryId, String documentId) {
         if (baseUrl == null) {
             return "#";
         }
-        return baseUrl + "/ui/#/repository/" + repositoryId + "/document/" + documentId;
+        return baseUrl + "/ui/#/documents/" + documentId;
     }
     
     /**
-     * Build link to object (folder or document).
+     * Build link to object (folder or document) in the React UI.
      */
     private String buildObjectLink(String repositoryId, String objectId) {
         if (baseUrl == null) {
             return "#";
         }
-        return baseUrl + "/ui/#/repository/" + repositoryId + "/object/" + objectId;
+        return baseUrl + "/ui/#/documents/" + objectId;
     }
     
     /**

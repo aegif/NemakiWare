@@ -294,6 +294,11 @@ public class TypeResourceTests {
             }
 
             @Override
+            public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetails(String repositoryId) {
+                return new ArrayList<>();
+            }
+
+            @Override
             public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(String repositoryId, String coreNodeId) {
                 return new ArrayList<>();
             }

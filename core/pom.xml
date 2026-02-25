@@ -1089,6 +1089,13 @@
 				<version>2.19.1</version>
 				<configuration>
 					<redirectTestOutputToFile>true</redirectTestOutputToFile>
+					<!-- Exclude integration tests that require running Docker containers -->
+					<!-- Run with: mvn test -Dit.test=SystemIntegrationTest,BrowserBindingTest,... -->
+					<excludes>
+						<exclude>**/test/tests/**</exclude>
+						<exclude>**/test/compatibility/**</exclude>
+						<exclude>**/*$*</exclude>
+					</excludes>
 					<!-- Java 17 Module System Compatibility -->
 					<argLine>
 						--add-opens=java.base/java.util=ALL-UNNAMED
@@ -1109,6 +1116,10 @@
 					<systemPropertyVariables>
 						<test.timeout>600000</test.timeout>
 					</systemPropertyVariables>
+					<!-- Environment variables for test execution -->
+					<environmentVariables>
+						<NEMAKI_ENCRYPTION_KEY>test-encryption-key-for-unit-tests-32chars!</NEMAKI_ENCRYPTION_KEY>
+					</environmentVariables>
 				</configuration>
 			</plugin>
 
