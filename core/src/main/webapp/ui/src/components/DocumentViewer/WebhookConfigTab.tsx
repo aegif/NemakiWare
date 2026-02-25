@@ -245,7 +245,7 @@ export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId
       dataIndex: 'authType',
       key: 'authType',
       width: 120,
-      render: (type: string) => type || 'none',
+      render: (type: string) => type || t('documentViewer.webhooks.authTypeNone'),
     },
     {
       title: t('documentViewer.webhooks.enabled'),
@@ -313,7 +313,7 @@ export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId
             label={t('documentViewer.webhooks.url')}
             rules={[
               { required: true, message: t('documentViewer.webhooks.url') },
-              { type: 'url', message: 'URL' },
+              { type: 'url', message: t('common.validation.invalidFormat', { field: 'URL' }) },
             ]}
           >
             <Input placeholder={t('documentViewer.webhooks.urlPlaceholder')} />

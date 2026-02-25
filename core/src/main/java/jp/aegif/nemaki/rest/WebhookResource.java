@@ -42,9 +42,14 @@ import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
+import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.WebhookService;
+import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.common.ErrorCode;
+import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.util.spring.SpringContext;
 import jp.aegif.nemaki.webhook.WebhookConfig;
@@ -287,7 +292,7 @@ public class WebhookResource extends ResourceBase {
     /**
      * Get webhook configuration for a specific object.
      * Returns all configs including disabled and invalid ones (for management UI).
-     * Requires admin authorization to prevent information disclosure.
+     * Requires CAN_GET_PROPERTIES_OBJECT permission (cmis:read equivalent).
      *
      * GET /rest/repo/{repositoryId}/webhook/config/{objectId}
      */
@@ -304,11 +309,6 @@ public class WebhookResource extends ResourceBase {
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
 
-        if (!checkAdmin(errMsg, request)) {
-            result = makeResult(false, result, errMsg);
-            return result.toJSONString();
-        }
-
         try {
             ContentService cs = getContentService();
             WebhookService ws = getWebhookService();
@@ -322,6 +322,13 @@ public class WebhookResource extends ResourceBase {
                     status = false;
                     addErrMsg(errMsg, "objectId", ErrorCode.ERR_NOTFOUND);
                 } else {
+                    // CMIS permission check: CAN_GET_PROPERTIES_OBJECT (cmis:read equivalent)
+                    if (!checkCmisPermission(request, repositoryId, cs, content,
+                            PermissionMapping.CAN_GET_PROPERTIES_OBJECT, errMsg)) {
+                        result = makeResult(false, result, errMsg);
+                        return result.toJSONString();
+                    }
+
                     List<WebhookConfig> configs = ws.getAllWebhookConfigs(repositoryId, content);
                     JSONArray configsArray = new JSONArray();
                     for (WebhookConfig config : configs) {
@@ -343,6 +350,7 @@ public class WebhookResource extends ResourceBase {
 
     /**
      * Add a new webhook configuration to a specific object.
+     * Requires CAN_UPDATE_PROPERTIES_OBJECT permission (cmis:write equivalent).
      *
      * POST /rest/repo/{repositoryId}/webhook/config/{objectId}
      * Body: {"url": "https://...", "events": ["created","updated"], "enabled": true, ...}
@@ -362,11 +370,6 @@ public class WebhookResource extends ResourceBase {
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
 
-        if (!checkAdmin(errMsg, request)) {
-            result = makeResult(false, result, errMsg);
-            return result.toJSONString();
-        }
-
         try {
             ContentService cs = getContentService();
             WebhookService ws = getWebhookService();
@@ -380,6 +383,13 @@ public class WebhookResource extends ResourceBase {
                     status = false;
                     addErrMsg(errMsg, "objectId", ErrorCode.ERR_NOTFOUND);
                 } else {
+                    // CMIS permission check: CAN_UPDATE_PROPERTIES_OBJECT (cmis:write equivalent)
+                    if (!checkCmisPermission(request, repositoryId, cs, content,
+                            PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, errMsg)) {
+                        result = makeResult(false, result, errMsg);
+                        return result.toJSONString();
+                    }
+
                     // Parse request body as a single config
                     org.json.simple.parser.JSONParser parser = new org.json.simple.parser.JSONParser();
                     JSONObject body = (JSONObject) parser.parse(requestBody);
@@ -422,6 +432,7 @@ public class WebhookResource extends ResourceBase {
 
     /**
      * Update an existing webhook configuration.
+     * Requires CAN_UPDATE_PROPERTIES_OBJECT permission (cmis:write equivalent).
      *
      * PUT /rest/repo/{repositoryId}/webhook/config/{objectId}/{webhookId}
      * Body: {"url": "https://...", "events": ["created","updated"], "enabled": true, ...}
@@ -442,11 +453,6 @@ public class WebhookResource extends ResourceBase {
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
 
-        if (!checkAdmin(errMsg, request)) {
-            result = makeResult(false, result, errMsg);
-            return result.toJSONString();
-        }
-
         try {
             ContentService cs = getContentService();
             WebhookService ws = getWebhookService();
@@ -460,6 +466,13 @@ public class WebhookResource extends ResourceBase {
                     status = false;
                     addErrMsg(errMsg, "objectId", ErrorCode.ERR_NOTFOUND);
                 } else {
+                    // CMIS permission check: CAN_UPDATE_PROPERTIES_OBJECT (cmis:write equivalent)
+                    if (!checkCmisPermission(request, repositoryId, cs, content,
+                            PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, errMsg)) {
+                        result = makeResult(false, result, errMsg);
+                        return result.toJSONString();
+                    }
+
                     List<WebhookConfig> configs = ws.getAllWebhookConfigs(repositoryId, content);
                     configs = new ArrayList<>(configs);
 
@@ -500,6 +513,7 @@ public class WebhookResource extends ResourceBase {
 
     /**
      * Delete a webhook configuration.
+     * Requires CAN_UPDATE_PROPERTIES_OBJECT permission (cmis:write equivalent).
      *
      * DELETE /rest/repo/{repositoryId}/webhook/config/{objectId}/{webhookId}
      */
@@ -517,11 +531,6 @@ public class WebhookResource extends ResourceBase {
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
 
-        if (!checkAdmin(errMsg, request)) {
-            result = makeResult(false, result, errMsg);
-            return result.toJSONString();
-        }
-
         try {
             ContentService cs = getContentService();
             WebhookService ws = getWebhookService();
@@ -535,6 +544,13 @@ public class WebhookResource extends ResourceBase {
                     status = false;
                     addErrMsg(errMsg, "objectId", ErrorCode.ERR_NOTFOUND);
                 } else {
+                    // CMIS permission check: CAN_UPDATE_PROPERTIES_OBJECT (cmis:write equivalent)
+                    if (!checkCmisPermission(request, repositoryId, cs, content,
+                            PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, errMsg)) {
+                        result = makeResult(false, result, errMsg);
+                        return result.toJSONString();
+                    }
+
                     List<WebhookConfig> configs = ws.getAllWebhookConfigs(repositoryId, content);
                     configs = new ArrayList<>(configs);
 
@@ -558,6 +574,56 @@ public class WebhookResource extends ResourceBase {
 
         result = makeResult(status, result, errMsg);
         return result.toJSONString();
+    }
+
+    /**
+     * Check CMIS permission on a content object for the current user.
+     * Returns true if permission is granted, false otherwise (with error message added).
+     */
+    @SuppressWarnings("unchecked")
+    private boolean checkCmisPermission(HttpServletRequest request, String repositoryId,
+                                        ContentService cs, Content content,
+                                        String permissionKey, JSONArray errMsg) {
+        CallContext callContext = (CallContext) request.getAttribute("CallContext");
+        if (callContext == null) {
+            addErrMsg(errMsg, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN, "unknown");
+            return false;
+        }
+        try {
+            PermissionService permService = getPermissionService();
+            if (permService == null) {
+                // Fallback to admin check if PermissionService is unavailable
+                Boolean _isAdmin = (Boolean) callContext.get(
+                        jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
+                boolean isAdmin = _isAdmin != null && _isAdmin;
+                if (!isAdmin) {
+                    addErrMsg(errMsg, "permission", "Permission denied");
+                }
+                return isAdmin;
+            }
+            Acl acl = cs.calculateAcl(repositoryId, content);
+            Boolean result = permService.checkPermission(
+                    callContext, repositoryId, permissionKey, acl, content.getType(), content);
+            if (result == null || !result) {
+                addErrMsg(errMsg, "permission", "Permission denied");
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.debug("Permission check failed for " + content.getName() + ": " + e.getMessage());
+            addErrMsg(errMsg, "permission", "Permission denied");
+            return false;
+        }
+    }
+
+    private PermissionService getPermissionService() {
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean("PermissionService", PermissionService.class);
+        } catch (Exception e) {
+            log.debug("Failed to get PermissionService: " + e.getMessage());
+            return null;
+        }
     }
 
     /**

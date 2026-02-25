@@ -1348,8 +1348,10 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         </div>
       ),
     }] : []),
-    // Webhook Config Tab (only shown for folders when user is admin, matching API's checkAdmin requirement)
-    ...(object.baseType === 'cmis:folder' && authToken?.isAdmin ? [{
+    // Webhook Config Tab
+    // UI制御: canApplyACL (cmis:all) で表示判断。サービス側は CAN_UPDATE_PROPERTIES (cmis:write) で許可。
+    // 意図的にUIを厳しくし、管理UIでの表示を cmis:all 保有者に限定している。
+    ...(object.baseType === 'cmis:folder' && object.allowableActions?.canApplyACL ? [{
       key: 'webhooks',
       label: t('documentViewer.webhooks.tab'),
       children: <WebhookConfigTab repositoryId={repositoryId} objectId={object.id} />,
@@ -1517,7 +1519,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 </Button>
               )}
 
-              {object.allowableActions?.canGetACL && (
+              {object.allowableActions?.canApplyACL && object.allowableActions?.canUpdateProperties && (
                 <Button
                   icon={<EditOutlined />}
                   onClick={() => {
