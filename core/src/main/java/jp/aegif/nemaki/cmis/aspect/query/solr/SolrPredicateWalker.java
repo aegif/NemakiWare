@@ -765,6 +765,15 @@ public class SolrPredicateWalker{
 	 * which applies each field's configured analyzer:
 	 *   - text:"running"   → text_ja analyzer (Kuromoji morphological analysis)
 	 *   - text_en:"running" → text_en analyzer (Porter stemming → "run", stop words)
+	 *
+	 * DESIGN DECISION (2026-02-26): dual-field (text + text_en) を維持する。
+	 * レビューで「BooleanQuery の SHOULD は Solr パーサで OR に変換されるため
+	 * 検索時間が微増する」と指摘されたが、以下の理由で現状維持とする:
+	 *   1. 実測影響が軽微 — Solr の OR クエリはインデックス参照のみで全文走査しない
+	 *   2. 多言語対応が本来の目的 — text (Kuromoji) で日本語、text_en (Porter) で
+	 *      英語ステミング・ストップワード除去を同時に実現しており、単一フィールドでは不可
+	 *   3. copyField によるインデックス膨張もドキュメント当たり数KB程度
+	 * 将来 text_cjk 等を追加する場合はこのメソッドに SHOULD 句を追加すればよい。
 	 */
 	private Query buildDualFieldQuery(String word) {
 		String quoted = "\"" + word + "\"";

@@ -912,6 +912,30 @@ public class CloudantClientWrapper {
 	}
 
 	/**
+	 * Check whether a view exists in the database by issuing a limit=0 probe query.
+	 * Returns true if the view responds, false only on NotFoundException.
+	 * Throws RuntimeException on transient errors so the caller can distinguish.
+	 *
+	 * @throws RuntimeException if the probe fails for a reason other than view-not-found
+	 */
+	public boolean isViewAvailable(String designDoc, String viewName) {
+		try {
+			PostViewOptions options = new PostViewOptions.Builder()
+				.db(databaseName)
+				.ddoc(designDoc)
+				.view(viewName)
+				.limit(0L)
+				.reduce(false)
+				.build();
+			client.postView(options).execute();
+			return true;
+		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+			return false;
+		}
+		// Other exceptions (transient network errors etc.) propagate as-is
+	}
+
+	/**
 	 * Execute a view query (legacy method for compatibility)
 	 */
 	public AllDocsResult queryViewLegacy(String designDoc, String viewName, Map<String, Object> queryParams) {

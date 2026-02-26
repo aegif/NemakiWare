@@ -1091,14 +1091,15 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		List<BulkUpdateObjectIdAndChangeToken> results = new ArrayList<BulkUpdateObjectIdAndChangeToken>();
 
-		ExecutorService executor = Executors.newCachedThreadPool();
-		List<BulkUpdateTask> tasks = new ArrayList<>();
-		for (BulkUpdateObjectIdAndChangeToken objectIdAndChangeToken : objectIdAndChangeTokenList) {
-			tasks.add(new BulkUpdateTask(callContext, repositoryId, objectIdAndChangeToken, properties,
-					addSecondaryTypeIds, removeSecondaryTypeIds, extension));
-		}
-
+		ExecutorService executor = Executors.newFixedThreadPool(
+				Math.min(objectIdAndChangeTokenList.size(), threadMax));
 		try {
+			List<BulkUpdateTask> tasks = new ArrayList<>();
+			for (BulkUpdateObjectIdAndChangeToken objectIdAndChangeToken : objectIdAndChangeTokenList) {
+				tasks.add(new BulkUpdateTask(callContext, repositoryId, objectIdAndChangeToken, properties,
+						addSecondaryTypeIds, removeSecondaryTypeIds, extension));
+			}
+
 			List<Future<BulkUpdateObjectIdAndChangeToken>> _results = executor.invokeAll(tasks);
 			for (Future<BulkUpdateObjectIdAndChangeToken> _result : _results) {
 				try {
@@ -1111,6 +1112,8 @@ public class ObjectServiceImpl implements ObjectService {
 		} catch (InterruptedException e1) {
 			log.warn("Bulk update operation was interrupted", e1);
 			Thread.currentThread().interrupt();
+		} finally {
+			executor.shutdown();
 		}
 
 		return results;
@@ -1216,115 +1219,6 @@ public class ObjectServiceImpl implements ObjectService {
 	public FailedToDeleteData deleteTree(CallContext callContext, String repositoryId, String folderId,
 			Boolean allVersions, UnfileObject unfileObjects, Boolean continueOnFailure, ExtensionsData extension) {
 		// //////////////////
-		// Inner classes
-		// //////////////////
-		class DeleteTask implements Callable<Boolean> {
-			private CallContext callContext;
-			private String repositoryId;
-			private Content content;
-			private Boolean allVersions;
-
-			public DeleteTask() {
-			}
-
-			public DeleteTask(CallContext callContext, String repositoryId, Content content, Boolean allVersions) {
-				this.callContext = callContext;
-				this.repositoryId = repositoryId;
-				this.content = content;
-				this.allVersions = allVersions;
-			}
-
-			@Override
-			public Boolean call() throws Exception {
-				try {
-					objectServiceInternal.deleteObjectInternal(callContext, repositoryId, content, allVersions, true);
-					return false;
-				} catch (Exception e) {
-					return true;
-				}
-			}
-		}
-
-		class WrappedExecutorService {
-			private ExecutorService service;
-			private Folder folder;
-
-			private WrappedExecutorService() {
-			};
-
-			public WrappedExecutorService(ExecutorService service, Folder folder) {
-				this.service = service;
-				this.folder = folder;
-			}
-
-			public ExecutorService getService() {
-				return service;
-			}
-
-			public Folder getFolder() {
-				return folder;
-			}
-		}
-
-		class DeleteService {
-			private Map<String, Future<Boolean>> failureIds;
-			private WrappedExecutorService parentService;
-			private CallContext callContext;
-			private String repositoryId;
-			private Content content;
-			private Boolean allVersions;
-
-			public DeleteService() {
-			}
-
-			public DeleteService(Map<String, Future<Boolean>> failureIds, WrappedExecutorService parentService,
-					CallContext callContext, String repositoryId, Content content, Boolean allVersions) {
-				super();
-				this.failureIds = failureIds;
-				this.parentService = parentService;
-				this.callContext = callContext;
-				this.repositoryId = repositoryId;
-				this.content = content;
-				this.allVersions = allVersions;
-			}
-
-			public void execute() {
-				if (content.isDocument()) {
-					Future<Boolean> result = parentService.getService()
-							.submit(new DeleteTask(callContext, repositoryId, content, allVersions));
-					failureIds.put(content.getId(), result);
-				} else if (content.isFolder()) {
-					WrappedExecutorService childrenService = new WrappedExecutorService(
-							Executors.newFixedThreadPool(threadMax), (Folder) content);
-
-					List<Content> children = contentService.getChildren(repositoryId, content.getId());
-					if (CollectionUtils.isNotEmpty(children)) {
-						for (Content child : children) {
-							DeleteService deleteService = new DeleteService(this.failureIds, childrenService,
-									callContext, repositoryId, child, allVersions);
-							deleteService.execute();
-						}
-					}
-
-					// wait til newService ends
-					childrenService.getService().shutdown();
-					try {
-						childrenService.getService().awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
-					} catch (InterruptedException e) {
-						log.error("Interrupted while waiting for children service to terminate", e);
-						Thread.currentThread().interrupt();
-					}
-
-					// Lastly, delete self
-					Future<Boolean> result = parentService.getService()
-							.submit(new DeleteTask(callContext, repositoryId, content, allVersions));
-					failureIds.put(content.getId(), result);
-				}
-
-			}
-		}
-
-		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", folderId);
@@ -1340,13 +1234,42 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		// Delete descendants
-		Map<String, Future<Boolean>> failureIds = new HashMap<String, Future<Boolean>>();
+		// Collect descendants grouped by depth (deepest first) to guarantee
+		// that children are fully deleted before their parent folder.
+		List<List<Content>> layers = collectByDepth(repositoryId, folder);
 
-		DeleteService deleteService = new DeleteService(failureIds,
-				new WrappedExecutorService(Executors.newFixedThreadPool(threadMax), folder), callContext, repositoryId,
-				folder, allVersions);
-		deleteService.execute();
+		Map<String, Future<Boolean>> failureIds = new HashMap<String, Future<Boolean>>();
+		ExecutorService executor = Executors.newFixedThreadPool(threadMax);
+		try {
+			// Process layers from deepest to shallowest (children before parents)
+			for (List<Content> layer : layers) {
+				List<Future<Boolean>> layerFutures = new ArrayList<>();
+				for (Content content : layer) {
+					Future<Boolean> result = executor.submit(() -> {
+						try {
+							objectServiceInternal.deleteObjectInternal(callContext, repositoryId, content, allVersions, true);
+							return false;
+						} catch (Exception e) {
+							return true;
+						}
+					});
+					failureIds.put(content.getId(), result);
+					layerFutures.add(result);
+				}
+				// Wait for this layer to complete before processing the next (shallower) layer
+				for (Future<Boolean> f : layerFutures) {
+					try {
+						f.get();
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					} catch (ExecutionException e) {
+						// failure recorded in failureIds
+					}
+				}
+			}
+		} finally {
+			executor.shutdown();
+		}
 
 		// Delete folder from Solr index
 		if (folder != null) {
@@ -1387,6 +1310,34 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 
 		return fdd;
+	}
+
+	/**
+	 * Collect descendants grouped by depth level (BFS).
+	 * Returns layers ordered from deepest to shallowest, so that iterating
+	 * in order guarantees children are processed before their parent.
+	 */
+	private List<List<Content>> collectByDepth(String repositoryId, Content root) {
+		List<List<Content>> layers = new ArrayList<>();
+		List<Content> currentLayer = new ArrayList<>();
+		currentLayer.add(root);
+
+		while (!currentLayer.isEmpty()) {
+			layers.add(currentLayer);
+			List<Content> nextLayer = new ArrayList<>();
+			for (Content content : currentLayer) {
+				if (content.isFolder()) {
+					List<Content> children = contentService.getChildren(repositoryId, content.getId());
+					if (CollectionUtils.isNotEmpty(children)) {
+						nextLayer.addAll(children);
+					}
+				}
+			}
+			currentLayer = nextLayer;
+		}
+		// Reverse: deepest layer first (leaf nodes), root last
+		java.util.Collections.reverse(layers);
+		return layers;
 	}
 
 	public void setObjectServiceInternal(ObjectServiceInternal objectServiceInternal) {

@@ -221,7 +221,11 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ## 現在のバージョン
 
-**3.1.0-RC3** (2026-02-25)
+**3.1.0-RC4** (2026-02-27)
+- Solr 多言語検索 (text_ja + text_en デュアルインデックス、Porter ステミング)
+- パフォーマンス改善 (deleteTree 並列化、getChildByName O(1) ビュー最適化、bulkUpdateProperties スレッドプール修正)
+- Versionable 文書の新 ID キャッシュ無効化
+- deleteTree 3層バグ修正 + Webhook 安全性改善
 - クラウド統合 (Google Workspace / Microsoft Entra ID ディレクトリ同期、Cloud Drive連携)
 - OIDC認証 (Google / Microsoft)
 - 多言語対応 (日本語/英語)
