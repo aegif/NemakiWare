@@ -666,9 +666,49 @@ public class SolrPredicateWalker{
 			return walkTextWord(node);
 		case TextSearchLexer.TEXT_SEARCH_PHRASE_STRING_LIT:
 			return walkTextPhrase(node);
+		case CmisQlStrictLexer.STRING_LIT:
+			// CmisQlStrictParser delivers CONTAINS('text') as STRING_LIT (type 62).
+			// CMIS spec: CONTAINS('word1 word2') = AND of individual words,
+			//            CONTAINS('"word1 word2"') = phrase search.
+			return walkContainsStringLit(node);
 		default:
 			return walkTextPhrase(node);
 		}
+	}
+
+	/**
+	 * Handle STRING_LIT from CmisQlStrictParser's CONTAINS clause.
+	 * Per CMIS spec:
+	 *   CONTAINS('word1 word2')   → AND of individual words (each analyzed per-field)
+	 *   CONTAINS('"word1 word2"') → exact phrase search
+	 */
+	private Query walkContainsStringLit(Tree node) {
+		String text = escapeString(node.toString());
+
+		// Strip surrounding single quotes from CMIS syntax
+		if (text.length() >= 2 && text.charAt(0) == '\'' && text.charAt(text.length() - 1) == '\'') {
+			text = text.substring(1, text.length() - 1);
+		}
+		text = text.trim();
+
+		// Inner double quotes indicate phrase search: CONTAINS('"exact phrase"')
+		if (text.length() >= 2 && text.startsWith("\"") && text.endsWith("\"")) {
+			String phrase = text.substring(1, text.length() - 1);
+			return buildDualFieldQuery(phrase);
+		}
+
+		// Split on whitespace: CONTAINS('word1 word2') → word1 AND word2
+		String[] words = text.split("\\s+");
+		if (words.length > 1) {
+			BooleanQuery.Builder andBuilder = new BooleanQuery.Builder();
+			for (String word : words) {
+				if (word.isEmpty()) continue;
+				andBuilder.add(buildDualFieldQuery(word), Occur.MUST);
+			}
+			return andBuilder.build();
+		}
+
+		return buildDualFieldQuery(text);
 	}
 
 	private Query walkTextAnd(Tree node) {
@@ -701,20 +741,35 @@ public class SolrPredicateWalker{
 	private Query walkTextWord(Tree node) {
 		String nodeText = node.toString();
 		String escapedText = escapeString(nodeText);
-		// CRITICAL FIX (2025-12-17): Use phrase search to prevent tokenization issues
-		// Without quotes, Solr tokenizes 'TEST_KEYWORD' into 'test', 'keyword'
-		// causing incorrect matches for documents containing just 'test'
-		escapedText = '"' + escapedText + '"';
 
-		// Dual-index search: text (Japanese/CJK) OR text_en (English stemming/stop words)
-		// NOTE: These TermQuery objects are serialized to a string via toString() and then
-		// re-parsed by Solr's query parser (see SolrQueryProcessor L319-434).
-		// Solr's parser applies each field's configured analyzer at parse time, so:
-		//   - text:"running"   → text_ja analyzer (Kuromoji morphological analysis)
-		//   - text_en:"running" → text_en analyzer (Porter stemming → "run", stop word removal)
-		// The analyzer is NOT applied on the Java side; it is applied by Solr on receipt.
-		Term termJa = new Term("text", escapedText);
-		Term termEn = new Term("text_en", escapedText);
+		// If text contains spaces, split into individual words and combine with AND.
+		// CMIS CONTAINS('word1 word2') means "documents containing both word1 AND word2",
+		// NOT phrase matching. Each word is searched independently against dual-index fields.
+		String[] words = escapedText.trim().split("\\s+");
+		if (words.length > 1) {
+			BooleanQuery.Builder andBuilder = new BooleanQuery.Builder();
+			for (String word : words) {
+				if (word.isEmpty()) continue;
+				andBuilder.add(buildDualFieldQuery(word), Occur.MUST);
+			}
+			return andBuilder.build();
+		}
+
+		return buildDualFieldQuery(escapedText);
+	}
+
+	/**
+	 * Build a dual-field query for a single word: text (text_ja) OR text_en.
+	 * Wraps the word in quotes to prevent tokenization of underscored terms.
+	 * NOTE: Query.toString() output is re-parsed by Solr's query parser,
+	 * which applies each field's configured analyzer:
+	 *   - text:"running"   → text_ja analyzer (Kuromoji morphological analysis)
+	 *   - text_en:"running" → text_en analyzer (Porter stemming → "run", stop words)
+	 */
+	private Query buildDualFieldQuery(String word) {
+		String quoted = "\"" + word + "\"";
+		Term termJa = new Term("text", quoted);
+		Term termEn = new Term("text_en", quoted);
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		builder.add(new TermQuery(termJa), Occur.SHOULD);
 		builder.add(new TermQuery(termEn), Occur.SHOULD);
@@ -725,29 +780,14 @@ public class SolrPredicateWalker{
 		String nodeText = node.toString();
 		String termString = escapeString(nodeText);
 
-		// CRITICAL FIX (2025-12-17): Always use phrase search for CONTAINS queries
-		// Previous behavior: single words like 'test_keyword' were searched as individual terms
-		// Problem: Solr tokenizes 'SEARCH_TEST_KEYWORD_123' into 'search', 'test', 'keyword', '123'
-		//          causing documents with just 'test' to incorrectly match
-		// Solution: Always wrap in double quotes to force exact phrase matching
+		// Strip surrounding single quotes from CMIS phrase syntax
 		if(termString.charAt(0) == '\'' && termString.charAt(termString.length()-1) == '\'' ){
-			// Remove the single quotes to get the actual search term
 			termString = termString.substring(1, termString.length() - 1);
 		}
 
-		// Always wrap in double quotes to force phrase search
-		// This prevents tokenized words from matching independently
-		termString = '"' + termString + '"';
-
-		// Dual-index search: text (Japanese/CJK) OR text_en (English stemming/stop words)
-		// NOTE: Query.toString() output is re-parsed by Solr's query parser, which applies
-		// each field's configured analyzer (see walkTextWord comment for details).
-		Term termJa = new Term("text", termString);
-		Term termEn = new Term("text_en", termString);
-		BooleanQuery.Builder builder = new BooleanQuery.Builder();
-		builder.add(new TermQuery(termJa), Occur.SHOULD);
-		builder.add(new TermQuery(termEn), Occur.SHOULD);
-		return builder.build();
+		// Phrase search: wrap in double quotes to force exact phrase matching.
+		// This is correct for walkTextPhrase (CMIS CONTAINS('"phrase here"')).
+		return buildDualFieldQuery(termString);
 	}
 	
 	private String escapeString(String val) {

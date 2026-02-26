@@ -1381,9 +1381,9 @@ public class ObjectServiceImpl implements ObjectService {
 		fdd.setIds(ids);
 
 		if (!ids.isEmpty()) {
-			log.warn("[deleteTree] Orphan objects detected: folderId={}, folderName={}, orphanIds={}, "
-				+ "action=Check archive management or query CouchDB directly for cleanup",
-				folder.getId(), folder.getName(), ids);
+			log.warn("[deleteTree] Orphan objects detected: folderId=" + folder.getId()
+				+ ", folderName=" + folder.getName() + ", orphanIds=" + ids
+				+ ", action=Check archive management or query CouchDB directly for cleanup");
 		}
 
 		return fdd;
