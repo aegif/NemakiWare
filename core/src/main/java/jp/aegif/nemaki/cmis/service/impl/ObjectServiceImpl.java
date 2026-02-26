@@ -723,12 +723,20 @@ public class ObjectServiceImpl implements ObjectService {
 			webhookContent = result;
 
 			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(oldId);
+			// Versionable documents produce a new object ID; invalidate that cache entry too
+			// to prevent stale references from being read by concurrent threads
+			if (result != null && !oldId.equals(result.getId())) {
+				nemakiCachePool.get(repositoryId).removeCmisAndContentCache(result.getId());
+			}
 		} finally {
 			lock.unlock();
 		}
 
 		// Trigger CONTENT_UPDATED webhook outside write lock to avoid
-		// holding the lock during parent-folder traversal and async dispatch
+		// holding the lock during parent-folder traversal and async dispatch.
+		// triggerWebhookByEventType captures an immutable snapshot of Content
+		// fields at call entry, so brief races between unlock and this call
+		// are tolerated.
 		if (webhookService != null && webhookContent != null) {
 			try {
 				webhookService.triggerWebhookByEventType(callContext, repositoryId,

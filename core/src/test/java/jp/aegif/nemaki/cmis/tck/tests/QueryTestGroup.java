@@ -19,13 +19,14 @@ public class QueryTestGroup extends TckSuite{
 	 * (CmisInvalidArgumentException: null on AtomPub session). Browser binding
 	 * is the primary CMIS 1.1 binding and works correctly for queries.
 	 * Other test groups continue to use AtomPub (the default) for regression coverage.
+	 *
+	 * Only the binding type is overridden; the browser URL is read from
+	 * the parameters file so that CI/alternate-port environments work correctly.
 	 */
 	@Override
 	protected java.util.Map<String, String> getParameterOverrides() {
 		java.util.Map<String, String> overrides = new java.util.HashMap<>();
 		overrides.put("org.apache.chemistry.opencmis.binding.spi.type", "browser");
-		overrides.put("org.apache.chemistry.opencmis.binding.browser.url",
-			"http://localhost:8080/core/browser");
 		return overrides;
 	}
 
