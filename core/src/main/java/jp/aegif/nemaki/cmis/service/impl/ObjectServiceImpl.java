@@ -115,7 +115,10 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", path);
-		// FIXME path is not preserved in db.
+		// NOTE: CouchDB にパスフィールドは保存されていない。getContentByPath() は
+		// ルートから parentId チェーンを辿るツリー走査でパスを解決する (計算量 O(depth))。
+		// トレードオフ: 移動・名称変更時にパスフィールドのメンテナンスが不要。
+		// 将来の最適化案: materialized path field / パスキャッシュ / Solr path 活用
 		Content content = contentService.getContentByPath(repositoryId, path);
 		exceptionService.objectNotFoundByPath(DomainType.OBJECT, content, path);
 
@@ -1351,7 +1354,14 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 
 		// Check FailedToDeleteData
-		// FIXME Consider orphans that was failed to be deleted
+		// TODO orphan 処理の改善
+		// 削除に失敗したオブジェクトはCMIS仕様上 FailedToDeleteData として返却されるが、
+		// 親フォルダが先に削除された場合、子オブジェクトが orphan（parentId が存在しない状態）になる。
+		// 現状: orphan は CouchDB 上に残存し、通常の CMIS ナビゲーションでは到達不能。
+		// 将来の改善案:
+		//   1. アーカイブ管理画面での orphan 検出・一覧表示
+		//   2. CouchDB ビューによる parentId 不整合の定期検出
+		//   3. deleteTree のトランザクション的な実行（子→親の順で削除）
 		FailedToDeleteDataImpl fdd = new FailedToDeleteDataImpl();
 		List<String> ids = new ArrayList<String>();
 		for (Entry<String, Future<Boolean>> entry : failureIds.entrySet()) {
@@ -1369,6 +1379,13 @@ public class ObjectServiceImpl implements ObjectService {
 			}
 		}
 		fdd.setIds(ids);
+
+		if (!ids.isEmpty()) {
+			log.warn("[deleteTree] Orphan objects detected: folderId={}, folderName={}, orphanIds={}, "
+				+ "action=Check archive management or query CouchDB directly for cleanup",
+				folder.getId(), folder.getName(), ids);
+		}
+
 		return fdd;
 	}
 

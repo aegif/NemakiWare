@@ -591,6 +591,87 @@ public class WebhookServiceTest {
     }
 
     // ========================================
+    // Consecutive Content Update Regression Tests
+    // ========================================
+
+    @Test
+    public void testConsecutiveContentUpdatesHaveCorrectObjectIdInPayload() {
+        // Regression: consecutive setContentStream calls must pass the correct
+        // objectId and changeToken for each document, not stale values.
+        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CONTENT_UPDATED\"]}]";
+
+        Document doc1 = createMockDocument("doc-v1.0", "folder-1",
+            Arrays.asList("nemaki:webhookable"), configJson);
+        when(doc1.getChangeToken()).thenReturn("token-v1.0");
+        when(doc1.getName()).thenReturn("doc-v1");
+
+        Document doc2 = createMockDocument("doc-v2.0", "folder-1",
+            Arrays.asList("nemaki:webhookable"), configJson);
+        when(doc2.getChangeToken()).thenReturn("token-v2.0");
+        when(doc2.getName()).thenReturn("doc-v2");
+
+        // Consecutive calls simulating two rapid setContentStream operations
+        webhookService.triggerWebhookByEventType(mockCallContext, "bedroom", doc1, "CONTENT_UPDATED", null);
+        webhookService.triggerWebhookByEventType(mockCallContext, "bedroom", doc2, "CONTENT_UPDATED", null);
+
+        // Capture all buildPayload invocations
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<String> objectIdCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> changeTokenCaptor = ArgumentCaptor.forClass(String.class);
+
+        verify(mockDeliveryService, times(2)).buildPayload(
+            eq("CONTENT_UPDATED"), objectIdCaptor.capture(), eq("bedroom"),
+            anyMap(), changeTokenCaptor.capture());
+
+        List<String> objectIds = objectIdCaptor.getAllValues();
+        List<String> changeTokens = changeTokenCaptor.getAllValues();
+
+        assertEquals("First call should use doc-v1.0 objectId", "doc-v1.0", objectIds.get(0));
+        assertEquals("First call should use token-v1.0", "token-v1.0", changeTokens.get(0));
+        assertEquals("Second call should use doc-v2.0 objectId", "doc-v2.0", objectIds.get(1));
+        assertEquals("Second call should use token-v2.0", "token-v2.0", changeTokens.get(1));
+    }
+
+    @Test
+    public void testConsecutiveContentUpdatesPropertiesMapIsolation() {
+        // Regression: each triggerWebhookByEventType call must produce an
+        // independent properties Map, preventing cross-contamination between events.
+        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CONTENT_UPDATED\"]}]";
+
+        Document doc1 = createMockDocument("doc-alpha", "folder-1",
+            Arrays.asList("nemaki:webhookable"), configJson);
+        when(doc1.getName()).thenReturn("alpha-document");
+        when(doc1.getChangeToken()).thenReturn("token-alpha");
+
+        Document doc2 = createMockDocument("doc-beta", "folder-1",
+            Arrays.asList("nemaki:webhookable"), configJson);
+        when(doc2.getName()).thenReturn("beta-document");
+        when(doc2.getChangeToken()).thenReturn("token-beta");
+
+        webhookService.triggerWebhookByEventType(mockCallContext, "bedroom", doc1, "CONTENT_UPDATED", null);
+        webhookService.triggerWebhookByEventType(mockCallContext, "bedroom", doc2, "CONTENT_UPDATED", null);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> propsCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(mockDeliveryService, times(2)).buildPayload(
+            eq("CONTENT_UPDATED"), anyString(), eq("bedroom"),
+            propsCaptor.capture(), anyString());
+
+        List<Map<String, Object>> allProps = propsCaptor.getAllValues();
+        Map<String, Object> props1 = allProps.get(0);
+        Map<String, Object> props2 = allProps.get(1);
+
+        // Verify each Map has the correct values for its respective document
+        assertEquals("First props should have alpha name", "alpha-document", props1.get("cmis:name"));
+        assertEquals("First props should have alpha objectId", "doc-alpha", props1.get("cmis:objectId"));
+        assertEquals("Second props should have beta name", "beta-document", props2.get("cmis:name"));
+        assertEquals("Second props should have beta objectId", "doc-beta", props2.get("cmis:objectId"));
+
+        // Verify isolation: the two Maps must not be the same instance
+        assertNotSame("Properties maps should be independent instances", props1, props2);
+    }
+
+    // ========================================
     // Helper Methods
     // ========================================
 

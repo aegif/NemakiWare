@@ -1703,7 +1703,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         <Col span={18}>
           <Card>
             <Space direction="vertical" style={{ width: '100%' }}>
-              {/* 1段目: ナビゲーション + 検索 */}
+              {/* 1段目: ナビゲーション（Up + パンくずリスト全幅） */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, minHeight: 32 }}>
                 <Button
                   icon={<UpOutlined />}
@@ -1715,21 +1715,22 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   {t('documentList.up')}
                 </Button>
                 <Breadcrumb items={breadcrumbItems} style={{ flex: 1, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }} />
+              </div>
+              {/* 2段目: 検索（左寄せ） + アクションボタン（右寄せ） */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
                 <Input
                   placeholder={t('documentList.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onPressEnter={handleSearch}
-                  style={{ width: 200, flexShrink: 0, marginLeft: 'auto' }}
+                  style={{ width: 200, flexShrink: 0 }}
                   className="search-input"
                 />
                 <Button onClick={handleSearch} className="search-button" style={{ flexShrink: 0 }}>{t('common.search')}</Button>
                 {isSearchMode && (
                   <Button onClick={handleClearSearch} style={{ flexShrink: 0 }}>{t('common.clear')}</Button>
                 )}
-              </div>
-              {/* 2段目: アクションボタン */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8, justifyContent: 'flex-end' }}>
+                <div style={{ marginLeft: 'auto' }} />  {/* スペーサー: 以降のボタンを右寄せ */}
                 {canCreateDoc && (
                   <Button
                     type="primary"

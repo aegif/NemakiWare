@@ -459,4 +459,88 @@ test.describe('Webhook Settings UI Tests', () => {
       });
     }
   });
+
+  test('WU7: Webhook CRUD via UI form interaction', async ({ page }) => {
+    // Create test folder via API
+    testFolderId = await apiHelper.createFolder({ name: `wh-ui-crud-${generateTestId()}` });
+    expect(testFolderId).toBeTruthy();
+
+    // Login and navigate to folder detail view
+    await authHelper.login();
+    await page.goto(`${BASE_URL}/core/ui/#/documents/${testFolderId}`);
+    await page.waitForLoadState('networkidle');
+
+    // Click Webhook tab
+    const webhookTab = page.locator('.ant-tabs-tab').filter({ hasText: /Webhook|ウェブフック/ });
+    await webhookTab.waitFor({ state: 'visible', timeout: 15000 });
+    await webhookTab.click();
+
+    // ---- CREATE ----
+    // Click "Add" button
+    const addButton = page.locator('button').filter({ hasText: /Add Webhook|ウェブフックを追加/ });
+    await addButton.waitFor({ state: 'visible', timeout: 5000 });
+    await addButton.click();
+
+    // Modal should appear
+    const modal = page.locator('.ant-modal-content');
+    await modal.waitFor({ state: 'visible', timeout: 5000 });
+
+    // Fill URL
+    await modal.locator('input[id*="url"]').fill('https://test.example.com/hook1');
+
+    // Check an event type checkbox (created / 作成) - i18n compatible
+    const createdCheckbox = modal.locator('.ant-checkbox-wrapper').filter({ hasText: /^(created|作成)$/i }).first();
+    await createdCheckbox.click();
+
+    // Click OK in modal footer
+    await modal.locator('.ant-modal-footer button.ant-btn-primary').click();
+
+    // Wait for modal to close and table to update
+    await page.waitForTimeout(2000);
+
+    // Verify row added in table
+    const tableRows = page.locator('.ant-table-tbody .ant-table-row');
+    await expect(tableRows).toHaveCount(1, { timeout: 5000 });
+    // Verify the URL is displayed
+    await expect(page.locator('.ant-table-tbody')).toContainText('https://test.example.com/hook1');
+
+    // ---- UPDATE ----
+    // Click edit button on the first row
+    const editButton = tableRows.first().locator('button').filter({ has: page.locator('[aria-label="edit"]') });
+    await editButton.click();
+
+    // Modal should reappear with existing data
+    const editModal = page.locator('.ant-modal-content');
+    await editModal.waitFor({ state: 'visible', timeout: 5000 });
+
+    // Change URL
+    const urlInput = editModal.locator('input[id*="url"]');
+    await urlInput.clear();
+    await urlInput.fill('https://test.example.com/hook-updated');
+
+    // Click OK
+    await editModal.locator('.ant-modal-footer button.ant-btn-primary').click();
+
+    // Wait for update
+    await page.waitForTimeout(2000);
+
+    // Verify URL was updated
+    await expect(page.locator('.ant-table-tbody')).toContainText('https://test.example.com/hook-updated');
+
+    // ---- DELETE ----
+    // Click delete button on the first row
+    const deleteButton = tableRows.first().locator('button').filter({ has: page.locator('[aria-label="delete"]') });
+    await deleteButton.click();
+
+    // Confirm in Popconfirm
+    const confirmButton = page.locator('.ant-popconfirm .ant-btn-primary');
+    await confirmButton.waitFor({ state: 'visible', timeout: 3000 });
+    await confirmButton.click();
+
+    // Wait for deletion
+    await page.waitForTimeout(2000);
+
+    // Verify table is empty
+    await expect(page.locator('.ant-table-empty, .ant-empty')).toBeVisible({ timeout: 5000 });
+  });
 });

@@ -99,6 +99,16 @@ timeout 900s mvn test -Dtest=BasicsTestGroup,TypesTestGroup,ControlTestGroup,Ver
 # 注意: テスト失敗時はCouchDBにゴミデータ(cmistck*, test-custom-*)が残る場合がある
 ```
 
+### QueryTestGroup (オプション)
+```bash
+timeout 1200s mvn test -Dtest=QueryTestGroup -f core/pom.xml -Pdevelopment
+# 前提条件:
+#   1. Solr 起動中 (docker compose の solr コンテナ)
+#   2. cmis-tck-parameters.properties に browser.url 設定済み
+#   3. NemakiWare core 起動済み + Solr 接続済み
+# 期待: 6/6 PASS (所要時間: 約15-20分)
+```
+
 ### Playwrightテスト
 ```bash
 cd core/src/main/webapp/ui

@@ -705,9 +705,20 @@ public class SolrPredicateWalker{
 		// Without quotes, Solr tokenizes 'TEST_KEYWORD' into 'test', 'keyword'
 		// causing incorrect matches for documents containing just 'test'
 		escapedText = '"' + escapedText + '"';
-		Term term = new Term("text", escapedText);
-		TermQuery q = new TermQuery(term);
-		return q;
+
+		// Dual-index search: text (Japanese/CJK) OR text_en (English stemming/stop words)
+		// NOTE: These TermQuery objects are serialized to a string via toString() and then
+		// re-parsed by Solr's query parser (see SolrQueryProcessor L319-434).
+		// Solr's parser applies each field's configured analyzer at parse time, so:
+		//   - text:"running"   → text_ja analyzer (Kuromoji morphological analysis)
+		//   - text_en:"running" → text_en analyzer (Porter stemming → "run", stop word removal)
+		// The analyzer is NOT applied on the Java side; it is applied by Solr on receipt.
+		Term termJa = new Term("text", escapedText);
+		Term termEn = new Term("text_en", escapedText);
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
+		builder.add(new TermQuery(termJa), Occur.SHOULD);
+		builder.add(new TermQuery(termEn), Occur.SHOULD);
+		return builder.build();
 	}
 
 	private Query walkTextPhrase(Tree node) {
@@ -719,8 +730,6 @@ public class SolrPredicateWalker{
 		// Problem: Solr tokenizes 'SEARCH_TEST_KEYWORD_123' into 'search', 'test', 'keyword', '123'
 		//          causing documents with just 'test' to incorrectly match
 		// Solution: Always wrap in double quotes to force exact phrase matching
-		//          This ensures 'SEARCH_TEST_KEYWORD_123' only matches documents containing
-		//          that exact sequence of tokens, not any individual token
 		if(termString.charAt(0) == '\'' && termString.charAt(termString.length()-1) == '\'' ){
 			// Remove the single quotes to get the actual search term
 			termString = termString.substring(1, termString.length() - 1);
@@ -730,9 +739,15 @@ public class SolrPredicateWalker{
 		// This prevents tokenized words from matching independently
 		termString = '"' + termString + '"';
 
-		Term term = new Term("text", termString);
-		TermQuery q = new TermQuery(term);
-		return q;
+		// Dual-index search: text (Japanese/CJK) OR text_en (English stemming/stop words)
+		// NOTE: Query.toString() output is re-parsed by Solr's query parser, which applies
+		// each field's configured analyzer (see walkTextWord comment for details).
+		Term termJa = new Term("text", termString);
+		Term termEn = new Term("text_en", termString);
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
+		builder.add(new TermQuery(termJa), Occur.SHOULD);
+		builder.add(new TermQuery(termEn), Occur.SHOULD);
+		return builder.build();
 	}
 	
 	private String escapeString(String val) {
