@@ -235,22 +235,34 @@ test.describe('Multilingual Search Tests', () => {
   test('ML2: Japanese morphological analysis - verb inflection', async ({ request }) => {
     const uid = generateTestId();
     const docName = `ml-ja-morph-${uid}.txt`;
-    // Kuromoji は「走っている」「走った」を「走る」の活用形として解析
+    const docNameNoMatch = `ml-ja-morph-nomatch-${uid}.txt`;
+    // Kuromoji は「実行しています」を「実行」+「する」+「いる」に分解する。
+    // テスト: 活用形「実行しています」を含む文書を、原形「実行」で検索してヒットさせる。
+    // ユニークマーカーで他文書との分離を確保しつつ、形態素解析の検証も行う。
     const uniqueMarker = `JAMORPH${uid}`;
     let docId: string | null = null;
+    let docIdNoMatch: string | null = null;
 
     try {
+      // 活用形を含む文書（「実行しています」= 連用形+て+いる+ます）
       docId = await createDocumentWithContent(request, docName,
         `${uniqueMarker} ユーザーがシステム上で操作を実行しています。`);
 
-      const indexed = await waitForSolrIndex(request, docName);
-      test.skip(!indexed, 'Solr indexing timeout');
+      // 「実行」を含まない文書
+      docIdNoMatch = await createDocumentWithContent(request, docNameNoMatch,
+        `${uniqueMarker} この文書には関連する動詞がありません。`);
 
-      // マーカー語で検索してドキュメントが見つかることを確認
-      const results = await searchContains(request, uniqueMarker);
+      const idx1 = await waitForSolrIndex(request, docName);
+      const idx2 = await waitForSolrIndex(request, docNameNoMatch);
+      test.skip(!idx1 || !idx2, 'Solr indexing timeout');
+
+      // 原形「実行」で検索 → 活用形「実行しています」を含む文書がヒットするはず
+      const results = await searchContains(request, `${uniqueMarker} 実行`);
       expect(results).toContain(docId);
+      expect(results).not.toContain(docIdNoMatch);
     } finally {
       if (docId) await deleteDocument(request, docId).catch(() => {});
+      if (docIdNoMatch) await deleteDocument(request, docIdNoMatch).catch(() => {});
     }
   });
 
@@ -278,34 +290,36 @@ test.describe('Multilingual Search Tests', () => {
     }
   });
 
-  test('ML4: English stemming - "running" matches document with "run"', async ({ request }) => {
+  test('ML4: English stemming - inflected form matches base form', async ({ request }) => {
     const uid = generateTestId();
-    const docNameRun = `ml-en-stem-run-${uid}.txt`;
+    const docNameInflected = `ml-en-stem-inflected-${uid}.txt`;
     const docNameNoMatch = `ml-en-stem-nomatch-${uid}.txt`;
-    // Use a unique compound word to avoid matching other documents
-    const uniqueBase = `XSTEMTEST${uid}`;
-    let docIdRun: string | null = null;
+    // Use a unique marker to isolate test documents, and test stemming separately.
+    // Document contains ONLY the inflected form "running" (not "run").
+    // Search with the base form "run" — should match via Porter stemming.
+    const uniqueMarker = `XSTEMTEST${uid}`;
+    let docIdInflected: string | null = null;
     let docIdNoMatch: string | null = null;
 
     try {
-      // Document with base form word
-      docIdRun = await createDocumentWithContent(request, docNameRun,
-        `The ${uniqueBase} program was running all day long.`);
+      // Document with inflected form ONLY ("running", NOT "run")
+      docIdInflected = await createDocumentWithContent(request, docNameInflected,
+        `${uniqueMarker} The program was running all day long without stopping.`);
 
-      // Document without the word
+      // Document without any form of "run"
       docIdNoMatch = await createDocumentWithContent(request, docNameNoMatch,
-        `This document has no related content whatsoever.`);
+        `${uniqueMarker} This document has completely unrelated content about cooking.`);
 
-      const idx1 = await waitForSolrIndex(request, docNameRun);
+      const idx1 = await waitForSolrIndex(request, docNameInflected);
       const idx2 = await waitForSolrIndex(request, docNameNoMatch);
       test.skip(!idx1 || !idx2, 'Solr indexing timeout');
 
-      // Search with the unique marker to find the document
-      const results = await searchContains(request, uniqueBase);
-      expect(results).toContain(docIdRun);
+      // Search with marker + base form "run" — should match "running" via stemming
+      const results = await searchContains(request, `${uniqueMarker} run`);
+      expect(results).toContain(docIdInflected);
       expect(results).not.toContain(docIdNoMatch);
     } finally {
-      if (docIdRun) await deleteDocument(request, docIdRun).catch(() => {});
+      if (docIdInflected) await deleteDocument(request, docIdInflected).catch(() => {});
       if (docIdNoMatch) await deleteDocument(request, docIdNoMatch).catch(() => {});
     }
   });
