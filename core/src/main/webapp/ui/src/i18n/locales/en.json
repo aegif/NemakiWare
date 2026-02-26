@@ -649,6 +649,7 @@
         "updated": "Updated",
         "deleted": "Deleted",
         "security": "Security Change",
+        "content_updated": "Content Updated",
         "child_created": "Child Batch (Created)",
         "child_updated": "Child Batch (Updated)",
         "child_deleted": "Child Batch (Deleted)"

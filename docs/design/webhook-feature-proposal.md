@@ -104,7 +104,7 @@ RSS機能は全オブジェクトが対象となりうるため、プライマ�
 | `CHILD_UPDATED` | 子要素更新（フォルダのみ） | - | ✅ 実装済み |
 | `CHILD_DELETED` | 子要素削除（フォルダのみ） | - | ✅ 実装済み |
 | `CHILD_BATCH` | 子イベントバッチ配送 | - | ✅ 実装済み |
-| `CONTENT_UPDATED` | コンテンツストリーム更新 | ChangeType.UPDATED (content) | 🔜 将来実装 |
+| `CONTENT_UPDATED` | コンテンツストリーム更新 | ChangeType.UPDATED (content) | ✅ 実装済み |
 | `CHECKED_OUT` / `CHECKED_IN` | チェックアウト/イン | - | 🔜 将来実装 |
 | `VERSION_CREATED` | 新バージョン作成 | ChangeType.CREATED (version) | 🔜 将来実装 |
 | `MOVED` | 移動 | ChangeType.UPDATED (parent) | 🔜 将来実装 |

@@ -60,6 +60,21 @@ public interface WebhookService {
     void triggerWebhook(CallContext callContext, String repositoryId, 
                         Content content, ChangeType changeType, 
                         Map<String, Object> additionalProperties);
+
+    /**
+     * Trigger webhook notifications for a custom event type (e.g. CONTENT_UPDATED).
+     * 
+     * Use this overload for event types that don't map directly to CMIS ChangeType.
+     * 
+     * @param callContext The call context
+     * @param repositoryId The repository ID
+     * @param content The content that triggered the event
+     * @param eventType The event type string (e.g. "CONTENT_UPDATED")
+     * @param additionalProperties Optional additional properties to include in payload
+     */
+    void triggerWebhookByEventType(CallContext callContext, String repositoryId,
+                                   Content content, String eventType,
+                                   Map<String, Object> additionalProperties);
     
     /**
      * Check if a content object has webhook configurations.

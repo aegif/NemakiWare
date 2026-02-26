@@ -33,6 +33,8 @@ public class WebhookEventMatcher {
             "UPDATED",   // ChangeType.UPDATED
             "DELETED",   // ChangeType.DELETED
             "SECURITY",  // ChangeType.SECURITY (ACL changes)
+            // Phase 2 events (content stream operations)
+            "CONTENT_UPDATED",  // Content stream set/append/delete
             // Phase 4 events (CHILD_* for folder monitoring)
             "CHILD_CREATED",  // Child object created in folder
             "CHILD_UPDATED",  // Child object updated in folder

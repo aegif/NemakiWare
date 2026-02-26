@@ -4436,18 +4436,26 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             throws IOException, ServletException, Exception {
         
         try {
-            // Extract folder ID from parameters or path
-            String folderId = request.getParameter("folderId");
+            // Extract folder ID from: (1) objectId param, (2) folderId param, (3) URL path
+            String folderId = request.getParameter("objectId");
+            if (folderId == null) {
+                folderId = request.getParameter("folderId");
+            }
             if (folderId == null && pathInfo != null) {
-                // Try to extract folderId from path like /bedroom/FOLDER_ID
+                // Fallback: extract from URL path like /bedroom/{folderId}
                 String[] pathParts = pathInfo.split("/");
                 if (pathParts.length >= 3) {
-                    folderId = pathParts[2]; // Third part is usually the folderId
+                    String candidate = pathParts[2];
+                    // Only use path segment if it looks like a CouchDB document ID (not "root")
+                    if (candidate != null && !candidate.isEmpty()
+                            && !"root".equalsIgnoreCase(candidate)) {
+                        folderId = candidate;
+                    }
                 }
             }
-            
+
             if (folderId == null || folderId.isEmpty()) {
-                throw new IllegalArgumentException("folderId parameter is required for deleteTree operation");
+                throw new IllegalArgumentException("objectId parameter is required for deleteTree operation");
             }
             
             // Extract repository ID from path

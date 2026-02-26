@@ -226,6 +226,9 @@
         <property name="threadLockService">
             <ref bean="ThreadLockService" />
         </property>
+        <property name="webhookService">
+            <ref bean="WebhookService" />
+        </property>
     </bean>
 
     <bean id="ObjectServiceInternal" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">

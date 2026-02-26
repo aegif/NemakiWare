@@ -649,6 +649,7 @@
         "updated": "更新",
         "deleted": "削除",
         "security": "権限変更",
+        "content_updated": "コンテンツ更新",
         "child_created": "子要素バッチ（作成）",
         "child_updated": "子要素バッチ（更新）",
         "child_deleted": "子要素バッチ（削除）"

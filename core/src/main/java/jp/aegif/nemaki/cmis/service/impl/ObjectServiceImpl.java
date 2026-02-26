@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.cmis.service.impl;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.WebhookService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
@@ -103,6 +104,7 @@ public class ObjectServiceImpl implements ObjectService {
 	private SolrUtil solrUtil;
 	private NemakiCachePool nemakiCachePool;
 	private ThreadLockService threadLockService;
+	private WebhookService webhookService;
 	private int threadMax;
 
 	@Override
@@ -653,6 +655,7 @@ public class ObjectServiceImpl implements ObjectService {
 
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
 
+		Content webhookContent = null;
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
 		try {
 			lock.lock();
@@ -716,9 +719,24 @@ public class ObjectServiceImpl implements ObjectService {
 				changeToken.setValue(result.getChangeToken());
 			}
 
+			// Capture data for webhook trigger (fired outside lock)
+			webhookContent = result;
+
 			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(oldId);
 		} finally {
 			lock.unlock();
+		}
+
+		// Trigger CONTENT_UPDATED webhook outside write lock to avoid
+		// holding the lock during parent-folder traversal and async dispatch
+		if (webhookService != null && webhookContent != null) {
+			try {
+				webhookService.triggerWebhookByEventType(callContext, repositoryId,
+						webhookContent, "CONTENT_UPDATED", null);
+			} catch (Exception e) {
+				log.warn("Failed to trigger CONTENT_UPDATED webhook for object "
+						+ webhookContent.getId() + ": " + e.getMessage());
+			}
 		}
 	}
 
@@ -728,6 +746,7 @@ public class ObjectServiceImpl implements ObjectService {
 
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
 
+		Content webhookContent = null;
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
 		try {
 			lock.lock();
@@ -751,10 +770,24 @@ public class ObjectServiceImpl implements ObjectService {
 			changeToken.setValue(updatedDocument.getChangeToken());
 		}
 
+		// Capture data for webhook trigger (fired outside lock)
+		webhookContent = updatedDocument;
+
 		nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId.getValue());
 
 		} finally {
 			lock.unlock();
+		}
+
+		// Trigger CONTENT_UPDATED webhook outside write lock
+		if (webhookService != null && webhookContent != null) {
+			try {
+				webhookService.triggerWebhookByEventType(callContext, repositoryId,
+						webhookContent, "CONTENT_UPDATED", null);
+			} catch (Exception e) {
+				log.warn("Failed to trigger CONTENT_UPDATED webhook for object "
+						+ webhookContent.getId() + ": " + e.getMessage());
+			}
 		}
 	}
 
@@ -764,6 +797,7 @@ public class ObjectServiceImpl implements ObjectService {
 
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
 
+		Content webhookContent = null;
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
 		try {
 			lock.lock();
@@ -805,9 +839,25 @@ public class ObjectServiceImpl implements ObjectService {
 			contentService.appendAttachment(callContext, repositoryId, objectId, changeToken, contentStream,
 					isLastChunk, extension);
 
+			// Capture content inside lock to avoid race with concurrent writers.
+			// Re-fetching after unlock could return state from a subsequent update,
+			// producing mismatched payload/changeToken in the webhook.
+			webhookContent = contentService.getContent(repositoryId, objectId.getValue());
+
 			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId.getValue());
 		} finally {
 			lock.unlock();
+		}
+
+		// Trigger CONTENT_UPDATED webhook outside write lock
+		if (webhookService != null && webhookContent != null) {
+			try {
+				webhookService.triggerWebhookByEventType(callContext, repositoryId,
+						webhookContent, "CONTENT_UPDATED", null);
+			} catch (Exception e) {
+				log.warn("Failed to trigger CONTENT_UPDATED webhook for object "
+						+ webhookContent.getId() + ": " + e.getMessage());
+			}
 		}
 	}
 
@@ -1268,14 +1318,13 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", folderId);
 		Folder folder = contentService.getFolder(repositoryId, folderId);
-		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_DELETE_TREE_FOLDER, folder);
-		exceptionService.constraintDeleteRootFolder(repositoryId, folderId);
 
-		// //////////////////
-		// Specific Exception
-		// //////////////////
+		// Null check BEFORE permissionDenied to avoid NPE on content.getId()
 		if (folder == null)
 			exceptionService.constraint(folderId, "deleteTree cannot be invoked on a non-folder object");
+
+		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_DELETE_TREE_FOLDER, folder);
+		exceptionService.constraintDeleteRootFolder(repositoryId, folderId);
 
 		// //////////////////
 		// Body of the method
@@ -1353,5 +1402,9 @@ public class ObjectServiceImpl implements ObjectService {
 
 	public void setThreadMax(int threadMax) {
 		this.threadMax = threadMax;
+	}
+
+	public void setWebhookService(WebhookService webhookService) {
+		this.webhookService = webhookService;
 	}
 }

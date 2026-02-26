@@ -810,8 +810,28 @@ public class CloudantClientWrapper {
 			PostViewOptions.Builder builder = new PostViewOptions.Builder()
 				.db(databaseName)
 				.ddoc(designDoc)
-				.view(viewName)
-				.includeDocs(true);
+				.view(viewName);
+
+			// Determine includeDocs: honor caller's setting, default true only when reduce is not true
+			boolean reduceRequested = false;
+			if (queryParams != null && queryParams.containsKey("reduce")) {
+				Object reduce = queryParams.get("reduce");
+				if (reduce instanceof Boolean) {
+					reduceRequested = (Boolean) reduce;
+				}
+			}
+			if (queryParams != null && queryParams.containsKey("include_docs")) {
+				Object includeDocs = queryParams.get("include_docs");
+				if (includeDocs instanceof Boolean) {
+					// CouchDB prohibits include_docs with reduce=true
+					if (!reduceRequested) {
+						builder.includeDocs((Boolean) includeDocs);
+					}
+				}
+			} else if (!reduceRequested) {
+				// Default: include docs when not reducing (backward compatible)
+				builder.includeDocs(true);
+			}
 
 			// Add query parameters if provided
 			if (queryParams != null) {

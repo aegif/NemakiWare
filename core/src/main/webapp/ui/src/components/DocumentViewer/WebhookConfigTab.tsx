@@ -51,7 +51,7 @@ interface WebhookFormValues {
 }
 
 const EVENT_TYPES = [
-  'created', 'updated', 'deleted', 'security',
+  'created', 'updated', 'deleted', 'security', 'content_updated',
   'child_created', 'child_updated', 'child_deleted',
 ];
 

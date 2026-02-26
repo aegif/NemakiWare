@@ -3,17 +3,20 @@ package jp.aegif.nemaki.webhook;
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.impl.WebhookServiceImpl;
@@ -24,407 +27,573 @@ import jp.aegif.nemaki.model.Property;
 
 /**
  * Unit tests for WebhookServiceImpl.
- * 
+ *
  * Tests cover:
  * - Webhook configuration detection
  * - Event type conversion
  * - Inherited configuration retrieval
- * - Trigger webhook logic
+ * - Trigger webhook logic with dispatch verification
  */
 public class WebhookServiceTest {
-    
+
     private WebhookServiceImpl webhookService;
     private ContentService mockContentService;
     private CallContext mockCallContext;
-    
+    private WebhookDeliveryService mockDeliveryService;
+    private ExecutorService mockExecutorService;
+
     @Before
-    public void setUp() {
+    public void setUp() throws Exception {
         webhookService = new WebhookServiceImpl();
         mockContentService = mock(ContentService.class);
         mockCallContext = mock(CallContext.class);
+        mockDeliveryService = mock(WebhookDeliveryService.class);
         webhookService.setContentService(mockContentService);
-        
+
         when(mockCallContext.getUsername()).thenReturn("testuser");
+
+        // Inject mock deliveryService via reflection for dispatch verification
+        setPrivateField(webhookService, "deliveryService", mockDeliveryService);
+
+        // Replace executorService with a same-thread executor so dispatch runs synchronously
+        mockExecutorService = new SameThreadExecutorService();
+        setPrivateField(webhookService, "executorService", mockExecutorService);
+
+        // Default: deliveryService returns a valid payload
+        when(mockDeliveryService.buildPayload(anyString(), anyString(), anyString(), anyMap(), anyString()))
+            .thenAnswer(inv -> {
+                WebhookPayload p = new WebhookPayload();
+                p.setEventType(inv.getArgument(0));
+                p.setObjectId(inv.getArgument(1));
+                p.setRepositoryId(inv.getArgument(2));
+                p.setDeliveryId("test-delivery-id");
+                p.setTimestamp(System.currentTimeMillis());
+                return p;
+            });
+        when(mockDeliveryService.serializePayload(any(WebhookPayload.class)))
+            .thenReturn("{\"test\":\"payload\"}");
+        when(mockDeliveryService.generateAuthHeaders(any(WebhookConfig.class)))
+            .thenReturn(new HashMap<>());
     }
-    
+
     // ========================================
     // hasWebhookConfig Tests
     // ========================================
-    
+
     @Test
     public void testHasWebhookConfigWithNullContent() {
-        assertFalse("Should return false for null content", 
+        assertFalse("Should return false for null content",
             webhookService.hasWebhookConfig("bedroom", null));
     }
-    
+
     @Test
     public void testHasWebhookConfigWithoutSecondaryType() {
         Content content = createMockContent("doc-1", null, null);
-        
-        assertFalse("Should return false when no secondary type", 
+
+        assertFalse("Should return false when no secondary type",
             webhookService.hasWebhookConfig("bedroom", content));
     }
-    
+
     @Test
     public void testHasWebhookConfigWithSecondaryTypeButNoConfigs() {
-        Content content = createMockContent("doc-1", 
+        Content content = createMockContent("doc-1",
             Arrays.asList("nemaki:webhookable"), null);
-        
-        assertFalse("Should return false when secondary type exists but no configs", 
+
+        assertFalse("Should return false when secondary type exists but no configs",
             webhookService.hasWebhookConfig("bedroom", content));
     }
-    
+
     @Test
     public void testHasWebhookConfigWithValidConfig() {
         String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"]}]";
-        Content content = createMockContent("doc-1", 
+        Content content = createMockContent("doc-1",
             Arrays.asList("nemaki:webhookable"), configJson);
-        
-        assertTrue("Should return true when valid config exists", 
+
+        assertTrue("Should return true when valid config exists",
             webhookService.hasWebhookConfig("bedroom", content));
     }
-    
+
     // ========================================
     // getWebhookConfigs Tests
     // ========================================
-    
+
     @Test
     public void testGetWebhookConfigsWithNullContent() {
         List<WebhookConfig> configs = webhookService.getWebhookConfigs("bedroom", null);
-        
+
         assertTrue("Should return empty list for null content", configs.isEmpty());
     }
-    
+
     @Test
     public void testGetWebhookConfigsWithoutSecondaryType() {
         Content content = createMockContent("doc-1", null, null);
-        
+
         List<WebhookConfig> configs = webhookService.getWebhookConfigs("bedroom", content);
-        
+
         assertTrue("Should return empty list when no secondary type", configs.isEmpty());
     }
-    
+
     @Test
     public void testGetWebhookConfigsWithValidConfigs() {
         String configJson = "[" +
             "{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook1\",\"events\":[\"CREATED\"]}," +
             "{\"id\":\"webhook-2\",\"enabled\":true,\"url\":\"https://example.com/webhook2\",\"events\":[\"UPDATED\"]}" +
             "]";
-        Content content = createMockContent("doc-1", 
+        Content content = createMockContent("doc-1",
             Arrays.asList("nemaki:webhookable"), configJson);
-        
+
         List<WebhookConfig> configs = webhookService.getWebhookConfigs("bedroom", content);
-        
+
         assertEquals("Should return 2 configs", 2, configs.size());
         assertEquals("First config should have correct ID", "webhook-1", configs.get(0).getId());
         assertEquals("Second config should have correct ID", "webhook-2", configs.get(1).getId());
     }
-    
+
     @Test
     public void testGetWebhookConfigsFiltersDisabledConfigs() {
         String configJson = "[" +
             "{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook1\",\"events\":[\"CREATED\"]}," +
             "{\"id\":\"webhook-2\",\"enabled\":false,\"url\":\"https://example.com/webhook2\",\"events\":[\"UPDATED\"]}" +
             "]";
-        Content content = createMockContent("doc-1", 
+        Content content = createMockContent("doc-1",
             Arrays.asList("nemaki:webhookable"), configJson);
-        
+
         List<WebhookConfig> configs = webhookService.getWebhookConfigs("bedroom", content);
-        
+
         assertEquals("Should return only enabled configs", 1, configs.size());
         assertEquals("Should return the enabled config", "webhook-1", configs.get(0).getId());
     }
-    
+
     @Test
     public void testGetWebhookConfigsSetsSourceObjectId() {
         String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"]}]";
-        Content content = createMockContent("doc-123", 
+        Content content = createMockContent("doc-123",
             Arrays.asList("nemaki:webhookable"), configJson);
-        
+
         List<WebhookConfig> configs = webhookService.getWebhookConfigs("bedroom", content);
-        
+
         assertEquals("Should set sourceObjectId", "doc-123", configs.get(0).getSourceObjectId());
     }
-    
+
     // ========================================
     // getInheritedWebhookConfigs Tests
     // ========================================
-    
+
     @Test
     public void testGetInheritedWebhookConfigsWithNullContent() {
         List<WebhookConfig> configs = webhookService.getInheritedWebhookConfigs("bedroom", null);
-        
+
         assertTrue("Should return empty list for null content", configs.isEmpty());
     }
-    
+
     @Test
     public void testGetInheritedWebhookConfigsFromParentFolder() {
         // Create parent folder with webhook config that includes children
         String parentConfigJson = "[{\"id\":\"parent-webhook\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"],\"includeChildren\":true,\"maxDepth\":5}]";
-        Folder parentFolder = createMockFolder("folder-1", null, 
+        Folder parentFolder = createMockFolder("folder-1", null,
             Arrays.asList("nemaki:webhookable"), parentConfigJson);
-        
+
         // Create child document
         Document childDoc = createMockDocument("doc-1", "folder-1", null, null);
-        
+
         when(mockContentService.getContent("bedroom", "folder-1")).thenReturn(parentFolder);
-        
+
         List<WebhookConfig> configs = webhookService.getInheritedWebhookConfigs("bedroom", childDoc);
-        
+
         assertEquals("Should inherit config from parent", 1, configs.size());
         assertEquals("Should have parent's webhook ID", "parent-webhook", configs.get(0).getId());
     }
-    
+
     @Test
     public void testGetInheritedWebhookConfigsRespectsMaxDepth() {
-        // Create grandparent folder with webhook config that has maxDepth=1 (direct children only)
-        // Distance is measured from webhook config folder to event object:
-        // - maxDepth=1 means direct children only (distance=1)
-        // - maxDepth=2 means children and grandchildren (distance=1,2)
         String grandparentConfigJson = "[{\"id\":\"grandparent-webhook\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"],\"includeChildren\":true,\"maxDepth\":1}]";
-        Folder grandparentFolder = createMockFolder("folder-0", null, 
+        Folder grandparentFolder = createMockFolder("folder-0", null,
             Arrays.asList("nemaki:webhookable"), grandparentConfigJson);
-        
-        // Create intermediate folder (distance=1 from grandparent's perspective)
+
         Folder parentFolder = createMockFolder("folder-1", "folder-0", null, null);
-        
-        // Create child document (distance=2 from grandparent's perspective - beyond maxDepth=1)
         Document childDoc = createMockDocument("doc-1", "folder-1", null, null);
-        
+
         when(mockContentService.getContent("bedroom", "folder-1")).thenReturn(parentFolder);
         when(mockContentService.getContent("bedroom", "folder-0")).thenReturn(grandparentFolder);
-        
+
         List<WebhookConfig> configs = webhookService.getInheritedWebhookConfigs("bedroom", childDoc);
-        
-        // From doc-1's perspective:
-        // folder-1 (parent of doc-1) at distance=1 - no webhook config
-        // folder-0 (grandparent of doc-1) at distance=2 - has webhook config with maxDepth=1
-        // distance=2 > maxDepth=1, so config should NOT be inherited
+
         assertTrue("Should not inherit config beyond maxDepth", configs.isEmpty());
     }
-    
+
     @Test
     public void testGetInheritedWebhookConfigsIncludesMaxDepthBoundary() {
-        // Create parent folder with webhook config that has maxDepth=1 (direct children only)
-        // Distance is measured from webhook config folder to event object:
-        // - maxDepth=1 means direct children only (distance=1)
-        // - maxDepth=2 means children and grandchildren (distance=1,2)
         String parentConfigJson = "[{\"id\":\"parent-webhook\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"],\"includeChildren\":true,\"maxDepth\":1}]";
-        Folder parentFolder = createMockFolder("folder-1", null, 
+        Folder parentFolder = createMockFolder("folder-1", null,
             Arrays.asList("nemaki:webhookable"), parentConfigJson);
-        
-        // Create child document (distance=1 from parent folder - within maxDepth=1)
+
         Document childDoc = createMockDocument("doc-1", "folder-1", null, null);
-        
+
         when(mockContentService.getContent("bedroom", "folder-1")).thenReturn(parentFolder);
-        
+
         List<WebhookConfig> configs = webhookService.getInheritedWebhookConfigs("bedroom", childDoc);
-        
-        // From doc-1's perspective:
-        // folder-1 is at distance=1 (parent of doc-1) - has webhook config with maxDepth=1
-        // distance=1 <= maxDepth=1, so config is included
+
         assertEquals("Should inherit config at maxDepth boundary", 1, configs.size());
         assertEquals("Should have parent's webhook ID", "parent-webhook", configs.get(0).getId());
     }
-    
+
     @Test
     public void testGetInheritedWebhookConfigsIgnoresNonIncludeChildrenConfigs() {
-        // Create parent folder with webhook config that does NOT include children
         String parentConfigJson = "[{\"id\":\"parent-webhook\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"],\"includeChildren\":false}]";
-        Folder parentFolder = createMockFolder("folder-1", null, 
+        Folder parentFolder = createMockFolder("folder-1", null,
             Arrays.asList("nemaki:webhookable"), parentConfigJson);
-        
-        // Create child document
+
         Document childDoc = createMockDocument("doc-1", "folder-1", null, null);
-        
+
         when(mockContentService.getContent("bedroom", "folder-1")).thenReturn(parentFolder);
-        
+
         List<WebhookConfig> configs = webhookService.getInheritedWebhookConfigs("bedroom", childDoc);
-        
+
         assertTrue("Should not inherit config when includeChildren=false", configs.isEmpty());
     }
-    
+
     // ========================================
     // triggerWebhook Tests
     // ========================================
-    
+
     @Test
     public void testTriggerWebhookWithNullContent() {
-        // Should not throw exception
         webhookService.triggerWebhook(mockCallContext, "bedroom", null, ChangeType.CREATED, null);
+
+        // Verify no dispatch attempt was made
+        verifyNoInteractions(mockDeliveryService);
     }
-    
-    @Test
-    public void testTriggerWebhookWithUnsupportedEventType() {
-        Content content = createMockContent("doc-1", 
-            Arrays.asList("nemaki:webhookable"), 
-            "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CHILD_CREATED\"]}]");
-        
-        // CHILD_CREATED is not supported in Phase 1
-        // Should not throw exception, just skip
-        webhookService.triggerWebhook(mockCallContext, "bedroom", content, ChangeType.CREATED, null);
-    }
-    
+
     @Test
     public void testTriggerWebhookWithNoMatchingConfigs() {
-        // Config only listens for DELETED events
         String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"DELETED\"]}]";
-        Content content = createMockContent("doc-1", 
+        Content content = createMockContent("doc-1",
             Arrays.asList("nemaki:webhookable"), configJson);
-        
-        // Trigger CREATED event - should not match
+
         webhookService.triggerWebhook(mockCallContext, "bedroom", content, ChangeType.CREATED, null);
-        
-        // No exception should be thrown
+
+        // CREATED event does not match DELETED config → no dispatch
+        verify(mockDeliveryService, never()).buildPayload(anyString(), anyString(), anyString(), anyMap(), anyString());
     }
-    
+
+    @Test
+    public void testTriggerWebhookDispatchesForMatchingConfig() {
+        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"]}]";
+        Content content = createMockContent("doc-1",
+            Arrays.asList("nemaki:webhookable"), configJson);
+
+        webhookService.triggerWebhook(mockCallContext, "bedroom", content, ChangeType.CREATED, null);
+
+        // Verify dispatch was invoked with correct event type and object ID
+        verify(mockDeliveryService, times(1)).buildPayload(
+            eq("CREATED"), eq("doc-1"), eq("bedroom"), anyMap(), eq("token-123"));
+        verify(mockDeliveryService, times(1)).serializePayload(any(WebhookPayload.class));
+    }
+
+    @Test
+    public void testTriggerWebhookHandlesAllSupportedEventTypes() {
+        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\",\"UPDATED\",\"DELETED\",\"SECURITY\"]}]";
+        Content content = createMockContent("doc-1",
+            Arrays.asList("nemaki:webhookable"), configJson);
+
+        webhookService.triggerWebhook(mockCallContext, "bedroom", content, ChangeType.CREATED, null);
+        webhookService.triggerWebhook(mockCallContext, "bedroom", content, ChangeType.UPDATED, null);
+        webhookService.triggerWebhook(mockCallContext, "bedroom", content, ChangeType.DELETED, null);
+        webhookService.triggerWebhook(mockCallContext, "bedroom", content, ChangeType.SECURITY, null);
+
+        // All 4 events should trigger dispatch
+        verify(mockDeliveryService, times(4)).buildPayload(anyString(), eq("doc-1"), eq("bedroom"), anyMap(), eq("token-123"));
+    }
+
+    @Test
+    public void testTriggerWebhookWithNullCallContext() {
+        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"]}]";
+        Content content = createMockContent("doc-1",
+            Arrays.asList("nemaki:webhookable"), configJson);
+
+        // Should dispatch even with null CallContext (userId will be null in payload)
+        webhookService.triggerWebhook(null, "bedroom", content, ChangeType.CREATED, null);
+
+        verify(mockDeliveryService, times(1)).buildPayload(
+            eq("CREATED"), eq("doc-1"), eq("bedroom"), anyMap(), eq("token-123"));
+    }
+
+    @Test
+    public void testTriggerWebhookWithNullRepositoryId() {
+        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"]}]";
+        Content content = createMockContent("doc-1",
+            Arrays.asList("nemaki:webhookable"), configJson);
+
+        webhookService.triggerWebhook(mockCallContext, null, content, ChangeType.CREATED, null);
+
+        // Null repositoryId → early return, no dispatch
+        verify(mockDeliveryService, never()).buildPayload(anyString(), anyString(), anyString(), anyMap(), anyString());
+    }
+
+    @Test
+    public void testTriggerWebhookWithNullChangeType() {
+        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"]}]";
+        Content content = createMockContent("doc-1",
+            Arrays.asList("nemaki:webhookable"), configJson);
+
+        webhookService.triggerWebhook(mockCallContext, "bedroom", content, null, null);
+
+        // Null ChangeType → early return, no dispatch
+        verify(mockDeliveryService, never()).buildPayload(anyString(), anyString(), anyString(), anyMap(), anyString());
+    }
+
+    @Test
+    public void testTriggerWebhookInheritsFromParentFolder() {
+        String parentConfigJson = "[{\"id\":\"parent-webhook\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"],\"includeChildren\":true,\"maxDepth\":5}]";
+        Folder parentFolder = createMockFolder("folder-1", null,
+            Arrays.asList("nemaki:webhookable"), parentConfigJson);
+
+        Document childDoc = createMockDocument("doc-1", "folder-1", null, null);
+
+        when(mockContentService.getContent("bedroom", "folder-1")).thenReturn(parentFolder);
+
+        webhookService.triggerWebhook(mockCallContext, "bedroom", childDoc, ChangeType.CREATED, null);
+
+        // Child has no own config, but inherits from parent → dispatch should occur
+        verify(mockDeliveryService, times(1)).buildPayload(
+            eq("CREATED"), eq("doc-1"), eq("bedroom"), anyMap(), eq("token-123"));
+    }
+
     // ========================================
     // WebhookDeliveryLog Tests
     // ========================================
-    
+
     @Test
     public void testWebhookDeliveryLogCreation() {
         WebhookDeliveryLog log = new WebhookDeliveryLog();
         log.setDeliveryId("delivery-123");
         log.setAttemptNumber(1);
         log.generateAttemptId();
-        
+
         assertEquals("delivery-123", log.getDeliveryId());
         assertEquals("delivery-123-1", log.getAttemptId());
         assertEquals(1, log.getAttemptNumber());
         assertEquals(WebhookDeliveryLog.DeliveryStatus.PENDING, log.getStatus());
     }
-    
+
     @Test
     public void testWebhookDeliveryLogMarkSuccess() {
         WebhookDeliveryLog log = new WebhookDeliveryLog();
         log.markSuccess(200, "{\"status\":\"ok\"}", 150);
-        
+
         assertTrue("Should be marked as success", log.isSuccess());
         assertEquals(Integer.valueOf(200), log.getStatusCode());
         assertEquals("{\"status\":\"ok\"}", log.getResponseBody());
         assertEquals(Long.valueOf(150), log.getResponseTimeMs());
         assertEquals(WebhookDeliveryLog.DeliveryStatus.SUCCESS, log.getStatus());
     }
-    
+
     @Test
     public void testWebhookDeliveryLogMarkFailed() {
         WebhookDeliveryLog log = new WebhookDeliveryLog();
         log.markFailed(500, "Internal Server Error", 200);
-        
+
         assertFalse("Should be marked as failed", log.isSuccess());
         assertEquals(Integer.valueOf(500), log.getStatusCode());
         assertEquals("Internal Server Error", log.getErrorMessage());
         assertEquals(Long.valueOf(200), log.getResponseTimeMs());
         assertEquals(WebhookDeliveryLog.DeliveryStatus.FAILED, log.getStatus());
     }
-    
+
     @Test
     public void testWebhookDeliveryLogTruncatesLongResponse() {
         WebhookDeliveryLog log = new WebhookDeliveryLog();
-        
-        // Create a response longer than 4096 characters
+
         StringBuilder longResponse = new StringBuilder();
         for (int i = 0; i < 5000; i++) {
             longResponse.append("x");
         }
-        
+
         log.markSuccess(200, longResponse.toString(), 100);
-        
+
         assertTrue("Response should be truncated", log.getResponseBody().length() < 5000);
-        assertTrue("Response should end with truncation marker", 
+        assertTrue("Response should end with truncation marker",
             log.getResponseBody().endsWith("... (truncated)"));
     }
-    
+
     // ========================================
-    // ContentService Integration Tests
+    // triggerWebhookByEventType Tests (P2/P3 Regression for CONTENT_UPDATED)
     // ========================================
-    
+
     @Test
-    public void testTriggerWebhookIsCalledWithCorrectParameters() {
-        // Create content with webhook config
-        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"]}]";
-        Content content = createMockContent("doc-1", 
+    public void testTriggerWebhookByEventTypeWithNullContent() {
+        webhookService.triggerWebhookByEventType(mockCallContext, "bedroom", null, "CONTENT_UPDATED", null);
+
+        // Null content → early return, no dispatch
+        verify(mockDeliveryService, never()).buildPayload(anyString(), anyString(), anyString(), anyMap(), anyString());
+    }
+
+    @Test
+    public void testTriggerWebhookByEventTypeWithNullRepositoryId() {
+        Content content = createMockContent("doc-1",
+            Arrays.asList("nemaki:webhookable"),
+            "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CONTENT_UPDATED\"]}]");
+
+        webhookService.triggerWebhookByEventType(mockCallContext, null, content, "CONTENT_UPDATED", null);
+
+        // Null repositoryId → early return, no dispatch
+        verify(mockDeliveryService, never()).buildPayload(anyString(), anyString(), anyString(), anyMap(), anyString());
+    }
+
+    @Test
+    public void testTriggerWebhookByEventTypeWithNullEventType() {
+        Content content = createMockContent("doc-1",
+            Arrays.asList("nemaki:webhookable"),
+            "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CONTENT_UPDATED\"]}]");
+
+        webhookService.triggerWebhookByEventType(mockCallContext, "bedroom", content, null, null);
+
+        // Null eventType → early return, no dispatch
+        verify(mockDeliveryService, never()).buildPayload(anyString(), anyString(), anyString(), anyMap(), anyString());
+    }
+
+    @Test
+    public void testTriggerWebhookByEventTypeWithInvalidEventType() {
+        Content content = createMockContent("doc-1",
+            Arrays.asList("nemaki:webhookable"),
+            "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CONTENT_UPDATED\"]}]");
+
+        webhookService.triggerWebhookByEventType(mockCallContext, "bedroom", content, "INVALID_TYPE", null);
+
+        // Invalid eventType → early return, no dispatch
+        verify(mockDeliveryService, never()).buildPayload(anyString(), anyString(), anyString(), anyMap(), anyString());
+    }
+
+    @Test
+    public void testTriggerWebhookByEventTypeContentUpdatedDispatches() {
+        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CONTENT_UPDATED\"]}]";
+        Content content = createMockContent("doc-1",
             Arrays.asList("nemaki:webhookable"), configJson);
-        
-        // Additional properties to pass
+
+        webhookService.triggerWebhookByEventType(mockCallContext, "bedroom", content, "CONTENT_UPDATED", null);
+
+        // Verify dispatch was invoked with correct event type and object ID
+        verify(mockDeliveryService, times(1)).buildPayload(
+            eq("CONTENT_UPDATED"), eq("doc-1"), eq("bedroom"), anyMap(), eq("token-123"));
+        verify(mockDeliveryService, times(1)).serializePayload(any(WebhookPayload.class));
+    }
+
+    @Test
+    public void testTriggerWebhookByEventTypePayloadContainsProperties() {
+        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CONTENT_UPDATED\"]}]";
+        Content content = createMockContent("doc-1",
+            Arrays.asList("nemaki:webhookable"), configJson);
+        when(content.getCreator()).thenReturn("admin");
+        when(content.getModifier()).thenReturn("testuser");
+
+        webhookService.triggerWebhookByEventType(mockCallContext, "bedroom", content, "CONTENT_UPDATED", null);
+
+        // Capture the properties map passed to buildPayload
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> propsCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(mockDeliveryService).buildPayload(eq("CONTENT_UPDATED"), eq("doc-1"), eq("bedroom"),
+            propsCaptor.capture(), eq("token-123"));
+
+        Map<String, Object> props = propsCaptor.getValue();
+        assertEquals("cmis:objectId should be set", "doc-1", props.get("cmis:objectId"));
+        assertEquals("cmis:name should be set", "test-content", props.get("cmis:name"));
+        assertEquals("cmis:objectTypeId should be set", "cmis:document", props.get("cmis:objectTypeId"));
+        assertEquals("cmis:createdBy should be set", "admin", props.get("cmis:createdBy"));
+        assertEquals("cmis:lastModifiedBy should be set", "testuser", props.get("cmis:lastModifiedBy"));
+        assertEquals("cmis:changeToken should be set", "token-123", props.get("cmis:changeToken"));
+    }
+
+    @Test
+    public void testTriggerWebhookByEventTypeWithAdditionalProperties() {
+        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CONTENT_UPDATED\"]}]";
+        Content content = createMockContent("doc-1",
+            Arrays.asList("nemaki:webhookable"), configJson);
+
         Map<String, Object> additionalProps = new HashMap<>();
-        additionalProps.put("customKey", "customValue");
-        
-        // Trigger webhook - should not throw
-        webhookService.triggerWebhook(mockCallContext, "bedroom", content, ChangeType.CREATED, additionalProps);
-        
-        // Verify the content was processed (no exception means success)
-        // The actual dispatch is async, so we just verify no exception
+        additionalProps.put("contentLength", 12345L);
+        additionalProps.put("mimeType", "application/pdf");
+
+        webhookService.triggerWebhookByEventType(mockCallContext, "bedroom", content, "CONTENT_UPDATED", additionalProps);
+
+        // Verify dispatch occurred and additional properties are included
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> propsCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(mockDeliveryService).buildPayload(eq("CONTENT_UPDATED"), eq("doc-1"), eq("bedroom"),
+            propsCaptor.capture(), eq("token-123"));
+
+        Map<String, Object> props = propsCaptor.getValue();
+        assertEquals("Additional property contentLength should be passed", 12345L, props.get("contentLength"));
+        assertEquals("Additional property mimeType should be passed", "application/pdf", props.get("mimeType"));
+        // Standard properties should still be present
+        assertEquals("cmis:objectId should not be overwritten", "doc-1", props.get("cmis:objectId"));
     }
-    
+
     @Test
-    public void testTriggerWebhookHandlesAllSupportedEventTypes() {
-        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\",\"UPDATED\",\"DELETED\",\"SECURITY\"]}]";
-        Content content = createMockContent("doc-1", 
-            Arrays.asList("nemaki:webhookable"), configJson);
-        
-        // Test all supported event types
-        webhookService.triggerWebhook(mockCallContext, "bedroom", content, ChangeType.CREATED, null);
-        webhookService.triggerWebhook(mockCallContext, "bedroom", content, ChangeType.UPDATED, null);
-        webhookService.triggerWebhook(mockCallContext, "bedroom", content, ChangeType.DELETED, null);
-        webhookService.triggerWebhook(mockCallContext, "bedroom", content, ChangeType.SECURITY, null);
-        
-        // No exception means all event types are handled correctly
-    }
-    
-    @Test
-    public void testTriggerWebhookWithNullCallContext() {
-        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"]}]";
-        Content content = createMockContent("doc-1", 
-            Arrays.asList("nemaki:webhookable"), configJson);
-        
-        // Should handle null CallContext gracefully
-        webhookService.triggerWebhook(null, "bedroom", content, ChangeType.CREATED, null);
-    }
-    
-    @Test
-    public void testTriggerWebhookWithNullRepositoryId() {
-        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"]}]";
-        Content content = createMockContent("doc-1", 
-            Arrays.asList("nemaki:webhookable"), configJson);
-        
-        // Should handle null repositoryId gracefully
-        webhookService.triggerWebhook(mockCallContext, null, content, ChangeType.CREATED, null);
-    }
-    
-    @Test
-    public void testTriggerWebhookWithNullChangeType() {
-        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"]}]";
-        Content content = createMockContent("doc-1", 
-            Arrays.asList("nemaki:webhookable"), configJson);
-        
-        // Should handle null ChangeType gracefully
-        webhookService.triggerWebhook(mockCallContext, "bedroom", content, null, null);
-    }
-    
-    @Test
-    public void testTriggerWebhookInheritsFromParentFolder() {
-        // Create parent folder with webhook config that includes children
-        String parentConfigJson = "[{\"id\":\"parent-webhook\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"],\"includeChildren\":true,\"maxDepth\":5}]";
-        Folder parentFolder = createMockFolder("folder-1", null, 
+    public void testTriggerWebhookByEventTypeInheritsFromParentDispatches() {
+        String parentConfigJson = "[{\"id\":\"parent-webhook\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CONTENT_UPDATED\"],\"includeChildren\":true,\"maxDepth\":5}]";
+        Folder parentFolder = createMockFolder("folder-1", null,
             Arrays.asList("nemaki:webhookable"), parentConfigJson);
-        
-        // Create child document without its own webhook config
+
         Document childDoc = createMockDocument("doc-1", "folder-1", null, null);
-        
+
         when(mockContentService.getContent("bedroom", "folder-1")).thenReturn(parentFolder);
-        
-        // Trigger webhook on child - should inherit from parent
-        webhookService.triggerWebhook(mockCallContext, "bedroom", childDoc, ChangeType.CREATED, null);
-        
-        // No exception means inherited config was found and processed
+
+        webhookService.triggerWebhookByEventType(mockCallContext, "bedroom", childDoc, "CONTENT_UPDATED", null);
+
+        // Child inherits CONTENT_UPDATED config from parent → dispatch should occur
+        verify(mockDeliveryService, times(1)).buildPayload(
+            eq("CONTENT_UPDATED"), eq("doc-1"), eq("bedroom"), anyMap(), eq("token-123"));
     }
-    
+
+    @Test
+    public void testTriggerWebhookByEventTypeNoMatchingConfigNoDispatch() {
+        // Config only listens for CREATED, not CONTENT_UPDATED
+        String configJson = "[{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"]}]";
+        Content content = createMockContent("doc-1",
+            Arrays.asList("nemaki:webhookable"), configJson);
+
+        webhookService.triggerWebhookByEventType(mockCallContext, "bedroom", content, "CONTENT_UPDATED", null);
+
+        // CONTENT_UPDATED does not match CREATED config → no dispatch
+        verify(mockDeliveryService, never()).buildPayload(anyString(), anyString(), anyString(), anyMap(), anyString());
+    }
+
+    @Test
+    public void testTriggerWebhookByEventTypeMultipleMatchingConfigs() {
+        String configJson = "[" +
+            "{\"id\":\"webhook-1\",\"enabled\":true,\"url\":\"https://a.example.com/hook\",\"events\":[\"CONTENT_UPDATED\"]}," +
+            "{\"id\":\"webhook-2\",\"enabled\":true,\"url\":\"https://b.example.com/hook\",\"events\":[\"CONTENT_UPDATED\",\"CREATED\"]}" +
+            "]";
+        Content content = createMockContent("doc-1",
+            Arrays.asList("nemaki:webhookable"), configJson);
+
+        webhookService.triggerWebhookByEventType(mockCallContext, "bedroom", content, "CONTENT_UPDATED", null);
+
+        // Both configs match CONTENT_UPDATED → 2 dispatches
+        verify(mockDeliveryService, times(2)).buildPayload(
+            eq("CONTENT_UPDATED"), eq("doc-1"), eq("bedroom"), anyMap(), eq("token-123"));
+    }
+
+    @Test
+    public void testTriggerWebhookByEventTypeDisabledConfigNotDispatched() {
+        String configJson = "[" +
+            "{\"id\":\"webhook-active\",\"enabled\":true,\"url\":\"https://a.example.com/hook\",\"events\":[\"CONTENT_UPDATED\"]}," +
+            "{\"id\":\"webhook-disabled\",\"enabled\":false,\"url\":\"https://b.example.com/hook\",\"events\":[\"CONTENT_UPDATED\"]}" +
+            "]";
+        Content content = createMockContent("doc-1",
+            Arrays.asList("nemaki:webhookable"), configJson);
+
+        webhookService.triggerWebhookByEventType(mockCallContext, "bedroom", content, "CONTENT_UPDATED", null);
+
+        // Only the enabled config should dispatch
+        verify(mockDeliveryService, times(1)).buildPayload(
+            eq("CONTENT_UPDATED"), eq("doc-1"), eq("bedroom"), anyMap(), eq("token-123"));
+    }
+
     // ========================================
     // Helper Methods
     // ========================================
-    
+
     private Content createMockContent(String id, List<String> secondaryTypes, String webhookConfigs) {
         Content content = mock(Content.class);
         when(content.getId()).thenReturn(id);
@@ -432,17 +601,17 @@ public class WebhookServiceTest {
         when(content.getName()).thenReturn("test-content");
         when(content.getObjectType()).thenReturn("cmis:document");
         when(content.getChangeToken()).thenReturn("token-123");
-        
+
         if (webhookConfigs != null) {
             List<Property> subTypeProps = new ArrayList<>();
             subTypeProps.add(new Property("nemaki:webhookConfigs", webhookConfigs));
             when(content.getSubTypeProperties()).thenReturn(subTypeProps);
         }
-        
+
         return content;
     }
-    
-    private Document createMockDocument(String id, String parentId, 
+
+    private Document createMockDocument(String id, String parentId,
                                          List<String> secondaryTypes, String webhookConfigs) {
         Document doc = mock(Document.class);
         when(doc.getId()).thenReturn(id);
@@ -451,17 +620,17 @@ public class WebhookServiceTest {
         when(doc.getName()).thenReturn("test-document");
         when(doc.getObjectType()).thenReturn("cmis:document");
         when(doc.getChangeToken()).thenReturn("token-123");
-        
+
         if (webhookConfigs != null) {
             List<Property> subTypeProps = new ArrayList<>();
             subTypeProps.add(new Property("nemaki:webhookConfigs", webhookConfigs));
             when(doc.getSubTypeProperties()).thenReturn(subTypeProps);
         }
-        
+
         return doc;
     }
-    
-    private Folder createMockFolder(String id, String parentId, 
+
+    private Folder createMockFolder(String id, String parentId,
                                      List<String> secondaryTypes, String webhookConfigs) {
         Folder folder = mock(Folder.class);
         when(folder.getId()).thenReturn(id);
@@ -470,13 +639,49 @@ public class WebhookServiceTest {
         when(folder.getName()).thenReturn("test-folder");
         when(folder.getObjectType()).thenReturn("cmis:folder");
         when(folder.getChangeToken()).thenReturn("token-123");
-        
+
         if (webhookConfigs != null) {
             List<Property> subTypeProps = new ArrayList<>();
             subTypeProps.add(new Property("nemaki:webhookConfigs", webhookConfigs));
             when(folder.getSubTypeProperties()).thenReturn(subTypeProps);
         }
-        
+
         return folder;
+    }
+
+    /**
+     * Set a private field on an object via reflection.
+     */
+    private static void setPrivateField(Object target, String fieldName, Object value) throws Exception {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    /**
+     * ExecutorService that runs tasks on the calling thread for synchronous test verification.
+     */
+    private static class SameThreadExecutorService extends java.util.concurrent.AbstractExecutorService {
+        private volatile boolean shutdown = false;
+
+        @Override
+        public void execute(Runnable command) {
+            command.run();
+        }
+
+        @Override
+        public void shutdown() { shutdown = true; }
+
+        @Override
+        public List<Runnable> shutdownNow() { shutdown = true; return new ArrayList<>(); }
+
+        @Override
+        public boolean isShutdown() { return shutdown; }
+
+        @Override
+        public boolean isTerminated() { return shutdown; }
+
+        @Override
+        public boolean awaitTermination(long timeout, java.util.concurrent.TimeUnit unit) { return true; }
     }
 }

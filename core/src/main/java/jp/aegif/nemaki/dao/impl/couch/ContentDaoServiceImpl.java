@@ -1013,10 +1013,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			log.debug("DEBUG getChildren: repositoryId=" + repositoryId + ", parentId=" + parentId);
 			
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "children", queryParams);
-			
+
 			List<Content> children = new ArrayList<Content>();
-			
-			if (result.getRows() != null) {
+
+			if (result != null && result.getRows() != null) {
 				log.debug("DEBUG getChildren: found " + result.getRows().size() + " raw rows");
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
@@ -1126,8 +1126,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			queryParams.put("include_docs", true);
 			queryParams.put("reduce", false);
 				ViewResult result = client.queryView("_repo", "children", queryParams);
-				
-			if (result.getRows() != null && !result.getRows().isEmpty()) {
+
+			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
 					log.debug("DEBUG getChildByName: found " + result.getRows().size() + " children for parent '" + parentId + "'");
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
