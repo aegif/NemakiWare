@@ -720,7 +720,7 @@ test.describe('Folder Hierarchy Operations', () => {
     await page.waitForTimeout(500);
 
     // Confirm deletion
-    const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button:has-text("OK")');
+    const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, .ant-popconfirm button:has-text("OK")');
     if (await confirmButton.count() > 0) {
       await confirmButton.click(isMobile ? { force: true } : {});
 

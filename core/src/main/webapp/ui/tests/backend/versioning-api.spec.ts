@@ -608,10 +608,16 @@ test.describe('CMIS Versioning API', () => {
     const versionsData = await versionsResponse.json();
 
     // Parse version labels from Browser Binding JSON response
-    // Format: Array of ObjectData with properties.propertyList[] array
-    // Each property has: { id: "cmis:versionLabel", firstValue: "1.0", values: ["1.0"] }
+    // Format: Array of ObjectData with properties object
+    // Each property: { id, value, ... } keyed by property ID
     const versionLabels = versionsData.map((version: any) => {
-      const propertyList = version.properties?.propertyList || [];
+      // Handle both object format (properties['cmis:versionLabel'].value)
+      // and array format (propertyList[].firstValue)
+      const props = version.properties || {};
+      if (props['cmis:versionLabel']) {
+        return props['cmis:versionLabel'].value || '';
+      }
+      const propertyList = props.propertyList || [];
       const versionLabelProp = propertyList.find((p: any) => p.id === 'cmis:versionLabel');
       return versionLabelProp?.firstValue || '';
     });

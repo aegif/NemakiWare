@@ -477,7 +477,7 @@ test.describe('Webhook Settings UI Tests', () => {
 
     // ---- CREATE ----
     // Click "Add" button
-    const addButton = page.locator('button').filter({ hasText: /Add Webhook|ウェブフックを追加/ });
+    const addButton = page.locator('button').filter({ hasText: /Add Webhook|Webhook追加|ウェブフックを追加/ });
     await addButton.waitFor({ state: 'visible', timeout: 5000 });
     await addButton.click();
 
@@ -498,11 +498,12 @@ test.describe('Webhook Settings UI Tests', () => {
     // Wait for modal to close and table to update
     await page.waitForTimeout(2000);
 
-    // Verify row added in table
-    const tableRows = page.locator('.ant-table-tbody .ant-table-row');
+    // Verify row added in webhook table (scope to the active tab panel to exclude property tables)
+    const webhookPanel = page.locator('.ant-tabs-tabpane-active, .ant-tabs-tabpane:not([hidden])').last();
+    const tableRows = webhookPanel.locator('.ant-table-tbody .ant-table-row');
     await expect(tableRows).toHaveCount(1, { timeout: 5000 });
     // Verify the URL is displayed
-    await expect(page.locator('.ant-table-tbody')).toContainText('https://test.example.com/hook1');
+    await expect(webhookPanel.locator('.ant-table-tbody')).toContainText('https://test.example.com/hook1');
 
     // ---- UPDATE ----
     // Click edit button on the first row
@@ -525,7 +526,7 @@ test.describe('Webhook Settings UI Tests', () => {
     await page.waitForTimeout(2000);
 
     // Verify URL was updated
-    await expect(page.locator('.ant-table-tbody')).toContainText('https://test.example.com/hook-updated');
+    await expect(webhookPanel.locator('.ant-table-tbody')).toContainText('https://test.example.com/hook-updated');
 
     // ---- DELETE ----
     // Click delete button on the first row
