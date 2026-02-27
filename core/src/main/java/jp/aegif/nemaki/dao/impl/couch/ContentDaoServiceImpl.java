@@ -2497,4 +2497,54 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public void deleteWebAuthnCredential(String repositoryId, String id) {
 		delete(repositoryId, id);
 	}
+
+	@Override
+	public List<Content> getContentsBySecondaryType(String repositoryId, String secondaryTypeId) {
+		CloudantClientWrapper client = connectorPool.get(repositoryId);
+
+		// Build Mango selector: {"secondaryIds": {"$elemMatch": {"$eq": secondaryTypeId}}}
+		Map<String, Object> elemMatch = new HashMap<>();
+		elemMatch.put("$eq", secondaryTypeId);
+		Map<String, Object> secondaryIdsSelector = new HashMap<>();
+		secondaryIdsSelector.put("$elemMatch", elemMatch);
+		Map<String, Object> selector = new HashMap<>();
+		selector.put("secondaryIds", secondaryIdsSelector);
+
+		List<CouchContent> couchContents = client.findBySelector(selector, CouchContent.class);
+		List<Content> result = new ArrayList<>();
+		for (CouchContent cc : couchContents) {
+			result.add(cc.convert());
+		}
+		return result;
+	}
+
+	@Override
+	public long getObjectCount(String repositoryId, String objectType) {
+		CloudantClientWrapper client = connectorPool.get(repositoryId);
+		Map<String, Object> params = new HashMap<>();
+		params.put("reduce", true);
+		params.put("group", true);
+		if (objectType != null) {
+			params.put("key", objectType);
+		}
+		ViewResult result = client.queryView("_repo", "countByObjectType", params);
+		if (objectType != null) {
+			// Count for a specific type
+			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
+				Object value = result.getRows().get(0).getValue();
+				if (value instanceof Number) return ((Number) value).longValue();
+			}
+			return 0;
+		} else {
+			// Sum across all types
+			long total = 0;
+			if (result != null && result.getRows() != null) {
+				for (ViewResultRow row : result.getRows()) {
+					Object value = row.getValue();
+					if (value instanceof Number) total += ((Number) value).longValue();
+				}
+			}
+			return total;
+		}
+	}
 }

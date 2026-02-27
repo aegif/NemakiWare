@@ -48,6 +48,8 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
+import jp.aegif.nemaki.audit.AuditLogger;
+import jp.aegif.nemaki.audit.AuditOperation;
 import jp.aegif.nemaki.rss.RssFeedService;
 import jp.aegif.nemaki.rss.RssToken;
 import jp.aegif.nemaki.rss.RssTokenService;
@@ -112,7 +114,16 @@ public class RssFeedResource extends ResourceBase {
         }
         return null;
     }
-    
+
+    private AuditLogger getAuditLogger() {
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean("auditLogger", AuditLogger.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /**
      * Get RSS/Atom feed for a folder.
      * 
@@ -353,17 +364,28 @@ public class RssFeedResource extends ResourceBase {
             result.put("id", token.getId());
             result.put("token", token.getToken());
             result.put("expiresAt", formatDate(token.getExpiresAt()));
-            
+
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.RSS_TOKEN_CREATE, repositoryId,
+                        getCallContextUsername(request), token.getId(), true, null);
+            }
+
         } catch (Exception e) {
             log.error("Error generating RSS token", e);
             status = false;
             addErrMsg(errMsg, "token", "Error generating token: " + e.getMessage());
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.RSS_TOKEN_CREATE, repositoryId,
+                        getCallContextUsername(request), null, false, e.getMessage());
+            }
         }
-        
+
         result = makeResult(status, result, errMsg);
         return result.toJSONString();
     }
-    
+
     @GET
     @Path("/tokens")
     @Produces(MediaType.APPLICATION_JSON)
@@ -416,6 +438,26 @@ public class RssFeedResource extends ResourceBase {
                 tokenJson.put("createdAt", formatDate(token.getCreatedAt()));
                 tokenJson.put("expiresAt", formatDate(token.getExpiresAt()));
                 tokenJson.put("expired", token.isExpired());
+
+                // Additional fields for UI
+                tokenJson.put("token", token.getToken());
+
+                if (token.getFolderIds() != null) {
+                    JSONArray folderIdsArray = new JSONArray();
+                    for (String folderId : token.getFolderIds()) {
+                        folderIdsArray.add(folderId);
+                    }
+                    tokenJson.put("folderIds", folderIdsArray);
+                }
+
+                if (token.getEvents() != null) {
+                    JSONArray eventsArray = new JSONArray();
+                    for (String event : token.getEvents()) {
+                        eventsArray.add(event);
+                    }
+                    tokenJson.put("events", eventsArray);
+                }
+
                 tokensArray.add(tokenJson);
             }
             result.put("tokens", tokensArray);
@@ -465,24 +507,34 @@ public class RssFeedResource extends ResourceBase {
         
         try {
             boolean success = tokenService.disableToken(repositoryId, tokenId);
-            
+
             if (!success) {
                 status = false;
                 addErrMsg(errMsg, "tokenId", "Token not found");
             } else {
                 result.put("message", "Token disabled");
+                AuditLogger audit = getAuditLogger();
+                if (audit != null) {
+                    audit.logOperation(AuditOperation.RSS_TOKEN_UPDATE, repositoryId,
+                            getCallContextUsername(request), tokenId, true, null);
+                }
             }
-            
+
         } catch (Exception e) {
             log.error("Error disabling RSS token", e);
             status = false;
             addErrMsg(errMsg, "token", "Error disabling token: " + e.getMessage());
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.RSS_TOKEN_UPDATE, repositoryId,
+                        getCallContextUsername(request), tokenId, false, e.getMessage());
+            }
         }
-        
+
         result = makeResult(status, result, errMsg);
         return result.toJSONString();
     }
-    
+
     @PUT
     @Path("/tokens/{tokenId}/refresh")
     @Produces(MediaType.APPLICATION_JSON)
@@ -535,18 +587,28 @@ public class RssFeedResource extends ResourceBase {
             } else {
                 result.put("id", token.getId());
                 result.put("expiresAt", formatDate(token.getExpiresAt()));
+                AuditLogger audit = getAuditLogger();
+                if (audit != null) {
+                    audit.logOperation(AuditOperation.RSS_TOKEN_UPDATE, repositoryId,
+                            getCallContextUsername(request), tokenId, true, null);
+                }
             }
-            
+
         } catch (Exception e) {
             log.error("Error refreshing RSS token", e);
             status = false;
             addErrMsg(errMsg, "token", "Error refreshing token: " + e.getMessage());
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.RSS_TOKEN_UPDATE, repositoryId,
+                        getCallContextUsername(request), tokenId, false, e.getMessage());
+            }
         }
-        
+
         result = makeResult(status, result, errMsg);
         return result.toJSONString();
     }
-    
+
     @DELETE
     @Path("/tokens/{tokenId}")
     @Produces(MediaType.APPLICATION_JSON)
@@ -582,20 +644,30 @@ public class RssFeedResource extends ResourceBase {
         
         try {
             boolean success = tokenService.deleteToken(repositoryId, tokenId);
-            
+
             if (!success) {
                 status = false;
                 addErrMsg(errMsg, "tokenId", "Token not found");
             } else {
                 result.put("message", "Token deleted");
+                AuditLogger audit = getAuditLogger();
+                if (audit != null) {
+                    audit.logOperation(AuditOperation.RSS_TOKEN_DELETE, repositoryId,
+                            getCallContextUsername(request), tokenId, true, null);
+                }
             }
-            
+
         } catch (Exception e) {
             log.error("Error deleting RSS token", e);
             status = false;
             addErrMsg(errMsg, "token", "Error deleting token: " + e.getMessage());
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.RSS_TOKEN_DELETE, repositoryId,
+                        getCallContextUsername(request), tokenId, false, e.getMessage());
+            }
         }
-        
+
         result = makeResult(status, result, errMsg);
         return result.toJSONString();
     }

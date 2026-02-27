@@ -2191,6 +2191,31 @@ public class CloudantClientWrapper {
 			}
 		}
 
+		// CRITICAL FIX: For CouchRssToken, use Document.getProperties() to get actual CouchDB fields
+		// Same issue as CouchNodeBase: the default path nests custom fields under "properties" key
+		// which prevents Jackson from mapping token, userId, repositoryId, name, etc.
+		// Without this fix, refreshToken() writes null fields back to CouchDB, causing tokens to
+		// disappear from the rssTokensByUserId view.
+		if (clazz.getSimpleName().equals("CouchRssToken")) {
+			Map<String, Object> properties = doc.getProperties();
+			if (properties != null) {
+				Map<String, Object> completeMap = new HashMap<>();
+				completeMap.put("_id", doc.getId());
+				completeMap.put("_rev", doc.getRev());
+				for (Map.Entry<String, Object> entry : properties.entrySet()) {
+					completeMap.put(entry.getKey(), entry.getValue());
+				}
+				log.debug("CouchRssToken deserialization - _id: {}, userId: {}", doc.getId(), completeMap.get("userId"));
+				try {
+					T result = mapper.convertValue(completeMap, clazz);
+					return result;
+				} catch (Exception deserEx) {
+					log.warn("Error deserializing CouchRssToken: " + deserEx.getMessage());
+					throw deserEx;
+				}
+			}
+		}
+
 				// Convert immutable Document to mutable Map first, then to target class
 				@SuppressWarnings("unchecked")
 				Map<String, Object> docMap = mapper.convertValue(doc, Map.class);
@@ -2799,5 +2824,62 @@ public class CloudantClientWrapper {
 		
 		// For all other types (String, Boolean, proper Number types), return as-is
 		return value;
+	}
+
+	/**
+	 * Execute a Mango (CouchDB _find) query using a selector map.
+	 * Useful for ad-hoc queries that don't have a dedicated view.
+	 *
+	 * @param selector Mango selector as a Map (e.g. {"secondaryIds": {"$elemMatch": {"$eq": "nemaki:webhookable"}}})
+	 * @param clazz    Target class for deserialization
+	 * @param <T>      Type parameter
+	 * @return List of matching documents (empty list if no matches)
+	 * @throws RuntimeException if the query fails (network error, CouchDB error, deserialization error, etc.)
+	 */
+	public <T> List<T> findBySelector(Map<String, Object> selector, Class<T> clazz) {
+		try {
+			PostFindOptions findOptions = new PostFindOptions.Builder()
+				.db(databaseName)
+				.selector(selector)
+				.build();
+
+			FindResult result = client.postFind(findOptions).execute().getResult();
+			List<T> objects = new ArrayList<>();
+			ObjectMapper mapper = getObjectMapper();
+
+			if (result.getDocs() != null) {
+				for (com.ibm.cloud.cloudant.v1.model.Document doc : result.getDocs()) {
+					Map<String, Object> docMap = doc.getProperties();
+					if (docMap != null) {
+						if (!docMap.containsKey("_id") && doc.getId() != null) {
+							docMap.put("_id", doc.getId());
+						}
+						if (!docMap.containsKey("_rev") && doc.getRev() != null) {
+							docMap.put("_rev", doc.getRev());
+						}
+						String jsonString = mapper.writeValueAsString(docMap);
+						T obj = mapper.readValue(jsonString, clazz);
+
+						if (obj instanceof jp.aegif.nemaki.model.couch.CouchNodeBase) {
+							jp.aegif.nemaki.model.couch.CouchNodeBase nodeBase = (jp.aegif.nemaki.model.couch.CouchNodeBase) obj;
+							if (nodeBase.getId() == null && docMap.get("_id") != null) {
+								nodeBase.setId((String) docMap.get("_id"));
+							}
+							if (nodeBase.getRevision() == null && docMap.get("_rev") != null) {
+								nodeBase.setRevision((String) docMap.get("_rev"));
+							}
+						}
+						objects.add(obj);
+					}
+				}
+			}
+
+			log.debug("findBySelector returned " + objects.size() + " results");
+			return objects;
+
+		} catch (Exception e) {
+			log.error("Error executing findBySelector: " + e.getMessage(), e);
+			throw new RuntimeException("Mango query failed: " + e.getMessage(), e);
+		}
 	}
 }

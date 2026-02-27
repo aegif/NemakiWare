@@ -1887,10 +1887,26 @@
     }
   },
   "webhookManagement": {
-    "title": "Webhook Management",
+    "title": "Webhook",
+    "tabs": {
+      "configs": "Configured Webhooks",
+      "deliveryLogs": "Delivery Logs"
+    },
+    "configColumns": {
+      "objectPath": "Object",
+      "url": "URL",
+      "events": "Events",
+      "authType": "Auth Type",
+      "enabled": "Enabled",
+      "includeChildren": "Include Children"
+    },
+    "noConfigs": "No configured webhooks",
+    "objectNotFound": "(deleted)",
+    "configsLoadError": "Failed to load webhook configurations",
     "columns": {
       "deliveryId": "Delivery ID",
       "objectId": "Object ID",
+      "objectPath": "Object",
       "webhookUrl": "Webhook URL",
       "eventType": "Event Type",
       "status": "Status",
@@ -1902,7 +1918,9 @@
     },
     "status": {
       "success": "Success",
-      "failed": "Failed"
+      "failed": "Failed",
+      "enabled": "Enabled",
+      "disabled": "Disabled"
     },
     "filter": {
       "status": "Status",
@@ -2188,6 +2206,7 @@
     "folderIds": "Target Folder IDs",
     "folderIdsPlaceholder": "Enter folder IDs separated by commas",
     "expiryDays": "Expiry (days)",
+    "expiryDaysMax": "Maximum 365 days",
     "createdAt": "Created",
     "expiresAt": "Expires",
     "enabled": "Enabled",
@@ -2208,6 +2227,7 @@
     "active": "Active",
     "feedUrl": "Feed URL",
     "copyFeedUrl": "Copy Feed URL",
+    "copyToken": "Copy Token",
     "selectFolder": "Select Folder",
     "selectedFolders": "Selected Folders",
     "noFolderSelected": "No folder selected",
@@ -2215,6 +2235,10 @@
     "feedUrls": "Feed URLs",
     "rssFeedUrl": "RSS Feed",
     "atomFeedUrl": "Atom Feed",
-    "urlCopied": "URL copied"
+    "urlCopied": "URL copied",
+    "targetFolders": "Target Folders",
+    "feedUrlColumn": "Feed URL",
+    "showFeedUrls": "Show URLs",
+    "pathResolveFailed": "Path resolution failed"
   }
 }

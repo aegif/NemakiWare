@@ -928,6 +928,7 @@
         <property name="contentService" ref="ContentService" />
         <property name="dispatcher" ref="webhookDispatcher" />
         <property name="webhookDaoService" ref="WebhookDaoService" />
+        <property name="contentDaoService" ref="ContentDaoService" />
     </bean>
 
     <bean id="webhookResource" class="jp.aegif.nemaki.rest.WebhookResource">

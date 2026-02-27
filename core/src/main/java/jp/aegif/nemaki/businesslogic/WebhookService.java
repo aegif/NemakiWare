@@ -185,4 +185,12 @@ public interface WebhookService {
      * @return WebhookDeliveryLog containing the test result
      */
     WebhookDeliveryLog testWebhook(String repositoryId, String url, String secret);
+
+    /**
+     * Get all objects that have webhook configurations (nemaki:webhookable secondary type).
+     *
+     * @param repositoryId The repository ID
+     * @return List of Content objects with webhook configurations
+     */
+    List<Content> getAllWebhookableObjects(String repositoryId);
 }

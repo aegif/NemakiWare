@@ -1933,4 +1933,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		nonCachedContentDaoService.deleteWebAuthnCredential(repositoryId, id);
 	}
 
+	@Override
+	public List<Content> getContentsBySecondaryType(String repositoryId, String secondaryTypeId) {
+		return nonCachedContentDaoService.getContentsBySecondaryType(repositoryId, secondaryTypeId);
+	}
+
+	@Override
+	public long getObjectCount(String repositoryId, String objectType) {
+		return nonCachedContentDaoService.getObjectCount(repositoryId, objectType);
+	}
+
 }

@@ -21,6 +21,8 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rest;
 
+import jp.aegif.nemaki.audit.AuditLogger;
+import jp.aegif.nemaki.audit.AuditOperation;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
@@ -33,6 +35,7 @@ import jp.aegif.nemaki.rest.importexport.ImportExportUtils.ImportResult;
 import jp.aegif.nemaki.rest.importexport.ZipExporter;
 import jp.aegif.nemaki.rest.importexport.ZipImporter;
 import jp.aegif.nemaki.rest.importexport.ZipImporter.ImportFormat;
+import jp.aegif.nemaki.util.spring.SpringContext;
 
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -109,6 +112,15 @@ public class ImportExportResource extends ResourceBase {
             return contentService;
         }
         return ImportExportUtils.getContentService();
+    }
+
+    private AuditLogger getAuditLogger() {
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean("auditLogger", AuditLogger.class);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     // ========== REST Endpoints ==========
@@ -225,6 +237,12 @@ public class ImportExportResource extends ResourceBase {
                 result.put("warnings", warnings);
             }
 
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.IMPORT_EXECUTE, repositoryId,
+                        getCallContextUsername(request), folderId, true, null);
+            }
+
             return Response.status(Response.Status.OK)
                     .entity(result.toJSONString())
                     .type(MediaType.APPLICATION_JSON)
@@ -234,6 +252,11 @@ public class ImportExportResource extends ResourceBase {
             log.error("Import failed: " + e.getMessage(), e);
             result.put("status", "error");
             result.put("message", "Import failed: " + e.getMessage());
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.IMPORT_EXECUTE, repositoryId,
+                        getCallContextUsername(request), folderId, false, e.getMessage());
+            }
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(result.toJSONString())
                     .type(MediaType.APPLICATION_JSON)
@@ -284,6 +307,9 @@ public class ImportExportResource extends ResourceBase {
                         .build();
             }
 
+            // Capture username before response is committed (request may not be available in StreamingOutput)
+            final String exportUsername = getCallContextUsername(request);
+
             StreamingOutput streamingOutput = new StreamingOutput() {
                 @Override
                 public void write(OutputStream output) throws IOException {
@@ -312,20 +338,38 @@ public class ImportExportResource extends ResourceBase {
                         } catch (Exception e) {
                             log.warn("Failed to export type definitions: " + e.getMessage(), e);
                         }
+
+                        // Audit after streaming completes successfully
+                        AuditLogger audit = getAuditLogger();
+                        if (audit != null) {
+                            audit.logOperation(AuditOperation.EXPORT_EXECUTE, repositoryId,
+                                    exportUsername, folderId, true, null);
+                        }
                     } catch (Exception e) {
                         log.error("Export streaming failed: " + e.getMessage(), e);
+                        AuditLogger audit = getAuditLogger();
+                        if (audit != null) {
+                            audit.logOperation(AuditOperation.EXPORT_EXECUTE, repositoryId,
+                                    exportUsername, folderId, false, e.getMessage());
+                        }
                         throw new IOException("Export failed: " + e.getMessage(), e);
                     }
                 }
             };
 
             String fileName = folder.getName() + "_export.zip";
+
             return Response.ok(streamingOutput)
                     .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
                     .build();
 
         } catch (Exception e) {
             log.error("Export failed: " + e.getMessage(), e);
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.EXPORT_EXECUTE, repositoryId,
+                        getCallContextUsername(request), folderId, false, e.getMessage());
+            }
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity("{\"status\":\"error\",\"message\":\"Export failed: " + e.getMessage() + "\"}")
                     .type(MediaType.APPLICATION_JSON)
@@ -559,12 +603,23 @@ public class ImportExportResource extends ResourceBase {
             log.info("Filesystem import completed: " + importResult.documentsCreated + " documents, " +
                     importResult.foldersCreated + " folders created");
 
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.IMPORT_EXECUTE, repositoryId,
+                        getCallContextUsername(request), folderId, true, null);
+            }
+
             return Response.ok(response.toJSONString()).build();
 
         } catch (Exception e) {
             log.error("Filesystem import failed: " + e.getMessage(), e);
             response.put("status", "error");
             response.put("message", "Import failed: " + e.getMessage());
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.IMPORT_EXECUTE, repositoryId,
+                        getCallContextUsername(request), folderId, false, e.getMessage());
+            }
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(response.toJSONString())
                     .build();
@@ -671,12 +726,23 @@ public class ImportExportResource extends ResourceBase {
             log.info("Filesystem export completed: " + exportResult.documentsExported + " documents, " +
                     exportResult.foldersExported + " folders exported");
 
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.EXPORT_EXECUTE, repositoryId,
+                        getCallContextUsername(request), folderId, true, null);
+            }
+
             return Response.ok(response.toJSONString()).build();
 
         } catch (Exception e) {
             log.error("Filesystem export failed: " + e.getMessage(), e);
             response.put("status", "error");
             response.put("message", "Export failed: " + e.getMessage());
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.EXPORT_EXECUTE, repositoryId,
+                        getCallContextUsername(request), folderId, false, e.getMessage());
+            }
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(response.toJSONString())
                     .build();

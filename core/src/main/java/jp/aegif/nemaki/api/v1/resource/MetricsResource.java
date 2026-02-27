@@ -17,17 +17,43 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.Response;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
+import jp.aegif.nemaki.dao.ContentDaoService;
+import jp.aegif.nemaki.util.spring.SpringContext;
 
 @Path("/repo/{repositoryId}/metrics")
 public class MetricsResource {
 
+    private static final Log log = LogFactory.getLog(MetricsResource.class);
     private static final String CONTENT_TYPE_OPENMETRICS = "text/plain; version=0.0.4; charset=utf-8";
+
+    private ContentDaoService contentDaoService;
 
     private boolean isAdmin(HttpServletRequest request) {
         CallContext callContext = (CallContext) request.getAttribute("CallContext");
         if (callContext == null) return false;
         Boolean isAdmin = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
         return isAdmin != null && isAdmin;
+    }
+
+    private ContentDaoService getContentDaoService() {
+        if (contentDaoService != null) {
+            return contentDaoService;
+        }
+        try {
+            contentDaoService = SpringContext.getApplicationContext()
+                    .getBean("contentDaoService", ContentDaoService.class);
+            return contentDaoService;
+        } catch (Exception e) {
+            log.debug("ContentDaoService not available from SpringContext: " + e.getMessage());
+            return null;
+        }
+    }
+
+    public void setContentDaoService(ContentDaoService contentDaoService) {
+        this.contentDaoService = contentDaoService;
     }
 
     @GET
@@ -96,15 +122,36 @@ public class MetricsResource {
     }
 
     private void appendRepositoryMetrics(StringBuilder sb, String repositoryId) {
-        // Repository object counts are not yet instrumented.
-        // Omitted to avoid returning misleading zero values to monitoring systems.
-        // TODO: Integrate with ContentDaoService views to expose actual counts.
+        ContentDaoService dao = getContentDaoService();
+        if (dao == null) {
+            return;
+        }
+
+        try {
+            long totalCount = dao.getObjectCount(repositoryId, null);
+            long docCount = dao.getObjectCount(repositoryId, "cmis:document");
+            long folderCount = dao.getObjectCount(repositoryId, "cmis:folder");
+
+            sb.append("# HELP nemaki_repository_objects_total Total objects in repository\n");
+            sb.append("# TYPE nemaki_repository_objects_total gauge\n");
+            sb.append("nemaki_repository_objects_total{repository=\"").append(repositoryId).append("\"} ")
+                .append(totalCount).append("\n");
+
+            sb.append("# HELP nemaki_repository_documents_total Total documents in repository\n");
+            sb.append("# TYPE nemaki_repository_documents_total gauge\n");
+            sb.append("nemaki_repository_documents_total{repository=\"").append(repositoryId).append("\"} ")
+                .append(docCount).append("\n");
+
+            sb.append("# HELP nemaki_repository_folders_total Total folders in repository\n");
+            sb.append("# TYPE nemaki_repository_folders_total gauge\n");
+            sb.append("nemaki_repository_folders_total{repository=\"").append(repositoryId).append("\"} ")
+                .append(folderCount).append("\n");
+        } catch (Exception e) {
+            log.warn("Failed to get repository metrics for " + repositoryId + ": " + e.getMessage());
+        }
     }
 
     private void appendJobMetrics(StringBuilder sb, String repositoryId) {
-        // Job queue counts (pending/running) are not yet instrumented.
-        // Only the paused flag is real — omit the rest to avoid misleading zeros.
-        // TODO: Integrate with actual job queue to expose pending/running counts.
         sb.append("# HELP nemaki_jobs_paused Whether jobs are paused (1=paused, 0=running)\n");
         sb.append("# TYPE nemaki_jobs_paused gauge\n");
         sb.append("nemaki_jobs_paused{repository=\"").append(repositoryId).append("\"} ")

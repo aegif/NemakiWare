@@ -1887,10 +1887,26 @@
     }
   },
   "webhookManagement": {
-    "title": "Webhook管理",
+    "title": "Webhook",
+    "tabs": {
+      "configs": "設定済みWebhook",
+      "deliveryLogs": "配信ログ"
+    },
+    "configColumns": {
+      "objectPath": "オブジェクト",
+      "url": "URL",
+      "events": "イベント",
+      "authType": "認証種別",
+      "enabled": "有効",
+      "includeChildren": "子要素含む"
+    },
+    "noConfigs": "設定済みWebhookがありません",
+    "objectNotFound": "(削除済み)",
+    "configsLoadError": "Webhook設定の読み込みに失敗しました",
     "columns": {
       "deliveryId": "配信ID",
       "objectId": "オブジェクトID",
+      "objectPath": "オブジェクト",
       "webhookUrl": "Webhook URL",
       "eventType": "イベント種別",
       "status": "ステータス",
@@ -1902,7 +1918,9 @@
     },
     "status": {
       "success": "成功",
-      "failed": "失敗"
+      "failed": "失敗",
+      "enabled": "有効",
+      "disabled": "無効"
     },
     "filter": {
       "status": "ステータス",
@@ -2188,6 +2206,7 @@
     "folderIds": "対象フォルダID",
     "folderIdsPlaceholder": "フォルダIDをカンマ区切りで入力",
     "expiryDays": "有効期限（日数）",
+    "expiryDaysMax": "最大365日",
     "createdAt": "作成日時",
     "expiresAt": "有効期限",
     "enabled": "有効",
@@ -2208,6 +2227,7 @@
     "active": "有効",
     "feedUrl": "フィードURL",
     "copyFeedUrl": "フィードURLをコピー",
+    "copyToken": "トークンをコピー",
     "selectFolder": "フォルダを選択",
     "selectedFolders": "選択済みフォルダ",
     "noFolderSelected": "フォルダが未選択です",
@@ -2215,6 +2235,10 @@
     "feedUrls": "フィードURL",
     "rssFeedUrl": "RSS フィード",
     "atomFeedUrl": "Atom フィード",
-    "urlCopied": "URLをコピーしました"
+    "urlCopied": "URLをコピーしました",
+    "targetFolders": "対象フォルダ",
+    "feedUrlColumn": "フィードURL",
+    "showFeedUrls": "URL表示",
+    "pathResolveFailed": "パス解決失敗"
   }
 }

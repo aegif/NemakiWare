@@ -1011,4 +1011,25 @@ public interface ContentDaoService {
 	 * Delete a WebAuthn credential by its document ID.
 	 */
 	void deleteWebAuthnCredential(String repositoryId, String id);
+
+	/**
+	 * Get all content objects that have a specific secondary type.
+	 * Uses CouchDB Mango query to search for documents with the given secondary type ID
+	 * in their secondaryIds array.
+	 *
+	 * @param repositoryId The repository ID
+	 * @param secondaryTypeId The secondary type ID to search for (e.g. "nemaki:webhookable")
+	 * @return List of matching Content objects, or empty list if none found
+	 */
+	List<Content> getContentsBySecondaryType(String repositoryId, String secondaryTypeId);
+
+	/**
+	 * Get the count of objects in the repository, optionally filtered by object type.
+	 *
+	 * @param repositoryId The repository ID
+	 * @param objectType The CMIS object type to count (e.g. "cmis:document", "cmis:folder"),
+	 *                   or null to count all objects
+	 * @return The count of matching objects
+	 */
+	long getObjectCount(String repositoryId, String objectType);
 }

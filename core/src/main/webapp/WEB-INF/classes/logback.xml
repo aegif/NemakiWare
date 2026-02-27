@@ -43,18 +43,18 @@
 		</encoder>
 	</appender>
 
-	<!-- Async Appender for Audit Logs (high performance, non-blocking) -->
+	<!-- Async Appender for Audit Logs (reliable, blocking on full queue) -->
 	<appender name="AUDIT_ASYNC" class="ch.qos.logback.classic.AsyncAppender">
-		<!-- Queue size: default 256, increase for high load -->
-		<queueSize>512</queueSize>
+		<!-- Queue size: 2048 to reduce blocking frequency under high load -->
+		<queueSize>2048</queueSize>
 		<!-- Don't discard any audit events (0 = never discard) -->
 		<discardingThreshold>0</discardingThreshold>
-		<!-- Max time to wait for flush on shutdown (ms) -->
-		<maxFlushTime>3000</maxFlushTime>
+		<!-- Max time to wait for flush on shutdown (10s for reliable drain) -->
+		<maxFlushTime>10000</maxFlushTime>
 		<!-- Don't include caller data (performance optimization) -->
 		<includeCallerData>false</includeCallerData>
-		<!-- Never block the application even if queue is full -->
-		<neverBlock>true</neverBlock>
+		<!-- Block when queue is full to prevent audit event loss -->
+		<neverBlock>false</neverBlock>
 		<appender-ref ref="AUDIT_FILE" />
 	</appender>
 

@@ -108,6 +108,7 @@ public class WebhookServiceImpl implements WebhookService {
     private WebhookDeliveryService deliveryService;
     private WebhookDispatcher dispatcher;
     private WebhookDaoService webhookDaoService;
+    private jp.aegif.nemaki.dao.ContentDaoService contentDaoService;
     
     private ExecutorService executorService;
     private ChildEventBatchProcessor childEventBatchProcessor;
@@ -160,6 +161,10 @@ public class WebhookServiceImpl implements WebhookService {
     
     public void setWebhookDaoService(WebhookDaoService webhookDaoService) {
         this.webhookDaoService = webhookDaoService;
+    }
+
+    public void setContentDaoService(jp.aegif.nemaki.dao.ContentDaoService contentDaoService) {
+        this.contentDaoService = contentDaoService;
     }
     
     @Override
@@ -960,6 +965,15 @@ public class WebhookServiceImpl implements WebhookService {
         }
         
         return result;
+    }
+
+    @Override
+    public List<Content> getAllWebhookableObjects(String repositoryId) {
+        if (contentDaoService == null) {
+            log.warn("contentDaoService is not injected, cannot get webhookable objects");
+            return new ArrayList<>();
+        }
+        return contentDaoService.getContentsBySecondaryType(repositoryId, WEBHOOKABLE_SECONDARY_TYPE);
     }
     
     /**
