@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, waitFor, act, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent, cleanup } from '@testing-library/react';
 import { RssTokenManagement } from './RssTokenManagement';
 
 // Track fetch calls for verifying cache behavior
 let fetchCallLog: string[] = [];
+// Control response delay per repository for tokens endpoint
+let tokensDelay: Record<string, number> = {};
 
 // Stable references (must not change between renders to avoid infinite useEffect loop)
 const STABLE_AUTH_TOKEN = { token: 'test-token', username: 'admin', repositoryId: 'bedroom' };
@@ -32,15 +34,15 @@ vi.mock('../ObjectPicker/ObjectPicker', () => ({
   ObjectPicker: () => null,
 }));
 
-// Tokens API response with two folders
-const makeTokensResponse = () => ({
+// Tokens API response with two folders (repo-specific name for DOM identification)
+const makeTokensResponse = (repoId = 'default') => ({
   status: 'success',
   tokens: [
     {
-      id: 'token-1',
-      name: 'Test Token',
+      id: `token-${repoId}`,
+      name: `Token-${repoId}`,
       enabled: true,
-      token: 'abc123',
+      token: `abc123-${repoId}`,
       folderIds: ['folder-aaa', 'folder-bbb'],
       events: ['created', 'updated'],
       createdAt: '2026-01-01',
@@ -49,6 +51,10 @@ const makeTokensResponse = () => ({
     },
   ],
 });
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 // CMIS object resolution response
 const makeCmisResponse = (objectId: string) => ({
@@ -60,15 +66,36 @@ const makeCmisResponse = (objectId: string) => ({
 
 beforeEach(() => {
   fetchCallLog = [];
+  tokensDelay = {};
 
   // Setup global.fetch mock
-  global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+  global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
+
+    // Determine which repository this request targets
+    const repoMatch = url.match(/\/repo\/([^/]+)\//);
+    const repo = repoMatch ? repoMatch[1] : '';
+
     fetchCallLog.push(url);
 
-    // RSS tokens endpoint
+    // RSS token mutation endpoints (disable/refresh/delete) — respond immediately
+    if (url.includes('/rss/tokens/') && (url.includes('/disable') || url.includes('/refresh'))) {
+      return new Response(JSON.stringify({ status: 'success' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // RSS tokens list endpoint (with configurable delay)
     if (url.includes('/rss/tokens')) {
-      return new Response(JSON.stringify(makeTokensResponse()), {
+      const td = tokensDelay[repo] || 0;
+      if (td > 0) {
+        await delay(td);
+        if (init?.signal?.aborted) {
+          throw new DOMException('The operation was aborted.', 'AbortError');
+        }
+      }
+      return new Response(JSON.stringify(makeTokensResponse(repo)), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -108,6 +135,87 @@ function countResolveCallsFor(objectId: string): number {
 function countAllResolveCalls(): number {
   return fetchCallLog.filter(url => url.includes('cmisselector=object')).length;
 }
+
+describe('RssTokenManagement manual operation race condition', () => {
+  it('discards stale loadTokens response triggered by handleDisable after repository switch', async () => {
+    const { rerender, container } = render(<RssTokenManagement repositoryId="bedroom" />);
+
+    // Wait for bedroom token data to appear in DOM
+    await waitFor(() => {
+      expect(screen.getByText('Token-bedroom')).toBeTruthy();
+    }, { timeout: 3000 });
+
+    // Configure: bedroom loadTokens reload will be slow (simulates post-disable re-fetch)
+    tokensDelay['bedroom'] = 400;
+    tokensDelay['canopy'] = 0;
+
+    // Trigger handleDisable — PUT .../disable returns immediately, then loadTokens() starts
+    const disableButton = screen.getByText('rssManagement.disable');
+    fireEvent.click(disableButton);
+
+    // Wait for disable API call to complete, loadTokens starts (with 400ms delay)
+    await delay(50);
+
+    // Switch repository while bedroom's loadTokens is in-flight
+    rerender(<RssTokenManagement repositoryId="canopy" />);
+
+    // Wait for canopy data to load
+    await waitFor(() => {
+      expect(screen.getByText('Token-canopy')).toBeTruthy();
+    }, { timeout: 3000 });
+
+    // Wait for bedroom's slow loadTokens response to arrive
+    await delay(600);
+
+    // DOM must show canopy data, not bedroom
+    expect(screen.getByText('Token-canopy')).toBeTruthy();
+    expect(screen.queryByText('Token-bedroom')).toBeNull();
+
+    // Verify row key is canopy's token, not bedroom's
+    expect(container.innerHTML).toContain('token-canopy');
+    expect(container.innerHTML).not.toContain('token-bedroom');
+  });
+
+  it('discards stale loadTokens response triggered by handleRefresh after repository switch', async () => {
+    const { rerender, container } = render(<RssTokenManagement repositoryId="bedroom" />);
+
+    // Wait for bedroom token data to appear
+    await waitFor(() => {
+      expect(screen.getByText('Token-bedroom')).toBeTruthy();
+    }, { timeout: 3000 });
+
+    // Configure slow reload for bedroom
+    tokensDelay['bedroom'] = 400;
+    tokensDelay['canopy'] = 0;
+
+    // Click refresh button (ReloadOutlined icon)
+    const refreshButton = container.querySelector('button .anticon-reload')?.closest('button');
+    expect(refreshButton).not.toBeNull();
+    fireEvent.click(refreshButton!);
+
+    // Wait for refresh API to complete, loadTokens starts (slow)
+    await delay(50);
+
+    // Switch repository
+    rerender(<RssTokenManagement repositoryId="canopy" />);
+
+    // Wait for canopy data
+    await waitFor(() => {
+      expect(screen.getByText('Token-canopy')).toBeTruthy();
+    }, { timeout: 3000 });
+
+    // Wait for bedroom's slow response
+    await delay(600);
+
+    // DOM must show canopy data only
+    expect(screen.getByText('Token-canopy')).toBeTruthy();
+    expect(screen.queryByText('Token-bedroom')).toBeNull();
+
+    // Verify row key is canopy's, not bedroom's
+    expect(container.innerHTML).toContain('token-canopy');
+    expect(container.innerHTML).not.toContain('token-bedroom');
+  });
+});
 
 describe('RssTokenManagement folder cache', () => {
   it('resolves each folder exactly once on initial load', async () => {
