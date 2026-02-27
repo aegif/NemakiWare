@@ -1196,7 +1196,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 
 		// Execute the view query — exceptions propagate to caller for fallback
-		Map<String, Object> compositeKey = new HashMap<String, Object>();
+		// CRITICAL FIX: Use LinkedHashMap to maintain key order matching CouchDB view emit order.
+		// CouchDB compares JSON object keys using serialized form, so key order must match
+		// the order in the view's emit(): {parentId: ..., name: ...}
+		Map<String, Object> compositeKey = new java.util.LinkedHashMap<String, Object>();
 		compositeKey.put("parentId", parentId);
 		compositeKey.put("name", name);
 
