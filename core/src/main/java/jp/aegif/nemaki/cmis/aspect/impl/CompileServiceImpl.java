@@ -706,23 +706,42 @@ public class CompileServiceImpl implements CompileService {
 		results.setObjects(new ArrayList<ObjectData>());
 
 		Map<String, Content> cachedContents = new HashMap<String, Content>();
+		String lastSuccessfulToken = null;
 		if (changes != null && CollectionUtils.isNotEmpty(changes)) {
 			for (Change change : changes) {
+				try {
+					// Retrieve the content (using caches)
+					String objectId = change.getObjectId();
+					Content content;
 
-				// Retrieve the content(using caches)
-				String objectId = change.getId();
-				Content content;
-
-				if (cachedContents.containsKey(objectId)) {
-					content = cachedContents.get(objectId);
-				} else {
-					content = contentService.getContent(repositoryId, objectId);
-					cachedContents.put(objectId, content);
+					if (objectId != null && cachedContents.containsKey(objectId)) {
+						content = cachedContents.get(objectId);
+					} else if (objectId != null) {
+						content = contentService.getContent(repositoryId, objectId);
+						cachedContents.put(objectId, content);
+					} else {
+						content = null;
+					}
+					// Compile a change object data depending on its type
+					results.getObjects()
+							.add(compileChangeObjectData(repositoryId, change, content, includePolicyIds, includeAcl));
+					// Track token of last successfully compiled event
+					String token = change.getToken();
+					if (token == null) {
+						token = change.getId();
+					}
+					lastSuccessfulToken = token;
+				} catch (Exception e) {
+					log.warn("Skipping change event " + change.getId()
+							+ " (objectId=" + change.getObjectId() + "): " + e.getMessage());
 				}
-				// Compile a change object data depending on its type
-				results.getObjects()
-						.add(compileChangeObjectData(repositoryId, change, content, includePolicyIds, includeAcl));
 			}
+		}
+
+		// Correct changeLogToken to last successfully compiled event
+		// so that skipped events are re-fetched on next poll
+		if (lastSuccessfulToken != null) {
+			changeLogToken.setValue(lastSuccessfulToken);
 		}
 
 		results.setNumItems(BigInteger.valueOf(results.getObjects().size()));
@@ -748,7 +767,7 @@ public class CompileServiceImpl implements CompileService {
 
 		// Set Properties
 		PropertiesImpl properties = new PropertiesImpl();
-		setCmisBasicChangeProperties(properties, change);
+		setCmisBasicChangeProperties(properties, change, repositoryId);
 		o.setProperties(properties);
 		// Set PolicyIds
 		setPolcyIds(o, change, includePolicyIds);
@@ -762,10 +781,16 @@ public class CompileServiceImpl implements CompileService {
 		return o;
 	}
 
-	private void setCmisBasicChangeProperties(PropertiesImpl props, Change change) {
+	private void setCmisBasicChangeProperties(PropertiesImpl props, Change change, String repositoryId) {
 		props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_ID, change.getObjectId()));
-		props.addProperty(new PropertyIdImpl(PropertyIds.BASE_TYPE_ID, change.getBaseType()));
-		props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, change.getObjectType()));
+		String baseType = change.getBaseType();
+		props.addProperty(new PropertyIdImpl(PropertyIds.BASE_TYPE_ID, baseType));
+		// Validate objectType exists; fall back to baseType if type definition was deleted
+		String objectType = change.getObjectType();
+		if (objectType != null && typeManager.getTypeDefinition(repositoryId, objectType) == null) {
+			objectType = baseType;
+		}
+		props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, objectType));
 		props.addProperty(new PropertyIdImpl(PropertyIds.NAME, change.getName()));
 		if (change.isOnDocument()) {
 			props.addProperty(new PropertyIdImpl(PropertyIds.VERSION_SERIES_ID, change.getVersionSeriesId()));
@@ -1409,10 +1434,14 @@ public class CompileServiceImpl implements CompileService {
 				properties.addProperty(creationDateProp);
 			}
 		} else {
-			// TCK COMPLIANCE: Add property even if null - let the service layer handle it
-			log.warn("CRITICAL TCK ISSUE: creationDate is null for object: " + content.getId());
+			// CMIS 1.1 MANDATORY: creationDate must be present - use epoch fallback
+			log.warn("creationDate is null for object: " + content.getId() + ", using epoch fallback");
+			GregorianCalendar epoch = new GregorianCalendar();
+			epoch.setTimeInMillis(0);
+			PropertyDateTimeImpl creationDateProp = new PropertyDateTimeImpl(PropertyIds.CREATION_DATE, epoch);
+			properties.addProperty(creationDateProp);
 		}
-		
+
 		// cmis:lastModificationDate - MUST be present (CMIS 1.1 MANDATORY property)
 		GregorianCalendar lastModificationDate = content.getModified();
 		// CRITICAL TCK COMPLIANCE: lastModificationDate is mandatory - always add the property
@@ -1424,8 +1453,12 @@ public class CompileServiceImpl implements CompileService {
 				properties.addProperty(lastModificationDateProp);
 			}
 		} else {
-			// TCK COMPLIANCE: Add property even if null - let the service layer handle it
-			log.warn("CRITICAL TCK ISSUE: lastModificationDate is null for object: " + content.getId());
+			// CMIS 1.1 MANDATORY: lastModificationDate must be present - use epoch fallback
+			log.warn("lastModificationDate is null for object: " + content.getId() + ", using epoch fallback");
+			GregorianCalendar epoch = new GregorianCalendar();
+			epoch.setTimeInMillis(0);
+			PropertyDateTimeImpl lastModDateProp = new PropertyDateTimeImpl(PropertyIds.LAST_MODIFICATION_DATE, epoch);
+			properties.addProperty(lastModDateProp);
 		}
 
 		// cmis:changeToken - Version control property (add here to avoid duplication)

@@ -92,21 +92,23 @@ curl -u admin:admin http://localhost:8080/core/atom/bedroom
 # 期待: 94/94 PASS
 ```
 
-### TCKテスト
+### TCKテスト (全38テスト)
 ```bash
-timeout 900s mvn test -Dtest=BasicsTestGroup,TypesTestGroup,ControlTestGroup,VersioningTestGroup -f core/pom.xml -Pdevelopment
-# 期待: 11/11 PASS (所要時間: 約13分、タイムアウト: 15分)
-# 注意: テスト失敗時はCouchDBにゴミデータ(cmistck*, test-custom-*)が残る場合がある
-```
+# 基本テスト (11テスト、約4分)
+timeout 900s mvn test -Dtest=ConnectionTestGroup,BasicsTestGroup,TypesTestGroup,ControlTestGroup,VersioningTestGroup -f core/pom.xml -Pdevelopment
 
-### QueryTestGroup (オプション)
-```bash
-timeout 1200s mvn test -Dtest=QueryTestGroup -f core/pom.xml -Pdevelopment
-# 前提条件:
-#   1. Solr 起動中 (docker compose の solr コンテナ)
-#   2. cmis-tck-parameters.properties に browser.url 設定済み
-#   3. NemakiWare core 起動済み + Solr 接続済み
-# 期待: 6/6 PASS (所要時間: 約15-20分)
+# CRUDテスト (19テスト、約20分)
+timeout 1800s mvn test -Dtest=CrudTestGroup1,CrudTestGroup2 -f core/pom.xml -Pdevelopment
+
+# クエリ + 変更ログテスト (6テスト、約12分、Solr必須)
+timeout 1800s mvn test -Dtest=QueryTestGroup -f core/pom.xml -Pdevelopment
+# 前提条件: Solr + NemakiWare core が Docker で起動中
+
+# 全TCK一括実行 (38テスト、約35分)
+timeout 3600s mvn test -Dtest=ConnectionTestGroup,BasicsTestGroup,TypesTestGroup,ControlTestGroup,VersioningTestGroup,CrudTestGroup1,CrudTestGroup2,QueryTestGroup -f core/pom.xml -Pdevelopment
+
+# 注意: テスト失敗時はCouchDBにゴミデータ(cmistck*, test-custom-*)が残る場合がある
+# FilingTestGroup は NemakiWare が Multifiling/Unfiling 非対応のためスキップ
 ```
 
 ### Playwrightテスト
@@ -208,7 +210,7 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ---
 
-## セキュリティステータス (2026-02-25) ✅
+## セキュリティステータス (2026-02-28) ✅
 
 - npm脆弱性: 0件
 - Maven依存関係: 最新化済み
@@ -216,12 +218,18 @@ curl -u admin:password http://localhost:5984/_all_dbs
 - エクスポートACLリーク: 対応済み (CAN_GET_ACL権限チェック追加)
 - アーカイブDAO例外伝播: 対応済み (null返却→CmisRuntimeException)
 - Webhook REST API: CMIS権限チェックに移行済み (admin限定→CAN_GET/UPDATE_PROPERTIES)
+- ContentChanges 削除済み型フォールバック: 対応済み (JSONConverter型解決エラー防止)
 
 ---
 
 ## 現在のバージョン
 
-**3.1.0-RC4** (2026-02-27)
+**3.1.0-RC4** (2026-02-28)
+- CMIS ContentChanges API 実装 (Cloudant SDK Document デシリアライゼーション修正、changeLogToken 数値キー対応)
+- ContentChanges イベント欠落防止 (lastSuccessfulToken トラッキング、warn ログ化)
+- ContentChanges 削除済み型フォールバック (OpenCMIS JSONConverter 型解決エラー防止)
+- CMIS 必須プロパティ null 安全化 (creationDate/lastModificationDate epoch フォールバック)
+- childByName ビュー HashMap→LinkedHashMap 修正 (順序保証)
 - Solr 多言語検索 (text_ja + text_en デュアルインデックス、Porter ステミング)
 - パフォーマンス改善 (deleteTree 並列化、getChildByName O(1) ビュー最適化、bulkUpdateProperties スレッドプール修正)
 - Versionable 文書の新 ID キャッシュ無効化
