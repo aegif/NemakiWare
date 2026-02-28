@@ -44,16 +44,10 @@ public class ChangeEventServiceDelegate {
 			changes.remove(0);
 		}
 
-		// Advance the changeLogToken to the last entry's token so the next
-		// poll starts after the current result set (CMIS spec §2.2.6.1).
-		if (changes != null && !changes.isEmpty()) {
-			Change last = changes.get(changes.size() - 1);
-			String nextToken = last.getToken();
-			if (nextToken == null) {
-				nextToken = last.getId();
-			}
-			changeLogToken.setValue(nextToken);
-		}
+		// NOTE: Token advancement is intentionally NOT done here.
+		// compileChangeDataList is responsible for advancing the token
+		// based on the consecutive range of successfully compiled events,
+		// preventing permanent loss of events that fail to compile.
 
 		return changes;
 	}

@@ -706,7 +706,11 @@ public class CompileServiceImpl implements CompileService {
 		results.setObjects(new ArrayList<ObjectData>());
 
 		Map<String, Content> cachedContents = new HashMap<String, Content>();
-		String lastSuccessfulToken = null;
+		// Track the consecutive-success prefix: once a failure is encountered,
+		// stop advancing the token so that the failed event (and all subsequent
+		// events) are re-fetched on the next poll.
+		String lastConsecutiveToken = null;
+		boolean broken = false;
 		if (changes != null && CollectionUtils.isNotEmpty(changes)) {
 			for (Change change : changes) {
 				try {
@@ -725,23 +729,27 @@ public class CompileServiceImpl implements CompileService {
 					// Compile a change object data depending on its type
 					results.getObjects()
 							.add(compileChangeObjectData(repositoryId, change, content, includePolicyIds, includeAcl));
-					// Track token of last successfully compiled event
-					String token = change.getToken();
-					if (token == null) {
-						token = change.getId();
+					// Only advance token while the consecutive prefix is unbroken
+					if (!broken) {
+						String token = change.getToken();
+						if (token == null) {
+							token = change.getId();
+						}
+						lastConsecutiveToken = token;
 					}
-					lastSuccessfulToken = token;
 				} catch (Exception e) {
 					log.warn("Skipping change event " + change.getId()
 							+ " (objectId=" + change.getObjectId() + "): " + e.getMessage());
+					broken = true;
 				}
 			}
 		}
 
-		// Correct changeLogToken to last successfully compiled event
-		// so that skipped events are re-fetched on next poll
-		if (lastSuccessfulToken != null) {
-			changeLogToken.setValue(lastSuccessfulToken);
+		// Advance changeLogToken only to the end of the consecutive-success
+		// prefix. Events from the first failure onward will be re-fetched.
+		// If the very first event fails, the token is not advanced at all.
+		if (lastConsecutiveToken != null) {
+			changeLogToken.setValue(lastConsecutiveToken);
 		}
 
 		results.setNumItems(BigInteger.valueOf(results.getObjects().size()));
