@@ -1,35 +1,4 @@
-/**
- * WebhookManagement Component for NemakiWare React UI
- *
- * Webhook management component providing delivery log viewing and retry operations:
- * - Delivery log list display with Ant Design Table component
- * - Filtering by status (success/failed/all)
- * - Retry failed deliveries
- * - Test webhook endpoint functionality
- * - View webhook configurations for objects
- *
- * Component Architecture:
- * WebhookManagement (stateful management orchestrator)
- *   ├─ useState: deliveryLogs, loading, testModalVisible, testUrl, testSecret, testResult
- *   ├─ useAuth: handleAuthError for authentication failure
- *   ├─ REST API: /rest/repo/{repositoryId}/webhook/* endpoints
- *   ├─ useEffect: loadDeliveryLogs() on repository change
- *   └─ Rendering:
- *       ├─ <Card> (container)
- *       │   ├─ Header: <h2> + <Button Test Webhook>
- *       │   ├─ <Select> (status filter)
- *       │   ├─ <Table> (delivery log list)
- *       │   │   ├─ Column: Delivery ID
- *       │   │   ├─ Column: Object ID
- *       │   │   ├─ Column: Event Type
- *       │   │   ├─ Column: Status
- *       │   │   ├─ Column: Status Code
- *       │   │   ├─ Column: Delivered At
- *       │   │   └─ Column: Actions (retry button)
- *       │   └─ <Modal> (test webhook form)
- */
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Table,
   Button,
@@ -44,7 +13,8 @@ import {
   Tooltip,
   Spin,
   Alert,
-  Descriptions
+  Descriptions,
+  Tabs
 } from 'antd';
 import {
   ReloadOutlined,
@@ -74,11 +44,63 @@ interface DeliveryLog {
   responseBody: string | null;
 }
 
+interface WebhookConfigEntry {
+  id: string;
+  enabled: boolean;
+  url: string;
+  events: string[];
+  authType: string | null;
+  includeChildren: boolean;
+  maxDepth: number | null;
+  retryCount: number | null;
+  hasAuthCredential: boolean;
+  hasSecret: boolean;
+}
+
+interface WebhookableObject {
+  objectId: string;
+  objectName: string;
+  objectPath: string | null;
+  webhookConfigs: WebhookConfigEntry[];
+}
+
+/** Flattened row for the configs table: one row per config, with object info */
+interface ConfigRow {
+  key: string;
+  objectId: string;
+  objectName: string;
+  objectPath: string | null;
+  config: WebhookConfigEntry;
+}
+
 interface TestResult {
   success: boolean;
   statusCode: number;
   responseTime: number;
   responseBody: string | null;
+}
+
+/** Resolve objectId -> path via CMIS browser binding */
+async function resolveObjectPath(
+  repositoryId: string,
+  objectId: string,
+  headers: Record<string, string>
+): Promise<{ name: string; path: string } | null> {
+  try {
+    const resp = await fetch(
+      `/core/browser/${repositoryId}/root?objectId=${encodeURIComponent(objectId)}&cmisselector=object&succinct=true`,
+      { headers, credentials: 'include' }
+    );
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const props = data.succinctProperties || {};
+    return {
+      name: props['cmis:name'] || objectId,
+      path: props['cmis:path'] || props['nk:parentPath'] || null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repositoryId }) => {
@@ -92,90 +114,150 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
   const { t } = useTranslation();
   const { handleAuthError } = useAuth();
 
-  useEffect(() => {
-    loadDeliveryLogs();
-  }, [repositoryId]);
+  // Configs tab state
+  const [configRows, setConfigRows] = useState<ConfigRow[]>([]);
+  const [configsLoading, setConfigsLoading] = useState(false);
 
-  /**
-   * Get authentication headers for API requests.
-   * Uses centralized auth header provider for Bearer token format.
-   * This eliminates direct localStorage access and ensures consistent auth handling.
-   */
-  const getAuthHeaders = (): Record<string, string> => {
+  // Delivery log path cache: objectId -> display label
+  const [pathCache, setPathCache] = useState<Record<string, string>>({});
+  const pathCacheRef = useRef<Record<string, string>>({});
+
+  // Track current repositoryId for stale response detection.
+  // Updated synchronously during render (not in useEffect) to ensure there is no
+  // window between re-render and effect execution where the ref holds a stale value.
+  const repositoryIdRef = useRef(repositoryId);
+  repositoryIdRef.current = repositoryId;
+
+  const getAuthHeaders = useCallback((): Record<string, string> => {
     return {
       'Content-Type': 'application/json',
       ...getCmisAuthHeaders()
     };
-  };
+  }, []);
 
-  const loadDeliveryLogs = async () => {
+  // --- Delivery Logs ---
+  const loadDeliveryLogs = useCallback(async (signal?: AbortSignal) => {
+    const isStale = () => signal?.aborted || repositoryId !== repositoryIdRef.current;
     setLoading(true);
     try {
       const response = await fetch(
         `/core/rest/repo/${repositoryId}/webhook/deliveries`,
-        {
-          method: 'GET',
-          headers: getAuthHeaders(),
-          credentials: 'include' // Send HttpOnly cookies automatically
-        }
+        { method: 'GET', headers: getAuthHeaders(), credentials: 'include', signal }
       );
-
+      if (isStale()) return;
       if (response.status === 401 || response.status === 403) {
         handleAuthError(null);
         return;
       }
-
       const data = await response.json();
+      if (isStale()) return;
       if (data.status === 'success' && data.deliveries) {
         setDeliveryLogs(data.deliveries);
-      } else if (data.status === 'failure') {
-        const errArr = data.error;
-        if (Array.isArray(errArr) && errArr.length > 0) {
-          const msg = errArr.map((e: any) =>
-            typeof e === 'string' ? e : Object.values(e).join(': ')
-          ).join('; ');
-          message.error(msg);
-        } else {
-          message.error(t('webhookManagement.messages.loadError'));
+        // Resolve paths only for objectIds not already cached
+        const allObjectIds = [...new Set((data.deliveries as DeliveryLog[]).map(d => d.objectId))];
+        const uncachedIds = allObjectIds.filter(oid => !(oid in pathCacheRef.current));
+        if (uncachedIds.length > 0) {
+          const headers = getAuthHeaders();
+          const entries = await Promise.all(
+            uncachedIds.map(async (oid) => {
+              const resolved = await resolveObjectPath(repositoryId, oid, headers);
+              return [oid, resolved ? (resolved.path || resolved.name) : oid] as [string, string];
+            })
+          );
+          if (isStale()) return;
+          const newEntries: Record<string, string> = {};
+          for (const [k, v] of entries) {
+            newEntries[k] = v;
+          }
+          pathCacheRef.current = { ...pathCacheRef.current, ...newEntries };
+          setPathCache(prev => ({ ...prev, ...newEntries }));
         }
+      } else if (data.status === 'failure') {
+        message.error(t('webhookManagement.messages.loadError'));
       }
-    } catch (error: any) {
-      console.error('Failed to load delivery logs:', error);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      if (isStale()) return;
       message.error(t('webhookManagement.messages.loadError'));
     } finally {
-      setLoading(false);
+      if (!isStale()) {
+        setLoading(false);
+      }
     }
-  };
+  }, [repositoryId, getAuthHeaders, handleAuthError, t]);
+
+  // --- Webhook Configs ---
+  const loadConfigs = useCallback(async (signal?: AbortSignal) => {
+    const isStale = () => signal?.aborted || repositoryId !== repositoryIdRef.current;
+    setConfigsLoading(true);
+    try {
+      const response = await fetch(
+        `/core/rest/repo/${repositoryId}/webhook/configs`,
+        { method: 'GET', headers: getAuthHeaders(), credentials: 'include', signal }
+      );
+      if (isStale()) return;
+      if (response.status === 401 || response.status === 403) {
+        handleAuthError(null);
+        return;
+      }
+      const data = await response.json();
+      if (isStale()) return;
+      if (data.status === 'success' && data.objects) {
+        const rows: ConfigRow[] = [];
+        for (const obj of data.objects as WebhookableObject[]) {
+          for (const config of obj.webhookConfigs) {
+            rows.push({
+              key: `${obj.objectId}-${config.id}`,
+              objectId: obj.objectId,
+              objectName: obj.objectName,
+              objectPath: obj.objectPath,
+              config,
+            });
+          }
+        }
+        setConfigRows(rows);
+      } else {
+        message.error(t('webhookManagement.configsLoadError'));
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      if (isStale()) return;
+      message.error(t('webhookManagement.configsLoadError'));
+    } finally {
+      if (!isStale()) {
+        setConfigsLoading(false);
+      }
+    }
+  }, [repositoryId, getAuthHeaders, handleAuthError, t]);
+
+  useEffect(() => {
+    // Clear path cache when repository changes
+    pathCacheRef.current = {};
+    setPathCache({});
+    const controller = new AbortController();
+    loadConfigs(controller.signal);
+    loadDeliveryLogs(controller.signal);
+    return () => controller.abort();
+  }, [repositoryId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRetry = async (deliveryId: string) => {
     try {
       const response = await fetch(
         `/core/rest/repo/${repositoryId}/webhook/deliveries/${deliveryId}/retry`,
-        {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          credentials: 'include' // Send HttpOnly cookies automatically
-        }
+        { method: 'POST', headers: getAuthHeaders(), credentials: 'include' }
       );
-
       if (response.status === 401 || response.status === 403) {
         handleAuthError(null);
         return;
       }
-
       const data = await response.json();
       if (data.status === 'success') {
         message.success(t('webhookManagement.messages.retryQueued'));
         loadDeliveryLogs();
       } else {
-        const errArr = data.error;
-        const msg = Array.isArray(errArr) && errArr.length > 0
-          ? errArr.map((e: any) => typeof e === 'string' ? e : Object.values(e).join(': ')).join('; ')
-          : t('webhookManagement.messages.retryError');
-        message.error(msg);
+        message.error(t('webhookManagement.messages.retryError'));
       }
-    } catch (error: any) {
-      console.error('Failed to retry delivery:', error);
+    } catch {
       message.error(t('webhookManagement.messages.retryError'));
     }
   };
@@ -183,26 +265,20 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
   const handleTestWebhook = async (values: { url: string; secret?: string }) => {
     setTestLoading(true);
     setTestResult(null);
-    
     try {
       const response = await fetch(
         `/core/rest/repo/${repositoryId}/webhook/test`,
         {
           method: 'POST',
           headers: getAuthHeaders(),
-          credentials: 'include', // Send HttpOnly cookies automatically
-          body: JSON.stringify({
-            url: values.url,
-            secret: values.secret || null
-          })
+          credentials: 'include',
+          body: JSON.stringify({ url: values.url, secret: values.secret || null })
         }
       );
-
       if (response.status === 401 || response.status === 403) {
         handleAuthError(null);
         return;
       }
-
       const data = await response.json();
       if (data.status === 'success') {
         setTestResult({
@@ -212,14 +288,9 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
           responseBody: data.responseBody || null
         });
       } else {
-        const errArr = data.error;
-        const msg = Array.isArray(errArr) && errArr.length > 0
-          ? errArr.map((e: any) => typeof e === 'string' ? e : Object.values(e).join(': ')).join('; ')
-          : t('webhookManagement.messages.testError');
-        message.error(msg);
+        message.error(t('webhookManagement.messages.testError'));
       }
-    } catch (error: any) {
-      console.error('Failed to test webhook:', error);
+    } catch {
       message.error(t('webhookManagement.messages.testError'));
     } finally {
       setTestLoading(false);
@@ -233,7 +304,84 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
     return true;
   });
 
-  const columns = [
+  // --- Render object path as a link ---
+  const renderObjectLink = (objectId: string, displayPath: string | null) => {
+    const label = displayPath || objectId;
+    return (
+      <Tooltip title={objectId}>
+        <a href={`#/documents/${objectId}`} style={{ fontSize: '12px' }}>
+          {label}
+        </a>
+      </Tooltip>
+    );
+  };
+
+  // --- Configs table columns ---
+  const configColumns = [
+    {
+      title: t('webhookManagement.configColumns.objectPath'),
+      key: 'objectPath',
+      width: 200,
+      ellipsis: true,
+      render: (_: unknown, row: ConfigRow) => renderObjectLink(row.objectId, row.objectPath || row.objectName),
+    },
+    {
+      title: t('webhookManagement.configColumns.url'),
+      key: 'url',
+      width: 250,
+      ellipsis: true,
+      render: (_: unknown, row: ConfigRow) => (
+        <Tooltip title={row.config.url}>
+          <span style={{ fontSize: '12px' }}>
+            {row.config.url && row.config.url.length > 40
+              ? row.config.url.substring(0, 40) + '...'
+              : row.config.url || '-'}
+          </span>
+        </Tooltip>
+      ),
+    },
+    {
+      title: t('webhookManagement.configColumns.events'),
+      key: 'events',
+      width: 200,
+      render: (_: unknown, row: ConfigRow) => (
+        <Space size={[0, 4]} wrap>
+          {(row.config.events || []).map(ev => (
+            <Tag key={ev} color="blue">{ev}</Tag>
+          ))}
+        </Space>
+      ),
+    },
+    {
+      title: t('webhookManagement.configColumns.authType'),
+      key: 'authType',
+      width: 100,
+      render: (_: unknown, row: ConfigRow) => row.config.authType || '-',
+    },
+    {
+      title: t('webhookManagement.configColumns.enabled'),
+      key: 'enabled',
+      width: 80,
+      render: (_: unknown, row: ConfigRow) => (
+        row.config.enabled
+          ? <Tag color="green">{t('webhookManagement.status.enabled')}</Tag>
+          : <Tag color="default">{t('webhookManagement.status.disabled')}</Tag>
+      ),
+    },
+    {
+      title: t('webhookManagement.configColumns.includeChildren'),
+      key: 'includeChildren',
+      width: 100,
+      render: (_: unknown, row: ConfigRow) => (
+        row.config.includeChildren
+          ? <CheckCircleOutlined style={{ color: '#52c41a' }} />
+          : <CloseCircleOutlined style={{ color: '#d9d9d9' }} />
+      ),
+    },
+  ];
+
+  // --- Delivery log columns ---
+  const deliveryColumns = [
     {
       title: t('webhookManagement.columns.deliveryId'),
       dataIndex: 'deliveryId',
@@ -249,18 +397,12 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       )
     },
     {
-      title: t('webhookManagement.columns.objectId'),
+      title: t('webhookManagement.columns.objectPath'),
       dataIndex: 'objectId',
-      key: 'objectId',
+      key: 'objectPath',
       width: 200,
       ellipsis: true,
-      render: (text: string) => (
-        <Tooltip title={text}>
-          <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>
-            {text?.substring(0, 8)}...
-          </span>
-        </Tooltip>
-      )
+      render: (objectId: string) => renderObjectLink(objectId, pathCache[objectId] || null),
     },
     {
       title: t('webhookManagement.columns.webhookUrl'),
@@ -334,7 +476,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       width: 150,
       render: (text: string | null, record: DeliveryLog) => (
         !record.success && text ? (
-          <Tooltip 
+          <Tooltip
             title={
               <pre style={{ maxWidth: 400, maxHeight: 200, overflow: 'auto', margin: 0, whiteSpace: 'pre-wrap' }}>
                 {text}
@@ -353,7 +495,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       title: t('webhookManagement.columns.actions'),
       key: 'actions',
       width: 100,
-      render: (_: any, record: DeliveryLog) => (
+      render: (_: unknown, record: DeliveryLog) => (
         <Space>
           {!record.success && (
             <Tooltip title={t('webhookManagement.actions.retry')}>
@@ -367,6 +509,58 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
         </Space>
       )
     }
+  ];
+
+  const tabItems = [
+    {
+      key: 'configs',
+      label: t('webhookManagement.tabs.configs'),
+      children: (
+        <Table
+          columns={configColumns}
+          dataSource={configRows}
+          rowKey="key"
+          loading={configsLoading}
+          pagination={false}
+          scroll={{ x: 1000 }}
+          locale={{ emptyText: t('webhookManagement.noConfigs') }}
+        />
+      ),
+    },
+    {
+      key: 'deliveryLogs',
+      label: t('webhookManagement.tabs.deliveryLogs'),
+      children: (
+        <>
+          <div style={{ marginBottom: 16 }}>
+            <Space>
+              <span>{t('webhookManagement.filter.status')}:</span>
+              <Select
+                value={statusFilter}
+                onChange={setStatusFilter}
+                style={{ width: 150 }}
+              >
+                <Select.Option value="all">{t('webhookManagement.filter.all')}</Select.Option>
+                <Select.Option value="success">{t('webhookManagement.filter.success')}</Select.Option>
+                <Select.Option value="failed">{t('webhookManagement.filter.failed')}</Select.Option>
+              </Select>
+            </Space>
+          </div>
+          <Table
+            columns={deliveryColumns}
+            dataSource={filteredLogs}
+            rowKey={(record: DeliveryLog) => record.attemptId || record.deliveryId}
+            loading={loading}
+            pagination={{
+              pageSize: 20,
+              showSizeChanger: true,
+              showTotal: (total) => t('webhookManagement.pagination.total', { total })
+            }}
+            scroll={{ x: 1400 }}
+          />
+        </>
+      ),
+    },
   ];
 
   return (
@@ -386,41 +580,15 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
           </Button>
           <Button
             icon={<ReloadOutlined />}
-            onClick={loadDeliveryLogs}
-            loading={loading}
+            onClick={() => { loadConfigs(); loadDeliveryLogs(); }}
+            loading={loading || configsLoading}
           >
             {t('common.refresh')}
           </Button>
         </Space>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <Space>
-          <span>{t('webhookManagement.filter.status')}:</span>
-          <Select
-            value={statusFilter}
-            onChange={setStatusFilter}
-            style={{ width: 150 }}
-          >
-            <Select.Option value="all">{t('webhookManagement.filter.all')}</Select.Option>
-            <Select.Option value="success">{t('webhookManagement.filter.success')}</Select.Option>
-            <Select.Option value="failed">{t('webhookManagement.filter.failed')}</Select.Option>
-          </Select>
-        </Space>
-      </div>
-
-      <Table
-        columns={columns}
-        dataSource={filteredLogs}
-        rowKey={(record: DeliveryLog) => record.attemptId || record.deliveryId}
-        loading={loading}
-        pagination={{
-          pageSize: 20,
-          showSizeChanger: true,
-          showTotal: (total) => t('webhookManagement.pagination.total', { total })
-        }}
-        scroll={{ x: 1400 }}
-      />
+      <Tabs items={tabItems} defaultActiveKey="configs" />
 
       <Modal
         title={t('webhookManagement.testModal.title')}
@@ -488,10 +656,10 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
               </Descriptions.Item>
               {testResult.responseBody && (
                 <Descriptions.Item label={t('webhookManagement.testModal.responseBody')}>
-                  <pre style={{ 
-                    maxHeight: 200, 
-                    overflow: 'auto', 
-                    background: '#f5f5f5', 
+                  <pre style={{
+                    maxHeight: 200,
+                    overflow: 'auto',
+                    background: '#f5f5f5',
                     padding: 8,
                     margin: 0,
                     fontSize: 12

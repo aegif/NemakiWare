@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.cmis.service.impl;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.WebhookService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
@@ -103,6 +104,7 @@ public class ObjectServiceImpl implements ObjectService {
 	private SolrUtil solrUtil;
 	private NemakiCachePool nemakiCachePool;
 	private ThreadLockService threadLockService;
+	private WebhookService webhookService;
 	private int threadMax;
 
 	@Override
@@ -113,7 +115,10 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", path);
-		// FIXME path is not preserved in db.
+		// NOTE: CouchDB にパスフィールドは保存されていない。getContentByPath() は
+		// ルートから parentId チェーンを辿るツリー走査でパスを解決する (計算量 O(depth))。
+		// トレードオフ: 移動・名称変更時にパスフィールドのメンテナンスが不要。
+		// 将来の最適化案: materialized path field / パスキャッシュ / Solr path 活用
 		Content content = contentService.getContentByPath(repositoryId, path);
 		exceptionService.objectNotFoundByPath(DomainType.OBJECT, content, path);
 
@@ -653,6 +658,7 @@ public class ObjectServiceImpl implements ObjectService {
 
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
 
+		Content webhookContent = null;
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
 		try {
 			lock.lock();
@@ -716,9 +722,32 @@ public class ObjectServiceImpl implements ObjectService {
 				changeToken.setValue(result.getChangeToken());
 			}
 
+			// Capture data for webhook trigger (fired outside lock)
+			webhookContent = result;
+
 			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(oldId);
+			// Versionable documents produce a new object ID; invalidate that cache entry too
+			// to prevent stale references from being read by concurrent threads
+			if (result != null && !oldId.equals(result.getId())) {
+				nemakiCachePool.get(repositoryId).removeCmisAndContentCache(result.getId());
+			}
 		} finally {
 			lock.unlock();
+		}
+
+		// Trigger CONTENT_UPDATED webhook outside write lock to avoid
+		// holding the lock during parent-folder traversal and async dispatch.
+		// triggerWebhookByEventType captures an immutable snapshot of Content
+		// fields at call entry, so brief races between unlock and this call
+		// are tolerated.
+		if (webhookService != null && webhookContent != null) {
+			try {
+				webhookService.triggerWebhookByEventType(callContext, repositoryId,
+						webhookContent, "CONTENT_UPDATED", null);
+			} catch (Exception e) {
+				log.warn("Failed to trigger CONTENT_UPDATED webhook for object "
+						+ webhookContent.getId() + ": " + e.getMessage());
+			}
 		}
 	}
 
@@ -728,6 +757,7 @@ public class ObjectServiceImpl implements ObjectService {
 
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
 
+		Content webhookContent = null;
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
 		try {
 			lock.lock();
@@ -751,10 +781,24 @@ public class ObjectServiceImpl implements ObjectService {
 			changeToken.setValue(updatedDocument.getChangeToken());
 		}
 
+		// Capture data for webhook trigger (fired outside lock)
+		webhookContent = updatedDocument;
+
 		nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId.getValue());
 
 		} finally {
 			lock.unlock();
+		}
+
+		// Trigger CONTENT_UPDATED webhook outside write lock
+		if (webhookService != null && webhookContent != null) {
+			try {
+				webhookService.triggerWebhookByEventType(callContext, repositoryId,
+						webhookContent, "CONTENT_UPDATED", null);
+			} catch (Exception e) {
+				log.warn("Failed to trigger CONTENT_UPDATED webhook for object "
+						+ webhookContent.getId() + ": " + e.getMessage());
+			}
 		}
 	}
 
@@ -764,6 +808,7 @@ public class ObjectServiceImpl implements ObjectService {
 
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
 
+		Content webhookContent = null;
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
 		try {
 			lock.lock();
@@ -805,9 +850,25 @@ public class ObjectServiceImpl implements ObjectService {
 			contentService.appendAttachment(callContext, repositoryId, objectId, changeToken, contentStream,
 					isLastChunk, extension);
 
+			// Capture content inside lock to avoid race with concurrent writers.
+			// Re-fetching after unlock could return state from a subsequent update,
+			// producing mismatched payload/changeToken in the webhook.
+			webhookContent = contentService.getContent(repositoryId, objectId.getValue());
+
 			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId.getValue());
 		} finally {
 			lock.unlock();
+		}
+
+		// Trigger CONTENT_UPDATED webhook outside write lock
+		if (webhookService != null && webhookContent != null) {
+			try {
+				webhookService.triggerWebhookByEventType(callContext, repositoryId,
+						webhookContent, "CONTENT_UPDATED", null);
+			} catch (Exception e) {
+				log.warn("Failed to trigger CONTENT_UPDATED webhook for object "
+						+ webhookContent.getId() + ": " + e.getMessage());
+			}
 		}
 	}
 
@@ -1030,14 +1091,15 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		List<BulkUpdateObjectIdAndChangeToken> results = new ArrayList<BulkUpdateObjectIdAndChangeToken>();
 
-		ExecutorService executor = Executors.newCachedThreadPool();
-		List<BulkUpdateTask> tasks = new ArrayList<>();
-		for (BulkUpdateObjectIdAndChangeToken objectIdAndChangeToken : objectIdAndChangeTokenList) {
-			tasks.add(new BulkUpdateTask(callContext, repositoryId, objectIdAndChangeToken, properties,
-					addSecondaryTypeIds, removeSecondaryTypeIds, extension));
-		}
-
+		ExecutorService executor = Executors.newFixedThreadPool(
+				Math.min(objectIdAndChangeTokenList.size(), threadMax));
 		try {
+			List<BulkUpdateTask> tasks = new ArrayList<>();
+			for (BulkUpdateObjectIdAndChangeToken objectIdAndChangeToken : objectIdAndChangeTokenList) {
+				tasks.add(new BulkUpdateTask(callContext, repositoryId, objectIdAndChangeToken, properties,
+						addSecondaryTypeIds, removeSecondaryTypeIds, extension));
+			}
+
 			List<Future<BulkUpdateObjectIdAndChangeToken>> _results = executor.invokeAll(tasks);
 			for (Future<BulkUpdateObjectIdAndChangeToken> _result : _results) {
 				try {
@@ -1050,6 +1112,8 @@ public class ObjectServiceImpl implements ObjectService {
 		} catch (InterruptedException e1) {
 			log.warn("Bulk update operation was interrupted", e1);
 			Thread.currentThread().interrupt();
+		} finally {
+			executor.shutdown();
 		}
 
 		return results;
@@ -1155,138 +1219,57 @@ public class ObjectServiceImpl implements ObjectService {
 	public FailedToDeleteData deleteTree(CallContext callContext, String repositoryId, String folderId,
 			Boolean allVersions, UnfileObject unfileObjects, Boolean continueOnFailure, ExtensionsData extension) {
 		// //////////////////
-		// Inner classes
-		// //////////////////
-		class DeleteTask implements Callable<Boolean> {
-			private CallContext callContext;
-			private String repositoryId;
-			private Content content;
-			private Boolean allVersions;
-
-			public DeleteTask() {
-			}
-
-			public DeleteTask(CallContext callContext, String repositoryId, Content content, Boolean allVersions) {
-				this.callContext = callContext;
-				this.repositoryId = repositoryId;
-				this.content = content;
-				this.allVersions = allVersions;
-			}
-
-			@Override
-			public Boolean call() throws Exception {
-				try {
-					objectServiceInternal.deleteObjectInternal(callContext, repositoryId, content, allVersions, true);
-					return false;
-				} catch (Exception e) {
-					return true;
-				}
-			}
-		}
-
-		class WrappedExecutorService {
-			private ExecutorService service;
-			private Folder folder;
-
-			private WrappedExecutorService() {
-			};
-
-			public WrappedExecutorService(ExecutorService service, Folder folder) {
-				this.service = service;
-				this.folder = folder;
-			}
-
-			public ExecutorService getService() {
-				return service;
-			}
-
-			public Folder getFolder() {
-				return folder;
-			}
-		}
-
-		class DeleteService {
-			private Map<String, Future<Boolean>> failureIds;
-			private WrappedExecutorService parentService;
-			private CallContext callContext;
-			private String repositoryId;
-			private Content content;
-			private Boolean allVersions;
-
-			public DeleteService() {
-			}
-
-			public DeleteService(Map<String, Future<Boolean>> failureIds, WrappedExecutorService parentService,
-					CallContext callContext, String repositoryId, Content content, Boolean allVersions) {
-				super();
-				this.failureIds = failureIds;
-				this.parentService = parentService;
-				this.callContext = callContext;
-				this.repositoryId = repositoryId;
-				this.content = content;
-				this.allVersions = allVersions;
-			}
-
-			public void execute() {
-				if (content.isDocument()) {
-					Future<Boolean> result = parentService.getService()
-							.submit(new DeleteTask(callContext, repositoryId, content, allVersions));
-					failureIds.put(content.getId(), result);
-				} else if (content.isFolder()) {
-					WrappedExecutorService childrenService = new WrappedExecutorService(
-							Executors.newFixedThreadPool(threadMax), (Folder) content);
-
-					List<Content> children = contentService.getChildren(repositoryId, content.getId());
-					if (CollectionUtils.isNotEmpty(children)) {
-						for (Content child : children) {
-							DeleteService deleteService = new DeleteService(this.failureIds, childrenService,
-									callContext, repositoryId, child, allVersions);
-							deleteService.execute();
-						}
-					}
-
-					// wait til newService ends
-					childrenService.getService().shutdown();
-					try {
-						childrenService.getService().awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
-					} catch (InterruptedException e) {
-						log.error("Interrupted while waiting for children service to terminate", e);
-						Thread.currentThread().interrupt();
-					}
-
-					// Lastly, delete self
-					Future<Boolean> result = parentService.getService()
-							.submit(new DeleteTask(callContext, repositoryId, content, allVersions));
-					failureIds.put(content.getId(), result);
-				}
-
-			}
-		}
-
-		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", folderId);
 		Folder folder = contentService.getFolder(repositoryId, folderId);
+
+		// Null check BEFORE permissionDenied to avoid NPE on content.getId()
+		if (folder == null)
+			exceptionService.constraint(folderId, "deleteTree cannot be invoked on a non-folder object");
+
 		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_DELETE_TREE_FOLDER, folder);
 		exceptionService.constraintDeleteRootFolder(repositoryId, folderId);
 
 		// //////////////////
-		// Specific Exception
-		// //////////////////
-		if (folder == null)
-			exceptionService.constraint(folderId, "deleteTree cannot be invoked on a non-folder object");
-
-		// //////////////////
 		// Body of the method
 		// //////////////////
-		// Delete descendants
-		Map<String, Future<Boolean>> failureIds = new HashMap<String, Future<Boolean>>();
+		// Collect descendants grouped by depth (deepest first) to guarantee
+		// that children are fully deleted before their parent folder.
+		List<List<Content>> layers = collectByDepth(repositoryId, folder);
 
-		DeleteService deleteService = new DeleteService(failureIds,
-				new WrappedExecutorService(Executors.newFixedThreadPool(threadMax), folder), callContext, repositoryId,
-				folder, allVersions);
-		deleteService.execute();
+		Map<String, Future<Boolean>> failureIds = new HashMap<String, Future<Boolean>>();
+		ExecutorService executor = Executors.newFixedThreadPool(threadMax);
+		try {
+			// Process layers from deepest to shallowest (children before parents)
+			for (List<Content> layer : layers) {
+				List<Future<Boolean>> layerFutures = new ArrayList<>();
+				for (Content content : layer) {
+					Future<Boolean> result = executor.submit(() -> {
+						try {
+							objectServiceInternal.deleteObjectInternal(callContext, repositoryId, content, allVersions, true);
+							return false;
+						} catch (Exception e) {
+							return true;
+						}
+					});
+					failureIds.put(content.getId(), result);
+					layerFutures.add(result);
+				}
+				// Wait for this layer to complete before processing the next (shallower) layer
+				for (Future<Boolean> f : layerFutures) {
+					try {
+						f.get();
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					} catch (ExecutionException e) {
+						// failure recorded in failureIds
+					}
+				}
+			}
+		} finally {
+			executor.shutdown();
+		}
 
 		// Delete folder from Solr index
 		if (folder != null) {
@@ -1294,7 +1277,14 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 
 		// Check FailedToDeleteData
-		// FIXME Consider orphans that was failed to be deleted
+		// TODO orphan 処理の改善
+		// 削除に失敗したオブジェクトはCMIS仕様上 FailedToDeleteData として返却されるが、
+		// 親フォルダが先に削除された場合、子オブジェクトが orphan（parentId が存在しない状態）になる。
+		// 現状: orphan は CouchDB 上に残存し、通常の CMIS ナビゲーションでは到達不能。
+		// 将来の改善案:
+		//   1. アーカイブ管理画面での orphan 検出・一覧表示
+		//   2. CouchDB ビューによる parentId 不整合の定期検出
+		//   3. deleteTree のトランザクション的な実行（子→親の順で削除）
 		FailedToDeleteDataImpl fdd = new FailedToDeleteDataImpl();
 		List<String> ids = new ArrayList<String>();
 		for (Entry<String, Future<Boolean>> entry : failureIds.entrySet()) {
@@ -1312,7 +1302,42 @@ public class ObjectServiceImpl implements ObjectService {
 			}
 		}
 		fdd.setIds(ids);
+
+		if (!ids.isEmpty()) {
+			log.warn("[deleteTree] Orphan objects detected: folderId=" + folder.getId()
+				+ ", folderName=" + folder.getName() + ", orphanIds=" + ids
+				+ ", action=Check archive management or query CouchDB directly for cleanup");
+		}
+
 		return fdd;
+	}
+
+	/**
+	 * Collect descendants grouped by depth level (BFS).
+	 * Returns layers ordered from deepest to shallowest, so that iterating
+	 * in order guarantees children are processed before their parent.
+	 */
+	private List<List<Content>> collectByDepth(String repositoryId, Content root) {
+		List<List<Content>> layers = new ArrayList<>();
+		List<Content> currentLayer = new ArrayList<>();
+		currentLayer.add(root);
+
+		while (!currentLayer.isEmpty()) {
+			layers.add(currentLayer);
+			List<Content> nextLayer = new ArrayList<>();
+			for (Content content : currentLayer) {
+				if (content.isFolder()) {
+					List<Content> children = contentService.getChildren(repositoryId, content.getId());
+					if (CollectionUtils.isNotEmpty(children)) {
+						nextLayer.addAll(children);
+					}
+				}
+			}
+			currentLayer = nextLayer;
+		}
+		// Reverse: deepest layer first (leaf nodes), root last
+		java.util.Collections.reverse(layers);
+		return layers;
 	}
 
 	public void setObjectServiceInternal(ObjectServiceInternal objectServiceInternal) {
@@ -1353,5 +1378,9 @@ public class ObjectServiceImpl implements ObjectService {
 
 	public void setThreadMax(int threadMax) {
 		this.threadMax = threadMax;
+	}
+
+	public void setWebhookService(WebhookService webhookService) {
+		this.webhookService = webhookService;
 	}
 }

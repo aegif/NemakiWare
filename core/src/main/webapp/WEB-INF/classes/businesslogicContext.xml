@@ -88,6 +88,9 @@
 		<property name="webhookDaoService">
 			<ref bean="WebhookDaoService" />
 		</property>
+		<property name="contentDaoService">
+			<ref bean="ContentDaoService" />
+		</property>
 	</bean>
 
 	<!-- Webhook DAO Service for delivery log persistence -->

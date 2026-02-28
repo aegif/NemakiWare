@@ -121,6 +121,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	private static final Log log = LogFactory.getLog(ContentDaoServiceImpl.class);
 
 	private static final String DESIGN_DOCUMENT = "_design/_repo";
+
+	// Per-repository childByName view availability cache.
+	// TRUE = confirmed available (permanent — view won't disappear at runtime).
+	// FALSE = confirmed missing — but re-probed after PROBE_RETRY_MS because
+	// Patch_StandardCmisViews may create the view after initial startup.
+	private final java.util.concurrent.ConcurrentHashMap<String, Boolean> childByNameViewStatus =
+			new java.util.concurrent.ConcurrentHashMap<>();
+	private final java.util.concurrent.ConcurrentHashMap<String, Long> childByNameProbeTime =
+			new java.util.concurrent.ConcurrentHashMap<>();
+	private static final long PROBE_RETRY_MS = 60_000; // re-probe FALSE after 60 seconds
 	private static final String ATTACHMENT_NAME = "content";
 
 	// Delegate instances for decomposed responsibilities
@@ -1013,10 +1023,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			log.debug("DEBUG getChildren: repositoryId=" + repositoryId + ", parentId=" + parentId);
 			
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "children", queryParams);
-			
+
 			List<Content> children = new ArrayList<Content>();
-			
-			if (result.getRows() != null) {
+
+			if (result != null && result.getRows() != null) {
 				log.debug("DEBUG getChildren: found " + result.getRows().size() + " raw rows");
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
@@ -1114,93 +1124,171 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Content getChildByName(String repositoryId, String parentId, String name) {
 		try {
-				log.debug("DEBUG getChildByName: searching for child '" + name + "' under parent '" + parentId + "' in repository: " + repositoryId);
-			
-			// FIXED: Use existing 'children' view instead of missing 'childByName' view
-			// Query children view and filter by name since childByName view doesn't exist
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			
-			// Create query parameters with include_docs=true
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			queryParams.put("key", parentId);
-			queryParams.put("include_docs", true);
-			queryParams.put("reduce", false);
-				ViewResult result = client.queryView("_repo", "children", queryParams);
-				
-			if (result.getRows() != null && !result.getRows().isEmpty()) {
-					log.debug("DEBUG getChildByName: found " + result.getRows().size() + " children for parent '" + parentId + "'");
-				for (ViewResultRow row : result.getRows()) {
-					if (row.getDoc() != null) {
-						// Handle Jakarta EE compatibility - row.getDoc() returns Document object, not Map
-						Object docObj = row.getDoc();
-						String childName = null;
-						String objectId = null;
-						
-						if (docObj instanceof Map) {
-							// Legacy behavior - cast to Map
-							Map<String, Object> doc = (Map<String, Object>) docObj;
-							childName = (String) doc.get("name");
-							objectId = (String) doc.get("_id");
-						} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
-							// Jakarta EE compatible behavior - use Document methods
-							com.ibm.cloud.cloudant.v1.model.Document doc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
-										
-							// Try multiple methods to extract data from Document
-							try {
-								// Method 1: Try direct document ID access first
-								try {
-									String docId = doc.getId();
-												if (docId != null) {
-										objectId = docId;
-									}
-								} catch (Exception idEx) {
-											}
-								
-								// Method 2: getProperties()
-								Map<String, Object> docProperties = doc.getProperties();
-								if (docProperties != null) {
-													childName = (String) docProperties.get("name");
-									
-									// Try both _id and id fields
-									if (objectId == null) {
-										objectId = (String) docProperties.get("_id");
-										if (objectId == null) {
-											objectId = (String) docProperties.get("id");
-										}
-									}
-											}
-								
-								// Method 3: Try accessing the document as a raw map using reflection/toString
-								if (objectId == null) {
-												// As a last resort, try to parse the ID from the string representation
-								}
-								
-							} catch (Exception e) {
-											e.printStackTrace();
-							}
-						} else {
-							log.warn("DEBUG getChildByName: unexpected document type: " + docObj.getClass().getName());
-							continue;
-						}
-						
-						log.debug("DEBUG getChildByName: checking child with name='" + childName + "'");
-						
-						if (name.equals(childName) && objectId != null) {
-							log.debug("DEBUG getChildByName: FOUND matching child '" + name + "' with ID: " + objectId);
-							return getContent(repositoryId, objectId);
-						}
-					}
+
+			// If childByName view is confirmed missing for this repository, skip to fallback
+			// — unless the FALSE cache TTL has expired, in which case fall through to re-probe
+			if (Boolean.FALSE.equals(childByNameViewStatus.get(repositoryId))) {
+				Long probeTime = childByNameProbeTime.get(repositoryId);
+				if (probeTime == null || (System.currentTimeMillis() - probeTime) <= PROBE_RETRY_MS) {
+					return getChildByNameFallback(client, repositoryId, parentId, name);
 				}
-					log.debug("DEBUG getChildByName: no child found with name '" + name + "' under parent '" + parentId + "'");
-			} else {
-					log.debug("DEBUG getChildByName: no children found for parent '" + parentId + "'");
+				// TTL expired — fall through to getChildByNameView() which will re-probe
 			}
-			
-			return null;
+
+			// Try childByName view (O(1) lookup with composite key {parentId, name}).
+			// getChildByNameView() returns null for "not found" and throws on transient errors.
+			try {
+				Content result = getChildByNameView(client, repositoryId, parentId, name);
+				return result;
+			} catch (Exception viewEx) {
+				// View unavailable or transient query error — fall back to children view
+				log.debug("childByName view query error, falling back to children view: " + viewEx.getMessage());
+				return getChildByNameFallback(client, repositoryId, parentId, name);
+			}
 		} catch (Exception e) {
 			log.error("Error getting child by name: " + name + " for parent: " + parentId + " in repository: " + repositoryId, e);
 			return null;
 		}
+	}
+
+	/**
+	 * O(1) lookup using the childByName view with composite key {parentId, name}.
+	 * Probes view existence once per repository via isViewAvailable() and caches
+	 * the result. TRUE is permanent; FALSE expires after PROBE_RETRY_MS so that
+	 * views created by Patch_StandardCmisViews after startup are eventually picked up.
+	 *
+	 * @return the matching Content, or null if the child genuinely does not exist
+	 * @throws RuntimeException if the view is unavailable or a transient query error occurs
+	 */
+	private Content getChildByNameView(CloudantClientWrapper client, String repositoryId, String parentId, String name) {
+		// Determine whether a (re-)probe is needed
+		boolean needsProbe = false;
+		if (!childByNameViewStatus.containsKey(repositoryId)) {
+			needsProbe = true;
+		} else if (Boolean.FALSE.equals(childByNameViewStatus.get(repositoryId))) {
+			// FALSE cached — check if TTL has expired
+			Long probeTime = childByNameProbeTime.get(repositoryId);
+			if (probeTime != null && (System.currentTimeMillis() - probeTime) > PROBE_RETRY_MS) {
+				needsProbe = true;
+			}
+		}
+
+		if (needsProbe) {
+			try {
+				boolean available = client.isViewAvailable("_repo", "childByName");
+				childByNameViewStatus.put(repositoryId, available);
+				childByNameProbeTime.put(repositoryId, System.currentTimeMillis());
+				if (available) {
+					log.info("childByName view confirmed available for repository " + repositoryId);
+				} else {
+					log.info("childByName view not found for repository " + repositoryId + " — using children view fallback");
+				}
+			} catch (Exception e) {
+				// Transient error during probe — don't cache, let caller fall back
+				throw new RuntimeException("childByName view probe failed for repository " + repositoryId, e);
+			}
+		}
+
+		// If probe confirmed view is missing, signal caller to fall back
+		if (Boolean.FALSE.equals(childByNameViewStatus.get(repositoryId))) {
+			throw new RuntimeException("childByName view not available for repository " + repositoryId);
+		}
+
+		// Execute the view query — exceptions propagate to caller for fallback
+		// CRITICAL FIX: Use LinkedHashMap to maintain key order matching CouchDB view emit order.
+		// CouchDB compares JSON object keys using serialized form, so key order must match
+		// the order in the view's emit(): {parentId: ..., name: ...}
+		Map<String, Object> compositeKey = new java.util.LinkedHashMap<String, Object>();
+		compositeKey.put("parentId", parentId);
+		compositeKey.put("name", name);
+
+		Map<String, Object> queryParams = new HashMap<String, Object>();
+		queryParams.put("key", compositeKey);
+		queryParams.put("include_docs", true);
+		queryParams.put("reduce", false);
+
+		ViewResult result = client.queryView("_repo", "childByName", queryParams);
+
+		if (result == null) {
+			// queryView() returned null = transient error (CloudantClientWrapper caught an exception internally)
+			throw new RuntimeException("childByName query returned null for repository " + repositoryId + " — transient error");
+		}
+
+		// Successful response — ensure status is cached as available (permanent)
+		childByNameViewStatus.put(repositoryId, Boolean.TRUE);
+
+		if (result.getRows() != null && !result.getRows().isEmpty()) {
+			ViewResultRow row = result.getRows().get(0);
+			String objectId = extractObjectId(row);
+			if (objectId != null) {
+				if (log.isTraceEnabled()) log.trace("getChildByName: found via childByName view: '" + name + "' id=" + objectId);
+				return getContent(repositoryId, objectId);
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Fallback: query children view (all children of parent) and filter by name client-side.
+	 * Used when childByName view is not available.
+	 */
+	private Content getChildByNameFallback(CloudantClientWrapper client, String repositoryId, String parentId, String name) {
+		Map<String, Object> queryParams = new HashMap<String, Object>();
+		queryParams.put("key", parentId);
+		queryParams.put("include_docs", true);
+		queryParams.put("reduce", false);
+		ViewResult result = client.queryView("_repo", "children", queryParams);
+
+		if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
+			for (ViewResultRow row : result.getRows()) {
+				String childName = extractName(row);
+				String objectId = extractObjectId(row);
+				if (name.equals(childName) && objectId != null) {
+					if (log.isTraceEnabled()) log.trace("getChildByName fallback: found '" + name + "' id=" + objectId);
+					return getContent(repositoryId, objectId);
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Extract the document name from a ViewResultRow, handling both Map and Document types.
+	 */
+	private String extractName(ViewResultRow row) {
+		if (row.getDoc() == null) return null;
+		Object docObj = row.getDoc();
+		if (docObj instanceof Map) {
+			return (String) ((Map<String, Object>) docObj).get("name");
+		} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
+			com.ibm.cloud.cloudant.v1.model.Document doc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
+			Map<String, Object> props = doc.getProperties();
+			return props != null ? (String) props.get("name") : null;
+		}
+		return null;
+	}
+
+	/**
+	 * Extract the object ID from a ViewResultRow, handling both Map and Document types.
+	 */
+	private String extractObjectId(ViewResultRow row) {
+		if (row.getDoc() == null) return null;
+		Object docObj = row.getDoc();
+		if (docObj instanceof Map) {
+			return (String) ((Map<String, Object>) docObj).get("_id");
+		} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
+			com.ibm.cloud.cloudant.v1.model.Document doc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
+			String id = doc.getId();
+			if (id != null) return id;
+			Map<String, Object> props = doc.getProperties();
+			if (props != null) {
+				id = (String) props.get("_id");
+				if (id == null) id = (String) props.get("id");
+			}
+			return id;
+		}
+		return null;
 	}
 
 	public List<String> getChildrenNames(String repositoryId, String parentId){
@@ -2411,5 +2499,55 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public void deleteWebAuthnCredential(String repositoryId, String id) {
 		delete(repositoryId, id);
+	}
+
+	@Override
+	public List<Content> getContentsBySecondaryType(String repositoryId, String secondaryTypeId) {
+		CloudantClientWrapper client = connectorPool.get(repositoryId);
+
+		// Build Mango selector: {"secondaryIds": {"$elemMatch": {"$eq": secondaryTypeId}}}
+		Map<String, Object> elemMatch = new HashMap<>();
+		elemMatch.put("$eq", secondaryTypeId);
+		Map<String, Object> secondaryIdsSelector = new HashMap<>();
+		secondaryIdsSelector.put("$elemMatch", elemMatch);
+		Map<String, Object> selector = new HashMap<>();
+		selector.put("secondaryIds", secondaryIdsSelector);
+
+		List<CouchContent> couchContents = client.findBySelector(selector, CouchContent.class);
+		List<Content> result = new ArrayList<>();
+		for (CouchContent cc : couchContents) {
+			result.add(cc.convert());
+		}
+		return result;
+	}
+
+	@Override
+	public long getObjectCount(String repositoryId, String objectType) {
+		CloudantClientWrapper client = connectorPool.get(repositoryId);
+		Map<String, Object> params = new HashMap<>();
+		params.put("reduce", true);
+		params.put("group", true);
+		if (objectType != null) {
+			params.put("key", objectType);
+		}
+		ViewResult result = client.queryView("_repo", "countByObjectType", params);
+		if (objectType != null) {
+			// Count for a specific type
+			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
+				Object value = result.getRows().get(0).getValue();
+				if (value instanceof Number) return ((Number) value).longValue();
+			}
+			return 0;
+		} else {
+			// Sum across all types
+			long total = 0;
+			if (result != null && result.getRows() != null) {
+				for (ViewResultRow row : result.getRows()) {
+					Object value = row.getValue();
+					if (value instanceof Number) total += ((Number) value).longValue();
+				}
+			}
+			return total;
+		}
 	}
 }

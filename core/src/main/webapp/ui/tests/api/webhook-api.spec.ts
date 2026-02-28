@@ -298,7 +298,9 @@ test.describe('Webhook API Tests', () => {
       expect(res.status() === 403 || data.status === 'failure').toBeTruthy();
     });
 
-    test('W17: Non-admin user cannot access webhook config', async ({ request }) => {
+    test('W17: Non-admin user with read permission can access webhook config (CMIS permission model)', async ({ request }) => {
+      // Webhook REST API uses CMIS CAN_GET_PROPERTIES permission check (not admin-only).
+      // api-e2e-testuser inherits cmis:read via GROUP_EVERYONE, so they CAN view webhook config.
       const testUserAuth = 'Basic ' + Buffer.from('api-e2e-testuser:testtest').toString('base64');
       const uuid = generateTestId();
       const docId = await createTestDocument(request, `webhook-sec-test-${uuid}.txt`);
@@ -310,7 +312,8 @@ test.describe('Webhook API Tests', () => {
         );
 
         const data = await res.json().catch(() => ({}));
-        expect(res.status() === 403 || data.status === 'failure').toBeTruthy();
+        expect(res.status()).toBe(200);
+        expect(data.status).toBe('success');
       } finally {
         await deleteObject(request, docId);
       }

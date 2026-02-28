@@ -92,23 +92,20 @@ test.describe('System Folders (/.system)', () => {
     const systemFolderId = systemFolder.object?.properties?.['cmis:objectId']?.value;
     console.log('Found .system folder ID:', systemFolderId);
 
-    // Step 2: Verify .system folder children via CMIS query (objectId-based children API not supported in Browser Binding)
-    const childrenRes = await page.request.post(
-      'http://localhost:8080/core/browser/bedroom',
+    // Step 2: Verify .system folder children via cmisselector=children
+    // NOTE: IN_FOLDER query goes through Solr which doesn't index system virtual folders.
+    // Use Browser Binding getChildren instead.
+    const childrenRes = await page.request.get(
+      `http://localhost:8080/core/browser/bedroom/${systemFolderId}?cmisselector=children`,
       {
         headers: {
           'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         },
-        form: {
-          cmisaction: 'query',
-          q: `SELECT cmis:objectId, cmis:name FROM cmis:folder WHERE IN_FOLDER('${systemFolderId}')`,
-          maxItems: '100',
-        },
       }
     );
     const childrenData = await childrenRes.json();
-    const childNames = (childrenData.results || []).map(
-      (r: any) => r.properties?.['cmis:name']?.value
+    const childNames = (childrenData.objects || []).map(
+      (obj: any) => obj.object?.properties?.['cmis:name']?.value
     );
 
     // Should contain 'users' subfolder

@@ -160,6 +160,15 @@ public class TestGroupBase extends AbstractRunner {
 		}
 	}
 
+	/**
+	 * Returns parameter overrides for the current test group.
+	 * Subclasses can override this to change binding type or other parameters.
+	 * @return null if no overrides, or a map of parameter key → value overrides
+	 */
+	protected Map<String, String> getParameterOverrides() {
+		return null;
+	}
+
 	public void run(CmisTest test) throws Exception {
 		run(new SimpleCmisWrapperTestGroup(test));
 		TckSuite.addToGroup(this.getClass(), test);
@@ -171,12 +180,28 @@ public class TestGroupBase extends AbstractRunner {
 		// CRITICAL FIX: Use preloaded parameters instead of loading again
 		// This avoids the hang issue with multiple loadParameters calls
 		if (parametersLoaded && loadedParameters != null) {
-			runner.setParameters(loadedParameters);
+			// Apply per-test-group overrides if present
+			Map<String, String> overrides = getParameterOverrides();
+			if (overrides != null && !overrides.isEmpty()) {
+				Map<String, String> merged = new HashMap<>(loadedParameters);
+				merged.putAll(overrides);
+				runner.setParameters(merged);
+			} else {
+				runner.setParameters(loadedParameters);
+			}
 		} else {
 			if (parametersFile == null || !parametersFile.exists()) {
 				throw new IllegalStateException("Failed to load TCK parameters file");
 			}
 			runner.loadParameters(parametersFile);
+			// Apply per-test-group overrides even in fallback path
+			Map<String, String> overrides = getParameterOverrides();
+			if (overrides != null && !overrides.isEmpty()) {
+				Map<String, String> currentParams = runner.getParameters();
+				Map<String, String> merged = new HashMap<>(currentParams);
+				merged.putAll(overrides);
+				runner.setParameters(merged);
+			}
 		}
 
 		runner.addGroup(group);
@@ -189,6 +214,10 @@ public class TestGroupBase extends AbstractRunner {
 		checkForFailures(runner);
 	}
 
+	/**
+	 * Check all test results for failures. All failures including cleanup errors
+	 * are reported as test failures to avoid masking real bugs.
+	 */
 	private static void checkForFailures(JUnitRunner runner) {
 		for (CmisTestGroup group : runner.getGroups()) {
 			for (CmisTest test : group.getTests()) {
@@ -199,6 +228,7 @@ public class TestGroupBase extends AbstractRunner {
 				for (CmisTestResult result : test.getResults()) {
 					if (result.getStatus() == CmisTestResultStatus.FAILURE ||
 						result.getStatus() == CmisTestResultStatus.UNEXPECTED_EXCEPTION) {
+
 						hasFailures = true;
 
 						// Collect detailed failure information

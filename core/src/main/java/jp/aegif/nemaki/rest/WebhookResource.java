@@ -45,6 +45,8 @@ import org.json.simple.JSONObject;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 
+import jp.aegif.nemaki.audit.AuditLogger;
+import jp.aegif.nemaki.audit.AuditOperation;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.WebhookService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
@@ -121,6 +123,89 @@ public class WebhookResource extends ResourceBase {
             log.debug("Could not find contentService: " + e.getMessage());
         }
         return null;
+    }
+
+    private AuditLogger getAuditLogger() {
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean("auditLogger", AuditLogger.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Get all webhook configurations across all webhookable objects in the repository.
+     * Returns a flat list of objects with their webhook configs and resolved paths.
+     * Requires admin authorization.
+     *
+     * GET /rest/repo/{repositoryId}/webhook/configs
+     */
+    @SuppressWarnings("unchecked")
+    @GET
+    @Path("/configs")
+    @Produces(MediaType.APPLICATION_JSON)
+    public String getAllWebhookConfigs(
+            @PathParam("repositoryId") String repositoryId,
+            @Context HttpServletRequest request) {
+
+        boolean status = true;
+        JSONObject result = new JSONObject();
+        JSONArray errMsg = new JSONArray();
+
+        if (!checkAdmin(errMsg, request)) {
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
+
+        try {
+            WebhookService ws = getWebhookService();
+            ContentService cs = getContentService();
+
+            if (ws == null || cs == null) {
+                status = false;
+                addErrMsg(errMsg, "service", "Required services not available");
+            } else {
+                List<Content> webhookableObjects = ws.getAllWebhookableObjects(repositoryId);
+                JSONArray objectsArray = new JSONArray();
+
+                for (Content content : webhookableObjects) {
+                    List<WebhookConfig> configs = ws.getAllWebhookConfigs(repositoryId, content);
+                    if (configs.isEmpty()) {
+                        continue;
+                    }
+
+                    JSONObject objJson = new JSONObject();
+                    objJson.put("objectId", content.getId());
+                    objJson.put("objectName", content.getName());
+
+                    // Resolve path
+                    try {
+                        String path = cs.calculatePath(repositoryId, content);
+                        objJson.put("objectPath", path);
+                    } catch (Exception e) {
+                        log.debug("Could not resolve path for " + content.getId() + ": " + e.getMessage());
+                        objJson.put("objectPath", null);
+                    }
+
+                    JSONArray configsArray = new JSONArray();
+                    for (WebhookConfig config : configs) {
+                        configsArray.add(buildWebhookConfigJson(config));
+                    }
+                    objJson.put("webhookConfigs", configsArray);
+                    objectsArray.add(objJson);
+                }
+
+                result.put("objects", objectsArray);
+            }
+        } catch (Exception e) {
+            log.error("Error getting all webhook configs: " + e.getMessage(), e);
+            status = false;
+            addErrMsg(errMsg, "configs", "Failed to get webhook configs: " + e.getMessage());
+        }
+
+        result = makeResult(status, result, errMsg);
+        return result.toJSONString();
     }
 
     /**
@@ -277,14 +362,25 @@ public class WebhookResource extends ResourceBase {
                     if (testResult.getResponseBody() != null) {
                         result.put("responseBody", testResult.getResponseBody());
                     }
+
+                    AuditLogger audit = getAuditLogger();
+                    if (audit != null) {
+                        audit.logOperation(AuditOperation.WEBHOOK_TEST, repositoryId,
+                                getCallContextUsername(request), null, testResult.isSuccess(), null);
+                    }
                 }
             }
         } catch (Exception e) {
             log.error("Error testing webhook: " + e.getMessage(), e);
             status = false;
             addErrMsg(errMsg, "test", "Failed to test webhook: " + e.getMessage());
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.WEBHOOK_TEST, repositoryId,
+                        getCallContextUsername(request), null, false, e.getMessage());
+            }
         }
-        
+
         result = makeResult(status, result, errMsg);
         return result.toJSONString();
     }
@@ -417,6 +513,12 @@ public class WebhookResource extends ResourceBase {
 
                         result.put("webhookId", newConfig.getId());
                         result.put("objectId", objectId);
+
+                        AuditLogger audit = getAuditLogger();
+                        if (audit != null) {
+                            audit.logOperation(AuditOperation.WEBHOOK_CREATE, repositoryId,
+                                    getCallContextUsername(request), objectId, true, null);
+                        }
                     }
                 }
             }
@@ -424,6 +526,11 @@ public class WebhookResource extends ResourceBase {
             log.error("Error adding webhook config: " + e.getMessage(), e);
             status = false;
             addErrMsg(errMsg, "config", "Failed to add webhook config: " + e.getMessage());
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.WEBHOOK_CREATE, repositoryId,
+                        getCallContextUsername(request), objectId, false, e.getMessage());
+            }
         }
 
         result = makeResult(status, result, errMsg);
@@ -498,6 +605,12 @@ public class WebhookResource extends ResourceBase {
                         ws.saveWebhookConfigs(repositoryId, objectId, configs);
                         result.put("webhookId", webhookId);
                         result.put("objectId", objectId);
+
+                        AuditLogger audit = getAuditLogger();
+                        if (audit != null) {
+                            audit.logOperation(AuditOperation.WEBHOOK_UPDATE, repositoryId,
+                                    getCallContextUsername(request), objectId, true, null);
+                        }
                     }
                 }
             }
@@ -505,6 +618,11 @@ public class WebhookResource extends ResourceBase {
             log.error("Error updating webhook config: " + e.getMessage(), e);
             status = false;
             addErrMsg(errMsg, "config", "Failed to update webhook config: " + e.getMessage());
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.WEBHOOK_UPDATE, repositoryId,
+                        getCallContextUsername(request), objectId, false, e.getMessage());
+            }
         }
 
         result = makeResult(status, result, errMsg);
@@ -563,6 +681,12 @@ public class WebhookResource extends ResourceBase {
                         ws.saveWebhookConfigs(repositoryId, objectId, configs);
                         result.put("webhookId", webhookId);
                         result.put("objectId", objectId);
+
+                        AuditLogger audit = getAuditLogger();
+                        if (audit != null) {
+                            audit.logOperation(AuditOperation.WEBHOOK_DELETE, repositoryId,
+                                    getCallContextUsername(request), objectId, true, null);
+                        }
                     }
                 }
             }
@@ -570,6 +694,11 @@ public class WebhookResource extends ResourceBase {
             log.error("Error deleting webhook config: " + e.getMessage(), e);
             status = false;
             addErrMsg(errMsg, "config", "Failed to delete webhook config: " + e.getMessage());
+            AuditLogger audit = getAuditLogger();
+            if (audit != null) {
+                audit.logOperation(AuditOperation.WEBHOOK_DELETE, repositoryId,
+                        getCallContextUsername(request), objectId, false, e.getMessage());
+            }
         }
 
         result = makeResult(status, result, errMsg);

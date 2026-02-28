@@ -136,6 +136,21 @@ public enum AuditOperation {
     SOLR_REINDEX("solrReindex", "Solr reindex initiated"),
     SOLR_CLEAR("solrClear", "Solr index cleared"),
 
+    // Webhook operations
+    WEBHOOK_CREATE("webhookCreate", "Webhook created"),
+    WEBHOOK_UPDATE("webhookUpdate", "Webhook updated"),
+    WEBHOOK_DELETE("webhookDelete", "Webhook deleted"),
+    WEBHOOK_TEST("webhookTest", "Webhook test sent"),
+
+    // RSS operations
+    RSS_TOKEN_CREATE("rssTokenCreate", "RSS token created"),
+    RSS_TOKEN_UPDATE("rssTokenUpdate", "RSS token updated"),
+    RSS_TOKEN_DELETE("rssTokenDelete", "RSS token deleted"),
+
+    // Import/Export operations
+    IMPORT_EXECUTE("importExecute", "Repository import executed"),
+    EXPORT_EXECUTE("exportExecute", "Repository export executed"),
+
     // Unknown operation (fallback)
     UNKNOWN("unknown", "Unknown operation");
 
@@ -277,6 +292,21 @@ public enum AuditOperation {
         // Solr operations
         if (lowerMethod.contains("reindex")) return SOLR_REINDEX;
         if (lowerMethod.contains("solrclear")) return SOLR_CLEAR;
+
+        // Webhook operations
+        if (lowerMethod.contains("webhookcreate")) return WEBHOOK_CREATE;
+        if (lowerMethod.contains("webhookupdate")) return WEBHOOK_UPDATE;
+        if (lowerMethod.contains("webhookdelete")) return WEBHOOK_DELETE;
+        if (lowerMethod.contains("webhooktest")) return WEBHOOK_TEST;
+
+        // RSS operations
+        if (lowerMethod.contains("rsstokencreate")) return RSS_TOKEN_CREATE;
+        if (lowerMethod.contains("rsstokenupdate")) return RSS_TOKEN_UPDATE;
+        if (lowerMethod.contains("rsstokendelete")) return RSS_TOKEN_DELETE;
+
+        // Import/Export operations
+        if (lowerMethod.contains("importexecute")) return IMPORT_EXECUTE;
+        if (lowerMethod.contains("exportexecute")) return EXPORT_EXECUTE;
 
         return UNKNOWN;
     }

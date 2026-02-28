@@ -45,7 +45,7 @@ public class RssTokenService {
     private static final Log log = LogFactory.getLog(RssTokenService.class);
     
     private static final int TOKEN_LENGTH = 32;
-    private static final int DEFAULT_EXPIRY_DAYS = 30;
+    private static final int DEFAULT_EXPIRY_DAYS = 365;
     private static final int MAX_EXPIRY_DAYS = 365;
     
     private final SecureRandom secureRandom = new SecureRandom();

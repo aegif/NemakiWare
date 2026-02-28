@@ -316,11 +316,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     const urlParams = new URLSearchParams(window.location.search);
     const fromUrl = urlParams.get('currentFolderId');
     if (fromUrl) {
-      console.log('[DocumentList] Initial currentFolderId from URL:', fromUrl);
       return fromUrl;
     }
     const saved = sessionStorage.getItem(`nemakiware_currentFolderId_${repositoryId}`);
-    console.log('[DocumentList] Initial currentFolderId from sessionStorage:', saved);
     return saved || '';
   });
   // Track if currentFolderId has been explicitly set by user action (not just defaulted to ROOT)
@@ -337,7 +335,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // This prevents overwriting the saved value with ROOT during initialization
   useEffect(() => {
     if (currentFolderId && repositoryId && currentFolderIdIsUserSet) {
-      console.log('[DocumentList] Saving currentFolderId to sessionStorage:', currentFolderId);
       sessionStorage.setItem(`nemakiware_currentFolderId_${repositoryId}`, currentFolderId);
     }
   }, [currentFolderId, repositoryId, currentFolderIdIsUserSet]);
@@ -355,7 +352,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     if (repositoryId && !currentFolderId) {
       const saved = sessionStorage.getItem(`nemakiware_currentFolderId_${repositoryId}`);
       if (saved) {
-        console.log('[DocumentList] Rehydrating currentFolderId from sessionStorage:', saved);
         setCurrentFolderId(saved);
         setCurrentFolderIdIsUserSet(true);
       }
@@ -442,13 +438,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [selectedCloudFile, setSelectedCloudFile] = useState<GoogleDriveFile | OneDriveFile | null>(null);
 
   // Debug: Log component mount/unmount
-  useEffect(() => {
-    console.log('[DocumentList] Component MOUNTED, URL:', window.location.href);
-    return () => {
-      console.log('[DocumentList] Component UNMOUNTED');
-    };
-  }, []);
-
   // Load cloud auth config for cloud import buttons (2026-02-03)
   useEffect(() => {
     fetchCloudAuthConfig().then(setCloudAuthConfig).catch(() => {});
@@ -460,27 +449,20 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // This allows the tree pivot to be preserved even when viewing different folders
   useEffect(() => {
     const folderIdFromUrl = searchParams.get('folderId');
-    console.log('[DocumentList] URL useEffect triggered');
-    console.log('[DocumentList] folderIdFromUrl:', folderIdFromUrl);
-    console.log('[DocumentList] current selectedFolderId:', selectedFolderId);
-    console.log('[DocumentList] current currentFolderId:', currentFolderId);
 
     if (folderIdFromUrl) {
       // URL determines which folder's contents to display (selectedFolderId)
       // Do NOT change currentFolderId - it should only change when user explicitly clicks an already-selected folder
       if (folderIdFromUrl !== selectedFolderId) {
-        console.log('[DocumentList] Setting selectedFolderId to:', folderIdFromUrl);
         setSelectedFolderId(folderIdFromUrl);
       }
       // REMOVED: Do not set currentFolderId from URL
       // currentFolderId is preserved via sessionStorage and user action only
     } else if (!selectedFolderId) {
       // Default to root folder if no URL parameter and no selected folder
-      console.log('[DocumentList] No folderId in URL, defaulting to ROOT');
       setSelectedFolderId(ROOT_FOLDER_ID);
       // Only set currentFolderId to ROOT if not already set (from sessionStorage)
       if (!currentFolderId) {
-        console.log('[DocumentList] Setting currentFolderId to ROOT (no sessionStorage value)');
         setCurrentFolderId(ROOT_FOLDER_ID);
       }
       setSearchParams({ folderId: ROOT_FOLDER_ID });
@@ -581,6 +563,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         if (repositoryId) {
           sessionStorage.removeItem(`nemakiware_selectedFolderId_${repositoryId}`);
           sessionStorage.removeItem(`nemakiware_currentFolderId_${repositoryId}`);
+          sessionStorage.removeItem(`nemakiware_expandedKeys_${repositoryId}`);
         }
         setSelectedFolderId(ROOT_FOLDER_ID);
         setCurrentFolderId(ROOT_FOLDER_ID);
@@ -598,6 +581,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             if (repositoryId) {
               sessionStorage.removeItem(`nemakiware_selectedFolderId_${repositoryId}`);
               sessionStorage.removeItem(`nemakiware_currentFolderId_${repositoryId}`);
+              sessionStorage.removeItem(`nemakiware_expandedKeys_${repositoryId}`);
             }
             setSelectedFolderId(rootFolder.id);
             setCurrentFolderId(rootFolder.id);
@@ -1719,7 +1703,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         <Col span={18}>
           <Card>
             <Space direction="vertical" style={{ width: '100%' }}>
-              {/* 1段目: ナビゲーション + 検索 */}
+              {/* 1段目: ナビゲーション（Up + パンくずリスト全幅） */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, minHeight: 32 }}>
                 <Button
                   icon={<UpOutlined />}
@@ -1731,21 +1715,22 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   {t('documentList.up')}
                 </Button>
                 <Breadcrumb items={breadcrumbItems} style={{ flex: 1, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }} />
+              </div>
+              {/* 2段目: 検索（左寄せ） + アクションボタン（右寄せ） */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
                 <Input
                   placeholder={t('documentList.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onPressEnter={handleSearch}
-                  style={{ width: 200, flexShrink: 0, marginLeft: 'auto' }}
+                  style={{ width: 200, flexShrink: 0 }}
                   className="search-input"
                 />
                 <Button onClick={handleSearch} className="search-button" style={{ flexShrink: 0 }}>{t('common.search')}</Button>
                 {isSearchMode && (
                   <Button onClick={handleClearSearch} style={{ flexShrink: 0 }}>{t('common.clear')}</Button>
                 )}
-              </div>
-              {/* 2段目: アクションボタン */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8, justifyContent: 'flex-end' }}>
+                <div style={{ marginLeft: 'auto' }} />  {/* スペーサー: 以降のボタンを右寄せ */}
                 {canCreateDoc && (
                   <Button
                     type="primary"

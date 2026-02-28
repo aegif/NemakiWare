@@ -192,6 +192,8 @@ SimpleQueryTest.*
 !core/src/test/java/jp/aegif/nemaki/archive/*Test.java
 # Exception: Keep CMIS behavior-fixing integration test
 !core/src/test/java/jp/aegif/nemaki/cmis/tck/tests/VersioningBehaviorTest.java
+# Exception: Keep CompileService unit tests
+!core/src/test/java/jp/aegif/nemaki/cmis/aspect/impl/*Test.java
 
 # Runtime logs and configuration
 jetty-*.log

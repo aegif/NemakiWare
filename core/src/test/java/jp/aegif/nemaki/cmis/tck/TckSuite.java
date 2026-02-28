@@ -18,7 +18,8 @@ import org.junit.rules.ExternalResource;
 
 import jp.aegif.nemaki.cmis.tck.tests.BasicsTestGroup;
 import jp.aegif.nemaki.cmis.tck.tests.ControlTestGroup;
-import jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup;
+import jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup1;
+import jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup2;
 import jp.aegif.nemaki.cmis.tck.tests.FilingTestGroup;
 import jp.aegif.nemaki.cmis.tck.tests.QueryTestGroup;
 import jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup;
@@ -83,7 +84,7 @@ public class TckSuite extends TestGroupBase{
 				_group = new DummyTestGroup(new org.apache.chemistry.opencmis.tck.tests.basics.BasicsTestGroup());
 			}else if(simpleClassName.equals(ControlTestGroup.class.getSimpleName())){
 				_group = new DummyTestGroup(new org.apache.chemistry.opencmis.tck.tests.control.ControlTestGroup());
-			}else if(simpleClassName.equals(CrudTestGroup.class.getSimpleName())){
+			}else if(simpleClassName.equals(CrudTestGroup1.class.getSimpleName()) || simpleClassName.equals(CrudTestGroup2.class.getSimpleName())){
 				_group = new DummyTestGroup(new org.apache.chemistry.opencmis.tck.tests.crud.CRUDTestGroup());
 			}else if(simpleClassName.equals(FilingTestGroup.class.getSimpleName())){
 				_group = new DummyTestGroup(new org.apache.chemistry.opencmis.tck.tests.filing.FilingTestGroup());

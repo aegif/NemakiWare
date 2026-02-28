@@ -101,17 +101,26 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 			log.debug("getContentChanges called for repository: " + repositoryId);
 		}
 		
-		org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl result = 
-			new org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl();
-		result.setObjects(new java.util.ArrayList<org.apache.chemistry.opencmis.commons.data.ObjectData>());
-		result.setHasMoreItems(false);
-		result.setNumItems(BigInteger.ZERO);
-		
-		if (changeLogToken != null) {
-			changeLogToken.setValue("0");
+		// Ensure changeLogToken holder exists (first poll may pass null)
+		if (changeLogToken == null) {
+			changeLogToken = new Holder<String>();
 		}
 		
-		return result;
+		// Default maxItems to 100 if not specified
+		if (maxItems == null) {
+			maxItems = BigInteger.valueOf(100);
+		}
+		
+		// ContentService経由で変更イベント取得
+		List<Change> changes = contentService.getLatestChanges(
+			repositoryId, callContext, changeLogToken,
+			includeProperties, filter, includePolicyIds,
+			includeAcl, maxItems, extension);
+		
+		// CompileServiceで ObjectList に変換
+		return compileService.compileChangeDataList(
+			callContext, repositoryId, changes, changeLogToken,
+			includeProperties, filter, includePolicyIds, includeAcl);
 	}
 
 	public void setQueryProcessor(QueryProcessor queryProcessor) {

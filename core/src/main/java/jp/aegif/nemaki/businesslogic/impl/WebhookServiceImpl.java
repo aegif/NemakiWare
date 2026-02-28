@@ -108,6 +108,7 @@ public class WebhookServiceImpl implements WebhookService {
     private WebhookDeliveryService deliveryService;
     private WebhookDispatcher dispatcher;
     private WebhookDaoService webhookDaoService;
+    private jp.aegif.nemaki.dao.ContentDaoService contentDaoService;
     
     private ExecutorService executorService;
     private ChildEventBatchProcessor childEventBatchProcessor;
@@ -161,6 +162,10 @@ public class WebhookServiceImpl implements WebhookService {
     public void setWebhookDaoService(WebhookDaoService webhookDaoService) {
         this.webhookDaoService = webhookDaoService;
     }
+
+    public void setContentDaoService(jp.aegif.nemaki.dao.ContentDaoService contentDaoService) {
+        this.contentDaoService = contentDaoService;
+    }
     
     @Override
     public void triggerWebhook(CallContext callContext, String repositoryId, 
@@ -189,6 +194,12 @@ public class WebhookServiceImpl implements WebhookService {
             return;
         }
         
+        // Capture immutable snapshot of content fields upfront.
+        // The Content object may be a shared mutable reference from the cache layer.
+        final String objectId = content.getId();
+        final String parentId = content.getParentId();
+        final String changeToken = content.getChangeToken();
+        
         // Trigger CHILD_* events on parent folder BEFORE checking own/inherited configs.
         // This must run independently because CHILD_* configs live on the parent folder
         // and are matched via a separate path (triggerChildEventOnParent), not via
@@ -199,7 +210,7 @@ public class WebhookServiceImpl implements WebhookService {
             triggerChildEventOnParent(callContext, repositoryId, content, eventType, additionalProperties);
         } catch (Exception e) {
             log.warn("triggerWebhook: CHILD event processing failed for object "
-                     + content.getId() + ": " + e.getMessage());
+                     + objectId + ": " + e.getMessage());
         }
         
         // Get webhook configurations for this content
@@ -210,7 +221,7 @@ public class WebhookServiceImpl implements WebhookService {
         configs.addAll(inheritedConfigs);
         
         if (configs.isEmpty()) {
-            log.debug("triggerWebhook: no webhook configs found for object: " + content.getId());
+            log.debug("triggerWebhook: no webhook configs found for object: " + objectId);
             return;
         }
         
@@ -223,17 +234,70 @@ public class WebhookServiceImpl implements WebhookService {
         }
         
         log.info("triggerWebhook: found " + matchingConfigs.size() + 
-                 " matching configs for event: " + eventType + " on object: " + content.getId());
+                 " matching configs for event: " + eventType + " on object: " + objectId);
         
-        // Build properties map for payload
+        // buildPropertiesMap copies primitive values into a new HashMap — safe snapshot
         Map<String, Object> properties = buildPropertiesMap(content, additionalProperties);
         
-        // Get change token
-        String changeToken = content.getChangeToken();
-        
-        // Dispatch webhooks asynchronously
+        // From this point on, only immutable snapshots are passed to async dispatch
         for (WebhookConfig config : matchingConfigs) {
-            dispatchWebhookAsync(callContext, repositoryId, content, eventType, 
+            dispatchWebhookAsync(callContext, repositoryId, objectId, parentId, eventType, 
+                                 config, properties, changeToken);
+        }
+    }
+
+    @Override
+    public void triggerWebhookByEventType(CallContext callContext, String repositoryId,
+                                          Content content, String eventType,
+                                          Map<String, Object> additionalProperties) {
+        if (content == null || repositoryId == null || repositoryId.isEmpty()) {
+            return;
+        }
+        if (eventType == null || !eventMatcher.isValidEventType(eventType)) {
+            log.debug("triggerWebhookByEventType: unsupported event type: " + eventType);
+            return;
+        }
+
+        // Capture immutable snapshot of content fields upfront.
+        // The Content object may be a shared mutable reference from the cache layer
+        // (cached ContentDaoServiceImpl returns the cache entry directly).
+        // All reads from 'content' must happen synchronously in this method,
+        // never inside async lambdas.
+        final String objectId = content.getId();
+        final String parentId = content.getParentId();
+        final String changeToken = content.getChangeToken();
+
+        // Trigger CHILD_* events on parent folder
+        try {
+            triggerChildEventOnParent(callContext, repositoryId, content, eventType, additionalProperties);
+        } catch (Exception e) {
+            log.warn("triggerWebhookByEventType: CHILD event processing failed for object "
+                     + objectId + ": " + e.getMessage());
+        }
+
+        // Get webhook configurations for this content (own + inherited)
+        List<WebhookConfig> configs = getWebhookConfigs(repositoryId, content);
+        configs.addAll(getInheritedWebhookConfigs(repositoryId, content));
+
+        if (configs.isEmpty()) {
+            return;
+        }
+
+        List<WebhookConfig> matchingConfigs = eventMatcher.findMatchingConfigs(configs, eventType);
+        if (matchingConfigs.isEmpty()) {
+            return;
+        }
+
+        log.info("triggerWebhookByEventType: found " + matchingConfigs.size() +
+                 " matching configs for event: " + eventType + " on object: " + objectId);
+
+        // buildPropertiesMap copies primitive values into a new HashMap — safe snapshot
+        Map<String, Object> properties = buildPropertiesMap(content, additionalProperties);
+
+        // From this point on, only immutable snapshots (objectId, parentId, changeToken,
+        // properties) are passed to async dispatch — no Content reference leaks.
+        for (WebhookConfig config : matchingConfigs) {
+            dispatchWebhookAsync(callContext, repositoryId, objectId, parentId, eventType,
                                  config, properties, changeToken);
         }
     }
@@ -304,10 +368,15 @@ public class WebhookServiceImpl implements WebhookService {
     }
     
     /**
-     * Dispatch a webhook asynchronously and persist delivery log
+     * Dispatch a webhook asynchronously and persist delivery log.
+     *
+     * All parameters must be immutable snapshots captured before this call.
+     * In particular, objectId and parentId must NOT be read from a shared Content
+     * reference inside the async lambda, because the Content object may be mutated
+     * by another thread after the write lock is released.
      */
     private void dispatchWebhookAsync(CallContext callContext, String repositoryId,
-                                       Content content, String eventType,
+                                       String objectId, String parentId, String eventType,
                                        WebhookConfig config, Map<String, Object> properties,
                                        String changeToken) {
         
@@ -315,12 +384,12 @@ public class WebhookServiceImpl implements WebhookService {
             try {
                 // Build payload
                 WebhookPayload payload = deliveryService.buildPayload(
-                    eventType, content.getId(), repositoryId, properties, changeToken
+                    eventType, objectId, repositoryId, properties, changeToken
                 );
                 
                 // Add additional context
-                if (content.getParentId() != null) {
-                    payload.setParentId(content.getParentId());
+                if (parentId != null) {
+                    payload.setParentId(parentId);
                 }
                 if (callContext != null && callContext.getUsername() != null) {
                     payload.setUserId(callContext.getUsername());
@@ -353,7 +422,7 @@ public class WebhookServiceImpl implements WebhookService {
                     WebhookDeliveryLog deliveryLog = new WebhookDeliveryLog();
                     deliveryLog.setDeliveryId(payload.getDeliveryId());
                     deliveryLog.setWebhookId(config.getId());
-                    deliveryLog.setObjectId(content.getId());
+                    deliveryLog.setObjectId(objectId);
                     deliveryLog.setRepositoryId(repositoryId);
                     deliveryLog.setWebhookUrl(config.getUrl());
                     deliveryLog.setEventType(eventType);
@@ -896,6 +965,15 @@ public class WebhookServiceImpl implements WebhookService {
         }
         
         return result;
+    }
+
+    @Override
+    public List<Content> getAllWebhookableObjects(String repositoryId) {
+        if (contentDaoService == null) {
+            log.warn("contentDaoService is not injected, cannot get webhookable objects");
+            return new ArrayList<>();
+        }
+        return contentDaoService.getContentsBySecondaryType(repositoryId, WEBHOOKABLE_SECONDARY_TYPE);
     }
     
     /**

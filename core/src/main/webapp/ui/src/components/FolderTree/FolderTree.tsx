@@ -80,12 +80,24 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   const [loading, setLoading] = useState(true);
   const [currentFolderId, setCurrentFolderId] = useState<string>('');
   const [selectedFolderId, setSelectedFolderId] = useState<string>('');
-  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>(() => {
+    try {
+      const saved = sessionStorage.getItem(`nemakiware_expandedKeys_${repositoryId}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [folderCache, setFolderCache] = useState<Map<string, CMISObject>>(new Map());
 
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
   const config = getCurrentFolderTreeConfig();
+
+  // Persist expandedKeys to sessionStorage
+  useEffect(() => {
+    if (repositoryId && expandedKeys.length > 0) {
+      sessionStorage.setItem(`nemakiware_expandedKeys_${repositoryId}`, JSON.stringify(expandedKeys));
+    }
+  }, [expandedKeys, repositoryId]);
 
   // Sync with external selected folder
   useEffect(() => {
@@ -97,9 +109,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   // Sync with external current folder
   // CRITICAL FIX (2025-12-29): Properly handle external currentFolderId when returning from DocumentViewer
   useEffect(() => {
-    console.log('[FolderTree] External sync effect - externalCurrentFolderId:', externalCurrentFolderId, 'internal:', currentFolderId);
     if (externalCurrentFolderId && externalCurrentFolderId !== currentFolderId) {
-      console.log('[FolderTree] Syncing to external currentFolderId:', externalCurrentFolderId);
       setCurrentFolderId(externalCurrentFolderId);
       loadTreeFromFolder(externalCurrentFolderId);
     }
@@ -108,12 +118,10 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   // Initial load - get root folder and build tree
   // Only load root if no external currentFolderId is provided
   useEffect(() => {
-    console.log('[FolderTree] Initial load effect - externalCurrentFolderId:', externalCurrentFolderId);
     if (!externalCurrentFolderId) {
       loadRootFolder();
     } else {
       // External currentFolderId provided - load tree from that folder
-      console.log('[FolderTree] Using external currentFolderId:', externalCurrentFolderId);
       loadTreeFromFolder(externalCurrentFolderId);
     }
   }, [repositoryId, externalCurrentFolderId]);
@@ -146,19 +154,15 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
       // CRITICAL FIX (2025-12-29): Only set currentFolderId to root if not externally provided
       // externalCurrentFolderId comes from sessionStorage (preserved tree pivot point)
       if (!externalCurrentFolderId) {
-        console.log('[FolderTree] loadRootFolder: Setting currentFolderId to root (no external)');
         setCurrentFolderId(rootFolder.id);
       } else {
-        console.log('[FolderTree] loadRootFolder: Keeping external currentFolderId:', externalCurrentFolderId);
       }
 
       // CRITICAL FIX (2025-12-29): Only set selectedFolderId to root if not externally provided
       // externalSelectedFolderId comes from URL (folder being viewed)
       if (!externalSelectedFolderId) {
-        console.log('[FolderTree] loadRootFolder: Setting selectedFolderId to root (no external)');
         setSelectedFolderId(rootFolder.id);
       } else {
-        console.log('[FolderTree] loadRootFolder: Keeping external selectedFolderId:', externalSelectedFolderId);
       }
 
       // Build tree around the effective current folder
@@ -206,9 +210,12 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
       const tree = buildTreeStructure(ancestors, folder, children);
       setTreeData(tree);
 
-      // Expand all ancestors and current folder
+      // Expand all ancestors and current folder, merging with previously saved keys
       const keysToExpand = [...ancestors.map(a => a.id), folderId];
-      setExpandedKeys(keysToExpand);
+      setExpandedKeys(prev => {
+        const merged = new Set([...prev, ...keysToExpand]);
+        return Array.from(merged);
+      });
 
     } catch (error) {
       console.error('Failed to load tree from folder:', error);

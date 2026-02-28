@@ -22,15 +22,21 @@
 package jp.aegif.nemaki.rest;
 
 import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.GregorianCalendar;
 import java.util.List;
 
+import jakarta.servlet.http.HttpServletRequest;
+
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.junit.Before;
 import org.junit.Test;
 
+import jp.aegif.nemaki.businesslogic.WebhookService;
+import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.webhook.WebhookConfig;
 import jp.aegif.nemaki.webhook.WebhookDeliveryLog;
 
@@ -395,5 +401,91 @@ public class WebhookResourceTest {
         org.json.simple.JSONObject json = (org.json.simple.JSONObject) method.invoke(resource, config);
 
         assertNull(json.get("maxDepth"));
+    }
+
+    // ---------------------------------------------------------------
+    // getAllWebhookConfigs — DAO failure propagation tests
+    // ---------------------------------------------------------------
+
+    /**
+     * Mangoクエリ失敗（findBySelector → RuntimeException）時に
+     * getAllWebhookConfigs がstatus:failの応答を返すことを検証。
+     * findBySelectorが例外を握りつぶしていた旧実装では空データ成功に見えていた。
+     */
+    @Test
+    public void testGetAllWebhookConfigs_DaoFailure_ReturnsFailureResponse() throws Exception {
+        // Setup: mock WebhookService that throws RuntimeException (simulating Mango query failure)
+        WebhookService mockWs = mock(WebhookService.class);
+        when(mockWs.getAllWebhookableObjects("bedroom"))
+            .thenThrow(new RuntimeException("Mango query failed: Connection refused"));
+
+        // Inject mock WebhookService via reflection
+        java.lang.reflect.Field wsField = WebhookResource.class.getDeclaredField("webhookService");
+        wsField.setAccessible(true);
+        wsField.set(resource, mockWs);
+
+        // Also inject mock ContentService (required to pass null check before getAllWebhookableObjects is called)
+        jp.aegif.nemaki.businesslogic.ContentService mockCs = mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+        java.lang.reflect.Field csField = WebhookResource.class.getDeclaredField("contentService");
+        csField.setAccessible(true);
+        csField.set(resource, mockCs);
+
+        // Setup: mock HttpServletRequest with admin CallContext
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        CallContext mockCallContext = mock(CallContext.class);
+        when(mockCallContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(mockCallContext.getRepositoryId()).thenReturn("bedroom");
+        when(mockRequest.getAttribute("CallContext")).thenReturn(mockCallContext);
+
+        // Execute
+        String responseJson = resource.getAllWebhookConfigs("bedroom", mockRequest);
+
+        // Verify: response indicates failure
+        org.json.simple.parser.JSONParser parser = new org.json.simple.parser.JSONParser();
+        org.json.simple.JSONObject response = (org.json.simple.JSONObject) parser.parse(responseJson);
+
+        assertEquals("failure", response.get("status"));
+        org.json.simple.JSONArray errors = (org.json.simple.JSONArray) response.get("error");
+        assertNotNull("Failure response must contain 'error' array", errors);
+        assertTrue("Error message should mention Mango query failure",
+            errors.toString().contains("Mango query failed"));
+    }
+
+    /**
+     * DAO正常（空結果）時にはstatus:okで空objectsを返すことを検証。
+     * 障害と空データが正しく区別されることを確認。
+     */
+    @Test
+    public void testGetAllWebhookConfigs_EmptyResult_ReturnsSuccessResponse() throws Exception {
+        // Setup: mock WebhookService that returns empty list (no webhookable objects)
+        WebhookService mockWs = mock(WebhookService.class);
+        when(mockWs.getAllWebhookableObjects("bedroom")).thenReturn(new ArrayList<>());
+
+        java.lang.reflect.Field wsField = WebhookResource.class.getDeclaredField("webhookService");
+        wsField.setAccessible(true);
+        wsField.set(resource, mockWs);
+
+        // ContentService is also needed (but won't be called since no objects)
+        // Inject a non-null ContentService to pass the null check
+        jp.aegif.nemaki.businesslogic.ContentService mockCs = mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+        java.lang.reflect.Field csField = WebhookResource.class.getDeclaredField("contentService");
+        csField.setAccessible(true);
+        csField.set(resource, mockCs);
+
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        CallContext mockCallContext = mock(CallContext.class);
+        when(mockCallContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(mockCallContext.getRepositoryId()).thenReturn("bedroom");
+        when(mockRequest.getAttribute("CallContext")).thenReturn(mockCallContext);
+
+        String responseJson = resource.getAllWebhookConfigs("bedroom", mockRequest);
+
+        org.json.simple.parser.JSONParser parser = new org.json.simple.parser.JSONParser();
+        org.json.simple.JSONObject response = (org.json.simple.JSONObject) parser.parse(responseJson);
+
+        assertEquals("success", response.get("status"));
+        org.json.simple.JSONArray objects = (org.json.simple.JSONArray) response.get("objects");
+        assertNotNull(objects);
+        assertEquals(0, objects.size());
     }
 }

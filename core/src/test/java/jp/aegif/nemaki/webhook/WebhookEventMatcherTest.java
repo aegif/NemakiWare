@@ -274,9 +274,59 @@ public class WebhookEventMatcherTest {
     }
     
     // ========================================
+    // CONTENT_UPDATED Event Type Tests (P2 Regression)
+    // ========================================
+
+    @Test
+    public void testContentUpdatedIsValidEventType() {
+        assertTrue("CONTENT_UPDATED should be a valid event type",
+            matcher.isValidEventType("CONTENT_UPDATED"));
+        assertTrue("content_updated (lowercase) should be valid",
+            matcher.isValidEventType("content_updated"));
+    }
+
+    @Test
+    public void testContentUpdatedInSupportedEventTypes() {
+        List<String> supported = matcher.getSupportedEventTypes();
+        assertTrue("Supported event types should include CONTENT_UPDATED",
+            supported.contains("CONTENT_UPDATED"));
+    }
+
+    @Test
+    public void testFindMatchingConfigsForContentUpdatedEvent() {
+        List<WebhookConfig> configs = Arrays.asList(
+            createConfig("webhook-1", true, Arrays.asList("CREATED", "CONTENT_UPDATED")),
+            createConfig("webhook-2", true, Arrays.asList("UPDATED")),
+            createConfig("webhook-3", true, Arrays.asList("CONTENT_UPDATED"))
+        );
+
+        List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "CONTENT_UPDATED");
+
+        assertEquals("Should find 2 matching configs for CONTENT_UPDATED", 2, matches.size());
+        assertTrue("Should include webhook-1",
+            matches.stream().anyMatch(c -> "webhook-1".equals(c.getId())));
+        assertTrue("Should include webhook-3",
+            matches.stream().anyMatch(c -> "webhook-3".equals(c.getId())));
+        assertFalse("Should not include webhook-2 (only has UPDATED, not CONTENT_UPDATED)",
+            matches.stream().anyMatch(c -> "webhook-2".equals(c.getId())));
+    }
+
+    @Test
+    public void testContentUpdatedIsNotChildEventType() {
+        assertFalse("CONTENT_UPDATED should not be a child event type",
+            matcher.isChildEventType("CONTENT_UPDATED"));
+    }
+
+    @Test
+    public void testContentUpdatedHasNoChildEventMapping() {
+        assertNull("CONTENT_UPDATED should not map to a CHILD_* event type",
+            matcher.toChildEventType("CONTENT_UPDATED"));
+    }
+
+    // ========================================
     // Helper Methods
     // ========================================
-    
+
     // ========================================
     // Unsupported Event Type Tests (Review Feedback)
     // ========================================

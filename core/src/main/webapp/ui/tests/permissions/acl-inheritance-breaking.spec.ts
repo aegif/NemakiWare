@@ -429,7 +429,7 @@ test.describe('ACL Inheritance Breaking', () => {
 
     expect(aclBeforeResponse.ok()).toBeTruthy();
     const aclBefore = await aclBeforeResponse.json();
-    const inheritedPermissionsCount = aclBefore.aces?.filter((ace: any) => !ace.direct).length || 0;
+    const inheritedPermissionsCount = aclBefore.aces?.filter((ace: any) => !ace.isDirect).length || 0;
     console.log(`Inherited permissions before breaking: ${inheritedPermissionsCount}`);
 
     const folderRow = await waitForTableRow(page, testFolderName);
@@ -488,8 +488,8 @@ test.describe('ACL Inheritance Breaking', () => {
       }
       // Use retry response
       const retryAcl = await retryResponse.json();
-      const retryInheritedCount = retryAcl.aces?.filter((ace: any) => !ace.direct).length || 0;
-      const retryDirectCount = retryAcl.aces?.filter((ace: any) => ace.direct).length || 0;
+      const retryInheritedCount = retryAcl.aces?.filter((ace: any) => !ace.isDirect).length || 0;
+      const retryDirectCount = retryAcl.aces?.filter((ace: any) => ace.isDirect).length || 0;
       console.log(`Retry - Inherited: ${retryInheritedCount}, Direct: ${retryDirectCount}`);
 
       expect(retryInheritedCount).toBe(0);
@@ -507,8 +507,8 @@ test.describe('ACL Inheritance Breaking', () => {
       return;
     }
     const aclAfter = await aclAfterResponse.json();
-    const inheritedPermissionsAfter = aclAfter.aces?.filter((ace: any) => !ace.direct).length || 0;
-    const directPermissionsAfter = aclAfter.aces?.filter((ace: any) => ace.direct).length || 0;
+    const inheritedPermissionsAfter = aclAfter.aces?.filter((ace: any) => !ace.isDirect).length || 0;
+    const directPermissionsAfter = aclAfter.aces?.filter((ace: any) => ace.isDirect).length || 0;
 
     console.log(`Inherited permissions after breaking: ${inheritedPermissionsAfter}`);
     console.log(`Direct permissions after breaking: ${directPermissionsAfter}`);

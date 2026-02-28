@@ -127,7 +127,12 @@ function verifyUserInACL(
   username: string,
   expectedPermissions?: string[]
 ): { exists: boolean; ace?: any } {
-  const ace = acl.aces?.find((a: any) => a.principalId === username);
+  // cmisselector=acl returns { principal: { principalId: "..." }, permissions: [...] }
+  // applyACL response returns { principal: "...", permissions: [...] }
+  const ace = acl.aces?.find((a: any) => {
+    const pid = typeof a.principal === 'object' ? a.principal?.principalId : a.principal;
+    return pid === username;
+  });
 
   if (!ace) {
     return { exists: false };
@@ -464,7 +469,10 @@ test.describe('ACL Operations - Error Cases', () => {
       console.log(`Test: Final ACL has ${finalCount} entries`);
 
       // Check that no empty principal was added
-      const emptyPrincipalAce = finalAcl.aces?.find((a: any) => a.principalId === '' || !a.principalId);
+      const emptyPrincipalAce = finalAcl.aces?.find((a: any) => {
+        const pid = typeof a.principal === 'object' ? a.principal?.principalId : a.principal;
+        return pid === '' || !pid;
+      });
       expect(emptyPrincipalAce).toBeUndefined();
       expect(finalCount).toBe(initialCount);
 

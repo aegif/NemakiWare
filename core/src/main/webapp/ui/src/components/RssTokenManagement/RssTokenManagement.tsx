@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card,
   Table,
@@ -20,6 +20,7 @@ import { PlusOutlined, DeleteOutlined, CopyOutlined, ReloadOutlined, FolderOutli
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { ObjectPicker } from '../ObjectPicker/ObjectPicker';
+import { getCmisAuthHeaders } from '../../services/auth/CmisAuthHeaderProvider';
 import type { CMISObject } from '../../types/cmis';
 
 const { Paragraph, Text } = Typography;
@@ -36,6 +37,8 @@ interface RssTokenData {
   createdAt?: string;
   expiresAt?: string;
   expired?: boolean;
+  folderIds?: string[];
+  events?: string[];
 }
 
 interface TokenFormValues {
@@ -50,7 +53,36 @@ interface SelectedFolder {
   name: string;
 }
 
+interface ResolvedFolder {
+  id: string;
+  name: string;
+  path: string | null;
+}
+
 const RSS_EVENTS = ['created', 'updated', 'deleted', 'security'];
+
+/** Resolve objectId -> path via CMIS browser binding */
+async function resolveObjectPath(
+  repositoryId: string,
+  objectId: string,
+  headers: Record<string, string>
+): Promise<{ name: string; path: string | null } | null> {
+  try {
+    const resp = await fetch(
+      `/core/browser/${repositoryId}/root?objectId=${encodeURIComponent(objectId)}&cmisselector=object&succinct=true`,
+      { headers, credentials: 'include' }
+    );
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const props = data.succinctProperties || {};
+    return {
+      name: props['cmis:name'] || objectId,
+      path: props['cmis:path'] || null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ repositoryId }) => {
   const { t } = useTranslation();
@@ -64,6 +96,17 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
   const [folderPickerVisible, setFolderPickerVisible] = useState(false);
   const [form] = Form.useForm<TokenFormValues>();
 
+  // Folder path cache: useRef to avoid stale closure in loadTokens callback.
+  // folderCacheRef holds the mutable cache; folderCacheVersion triggers re-render when cache updates.
+  const folderCacheRef = useRef<Record<string, ResolvedFolder>>({});
+  const [folderCacheVersion, setFolderCacheVersion] = useState(0);
+
+  // Track current repositoryId for stale response detection.
+  // Updated synchronously during render (not in useEffect) to ensure there is no
+  // window between re-render and effect execution where the ref holds a stale value.
+  const repositoryIdRef = useRef(repositoryId);
+  repositoryIdRef.current = repositoryId;
+
   const getHeaders = useCallback(() => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken?.token) {
@@ -72,30 +115,77 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
     return headers;
   }, [authToken]);
 
-  const loadTokens = useCallback(async () => {
+  const loadTokens = useCallback(async (signal?: AbortSignal) => {
     if (!authToken?.username) return;
+    const isStale = () => signal?.aborted || repositoryId !== repositoryIdRef.current;
     setLoading(true);
     try {
       const response = await fetch(
         `/core/rest/repo/${repositoryId}/rss/tokens?userId=${encodeURIComponent(authToken.username)}`,
-        { headers: getHeaders() }
+        { headers: getHeaders(), signal }
       );
+      if (isStale()) return;
       const data = await response.json();
+      if (isStale()) return;
       if (data.status === 'success') {
-        setTokens(data.tokens || []);
+        const tokenList: RssTokenData[] = data.tokens || [];
+        setTokens(tokenList);
+
+        // Resolve folder paths for all unique folderIds
+        const allFolderIds = new Set<string>();
+        for (const tk of tokenList) {
+          if (tk.folderIds) {
+            for (const fid of tk.folderIds) {
+              allFolderIds.add(fid);
+            }
+          }
+        }
+
+        const cmisHeaders = getCmisAuthHeaders();
+        const headers = { 'Content-Type': 'application/json', ...cmisHeaders };
+        const currentCache = folderCacheRef.current;
+        const newEntries: Record<string, ResolvedFolder> = {};
+        await Promise.all(
+          [...allFolderIds].map(async (fid) => {
+            if (currentCache[fid]) {
+              return; // already cached
+            }
+            const resolved = await resolveObjectPath(repositoryId, fid, headers);
+            newEntries[fid] = {
+              id: fid,
+              name: resolved?.name || fid,
+              path: resolved?.path || null,
+            };
+          })
+        );
+        if (isStale()) return;
+        if (Object.keys(newEntries).length > 0) {
+          folderCacheRef.current = { ...currentCache, ...newEntries };
+          setFolderCacheVersion(v => v + 1);
+        }
       } else {
         message.error(t('rssManagement.loadError'));
       }
-    } catch {
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      if (isStale()) return;
       message.error(t('rssManagement.loadError'));
     } finally {
-      setLoading(false);
+      if (!isStale()) {
+        setLoading(false);
+      }
     }
   }, [repositoryId, authToken, getHeaders, t]);
 
   useEffect(() => {
-    loadTokens();
-  }, [loadTokens]);
+    // Clear folder cache when repository changes
+    folderCacheRef.current = {};
+    setFolderCacheVersion(0);
+
+    const controller = new AbortController();
+    loadTokens(controller.signal);
+    return () => controller.abort();
+  }, [loadTokens]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCreate = async () => {
     try {
@@ -212,12 +302,39 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
     return `${base}/core/rest/repo/${repositoryId}/rss/folder/${folderId}?token=${token}&format=${format}`;
   };
 
+  const renderFolderLinks = (folderIds: string[] | undefined) => {
+    if (!folderIds || folderIds.length === 0) return '-';
+    void folderCacheVersion; // ensure re-render when cache updates
+    return (
+      <Space size={[0, 4]} wrap>
+        {folderIds.map(fid => {
+          const resolved = folderCacheRef.current[fid];
+          const label = resolved ? (resolved.path || resolved.name) : fid;
+          return (
+            <Tooltip key={fid} title={fid}>
+              <a href={`#/documents/${fid}`} style={{ fontSize: '12px' }}>
+                <FolderOutlined style={{ marginRight: 2 }} />
+                {label}
+              </a>
+            </Tooltip>
+          );
+        })}
+      </Space>
+    );
+  };
+
   const columns = [
     {
       title: t('rssManagement.name'),
       dataIndex: 'name',
       key: 'name',
       ellipsis: true,
+    },
+    {
+      title: t('rssManagement.targetFolders'),
+      key: 'targetFolders',
+      width: 250,
+      render: (_: unknown, record: RssTokenData) => renderFolderLinks(record.folderIds),
     },
     {
       title: t('rssManagement.status'),
@@ -230,6 +347,49 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         return record.enabled
           ? <Tag color="green">{t('rssManagement.active')}</Tag>
           : <Tag color="default">{t('rssManagement.disabled')}</Tag>;
+      },
+    },
+    {
+      title: t('rssManagement.feedUrlColumn'),
+      key: 'feedUrl',
+      width: 120,
+      render: (_: unknown, record: RssTokenData) => {
+        if (!record.token || !record.folderIds || record.folderIds.length === 0) {
+          return '-';
+        }
+        return (
+          <Tooltip
+            title={
+              <div style={{ maxWidth: 400 }}>
+                {record.folderIds.map(fid => {
+                  const resolved = folderCacheRef.current[fid];
+                  const folderLabel = resolved ? (resolved.path || resolved.name) : fid;
+                  return (
+                    <div key={fid} style={{ marginBottom: 8 }}>
+                      <div><strong>{folderLabel}</strong></div>
+                      <div style={{ fontSize: 11 }}>
+                        RSS: <Text copyable={{ text: buildFeedUrl(fid, record.token!, 'rss') }} style={{ fontSize: 11 }}>
+                          {buildFeedUrl(fid, record.token!, 'rss').substring(0, 50)}...
+                        </Text>
+                      </div>
+                      <div style={{ fontSize: 11 }}>
+                        Atom: <Text copyable={{ text: buildFeedUrl(fid, record.token!, 'atom') }} style={{ fontSize: 11 }}>
+                          {buildFeedUrl(fid, record.token!, 'atom').substring(0, 50)}...
+                        </Text>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            }
+            overlayStyle={{ maxWidth: 500 }}
+            trigger="click"
+          >
+            <Button type="link" size="small" icon={<LinkOutlined />}>
+              {t('rssManagement.showFeedUrls')}
+            </Button>
+          </Tooltip>
+        );
       },
     },
     {
@@ -294,7 +454,7 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
             form.resetFields();
             form.setFieldsValue({
               userId: authToken?.username || '',
-              expiryDays: 30,
+              expiryDays: 365,
               events: ['created', 'updated', 'deleted'],
             });
             setSelectedFolders([]);
@@ -381,8 +541,9 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
           <Form.Item
             name="expiryDays"
             label={t('rssManagement.expiryDays')}
+            extra={t('rssManagement.expiryDaysMax')}
           >
-            <InputNumber min={1} max={365} />
+            <InputNumber min={1} max={365} style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
@@ -406,7 +567,7 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         width={640}
         footer={[
           <Button key="copy" icon={<CopyOutlined />} onClick={() => newToken && copyToClipboard(newToken)}>
-            {t('rssManagement.copyFeedUrl')}
+            {t('rssManagement.copyToken')}
           </Button>,
           <Button key="ok" type="primary" onClick={() => { setNewToken(null); setNewTokenFolders([]); }}>
             OK

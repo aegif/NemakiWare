@@ -3,6 +3,14 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { TypeGUIEditor } from './TypeGUIEditor';
 import { TypeDefinition } from '../../types/cmis';
 
+// Stable mock references
+const STABLE_T = (key: string) => key;
+const STABLE_TRANSLATION = { t: STABLE_T, i18n: { language: 'en' } };
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => STABLE_TRANSLATION,
+}));
+
 const mockExistingTypes: TypeDefinition[] = [
   {
     id: 'cmis:document',
@@ -73,8 +81,8 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      expect(screen.getByText('GUIエディタ')).toBeInTheDocument();
-      expect(screen.getByText('JSONエディタ')).toBeInTheDocument();
+      expect(screen.getByText('typeManagement.guiEditor.guiEditorTab')).toBeInTheDocument();
+      expect(screen.getByText('typeManagement.guiEditor.jsonEditorTab')).toBeInTheDocument();
     });
 
     it('renders basic info panel', () => {
@@ -88,9 +96,8 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      expect(screen.getByText('基本情報')).toBeInTheDocument();
-      expect(screen.getByText('タイプオプション')).toBeInTheDocument();
-      expect(screen.getByText('プロパティ定義')).toBeInTheDocument();
+      expect(screen.getByText('typeManagement.guiEditor.basicInfo')).toBeInTheDocument();
+      expect(screen.getByText('typeManagement.guiEditor.typeOptions')).toBeInTheDocument();
     });
 
     it('renders update button for editing mode', () => {
@@ -105,11 +112,8 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      // Use getByRole with regex to handle Ant Design's CJK character spacing
-      // Ant Design adds spaces between CJK characters (e.g., '更新' → '更 新')
-      // Regex /更\s*新/ matches both '更新' and '更 新'
-      expect(screen.getByRole('button', { name: /キャンセル/ })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /更\s*新/ })).toBeInTheDocument();
+      expect(screen.getByText('typeManagement.guiEditor.cancel')).toBeInTheDocument();
+      expect(screen.getByText('typeManagement.guiEditor.update')).toBeInTheDocument();
     });
 
     it('renders create button for new type', () => {
@@ -123,10 +127,8 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      // Use getByRole with regex to handle Ant Design's CJK character spacing
-      // Regex /作\s*成/ matches both '作成' and '作 成'
-      expect(screen.getByRole('button', { name: /キャンセル/ })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /作\s*成/ })).toBeInTheDocument();
+      expect(screen.getByText('typeManagement.guiEditor.cancel')).toBeInTheDocument();
+      expect(screen.getByText('typeManagement.guiEditor.create')).toBeInTheDocument();
     });
   });
 
@@ -142,12 +144,11 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      // Use getByRole with regex to handle Ant Design's CJK character spacing
-      const createButton = screen.getByRole('button', { name: /作\s*成/ });
+      const createButton = screen.getByText('typeManagement.guiEditor.create');
       fireEvent.click(createButton);
 
       await waitFor(() => {
-        expect(screen.getByText('タイプIDは必須です')).toBeInTheDocument();
+        expect(screen.getByText('typeManagement.validation.typeIdRequired')).toBeInTheDocument();
       });
       expect(mockOnSave).not.toHaveBeenCalled();
     });
@@ -165,11 +166,11 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      const jsonTab = screen.getByText('JSONエディタ');
+      const jsonTab = screen.getByText('typeManagement.guiEditor.jsonEditorTab');
       fireEvent.click(jsonTab);
 
       await waitFor(() => {
-        expect(screen.getByText('JSON形式で直接編集')).toBeInTheDocument();
+        expect(screen.getByText('typeManagement.guiEditor.jsonEditorTitle')).toBeInTheDocument();
       });
     });
   });
@@ -186,7 +187,7 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      const cancelButton = screen.getByText('キャンセル');
+      const cancelButton = screen.getByText('typeManagement.guiEditor.cancel');
       fireEvent.click(cancelButton);
 
       expect(mockOnCancel).toHaveBeenCalled();
@@ -219,7 +220,7 @@ describe('TypeGUIEditor', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText('リレーションシップ設定')).toBeInTheDocument();
+        expect(screen.getByText('typeManagement.guiEditor.relationshipSettings')).toBeInTheDocument();
       });
     });
 
@@ -234,7 +235,7 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      expect(screen.queryByText('リレーションシップ設定')).not.toBeInTheDocument();
+      expect(screen.queryByText('typeManagement.guiEditor.relationshipSettings')).not.toBeInTheDocument();
     });
   });
 
@@ -250,7 +251,7 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      expect(screen.getByText('プロパティを追加')).toBeInTheDocument();
+      expect(screen.getByText('typeManagement.guiEditor.addProperty')).toBeInTheDocument();
     });
 
     it('shows empty property message initially', () => {
@@ -264,7 +265,7 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      expect(screen.getByText('プロパティが定義されていません')).toBeInTheDocument();
+      expect(screen.getByText('typeManagement.guiEditor.noPropertiesTitle')).toBeInTheDocument();
     });
   });
 });

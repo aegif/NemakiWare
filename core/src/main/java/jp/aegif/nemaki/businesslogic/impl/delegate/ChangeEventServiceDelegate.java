@@ -29,7 +29,27 @@ public class ChangeEventServiceDelegate {
 	public List<Change> getLatestChanges(String repositoryId, CallContext context, Holder<String> changeLogToken,
 			Boolean includeProperties, String filter, Boolean includePolicyIds, Boolean includeAcl, BigInteger maxItems,
 			ExtensionsData extension) {
-		return contentDaoService.getLatestChanges(repositoryId, changeLogToken.getValue(), maxItems.intValue());
+		String startToken = changeLogToken.getValue();
+		int limit = maxItems.intValue();
+
+		// CouchDB startkey is inclusive, so when resuming from a previous token
+		// we fetch one extra and drop the first row to avoid returning the
+		// event that was already delivered as the last item of the prior batch.
+		boolean skipFirst = (startToken != null);
+		int fetchLimit = skipFirst ? limit + 1 : limit;
+
+		List<Change> changes = contentDaoService.getLatestChanges(repositoryId, startToken, fetchLimit);
+
+		if (skipFirst && changes != null && !changes.isEmpty()) {
+			changes.remove(0);
+		}
+
+		// NOTE: Token advancement is intentionally NOT done here.
+		// compileChangeDataList is responsible for advancing the token
+		// based on the consecutive range of successfully compiled events,
+		// preventing permanent loss of events that fail to compile.
+
+		return changes;
 	}
 
 	public String getLatestChangeToken(String repositoryId) {

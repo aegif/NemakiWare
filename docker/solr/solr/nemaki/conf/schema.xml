@@ -167,6 +167,10 @@
         via copyField further on in this schema  -->
    <field name="text" type="text_ja" indexed="true" stored="false" multiValued="true"/>
 
+   <!-- English-analyzed catchall field for stemming, stop word removal, etc.
+        Populated via copyField from the same sources as "text". -->
+   <field name="text_en" type="text_en" indexed="true" stored="false" multiValued="true"/>
+
    <!-- catchall text field that indexes tokens both normally and in reverse for efficient
         leading wildcard queries. -->
    <field name="text_rev" type="text_general_rev" indexed="true" stored="false" multiValued="true"/>
@@ -270,6 +274,12 @@
    <copyField source="content_type" dest="text"/>
    <copyField source="resourcename" dest="text"/>
    <copyField source="url" dest="text"/>
+
+   <!-- English-analyzed copies for multilingual search (stemming, stop words) -->
+   <copyField source="title" dest="text_en"/>
+   <copyField source="description" dest="text_en"/>
+   <copyField source="keywords" dest="text_en"/>
+   <copyField source="content" dest="text_en"/>
 
 
 

@@ -11,10 +11,24 @@ import org.junit.Ignore;
 
 import jp.aegif.nemaki.cmis.tck.TckSuite;
 
-// @Ignore("TCK tests temporarily disabled due to server connectivity issues - requires running CMIS server on localhost:8080") - ENABLED for investigation
 public class QueryTestGroup extends TckSuite{
 
-	// Static initialization and constructor - no debug logging needed
+	/**
+	 * Override binding to Browser for Query tests.
+	 * AtomPub binding has a known issue with CMIS query session creation
+	 * (CmisInvalidArgumentException: null on AtomPub session). Browser binding
+	 * is the primary CMIS 1.1 binding and works correctly for queries.
+	 * Other test groups continue to use AtomPub (the default) for regression coverage.
+	 *
+	 * Only the binding type is overridden; the browser URL is read from
+	 * the parameters file so that CI/alternate-port environments work correctly.
+	 */
+	@Override
+	protected java.util.Map<String, String> getParameterOverrides() {
+		java.util.Map<String, String> overrides = new java.util.HashMap<>();
+		overrides.put("org.apache.chemistry.opencmis.binding.spi.type", "browser");
+		return overrides;
+	}
 
 	@Test
 	public void querySmokeTest() throws Exception{
