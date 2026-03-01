@@ -39,8 +39,14 @@
                 <enabled>true</enabled>
             </releases>
         </repository>
-
-		<!-- Removed version99 repository - not needed anymore -->
+		<!-- OpenCMIS 1.1.0-nemakiware Jakarta EE JARs hosted on GitHub Packages.
+		     Requires ~/.m2/settings.xml with server id "github-opencmis". -->
+		<repository>
+			<id>${opencmis.github.packages.repository.id}</id>
+			<url>${opencmis.github.packages.url}</url>
+			<releases><enabled>true</enabled></releases>
+			<snapshots><enabled>false</enabled></snapshots>
+		</repository>
 	</repositories>
 
 	<dependencyManagement>
@@ -238,76 +244,49 @@
 		<!-- OpenCMIS dependencies - excluded when Jakarta profile is active -->
 		<!-- server-support dependency moved down to avoid duplication -->
 
-		<!-- Jakarta-converted server-bindings included directly in WEB-INF/lib -->
-		<!-- OpenCMIS Jakarta EE Converted Dependencies -->
-		<!-- All OpenCMIS dependencies use Jakarta converted versions for unified environment -->
-		<!-- OpenCMIS Jakarta EE 10 Compatible JARs - Self-built unified management -->
+		<!-- OpenCMIS 1.1.0-nemakiware Jakarta EE 10 Compatible JARs.
+		     Resolved from GitHub Packages (aegif/chemistry-opencmis-nemakiware).
+		     Requires ~/.m2/settings.xml with server id "github-opencmis". -->
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-commons-impl</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-commons-impl-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
-
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-commons-api</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-commons-api-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
-
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-server-support</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-server-support-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
-
-		<!-- OpenCMIS dependencies set to compile - JARs provided by self-build strategy -->
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-server-bindings</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-server-bindings-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
-
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-impl</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-client-impl-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
-
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-api</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-client-api-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
-
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-bindings</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-client-bindings-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
-
-		<!-- Jakarta EE JAX-WS Runtime (Metro RI) -->
-
-		<!-- Updated to 1.1.0-nemakiware Jakarta version with systemPath -->
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-test-tck</artifactId>
-			<version>1.1.0-nemakiware</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-test-tck-1.1.0-nemakiware.jar</systemPath>
+			<version>${org.apache.chemistry.opencmis.version}</version>
+			<scope>test</scope>
 		</dependency>
 
 		<!-- ANTLR runtime dependency for OpenCMIS query parsing -->
@@ -1073,22 +1052,6 @@
 								<include>*.png</include>
 							</includes>
 						</resource>
-						<!-- OpenCMIS 1.1.0-nemakiware Jakarta EE 10 JARs -->
-						<!-- CRITICAL: These must be added via webResources to prevent maven-war-plugin from deleting them -->
-						<resource>
-							<directory>${basedir}/../lib/built-jars</directory>
-							<targetPath>WEB-INF/lib</targetPath>
-							<includes>
-								<include>chemistry-opencmis-server-bindings-1.1.0-nemakiware.jar</include>
-								<include>chemistry-opencmis-commons-impl-1.1.0-nemakiware.jar</include>
-								<include>chemistry-opencmis-commons-api-1.1.0-nemakiware.jar</include>
-								<include>chemistry-opencmis-server-support-1.1.0-nemakiware.jar</include>
-								<include>chemistry-opencmis-client-impl-1.1.0-nemakiware.jar</include>
-								<include>chemistry-opencmis-client-api-1.1.0-nemakiware.jar</include>
-								<include>chemistry-opencmis-client-bindings-1.1.0-nemakiware.jar</include>
-								<include>chemistry-opencmis-test-tck-1.1.0-nemakiware.jar</include>
-							</includes>
-						</resource>
 					</webResources>
 				</configuration>
 			</plugin>
@@ -1120,8 +1083,6 @@
 					<reuseForks>true</reuseForks>
 					<!-- Extended to 3 hours for full TCK suite execution -->
 					<forkedProcessTimeoutInSeconds>10800</forkedProcessTimeoutInSeconds>
-					<!-- Individual test timeout -->
-					<timeout>600</timeout>
 					<!-- System properties for test execution -->
 					<systemPropertyVariables>
 						<test.timeout>600000</test.timeout>
@@ -1145,9 +1106,7 @@
 					<skip>true</skip>
 					<webApp>
 						<contextPath>/core</contextPath>
-						<!-- Priority: Jakarta JARs FIRST to override standard OpenCMIS classes -->
-						<extraClasspath>${project.basedir}/../lib/built-jars/chemistry-opencmis-server-bindings-1.1.0-nemakiware.jar,${project.basedir}/../lib/built-jars/chemistry-opencmis-commons-impl-1.1.0-nemakiware.jar,${project.basedir}/../lib/built-jars/chemistry-opencmis-commons-api-1.1.0-nemakiware.jar,${project.basedir}/../lib/built-jars/chemistry-opencmis-server-support-1.1.0-nemakiware.jar</extraClasspath>
-						<!-- Use webapp-first classloading to prioritize Jakarta JARs -->
+						<!-- OpenCMIS JARs are on the compile classpath via GitHub Packages -->
 						<parentLoaderPriority>false</parentLoaderPriority>
 					</webApp>
 					<httpConnector>
@@ -1357,22 +1316,8 @@
 									</fileset>
 								</delete>
 
-								<!-- UNIFIED JAR MANAGEMENT: Copy 1.1.0-nemakiware Self-Build JARs from built-jars -->
-								<!-- Jakarta EE 10 requires self-build OpenCMIS 1.1.0-nemakiware -->
-								<copy todir="${project.build.directory}/${project.build.finalName}/WEB-INF/lib">
-									<fileset dir="${basedir}/../lib/built-jars">
-										<include name="chemistry-opencmis-server-bindings-1.1.0-nemakiware.jar"/>
-										<include name="chemistry-opencmis-commons-impl-1.1.0-nemakiware.jar"/>
-										<include name="chemistry-opencmis-commons-api-1.1.0-nemakiware.jar"/>
-										<include name="chemistry-opencmis-server-support-1.1.0-nemakiware.jar"/>
-										<include name="chemistry-opencmis-client-impl-1.1.0-nemakiware.jar"/>
-										<include name="chemistry-opencmis-client-api-1.1.0-nemakiware.jar"/>
-										<include name="chemistry-opencmis-client-bindings-1.1.0-nemakiware.jar"/>
-										<include name="chemistry-opencmis-test-tck-1.1.0-nemakiware.jar"/>
-									</fileset>
-								</copy>
-								<echo message="Copied Jakarta EE 10 compatible OpenCMIS 1.1.0-nemakiware JARs from fixed MultipartParser locations"/>
-								<!-- jaxws-rt-4.0.2-jakarta.jar copy removed - files moved to suspended-modules -->
+								<!-- OpenCMIS 1.1.0-nemakiware JARs are now resolved via Maven
+							     from GitHub Packages and placed in WEB-INF/lib automatically -->
 								<!-- UI file copying moved to maven-war-plugin webResources configuration -->
 							</target>
 						</configuration>
@@ -1400,8 +1345,10 @@
 			<build>
 				<plugins>
 					<!--
-						Resolve OpenCMIS from GitHub Packages and place jars into lib/built-jars
-						so existing systemPath dependencies and WAR assembly continue to work.
+						Resolve OpenCMIS from GitHub Packages and place jars into lib/built-jars.
+						This is a utility profile for explicitly syncing JARs to lib/built-jars
+						(e.g. for offline builds or Docker image preparation).
+						Normal builds resolve OpenCMIS via the project-level repository definition.
 						Authentication: ~/.m2/settings.xml server id = github-opencmis
 					-->
 					<plugin>
@@ -1519,28 +1466,14 @@
 								</goals>
 								<configuration>
 									<target>
-										<!-- Remove ONLY conflicting Jakarta variants, keep 1.1.0-nemakiware JARs -->
+										<!-- Remove ONLY conflicting Jakarta variants (old -jakarta.jar suffixed files) -->
 										<delete failonerror="false">
 											<fileset dir="${project.build.directory}/${project.build.finalName}/WEB-INF/lib">
 												<include name="*-jakarta.jar"/>
-												<!-- DO NOT delete 1.1.0-nemakiware JARs - they are required for Jakarta EE 10 -->
-												<!-- Keep Maven-managed and forced-copy 1.1.0-nemakiware JARs -->
 											</fileset>
 										</delete>
-										<!-- UNIFIED JAR MANAGEMENT: Copy Jakarta EE 10 Compatible OpenCMIS 1.1.0-nemakiware JARs from built-jars -->
-										<copy todir="${project.build.directory}/${project.build.finalName}/WEB-INF/lib">
-											<fileset dir="${basedir}/../lib/built-jars">
-												<include name="chemistry-opencmis-server-bindings-1.1.0-nemakiware.jar"/>
-												<include name="chemistry-opencmis-commons-impl-1.1.0-nemakiware.jar"/>
-												<include name="chemistry-opencmis-commons-api-1.1.0-nemakiware.jar"/>
-												<include name="chemistry-opencmis-server-support-1.1.0-nemakiware.jar"/>
-												<include name="chemistry-opencmis-client-impl-1.1.0-nemakiware.jar"/>
-												<include name="chemistry-opencmis-client-api-1.1.0-nemakiware.jar"/>
-												<include name="chemistry-opencmis-client-bindings-1.1.0-nemakiware.jar"/>
-												<include name="chemistry-opencmis-test-tck-1.1.0-nemakiware.jar"/>
-											</fileset>
-										</copy>
-										<echo message="Development: Copied Jakarta EE 10 compatible OpenCMIS 1.1.0-nemakiware JARs from fixed MultipartParser locations"/>
+										<!-- OpenCMIS 1.1.0-nemakiware JARs are now resolved via Maven
+										     from GitHub Packages and placed in WEB-INF/lib automatically -->
 									</target>
 								</configuration>
 							</execution>
