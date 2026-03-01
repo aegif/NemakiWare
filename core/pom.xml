@@ -157,8 +157,9 @@
 		</dependency>
 		-->
 		
-		<!-- SLF4J実装バインディング - Log4j2-SLF4J実装のみ使用（Spring Bootから自動的に取得）-->
-		<!-- Logback関連依存関係をコメントアウト - SLF4J競合を解決 -->
+		<!-- SLF4J実装バインディング - logback-classic を単一バインディングとして使用。
+		     solr-core 由来の log4j-slf4j2-impl は exclusion で除外済み。
+		     以下の logback-contrib はコメントアウト（直接依存不要） -->
 		<!--
 		<dependency>
 			<groupId>ch.qos.logback.contrib</groupId>
