@@ -438,14 +438,15 @@ public class NavigationServiceImpl implements NavigationService {
 			// //////////////////
 			// Specific Exception
 			// //////////////////
+			// CMIS 1.1 §2.2.3.3: Root folder has no parent — must reject before lock
+			exceptionService.invalidArgumentRootFolder(repositoryId, folder);
+
 			Folder parent = contentService.getParent(repositoryId, folderId);
+			exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parent);
 			
 			Lock parentLock = threadLockService.getReadLock(repositoryId, parent.getId());
 			try{
 				parentLock.lock();
-				
-				exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parent);
-				exceptionService.invalidArgumentRootFolder(repositoryId, folder);
 
 				// //////////////////
 				// Body of the method
