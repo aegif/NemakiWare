@@ -22,7 +22,7 @@
 		<maven.compiler.target>17</maven.compiler.target>
 		<nemakiware.version>${project.version}</nemakiware.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<org.springframework.version>6.1.13</org.springframework.version>
+		<org.springframework.version>6.1.21</org.springframework.version>
 		<org.apache.chemistry.opencmis.version>1.1.0-nemakiware</org.apache.chemistry.opencmis.version>
 		<opencmis.github.packages.url>https://maven.pkg.github.com/aegif/chemistry-opencmis-nemakiware</opencmis.github.packages.url>
 		<opencmis.github.packages.repository.id>github-opencmis</opencmis.github.packages.repository.id>
@@ -186,12 +186,12 @@
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-core</artifactId>
-			<version>2.20.1</version>
+			<version>2.21.1</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-databind</artifactId>
-			<version>2.20.1</version>
+			<version>2.21.1</version>
 		</dependency>
 		<!-- WebAuthn (Passkey) support -->
 		<dependency>
@@ -208,14 +208,14 @@
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-annotations</artifactId>
-			<version>2.20</version>
+			<version>2.21</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.datatype</groupId>
 			<artifactId>jackson-datatype-jdk8</artifactId>
-			<version>2.20.1</version>
+			<version>2.21.1</version>
 		</dependency>
-		<!-- SECURITY UPDATE (2025-11-19): Updated Jackson from 2.17.1 to 2.20.x for security fixes -->
+		<!-- SECURITY UPDATE: Jackson 2.21.1 fixes GHSA-72hv-8253-57qq (async parser DoS) -->
 		<!-- NOTE: jackson-annotations 2.20+ uses major.minor versioning only (no patch version) -->
 
 
@@ -373,7 +373,7 @@
 		<dependency>
 			<groupId>org.springframework.ldap</groupId>
 			<artifactId>spring-ldap-core</artifactId>
-			<version>3.2.4</version>
+			<version>3.2.8</version>
 		</dependency>
 
 		<dependency>
@@ -636,17 +636,13 @@
 			<artifactId>commons-codec</artifactId>
 			<version>1.20.0</version>
 		</dependency>
-		<!-- Previously transitive via cobertura-maven-plugin (now removed) -->
+		<!-- SECURITY FIX: commons-beanutils 1.11.0 fixes CVE-2025-48734 (CVSS 8.8) -->
 		<dependency>
 			<groupId>commons-beanutils</groupId>
 			<artifactId>commons-beanutils</artifactId>
-			<version>1.9.4</version>
+			<version>1.11.0</version>
 		</dependency>
-		<dependency>
-			<groupId>commons-lang</groupId>
-			<artifactId>commons-lang</artifactId>
-			<version>2.6</version>
-		</dependency>
+		<!-- commons-lang 2.6 removed: migrated to commons-lang3 (see below) -->
 
 		<dependency>
 			<groupId>org.apache.commons</groupId>
@@ -698,16 +694,16 @@
 		</dependency>
 
 		<!-- Apache Tika for full-text content extraction (PDF, Office, etc.) -->
-		<!-- FEATURE: Full-text search support for NemakiWare 3.0 (2025-11-27) -->
+		<!-- SECURITY FIX: Tika 3.2.3 fixes CVE-2025-66516 (XXE, CVSS 10.0) -->
 		<dependency>
 			<groupId>org.apache.tika</groupId>
 			<artifactId>tika-core</artifactId>
-			<version>2.9.2</version>
+			<version>3.2.3</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.tika</groupId>
 			<artifactId>tika-parsers-standard-package</artifactId>
-			<version>2.9.2</version>
+			<version>3.2.3</version>
 			<exclusions>
 				<!-- Exclude conflicting logging implementations -->
 				<exclusion>
@@ -869,10 +865,11 @@
 		</dependency>
 
 		<!-- Cloud Authentication: Microsoft / generic JWKS token verification -->
+		<!-- SECURITY FIX: 9.37.4 fixes CVE-2025-53864 (nested JSON DoS) -->
 		<dependency>
 			<groupId>com.nimbusds</groupId>
 			<artifactId>nimbus-jose-jwt</artifactId>
-			<version>9.37.3</version>
+			<version>9.37.4</version>
 		</dependency>
 
 		<!-- Google Drive API -->
@@ -916,10 +913,11 @@
 			<artifactId>microsoft-graph</artifactId>
 			<version>6.5.0</version>
 		</dependency>
+		<!-- SECURITY FIX: 1.18.0 fixes CVE-2024-35255 (EoP, affected <1.12.2) + latest MSAL4J -->
 		<dependency>
 			<groupId>com.azure</groupId>
 			<artifactId>azure-identity</artifactId>
-			<version>1.12.1</version>
+			<version>1.18.0</version>
 		</dependency>
 
 		<!-- AWS SDK (Bedrock Runtime) for embedding generation -->

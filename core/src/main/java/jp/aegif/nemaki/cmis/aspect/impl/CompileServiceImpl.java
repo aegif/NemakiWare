@@ -927,9 +927,12 @@ public class CompileServiceImpl implements CompileService {
 				if (Action.CAN_MOVE_OBJECT == convertKeyToAction(key)) {
 					continue;
 				}
-				// CRITICAL CMIS COMPLIANCE FIX: Root folder cannot have CAN_GET_FOLDER_PARENT action
-				// because root folder has no parent by definition
+				// CMIS 1.1 §2.2.2.1: Root folder has no parent — both parent navigation
+				// actions must be excluded from AllowableActions.
 				if (PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT.equals(key)) {
+					continue;
+				}
+				if (PermissionMapping.CAN_GET_PARENTS_FOLDER.equals(key)) {
 					continue;
 				}
 			}
