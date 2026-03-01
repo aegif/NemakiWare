@@ -125,7 +125,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         assertTrue("clearIndex should return true on success", result);
         verify(solrClient).deleteByQuery("repository_id:" + ClientUtils.escapeQueryChars(TEST_REPO_ID));
         verify(solrClient).commit();
-        verify(solrClient).close();
+        // BTL-004: SolrClient is now shared and lifecycle-managed — no per-call close()
     }
     
     @Test
@@ -168,7 +168,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         
         assertTrue("optimizeIndex should return true on success", result);
         verify(solrClient).optimize();
-        verify(solrClient).close();
+        // BTL-004: SolrClient is now shared and lifecycle-managed — no per-call close()
     }
     
     @Test
@@ -257,25 +257,6 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         assertTrue(result);
     }
 
-    @Test
-    public void testClearIndexClosesClientOnSuccess() throws Exception {
-        when(solrUtil.getSolrClient()).thenReturn(solrClient);
-        when(solrClient.deleteByQuery(anyString())).thenReturn(updateResponse);
-        when(updateResponse.getStatus()).thenReturn(0);
-        
-        service.clearIndex(TEST_REPO_ID);
-        
-        verify(solrClient).close();
-    }
-    
-    @Test
-    public void testOptimizeIndexClosesClientOnSuccess() throws Exception {
-        when(solrUtil.getSolrClient()).thenReturn(solrClient);
-        when(solrClient.optimize()).thenReturn(updateResponse);
-        when(updateResponse.getStatus()).thenReturn(0);
-        
-        service.optimizeIndex(TEST_REPO_ID);
-        
-        verify(solrClient).close();
-    }
+    // BTL-004: testClearIndexClosesClientOnSuccess and testOptimizeIndexClosesClientOnSuccess
+    // removed — SolrClient is now shared and lifecycle-managed, no per-call close().
 }

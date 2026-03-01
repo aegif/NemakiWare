@@ -53,6 +53,7 @@ import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.TermInSetQuery;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TermRangeQuery;
 import org.apache.lucene.search.WildcardQuery;
@@ -535,102 +536,49 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkInTreeInternal(String folderId, String repositoryId) {
-		// Alternative IN_TREE implementation using parent_id relationships
-		// This avoids circular dependency with ContentService path calculations
-		
-		// Set Solr server
-		SolrClient solrClient = solrUtil.getSolrClient();
-
-		// Recursively find all descendant folder IDs using parent_id relationships
-		Set<String> allDescendantIds = new HashSet<String>();
-		List<String> currentLevelIds = new ArrayList<String>();
-		currentLevelIds.add(folderId); // Start with the specified folder
-		
-		// Add the root folder itself as a descendant 
-		allDescendantIds.add(folderId);
-		
-		// Recursively find descendants up to a reasonable depth limit
-		int maxDepth = 10; // Prevent infinite loops
-		for (int depth = 0; depth < maxDepth && !currentLevelIds.isEmpty(); depth++) {
-			List<String> nextLevelIds = new ArrayList<String>();
-			
-			// Build Solr query string to find direct children of current level folders
-			StringBuilder queryString = new StringBuilder();
-			queryString.append("basetype:cmis\\:folder AND (");
-			
-			boolean first = true;
-			for (String parentId : currentLevelIds) {
-				if (!first) {
-					queryString.append(" OR ");
-				}
-				queryString.append("parent_id:").append(parentId);
-				first = false;
-			}
-			queryString.append(")");
-			
-			try {
-				SolrQuery solrQuery = new SolrQuery(queryString.toString());
-				QueryResponse resp = solrClient.query(solrQuery);
-				SolrDocumentList children = resp.getResults();
-				
-				for (SolrDocument child : children) {
-					Object objectIdValue = child.getFieldValue("object_id");
-					String childId = null;
-					
-					if (objectIdValue instanceof String) {
-						childId = (String) objectIdValue;
-					} else if (objectIdValue instanceof List && !((List<?>) objectIdValue).isEmpty()) {
-						// Handle multi-valued field case
-						Object firstValue = ((List<?>) objectIdValue).get(0);
-						if (firstValue instanceof String) {
-							childId = (String) firstValue;
-						}
-					}
-					
-					if (childId != null && !allDescendantIds.contains(childId)) {
-						allDescendantIds.add(childId);
-						nextLevelIds.add(childId);
-					}
-				}
-			} catch (SolrServerException | IOException e) {
-				log.error("Error during IN_TREE descendant search: " + e.getMessage(), e);
-				break; // Stop recursion on error
-			}
-			
-			currentLevelIds = nextLevelIds;
-		}
-		
-		// Build final query for all objects under any of the descendant folders
-		if (allDescendantIds.isEmpty()) {
-			// Return empty query if no descendants found
+		// Use cached folder hierarchy from SolrUtil (TTL-based with invalidation)
+		Map<String, List<String>> childrenMap = solrUtil.getFolderHierarchy(repositoryId);
+		if (childrenMap == null) {
 			return new MatchNoDocsQuery();
 		}
-		
-		StringBuilder finalQueryString = new StringBuilder();
-		finalQueryString.append("(");
-		
-		boolean first = true;
-		for (String descendantId : allDescendantIds) {
-			if (!first) {
-				finalQueryString.append(" OR ");
+
+		// BFS from folderId to collect all descendant folder IDs
+		Set<String> allDescendantIds = new HashSet<>();
+		allDescendantIds.add(folderId);
+		List<String> queue = new ArrayList<>();
+		queue.add(folderId);
+
+		while (!queue.isEmpty()) {
+			List<String> nextQueue = new ArrayList<>();
+			for (String parentId : queue) {
+				List<String> children = childrenMap.get(parentId);
+				if (children != null) {
+					for (String childId : children) {
+						if (allDescendantIds.add(childId)) {
+							nextQueue.add(childId);
+						}
+					}
+				}
 			}
-			finalQueryString.append("parent_id:").append(descendantId);
-			first = false;
+			queue = nextQueue;
 		}
-		finalQueryString.append(")");
-		
-		// Convert Solr query string to Lucene Query for return
-		// For now, return a simple query - the framework will handle Solr syntax conversion
+
+		// Build final query: parent_id IN (all descendant folder IDs)
+		if (allDescendantIds.isEmpty()) {
+			return new MatchNoDocsQuery();
+		}
+
 		if (allDescendantIds.size() == 1) {
 			String singleId = allDescendantIds.iterator().next();
 			return new TermQuery(new Term("parent_id", singleId));
 		} else {
-			// For multiple IDs, create a BooleanQuery
-			BooleanQuery.Builder builder = new BooleanQuery.Builder();
+			// Use TermInSetQuery instead of BooleanQuery with SHOULD clauses
+			// to avoid TooManyClauses when descendant count exceeds maxClauseCount (default 1024)
+			List<BytesRef> terms = new ArrayList<>(allDescendantIds.size());
 			for (String descendantId : allDescendantIds) {
-				builder.add(new TermQuery(new Term("parent_id", descendantId)), Occur.SHOULD);
+				terms.add(new BytesRef(descendantId));
 			}
-			return builder.build();
+			return new TermInSetQuery("parent_id", terms);
 		}
 	}
 
@@ -1067,5 +1015,21 @@ public class SolrPredicateWalker{
 			e.printStackTrace();
 			return null;
 		}
+	}
+
+	/**
+	 * Extract a String field value from a SolrDocument, handling multi-valued fields.
+	 */
+	private String extractSolrStringField(SolrDocument doc, String fieldName) {
+		Object value = doc.getFieldValue(fieldName);
+		if (value instanceof String) {
+			return (String) value;
+		} else if (value instanceof List && !((List<?>) value).isEmpty()) {
+			Object first = ((List<?>) value).get(0);
+			if (first instanceof String) {
+				return (String) first;
+			}
+		}
+		return null;
 	}
 }

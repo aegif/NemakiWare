@@ -903,11 +903,18 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+			// View or design document does not exist — this is expected during initial
+			// startup before design documents are created. Return null so callers treat
+			// it as "no data yet".
 			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
 			return null;
 		} catch (Exception e) {
-			log.warn("Error executing view query for design doc '" + designDoc + "', view '" + viewName + "' - returning null. This is normal during initial startup: " + e.getMessage());
-			return null;
+			// Transient errors (network timeout, server 500, etc.) must NOT be silently
+			// swallowed as "no data". Propagate so callers can distinguish "data absent"
+			// from "infrastructure failure".
+			log.error("Error executing view query for design doc '" + designDoc + "', view '" + viewName + "': " + e.getMessage(), e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"CouchDB view query failed: " + designDoc + "/" + viewName + " - " + e.getMessage(), e);
 		}
 	}
 
@@ -1196,8 +1203,9 @@ public class CloudantClientWrapper {
 			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
 			return null;
 		} catch (Exception e) {
-			log.error("CRITICAL: Error querying view " + designDoc + "/" + viewName + " with key: " + key + " - returning null. Exception: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
-			return null;
+			log.error("Error querying view " + designDoc + "/" + viewName + " with key: " + key + ": " + e.getMessage(), e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"CouchDB view query failed: " + designDoc + "/" + viewName + " - " + e.getMessage(), e);
 		}
 	}
 
@@ -1252,8 +1260,9 @@ public class CloudantClientWrapper {
 			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
 			return null;
 		} catch (Exception e) {
-			log.error("CRITICAL: Error querying view " + designDoc + "/" + viewName + " with key: " + key + " - returning null. Exception: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
-			return null;
+			log.error("Error querying view " + designDoc + "/" + viewName + " with key: " + key + ": " + e.getMessage(), e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"CouchDB view query failed: " + designDoc + "/" + viewName + " - " + e.getMessage(), e);
 		}
 	}
 

@@ -107,6 +107,13 @@ public class ObjectServiceImpl implements ObjectService {
 	private WebhookService webhookService;
 	private int threadMax;
 
+	// BTL-005: Bounded executor for deleteTree. Lazily initialized after Spring DI sets threadMax.
+	private volatile ExecutorService deleteTreeExecutor;
+	private final Object treeExecutorLock = new Object();
+	// BTL-006: Separate bounded executor for bulkUpdateProperties.
+	private volatile ExecutorService bulkUpdateExecutor;
+	private final Object bulkUpdateExecutorLock = new Object();
+
 	@Override
 	public ObjectData getObjectByPath(CallContext callContext, String repositoryId, String path, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
@@ -144,7 +151,7 @@ public class ObjectServiceImpl implements ObjectService {
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePolicyIds, Boolean includeAcl, ExtensionsData extension) {
 
-		log.info(MessageFormat.format("ObjcetService#getObject START: Repo={0}, Id={1}", repositoryId, objectId));
+		if (log.isDebugEnabled()) log.debug(MessageFormat.format("ObjcetService#getObject START: Repo={0}, Id={1}", repositoryId, objectId));
 
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 
@@ -156,7 +163,7 @@ public class ObjectServiceImpl implements ObjectService {
 			// General Exception
 			// //////////////////
 			Content content = contentService.getContent(repositoryId, objectId);
-			log.info(MessageFormat.format("ObjcetService#getObject getContent success: Repo={0}, Id={1}", repositoryId, objectId));
+			if (log.isDebugEnabled()) log.debug(MessageFormat.format("ObjcetService#getObject getContent success: Repo={0}, Id={1}", repositoryId, objectId));
 
 			// WORK AROUND: getObject(versionSeriesId) is interpreted as
 			// getDocumentOflatestVersion
@@ -172,7 +179,7 @@ public class ObjectServiceImpl implements ObjectService {
 			}
 			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
 					content);
-			log.info(MessageFormat.format("ObjcetService#getObject permissionDenied check success: Repo={0}, Id={1}", repositoryId, objectId));
+			if (log.isDebugEnabled()) log.debug(MessageFormat.format("ObjcetService#getObject permissionDenied check success: Repo={0}, Id={1}", repositoryId, objectId));
 
 			// //////////////////
 			// Body of the method
@@ -180,7 +187,7 @@ public class ObjectServiceImpl implements ObjectService {
 			ObjectData object = compileService.compileObjectData(callContext, repositoryId, content, filter,
 					includeAllowableActions, includeRelationships, null, includeAcl);
 
-			log.info(MessageFormat.format("ObjcetService#getObject END: Repo={0}, Id={1} Type={2} Name={3}", repositoryId, objectId, content.getObjectType(), content.getObjectType(), content.getName()));
+			if (log.isDebugEnabled()) log.debug(MessageFormat.format("ObjcetService#getObject END: Repo={0}, Id={1} Type={2} Name={3}", repositoryId, objectId, content.getObjectType(), content.getName()));
 
 			return object;
 		} finally {
@@ -506,6 +513,10 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		Folder folder = contentService.createFolder(callContext, repositoryId, properties, parentFolder, policies,
 				addAces, removeAces, null);
+
+		// Invalidate IN_TREE folder hierarchy cache
+		solrUtil.invalidateFolderHierarchyCache(repositoryId);
+
 		return folder.getId();
 	}
 
@@ -1091,29 +1102,23 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		List<BulkUpdateObjectIdAndChangeToken> results = new ArrayList<BulkUpdateObjectIdAndChangeToken>();
 
-		ExecutorService executor = Executors.newFixedThreadPool(
-				Math.min(objectIdAndChangeTokenList.size(), threadMax));
-		try {
-			List<BulkUpdateTask> tasks = new ArrayList<>();
-			for (BulkUpdateObjectIdAndChangeToken objectIdAndChangeToken : objectIdAndChangeTokenList) {
-				tasks.add(new BulkUpdateTask(callContext, repositoryId, objectIdAndChangeToken, properties,
-						addSecondaryTypeIds, removeSecondaryTypeIds, extension));
-			}
+		// BTL-006: Use dedicated bulkUpdate executor (separate from deleteTree)
+		List<Future<BulkUpdateObjectIdAndChangeToken>> futures = new ArrayList<>();
+		for (BulkUpdateObjectIdAndChangeToken objectIdAndChangeToken : objectIdAndChangeTokenList) {
+			futures.add(getBulkUpdateExecutor().submit(new BulkUpdateTask(callContext, repositoryId, objectIdAndChangeToken,
+					properties, addSecondaryTypeIds, removeSecondaryTypeIds, extension)));
+		}
 
-			List<Future<BulkUpdateObjectIdAndChangeToken>> _results = executor.invokeAll(tasks);
-			for (Future<BulkUpdateObjectIdAndChangeToken> _result : _results) {
-				try {
-					BulkUpdateObjectIdAndChangeToken result = _result.get();
-					results.add(result);
-				} catch (Exception e) {
-					log.debug("Bulk update task failed for one object", e);
-				}
+		for (Future<BulkUpdateObjectIdAndChangeToken> future : futures) {
+			try {
+				BulkUpdateObjectIdAndChangeToken result = future.get();
+				results.add(result);
+			} catch (InterruptedException e) {
+				log.warn("Bulk update operation was interrupted", e);
+				Thread.currentThread().interrupt();
+			} catch (ExecutionException e) {
+				log.debug("Bulk update task failed for one object", e);
 			}
-		} catch (InterruptedException e1) {
-			log.warn("Bulk update operation was interrupted", e1);
-			Thread.currentThread().interrupt();
-		} finally {
-			executor.shutdown();
 		}
 
 		return results;
@@ -1203,6 +1208,9 @@ public class ObjectServiceImpl implements ObjectService {
 			contentService.move(callContext, repositoryId, content, target);
 
 			nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
+
+			// Invalidate IN_TREE folder hierarchy cache (folder may have been moved)
+			solrUtil.invalidateFolderHierarchyCache(repositoryId);
 		} finally {
 			lock.unlock();
 		}
@@ -1212,7 +1220,16 @@ public class ObjectServiceImpl implements ObjectService {
 	public void deleteObject(CallContext callContext, String repositoryId, String objectId, Boolean allVersions,
 			ExtensionsData extension) {
 
+		// Check if the object is a folder before deletion (for cache invalidation)
+		Content content = contentService.getContent(repositoryId, objectId);
+		boolean isFolder = (content instanceof Folder);
+
 		objectServiceInternal.deleteObjectInternal(callContext, repositoryId, objectId, allVersions, false);
+
+		// Invalidate IN_TREE folder hierarchy cache when a folder is deleted
+		if (isFolder) {
+			solrUtil.invalidateFolderHierarchyCache(repositoryId);
+		}
 	}
 
 	@Override
@@ -1234,78 +1251,25 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		// Collect descendants grouped by depth (deepest first) to guarantee
-		// that children are fully deleted before their parent folder.
-		List<List<Content>> layers = collectByDepth(repositoryId, folder);
-
-		Map<String, Future<Boolean>> failureIds = new HashMap<String, Future<Boolean>>();
-		ExecutorService executor = Executors.newFixedThreadPool(threadMax);
-		try {
-			// Process layers from deepest to shallowest (children before parents)
-			for (List<Content> layer : layers) {
-				List<Future<Boolean>> layerFutures = new ArrayList<>();
-				for (Content content : layer) {
-					Future<Boolean> result = executor.submit(() -> {
-						try {
-							objectServiceInternal.deleteObjectInternal(callContext, repositoryId, content, allVersions, true);
-							return false;
-						} catch (Exception e) {
-							return true;
-						}
-					});
-					failureIds.put(content.getId(), result);
-					layerFutures.add(result);
-				}
-				// Wait for this layer to complete before processing the next (shallower) layer
-				for (Future<Boolean> f : layerFutures) {
-					try {
-						f.get();
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
-					} catch (ExecutionException e) {
-						// failure recorded in failureIds
-					}
-				}
-			}
-		} finally {
-			executor.shutdown();
-		}
+		// BTL-005: DFS post-order traversal — process children before parent
+		// without materializing the entire tree in memory.
+		List<String> failedIds = new ArrayList<>();
+		deleteTreeDFS(callContext, repositoryId, folder, allVersions, failedIds);
 
 		// Delete folder from Solr index
 		if (folder != null) {
 			solrUtil.deleteDocument(repositoryId, folder.getId());
 		}
 
-		// Check FailedToDeleteData
-		// TODO orphan 処理の改善
-		// 削除に失敗したオブジェクトはCMIS仕様上 FailedToDeleteData として返却されるが、
-		// 親フォルダが先に削除された場合、子オブジェクトが orphan（parentId が存在しない状態）になる。
-		// 現状: orphan は CouchDB 上に残存し、通常の CMIS ナビゲーションでは到達不能。
-		// 将来の改善案:
-		//   1. アーカイブ管理画面での orphan 検出・一覧表示
-		//   2. CouchDB ビューによる parentId 不整合の定期検出
-		//   3. deleteTree のトランザクション的な実行（子→親の順で削除）
-		FailedToDeleteDataImpl fdd = new FailedToDeleteDataImpl();
-		List<String> ids = new ArrayList<String>();
-		for (Entry<String, Future<Boolean>> entry : failureIds.entrySet()) {
-			Boolean failed;
-			try {
-				failed = entry.getValue().get();
-				if (failed) {
-					ids.add(entry.getKey());
-				}
-			} catch (InterruptedException e) {
-				log.warn("Delete operation interrupted for object: " + entry.getKey(), e);
-				Thread.currentThread().interrupt();
-			} catch (ExecutionException e) {
-				log.warn("Delete operation failed for object: " + entry.getKey(), e);
-			}
-		}
-		fdd.setIds(ids);
+		// Invalidate IN_TREE folder hierarchy cache
+		solrUtil.invalidateFolderHierarchyCache(repositoryId);
 
-		if (!ids.isEmpty()) {
+		FailedToDeleteDataImpl fdd = new FailedToDeleteDataImpl();
+		fdd.setIds(failedIds);
+
+		if (!failedIds.isEmpty()) {
 			log.warn("[deleteTree] Orphan objects detected: folderId=" + folder.getId()
-				+ ", folderName=" + folder.getName() + ", orphanIds=" + ids
+				+ ", folderName=" + folder.getName() + ", orphanIds=" + failedIds
 				+ ", action=Check archive management or query CouchDB directly for cleanup");
 		}
 
@@ -1313,31 +1277,70 @@ public class ObjectServiceImpl implements ObjectService {
 	}
 
 	/**
-	 * Collect descendants grouped by depth level (BFS).
-	 * Returns layers ordered from deepest to shallowest, so that iterating
-	 * in order guarantees children are processed before their parent.
+	 * BTL-005: DFS post-order deletion — recursively delete children before the parent.
+	 * Only the current folder's children are loaded at each recursion level,
+	 * so memory usage is proportional to tree depth × average branching factor,
+	 * not to total tree size.
+	 *
+	 * Within each folder, non-folder children are deleted in parallel using the
+	 * shared executor (BTL-006), while sub-folders are processed recursively first.
 	 */
-	private List<List<Content>> collectByDepth(String repositoryId, Content root) {
-		List<List<Content>> layers = new ArrayList<>();
-		List<Content> currentLayer = new ArrayList<>();
-		currentLayer.add(root);
+	private void deleteTreeDFS(CallContext callContext, String repositoryId,
+			Content node, Boolean allVersions, List<String> failedIds) {
+		if (node.isFolder()) {
+			List<Content> children = contentService.getChildren(repositoryId, node.getId());
+			if (CollectionUtils.isNotEmpty(children)) {
+				// Separate sub-folders (recurse) from non-folders (parallel delete)
+				List<Content> subFolders = new ArrayList<>();
+				List<Content> nonFolders = new ArrayList<>();
+				for (Content child : children) {
+					if (child.isFolder()) {
+						subFolders.add(child);
+					} else {
+						nonFolders.add(child);
+					}
+				}
 
-		while (!currentLayer.isEmpty()) {
-			layers.add(currentLayer);
-			List<Content> nextLayer = new ArrayList<>();
-			for (Content content : currentLayer) {
-				if (content.isFolder()) {
-					List<Content> children = contentService.getChildren(repositoryId, content.getId());
-					if (CollectionUtils.isNotEmpty(children)) {
-						nextLayer.addAll(children);
+				// Recurse into sub-folders first (post-order)
+				for (Content subFolder : subFolders) {
+					deleteTreeDFS(callContext, repositoryId, subFolder, allVersions, failedIds);
+				}
+
+				// Delete non-folder children in parallel using deleteTree executor
+				if (!nonFolders.isEmpty()) {
+					List<Future<String>> futures = new ArrayList<>();
+					for (Content child : nonFolders) {
+						futures.add(getDeleteTreeExecutor().submit(() -> {
+							try {
+								objectServiceInternal.deleteObjectInternal(callContext, repositoryId, child, allVersions, true);
+								return null; // success
+							} catch (Exception e) {
+								return child.getId(); // failure
+							}
+						}));
+					}
+					for (Future<String> f : futures) {
+						try {
+							String failedId = f.get();
+							if (failedId != null) {
+								failedIds.add(failedId);
+							}
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+						} catch (ExecutionException e) {
+							// should not happen since we catch in the callable
+						}
 					}
 				}
 			}
-			currentLayer = nextLayer;
 		}
-		// Reverse: deepest layer first (leaf nodes), root last
-		java.util.Collections.reverse(layers);
-		return layers;
+
+		// Delete the node itself (folder after its children, or non-folder leaf)
+		try {
+			objectServiceInternal.deleteObjectInternal(callContext, repositoryId, node, allVersions, true);
+		} catch (Exception e) {
+			failedIds.add(node.getId());
+		}
 	}
 
 	public void setObjectServiceInternal(ObjectServiceInternal objectServiceInternal) {
@@ -1382,5 +1385,91 @@ public class ObjectServiceImpl implements ObjectService {
 
 	public void setWebhookService(WebhookService webhookService) {
 		this.webhookService = webhookService;
+	}
+
+	/**
+	 * Lazily create deleteTree executor using the Spring-injected threadMax setting.
+	 * Double-checked locking ensures thread safety and single initialization.
+	 */
+	private ExecutorService getDeleteTreeExecutor() {
+		ExecutorService executor = deleteTreeExecutor;
+		if (executor != null) {
+			return executor;
+		}
+		synchronized (treeExecutorLock) {
+			executor = deleteTreeExecutor;
+			if (executor != null) {
+				return executor;
+			}
+			int maxThreads = threadMax > 0 ? threadMax : Runtime.getRuntime().availableProcessors();
+			// corePoolSize = maxThreads so threads are eagerly created for parallel tree ops.
+			// allowCoreThreadTimeOut ensures idle threads are reclaimed after 60s.
+			java.util.concurrent.ThreadPoolExecutor tpe = new java.util.concurrent.ThreadPoolExecutor(
+				maxThreads, maxThreads,
+				60L, TimeUnit.SECONDS,
+				new java.util.concurrent.LinkedBlockingQueue<>(1024),
+				r -> { Thread t = new Thread(r, "deleteTree-worker"); t.setDaemon(true); return t; },
+				new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
+			tpe.allowCoreThreadTimeOut(true);
+			executor = tpe;
+			deleteTreeExecutor = executor;
+			log.info("deleteTree executor initialized with maxThreads=" + maxThreads + " (thread.max=" + threadMax + ")");
+			return executor;
+		}
+	}
+
+	/**
+	 * Lazily create bulkUpdateProperties executor using the Spring-injected threadMax setting.
+	 * Separate from deleteTree executor to prevent thread starvation under concurrent use.
+	 */
+	private ExecutorService getBulkUpdateExecutor() {
+		ExecutorService executor = bulkUpdateExecutor;
+		if (executor != null) {
+			return executor;
+		}
+		synchronized (bulkUpdateExecutorLock) {
+			executor = bulkUpdateExecutor;
+			if (executor != null) {
+				return executor;
+			}
+			int maxThreads = threadMax > 0 ? threadMax : Runtime.getRuntime().availableProcessors();
+			java.util.concurrent.ThreadPoolExecutor tpe = new java.util.concurrent.ThreadPoolExecutor(
+				maxThreads, maxThreads,
+				60L, TimeUnit.SECONDS,
+				new java.util.concurrent.LinkedBlockingQueue<>(1024),
+				r -> { Thread t = new Thread(r, "bulkUpdate-worker"); t.setDaemon(true); return t; },
+				new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
+			tpe.allowCoreThreadTimeOut(true);
+			executor = tpe;
+			bulkUpdateExecutor = executor;
+			log.info("bulkUpdate executor initialized with maxThreads=" + maxThreads + " (thread.max=" + threadMax + ")");
+			return executor;
+		}
+	}
+
+	/**
+	 * Shutdown hook for executors.
+	 * Called by Spring via destroy-method="destroy".
+	 */
+	public void destroy() {
+		shutdownExecutor(deleteTreeExecutor, "deleteTree");
+		shutdownExecutor(bulkUpdateExecutor, "bulkUpdate");
+	}
+
+	private void shutdownExecutor(ExecutorService executor, String name) {
+		if (executor != null) {
+			executor.shutdown();
+			try {
+				if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+					log.warn(name + " executor did not terminate within timeout, forcing shutdown. "
+						+ "Active tasks may be interrupted.");
+					executor.shutdownNow();
+				}
+			} catch (InterruptedException e) {
+				log.warn(name + " executor shutdown interrupted, forcing shutdown");
+				executor.shutdownNow();
+				Thread.currentThread().interrupt();
+			}
+		}
 	}
 }

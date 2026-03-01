@@ -195,7 +195,7 @@
             <ref bean="objectService" />
         </property>
     </bean>
-    <bean id="objectService" class="jp.aegif.nemaki.cmis.service.impl.ObjectServiceImpl">
+    <bean id="objectService" class="jp.aegif.nemaki.cmis.service.impl.ObjectServiceImpl" destroy-method="destroy">
         <property name="typeManager">
             <ref bean="TypeManager" />
         </property>
@@ -386,7 +386,7 @@
         </property>
     </bean>
 
-    <bean id="aclService" class="jp.aegif.nemaki.cmis.service.impl.AclServiceImpl">
+    <bean id="aclService" class="jp.aegif.nemaki.cmis.service.impl.AclServiceImpl" destroy-method="destroy">
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
@@ -644,7 +644,7 @@
     <!-- CRITICAL FIX (2025-11-19): ApplicationContextAware for lazy ContentService retrieval -->
     <!-- No direct ContentService injection to avoid circular dependency -->
     <!-- Spring will automatically call setApplicationContext() -->
-    <bean id="solrUtil" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil">
+    <bean id="solrUtil" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil" destroy-method="destroy">
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>

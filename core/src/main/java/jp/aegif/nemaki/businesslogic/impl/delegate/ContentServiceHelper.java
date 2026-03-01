@@ -38,6 +38,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.GregorianCalendar;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
 /**
  * Shared utility methods extracted from ContentServiceImpl.
@@ -47,6 +48,23 @@ import java.util.concurrent.CompletableFuture;
 public class ContentServiceHelper {
 
 	private static final Logger log = LoggerFactory.getLogger(ContentServiceHelper.class);
+
+	// BTL-009: Dedicated executor for async webhook calls.
+	// CallerRunsPolicy provides backpressure: when the queue is full the calling
+	// thread delivers the webhook synchronously, ensuring no event is silently
+	// lost (critical for external integration consistency).
+	// Instance field (not static) so a fresh executor is created on Spring context restart.
+	// corePoolSize=1 ensures at least one thread is always ready for webhook delivery.
+	private final ExecutorService webhookExecutor;
+	{
+		java.util.concurrent.ThreadPoolExecutor tpe = new java.util.concurrent.ThreadPoolExecutor(
+			1, 2, 60L, java.util.concurrent.TimeUnit.SECONDS,
+			new java.util.concurrent.LinkedBlockingQueue<>(256),
+			r -> { Thread t = new Thread(r, "webhook-async"); t.setDaemon(true); return t; },
+			new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
+		tpe.allowCoreThreadTimeOut(true);
+		webhookExecutor = tpe;
+	}
 
 	private final ContentDaoService contentDaoService;
 	private volatile WebhookService webhookService;
@@ -62,6 +80,25 @@ public class ContentServiceHelper {
 	 */
 	public void setWebhookService(WebhookService webhookService) {
 		this.webhookService = webhookService;
+	}
+
+	/**
+	 * Shuts down the webhook executor during application shutdown.
+	 * Called from ContentServiceImpl.destroy() via Spring lifecycle.
+	 */
+	public void shutdown() {
+		webhookExecutor.shutdown();
+		try {
+			if (!webhookExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+				log.warn("webhookExecutor did not terminate within timeout, forcing shutdown. "
+					+ "Active tasks may be interrupted.");
+				webhookExecutor.shutdownNow();
+			}
+		} catch (InterruptedException e) {
+			log.warn("webhookExecutor shutdown interrupted, forcing shutdown");
+			webhookExecutor.shutdownNow();
+			Thread.currentThread().interrupt();
+		}
 	}
 
 	public void setSignature(CallContext callContext, NodeBase n) {
@@ -162,7 +199,7 @@ public class ContentServiceHelper {
 				} catch (Exception e) {
 					log.warn("Failed to trigger webhook for content " + contentId + ": " + e.getMessage());
 				}
-			});
+			}, webhookExecutor);
 		}
 
 		return change.getToken();

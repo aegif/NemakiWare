@@ -62,6 +62,36 @@ mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 cp core/target/core.war docker/core/core.war
 ```
 
+### OpenCMIS JAR Source (GitHub Packages)
+
+NemakiWare uses OpenCMIS JARs from `lib/built-jars` by default.
+To refresh those JARs from `aegif/chemistry-opencmis-nemakiware` on GitHub Packages:
+
+```bash
+./scripts/fetch-opencmis-from-github-packages.sh
+```
+
+Prerequisite (`~/.m2/settings.xml`):
+
+```xml
+<settings>
+  <servers>
+    <server>
+      <id>github-opencmis</id>
+      <username>YOUR_GITHUB_USERNAME</username>
+      <password>YOUR_GITHUB_TOKEN</password>
+    </server>
+  </servers>
+</settings>
+```
+
+If you want to test against another Maven repository URL:
+
+```bash
+OPENCMIS_GITHUB_PACKAGES_URL=file:/tmp/opencmis-gpr-dryrun \
+  ./scripts/fetch-opencmis-from-github-packages.sh
+```
+
 ### 2. Start Services
 
 ```bash

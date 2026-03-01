@@ -22,7 +22,6 @@ package jp.aegif.nemaki.cmis.service.impl;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.locks.Lock;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
@@ -72,6 +71,16 @@ public class AclServiceImpl implements AclService {
 	private RepositoryInfoMap repositoryInfoMap;
 	private RAGIndexingService ragIndexingService;
 	private ACLExpander aclExpander;
+
+	// Shared single-thread executor for async RAG ACL updates.
+	// CallerRunsPolicy provides backpressure: when the queue is full the calling
+	// thread executes the task synchronously, ensuring no ACL update is silently
+	// lost (critical for RAG search permission consistency).
+	private final ExecutorService ragAclExecutor = new java.util.concurrent.ThreadPoolExecutor(
+			0, 1, 60L, java.util.concurrent.TimeUnit.SECONDS,
+			new java.util.concurrent.LinkedBlockingQueue<>(256),
+			r -> { Thread t = new Thread(r, "RAG-ACL-Updater"); t.setDaemon(true); return t; },
+			new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
 
 	@Override
 	public Acl getAcl(CallContext callContext, String repositoryId,
@@ -202,7 +211,7 @@ public class AclServiceImpl implements AclService {
 			clearCachesRecursively(repositoryId, content);
 
 			// Async update RAG index ACL for this object and descendants
-			updateRAGIndexACLAsync(Executors.newSingleThreadExecutor(), repositoryId, content);
+			updateRAGIndexACLAsync(repositoryId, content);
 
 			return getAcl(callContext, repositoryId, objectId, false, null);
 		}finally{
@@ -244,8 +253,9 @@ public class AclServiceImpl implements AclService {
 	/**
 	 * Asynchronously update RAG index ACL for a document/folder and its descendants.
 	 * This ensures that RAG search results reflect the latest permission changes.
+	 * Uses the shared ragAclExecutor to prevent thread leak.
 	 */
-	private void updateRAGIndexACLAsync(ExecutorService executorService, String repositoryId, Content content) {
+	private void updateRAGIndexACLAsync(String repositoryId, Content content) {
 		// Get RAG services from Spring context (optional dependencies)
 		RAGIndexingService ragService = getRagIndexingService();
 		ACLExpander expander = getAclExpander();
@@ -255,7 +265,7 @@ public class AclServiceImpl implements AclService {
 			return;
 		}
 
-		executorService.submit(() -> {
+		ragAclExecutor.submit(() -> {
 			try {
 				updateRAGIndexACLRecursively(repositoryId, content, ragService, expander, new java.util.HashSet<>());
 				log.info("RAG index ACL update triggered for: " + content.getId());
@@ -470,5 +480,23 @@ public class AclServiceImpl implements AclService {
 
 	public void setAclExpander(ACLExpander aclExpander) {
 		this.aclExpander = aclExpander;
+	}
+
+	/**
+	 * Shuts down the shared RAG ACL executor. Called by Spring destroy-method.
+	 */
+	public void destroy() {
+		ragAclExecutor.shutdown();
+		try {
+			if (!ragAclExecutor.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)) {
+				log.warn("ragAclExecutor did not terminate within timeout, forcing shutdown. "
+					+ "Active tasks may be interrupted.");
+				ragAclExecutor.shutdownNow();
+			}
+		} catch (InterruptedException e) {
+			log.warn("ragAclExecutor shutdown interrupted, forcing shutdown");
+			ragAclExecutor.shutdownNow();
+			Thread.currentThread().interrupt();
+		}
 	}
 }

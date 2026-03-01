@@ -40,7 +40,7 @@
 			<ref bean="contentService" />
 		</property>
 	</bean>
-	<bean id="contentService" class="jp.aegif.nemaki.businesslogic.impl.ContentServiceImpl">
+	<bean id="contentService" class="jp.aegif.nemaki.businesslogic.impl.ContentServiceImpl" destroy-method="destroy">
 		<property name="repositoryInfoMap">
 			<ref bean="repositoryInfoMap" />
 		</property>

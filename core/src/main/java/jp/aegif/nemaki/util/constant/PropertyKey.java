@@ -28,6 +28,8 @@ public interface PropertyKey {
 	final String SOLR_CONTEXT = "solr.context";
 	final String SOLR_INDEXING_FORCE= "solr.indexing.force";
 	final String SOLR_NEMAKI_USERID= "solr.nemaki.userid";
+	/** TTL in ms for IN_TREE folder hierarchy cache. Default: 10000 (10s) */
+	final String SOLR_IN_TREE_CACHE_TTL_MS = "solr.in_tree.cache.ttl.ms";
 
 
 	//Config file path

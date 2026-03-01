@@ -318,7 +318,6 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             SolrClient solrClient = solrUtil.getSolrClient();
             if (solrClient != null) {
                 solrClient.commit();
-                solrClient.close();
                 // Wait a short time for Solr to fully process the commit
                 Thread.sleep(2000);
                 log.info("Solr commit completed for repository: " + repositoryId);
@@ -590,14 +589,6 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         } catch (Exception e) {
             log.warn("Error during batch verification: " + e.getMessage());
             // Don't fail the batch - verification is best-effort
-        } finally {
-            if (solrClient != null) {
-                try {
-                    solrClient.close();
-                } catch (Exception e) {
-                    log.warn("Failed to close Solr client: " + e.getMessage());
-                }
-            }
         }
     }
 
@@ -692,14 +683,6 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             log.error("Error checking index health for repository: " + repositoryId, e);
             health.setHealthy(false);
             health.setMessage("Error checking health: " + e.getMessage());
-        } finally {
-            if (solrClient != null) {
-                try {
-                    solrClient.close();
-                } catch (Exception e) {
-                    log.warn("Failed to close Solr client: " + e.getMessage());
-                }
-            }
         }
 
         return health;
@@ -784,9 +767,6 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         } catch (Exception e) {
             log.error("Error getting index discrepancies for repository: " + repositoryId, e);
         } finally {
-            if (solrClient != null) {
-                try { solrClient.close(); } catch (Exception e) { /* ignore */ }
-            }
         }
         return result;
     }
@@ -947,14 +927,6 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         } catch (Exception e) {
             log.error("Error executing Solr query for repository: " + repositoryId, e);
             result.setErrorMessage(e.getMessage());
-        } finally {
-            if (solrClient != null) {
-                try {
-                    solrClient.close();
-                } catch (Exception e) {
-                    log.warn("Failed to close Solr client: " + e.getMessage());
-                }
-            }
         }
 
         return result;
@@ -1003,7 +975,6 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             // Escape repositoryId to prevent query injection with special characters
             UpdateResponse response = solrClient.deleteByQuery("repository_id:" + ClientUtils.escapeQueryChars(repositoryId));
             solrClient.commit();
-            solrClient.close();
 
             log.info("Index cleared for repository: " + repositoryId);
             return response.getStatus() == 0;
@@ -1023,7 +994,6 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             }
 
             UpdateResponse response = solrClient.optimize();
-            solrClient.close();
 
             log.info("Index optimized for repository: " + repositoryId);
             return response.getStatus() == 0;

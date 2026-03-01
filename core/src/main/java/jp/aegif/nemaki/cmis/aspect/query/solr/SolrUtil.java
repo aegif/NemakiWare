@@ -60,8 +60,13 @@ import java.util.Calendar;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.response.QueryResponse;
+import org.apache.solr.common.SolrDocument;
+import org.apache.solr.common.SolrDocumentList;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 
@@ -86,6 +91,19 @@ public class SolrUtil implements ApplicationContextAware {
 
 	// Cached ContentService instance to avoid repeated applicationContext.getBean() calls
 	private volatile ContentService contentServiceCache;
+
+	// BTL-004: Shared SolrClient instance — HttpSolrClient is thread-safe
+	private volatile SolrClient sharedSolrClient;
+	private final Object solrClientLock = new Object();
+
+	// BTL-009: Dedicated executor for async Solr operations.
+	// CallerRunsPolicy provides backpressure: when the queue is full the calling
+	// thread executes the task synchronously, ensuring no index/delete operation
+	// is silently lost (which would cause search result inconsistency).
+	// Instance field (not static) so a fresh executor is created on Spring context restart.
+	// corePoolSize=2 ensures parallel indexing without waiting for queue saturation.
+	// Initialized in constructor (not instance initializer) for Mockito compatibility.
+	private java.util.concurrent.ExecutorService asyncSolrExecutor;
 
 	// Retry configuration for async Solr indexing
 	private static final int SOLR_INDEX_MAX_RETRY = 2;
@@ -122,41 +140,54 @@ public class SolrUtil implements ApplicationContextAware {
 		map.put(PropertyIds.PARENT_ID, "parent_id");
 		map.put(PropertyIds.PATH, "path");
 		map.put(PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS, "allowed_child_object_type_ids");
+
+		// Initialize async executor in constructor for Mockito compatibility
+		java.util.concurrent.ThreadPoolExecutor tpe = new java.util.concurrent.ThreadPoolExecutor(
+			2, 4, 60L, java.util.concurrent.TimeUnit.SECONDS,
+			new java.util.concurrent.LinkedBlockingQueue<>(512),
+			r -> { Thread t = new Thread(r, "solr-async"); t.setDaemon(true); return t; },
+			new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
+		tpe.allowCoreThreadTimeOut(true);
+		this.asyncSolrExecutor = tpe;
 	}
 
 	/**
-	 * Get Solr server instance
+	 * Get shared Solr server instance (thread-safe, lazy-initialized).
+	 * HttpSolrClient is thread-safe and reusable — creating one per call
+	 * wastes TCP connections and increases GC pressure.
 	 *
-	 * @return
+	 * @return shared SolrClient instance, or null if Solr is unreachable
 	 */
 	public SolrClient getSolrClient() {
-		String url = getSolrUrl();
-		log.info("Creating Solr client for URL: " + url);
-		
-		// Skip Http2SolrClient for Jakarta EE compatibility - use HttpSolrClient directly
-		log.debug("Using HttpSolrClient for Jakarta EE compatibility - skipping Http2SolrClient");
-		
-		// Fallback to HttpSolrClient for compatibility
-		try {
-			log.debug("Attempting HttpSolrClient fallback");
-			@SuppressWarnings("deprecation")
-			HttpSolrClient client = new HttpSolrClient.Builder(url)
-				.withConnectionTimeout(30000)
-				.withSocketTimeout(30000)
-				.build();
-			log.debug("HttpSolrClient created successfully for URL: {}", url);
+		SolrClient client = sharedSolrClient;
+		if (client != null) {
 			return client;
-		} catch (Exception e) {
-			log.error("HttpSolrClient creation failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-			e.printStackTrace();
-			log.error("All Solr client implementations failed: " + e.getMessage(), e);
 		}
-		
-		// Final fallback: Return null for graceful degradation to database-only queries
-		log.error("All Solr client implementations failed - HttpSolrClient unavailable");
-		log.error("CMIS queries will use database fallback instead of full-text search");
-		log.error("This is expected when Solr server is unavailable or network connectivity issues exist");
-		return null;  // Return null to trigger database fallback
+		synchronized (solrClientLock) {
+			client = sharedSolrClient;
+			if (client != null) {
+				return client;
+			}
+			String url = getSolrUrl();
+			if (url == null) {
+				log.error("Solr URL is null — cannot create SolrClient");
+				return null;
+			}
+			log.info("Creating shared Solr client for URL: " + url);
+			try {
+				@SuppressWarnings("deprecation")
+				HttpSolrClient newClient = new HttpSolrClient.Builder(url)
+					.withConnectionTimeout(30000)
+					.withSocketTimeout(30000)
+					.build();
+				sharedSolrClient = newClient;
+				log.info("Shared HttpSolrClient created successfully for URL: " + url);
+				return newClient;
+			} catch (Exception e) {
+				log.error("HttpSolrClient creation failed: " + e.getMessage(), e);
+				return null;
+			}
+		}
 	}
 
 	/**
@@ -270,7 +301,7 @@ public class SolrUtil implements ApplicationContextAware {
 			// Execute Solr indexing asynchronously to avoid blocking CMIS operations
 			CompletableFuture.runAsync(() -> {
 				indexDocumentInternal(repositoryId, content, skipRAGIndexing);
-			}).exceptionally(ex -> {
+			}, asyncSolrExecutor).exceptionally(ex -> {
 				log.warn("Solr async indexing failed for {}, scheduling retry: {}", content.getId(), ex.getMessage());
 				scheduleRetry(() -> indexDocumentInternal(repositoryId, content, skipRAGIndexing), content.getId(), 1);
 				return null;
@@ -299,7 +330,7 @@ public class SolrUtil implements ApplicationContextAware {
 				return;
 			}
 			task.run();
-		}).exceptionally(ex -> {
+		}, asyncSolrExecutor).exceptionally(ex -> {
 			log.warn("Solr indexing retry {} failed for {}: {}", attempt, docId, ex.getMessage());
 			scheduleRetry(task, docId, attempt + 1);
 			return null;
@@ -383,16 +414,8 @@ public class SolrUtil implements ApplicationContextAware {
 		} catch (Exception e) {
 			log.error("Unexpected error during batch indexing: " + e.getMessage(), e);
 			throw new RuntimeException("Solr batch indexing failed: " + e.getMessage(), e);
-		} finally {
-			if (solrClient != null) {
-				try {
-					solrClient.close();
-				} catch (IOException e) {
-					log.warn("Failed to close Solr client: " + e.getMessage());
-				}
-			}
 		}
-		
+
 		return successCount;
 	}
 
@@ -454,14 +477,6 @@ public class SolrUtil implements ApplicationContextAware {
 		} catch (Exception e) {
 			log.error("Unexpected error during Solr indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
 			throw new RuntimeException("Solr indexing failed: " + e.getMessage(), e);
-		} finally {
-			if (solrClient != null) {
-				try {
-					solrClient.close();
-				} catch (IOException e) {
-					log.warn("Failed to close Solr client: " + e.getMessage());
-				}
-			}
 		}
 	}
 
@@ -488,7 +503,7 @@ public class SolrUtil implements ApplicationContextAware {
 				// RAG indexing failure should not affect normal operations
 				log.warn("RAG indexing failed for document: " + document.getId() + ", error: " + e.getMessage());
 			}
-		});
+		}, asyncSolrExecutor);
 	}
 
 	/**
@@ -508,7 +523,7 @@ public class SolrUtil implements ApplicationContextAware {
 				// RAG deletion failure should not affect normal operations
 				log.warn("RAG document deletion failed for: " + documentId + ", error: " + e.getMessage());
 			}
-		});
+		}, asyncSolrExecutor);
 	}
 
 	/**
@@ -875,8 +890,6 @@ public class SolrUtil implements ApplicationContextAware {
 				throw e;
 			} catch (Exception e) {
 				throw new RuntimeException("Solr document deletion failed for document: " + documentId + ": " + e.getMessage(), e);
-			} finally {
-				try { solrClient.close(); } catch (IOException ignored) {}
 			}
 			return;
 		}
@@ -899,12 +912,11 @@ public class SolrUtil implements ApplicationContextAware {
 					throw new RuntimeException("Solr deletion failed with status: " + response.getStatus());
 				}
 
-				solrClient.close();
 			} catch (SolrServerException | IOException e) {
 				log.warn("Solr document deletion failed for document: " + documentId + " in repository: " + repositoryId + ", error: " + e.getMessage());
 				throw new RuntimeException("Solr deletion failed: " + e.getMessage(), e);
 			}
-		}).exceptionally(ex -> {
+		}, asyncSolrExecutor).exceptionally(ex -> {
 			log.warn("Solr async deletion failed for {}, scheduling retry: {}", documentId, ex.getMessage());
 			scheduleRetry(() -> {
 				try {
@@ -913,7 +925,6 @@ public class SolrUtil implements ApplicationContextAware {
 					req.deleteById(documentId);
 					req.setCommitWithin(1000);
 					req.process(solrClient);
-					solrClient.close();
 					log.info("Solr deletion retry succeeded for document: {}", documentId);
 					triggerRAGDeletion(repositoryId, documentId);
 				} catch (Exception retryEx) {
@@ -1022,6 +1033,270 @@ public class SolrUtil implements ApplicationContextAware {
 		synchronized (this) {
 			this.contentServiceCache = null;
 			this.applicationContext = applicationContext;
+		}
+	}
+
+
+	// ── IN_TREE folder hierarchy cache ──────────────────────────────────
+	// Caches the parent→children map per repository to avoid full Solr scan
+	// on every IN_TREE predicate. TTL-based with explicit invalidation.
+	// Uses a generation counter to prevent stale rebuild results from overwriting
+	// a concurrent invalidation.
+
+	private static final long DEFAULT_IN_TREE_CACHE_TTL_MS = 10_000L; // 10 seconds
+
+	private static class FolderHierarchyCacheEntry {
+		final Map<String, List<String>> childrenMap;
+		final long createdAt;
+		final long generation;
+
+		FolderHierarchyCacheEntry(Map<String, List<String>> childrenMap, long generation) {
+			this.childrenMap = childrenMap;
+			this.createdAt = System.currentTimeMillis();
+			this.generation = generation;
+		}
+
+		boolean isExpired(long ttlMs) {
+			return System.currentTimeMillis() - createdAt > ttlMs;
+		}
+	}
+
+	private final java.util.concurrent.ConcurrentHashMap<String, FolderHierarchyCacheEntry>
+		folderHierarchyCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+	// Generation counter per repository — incremented on invalidation.
+	// Rebuild checks generation before storing to discard stale results.
+	private final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicLong>
+		folderHierarchyGenerations = new java.util.concurrent.ConcurrentHashMap<>();
+
+	// Guard against concurrent rebuilds for the same repository
+	private final java.util.concurrent.ConcurrentHashMap<String, Object>
+		folderHierarchyBuildLocks = new java.util.concurrent.ConcurrentHashMap<>();
+
+	private long getGeneration(String repositoryId) {
+		java.util.concurrent.atomic.AtomicLong gen =
+			folderHierarchyGenerations.computeIfAbsent(repositoryId,
+				k -> new java.util.concurrent.atomic.AtomicLong(0));
+		return gen.get();
+	}
+
+	/**
+	 * Returns the parent→children map for folders in the given repository.
+	 * Uses a TTL-based cache to avoid full Solr scans on every IN_TREE call.
+	 *
+	 * @return childrenMap (parentId → list of childIds), or null on Solr error
+	 */
+	public Map<String, List<String>> getFolderHierarchy(String repositoryId) {
+		long ttl = getInTreeCacheTtlMs();
+
+		// Fast-path: lock-free cache check.
+		// Read generation BEFORE entry so that a concurrent invalidation
+		// (which increments generation, then removes entry) is detected:
+		//   - If invalidate runs before genRead: we read new gen, entry may
+		//     still be present but entry.generation < gen → MISS (safe).
+		//   - If invalidate runs between genRead and entryRead: entry is
+		//     removed → null → MISS (safe).
+		//   - If invalidate runs after entryRead: stale entry returned once.
+		//     The re-check of generation before return minimises this window.
+		long currentGen = getGeneration(repositoryId);
+		FolderHierarchyCacheEntry entry = folderHierarchyCache.get(repositoryId);
+		if (entry != null && !entry.isExpired(ttl) && entry.generation == currentGen) {
+			// Re-verify generation to narrow the race window: if an invalidation
+			// occurred between the reads above and now, generation will have advanced.
+			if (getGeneration(repositoryId) == currentGen) {
+				log.debug("IN_TREE cache HIT for repository={}", repositoryId);
+				return entry.childrenMap;
+			}
+			// Generation moved — fall through to synchronized rebuild
+		}
+
+		// Serialize rebuild per repository to prevent thundering herd
+		Object lock = folderHierarchyBuildLocks.computeIfAbsent(repositoryId, k -> new Object());
+		synchronized (lock) {
+			// Double-check after acquiring lock
+			currentGen = getGeneration(repositoryId);
+			entry = folderHierarchyCache.get(repositoryId);
+			if (entry != null && !entry.isExpired(ttl) && entry.generation == currentGen) {
+				return entry.childrenMap;
+			}
+
+			// Build with retry: if generation changes during build, retry up to
+			// 3 times. Only cache when afterGen == buildGen (consistent snapshot).
+			// If all 3 attempts see generation drift, return the last result
+			// WITHOUT caching — the next caller will retry, and by then the
+			// invalidation storm will likely have subsided.
+			Map<String, List<String>> childrenMap = null;
+			for (int attempt = 1; attempt <= 3; attempt++) {
+				long buildGen = getGeneration(repositoryId);
+				long start = System.currentTimeMillis();
+				log.debug("IN_TREE cache MISS for repository={}, rebuilding folder hierarchy (gen={}, attempt={})",
+					repositoryId, buildGen, attempt);
+
+				childrenMap = buildFolderHierarchyFromSolr(repositoryId);
+				if (childrenMap == null) {
+					return null; // Solr error
+				}
+
+				long afterGen = getGeneration(repositoryId);
+				if (afterGen == buildGen) {
+					folderHierarchyCache.put(repositoryId, new FolderHierarchyCacheEntry(childrenMap, buildGen));
+					long elapsed = System.currentTimeMillis() - start;
+					log.info("IN_TREE cache rebuilt for repository={} in {}ms ({} folders, gen={}, attempt={})",
+						repositoryId, elapsed, childrenMap.values().stream().mapToInt(List::size).sum(),
+						buildGen, attempt);
+					return childrenMap;
+				}
+
+				if (attempt < 3) {
+					log.info("IN_TREE cache rebuild for repository={} gen changed ({}→{}), retrying (attempt={}/3)",
+						repositoryId, buildGen, afterGen, attempt);
+				} else {
+					// All 3 attempts saw generation changes. Return the build result
+					// for this request (best-effort) but do NOT cache it — caching
+					// with a mismatched generation would serve stale data to
+					// subsequent requests for the full TTL period.
+					log.warn("IN_TREE cache rebuild for repository={} saw continuous gen changes ({}→{}), "
+						+ "returning uncached best-effort result (attempt=3)", repositoryId, buildGen, afterGen);
+				}
+			}
+			return childrenMap;
+		}
+	}
+
+	/**
+	 * Invalidates the folder hierarchy cache for the given repository.
+	 * Called after folder create/move/delete operations.
+	 * Increments the generation counter so any in-flight rebuild will discard
+	 * its stale result.
+	 *
+	 * IMPORTANT: generation must be incremented BEFORE cache removal.
+	 * This ordering ensures the fast-path in getFolderHierarchy() is safe:
+	 * reading entry before generation guarantees that any concurrent invalidation
+	 * causes entry.generation < currentGen → cache MISS.
+	 */
+	public void invalidateFolderHierarchyCache(String repositoryId) {
+		java.util.concurrent.atomic.AtomicLong gen =
+			folderHierarchyGenerations.computeIfAbsent(repositoryId,
+				k -> new java.util.concurrent.atomic.AtomicLong(0));
+		long newGen = gen.incrementAndGet();
+		folderHierarchyCache.remove(repositoryId);
+		log.debug("IN_TREE cache invalidated for repository={} (new gen={})", repositoryId, newGen);
+	}
+
+	private long getInTreeCacheTtlMs() {
+		try {
+			String val = propertyManager.readValue(PropertyKey.SOLR_IN_TREE_CACHE_TTL_MS);
+			if (val != null && !val.isEmpty()) {
+				return Long.parseLong(val);
+			}
+		} catch (Exception e) {
+			// ignore
+		}
+		return DEFAULT_IN_TREE_CACHE_TTL_MS;
+	}
+
+	/**
+	 * Fetches all folders from Solr using cursorMark pagination and builds
+	 * a parent→children map.
+	 *
+	 * @return childrenMap, or null on Solr error
+	 */
+	private Map<String, List<String>> buildFolderHierarchyFromSolr(String repositoryId) {
+		SolrClient solrClient = getSolrClient();
+		if (solrClient == null) {
+			return null;
+		}
+
+		Map<String, String> folderParentMap = new HashMap<>();
+		try {
+			String cursorMark = org.apache.solr.common.params.CursorMarkParams.CURSOR_MARK_START;
+			boolean done = false;
+			while (!done) {
+				SolrQuery solrQuery = new SolrQuery(
+					"basetype:cmis\\:folder AND repository_id:" +
+					org.apache.solr.client.solrj.util.ClientUtils.escapeQueryChars(repositoryId));
+				solrQuery.setFields("object_id", "parent_id");
+				solrQuery.setRows(10000);
+				solrQuery.setSort("object_id", SolrQuery.ORDER.asc);
+				solrQuery.set(org.apache.solr.common.params.CursorMarkParams.CURSOR_MARK_PARAM, cursorMark);
+
+				QueryResponse resp = solrClient.query(solrQuery);
+				SolrDocumentList docs = resp.getResults();
+
+				for (SolrDocument doc : docs) {
+					String objectId = extractSolrStringFieldStatic(doc, "object_id");
+					String parentId = extractSolrStringFieldStatic(doc, "parent_id");
+					if (objectId != null) {
+						folderParentMap.put(objectId, parentId);
+					}
+				}
+
+				String nextCursorMark = resp.getNextCursorMark();
+				if (cursorMark.equals(nextCursorMark)) {
+					done = true;
+				}
+				cursorMark = nextCursorMark;
+			}
+		} catch (SolrServerException | IOException e) {
+			log.error("Error fetching folder hierarchy for IN_TREE cache: " + e.getMessage(), e);
+			return null;
+		}
+
+		Map<String, List<String>> childrenMap = new HashMap<>();
+		for (Map.Entry<String, String> entry : folderParentMap.entrySet()) {
+			if (entry.getValue() != null) {
+				childrenMap.computeIfAbsent(entry.getValue(), k -> new ArrayList<>()).add(entry.getKey());
+			}
+		}
+		return childrenMap;
+	}
+
+	/**
+	 * Extracts a string field from a SolrDocument, handling multi-valued fields.
+	 */
+	private static String extractSolrStringFieldStatic(SolrDocument doc, String fieldName) {
+		Object val = doc.getFieldValue(fieldName);
+		if (val == null) return null;
+		if (val instanceof String) return (String) val;
+		if (val instanceof java.util.Collection) {
+			java.util.Collection<?> col = (java.util.Collection<?>) val;
+			if (!col.isEmpty()) {
+				Object first = col.iterator().next();
+				return first != null ? first.toString() : null;
+			}
+			return null;
+		}
+		return val.toString();
+	}
+
+	/**
+	 * Shutdown hook — closes the shared SolrClient and async executor on
+	 * application shutdown. Called by Spring via destroy-method="destroy".
+	 */
+	public void destroy() {
+		// Shutdown async executor to prevent thread leaks on redeploy
+		asyncSolrExecutor.shutdown();
+		try {
+			if (!asyncSolrExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+				log.warn("asyncSolrExecutor did not terminate within timeout, forcing shutdown. "
+					+ "Active tasks may be interrupted.");
+				asyncSolrExecutor.shutdownNow();
+			}
+		} catch (InterruptedException e) {
+			log.warn("asyncSolrExecutor shutdown interrupted, forcing shutdown");
+			asyncSolrExecutor.shutdownNow();
+			Thread.currentThread().interrupt();
+		}
+
+		SolrClient client = sharedSolrClient;
+		if (client != null) {
+			sharedSolrClient = null;
+			try {
+				client.close();
+				log.info("Shared SolrClient closed successfully");
+			} catch (IOException e) {
+				log.warn("Error closing shared SolrClient: " + e.getMessage());
+			}
 		}
 	}
 

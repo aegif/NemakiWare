@@ -230,9 +230,10 @@ public class ContentServiceImpl implements ContentService {
 				}
 			}
 
-			// Path resolution successful - use getContent() to ensure consistent object loading
+			// BTL-007: getChildByName already returns a fully-loaded Content via
+			// getContent() internally — no need for another round-trip.
 			log.debug("getContentByPath: path resolution successful, final content ID=" + content.getId());
-			return getContent(repositoryId, content.getId());
+			return content;
 		}
 	}
 
@@ -3766,6 +3767,15 @@ public class ContentServiceImpl implements ContentService {
 		
 		log.debug("Atomic attachment copy verified: {}", attachmentId);
 		return attachmentId;
+	}
+
+	/**
+	 * Spring lifecycle: shut down the async webhook executor on context close.
+	 */
+	public void destroy() {
+		if (helper != null) {
+			helper.shutdown();
+		}
 	}
 
 	////////////////////////////////////////////

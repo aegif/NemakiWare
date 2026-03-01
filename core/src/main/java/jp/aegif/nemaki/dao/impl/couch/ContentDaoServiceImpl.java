@@ -1141,11 +1141,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			try {
 				Content result = getChildByNameView(client, repositoryId, parentId, name);
 				return result;
+			} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException cre) {
+				// Transient infrastructure failure — propagate, do NOT silently fallback
+				throw cre;
 			} catch (Exception viewEx) {
-				// View unavailable or transient query error — fall back to children view
+				// View unavailable (not yet created) — fall back to children view
 				log.debug("childByName view query error, falling back to children view: " + viewEx.getMessage());
 				return getChildByNameFallback(client, repositoryId, parentId, name);
 			}
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException cre) {
+			// Infrastructure failure — propagate to caller
+			throw cre;
 		} catch (Exception e) {
 			log.error("Error getting child by name: " + name + " for parent: " + parentId + " in repository: " + repositoryId, e);
 			return null;
@@ -1159,7 +1165,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 * views created by Patch_StandardCmisViews after startup are eventually picked up.
 	 *
 	 * @return the matching Content, or null if the child genuinely does not exist
-	 * @throws RuntimeException if the view is unavailable or a transient query error occurs
+	 * @throws CmisRuntimeException if a transient probe/query error occurs (must NOT be caught as fallback)
+	 * @throws RuntimeException if the view is unavailable (signals caller to fall back)
 	 */
 	private Content getChildByNameView(CloudantClientWrapper client, String repositoryId, String parentId, String name) {
 		// Determine whether a (re-)probe is needed
@@ -1185,8 +1192,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					log.info("childByName view not found for repository " + repositoryId + " — using children view fallback");
 				}
 			} catch (Exception e) {
-				// Transient error during probe — don't cache, let caller fall back
-				throw new RuntimeException("childByName view probe failed for repository " + repositoryId, e);
+				// Transient error during probe — propagate as CmisRuntimeException
+				// so the caller does NOT silently fall back to the children view.
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"childByName view probe failed for repository " + repositoryId, e);
 			}
 		}
 
@@ -1195,7 +1204,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			throw new RuntimeException("childByName view not available for repository " + repositoryId);
 		}
 
-		// Execute the view query — exceptions propagate to caller for fallback
+		// Execute the view query — transient errors propagate as CmisRuntimeException
+		// from queryView(); null return means NotFoundException (view missing).
 		// CRITICAL FIX: Use LinkedHashMap to maintain key order matching CouchDB view emit order.
 		// CouchDB compares JSON object keys using serialized form, so key order must match
 		// the order in the view's emit(): {parentId: ..., name: ...}
@@ -1211,8 +1221,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		ViewResult result = client.queryView("_repo", "childByName", queryParams);
 
 		if (result == null) {
-			// queryView() returned null = transient error (CloudantClientWrapper caught an exception internally)
-			throw new RuntimeException("childByName query returned null for repository " + repositoryId + " — transient error");
+			// queryView() returned null = NotFoundException (view/design doc does not exist).
+			// Cache as unavailable so next call falls back without re-probing.
+			childByNameViewStatus.put(repositoryId, Boolean.FALSE);
+			childByNameProbeTime.put(repositoryId, System.currentTimeMillis());
+			throw new RuntimeException("childByName view not found for repository " + repositoryId + " — fallback to children view");
 		}
 
 		// Successful response — ensure status is cached as available (permanent)

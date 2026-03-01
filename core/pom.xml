@@ -24,6 +24,8 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<org.springframework.version>6.1.13</org.springframework.version>
 		<org.apache.chemistry.opencmis.version>1.1.0-nemakiware</org.apache.chemistry.opencmis.version>
+		<opencmis.github.packages.url>https://maven.pkg.github.com/aegif/chemistry-opencmis-nemakiware</opencmis.github.packages.url>
+		<opencmis.github.packages.repository.id>github-opencmis</opencmis.github.packages.repository.id>
 		<jersey.version>3.1.10</jersey.version>
 		<org.apache.chemistry.opencmis.version.14>0.14.0</org.apache.chemistry.opencmis.version.14>
 		<aws.sdk.version>2.25.60</aws.sdk.version>
@@ -575,6 +577,12 @@
 				<exclusion>
 					<groupId>javax.servlet</groupId>
 					<artifactId>javax.servlet-api</artifactId>
+				</exclusion>
+				<!-- Exclude log4j-slf4j2-impl to prevent dual SLF4J binding
+				     (NemakiWare uses logback-classic as the single SLF4J binding) -->
+				<exclusion>
+					<groupId>org.apache.logging.log4j</groupId>
+					<artifactId>log4j-slf4j2-impl</artifactId>
 				</exclusion>
 			</exclusions>
 		</dependency>
@@ -1374,6 +1382,120 @@
 	</build>
 
 	<profiles>
+		<profile>
+			<id>opencmis-github-packages</id>
+			<repositories>
+				<repository>
+					<id>${opencmis.github.packages.repository.id}</id>
+					<url>${opencmis.github.packages.url}</url>
+					<releases>
+						<enabled>true</enabled>
+					</releases>
+					<snapshots>
+						<enabled>true</enabled>
+					</snapshots>
+				</repository>
+			</repositories>
+			<build>
+				<plugins>
+					<!--
+						Resolve OpenCMIS from GitHub Packages and place jars into lib/built-jars
+						so existing systemPath dependencies and WAR assembly continue to work.
+						Authentication: ~/.m2/settings.xml server id = github-opencmis
+					-->
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-dependency-plugin</artifactId>
+						<version>3.6.1</version>
+						<executions>
+							<execution>
+								<id>sync-opencmis-from-github-packages</id>
+								<phase>validate</phase>
+								<goals>
+									<goal>copy</goal>
+								</goals>
+								<configuration>
+									<artifactItems>
+										<artifactItem>
+											<groupId>org.apache.chemistry.opencmis</groupId>
+											<artifactId>chemistry-opencmis-commons-impl</artifactId>
+											<version>${org.apache.chemistry.opencmis.version}</version>
+											<type>jar</type>
+											<outputDirectory>${project.basedir}/../lib/built-jars</outputDirectory>
+											<destFileName>chemistry-opencmis-commons-impl-${org.apache.chemistry.opencmis.version}.jar</destFileName>
+											<overWrite>true</overWrite>
+										</artifactItem>
+										<artifactItem>
+											<groupId>org.apache.chemistry.opencmis</groupId>
+											<artifactId>chemistry-opencmis-commons-api</artifactId>
+											<version>${org.apache.chemistry.opencmis.version}</version>
+											<type>jar</type>
+											<outputDirectory>${project.basedir}/../lib/built-jars</outputDirectory>
+											<destFileName>chemistry-opencmis-commons-api-${org.apache.chemistry.opencmis.version}.jar</destFileName>
+											<overWrite>true</overWrite>
+										</artifactItem>
+										<artifactItem>
+											<groupId>org.apache.chemistry.opencmis</groupId>
+											<artifactId>chemistry-opencmis-server-support</artifactId>
+											<version>${org.apache.chemistry.opencmis.version}</version>
+											<type>jar</type>
+											<outputDirectory>${project.basedir}/../lib/built-jars</outputDirectory>
+											<destFileName>chemistry-opencmis-server-support-${org.apache.chemistry.opencmis.version}.jar</destFileName>
+											<overWrite>true</overWrite>
+										</artifactItem>
+										<artifactItem>
+											<groupId>org.apache.chemistry.opencmis</groupId>
+											<artifactId>chemistry-opencmis-server-bindings</artifactId>
+											<version>${org.apache.chemistry.opencmis.version}</version>
+											<type>jar</type>
+											<outputDirectory>${project.basedir}/../lib/built-jars</outputDirectory>
+											<destFileName>chemistry-opencmis-server-bindings-${org.apache.chemistry.opencmis.version}.jar</destFileName>
+											<overWrite>true</overWrite>
+										</artifactItem>
+										<artifactItem>
+											<groupId>org.apache.chemistry.opencmis</groupId>
+											<artifactId>chemistry-opencmis-client-impl</artifactId>
+											<version>${org.apache.chemistry.opencmis.version}</version>
+											<type>jar</type>
+											<outputDirectory>${project.basedir}/../lib/built-jars</outputDirectory>
+											<destFileName>chemistry-opencmis-client-impl-${org.apache.chemistry.opencmis.version}.jar</destFileName>
+											<overWrite>true</overWrite>
+										</artifactItem>
+										<artifactItem>
+											<groupId>org.apache.chemistry.opencmis</groupId>
+											<artifactId>chemistry-opencmis-client-api</artifactId>
+											<version>${org.apache.chemistry.opencmis.version}</version>
+											<type>jar</type>
+											<outputDirectory>${project.basedir}/../lib/built-jars</outputDirectory>
+											<destFileName>chemistry-opencmis-client-api-${org.apache.chemistry.opencmis.version}.jar</destFileName>
+											<overWrite>true</overWrite>
+										</artifactItem>
+										<artifactItem>
+											<groupId>org.apache.chemistry.opencmis</groupId>
+											<artifactId>chemistry-opencmis-client-bindings</artifactId>
+											<version>${org.apache.chemistry.opencmis.version}</version>
+											<type>jar</type>
+											<outputDirectory>${project.basedir}/../lib/built-jars</outputDirectory>
+											<destFileName>chemistry-opencmis-client-bindings-${org.apache.chemistry.opencmis.version}.jar</destFileName>
+											<overWrite>true</overWrite>
+										</artifactItem>
+										<artifactItem>
+											<groupId>org.apache.chemistry.opencmis</groupId>
+											<artifactId>chemistry-opencmis-test-tck</artifactId>
+											<version>${org.apache.chemistry.opencmis.version}</version>
+											<type>jar</type>
+											<outputDirectory>${project.basedir}/../lib/built-jars</outputDirectory>
+											<destFileName>chemistry-opencmis-test-tck-${org.apache.chemistry.opencmis.version}.jar</destFileName>
+											<overWrite>true</overWrite>
+										</artifactItem>
+									</artifactItems>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
 		<profile>
 			<id>development</id>
 			<activation>
