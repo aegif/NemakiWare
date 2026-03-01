@@ -39,14 +39,9 @@
                 <enabled>true</enabled>
             </releases>
         </repository>
-		<!-- OpenCMIS 1.1.0-nemakiware Jakarta EE JARs hosted on GitHub Packages.
-		     Requires ~/.m2/settings.xml with server id "github-opencmis". -->
-		<repository>
-			<id>${opencmis.github.packages.repository.id}</id>
-			<url>${opencmis.github.packages.url}</url>
-			<releases><enabled>true</enabled></releases>
-			<snapshots><enabled>false</enabled></snapshots>
-		</repository>
+		<!-- OpenCMIS 1.1.0-nemakiware JARs are resolved from local Maven repository.
+		     For initial setup, run: ./scripts/install-opencmis-local.sh
+		     Or activate the opencmis-github-packages profile with GitHub Packages auth. -->
 	</repositories>
 
 	<dependencyManagement>
