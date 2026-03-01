@@ -39,14 +39,9 @@
                 <enabled>true</enabled>
             </releases>
         </repository>
-		<!-- OpenCMIS 1.1.0-nemakiware Jakarta EE JARs hosted on GitHub Packages.
-		     Requires ~/.m2/settings.xml with server id "github-opencmis". -->
-		<repository>
-			<id>${opencmis.github.packages.repository.id}</id>
-			<url>${opencmis.github.packages.url}</url>
-			<releases><enabled>true</enabled></releases>
-			<snapshots><enabled>false</enabled></snapshots>
-		</repository>
+		<!-- OpenCMIS 1.1.0-nemakiware JARs are resolved from local Maven repository.
+		     For initial setup, run: ./scripts/install-opencmis-local.sh
+		     Or activate the opencmis-github-packages profile with GitHub Packages auth. -->
 	</repositories>
 
 	<dependencyManagement>
@@ -127,7 +122,7 @@
 		<dependency>
 			<groupId>org.mockito</groupId>
 			<artifactId>mockito-core</artifactId>
-			<version>5.11.0</version>
+			<version>5.22.0</version>
 			<scope>test</scope>
 		</dependency>
 
@@ -135,7 +130,7 @@
 		<dependency>
 			<groupId>org.json</groupId>
 			<artifactId>json</artifactId>
-			<version>20250517</version>
+			<version>20251224</version>
 			<scope>test</scope>
 		</dependency>
 
@@ -363,14 +358,9 @@
 			<version>${org.springframework.version}</version>
 		</dependency>
 		<dependency>
-			<groupId>org.springframework.plugin</groupId>
-			<artifactId>spring-plugin-core</artifactId>
-			<version>1.2.0.RELEASE</version>
-		</dependency>
-		<dependency>
 			<groupId>org.aspectj</groupId>
 			<artifactId>aspectjweaver</artifactId>
-			<version>1.9.25</version>
+			<version>1.9.25.1</version>
 		</dependency>
 
 		<dependency>
@@ -605,21 +595,9 @@
 		</dependency>
 
 		<dependency>
-			<groupId>org.codehaus.mojo</groupId>
-			<artifactId>cobertura-maven-plugin</artifactId>
-			<version>2.5.2</version>
-			<exclusions>
-				<exclusion>
-					<groupId>xml-apis</groupId>
-					<artifactId>xml-apis</artifactId>
-				</exclusion>
-			</exclusions>
-		</dependency>
-
-		<dependency>
 			<groupId>org.ehcache</groupId>
 			<artifactId>ehcache</artifactId>
-			<version>3.10.8</version>
+			<version>3.11.1</version>
 			<exclusions>
 				<exclusion>
 					<groupId>org.glassfish.jaxb</groupId>
@@ -631,7 +609,7 @@
 		<dependency>
 			<groupId>org.ehcache</groupId>
 			<artifactId>ehcache-clustered</artifactId>
-			<version>3.10.8</version>
+			<version>3.11.1</version>
 			<optional>true</optional>
 			<exclusions>
 				<exclusion>
@@ -658,7 +636,17 @@
 			<artifactId>commons-codec</artifactId>
 			<version>1.20.0</version>
 		</dependency>
-		<!-- SECURITY UPDATE (2025-11-19): Updated from 1.10 to 1.20.0 (10-year-old version upgraded) -->
+		<!-- Previously transitive via cobertura-maven-plugin (now removed) -->
+		<dependency>
+			<groupId>commons-beanutils</groupId>
+			<artifactId>commons-beanutils</artifactId>
+			<version>1.9.4</version>
+		</dependency>
+		<dependency>
+			<groupId>commons-lang</groupId>
+			<artifactId>commons-lang</artifactId>
+			<version>2.6</version>
+		</dependency>
 
 		<dependency>
 			<groupId>org.apache.commons</groupId>
@@ -683,7 +671,7 @@
 		<dependency>
 			<groupId>uk.com.robust-it</groupId>
 			<artifactId>cloning</artifactId>
-			<version>1.9.1</version>
+			<version>1.9.12</version>
 		</dependency>
 
 		<dependency>
@@ -700,15 +688,13 @@
 		<dependency>
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-collections4</artifactId>
-			<version>4.4</version>
+			<version>4.5.0</version>
 		</dependency>
 
-		<!-- Override commons-io version for POI 5.2.5 compatibility -->
-		<!-- POI 5.2.5 requires commons-io 2.13.0+ for UnsynchronizedByteArrayOutputStream.builder() -->
 		<dependency>
 			<groupId>commons-io</groupId>
 			<artifactId>commons-io</artifactId>
-			<version>2.15.0</version>
+			<version>2.18.0</version>
 		</dependency>
 
 		<!-- Apache Tika for full-text content extraction (PDF, Office, etc.) -->
@@ -1058,7 +1044,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
-				<version>2.19.1</version>
+				<version>3.5.2</version>
 				<configuration>
 					<redirectTestOutputToFile>true</redirectTestOutputToFile>
 					<!-- Exclude integration tests that require running Docker containers -->

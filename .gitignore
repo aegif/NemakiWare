@@ -231,12 +231,22 @@ tck-evidence-2025-10-11.tar.gz
 *.old
 node/
 
+# Legacy modules and directories (removed from git to eliminate Dependabot alerts)
+suspended-modules/
+extracted/
+setup/
+docker/initializer/
+docker/docker-compose-containerized.yml
+docker/docker-compose-jakarta-*.yml
+docker/docker-compose-tomcat10.yml
+docker/prepare-initializer.sh
+
+# Root-level artifacts (UI is in core/src/main/webapp/ui/)
+/package-lock.json
+
 # Legacy OpenCMIS JARs (removed 2025-12-16)
 # These are no longer needed - using lib/built-jars/ for custom OpenCMIS builds
 lib/014-source/
-suspended-modules/opencmis-1.1.0-legacy/
-suspended-modules/opencmis-1.2.0-jars/
-suspended-modules/opencmis-legacy-converted/
 chemistry-opencmis-1.1.0-jakarta-jars/
 
 # Detached OpenCMIS bundled sources (migrated to GitHub Packages)
