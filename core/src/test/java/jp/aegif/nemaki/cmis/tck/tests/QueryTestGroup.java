@@ -6,8 +6,8 @@ import org.apache.chemistry.opencmis.tck.tests.query.QueryInFolderTest;
 import org.apache.chemistry.opencmis.tck.tests.query.QueryLikeTest;
 import org.apache.chemistry.opencmis.tck.tests.query.QueryRootFolderTest;
 import org.apache.chemistry.opencmis.tck.tests.query.QuerySmokeTest;
-import org.junit.Test;
-import org.junit.Ignore;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Disabled;
 
 import jp.aegif.nemaki.cmis.tck.TckSuite;
 

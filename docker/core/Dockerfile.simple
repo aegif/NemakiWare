@@ -1,9 +1,9 @@
-FROM tomcat:10.1-jre17
+FROM tomcat:10.1-jre21
 
 # Install curl, openjdk, LibreOffice (for PDF conversion), and Japanese fonts
 RUN apt-get update && apt-get install -y \
     curl \
-    openjdk-17-jdk-headless \
+    openjdk-21-jdk-headless \
     libreoffice-writer \
     libreoffice-calc \
     libreoffice-impress \

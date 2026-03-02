@@ -41,8 +41,8 @@ import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.UnfileObject;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 
 public class TestBase {
 	protected static Session session;
@@ -50,13 +50,13 @@ public class TestBase {
 	protected static String logFormat = "{thread:%s, time:%s, id:%s, start:%s, end:%s"; 
 	protected static final String PARAM_FILE_NAME = "cmis-original-thread.properties";
 	
-	@BeforeClass
+	@BeforeAll
 	public static void before() throws Exception {
 		session = SessionUtil.createCmisSession("bedroom", "admin", "admin");
 		testFolderId = prepareData();
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void after() throws Exception {
 		Folder folder = (Folder) session.getObject(testFolderId);
 		folder.deleteTree(true, UnfileObject.DELETE, true);

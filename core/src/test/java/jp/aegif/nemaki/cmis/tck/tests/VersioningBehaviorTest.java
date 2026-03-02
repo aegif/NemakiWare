@@ -9,8 +9,10 @@ import org.apache.chemistry.opencmis.commons.enums.BindingType;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisConnectionException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
-import org.junit.*;
-import org.junit.runners.MethodSorters;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.TestMethodOrder;
 
 import java.io.ByteArrayInputStream;
 import java.math.BigInteger;
@@ -18,7 +20,7 @@ import java.net.ConnectException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Behavior-fixing tests for checkOut/checkIn/cancelCheckOut/createAttachment.
@@ -33,7 +35,7 @@ import static org.junit.Assert.*;
  *
  * @see docs/adr/001-versioning-attachment-delegate-extraction.md
  */
-@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+@TestMethodOrder(MethodOrderer.MethodName.class)
 public class VersioningBehaviorTest {
 
     private static Session session;
@@ -41,7 +43,7 @@ public class VersioningBehaviorTest {
     private static String testFolderId;
     private static final String TEST_FOLDER_NAME = "behavior-test-" + System.currentTimeMillis();
 
-    @BeforeClass
+    @BeforeAll
     public static void setUpSession() {
         Map<String, String> params = new HashMap<>();
         params.put(SessionParameter.BINDING_TYPE, BindingType.ATOMPUB.value());
@@ -58,7 +60,7 @@ public class VersioningBehaviorTest {
             session = factory.createSession(params);
         } catch (CmisConnectionException e) {
             if (isConnectivityError(e)) {
-                Assume.assumeTrue("NemakiWare server not reachable at localhost:8080 — skipping", false);
+                Assumptions.assumeTrue(false, "NemakiWare server not reachable at localhost:8080 — skipping");
             }
             throw e; // authentication / protocol errors → fail fast
         }
@@ -68,7 +70,7 @@ public class VersioningBehaviorTest {
             session.getRootFolder();
         } catch (CmisConnectionException e) {
             if (isConnectivityError(e)) {
-                Assume.assumeTrue("NemakiWare server not reachable at localhost:8080 — skipping", false);
+                Assumptions.assumeTrue(false, "NemakiWare server not reachable at localhost:8080 — skipping");
             }
             throw e;
         }
@@ -127,7 +129,7 @@ public class VersioningBehaviorTest {
         return false;
     }
 
-    @AfterClass
+    @AfterAll
     public static void tearDown() {
         if (testFolderId != null && session != null) {
             try {
@@ -167,26 +169,25 @@ public class VersioningBehaviorTest {
     @Test
     public void test01_checkOut_createsPwcWithCorrectProperties() {
         Document doc = createTestDocument("checkout-test.txt", "initial content");
-        assertNotNull("Document should be created", doc);
-        assertEquals("Initial version should be 1.0", "1.0", doc.getVersionLabel());
-        assertFalse("Document should not be checked out initially",
-                doc.isVersionSeriesCheckedOut());
+        assertNotNull(doc, "Document should be created");
+        assertEquals("1.0", doc.getVersionLabel(), "Initial version should be 1.0");
+        assertFalse(doc.isVersionSeriesCheckedOut(), "Document should not be checked out initially");
 
         // CheckOut
         ObjectId pwcId = doc.checkOut();
-        assertNotNull("PWC ID should be returned", pwcId);
+        assertNotNull(pwcId, "PWC ID should be returned");
 
         // Refresh and verify checkout state
         doc.refresh();
-        assertTrue("Version series should be checked out", doc.isVersionSeriesCheckedOut());
+        assertTrue(doc.isVersionSeriesCheckedOut(), "Version series should be checked out");
 
         // Get PWC and verify properties
         Document pwc = (Document) session.getObject(pwcId);
-        assertNotNull("PWC should exist", pwc);
+        assertNotNull(pwc, "PWC should exist");
         // NemakiWare behavior: PWC versionLabel is null (not set until checkIn)
-        assertNull("PWC version label should be null in NemakiWare", pwc.getVersionLabel());
-        assertEquals("PWC name should match original", "checkout-test.txt", pwc.getName());
-        assertFalse("PWC should not be latest version", pwc.isLatestVersion());
+        assertNull(pwc.getVersionLabel(), "PWC version label should be null in NemakiWare");
+        assertEquals("checkout-test.txt", pwc.getName(), "PWC name should match original");
+        assertFalse(pwc.isLatestVersion(), "PWC should not be latest version");
 
         // Cleanup: cancel checkout
         pwc.cancelCheckOut();
@@ -202,9 +203,9 @@ public class VersioningBehaviorTest {
 
         // Verify PWC has same content
         ContentStream pwcStream = pwc.getContentStream();
-        assertNotNull("PWC should have content stream", pwcStream);
+        assertNotNull(pwcStream, "PWC should have content stream");
         String pwcContent = new String(pwcStream.getStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertEquals("PWC content should match original", originalContent, pwcContent);
+        assertEquals(originalContent, pwcContent, "PWC content should match original");
 
         pwc.cancelCheckOut();
     }
@@ -217,7 +218,7 @@ public class VersioningBehaviorTest {
         doc.refresh();
 
         String checkedOutBy = doc.getVersionSeriesCheckedOutBy();
-        assertEquals("Checked out by should be admin", "admin", checkedOutBy);
+        assertEquals("admin", checkedOutBy, "Checked out by should be admin");
 
         Document pwc = (Document) session.getObject(pwcId);
         pwc.cancelCheckOut();
@@ -235,8 +236,7 @@ public class VersioningBehaviorTest {
 
         // Refresh original document
         doc.refresh();
-        assertFalse("Version series should not be checked out after cancel",
-                doc.isVersionSeriesCheckedOut());
+        assertFalse(doc.isVersionSeriesCheckedOut(), "Version series should not be checked out after cancel");
 
         // Verify PWC no longer exists
         try {
@@ -260,9 +260,8 @@ public class VersioningBehaviorTest {
 
         // Re-read document
         doc.refresh();
-        assertEquals("Version label should remain unchanged after cancel",
-                originalVersionLabel, doc.getVersionLabel());
-        assertTrue("Should still be latest version after cancel", doc.isLatestVersion());
+        assertEquals(originalVersionLabel, doc.getVersionLabel(), "Version label should remain unchanged after cancel");
+        assertTrue(doc.isLatestVersion(), "Should still be latest version after cancel");
     }
 
     // ========== CheckIn Behavior Tests ==========
@@ -270,7 +269,7 @@ public class VersioningBehaviorTest {
     @Test
     public void test06_checkIn_majorVersion_incrementsVersionLabel() {
         Document doc = createTestDocument("checkin-major.txt", "v1 content");
-        assertEquals("Initial version should be 1.0", "1.0", doc.getVersionLabel());
+        assertEquals("1.0", doc.getVersionLabel(), "Initial version should be 1.0");
 
         ObjectId pwcId = doc.checkOut();
         Document pwc = (Document) session.getObject(pwcId);
@@ -282,9 +281,9 @@ public class VersioningBehaviorTest {
         ObjectId newVersionId = pwc.checkIn(true, props, newContent, "Major version check-in");
 
         Document newVersion = (Document) session.getObject(newVersionId);
-        assertEquals("New version label should be 2.0", "2.0", newVersion.getVersionLabel());
-        assertTrue("New version should be latest", newVersion.isLatestVersion());
-        assertTrue("New version should be latest major", newVersion.isLatestMajorVersion());
+        assertEquals("2.0", newVersion.getVersionLabel(), "New version label should be 2.0");
+        assertTrue(newVersion.isLatestVersion(), "New version should be latest");
+        assertTrue(newVersion.isLatestMajorVersion(), "New version should be latest major");
     }
 
     @Test
@@ -301,8 +300,8 @@ public class VersioningBehaviorTest {
         ObjectId newVersionId = pwc.checkIn(false, props, newContent, "Minor version check-in");
 
         Document newVersion = (Document) session.getObject(newVersionId);
-        assertEquals("New version label should be 1.1", "1.1", newVersion.getVersionLabel());
-        assertTrue("New version should be latest", newVersion.isLatestVersion());
+        assertEquals("1.1", newVersion.getVersionLabel(), "New version label should be 1.1");
+        assertTrue(newVersion.isLatestVersion(), "New version should be latest");
     }
 
     @Test
@@ -321,7 +320,7 @@ public class VersioningBehaviorTest {
         Document newVersion = (Document) session.getObject(newVersionId);
         ContentStream resultStream = newVersion.getContentStream();
         String resultContent = new String(resultStream.getStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertEquals("Content should be updated after checkIn", updatedContent, resultContent);
+        assertEquals(updatedContent, resultContent, "Content should be updated after checkIn");
     }
 
     @Test
@@ -337,8 +336,7 @@ public class VersioningBehaviorTest {
         ObjectId newVersionId = pwc.checkIn(true, props, newCs, "Reset check");
 
         Document newVersion = (Document) session.getObject(newVersionId);
-        assertFalse("Version series should not be checked out after checkIn",
-                newVersion.isVersionSeriesCheckedOut());
+        assertFalse(newVersion.isVersionSeriesCheckedOut(), "Version series should not be checked out after checkIn");
     }
 
     @Test
@@ -356,8 +354,8 @@ public class VersioningBehaviorTest {
         // Verify previous version is no longer latest
         Document v1 = (Document) session.getObject(v1Id);
         v1.refresh();
-        assertFalse("Previous version should NOT be latest", v1.isLatestVersion());
-        assertFalse("Previous version should NOT be latest major", v1.isLatestMajorVersion());
+        assertFalse(v1.isLatestVersion(), "Previous version should NOT be latest");
+        assertFalse(v1.isLatestMajorVersion(), "Previous version should NOT be latest major");
     }
 
     @Test
@@ -382,12 +380,11 @@ public class VersioningBehaviorTest {
         Document v3 = (Document) session.getObject(v3Id);
         List<Document> versions = v3.getAllVersions();
 
-        assertNotNull("Version history should not be null", versions);
-        assertTrue("Should have at least 3 versions", versions.size() >= 3);
+        assertNotNull(versions, "Version history should not be null");
+        assertTrue(versions.size() >= 3, "Should have at least 3 versions");
 
         // CMIS spec: versions are ordered latest-first
-        assertEquals("First version in list should be latest (3.0)",
-                "3.0", versions.get(0).getVersionLabel());
+        assertEquals("3.0", versions.get(0).getVersionLabel(), "First version in list should be latest (3.0)");
     }
 
     // ========== Attachment / Content Stream Tests ==========
@@ -408,9 +405,9 @@ public class VersioningBehaviorTest {
 
         Document newVersion = (Document) session.getObject(newVersionId);
         ContentStream resultStream = newVersion.getContentStream();
-        assertNotNull("Content stream should exist", resultStream);
+        assertNotNull(resultStream, "Content stream should exist");
         String result = new String(resultStream.getStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertEquals("Content should match after checkIn", newContent, result);
+        assertEquals(newContent, result, "Content should match after checkIn");
     }
 
     @Test
@@ -426,7 +423,7 @@ public class VersioningBehaviorTest {
 
         Document doc = testFolder.createDocument(props, cs, VersioningState.MAJOR);
         ContentStream resultStream = doc.getContentStream();
-        assertEquals("MIME type should be preserved", "text/html", resultStream.getMimeType());
+        assertEquals("text/html", resultStream.getMimeType(), "MIME type should be preserved");
     }
 
     @Test
@@ -435,10 +432,10 @@ public class VersioningBehaviorTest {
         Document doc = createTestDocument("length-test.txt", content);
 
         ContentStream resultStream = doc.getContentStream();
-        assertNotNull("Content stream should exist", resultStream);
+        assertNotNull(resultStream, "Content stream should exist");
         long reportedLength = resultStream.getLength();
-        assertTrue("Content length should be positive", reportedLength > 0);
-        assertEquals("Content length should match", content.getBytes(StandardCharsets.UTF_8).length, reportedLength);
+        assertTrue(reportedLength > 0, "Content length should be positive");
+        assertEquals(content.getBytes(StandardCharsets.UTF_8).length, reportedLength, "Content length should match");
     }
 
     @Test
@@ -453,7 +450,7 @@ public class VersioningBehaviorTest {
                 BigInteger.ZERO, "text/plain", new ByteArrayInputStream(emptyBytes));
 
         Document doc = testFolder.createDocument(props, cs, VersioningState.MAJOR);
-        assertNotNull("Document with empty content should be created", doc);
+        assertNotNull(doc, "Document with empty content should be created");
     }
 
     // ========== Combined Scenario Tests ==========
@@ -463,7 +460,7 @@ public class VersioningBehaviorTest {
         // Create initial document
         Document doc = createTestDocument("full-cycle.txt", "version 1.0");
         String versionSeriesId = doc.getVersionSeriesId();
-        assertNotNull("Version series ID should exist", versionSeriesId);
+        assertNotNull(versionSeriesId, "Version series ID should exist");
 
         // Cycle 1: CheckOut -> CheckIn (major)
         ObjectId pwcId1 = doc.checkOut();
@@ -482,8 +479,8 @@ public class VersioningBehaviorTest {
         pwc2.cancelCheckOut();
 
         v2.refresh();
-        assertFalse("Should not be checked out after cancel", v2.isVersionSeriesCheckedOut());
-        assertEquals("Version label should still be 2.0 after cancel", "2.0", v2.getVersionLabel());
+        assertFalse(v2.isVersionSeriesCheckedOut(), "Should not be checked out after cancel");
+        assertEquals("2.0", v2.getVersionLabel(), "Version label should still be 2.0 after cancel");
 
         // Cycle 3: CheckOut -> CheckIn (minor)
         ObjectId pwcId3 = v2.checkOut();
@@ -493,11 +490,11 @@ public class VersioningBehaviorTest {
 
         Document v3 = (Document) session.getObject(v3Id);
         assertEquals("2.1", v3.getVersionLabel());
-        assertTrue("Latest version should be v2.1", v3.isLatestVersion());
+        assertTrue(v3.isLatestVersion(), "Latest version should be v2.1");
 
         // Verify version history
         List<Document> history = v3.getAllVersions();
-        assertTrue("Should have at least 3 versions", history.size() >= 3);
+        assertTrue(history.size() >= 3, "Should have at least 3 versions");
     }
 
     @Test
@@ -514,7 +511,6 @@ public class VersioningBehaviorTest {
         ObjectId newVersionId = pwc.checkIn(true, props, newCs, checkinComment);
 
         Document newVersion = (Document) session.getObject(newVersionId);
-        assertEquals("Check-in comment should be preserved",
-                checkinComment, newVersion.getCheckinComment());
+        assertEquals(checkinComment, newVersion.getCheckinComment(), "Check-in comment should be preserved");
     }
 }

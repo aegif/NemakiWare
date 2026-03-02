@@ -1,8 +1,8 @@
 package jp.aegif.nemaki.webhook;
 
-import org.junit.Test;
-import org.junit.Before;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import static org.junit.jupiter.api.Assertions.*;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -29,7 +29,7 @@ public class WebhookDeliveryServiceTest {
     
     private WebhookDeliveryService deliveryService;
     
-    @Before
+    @BeforeEach
     public void setUp() {
         log.info("Setting up WebhookDeliveryServiceTest");
         deliveryService = new WebhookDeliveryService();
@@ -52,12 +52,12 @@ public class WebhookDeliveryServiceTest {
             eventType, objectId, repositoryId, properties, null
         );
         
-        assertNotNull("Payload should not be null", payload);
+        assertNotNull(payload, "Payload should not be null");
         assertEquals("CREATED", payload.getEventType());
         assertEquals("doc-123", payload.getObjectId());
         assertEquals("bedroom", payload.getRepositoryId());
-        assertNotNull("Timestamp should be set", payload.getTimestamp());
-        assertNotNull("DeliveryId should be generated", payload.getDeliveryId());
+        assertNotNull(payload.getTimestamp(), "Timestamp should be set");
+        assertNotNull(payload.getDeliveryId(), "DeliveryId should be generated");
         assertEquals("test-document.txt", payload.getProperties().get("cmis:name"));
     }
     
@@ -73,7 +73,7 @@ public class WebhookDeliveryServiceTest {
             eventType, objectId, repositoryId, properties, null
         );
         
-        assertNotNull("Payload should not be null", payload);
+        assertNotNull(payload, "Payload should not be null");
         assertEquals("UPDATED", payload.getEventType());
         assertEquals("doc-456", payload.getObjectId());
     }
@@ -88,7 +88,7 @@ public class WebhookDeliveryServiceTest {
             eventType, objectId, repositoryId, null, null
         );
         
-        assertNotNull("Payload should not be null", payload);
+        assertNotNull(payload, "Payload should not be null");
         assertEquals("DELETED", payload.getEventType());
         assertEquals("doc-789", payload.getObjectId());
     }
@@ -105,7 +105,7 @@ public class WebhookDeliveryServiceTest {
             eventType, objectId, repositoryId, properties, null
         );
         
-        assertNotNull("Payload should not be null", payload);
+        assertNotNull(payload, "Payload should not be null");
         assertEquals("SECURITY", payload.getEventType());
     }
     
@@ -120,7 +120,7 @@ public class WebhookDeliveryServiceTest {
             eventType, objectId, repositoryId, null, changeToken
         );
         
-        assertNotNull("Payload should not be null", payload);
+        assertNotNull(payload, "Payload should not be null");
         assertEquals(changeToken, payload.getChangeToken());
     }
     
@@ -140,8 +140,8 @@ public class WebhookDeliveryServiceTest {
         
         Map<String, String> headers = deliveryService.generateAuthHeaders(config);
         
-        assertNotNull("Headers should not be null", headers);
-        assertFalse("Should not contain Authorization header", headers.containsKey("Authorization"));
+        assertNotNull(headers, "Headers should not be null");
+        assertFalse(headers.containsKey("Authorization"), "Should not contain Authorization header");
     }
     
     @Test
@@ -157,9 +157,9 @@ public class WebhookDeliveryServiceTest {
         
         Map<String, String> headers = deliveryService.generateAuthHeaders(config);
         
-        assertNotNull("Headers should not be null", headers);
-        assertTrue("Should contain Authorization header", headers.containsKey("Authorization"));
-        assertTrue("Should be Basic auth", headers.get("Authorization").startsWith("Basic "));
+        assertNotNull(headers, "Headers should not be null");
+        assertTrue(headers.containsKey("Authorization"), "Should contain Authorization header");
+        assertTrue(headers.get("Authorization").startsWith("Basic "), "Should be Basic auth");
     }
     
     @Test
@@ -175,8 +175,8 @@ public class WebhookDeliveryServiceTest {
         
         Map<String, String> headers = deliveryService.generateAuthHeaders(config);
         
-        assertNotNull("Headers should not be null", headers);
-        assertTrue("Should contain Authorization header", headers.containsKey("Authorization"));
+        assertNotNull(headers, "Headers should not be null");
+        assertTrue(headers.containsKey("Authorization"), "Should contain Authorization header");
         assertEquals("Bearer my-token-12345", headers.get("Authorization"));
     }
     
@@ -193,8 +193,8 @@ public class WebhookDeliveryServiceTest {
         
         Map<String, String> headers = deliveryService.generateAuthHeaders(config);
         
-        assertNotNull("Headers should not be null", headers);
-        assertTrue("Should contain X-API-Key header", headers.containsKey("X-API-Key"));
+        assertNotNull(headers, "Headers should not be null");
+        assertTrue(headers.containsKey("X-API-Key"), "Should contain X-API-Key header");
         assertEquals("api-key-secret", headers.get("X-API-Key"));
     }
     
@@ -216,10 +216,10 @@ public class WebhookDeliveryServiceTest {
         
         Map<String, String> headers = deliveryService.generateAuthHeaders(config);
         
-        assertNotNull("Headers should not be null", headers);
+        assertNotNull(headers, "Headers should not be null");
         assertEquals("custom-value", headers.get("X-Custom-Header"));
         assertEquals("another-value", headers.get("X-Another-Header"));
-        assertTrue("Should also contain Authorization", headers.containsKey("Authorization"));
+        assertTrue(headers.containsKey("Authorization"), "Should also contain Authorization");
     }
     
     // ========================================
@@ -233,10 +233,10 @@ public class WebhookDeliveryServiceTest {
         
         String signature = deliveryService.computeHmacSignature(payload, secret);
         
-        assertNotNull("Signature should not be null", signature);
-        assertFalse("Signature should not be empty", signature.isEmpty());
+        assertNotNull(signature, "Signature should not be null");
+        assertFalse(signature.isEmpty(), "Signature should not be empty");
         // HMAC-SHA256 produces 64 hex characters
-        assertEquals("HMAC-SHA256 should produce 64 hex chars", 64, signature.length());
+        assertEquals(64, signature.length(), "HMAC-SHA256 should produce 64 hex chars");
     }
     
     @Test
@@ -247,7 +247,7 @@ public class WebhookDeliveryServiceTest {
         String signature1 = deliveryService.computeHmacSignature(payload, secret);
         String signature2 = deliveryService.computeHmacSignature(payload, secret);
         
-        assertEquals("Same payload and secret should produce same signature", signature1, signature2);
+        assertEquals(signature1, signature2, "Same payload and secret should produce same signature");
     }
     
     @Test
@@ -257,7 +257,7 @@ public class WebhookDeliveryServiceTest {
         String signature1 = deliveryService.computeHmacSignature(payload, "secret1");
         String signature2 = deliveryService.computeHmacSignature(payload, "secret2");
         
-        assertNotEquals("Different secrets should produce different signatures", signature1, signature2);
+        assertNotEquals(signature1, signature2, "Different secrets should produce different signatures");
     }
     
     @Test
@@ -266,7 +266,7 @@ public class WebhookDeliveryServiceTest {
         
         String signature = deliveryService.computeHmacSignature(payload, null);
         
-        assertNull("Null secret should return null signature", signature);
+        assertNull(signature, "Null secret should return null signature");
     }
     
     // ========================================
@@ -277,8 +277,8 @@ public class WebhookDeliveryServiceTest {
     public void testGenerateDeliveryId() {
         String deliveryId = deliveryService.generateDeliveryId();
         
-        assertNotNull("DeliveryId should not be null", deliveryId);
-        assertFalse("DeliveryId should not be empty", deliveryId.isEmpty());
+        assertNotNull(deliveryId, "DeliveryId should not be null");
+        assertFalse(deliveryId.isEmpty(), "DeliveryId should not be empty");
     }
     
     @Test
@@ -286,7 +286,7 @@ public class WebhookDeliveryServiceTest {
         String id1 = deliveryService.generateDeliveryId();
         String id2 = deliveryService.generateDeliveryId();
         
-        assertNotEquals("Each delivery ID should be unique", id1, id2);
+        assertNotEquals(id1, id2, "Each delivery ID should be unique");
     }
     
     // ========================================
@@ -297,15 +297,15 @@ public class WebhookDeliveryServiceTest {
     public void testCalculateBackoffDelay() {
         // First retry (attempt 1)
         long delay1 = deliveryService.calculateBackoffDelay(1);
-        assertTrue("First retry should have delay >= 1000ms", delay1 >= 1000);
+        assertTrue(delay1 >= 1000, "First retry should have delay >= 1000ms");
         
         // Second retry (attempt 2)
         long delay2 = deliveryService.calculateBackoffDelay(2);
-        assertTrue("Second retry should have longer delay", delay2 > delay1);
+        assertTrue(delay2 > delay1, "Second retry should have longer delay");
         
         // Third retry (attempt 3)
         long delay3 = deliveryService.calculateBackoffDelay(3);
-        assertTrue("Third retry should have even longer delay", delay3 > delay2);
+        assertTrue(delay3 > delay2, "Third retry should have even longer delay");
     }
     
     @Test
@@ -314,7 +314,7 @@ public class WebhookDeliveryServiceTest {
         long delay = deliveryService.calculateBackoffDelay(100);
         
         // Max delay should be capped at 5 minutes (300000ms)
-        assertTrue("Delay should be capped at max value", delay <= 300000);
+        assertTrue(delay <= 300000, "Delay should be capped at max value");
     }
     
     @Test
@@ -327,10 +327,10 @@ public class WebhookDeliveryServiceTest {
             .retryCount(3)
             .build();
         
-        assertTrue("Should retry on attempt 1", deliveryService.shouldRetry(config, 1, 500));
-        assertTrue("Should retry on attempt 2", deliveryService.shouldRetry(config, 2, 503));
-        assertTrue("Should retry on attempt 3", deliveryService.shouldRetry(config, 3, 502));
-        assertFalse("Should not retry after max attempts", deliveryService.shouldRetry(config, 4, 500));
+        assertTrue(deliveryService.shouldRetry(config, 1, 500), "Should retry on attempt 1");
+        assertTrue(deliveryService.shouldRetry(config, 2, 503), "Should retry on attempt 2");
+        assertTrue(deliveryService.shouldRetry(config, 3, 502), "Should retry on attempt 3");
+        assertFalse(deliveryService.shouldRetry(config, 4, 500), "Should not retry after max attempts");
     }
     
     @Test
@@ -343,9 +343,9 @@ public class WebhookDeliveryServiceTest {
             .retryCount(3)
             .build();
         
-        assertFalse("Should not retry on 200", deliveryService.shouldRetry(config, 1, 200));
-        assertFalse("Should not retry on 201", deliveryService.shouldRetry(config, 1, 201));
-        assertFalse("Should not retry on 204", deliveryService.shouldRetry(config, 1, 204));
+        assertFalse(deliveryService.shouldRetry(config, 1, 200), "Should not retry on 200");
+        assertFalse(deliveryService.shouldRetry(config, 1, 201), "Should not retry on 201");
+        assertFalse(deliveryService.shouldRetry(config, 1, 204), "Should not retry on 204");
     }
     
     @Test
@@ -359,10 +359,10 @@ public class WebhookDeliveryServiceTest {
             .build();
         
         // 4xx errors (except 429) should not be retried
-        assertFalse("Should not retry on 400", deliveryService.shouldRetry(config, 1, 400));
-        assertFalse("Should not retry on 401", deliveryService.shouldRetry(config, 1, 401));
-        assertFalse("Should not retry on 403", deliveryService.shouldRetry(config, 1, 403));
-        assertFalse("Should not retry on 404", deliveryService.shouldRetry(config, 1, 404));
+        assertFalse(deliveryService.shouldRetry(config, 1, 400), "Should not retry on 400");
+        assertFalse(deliveryService.shouldRetry(config, 1, 401), "Should not retry on 401");
+        assertFalse(deliveryService.shouldRetry(config, 1, 403), "Should not retry on 403");
+        assertFalse(deliveryService.shouldRetry(config, 1, 404), "Should not retry on 404");
     }
     
     @Test
@@ -376,7 +376,7 @@ public class WebhookDeliveryServiceTest {
             .build();
         
         // 429 Too Many Requests should be retried
-        assertTrue("Should retry on 429", deliveryService.shouldRetry(config, 1, 429));
+        assertTrue(deliveryService.shouldRetry(config, 1, 429), "Should retry on 429");
     }
     
     // ========================================
@@ -394,11 +394,11 @@ public class WebhookDeliveryServiceTest {
         
         String json = deliveryService.serializePayload(payload);
         
-        assertNotNull("JSON should not be null", json);
-        assertTrue("Should contain eventType", json.contains("CREATED"));
-        assertTrue("Should contain objectId", json.contains("doc-123"));
-        assertTrue("Should contain repositoryId", json.contains("bedroom"));
-        assertTrue("Should contain deliveryId", json.contains("delivery-abc"));
+        assertNotNull(json, "JSON should not be null");
+        assertTrue(json.contains("CREATED"), "Should contain eventType");
+        assertTrue(json.contains("doc-123"), "Should contain objectId");
+        assertTrue(json.contains("bedroom"), "Should contain repositoryId");
+        assertTrue(json.contains("delivery-abc"), "Should contain deliveryId");
     }
     
     // ========================================
@@ -408,8 +408,7 @@ public class WebhookDeliveryServiceTest {
     @Test
     public void testShouldRetryWithNullConfig() {
         // Should return false when config is null (not throw NPE)
-        assertFalse("Should return false for null config", 
-            deliveryService.shouldRetry(null, 1, 500));
+        assertFalse(deliveryService.shouldRetry(null, 1, 500), "Should return false for null config");
     }
     
     @Test
@@ -424,8 +423,7 @@ public class WebhookDeliveryServiceTest {
             .build();
         
         // With null retryCount (defaults to 0), attempt 1 should not retry
-        assertFalse("Should not retry when retryCount is null (defaults to 0)", 
-            deliveryService.shouldRetry(config, 1, 500));
+        assertFalse(deliveryService.shouldRetry(config, 1, 500), "Should not retry when retryCount is null (defaults to 0)");
     }
     
     @Test
@@ -433,8 +431,8 @@ public class WebhookDeliveryServiceTest {
         // Should return empty map when config is null (not throw NPE)
         Map<String, String> headers = deliveryService.generateAuthHeaders(null);
         
-        assertNotNull("Should return empty map, not null", headers);
-        assertTrue("Should return empty map for null config", headers.isEmpty());
+        assertNotNull(headers, "Should return empty map, not null");
+        assertTrue(headers.isEmpty(), "Should return empty map for null config");
     }
     
     @Test
@@ -445,9 +443,9 @@ public class WebhookDeliveryServiceTest {
         long delayNegative = deliveryService.calculateBackoffDelay(-1);
         
         // All should return the base delay (normalized to attempt 1)
-        assertTrue("Attempt 0 should return valid delay", delay0 >= 1000);
-        assertTrue("Attempt 1 should return valid delay", delay1 >= 1000);
-        assertTrue("Negative attempt should return valid delay", delayNegative >= 1000);
+        assertTrue(delay0 >= 1000, "Attempt 0 should return valid delay");
+        assertTrue(delay1 >= 1000, "Attempt 1 should return valid delay");
+        assertTrue(delayNegative >= 1000, "Negative attempt should return valid delay");
     }
     
     // ========================================
@@ -472,12 +470,9 @@ public class WebhookDeliveryServiceTest {
         assertEquals("cmis:document", payload.getProperties().get("cmis:objectTypeId"));
         
         // Sensitive properties should be filtered out
-        assertNull("nemaki:webhookConfigs should be filtered", 
-            payload.getProperties().get("nemaki:webhookConfigs"));
-        assertNull("nemaki:webhookSecret should be filtered", 
-            payload.getProperties().get("nemaki:webhookSecret"));
-        assertNull("nemaki:authCredential should be filtered", 
-            payload.getProperties().get("nemaki:authCredential"));
+        assertNull(payload.getProperties().get("nemaki:webhookConfigs"), "nemaki:webhookConfigs should be filtered");
+        assertNull(payload.getProperties().get("nemaki:webhookSecret"), "nemaki:webhookSecret should be filtered");
+        assertNull(payload.getProperties().get("nemaki:authCredential"), "nemaki:authCredential should be filtered");
     }
     
     @Test
@@ -499,13 +494,11 @@ public class WebhookDeliveryServiceTest {
         String json = deliveryService.serializePayload(payload);
         
         // Non-sensitive properties should be included
-        assertTrue("Should contain cmis:name", json.contains("test-document.txt"));
+        assertTrue(json.contains("test-document.txt"), "Should contain cmis:name");
         
         // Sensitive properties should be filtered out even in serializePayload
-        assertFalse("nemaki:webhookConfigs should be filtered in serialization", 
-            json.contains("nemaki:webhookConfigs"));
-        assertFalse("Secret value should not appear in JSON", 
-            json.contains("my-secret"));
+        assertFalse(json.contains("nemaki:webhookConfigs"), "nemaki:webhookConfigs should be filtered in serialization");
+        assertFalse(json.contains("my-secret"), "Secret value should not appear in JSON");
     }
     
     @Test
@@ -520,7 +513,6 @@ public class WebhookDeliveryServiceTest {
             .build();
         
         // With negative retryCount (treated as 0), attempt 1 should not retry
-        assertFalse("Should not retry when retryCount is negative (treated as 0)", 
-            deliveryService.shouldRetry(config, 1, 500));
+        assertFalse(deliveryService.shouldRetry(config, 1, 500), "Should not retry when retryCount is negative (treated as 0)");
     }
 }

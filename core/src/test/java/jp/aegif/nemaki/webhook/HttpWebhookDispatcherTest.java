@@ -20,15 +20,15 @@
  ******************************************************************************/
 package jp.aegif.nemaki.webhook;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.URL;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for HttpWebhookDispatcher SSRF protection.
@@ -47,7 +47,7 @@ public class HttpWebhookDispatcherTest {
     private HttpWebhookDispatcher dispatcher;
     private Method isAddressSafeMethod;
 
-    @Before
+    @BeforeEach
     public void setUp() throws Exception {
         dispatcher = new HttpWebhookDispatcher();
 
@@ -72,28 +72,28 @@ public class HttpWebhookDispatcherTest {
     public void testBlocksLocalhost() throws Exception {
         URL url = new URL("http://localhost/webhook");
         boolean result = isUrlSafe(url);
-        assertFalse("localhost should be blocked", result);
+        assertFalse(result, "localhost should be blocked");
     }
     
     @Test
     public void testBlocksLocalhostUppercase() throws Exception {
         URL url = new URL("http://LOCALHOST/webhook");
         boolean result = isUrlSafe(url);
-        assertFalse("LOCALHOST (uppercase) should be blocked", result);
+        assertFalse(result, "LOCALHOST (uppercase) should be blocked");
     }
     
     @Test
     public void testBlocks127001() throws Exception {
         URL url = new URL("http://127.0.0.1/webhook");
         boolean result = isUrlSafe(url);
-        assertFalse("127.0.0.1 should be blocked", result);
+        assertFalse(result, "127.0.0.1 should be blocked");
     }
     
     @Test
     public void testBlocks0000() throws Exception {
         URL url = new URL("http://0.0.0.0/webhook");
         boolean result = isUrlSafe(url);
-        assertFalse("0.0.0.0 should be blocked", result);
+        assertFalse(result, "0.0.0.0 should be blocked");
     }
     
     @Test
@@ -101,7 +101,7 @@ public class HttpWebhookDispatcherTest {
         // Note: URL with IPv6 requires brackets
         URL url = new URL("http://[::1]/webhook");
         boolean result = isUrlSafe(url);
-        assertFalse("::1 (IPv6 loopback) should be blocked", result);
+        assertFalse(result, "::1 (IPv6 loopback) should be blocked");
     }
     
     // ========================================
@@ -112,21 +112,21 @@ public class HttpWebhookDispatcherTest {
     public void testBlocksAwsMetadataEndpoint() throws Exception {
         URL url = new URL("http://169.254.169.254/latest/meta-data/");
         boolean result = isUrlSafe(url);
-        assertFalse("AWS metadata endpoint should be blocked", result);
+        assertFalse(result, "AWS metadata endpoint should be blocked");
     }
     
     @Test
     public void testBlocksGcpMetadataInternal() throws Exception {
         URL url = new URL("http://metadata.google.internal/computeMetadata/v1/");
         boolean result = isUrlSafe(url);
-        assertFalse("GCP metadata.google.internal should be blocked", result);
+        assertFalse(result, "GCP metadata.google.internal should be blocked");
     }
     
     @Test
     public void testBlocksGcpMetadataCom() throws Exception {
         URL url = new URL("http://metadata.google.com/computeMetadata/v1/");
         boolean result = isUrlSafe(url);
-        assertFalse("metadata.google.com should be blocked", result);
+        assertFalse(result, "metadata.google.com should be blocked");
     }
     
     // ========================================
@@ -137,28 +137,28 @@ public class HttpWebhookDispatcherTest {
     public void testBlocks10Network() throws Exception {
         InetAddress addr = InetAddress.getByName("10.0.0.1");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertFalse("10.x.x.x private network should be blocked", result);
+        assertFalse(result, "10.x.x.x private network should be blocked");
     }
     
     @Test
     public void testBlocks10NetworkMax() throws Exception {
         InetAddress addr = InetAddress.getByName("10.255.255.255");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertFalse("10.255.255.255 should be blocked", result);
+        assertFalse(result, "10.255.255.255 should be blocked");
     }
     
     @Test
     public void testBlocks172_16Network() throws Exception {
         InetAddress addr = InetAddress.getByName("172.16.0.1");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertFalse("172.16.x.x private network should be blocked", result);
+        assertFalse(result, "172.16.x.x private network should be blocked");
     }
     
     @Test
     public void testBlocks172_31Network() throws Exception {
         InetAddress addr = InetAddress.getByName("172.31.255.255");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertFalse("172.31.x.x private network should be blocked", result);
+        assertFalse(result, "172.31.x.x private network should be blocked");
     }
     
     @Test
@@ -166,7 +166,7 @@ public class HttpWebhookDispatcherTest {
         // 172.15.x.x is NOT in the private range (172.16-31)
         InetAddress addr = InetAddress.getByName("172.15.0.1");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertTrue("172.15.x.x should be allowed (not in private range)", result);
+        assertTrue(result, "172.15.x.x should be allowed (not in private range)");
     }
     
     @Test
@@ -174,21 +174,21 @@ public class HttpWebhookDispatcherTest {
         // 172.32.x.x is NOT in the private range (172.16-31)
         InetAddress addr = InetAddress.getByName("172.32.0.1");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertTrue("172.32.x.x should be allowed (not in private range)", result);
+        assertTrue(result, "172.32.x.x should be allowed (not in private range)");
     }
     
     @Test
     public void testBlocks192_168Network() throws Exception {
         InetAddress addr = InetAddress.getByName("192.168.1.1");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertFalse("192.168.x.x private network should be blocked", result);
+        assertFalse(result, "192.168.x.x private network should be blocked");
     }
     
     @Test
     public void testBlocks169_254Network() throws Exception {
         InetAddress addr = InetAddress.getByName("169.254.1.1");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertFalse("169.254.x.x link-local should be blocked", result);
+        assertFalse(result, "169.254.x.x link-local should be blocked");
     }
     
     // ========================================
@@ -199,21 +199,21 @@ public class HttpWebhookDispatcherTest {
     public void testBlocksIPv6ULA_FC00() throws Exception {
         InetAddress addr = InetAddress.getByName("fc00::1");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertFalse("fc00::1 (IPv6 ULA) should be blocked", result);
+        assertFalse(result, "fc00::1 (IPv6 ULA) should be blocked");
     }
     
     @Test
     public void testBlocksIPv6ULA_FD00() throws Exception {
         InetAddress addr = InetAddress.getByName("fd00::1");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertFalse("fd00::1 (IPv6 ULA) should be blocked", result);
+        assertFalse(result, "fd00::1 (IPv6 ULA) should be blocked");
     }
     
     @Test
     public void testBlocksIPv6ULA_FDXX() throws Exception {
         InetAddress addr = InetAddress.getByName("fd12:3456:789a::1");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertFalse("fd12:3456:789a::1 (IPv6 ULA) should be blocked", result);
+        assertFalse(result, "fd12:3456:789a::1 (IPv6 ULA) should be blocked");
     }
     
     // ========================================
@@ -224,21 +224,21 @@ public class HttpWebhookDispatcherTest {
     public void testBlocksLoopbackAddress() throws Exception {
         InetAddress addr = InetAddress.getByName("127.0.0.1");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertFalse("127.0.0.1 loopback should be blocked", result);
+        assertFalse(result, "127.0.0.1 loopback should be blocked");
     }
     
     @Test
     public void testBlocksLoopbackAddressRange() throws Exception {
         InetAddress addr = InetAddress.getByName("127.0.0.2");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertFalse("127.0.0.2 loopback should be blocked", result);
+        assertFalse(result, "127.0.0.2 loopback should be blocked");
     }
     
     @Test
     public void testBlocksIPv6LoopbackAddress() throws Exception {
         InetAddress addr = InetAddress.getByName("::1");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertFalse("::1 IPv6 loopback should be blocked", result);
+        assertFalse(result, "::1 IPv6 loopback should be blocked");
     }
     
     // ========================================
@@ -249,14 +249,14 @@ public class HttpWebhookDispatcherTest {
     public void testAllowsPublicIP() throws Exception {
         InetAddress addr = InetAddress.getByName("8.8.8.8");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertTrue("8.8.8.8 (Google DNS) should be allowed", result);
+        assertTrue(result, "8.8.8.8 (Google DNS) should be allowed");
     }
     
     @Test
     public void testAllowsPublicIP2() throws Exception {
         InetAddress addr = InetAddress.getByName("1.1.1.1");
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
-        assertTrue("1.1.1.1 (Cloudflare DNS) should be allowed", result);
+        assertTrue(result, "1.1.1.1 (Cloudflare DNS) should be allowed");
     }
     
     // ========================================
@@ -290,7 +290,7 @@ public class HttpWebhookDispatcherTest {
         // Create a URL with empty host (edge case)
         URL url = new URL("http:///webhook");
         boolean result = isUrlSafe(url);
-        assertFalse("URL with empty host should be blocked", result);
+        assertFalse(result, "URL with empty host should be blocked");
     }
     
     @Test
@@ -326,8 +326,7 @@ public class HttpWebhookDispatcherTest {
         // Verify that HttpURLConnection default behavior is to follow redirects
         URL testUrl = new URL("http://example.com/webhook");
         HttpURLConnection defaultConnection = (HttpURLConnection) testUrl.openConnection();
-        assertTrue("Default HttpURLConnection should follow redirects", 
-                   defaultConnection.getInstanceFollowRedirects());
+        assertTrue(defaultConnection.getInstanceFollowRedirects(), "Default HttpURLConnection should follow redirects");
         defaultConnection.disconnect();
         
         // The actual protection is verified by checking the code sets setInstanceFollowRedirects(false)
@@ -348,8 +347,7 @@ public class HttpWebhookDispatcherTest {
         
         for (int code : redirectCodes) {
             // Verify these are NOT in the 2xx success range
-            assertFalse("HTTP " + code + " should not be treated as success",
-                       code >= 200 && code < 300);
+            assertFalse(code >= 200 && code < 300, "HTTP " + code + " should not be treated as success");
         }
     }
     
@@ -378,7 +376,7 @@ public class HttpWebhookDispatcherTest {
         try {
             InetAddress internalAddr = InetAddress.getByName("169.254.169.254");
             boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, internalAddr, "redirect-target");
-            assertFalse("Internal IP 169.254.169.254 should be blocked", result);
+            assertFalse(result, "Internal IP 169.254.169.254 should be blocked");
         } catch (Exception e) {
             fail("Exception during test: " + e.getMessage());
         }
@@ -393,7 +391,7 @@ public class HttpWebhookDispatcherTest {
         try {
             InetAddress localhost = InetAddress.getByName("127.0.0.1");
             boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, localhost, "redirect-target");
-            assertFalse("Localhost should be blocked even via redirect", result);
+            assertFalse(result, "Localhost should be blocked even via redirect");
         } catch (Exception e) {
             fail("Exception during test: " + e.getMessage());
         }
@@ -411,7 +409,7 @@ public class HttpWebhookDispatcherTest {
             try {
                 InetAddress addr = InetAddress.getByName(ip);
                 boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "redirect-target");
-                assertFalse("Private IP " + ip + " should be blocked even via redirect", result);
+                assertFalse(result, "Private IP " + ip + " should be blocked even via redirect");
             } catch (Exception e) {
                 fail("Exception during test for " + ip + ": " + e.getMessage());
             }

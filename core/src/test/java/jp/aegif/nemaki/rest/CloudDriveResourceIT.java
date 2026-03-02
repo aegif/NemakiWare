@@ -4,8 +4,8 @@ import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.http.ContentType;
 import io.restassured.specification.RequestSpecification;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
@@ -34,7 +34,7 @@ public class CloudDriveResourceIT {
 	private static String repositoryId;
 	private static RequestSpecification adminSpec;
 
-	@BeforeClass
+	@BeforeAll
 	public static void setup() {
 		baseUrl = System.getProperty("nemaki.test.baseUrl", "http://localhost:8080/core");
 		repositoryId = System.getProperty("nemaki.test.repositoryId", "bedroom");

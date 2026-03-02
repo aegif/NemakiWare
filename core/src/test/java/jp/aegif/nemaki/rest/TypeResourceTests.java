@@ -1,9 +1,9 @@
 package jp.aegif.nemaki.rest;
 
-import org.junit.Test;
-import org.junit.Before;
-import org.junit.After;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import static org.junit.jupiter.api.Assertions.*;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.json.JSONObject;
@@ -47,13 +47,13 @@ public class TypeResourceTests {
     // TypeResource instance for endpoint tests
     private TypeResource typeResource;
     
-    @Before
+    @BeforeEach
     public void setUp() {
         log.info("Setting up TypeResourceTests");
         typeResource = new TypeResource();
     }
     
-    @After
+    @AfterEach
     public void tearDown() {
         log.info("Tearing down TypeResourceTests");
         typeResource = null;
@@ -71,15 +71,13 @@ public class TypeResourceTests {
         // TypeResource with no services injected
         Response response = typeResource.list(TEST_REPOSITORY_ID);
         
-        assertEquals("Should return 500 Internal Server Error", 
-            Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), 
-            response.getStatus());
+        assertEquals(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), response.getStatus(), "Should return 500 Internal Server Error");
         
         // Verify error response structure
         String entity = (String) response.getEntity();
-        assertNotNull("Response entity should not be null", entity);
-        assertTrue("Response should contain 'error' status", entity.contains("\"status\":\"error\""));
-        assertTrue("Response should mention TypeService", entity.contains("TypeService"));
+        assertNotNull(entity, "Response entity should not be null");
+        assertTrue(entity.contains("\"status\":\"error\""), "Response should contain 'error' status");
+        assertTrue(entity.contains("TypeService"), "Response should mention TypeService");
         
         log.info("list() correctly returns 500 when TypeService is null");
     }
@@ -91,13 +89,11 @@ public class TypeResourceTests {
     public void testShowReturns500WhenTypeServiceNull() {
         Response response = typeResource.show(TEST_REPOSITORY_ID, TEST_TYPE_ID);
         
-        assertEquals("Should return 500 Internal Server Error", 
-            Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), 
-            response.getStatus());
+        assertEquals(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), response.getStatus(), "Should return 500 Internal Server Error");
         
         String entity = (String) response.getEntity();
-        assertNotNull("Response entity should not be null", entity);
-        assertTrue("Response should contain 'error' status", entity.contains("\"status\":\"error\""));
+        assertNotNull(entity, "Response entity should not be null");
+        assertTrue(entity.contains("\"status\":\"error\""), "Response should contain 'error' status");
         
         log.info("show() correctly returns 500 when TypeService is null");
     }
@@ -110,13 +106,11 @@ public class TypeResourceTests {
         String jsonInput = createValidTypeDefinitionJson().toString();
         Response response = typeResource.create(TEST_REPOSITORY_ID, jsonInput, createMockRequest());
 
-        assertEquals("Should return 403 Forbidden without admin credentials",
-            Response.Status.FORBIDDEN.getStatusCode(),
-            response.getStatus());
+        assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus(), "Should return 403 Forbidden without admin credentials");
 
         String entity = (String) response.getEntity();
-        assertNotNull("Response entity should not be null", entity);
-        assertTrue("Response should contain 'error' status", entity.contains("\"status\":\"error\""));
+        assertNotNull(entity, "Response entity should not be null");
+        assertTrue(entity.contains("\"status\":\"error\""), "Response should contain 'error' status");
 
         log.info("create() correctly returns 403 when no admin credentials provided");
     }
@@ -129,13 +123,11 @@ public class TypeResourceTests {
         String jsonInput = createValidTypeDefinitionJson().toString();
         Response response = typeResource.update(TEST_REPOSITORY_ID, TEST_TYPE_ID, jsonInput, createMockRequest());
 
-        assertEquals("Should return 403 Forbidden without admin credentials",
-            Response.Status.FORBIDDEN.getStatusCode(),
-            response.getStatus());
+        assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus(), "Should return 403 Forbidden without admin credentials");
 
         String entity = (String) response.getEntity();
-        assertNotNull("Response entity should not be null", entity);
-        assertTrue("Response should contain 'error' status", entity.contains("\"status\":\"error\""));
+        assertNotNull(entity, "Response entity should not be null");
+        assertTrue(entity.contains("\"status\":\"error\""), "Response should contain 'error' status");
 
         log.info("update() correctly returns 403 when no admin credentials provided");
     }
@@ -147,13 +139,11 @@ public class TypeResourceTests {
     public void testDeleteReturns403WhenNoAdmin() {
         Response response = typeResource.delete(TEST_REPOSITORY_ID, TEST_TYPE_ID, createMockRequest());
 
-        assertEquals("Should return 403 Forbidden without admin credentials",
-            Response.Status.FORBIDDEN.getStatusCode(),
-            response.getStatus());
+        assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus(), "Should return 403 Forbidden without admin credentials");
 
         String entity = (String) response.getEntity();
-        assertNotNull("Response entity should not be null", entity);
-        assertTrue("Response should contain 'error' status", entity.contains("\"status\":\"error\""));
+        assertNotNull(entity, "Response entity should not be null");
+        assertTrue(entity.contains("\"status\":\"error\""), "Response should contain 'error' status");
 
         log.info("delete() correctly returns 403 when no admin credentials provided");
     }
@@ -170,9 +160,7 @@ public class TypeResourceTests {
         String jsonInput = createValidTypeDefinitionJson().toString();
         Response response = typeResource.update(TEST_REPOSITORY_ID, "cmis:document", jsonInput, createMockRequest());
 
-        assertEquals("Should return 403 Forbidden without admin credentials",
-            Response.Status.FORBIDDEN.getStatusCode(),
-            response.getStatus());
+        assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus(), "Should return 403 Forbidden without admin credentials");
 
         log.info("update() correctly rejects without admin credentials");
     }
@@ -188,9 +176,7 @@ public class TypeResourceTests {
 
         Response response = typeResource.delete(TEST_REPOSITORY_ID, "cmis:document", createMockRequest());
 
-        assertEquals("Should return 403 Forbidden without admin credentials",
-            Response.Status.FORBIDDEN.getStatusCode(),
-            response.getStatus());
+        assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus(), "Should return 403 Forbidden without admin credentials");
 
         log.info("delete() correctly rejects without admin credentials");
     }
@@ -206,10 +192,10 @@ public class TypeResourceTests {
         successResponse.put("message", "Operation completed");
         successResponse.put("typeId", TEST_TYPE_ID);
         
-        assertTrue("Success response must have status field", successResponse.has("status"));
-        assertEquals("Status must be 'success'", "success", successResponse.getString("status"));
-        assertTrue("Success response must have message field", successResponse.has("message"));
-        
+        assertTrue(successResponse.has("status"), "Success response must have status field");
+        assertEquals("success", successResponse.getString("status"), "Status must be 'success'");
+        assertTrue(successResponse.has("message"), "Success response must have message field");
+
         log.info("Success response structure verified");
     }
     
@@ -224,10 +210,10 @@ public class TypeResourceTests {
         errorResponse.put("message", "Operation failed");
         errorResponse.put("error", "Detailed error message");
         
-        assertTrue("Error response must have status field", errorResponse.has("status"));
-        assertEquals("Status must be 'error'", "error", errorResponse.getString("status"));
-        assertTrue("Error response must have message field", errorResponse.has("message"));
-        
+        assertTrue(errorResponse.has("status"), "Error response must have status field");
+        assertEquals("error", errorResponse.getString("status"), "Status must be 'error'");
+        assertTrue(errorResponse.has("message"), "Error response must have message field");
+
         log.info("Error response structure verified");
     }
     
@@ -337,16 +323,16 @@ public class TypeResourceTests {
         JSONObject typeJson = createValidTypeDefinitionJson();
         
         // Verify required fields
-        assertTrue("Type JSON must have 'id' field", typeJson.has("id"));
-        assertTrue("Type JSON must have 'localName' field", typeJson.has("localName"));
-        assertTrue("Type JSON must have 'queryName' field", typeJson.has("queryName"));
-        assertTrue("Type JSON must have 'displayName' field", typeJson.has("displayName"));
-        assertTrue("Type JSON must have 'baseId' field", typeJson.has("baseId"));
-        assertTrue("Type JSON must have 'parentId' field", typeJson.has("parentId"));
+        assertTrue(typeJson.has("id"), "Type JSON must have 'id' field");
+        assertTrue(typeJson.has("localName"), "Type JSON must have 'localName' field");
+        assertTrue(typeJson.has("queryName"), "Type JSON must have 'queryName' field");
+        assertTrue(typeJson.has("displayName"), "Type JSON must have 'displayName' field");
+        assertTrue(typeJson.has("baseId"), "Type JSON must have 'baseId' field");
+        assertTrue(typeJson.has("parentId"), "Type JSON must have 'parentId' field");
         
         // Verify field values are not empty
-        assertFalse("Type ID must not be empty", typeJson.getString("id").isEmpty());
-        assertFalse("Base ID must not be empty", typeJson.getString("baseId").isEmpty());
+        assertFalse(typeJson.getString("id").isEmpty(), "Type ID must not be empty");
+        assertFalse(typeJson.getString("baseId").isEmpty(), "Base ID must not be empty");
         
         log.info("Valid type definition JSON structure verified");
     }
@@ -359,16 +345,16 @@ public class TypeResourceTests {
         JSONObject propertyJson = createValidPropertyDefinitionJson("nemaki:testProperty");
         
         // Verify required fields
-        assertTrue("Property JSON must have 'id' field", propertyJson.has("id"));
-        assertTrue("Property JSON must have 'localName' field", propertyJson.has("localName"));
-        assertTrue("Property JSON must have 'queryName' field", propertyJson.has("queryName"));
-        assertTrue("Property JSON must have 'displayName' field", propertyJson.has("displayName"));
-        assertTrue("Property JSON must have 'propertyType' field", propertyJson.has("propertyType"));
-        assertTrue("Property JSON must have 'cardinality' field", propertyJson.has("cardinality"));
-        assertTrue("Property JSON must have 'updatability' field", propertyJson.has("updatability"));
+        assertTrue(propertyJson.has("id"), "Property JSON must have 'id' field");
+        assertTrue(propertyJson.has("localName"), "Property JSON must have 'localName' field");
+        assertTrue(propertyJson.has("queryName"), "Property JSON must have 'queryName' field");
+        assertTrue(propertyJson.has("displayName"), "Property JSON must have 'displayName' field");
+        assertTrue(propertyJson.has("propertyType"), "Property JSON must have 'propertyType' field");
+        assertTrue(propertyJson.has("cardinality"), "Property JSON must have 'cardinality' field");
+        assertTrue(propertyJson.has("updatability"), "Property JSON must have 'updatability' field");
         
         // Verify field values
-        assertFalse("Property ID must not be empty", propertyJson.getString("id").isEmpty());
+        assertFalse(propertyJson.getString("id").isEmpty(), "Property ID must not be empty");
         
         log.info("Valid property definition JSON structure verified");
     }
@@ -389,21 +375,21 @@ public class TypeResourceTests {
         );
         
         // Verify error response structure
-        assertTrue("Error response must have 'status' field", errorResponse.has("status"));
-        assertEquals("Status must be 'error'", "error", errorResponse.getString("status"));
-        assertTrue("Error response must have 'message' field", errorResponse.has("message"));
-        assertTrue("Error response must have 'subtypes' array", errorResponse.has("subtypes"));
+        assertTrue(errorResponse.has("status"), "Error response must have 'status' field");
+        assertEquals("error", errorResponse.getString("status"), "Status must be 'error'");
+        assertTrue(errorResponse.has("message"), "Error response must have 'message' field");
+        assertTrue(errorResponse.has("subtypes"), "Error response must have 'subtypes' array");
         
         // Verify subtypes array
         JSONArray subtypes = errorResponse.getJSONArray("subtypes");
-        assertEquals("Subtypes array must contain 2 items", 2, subtypes.length());
-        assertEquals("First subtype must be 'nemaki:childType1'", "nemaki:childType1", subtypes.getString(0));
-        assertEquals("Second subtype must be 'nemaki:childType2'", "nemaki:childType2", subtypes.getString(1));
+        assertEquals(2, subtypes.length(), "Subtypes array must contain 2 items");
+        assertEquals("nemaki:childType1", subtypes.getString(0), "First subtype must be 'nemaki:childType1'");
+        assertEquals("nemaki:childType2", subtypes.getString(1), "Second subtype must be 'nemaki:childType2'");
         
         // Verify message contains helpful information
         String message = errorResponse.getString("message");
-        assertTrue("Message must mention subtypes", message.contains("subtypes"));
-        assertTrue("Message must mention the parent type", message.contains("nemaki:parentType"));
+        assertTrue(message.contains("subtypes"), "Message must mention subtypes");
+        assertTrue(message.contains("nemaki:parentType"), "Message must mention the parent type");
         
         log.info("Subtype blocking error response structure verified");
     }
@@ -420,20 +406,19 @@ public class TypeResourceTests {
         );
         
         // Verify error response structure
-        assertTrue("Error response must have 'status' field", errorResponse.has("status"));
-        assertEquals("Status must be 'error'", "error", errorResponse.getString("status"));
-        assertTrue("Error response must have 'message' field", errorResponse.has("message"));
-        assertTrue("Error response must have 'referencingRelationships' array", 
-            errorResponse.has("referencingRelationships"));
+        assertTrue(errorResponse.has("status"), "Error response must have 'status' field");
+        assertEquals("error", errorResponse.getString("status"), "Status must be 'error'");
+        assertTrue(errorResponse.has("message"), "Error response must have 'message' field");
+        assertTrue(errorResponse.has("referencingRelationships"), "Error response must have 'referencingRelationships' array");
         
         // Verify relationships array
         JSONArray relationships = errorResponse.getJSONArray("referencingRelationships");
-        assertEquals("Relationships array must contain 2 items", 2, relationships.length());
+        assertEquals(2, relationships.length(), "Relationships array must contain 2 items");
         
         // Verify message contains helpful information
         String message = errorResponse.getString("message");
-        assertTrue("Message must mention relationship types", message.contains("relationship"));
-        assertTrue("Message must mention the target type", message.contains("nemaki:targetType"));
+        assertTrue(message.contains("relationship"), "Message must mention relationship types");
+        assertTrue(message.contains("nemaki:targetType"), "Message must mention the target type");
         
         log.info("Relationship reference blocking error response structure verified");
     }
@@ -447,17 +432,16 @@ public class TypeResourceTests {
         JSONObject successResponse = createSuccessResponseWithWarning("nemaki:updatedType");
         
         // Verify success response structure
-        assertTrue("Success response must have 'status' field", successResponse.has("status"));
-        assertEquals("Status must be 'success'", "success", successResponse.getString("status"));
-        assertTrue("Success response must have 'message' field", successResponse.has("message"));
-        assertTrue("Success response must have 'typeId' field", successResponse.has("typeId"));
-        assertTrue("Success response must have 'warning' field for non-CMIS operations", 
-            successResponse.has("warning"));
+        assertTrue(successResponse.has("status"), "Success response must have 'status' field");
+        assertEquals("success", successResponse.getString("status"), "Status must be 'success'");
+        assertTrue(successResponse.has("message"), "Success response must have 'message' field");
+        assertTrue(successResponse.has("typeId"), "Success response must have 'typeId' field");
+        assertTrue(successResponse.has("warning"), "Success response must have 'warning' field for non-CMIS operations");
         
         // Verify warning mentions CMIS non-compliance
         String warning = successResponse.getString("warning");
-        assertTrue("Warning must mention NemakiWare-specific", warning.contains("NemakiWare"));
-        assertTrue("Warning must mention CMIS", warning.contains("CMIS"));
+        assertTrue(warning.contains("NemakiWare"), "Warning must mention NemakiWare-specific");
+        assertTrue(warning.contains("CMIS"), "Warning must mention CMIS");
         
         log.info("Success response with warning structure verified");
     }
@@ -477,8 +461,7 @@ public class TypeResourceTests {
         };
         
         for (String type : validTypes) {
-            assertTrue("Property type '" + type + "' should be valid", 
-                isValidPropertyType(type));
+            assertTrue(isValidPropertyType(type), "Property type '" + type + "' should be valid");
         }
         
         log.info("All valid CMIS property types verified");
@@ -494,8 +477,7 @@ public class TypeResourceTests {
         };
         
         for (String type : invalidTypes) {
-            assertFalse("Property type '" + type + "' should be invalid", 
-                isValidPropertyType(type));
+            assertFalse(isValidPropertyType(type), "Property type '" + type + "' should be invalid");
         }
         
         log.info("Invalid property types correctly rejected");
@@ -506,12 +488,12 @@ public class TypeResourceTests {
      */
     @Test
     public void testValidCardinalityValues() {
-        assertTrue("'single' should be valid cardinality", isValidCardinality("single"));
-        assertTrue("'multi' should be valid cardinality", isValidCardinality("multi"));
+        assertTrue(isValidCardinality("single"), "'single' should be valid cardinality");
+        assertTrue(isValidCardinality("multi"), "'multi' should be valid cardinality");
         
-        assertFalse("'multiple' should be invalid cardinality", isValidCardinality("multiple"));
-        assertFalse("'one' should be invalid cardinality", isValidCardinality("one"));
-        assertFalse("Empty string should be invalid cardinality", isValidCardinality(""));
+        assertFalse(isValidCardinality("multiple"), "'multiple' should be invalid cardinality");
+        assertFalse(isValidCardinality("one"), "'one' should be invalid cardinality");
+        assertFalse(isValidCardinality(""), "Empty string should be invalid cardinality");
         
         log.info("Cardinality validation verified");
     }
@@ -524,12 +506,11 @@ public class TypeResourceTests {
         String[] validValues = {"readonly", "readwrite", "whencheckedout", "oncreate"};
         
         for (String value : validValues) {
-            assertTrue("Updatability '" + value + "' should be valid", 
-                isValidUpdatability(value));
+            assertTrue(isValidUpdatability(value), "Updatability '" + value + "' should be valid");
         }
         
-        assertFalse("'editable' should be invalid updatability", isValidUpdatability("editable"));
-        assertFalse("Empty string should be invalid updatability", isValidUpdatability(""));
+        assertFalse(isValidUpdatability("editable"), "'editable' should be invalid updatability");
+        assertFalse(isValidUpdatability(""), "Empty string should be invalid updatability");
         
         log.info("Updatability validation verified");
     }
@@ -549,12 +530,10 @@ public class TypeResourceTests {
         };
         
         for (String baseType : baseTypes) {
-            assertTrue("'" + baseType + "' should be identified as base type", 
-                isBaseType(baseType));
+            assertTrue(isBaseType(baseType), "'" + baseType + "' should be identified as base type");
         }
         
-        assertFalse("'nemaki:customType' should not be identified as base type", 
-            isBaseType("nemaki:customType"));
+        assertFalse(isBaseType("nemaki:customType"), "'nemaki:customType' should not be identified as base type");
         
         log.info("Base type identification verified");
     }
@@ -576,8 +555,7 @@ public class TypeResourceTests {
         };
         
         for (String id : validIds) {
-            assertTrue("Type ID '" + id + "' should be valid format", 
-                isValidTypeIdFormat(id));
+            assertTrue(isValidTypeIdFormat(id), "Type ID '" + id + "' should be valid format");
         }
         
         log.info("Valid type ID formats verified");
@@ -597,8 +575,7 @@ public class TypeResourceTests {
         };
         
         for (String id : invalidIds) {
-            assertFalse("Type ID '" + id + "' should be invalid format", 
-                isValidTypeIdFormat(id));
+            assertFalse(isValidTypeIdFormat(id), "Type ID '" + id + "' should be invalid format");
         }
         
         log.info("Invalid type ID formats correctly rejected");
@@ -616,12 +593,9 @@ public class TypeResourceTests {
         JSONObject relationshipType = createRelationshipTypeDefinitionJson();
         
         // Verify relationship-specific fields
-        assertEquals("Base ID must be 'cmis:relationship'", 
-            "cmis:relationship", relationshipType.getString("baseId"));
-        assertTrue("Relationship type should have allowedSourceTypes", 
-            relationshipType.has("allowedSourceTypes"));
-        assertTrue("Relationship type should have allowedTargetTypes", 
-            relationshipType.has("allowedTargetTypes"));
+        assertEquals("cmis:relationship", relationshipType.getString("baseId"), "Base ID must be 'cmis:relationship'");
+        assertTrue(relationshipType.has("allowedSourceTypes"), "Relationship type should have allowedSourceTypes");
+        assertTrue(relationshipType.has("allowedTargetTypes"), "Relationship type should have allowedTargetTypes");
         
         log.info("Relationship type definition structure verified");
     }
@@ -645,10 +619,10 @@ public class TypeResourceTests {
         // Find subtypes of nemaki:parent
         List<String> subtypes = findSubtypes(types, "nemaki:parent");
         
-        assertEquals("Should find 2 subtypes", 2, subtypes.size());
-        assertTrue("Should include nemaki:child1", subtypes.contains("nemaki:child1"));
-        assertTrue("Should include nemaki:child2", subtypes.contains("nemaki:child2"));
-        assertFalse("Should not include nemaki:unrelated", subtypes.contains("nemaki:unrelated"));
+        assertEquals(2, subtypes.size(), "Should find 2 subtypes");
+        assertTrue(subtypes.contains("nemaki:child1"), "Should include nemaki:child1");
+        assertTrue(subtypes.contains("nemaki:child2"), "Should include nemaki:child2");
+        assertFalse(subtypes.contains("nemaki:unrelated"), "Should not include nemaki:unrelated");
         
         log.info("Subtype detection verified");
     }
@@ -670,10 +644,10 @@ public class TypeResourceTests {
         // Find relationships referencing nemaki:targetType
         List<String> referencingRels = findReferencingRelationships(relationships, "nemaki:targetType");
         
-        assertEquals("Should find 2 referencing relationships", 2, referencingRels.size());
-        assertTrue("Should include nemaki:rel1", referencingRels.contains("nemaki:rel1"));
-        assertTrue("Should include nemaki:rel2", referencingRels.contains("nemaki:rel2"));
-        assertFalse("Should not include nemaki:rel3", referencingRels.contains("nemaki:rel3"));
+        assertEquals(2, referencingRels.size(), "Should find 2 referencing relationships");
+        assertTrue(referencingRels.contains("nemaki:rel1"), "Should include nemaki:rel1");
+        assertTrue(referencingRels.contains("nemaki:rel2"), "Should include nemaki:rel2");
+        assertFalse(referencingRels.contains("nemaki:rel3"), "Should not include nemaki:rel3");
         
         log.info("Relationship reference detection verified");
     }
@@ -687,13 +661,13 @@ public class TypeResourceTests {
      */
     @Test
     public void testPropertyCoreAttributeIdentification() {
-        assertTrue("propertyType is a core attribute", isCoreAttribute("propertyType"));
-        assertTrue("cardinality is a core attribute", isCoreAttribute("cardinality"));
+        assertTrue(isCoreAttribute("propertyType"), "propertyType is a core attribute");
+        assertTrue(isCoreAttribute("cardinality"), "cardinality is a core attribute");
         
-        assertFalse("displayName is not a core attribute", isCoreAttribute("displayName"));
-        assertFalse("description is not a core attribute", isCoreAttribute("description"));
-        assertFalse("updatability is not a core attribute", isCoreAttribute("updatability"));
-        assertFalse("required is not a core attribute", isCoreAttribute("required"));
+        assertFalse(isCoreAttribute("displayName"), "displayName is not a core attribute");
+        assertFalse(isCoreAttribute("description"), "description is not a core attribute");
+        assertFalse(isCoreAttribute("updatability"), "updatability is not a core attribute");
+        assertFalse(isCoreAttribute("required"), "required is not a core attribute");
         
         log.info("Property core attribute identification verified");
     }
@@ -704,26 +678,18 @@ public class TypeResourceTests {
     @Test
     public void testPropertyTypeCoercionCompatibility() {
         // String can be coerced to most types
-        assertTrue("String -> Boolean should be possible", 
-            canCoerce("string", "boolean"));
-        assertTrue("String -> Integer should be possible", 
-            canCoerce("string", "integer"));
-        assertTrue("String -> Decimal should be possible", 
-            canCoerce("string", "decimal"));
-        assertTrue("String -> DateTime should be possible", 
-            canCoerce("string", "datetime"));
+        assertTrue(canCoerce("string", "boolean"), "String -> Boolean should be possible");
+        assertTrue(canCoerce("string", "integer"), "String -> Integer should be possible");
+        assertTrue(canCoerce("string", "decimal"), "String -> Decimal should be possible");
+        assertTrue(canCoerce("string", "datetime"), "String -> DateTime should be possible");
         
         // Any type can be coerced to String
-        assertTrue("Boolean -> String should be possible", 
-            canCoerce("boolean", "string"));
-        assertTrue("Integer -> String should be possible", 
-            canCoerce("integer", "string"));
+        assertTrue(canCoerce("boolean", "string"), "Boolean -> String should be possible");
+        assertTrue(canCoerce("integer", "string"), "Integer -> String should be possible");
         
         // Numeric coercions
-        assertTrue("Integer -> Decimal should be possible", 
-            canCoerce("integer", "decimal"));
-        assertTrue("Decimal -> Integer should be possible (with truncation)", 
-            canCoerce("decimal", "integer"));
+        assertTrue(canCoerce("integer", "decimal"), "Integer -> Decimal should be possible");
+        assertTrue(canCoerce("decimal", "integer"), "Decimal -> Integer should be possible (with truncation)");
         
         log.info("Property type coercion compatibility verified");
     }

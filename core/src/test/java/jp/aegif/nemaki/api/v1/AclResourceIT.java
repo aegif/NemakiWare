@@ -1,8 +1,8 @@
 package jp.aegif.nemaki.api.v1;
 
 import io.restassured.response.Response;
-import org.junit.Test;
-import org.junit.Ignore;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Disabled;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -21,7 +21,7 @@ import static org.hamcrest.Matchers.*;
  * 
  * Run with: mvn test -Dtest=AclResourceIT -Dnemaki.test.baseUrl=http://localhost:8080/core
  */
-@Ignore("Integration tests require a running NemakiWare instance")
+@Disabled("Integration tests require a running NemakiWare instance")
 public class AclResourceIT extends ApiV1TestBase {
     
     @Test

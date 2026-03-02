@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.webhook;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import java.lang.reflect.Field;
@@ -14,8 +14,8 @@ import java.util.concurrent.ExecutorService;
 
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
@@ -42,7 +42,7 @@ public class WebhookServiceTest {
     private WebhookDeliveryService mockDeliveryService;
     private ExecutorService mockExecutorService;
 
-    @Before
+    @BeforeEach
     public void setUp() throws Exception {
         webhookService = new WebhookServiceImpl();
         mockContentService = mock(ContentService.class);
@@ -82,16 +82,14 @@ public class WebhookServiceTest {
 
     @Test
     public void testHasWebhookConfigWithNullContent() {
-        assertFalse("Should return false for null content",
-            webhookService.hasWebhookConfig("bedroom", null));
+        assertFalse(webhookService.hasWebhookConfig("bedroom", null), "Should return false for null content");
     }
 
     @Test
     public void testHasWebhookConfigWithoutSecondaryType() {
         Content content = createMockContent("doc-1", null, null);
 
-        assertFalse("Should return false when no secondary type",
-            webhookService.hasWebhookConfig("bedroom", content));
+        assertFalse(webhookService.hasWebhookConfig("bedroom", content), "Should return false when no secondary type");
     }
 
     @Test
@@ -99,8 +97,7 @@ public class WebhookServiceTest {
         Content content = createMockContent("doc-1",
             Arrays.asList("nemaki:webhookable"), null);
 
-        assertFalse("Should return false when secondary type exists but no configs",
-            webhookService.hasWebhookConfig("bedroom", content));
+        assertFalse(webhookService.hasWebhookConfig("bedroom", content), "Should return false when secondary type exists but no configs");
     }
 
     @Test
@@ -109,8 +106,7 @@ public class WebhookServiceTest {
         Content content = createMockContent("doc-1",
             Arrays.asList("nemaki:webhookable"), configJson);
 
-        assertTrue("Should return true when valid config exists",
-            webhookService.hasWebhookConfig("bedroom", content));
+        assertTrue(webhookService.hasWebhookConfig("bedroom", content), "Should return true when valid config exists");
     }
 
     // ========================================
@@ -121,7 +117,7 @@ public class WebhookServiceTest {
     public void testGetWebhookConfigsWithNullContent() {
         List<WebhookConfig> configs = webhookService.getWebhookConfigs("bedroom", null);
 
-        assertTrue("Should return empty list for null content", configs.isEmpty());
+        assertTrue(configs.isEmpty(), "Should return empty list for null content");
     }
 
     @Test
@@ -130,7 +126,7 @@ public class WebhookServiceTest {
 
         List<WebhookConfig> configs = webhookService.getWebhookConfigs("bedroom", content);
 
-        assertTrue("Should return empty list when no secondary type", configs.isEmpty());
+        assertTrue(configs.isEmpty(), "Should return empty list when no secondary type");
     }
 
     @Test
@@ -144,9 +140,9 @@ public class WebhookServiceTest {
 
         List<WebhookConfig> configs = webhookService.getWebhookConfigs("bedroom", content);
 
-        assertEquals("Should return 2 configs", 2, configs.size());
-        assertEquals("First config should have correct ID", "webhook-1", configs.get(0).getId());
-        assertEquals("Second config should have correct ID", "webhook-2", configs.get(1).getId());
+        assertEquals(2, configs.size(), "Should return 2 configs");
+        assertEquals("webhook-1", configs.get(0).getId(), "First config should have correct ID");
+        assertEquals("webhook-2", configs.get(1).getId(), "Second config should have correct ID");
     }
 
     @Test
@@ -160,8 +156,8 @@ public class WebhookServiceTest {
 
         List<WebhookConfig> configs = webhookService.getWebhookConfigs("bedroom", content);
 
-        assertEquals("Should return only enabled configs", 1, configs.size());
-        assertEquals("Should return the enabled config", "webhook-1", configs.get(0).getId());
+        assertEquals(1, configs.size(), "Should return only enabled configs");
+        assertEquals("webhook-1", configs.get(0).getId(), "Should return the enabled config");
     }
 
     @Test
@@ -172,7 +168,7 @@ public class WebhookServiceTest {
 
         List<WebhookConfig> configs = webhookService.getWebhookConfigs("bedroom", content);
 
-        assertEquals("Should set sourceObjectId", "doc-123", configs.get(0).getSourceObjectId());
+        assertEquals("doc-123", configs.get(0).getSourceObjectId(), "Should set sourceObjectId");
     }
 
     // ========================================
@@ -183,7 +179,7 @@ public class WebhookServiceTest {
     public void testGetInheritedWebhookConfigsWithNullContent() {
         List<WebhookConfig> configs = webhookService.getInheritedWebhookConfigs("bedroom", null);
 
-        assertTrue("Should return empty list for null content", configs.isEmpty());
+        assertTrue(configs.isEmpty(), "Should return empty list for null content");
     }
 
     @Test
@@ -200,8 +196,8 @@ public class WebhookServiceTest {
 
         List<WebhookConfig> configs = webhookService.getInheritedWebhookConfigs("bedroom", childDoc);
 
-        assertEquals("Should inherit config from parent", 1, configs.size());
-        assertEquals("Should have parent's webhook ID", "parent-webhook", configs.get(0).getId());
+        assertEquals(1, configs.size(), "Should inherit config from parent");
+        assertEquals("parent-webhook", configs.get(0).getId(), "Should have parent's webhook ID");
     }
 
     @Test
@@ -218,7 +214,7 @@ public class WebhookServiceTest {
 
         List<WebhookConfig> configs = webhookService.getInheritedWebhookConfigs("bedroom", childDoc);
 
-        assertTrue("Should not inherit config beyond maxDepth", configs.isEmpty());
+        assertTrue(configs.isEmpty(), "Should not inherit config beyond maxDepth");
     }
 
     @Test
@@ -233,8 +229,8 @@ public class WebhookServiceTest {
 
         List<WebhookConfig> configs = webhookService.getInheritedWebhookConfigs("bedroom", childDoc);
 
-        assertEquals("Should inherit config at maxDepth boundary", 1, configs.size());
-        assertEquals("Should have parent's webhook ID", "parent-webhook", configs.get(0).getId());
+        assertEquals(1, configs.size(), "Should inherit config at maxDepth boundary");
+        assertEquals("parent-webhook", configs.get(0).getId(), "Should have parent's webhook ID");
     }
 
     @Test
@@ -249,7 +245,7 @@ public class WebhookServiceTest {
 
         List<WebhookConfig> configs = webhookService.getInheritedWebhookConfigs("bedroom", childDoc);
 
-        assertTrue("Should not inherit config when includeChildren=false", configs.isEmpty());
+        assertTrue(configs.isEmpty(), "Should not inherit config when includeChildren=false");
     }
 
     // ========================================
@@ -381,7 +377,7 @@ public class WebhookServiceTest {
         WebhookDeliveryLog log = new WebhookDeliveryLog();
         log.markSuccess(200, "{\"status\":\"ok\"}", 150);
 
-        assertTrue("Should be marked as success", log.isSuccess());
+        assertTrue(log.isSuccess(), "Should be marked as success");
         assertEquals(Integer.valueOf(200), log.getStatusCode());
         assertEquals("{\"status\":\"ok\"}", log.getResponseBody());
         assertEquals(Long.valueOf(150), log.getResponseTimeMs());
@@ -393,7 +389,7 @@ public class WebhookServiceTest {
         WebhookDeliveryLog log = new WebhookDeliveryLog();
         log.markFailed(500, "Internal Server Error", 200);
 
-        assertFalse("Should be marked as failed", log.isSuccess());
+        assertFalse(log.isSuccess(), "Should be marked as failed");
         assertEquals(Integer.valueOf(500), log.getStatusCode());
         assertEquals("Internal Server Error", log.getErrorMessage());
         assertEquals(Long.valueOf(200), log.getResponseTimeMs());
@@ -411,9 +407,8 @@ public class WebhookServiceTest {
 
         log.markSuccess(200, longResponse.toString(), 100);
 
-        assertTrue("Response should be truncated", log.getResponseBody().length() < 5000);
-        assertTrue("Response should end with truncation marker",
-            log.getResponseBody().endsWith("... (truncated)"));
+        assertTrue(log.getResponseBody().length() < 5000, "Response should be truncated");
+        assertTrue(log.getResponseBody().endsWith("... (truncated)"), "Response should end with truncation marker");
     }
 
     // ========================================
@@ -495,12 +490,12 @@ public class WebhookServiceTest {
             propsCaptor.capture(), eq("token-123"));
 
         Map<String, Object> props = propsCaptor.getValue();
-        assertEquals("cmis:objectId should be set", "doc-1", props.get("cmis:objectId"));
-        assertEquals("cmis:name should be set", "test-content", props.get("cmis:name"));
-        assertEquals("cmis:objectTypeId should be set", "cmis:document", props.get("cmis:objectTypeId"));
-        assertEquals("cmis:createdBy should be set", "admin", props.get("cmis:createdBy"));
-        assertEquals("cmis:lastModifiedBy should be set", "testuser", props.get("cmis:lastModifiedBy"));
-        assertEquals("cmis:changeToken should be set", "token-123", props.get("cmis:changeToken"));
+        assertEquals("doc-1", props.get("cmis:objectId"), "cmis:objectId should be set");
+        assertEquals("test-content", props.get("cmis:name"), "cmis:name should be set");
+        assertEquals("cmis:document", props.get("cmis:objectTypeId"), "cmis:objectTypeId should be set");
+        assertEquals("admin", props.get("cmis:createdBy"), "cmis:createdBy should be set");
+        assertEquals("testuser", props.get("cmis:lastModifiedBy"), "cmis:lastModifiedBy should be set");
+        assertEquals("token-123", props.get("cmis:changeToken"), "cmis:changeToken should be set");
     }
 
     @Test
@@ -522,10 +517,10 @@ public class WebhookServiceTest {
             propsCaptor.capture(), eq("token-123"));
 
         Map<String, Object> props = propsCaptor.getValue();
-        assertEquals("Additional property contentLength should be passed", 12345L, props.get("contentLength"));
-        assertEquals("Additional property mimeType should be passed", "application/pdf", props.get("mimeType"));
+        assertEquals(12345L, props.get("contentLength"), "Additional property contentLength should be passed");
+        assertEquals("application/pdf", props.get("mimeType"), "Additional property mimeType should be passed");
         // Standard properties should still be present
-        assertEquals("cmis:objectId should not be overwritten", "doc-1", props.get("cmis:objectId"));
+        assertEquals("doc-1", props.get("cmis:objectId"), "cmis:objectId should not be overwritten");
     }
 
     @Test
@@ -626,10 +621,10 @@ public class WebhookServiceTest {
         List<String> objectIds = objectIdCaptor.getAllValues();
         List<String> changeTokens = changeTokenCaptor.getAllValues();
 
-        assertEquals("First call should use doc-v1.0 objectId", "doc-v1.0", objectIds.get(0));
-        assertEquals("First call should use token-v1.0", "token-v1.0", changeTokens.get(0));
-        assertEquals("Second call should use doc-v2.0 objectId", "doc-v2.0", objectIds.get(1));
-        assertEquals("Second call should use token-v2.0", "token-v2.0", changeTokens.get(1));
+        assertEquals("doc-v1.0", objectIds.get(0), "First call should use doc-v1.0 objectId");
+        assertEquals("token-v1.0", changeTokens.get(0), "First call should use token-v1.0");
+        assertEquals("doc-v2.0", objectIds.get(1), "Second call should use doc-v2.0 objectId");
+        assertEquals("token-v2.0", changeTokens.get(1), "Second call should use token-v2.0");
     }
 
     @Test
@@ -662,13 +657,13 @@ public class WebhookServiceTest {
         Map<String, Object> props2 = allProps.get(1);
 
         // Verify each Map has the correct values for its respective document
-        assertEquals("First props should have alpha name", "alpha-document", props1.get("cmis:name"));
-        assertEquals("First props should have alpha objectId", "doc-alpha", props1.get("cmis:objectId"));
-        assertEquals("Second props should have beta name", "beta-document", props2.get("cmis:name"));
-        assertEquals("Second props should have beta objectId", "doc-beta", props2.get("cmis:objectId"));
+        assertEquals("alpha-document", props1.get("cmis:name"), "First props should have alpha name");
+        assertEquals("doc-alpha", props1.get("cmis:objectId"), "First props should have alpha objectId");
+        assertEquals("beta-document", props2.get("cmis:name"), "Second props should have beta name");
+        assertEquals("doc-beta", props2.get("cmis:objectId"), "Second props should have beta objectId");
 
         // Verify isolation: the two Maps must not be the same instance
-        assertNotSame("Properties maps should be independent instances", props1, props2);
+        assertNotSame(props1, props2, "Properties maps should be independent instances");
     }
 
     // ========================================

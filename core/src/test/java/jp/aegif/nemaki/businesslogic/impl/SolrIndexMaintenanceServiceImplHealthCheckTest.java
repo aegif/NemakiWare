@@ -1,13 +1,13 @@
 package jp.aegif.nemaki.businesslogic.impl;
 
-import org.junit.Test;
-import org.junit.Before;
-import org.junit.After;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.InjectMocks;
-import org.mockito.junit.MockitoJUnitRunner;
-import static org.junit.Assert.*;
+import org.mockito.junit.jupiter.MockitoExtension;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
@@ -37,7 +37,7 @@ import java.util.List;
  * so tests must create real SolrDocumentList instances with real SolrDocument objects
  * rather than mocking the iteration.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 public class SolrIndexMaintenanceServiceImplHealthCheckTest {
 
     private static final String TEST_REPO_ID = "test-repo";
@@ -67,13 +67,13 @@ public class SolrIndexMaintenanceServiceImplHealthCheckTest {
     @InjectMocks
     private SolrIndexMaintenanceServiceImpl service;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         when(repositoryInfoMap.get(TEST_REPO_ID)).thenReturn(repositoryInfo);
         when(repositoryInfo.getRootFolderId()).thenReturn(ROOT_FOLDER_ID);
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         if (service != null) {
             service.shutdown();

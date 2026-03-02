@@ -1,11 +1,11 @@
 package jp.aegif.nemaki.businesslogic.impl;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.InjectMocks;
-import org.mockito.junit.MockitoJUnitRunner;
-import static org.junit.Assert.*;
+import org.mockito.junit.jupiter.MockitoExtension;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
@@ -13,7 +13,7 @@ import jp.aegif.nemaki.cmis.service.ObjectService;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 public class CloudDriveServiceImplTest {
 
 	@Mock
@@ -43,25 +43,26 @@ public class CloudDriveServiceImplTest {
 	@Test
 	public void testGetCloudFileUrl_NullFileId() {
 		String url = service.getCloudFileUrl("google", null);
-		assertNull("Null fileId should return null", url);
+		assertNull(url, "Null fileId should return null");
 	}
 
 	@Test
 	public void testGetCloudFileUrl_EmptyFileId() {
 		String url = service.getCloudFileUrl("google", "");
-		assertNull("Empty fileId should return null", url);
+		assertNull(url, "Empty fileId should return null");
 	}
 
-	@Test(expected = RuntimeException.class)
+	@Test
 	public void testPushToCloud_NoContentStream() {
 		CallContext callContext = mock(CallContext.class);
 		when(callContext.getUsername()).thenReturn("testuser");
 		when(objectService.getContentStream(any(), eq("bedroom"), eq("doc1"), any(), any(), any()))
 				.thenReturn(null);
-		service.pushToCloud(callContext, "bedroom", "doc1", "google", "token");
+		assertThrows(RuntimeException.class, () ->
+			service.pushToCloud(callContext, "bedroom", "doc1", "google", "token"));
 	}
 
-	@Test(expected = IllegalArgumentException.class)
+	@Test
 	public void testPushToCloud_UnknownProvider() {
 		CallContext callContext = mock(CallContext.class);
 		when(callContext.getUsername()).thenReturn("testuser");
@@ -69,18 +70,21 @@ public class CloudDriveServiceImplTest {
 		when(cs.getStream()).thenReturn(new java.io.ByteArrayInputStream(new byte[0]));
 		when(objectService.getContentStream(any(), eq("bedroom"), eq("doc1"), any(), any(), any()))
 				.thenReturn(cs);
-		service.pushToCloud(callContext, "bedroom", "doc1", "dropbox", "token");
+		assertThrows(IllegalArgumentException.class, () ->
+			service.pushToCloud(callContext, "bedroom", "doc1", "dropbox", "token"));
 	}
 
-	@Test(expected = IllegalArgumentException.class)
+	@Test
 	public void testPushToCloud_NullCallContext() {
 		// SECURITY: Verify that null CallContext is rejected
-		service.pushToCloud(null, "bedroom", "doc1", "google", "token");
+		assertThrows(IllegalArgumentException.class, () ->
+			service.pushToCloud(null, "bedroom", "doc1", "google", "token"));
 	}
 
-	@Test(expected = UnsupportedOperationException.class)
+	@Test
 	public void testPullFromCloud_ThrowsUnsupported() {
-		service.pullFromCloud("bedroom", "doc1", "google", "token");
+		assertThrows(UnsupportedOperationException.class, () ->
+			service.pullFromCloud("bedroom", "doc1", "google", "token"));
 	}
 
 	@Test
@@ -89,14 +93,16 @@ public class CloudDriveServiceImplTest {
 		service.deleteFromCloud("dropbox", "file1", "token");
 	}
 
-	@Test(expected = IllegalArgumentException.class)
+	@Test
 	public void testPullFromCloudByFileId_UnknownProvider() {
-		service.pullFromCloudByFileId("dropbox", "file1", "token");
+		assertThrows(IllegalArgumentException.class, () ->
+			service.pullFromCloudByFileId("dropbox", "file1", "token"));
 	}
 
-	@Test(expected = UnsupportedOperationException.class)
+	@Test
 	public void testPullFromCloud_Microsoft_ThrowsUnsupported() {
-		service.pullFromCloud("bedroom", "doc1", "microsoft", "token");
+		assertThrows(UnsupportedOperationException.class, () ->
+			service.pullFromCloud("bedroom", "doc1", "microsoft", "token"));
 	}
 
 	@Test
@@ -128,38 +134,38 @@ public class CloudDriveServiceImplTest {
 	@Test
 	public void testGetCloudComments_NullCloudFileId() {
 		String comments = service.getCloudComments("google", null, "token");
-		assertNull("Null cloudFileId should return null", comments);
+		assertNull(comments, "Null cloudFileId should return null");
 	}
 
 	@Test
 	public void testGetCloudComments_EmptyCloudFileId() {
 		String comments = service.getCloudComments("google", "", "token");
-		assertNull("Empty cloudFileId should return null", comments);
+		assertNull(comments, "Empty cloudFileId should return null");
 	}
 
 	@Test
 	public void testGetCloudComments_UnknownProvider() {
 		String comments = service.getCloudComments("dropbox", "file123", "token");
-		assertNull("Unknown provider should return null", comments);
+		assertNull(comments, "Unknown provider should return null");
 	}
 
 	@Test
 	public void testGetCloudComments_Google_InvalidToken() {
 		// With an invalid token, the API call will fail and return null
 		String comments = service.getCloudComments("google", "file123", "invalid-token");
-		assertNull("Invalid token should result in null (error handled internally)", comments);
+		assertNull(comments, "Invalid token should result in null (error handled internally)");
 	}
 
 	@Test
 	public void testGetCloudComments_Microsoft_InvalidToken() {
 		// With an invalid token, the API call will fail and return null
 		String comments = service.getCloudComments("microsoft", "file123", "invalid-token");
-		assertNull("Invalid token should result in null (error handled internally)", comments);
+		assertNull(comments, "Invalid token should result in null (error handled internally)");
 	}
 
 	@Test
 	public void testGetCloudComments_NullProvider() {
 		String comments = service.getCloudComments(null, "file123", "token");
-		assertNull("Null provider should return null (handled by switch default)", comments);
+		assertNull(comments, "Null provider should return null (handled by switch default)");
 	}
 }

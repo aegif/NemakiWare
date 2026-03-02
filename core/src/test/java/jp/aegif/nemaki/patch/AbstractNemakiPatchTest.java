@@ -1,13 +1,13 @@
 package jp.aegif.nemaki.patch;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 
@@ -128,9 +128,8 @@ public class AbstractNemakiPatchTest {
 
         boolean result = patch.apply();
 
-        assertTrue("apply() should return true when all repositories succeed", result);
-        assertTrue("createPathHistory should be called for bedroom",
-                stubPatchUtil.wasCreatePathHistoryCalled("bedroom", "test_success"));
+        assertTrue(result, "apply() should return true when all repositories succeed");
+        assertTrue(stubPatchUtil.wasCreatePathHistoryCalled("bedroom", "test_success"), "createPathHistory should be called for bedroom");
     }
 
     @Test
@@ -147,9 +146,8 @@ public class AbstractNemakiPatchTest {
 
         boolean result = patch.apply();
 
-        assertFalse("apply() should return false when applyPerRepositoryPatch throws", result);
-        assertFalse("createPathHistory should NOT be called for failed repository",
-                stubPatchUtil.wasCreatePathHistoryCalled("bedroom", "test_failing"));
+        assertFalse(result, "apply() should return false when applyPerRepositoryPatch throws");
+        assertFalse(stubPatchUtil.wasCreatePathHistoryCalled("bedroom", "test_failing"), "createPathHistory should NOT be called for failed repository");
     }
 
     @Test
@@ -167,13 +165,11 @@ public class AbstractNemakiPatchTest {
 
         boolean result = patch.apply();
 
-        assertFalse("apply() should return false when any repository fails", result);
+        assertFalse(result, "apply() should return false when any repository fails");
         // bedroom succeeded → history created
-        assertTrue("createPathHistory should be called for bedroom (succeeded)",
-                stubPatchUtil.wasCreatePathHistoryCalled("bedroom", "test_partial_fail"));
+        assertTrue(stubPatchUtil.wasCreatePathHistoryCalled("bedroom", "test_partial_fail"), "createPathHistory should be called for bedroom (succeeded)");
         // canopy failed → history NOT created
-        assertFalse("createPathHistory should NOT be called for canopy (failed)",
-                stubPatchUtil.wasCreatePathHistoryCalled("canopy", "test_partial_fail"));
+        assertFalse(stubPatchUtil.wasCreatePathHistoryCalled("canopy", "test_partial_fail"), "createPathHistory should NOT be called for canopy (failed)");
     }
 
     @Test
@@ -193,8 +189,7 @@ public class AbstractNemakiPatchTest {
 
         boolean result = patch.apply();
 
-        assertTrue("apply() should return true when patch is already applied (skipped)", result);
-        assertEquals("createPathHistory should NOT be called when patch already applied",
-                0, stubPatchUtil.getCreatePathHistoryCallCount());
+        assertTrue(result, "apply() should return true when patch is already applied (skipped)");
+        assertEquals(0, stubPatchUtil.getCreatePathHistoryCallCount(), "createPathHistory should NOT be called when patch already applied");
     }
 }

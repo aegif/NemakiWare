@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # NemakiWare Jakarta EE 10 Development Environment Startup Script
-# This script configures the Java 17 module system and starts Jetty for development
+# This script configures the Java 21 module system and starts Jetty for development
 
 echo "=== NemakiWare Jakarta EE 10 Development Environment ==="
-echo "Setting up Java 17 module system compatibility..."
+echo "Setting up Java 21 module system compatibility..."
 
-# Set MAVEN_OPTS for Java 17 module system compatibility
+# Set MAVEN_OPTS for Java 21 module system compatibility
 export MAVEN_OPTS="--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED --add-opens=java.desktop/java.awt.font=ALL-UNNAMED"
 
 echo "MAVEN_OPTS configured: $MAVEN_OPTS"

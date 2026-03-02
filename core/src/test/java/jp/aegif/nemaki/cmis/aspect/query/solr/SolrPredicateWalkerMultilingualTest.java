@@ -1,14 +1,14 @@
 package jp.aegif.nemaki.cmis.aspect.query.solr;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Method;
 
 import org.antlr.runtime.tree.CommonTree;
 import org.apache.chemistry.opencmis.server.support.query.TextSearchLexer;
 import org.apache.lucene.search.Query;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for SolrPredicateWalker multilingual search with script-based
@@ -26,7 +26,7 @@ public class SolrPredicateWalkerMultilingualTest {
     private Method walkTextPhraseMethod;
     private Method detectScriptMethod;
 
-    @Before
+    @BeforeEach
     public void setUp() throws Exception {
         walker = new SolrPredicateWalker(null, null, null, null);
 
@@ -89,8 +89,7 @@ public class SolrPredicateWalkerMultilingualTest {
         // U+2000B = サロゲートペア \uD840\uDC0B
         String extB = "\uD840\uDC0B";
         Object result = detectScriptMethod.invoke(null, extB);
-        assertEquals("Supplementary CJK (Extension B) should be CJK_ONLY",
-            "CJK_ONLY", result.toString());
+        assertEquals("CJK_ONLY", result.toString(), "Supplementary CJK (Extension B) should be CJK_ONLY");
     }
 
     /**
@@ -100,8 +99,7 @@ public class SolrPredicateWalkerMultilingualTest {
     public void testDetectScriptCjkExtensionBMixed() throws Exception {
         String extBMixed = "abc\uD840\uDC0B";
         Object result = detectScriptMethod.invoke(null, extBMixed);
-        assertEquals("Supplementary CJK + Latin should be MIXED",
-            "MIXED", result.toString());
+        assertEquals("MIXED", result.toString(), "Supplementary CJK + Latin should be MIXED");
     }
 
     /**
@@ -113,8 +111,7 @@ public class SolrPredicateWalkerMultilingualTest {
         // U+2F800 = サロゲートペア \uD87E\uDC00
         String compatSupp = "\uD87E\uDC00";
         Object result = detectScriptMethod.invoke(null, compatSupp);
-        assertEquals("CJK Compatibility Supplement should be CJK_ONLY",
-            "CJK_ONLY", result.toString());
+        assertEquals("CJK_ONLY", result.toString(), "CJK Compatibility Supplement should be CJK_ONLY");
     }
 
     // ========================================
@@ -128,10 +125,8 @@ public class SolrPredicateWalkerMultilingualTest {
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
-        assertTrue("Latin-only word should use text_en field for stemming",
-            queryStr.contains("text_en:\"hello\""));
-        assertTrue("Latin-only word should also use text field for author/url/etc coverage",
-            queryStr.contains("text:\"hello\""));
+        assertTrue(queryStr.contains("text_en:\"hello\""), "Latin-only word should use text_en field for stemming");
+        assertTrue(queryStr.contains("text:\"hello\""), "Latin-only word should also use text field for author/url/etc coverage");
     }
 
     @Test
@@ -140,10 +135,8 @@ public class SolrPredicateWalkerMultilingualTest {
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
-        assertTrue("Latin-only word should use text_en field for stemming",
-            queryStr.contains("text_en:\"running\""));
-        assertTrue("Latin-only word should also use text field for author/url/etc coverage",
-            queryStr.contains("text:\"running\""));
+        assertTrue(queryStr.contains("text_en:\"running\""), "Latin-only word should use text_en field for stemming");
+        assertTrue(queryStr.contains("text:\"running\""), "Latin-only word should also use text field for author/url/etc coverage");
     }
 
     // ========================================
@@ -157,10 +150,8 @@ public class SolrPredicateWalkerMultilingualTest {
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
-        assertTrue("CJK-only word should use text field",
-            queryStr.contains("text:\"検索\""));
-        assertFalse("CJK-only word should NOT use text_en field",
-            queryStr.contains("text_en:"));
+        assertTrue(queryStr.contains("text:\"検索\""), "CJK-only word should use text field");
+        assertFalse(queryStr.contains("text_en:"), "CJK-only word should NOT use text_en field");
     }
 
     // ========================================
@@ -173,10 +164,8 @@ public class SolrPredicateWalkerMultilingualTest {
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
-        assertTrue("Mixed word should search text field",
-            queryStr.contains("text:\"test検索\""));
-        assertTrue("Mixed word should search text_en field",
-            queryStr.contains("text_en:\"test検索\""));
+        assertTrue(queryStr.contains("text:\"test検索\""), "Mixed word should search text field");
+        assertTrue(queryStr.contains("text_en:\"test検索\""), "Mixed word should search text_en field");
     }
 
     // ========================================
@@ -189,10 +178,8 @@ public class SolrPredicateWalkerMultilingualTest {
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
-        assertTrue("Underscore term (Latin) should use text_en field",
-            queryStr.contains("text_en:\"TEST_KEYWORD_123\""));
-        assertTrue("Underscore term (Latin) should also use text field",
-            queryStr.contains("text:\"TEST_KEYWORD_123\""));
+        assertTrue(queryStr.contains("text_en:\"TEST_KEYWORD_123\""), "Underscore term (Latin) should use text_en field");
+        assertTrue(queryStr.contains("text:\"TEST_KEYWORD_123\""), "Underscore term (Latin) should also use text field");
     }
 
     // ========================================
@@ -205,10 +192,8 @@ public class SolrPredicateWalkerMultilingualTest {
         Query query = (Query) walkTextPhraseMethod.invoke(walker, node);
         String queryStr = query.toString();
 
-        assertTrue("Latin-only phrase should use text_en field",
-            queryStr.contains("text_en:\"hello world\""));
-        assertTrue("Latin-only phrase should also use text field",
-            queryStr.contains("text:\"hello world\""));
+        assertTrue(queryStr.contains("text_en:\"hello world\""), "Latin-only phrase should use text_en field");
+        assertTrue(queryStr.contains("text:\"hello world\""), "Latin-only phrase should also use text field");
     }
 
     // ========================================
@@ -221,10 +206,8 @@ public class SolrPredicateWalkerMultilingualTest {
         Query query = (Query) walkTextPhraseMethod.invoke(walker, node);
         String queryStr = query.toString();
 
-        assertTrue("CJK-only phrase should use text field",
-            queryStr.contains("text:\"日本語フレーズ\""));
-        assertFalse("CJK-only phrase should NOT use text_en field",
-            queryStr.contains("text_en:"));
+        assertTrue(queryStr.contains("text:\"日本語フレーズ\""), "CJK-only phrase should use text field");
+        assertFalse(queryStr.contains("text_en:"), "CJK-only phrase should NOT use text_en field");
     }
 
     // ========================================
@@ -237,10 +220,8 @@ public class SolrPredicateWalkerMultilingualTest {
         Query query = (Query) walkTextPhraseMethod.invoke(walker, node);
         String queryStr = query.toString();
 
-        assertTrue("Mixed phrase should search text field",
-            queryStr.contains("text:\"test document テスト\""));
-        assertTrue("Mixed phrase should search text_en field",
-            queryStr.contains("text_en:\"test document テスト\""));
+        assertTrue(queryStr.contains("text:\"test document テスト\""), "Mixed phrase should search text field");
+        assertTrue(queryStr.contains("text_en:\"test document テスト\""), "Mixed phrase should search text_en field");
     }
 
     // ========================================
@@ -254,10 +235,8 @@ public class SolrPredicateWalkerMultilingualTest {
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
-        assertTrue("Latin-only word should have text: clause",
-            queryStr.contains("text:\"test\""));
-        assertTrue("Latin-only word should have text_en: clause",
-            queryStr.contains("text_en:\"test\""));
+        assertTrue(queryStr.contains("text:\"test\""), "Latin-only word should have text: clause");
+        assertTrue(queryStr.contains("text_en:\"test\""), "Latin-only word should have text_en: clause");
     }
 
     @Test
@@ -267,10 +246,8 @@ public class SolrPredicateWalkerMultilingualTest {
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
-        assertTrue("CJK-only word should have text: clause",
-            queryStr.contains("text:\"検索\""));
-        assertFalse("CJK-only word should NOT have text_en: clause",
-            queryStr.contains("text_en:"));
+        assertTrue(queryStr.contains("text:\"検索\""), "CJK-only word should have text: clause");
+        assertFalse(queryStr.contains("text_en:"), "CJK-only word should NOT have text_en: clause");
     }
 
     @Test
@@ -280,10 +257,8 @@ public class SolrPredicateWalkerMultilingualTest {
         Query query = (Query) walkTextPhraseMethod.invoke(walker, node);
         String queryStr = query.toString();
 
-        assertTrue("Latin-only phrase should have text: clause",
-            queryStr.contains("text:\"multi word phrase\""));
-        assertTrue("Latin-only phrase should have text_en: clause",
-            queryStr.contains("text_en:\"multi word phrase\""));
+        assertTrue(queryStr.contains("text:\"multi word phrase\""), "Latin-only phrase should have text: clause");
+        assertTrue(queryStr.contains("text_en:\"multi word phrase\""), "Latin-only phrase should have text_en: clause");
     }
 
     // ========================================
@@ -300,10 +275,8 @@ public class SolrPredicateWalkerMultilingualTest {
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
-        assertTrue("Latin query must include text field to cover author/content_type/resourcename/url",
-            queryStr.contains("text:\"smith\""));
-        assertTrue("Latin query should also include text_en for stemming",
-            queryStr.contains("text_en:\"smith\""));
+        assertTrue(queryStr.contains("text:\"smith\""), "Latin query must include text field to cover author/content_type/resourcename/url");
+        assertTrue(queryStr.contains("text_en:\"smith\""), "Latin query should also include text_en for stemming");
     }
 
     @Test
@@ -313,9 +286,7 @@ public class SolrPredicateWalkerMultilingualTest {
         Query query = (Query) walkTextPhraseMethod.invoke(walker, node);
         String queryStr = query.toString();
 
-        assertTrue("Latin phrase must include text field for resourcename coverage",
-            queryStr.contains("text:\"annual report\""));
-        assertTrue("Latin phrase should also include text_en for stemming",
-            queryStr.contains("text_en:\"annual report\""));
+        assertTrue(queryStr.contains("text:\"annual report\""), "Latin phrase must include text field for resourcename coverage");
+        assertTrue(queryStr.contains("text_en:\"annual report\""), "Latin phrase should also include text_en for stemming");
     }
 }

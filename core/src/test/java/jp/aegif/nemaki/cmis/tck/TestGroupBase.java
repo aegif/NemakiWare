@@ -26,11 +26,10 @@ import org.apache.chemistry.opencmis.tck.CmisTestResult;
 import org.apache.chemistry.opencmis.tck.CmisTestResultStatus;
 import org.apache.chemistry.opencmis.tck.impl.AbstractCmisTestGroup;
 import org.apache.chemistry.opencmis.tck.runner.AbstractRunner;
-import org.junit.Assert;
-import org.junit.Assume;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.rules.TestName;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.TestInfo;
 
 public class TestGroupBase extends AbstractRunner {
 
@@ -112,28 +111,25 @@ public class TestGroupBase extends AbstractRunner {
 		return filters;
 	}
 
-	@Rule
-	public TestName testName = new TestName();
-
-	@Before
-	public void beforeMethod() throws Exception {
+	@BeforeEach
+	public void beforeMethod(TestInfo testInfo) throws Exception {
 		// CRITICAL FIX: Temporarily skip filter checks to isolate timeout problem
 		if (false) {
 			filterClass(this.getClass().getSimpleName());
-			filterMethod(testName.getMethodName());
+			filterMethod(testInfo.getTestMethod().map(java.lang.reflect.Method::getName).orElse("unknown"));
 		}
 	}
 
 	private void filterClass(String simpleClassName) {
 		Properties filterProps = getFilters();
 		String filterValue = filterProps.getProperty(simpleClassName, "true"); // Default to true if not found
-		Assume.assumeTrue(Boolean.valueOf(filterValue));
+		Assumptions.assumeTrue(Boolean.valueOf(filterValue));
 	}
 
 	private void filterMethod(String methodName) {
 		Properties filterProps = getFilters();
 		String filterValue = filterProps.getProperty(methodName, "true"); // Default to true if not found
-		Assume.assumeTrue(Boolean.valueOf(filterValue));
+		Assumptions.assumeTrue(Boolean.valueOf(filterValue));
 	}
 
 	private static class PropertyUtil {
@@ -268,7 +264,7 @@ public class TestGroupBase extends AbstractRunner {
 				if (hasFailures) {
 					String errorMsg = "TCK FAILURE detected in test: " + test.getName() + failureDetails.toString();
 					System.err.println(errorMsg);
-					Assert.fail(errorMsg);
+					Assertions.fail(errorMsg);
 				}
 			}
 		}

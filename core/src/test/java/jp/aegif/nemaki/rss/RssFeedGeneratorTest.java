@@ -21,20 +21,20 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rss;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class RssFeedGeneratorTest {
     
     private RssFeedGenerator generator;
     
-    @Before
+    @BeforeEach
     public void setUp() {
         generator = new RssFeedGenerator();
         generator.setBaseUrl("http://localhost:8080/nemakiware");

@@ -5,12 +5,12 @@ import org.apache.chemistry.opencmis.tck.tests.types.BaseTypesTest;
 import org.apache.chemistry.opencmis.tck.tests.types.CreateAndDeleteTypeTest;
 import org.apache.chemistry.opencmis.tck.tests.types.SecondaryTypesTest;
 import org.apache.chemistry.opencmis.tck.impl.WrapperCmisTestGroup;
-import org.junit.Test;
-import org.junit.Ignore;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Disabled;
 
 import jp.aegif.nemaki.cmis.tck.TckSuite;
 
-// @Ignore("TCK tests temporarily disabled due to data visibility issues - see CLAUDE.md") - ENABLED: Data visibility issues resolved
+// @Disabled("TCK tests temporarily disabled due to data visibility issues - see CLAUDE.md") - ENABLED: Data visibility issues resolved
 public class TypesTestGroup extends TckSuite{
 	@Test
 	public void baseTypesTest() throws Exception{

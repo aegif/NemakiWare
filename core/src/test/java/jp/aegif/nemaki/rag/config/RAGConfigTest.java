@@ -1,8 +1,8 @@
 package jp.aegif.nemaki.rag.config;
 
-import org.junit.Test;
-import org.junit.Before;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Field;
 
@@ -18,7 +18,7 @@ public class RAGConfigTest {
 
     private RAGConfig ragConfig;
 
-    @Before
+    @BeforeEach
     public void setUp() throws Exception {
         ragConfig = new RAGConfig();
         
@@ -58,89 +58,75 @@ public class RAGConfigTest {
 
     @Test
     public void testIsMimeTypeSupportedTextPlain() {
-        assertTrue("text/plain should be supported", 
-                ragConfig.isMimeTypeSupported("text/plain"));
+        assertTrue(ragConfig.isMimeTypeSupported("text/plain"), "text/plain should be supported");
     }
 
     @Test
     public void testIsMimeTypeSupportedTextHtml() {
-        assertTrue("text/html should be supported", 
-                ragConfig.isMimeTypeSupported("text/html"));
+        assertTrue(ragConfig.isMimeTypeSupported("text/html"), "text/html should be supported");
     }
 
     @Test
     public void testIsMimeTypeSupportedTextXml() {
-        assertTrue("text/xml should be supported", 
-                ragConfig.isMimeTypeSupported("text/xml"));
+        assertTrue(ragConfig.isMimeTypeSupported("text/xml"), "text/xml should be supported");
     }
 
     @Test
     public void testIsMimeTypeSupportedPdf() {
-        assertTrue("application/pdf should be supported", 
-                ragConfig.isMimeTypeSupported("application/pdf"));
+        assertTrue(ragConfig.isMimeTypeSupported("application/pdf"), "application/pdf should be supported");
     }
 
     @Test
     public void testIsMimeTypeSupportedMsWord() {
-        assertTrue("application/msword should be supported", 
-                ragConfig.isMimeTypeSupported("application/msword"));
+        assertTrue(ragConfig.isMimeTypeSupported("application/msword"), "application/msword should be supported");
     }
 
     @Test
     public void testIsMimeTypeSupportedDocx() {
-        assertTrue("DOCX should be supported", 
-                ragConfig.isMimeTypeSupported(
-                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"));
+        assertTrue(ragConfig.isMimeTypeSupported(
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"), "DOCX should be supported");
     }
 
     @Test
     public void testIsMimeTypeSupportedUnsupportedType() {
-        assertFalse("image/png should not be supported", 
-                ragConfig.isMimeTypeSupported("image/png"));
+        assertFalse(ragConfig.isMimeTypeSupported("image/png"), "image/png should not be supported");
     }
 
     @Test
     public void testIsMimeTypeSupportedUnsupportedVideo() {
-        assertFalse("video/mp4 should not be supported", 
-                ragConfig.isMimeTypeSupported("video/mp4"));
+        assertFalse(ragConfig.isMimeTypeSupported("video/mp4"), "video/mp4 should not be supported");
     }
 
     @Test
     public void testIsMimeTypeSupportedNull() {
-        assertFalse("null should not be supported", 
-                ragConfig.isMimeTypeSupported(null));
+        assertFalse(ragConfig.isMimeTypeSupported(null), "null should not be supported");
     }
 
     @Test
     public void testIsMimeTypeSupportedEmpty() {
-        assertFalse("empty string should not be supported", 
-                ragConfig.isMimeTypeSupported(""));
+        assertFalse(ragConfig.isMimeTypeSupported(""), "empty string should not be supported");
     }
 
     @Test
     public void testIsMimeTypeSupportedCaseInsensitive() {
-        assertTrue("MIME type check should be case-insensitive", 
-                ragConfig.isMimeTypeSupported("TEXT/PLAIN"));
+        assertTrue(ragConfig.isMimeTypeSupported("TEXT/PLAIN"), "MIME type check should be case-insensitive");
     }
 
     @Test
     public void testIsMimeTypeSupportedMixedCase() {
-        assertTrue("MIME type check should be case-insensitive", 
-                ragConfig.isMimeTypeSupported("Text/Plain"));
+        assertTrue(ragConfig.isMimeTypeSupported("Text/Plain"), "MIME type check should be case-insensitive");
     }
 
     @Test
     public void testIsMimeTypeSupportedWithWhitespace() {
-        assertTrue("MIME type with whitespace should be trimmed", 
-                ragConfig.isMimeTypeSupported(" text/plain "));
+        assertTrue(ragConfig.isMimeTypeSupported(" text/plain "), "MIME type with whitespace should be trimmed");
     }
 
     @Test
     public void testIsMimeTypeSupportedWithNullSupportedTypes() throws Exception {
         setField(ragConfig, "supportedMimeTypes", null);
         
-        assertFalse("Should return false when supportedMimeTypes is null", 
-                ragConfig.isMimeTypeSupported("text/plain"));
+        assertFalse(ragConfig.isMimeTypeSupported("text/plain"), "Should return false when supportedMimeTypes is null");
     }
 
     // ========== getPropertyFieldsArray Tests ==========
@@ -149,10 +135,10 @@ public class RAGConfigTest {
     public void testGetPropertyFieldsArrayDefault() {
         String[] fields = ragConfig.getPropertyFieldsArray();
         
-        assertNotNull("Fields array should not be null", fields);
-        assertEquals("Should have 2 default fields", 2, fields.length);
-        assertEquals("First field should be cmis:name", "cmis:name", fields[0]);
-        assertEquals("Second field should be cmis:description", "cmis:description", fields[1]);
+        assertNotNull(fields, "Fields array should not be null");
+        assertEquals(2, fields.length, "Should have 2 default fields");
+        assertEquals("cmis:name", fields[0], "First field should be cmis:name");
+        assertEquals("cmis:description", fields[1], "Second field should be cmis:description");
     }
 
     @Test
@@ -161,9 +147,9 @@ public class RAGConfigTest {
         
         String[] fields = ragConfig.getPropertyFieldsArray();
         
-        assertNotNull("Fields array should not be null", fields);
-        assertEquals("Should have 1 field", 1, fields.length);
-        assertEquals("Field should be cmis:name", "cmis:name", fields[0]);
+        assertNotNull(fields, "Fields array should not be null");
+        assertEquals(1, fields.length, "Should have 1 field");
+        assertEquals("cmis:name", fields[0], "Field should be cmis:name");
     }
 
     @Test
@@ -172,11 +158,11 @@ public class RAGConfigTest {
         
         String[] fields = ragConfig.getPropertyFieldsArray();
         
-        assertNotNull("Fields array should not be null", fields);
-        assertEquals("Should have 3 fields", 3, fields.length);
-        assertEquals("First field should be cmis:name", "cmis:name", fields[0]);
-        assertEquals("Second field should be cmis:description", "cmis:description", fields[1]);
-        assertEquals("Third field should be nemaki:keywords", "nemaki:keywords", fields[2]);
+        assertNotNull(fields, "Fields array should not be null");
+        assertEquals(3, fields.length, "Should have 3 fields");
+        assertEquals("cmis:name", fields[0], "First field should be cmis:name");
+        assertEquals("cmis:description", fields[1], "Second field should be cmis:description");
+        assertEquals("nemaki:keywords", fields[2], "Third field should be nemaki:keywords");
     }
 
     @Test
@@ -185,8 +171,8 @@ public class RAGConfigTest {
         
         String[] fields = ragConfig.getPropertyFieldsArray();
         
-        assertNotNull("Fields array should not be null", fields);
-        assertEquals("Empty string should return empty array", 0, fields.length);
+        assertNotNull(fields, "Fields array should not be null");
+        assertEquals(0, fields.length, "Empty string should return empty array");
     }
 
     @Test
@@ -195,8 +181,8 @@ public class RAGConfigTest {
         
         String[] fields = ragConfig.getPropertyFieldsArray();
         
-        assertNotNull("Fields array should not be null", fields);
-        assertEquals("Null should return empty array", 0, fields.length);
+        assertNotNull(fields, "Fields array should not be null");
+        assertEquals(0, fields.length, "Null should return empty array");
     }
 
     @Test
@@ -205,21 +191,21 @@ public class RAGConfigTest {
         
         String[] fields = ragConfig.getPropertyFieldsArray();
         
-        assertNotNull("Fields array should not be null", fields);
-        assertEquals("Whitespace-only should return empty array", 0, fields.length);
+        assertNotNull(fields, "Fields array should not be null");
+        assertEquals(0, fields.length, "Whitespace-only should return empty array");
     }
 
     // ========== Getter Tests ==========
 
     @Test
     public void testIsEnabled() {
-        assertFalse("Default enabled should be false", ragConfig.isEnabled());
+        assertFalse(ragConfig.isEnabled(), "Default enabled should be false");
     }
 
     @Test
     public void testIsEnabledTrue() throws Exception {
         setField(ragConfig, "enabled", true);
-        assertTrue("Enabled should be true", ragConfig.isEnabled());
+        assertTrue(ragConfig.isEnabled(), "Enabled should be true");
     }
 
     @Test
@@ -289,8 +275,7 @@ public class RAGConfigTest {
 
     @Test
     public void testIsPropertySearchEnabled() {
-        assertTrue("Property search should be enabled by default", 
-                ragConfig.isPropertySearchEnabled());
+        assertTrue(ragConfig.isPropertySearchEnabled(), "Property search should be enabled by default");
     }
 
     @Test
@@ -300,8 +285,7 @@ public class RAGConfigTest {
 
     @Test
     public void testIsIncludeCustomProperties() {
-        assertFalse("Include custom properties should be false by default", 
-                ragConfig.isIncludeCustomProperties());
+        assertFalse(ragConfig.isIncludeCustomProperties(), "Include custom properties should be false by default");
     }
 
     @Test
@@ -311,8 +295,7 @@ public class RAGConfigTest {
 
     @Test
     public void testIsIndexingAsync() {
-        assertTrue("Indexing async should be true by default", 
-                ragConfig.isIndexingAsync());
+        assertTrue(ragConfig.isIndexingAsync(), "Indexing async should be true by default");
     }
 
     @Test
@@ -329,23 +312,21 @@ public class RAGConfigTest {
     @Test
     public void testGetSolrCommitWithinMsZero() throws Exception {
         setField(ragConfig, "solrCommitWithinMs", 0);
-        assertEquals("Zero should be allowed for immediate commit", 
-                0, ragConfig.getSolrCommitWithinMs());
+        assertEquals(0, ragConfig.getSolrCommitWithinMs(), "Zero should be allowed for immediate commit");
     }
 
     @Test
     public void testGetSolrCommitWithinMsNegative() throws Exception {
         setField(ragConfig, "solrCommitWithinMs", -1);
-        assertEquals("Negative should be allowed for immediate commit", 
-                -1, ragConfig.getSolrCommitWithinMs());
+        assertEquals(-1, ragConfig.getSolrCommitWithinMs(), "Negative should be allowed for immediate commit");
     }
 
     @Test
     public void testGetSupportedMimeTypes() {
         String mimeTypes = ragConfig.getSupportedMimeTypes();
-        assertNotNull("Supported MIME types should not be null", mimeTypes);
-        assertTrue("Should contain text/plain", mimeTypes.contains("text/plain"));
-        assertTrue("Should contain application/pdf", mimeTypes.contains("application/pdf"));
+        assertNotNull(mimeTypes, "Supported MIME types should not be null");
+        assertTrue(mimeTypes.contains("text/plain"), "Should contain text/plain");
+        assertTrue(mimeTypes.contains("application/pdf"), "Should contain application/pdf");
     }
 
     // ========== Edge Cases ==========
@@ -354,18 +335,14 @@ public class RAGConfigTest {
     public void testIsMimeTypeSupportedWithExtraCommas() throws Exception {
         setField(ragConfig, "supportedMimeTypes", "text/plain,,text/html,");
         
-        assertTrue("text/plain should still be supported", 
-                ragConfig.isMimeTypeSupported("text/plain"));
-        assertTrue("text/html should still be supported", 
-                ragConfig.isMimeTypeSupported("text/html"));
+        assertTrue(ragConfig.isMimeTypeSupported("text/plain"), "text/plain should still be supported");
+        assertTrue(ragConfig.isMimeTypeSupported("text/html"), "text/html should still be supported");
     }
 
     @Test
     public void testIsMimeTypeSupportedPartialMatch() {
         // Should not match partial MIME types
-        assertFalse("Partial match 'text' should not be supported", 
-                ragConfig.isMimeTypeSupported("text"));
-        assertFalse("Partial match 'plain' should not be supported", 
-                ragConfig.isMimeTypeSupported("plain"));
+        assertFalse(ragConfig.isMimeTypeSupported("text"), "Partial match 'text' should not be supported");
+        assertFalse(ragConfig.isMimeTypeSupported("plain"), "Partial match 'plain' should not be supported");
     }
 }

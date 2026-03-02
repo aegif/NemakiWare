@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.mcp;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import java.util.Arrays;
@@ -9,8 +9,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mindrot.jbcrypt.BCrypt;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -71,7 +71,7 @@ public class McpToolsProviderTest {
     private static final long TEST_SESSION_TTL_SECONDS = 3600;
     private static final String DEFAULT_REPOSITORY = "bedroom";
 
-    @Before
+    @BeforeEach
     public void setUp() {
         MockitoAnnotations.openMocks(this);
         ObjectMapper objectMapper = new ObjectMapper();

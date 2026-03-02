@@ -9,8 +9,8 @@ import org.apache.chemistry.opencmis.tck.tests.crud.PropertyFilterTest;
 import org.apache.chemistry.opencmis.tck.tests.crud.SetAndDeleteContentTest;
 import org.apache.chemistry.opencmis.tck.tests.crud.UpdateSmokeTest;
 import org.apache.chemistry.opencmis.tck.tests.crud.WhitespaceInNameTest;
-import org.junit.Test;
-import org.junit.Ignore;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Disabled;
 
 import jp.aegif.nemaki.cmis.tck.TestGroupBase;
 

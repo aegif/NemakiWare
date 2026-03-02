@@ -1,8 +1,8 @@
 package jp.aegif.nemaki.api.v1;
 
 import io.restassured.response.Response;
-import org.junit.Test;
-import org.junit.Ignore;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Disabled;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
@@ -25,7 +25,7 @@ import static org.hamcrest.Matchers.*;
  * 
  * Run with: mvn test -Dtest=ObjectResourceIT -Dnemaki.test.baseUrl=http://localhost:8080/core
  */
-@Ignore("Integration tests require a running NemakiWare instance")
+@Disabled("Integration tests require a running NemakiWare instance")
 public class ObjectResourceIT extends ApiV1TestBase {
     
     @Test

@@ -1,8 +1,8 @@
 package jp.aegif.nemaki.webhook;
 
-import org.junit.Test;
-import org.junit.Before;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import static org.junit.jupiter.api.Assertions.*;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -25,7 +25,7 @@ public class WebhookEventMatcherTest {
     
     private WebhookEventMatcher matcher;
     
-    @Before
+    @BeforeEach
     public void setUp() {
         log.info("Setting up WebhookEventMatcherTest");
         matcher = new WebhookEventMatcher();
@@ -45,9 +45,9 @@ public class WebhookEventMatcherTest {
         
         List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "CREATED");
         
-        assertEquals("Should find 2 matching configs", 2, matches.size());
-        assertTrue("Should include webhook-1", matches.stream().anyMatch(c -> "webhook-1".equals(c.getId())));
-        assertTrue("Should include webhook-3", matches.stream().anyMatch(c -> "webhook-3".equals(c.getId())));
+        assertEquals(2, matches.size(), "Should find 2 matching configs");
+        assertTrue(matches.stream().anyMatch(c -> "webhook-1".equals(c.getId())), "Should include webhook-1");
+        assertTrue(matches.stream().anyMatch(c -> "webhook-3".equals(c.getId())), "Should include webhook-3");
     }
     
     @Test
@@ -60,9 +60,9 @@ public class WebhookEventMatcherTest {
         
         List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "UPDATED");
         
-        assertEquals("Should find 2 matching configs", 2, matches.size());
-        assertTrue("Should include webhook-1", matches.stream().anyMatch(c -> "webhook-1".equals(c.getId())));
-        assertTrue("Should include webhook-2", matches.stream().anyMatch(c -> "webhook-2".equals(c.getId())));
+        assertEquals(2, matches.size(), "Should find 2 matching configs");
+        assertTrue(matches.stream().anyMatch(c -> "webhook-1".equals(c.getId())), "Should include webhook-1");
+        assertTrue(matches.stream().anyMatch(c -> "webhook-2".equals(c.getId())), "Should include webhook-2");
     }
     
     @Test
@@ -75,7 +75,7 @@ public class WebhookEventMatcherTest {
         
         List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "DELETED");
         
-        assertEquals("Should find 1 matching config", 1, matches.size());
+        assertEquals(1, matches.size(), "Should find 1 matching config");
         assertEquals("webhook-2", matches.get(0).getId());
     }
     
@@ -89,7 +89,7 @@ public class WebhookEventMatcherTest {
         
         List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "SECURITY");
         
-        assertEquals("Should find 2 matching configs", 2, matches.size());
+        assertEquals(2, matches.size(), "Should find 2 matching configs");
     }
     
     // ========================================
@@ -106,9 +106,8 @@ public class WebhookEventMatcherTest {
         
         List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "CREATED");
         
-        assertEquals("Should find 2 matching configs (excluding disabled)", 2, matches.size());
-        assertFalse("Should not include disabled webhook-2", 
-            matches.stream().anyMatch(c -> "webhook-2".equals(c.getId())));
+        assertEquals(2, matches.size(), "Should find 2 matching configs (excluding disabled)");
+        assertFalse(matches.stream().anyMatch(c -> "webhook-2".equals(c.getId())), "Should not include disabled webhook-2");
     }
     
     @Test
@@ -120,7 +119,7 @@ public class WebhookEventMatcherTest {
         
         List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "CREATED");
         
-        assertTrue("Should return empty list when all configs are disabled", matches.isEmpty());
+        assertTrue(matches.isEmpty(), "Should return empty list when all configs are disabled");
     }
     
     // ========================================
@@ -133,16 +132,16 @@ public class WebhookEventMatcherTest {
         
         List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "CREATED");
         
-        assertNotNull("Should return empty list, not null", matches);
-        assertTrue("Should return empty list", matches.isEmpty());
+        assertNotNull(matches, "Should return empty list, not null");
+        assertTrue(matches.isEmpty(), "Should return empty list");
     }
     
     @Test
     public void testFindMatchingConfigsWithNullList() {
         List<WebhookConfig> matches = matcher.findMatchingConfigs(null, "CREATED");
         
-        assertNotNull("Should return empty list, not null", matches);
-        assertTrue("Should return empty list", matches.isEmpty());
+        assertNotNull(matches, "Should return empty list, not null");
+        assertTrue(matches.isEmpty(), "Should return empty list");
     }
     
     @Test
@@ -153,8 +152,8 @@ public class WebhookEventMatcherTest {
         
         List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, null);
         
-        assertNotNull("Should return empty list, not null", matches);
-        assertTrue("Should return empty list for null event type", matches.isEmpty());
+        assertNotNull(matches, "Should return empty list, not null");
+        assertTrue(matches.isEmpty(), "Should return empty list for null event type");
     }
     
     @Test
@@ -165,8 +164,8 @@ public class WebhookEventMatcherTest {
         
         List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "");
         
-        assertNotNull("Should return empty list, not null", matches);
-        assertTrue("Should return empty list for empty event type", matches.isEmpty());
+        assertNotNull(matches, "Should return empty list, not null");
+        assertTrue(matches.isEmpty(), "Should return empty list for empty event type");
     }
     
     // ========================================
@@ -181,11 +180,11 @@ public class WebhookEventMatcherTest {
         
         // Test lowercase
         List<WebhookConfig> matches1 = matcher.findMatchingConfigs(configs, "created");
-        assertEquals("Should match lowercase event", 1, matches1.size());
+        assertEquals(1, matches1.size(), "Should match lowercase event");
         
         // Test mixed case
         List<WebhookConfig> matches2 = matcher.findMatchingConfigs(configs, "Created");
-        assertEquals("Should match mixed case event", 1, matches2.size());
+        assertEquals(1, matches2.size(), "Should match mixed case event");
     }
     
     // ========================================
@@ -201,7 +200,7 @@ public class WebhookEventMatcherTest {
         
         List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "DELETED");
         
-        assertTrue("Should return empty list when no configs match", matches.isEmpty());
+        assertTrue(matches.isEmpty(), "Should return empty list when no configs match");
     }
     
     // ========================================
@@ -220,7 +219,7 @@ public class WebhookEventMatcherTest {
             
             List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, eventType);
             
-            assertEquals("Should match " + eventType + " event", 1, matches.size());
+            assertEquals(1, matches.size(), "Should match " + eventType + " event");
         }
     }
     
@@ -248,29 +247,29 @@ public class WebhookEventMatcherTest {
     @Test
     public void testIsValidEventType() {
         // Valid Phase 1 events
-        assertTrue("CREATED should be valid", matcher.isValidEventType("CREATED"));
-        assertTrue("UPDATED should be valid", matcher.isValidEventType("UPDATED"));
-        assertTrue("DELETED should be valid", matcher.isValidEventType("DELETED"));
-        assertTrue("SECURITY should be valid", matcher.isValidEventType("SECURITY"));
+        assertTrue(matcher.isValidEventType("CREATED"), "CREATED should be valid");
+        assertTrue(matcher.isValidEventType("UPDATED"), "UPDATED should be valid");
+        assertTrue(matcher.isValidEventType("DELETED"), "DELETED should be valid");
+        assertTrue(matcher.isValidEventType("SECURITY"), "SECURITY should be valid");
         
         // Case insensitive
-        assertTrue("created should be valid", matcher.isValidEventType("created"));
+        assertTrue(matcher.isValidEventType("created"), "created should be valid");
         
         // Invalid events
-        assertFalse("INVALID should not be valid", matcher.isValidEventType("INVALID"));
-        assertFalse("null should not be valid", matcher.isValidEventType(null));
-        assertFalse("empty should not be valid", matcher.isValidEventType(""));
+        assertFalse(matcher.isValidEventType("INVALID"), "INVALID should not be valid");
+        assertFalse(matcher.isValidEventType(null), "null should not be valid");
+        assertFalse(matcher.isValidEventType(""), "empty should not be valid");
     }
     
     @Test
     public void testGetSupportedEventTypes() {
         List<String> supportedTypes = matcher.getSupportedEventTypes();
         
-        assertNotNull("Should return list of supported types", supportedTypes);
-        assertTrue("Should include CREATED", supportedTypes.contains("CREATED"));
-        assertTrue("Should include UPDATED", supportedTypes.contains("UPDATED"));
-        assertTrue("Should include DELETED", supportedTypes.contains("DELETED"));
-        assertTrue("Should include SECURITY", supportedTypes.contains("SECURITY"));
+        assertNotNull(supportedTypes, "Should return list of supported types");
+        assertTrue(supportedTypes.contains("CREATED"), "Should include CREATED");
+        assertTrue(supportedTypes.contains("UPDATED"), "Should include UPDATED");
+        assertTrue(supportedTypes.contains("DELETED"), "Should include DELETED");
+        assertTrue(supportedTypes.contains("SECURITY"), "Should include SECURITY");
     }
     
     // ========================================
@@ -279,17 +278,14 @@ public class WebhookEventMatcherTest {
 
     @Test
     public void testContentUpdatedIsValidEventType() {
-        assertTrue("CONTENT_UPDATED should be a valid event type",
-            matcher.isValidEventType("CONTENT_UPDATED"));
-        assertTrue("content_updated (lowercase) should be valid",
-            matcher.isValidEventType("content_updated"));
+        assertTrue(matcher.isValidEventType("CONTENT_UPDATED"), "CONTENT_UPDATED should be a valid event type");
+        assertTrue(matcher.isValidEventType("content_updated"), "content_updated (lowercase) should be valid");
     }
 
     @Test
     public void testContentUpdatedInSupportedEventTypes() {
         List<String> supported = matcher.getSupportedEventTypes();
-        assertTrue("Supported event types should include CONTENT_UPDATED",
-            supported.contains("CONTENT_UPDATED"));
+        assertTrue(supported.contains("CONTENT_UPDATED"), "Supported event types should include CONTENT_UPDATED");
     }
 
     @Test
@@ -302,25 +298,20 @@ public class WebhookEventMatcherTest {
 
         List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "CONTENT_UPDATED");
 
-        assertEquals("Should find 2 matching configs for CONTENT_UPDATED", 2, matches.size());
-        assertTrue("Should include webhook-1",
-            matches.stream().anyMatch(c -> "webhook-1".equals(c.getId())));
-        assertTrue("Should include webhook-3",
-            matches.stream().anyMatch(c -> "webhook-3".equals(c.getId())));
-        assertFalse("Should not include webhook-2 (only has UPDATED, not CONTENT_UPDATED)",
-            matches.stream().anyMatch(c -> "webhook-2".equals(c.getId())));
+        assertEquals(2, matches.size(), "Should find 2 matching configs for CONTENT_UPDATED");
+        assertTrue(matches.stream().anyMatch(c -> "webhook-1".equals(c.getId())), "Should include webhook-1");
+        assertTrue(matches.stream().anyMatch(c -> "webhook-3".equals(c.getId())), "Should include webhook-3");
+        assertFalse(matches.stream().anyMatch(c -> "webhook-2".equals(c.getId())), "Should not include webhook-2 (only has UPDATED, not CONTENT_UPDATED)");
     }
 
     @Test
     public void testContentUpdatedIsNotChildEventType() {
-        assertFalse("CONTENT_UPDATED should not be a child event type",
-            matcher.isChildEventType("CONTENT_UPDATED"));
+        assertFalse(matcher.isChildEventType("CONTENT_UPDATED"), "CONTENT_UPDATED should not be a child event type");
     }
 
     @Test
     public void testContentUpdatedHasNoChildEventMapping() {
-        assertNull("CONTENT_UPDATED should not map to a CHILD_* event type",
-            matcher.toChildEventType("CONTENT_UPDATED"));
+        assertNull(matcher.toChildEventType("CONTENT_UPDATED"), "CONTENT_UPDATED should not map to a CHILD_* event type");
     }
 
     // ========================================
@@ -342,7 +333,7 @@ public class WebhookEventMatcherTest {
         // Searching for an unsupported event type should return empty list
         List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "INVALID_EVENT");
         
-        assertTrue("Should return empty list for unsupported event type", matches.isEmpty());
+        assertTrue(matches.isEmpty(), "Should return empty list for unsupported event type");
     }
     
     @Test
@@ -354,7 +345,7 @@ public class WebhookEventMatcherTest {
 
         List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "CHILD_CREATED");
 
-        assertEquals("Should match CHILD_CREATED event type", 1, matches.size());
+        assertEquals(1, matches.size(), "Should match CHILD_CREATED event type");
         assertEquals("webhook-1", matches.get(0).getId());
     }
     

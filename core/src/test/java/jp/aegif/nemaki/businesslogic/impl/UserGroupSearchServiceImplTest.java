@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.businesslogic.impl;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
@@ -8,8 +8,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService;
@@ -29,7 +29,7 @@ public class UserGroupSearchServiceImplTest {
 	private StubSolrIndexMaintenanceService stubSolr;
 	private StubPropertyManager stubPm;
 
-	@Before
+	@BeforeEach
 	public void setUp() {
 		service = new UserGroupSearchServiceImpl();
 		stubSolr = new StubSolrIndexMaintenanceService();
@@ -210,10 +210,8 @@ public class UserGroupSearchServiceImplTest {
 		// The query should contain lowercase "admin"
 		String capturedQuery = stubSolr.lastQuery;
 		assertNotNull(capturedQuery);
-		assertTrue("Query should contain lowercased term",
-				capturedQuery.contains("admin"));
-		assertFalse("Query should NOT contain original case term in id_lc field search",
-				capturedQuery.contains("Admin"));
+		assertTrue(capturedQuery.contains("admin"), "Query should contain lowercased term");
+		assertFalse(capturedQuery.contains("Admin"), "Query should NOT contain original case term in id_lc field search");
 	}
 
 	@Test
@@ -233,8 +231,7 @@ public class UserGroupSearchServiceImplTest {
 		String capturedQuery = stubSolr.lastQuery;
 		assertNotNull(capturedQuery);
 		// + should be escaped by ClientUtils.escapeQueryChars
-		assertTrue("Query should contain escaped special chars",
-				capturedQuery.contains("test\\+user"));
+		assertTrue(capturedQuery.contains("test\\+user"), "Query should contain escaped special chars");
 	}
 
 	@Test
@@ -244,8 +241,7 @@ public class UserGroupSearchServiceImplTest {
 
 		String capturedQuery = stubSolr.lastQuery;
 		assertNotNull(capturedQuery);
-		assertTrue("Query should filter by nemaki:user objecttype",
-				capturedQuery.contains("objecttype:nemaki\\:user"));
+		assertTrue(capturedQuery.contains("objecttype:nemaki\\:user"), "Query should filter by nemaki:user objecttype");
 	}
 
 	@Test
@@ -268,12 +264,9 @@ public class UserGroupSearchServiceImplTest {
 		String capturedQuery = stubSolr.lastQuery;
 		assertNotNull(capturedQuery);
 		// Should use user_id (not user_id_lc) and name (not name_lc)
-		assertTrue("Query should use case-sensitive field user_id",
-				capturedQuery.contains("dynamic.usersearch.user_id:"));
-		assertTrue("Query should use case-sensitive field name",
-				capturedQuery.contains("name:"));
-		assertTrue("Query should contain original case term",
-				capturedQuery.contains("Admin"));
+		assertTrue(capturedQuery.contains("dynamic.usersearch.user_id:"), "Query should use case-sensitive field user_id");
+		assertTrue(capturedQuery.contains("name:"), "Query should use case-sensitive field name");
+		assertTrue(capturedQuery.contains("Admin"), "Query should contain original case term");
 	}
 
 	// ==========================================
@@ -287,8 +280,7 @@ public class UserGroupSearchServiceImplTest {
 
 		String capturedQuery = stubSolr.lastQuery;
 		assertNotNull(capturedQuery);
-		assertTrue("Query should filter by nemaki:group objecttype",
-				capturedQuery.contains("objecttype:nemaki\\:group"));
+		assertTrue(capturedQuery.contains("objecttype:nemaki\\:group"), "Query should filter by nemaki:group objecttype");
 	}
 
 	@Test
@@ -298,8 +290,7 @@ public class UserGroupSearchServiceImplTest {
 
 		String capturedQuery = stubSolr.lastQuery;
 		assertNotNull(capturedQuery);
-		assertTrue("Query should use group_id_lc field",
-				capturedQuery.contains("dynamic.usersearch.group_id_lc:"));
+		assertTrue(capturedQuery.contains("dynamic.usersearch.group_id_lc:"), "Query should use group_id_lc field");
 	}
 
 	// ==========================================
@@ -686,8 +677,8 @@ public class UserGroupSearchServiceImplTest {
 		stubSolr.setMultiQueryResults("dynamic.usersearch.user_id:*", makeDocs(100), 100);
 		stubSolr.setMultiQueryResults("dynamic.usersearch.group_id:*", new ArrayList<>(), 0);
 
-		assertTrue("User search should be ready (100/100)", service.isSolrUserSearchEffective("bedroom"));
-		assertFalse("Group search should NOT be ready (0/10)", service.isSolrGroupSearchEffective("bedroom"));
+		assertTrue(service.isSolrUserSearchEffective("bedroom"), "User search should be ready (100/100)");
+		assertFalse(service.isSolrGroupSearchEffective("bedroom"), "Group search should NOT be ready (0/10)");
 	}
 
 	@Test
@@ -700,8 +691,8 @@ public class UserGroupSearchServiceImplTest {
 		stubSolr.setMultiQueryResults("dynamic.usersearch.user_id:*", makeDocs(5), 5);
 		stubSolr.setMultiQueryResults("dynamic.usersearch.group_id:*", makeDocs(10), 10);
 
-		assertFalse("User search should NOT be ready (5/100)", service.isSolrUserSearchEffective("bedroom"));
-		assertTrue("Group search should be ready (10/10)", service.isSolrGroupSearchEffective("bedroom"));
+		assertFalse(service.isSolrUserSearchEffective("bedroom"), "User search should NOT be ready (5/100)");
+		assertTrue(service.isSolrGroupSearchEffective("bedroom"), "Group search should be ready (10/10)");
 	}
 
 	@Test

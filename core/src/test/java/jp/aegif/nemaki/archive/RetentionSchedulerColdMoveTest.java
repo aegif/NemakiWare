@@ -4,10 +4,10 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import java.io.ByteArrayInputStream;
@@ -33,7 +33,7 @@ public class RetentionSchedulerColdMoveTest {
     private PropertyManager propertyManager;
     private InMemoryStorageAdapter adapter;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         scheduler = new RetentionScheduler();
         contentService = mock(ContentService.class);
@@ -77,7 +77,7 @@ public class RetentionSchedulerColdMoveTest {
         Method moveToCold = getMoveToColdMethod();
         boolean result = (boolean) moveToCold.invoke(scheduler, "bedroom", archive, adapter);
 
-        assertTrue("moveToCold should return true on success", result);
+        assertTrue(result, "moveToCold should return true on success");
 
         // Verify state transitions: COLD_MOVING → ARCHIVED_COLD
         verify(contentService).updateArchiveState(eq("bedroom"), eq("arch-001"),
@@ -106,7 +106,7 @@ public class RetentionSchedulerColdMoveTest {
         moveToCold.invoke(scheduler, "bedroom", archive, adapter);
 
         // Verify content was written to adapter
-        assertTrue("Content should exist in cold storage", adapter.exists("bedroom", "orig-002"));
+        assertTrue(adapter.exists("bedroom", "orig-002"), "Content should exist in cold storage");
     }
 
     // ===== COPY mode tests =====
@@ -123,7 +123,7 @@ public class RetentionSchedulerColdMoveTest {
         Method moveToCold = getMoveToColdMethod();
         boolean result = (boolean) moveToCold.invoke(scheduler, "bedroom", archive, adapter);
 
-        assertTrue("moveToCold should return true on success", result);
+        assertTrue(result, "moveToCold should return true on success");
 
         // Verify state transitions: COLD_MOVING → ARCHIVED_LOCAL (NOT ARCHIVED_COLD)
         verify(contentService).updateArchiveState(eq("bedroom"), eq("arch-003"),
@@ -177,7 +177,7 @@ public class RetentionSchedulerColdMoveTest {
         moveToCold.invoke(scheduler, "bedroom", archive, adapter);
 
         // Content should be in cold storage even in COPY mode
-        assertTrue("Content should exist in cold storage", adapter.exists("bedroom", "orig-005"));
+        assertTrue(adapter.exists("bedroom", "orig-005"), "Content should exist in cold storage");
     }
 
     // ===== Edge case: no content stream =====
@@ -191,7 +191,7 @@ public class RetentionSchedulerColdMoveTest {
         Method moveToCold = getMoveToColdMethod();
         boolean result = (boolean) moveToCold.invoke(scheduler, "bedroom", archive, adapter);
 
-        assertFalse("moveToCold should return false when content is missing", result);
+        assertFalse(result, "moveToCold should return false when content is missing");
 
         // Verify state set to COLD_MOVING then reverted to ARCHIVED_LOCAL
         verify(contentService).updateArchiveState(eq("bedroom"), eq("arch-006"),
@@ -203,7 +203,7 @@ public class RetentionSchedulerColdMoveTest {
         verify(contentService, never()).updateArchiveColdMoveMode(anyString(), anyString(), anyString());
 
         // Verify nothing stored in adapter
-        assertFalse("Nothing should be in cold storage", adapter.exists("bedroom", "orig-006"));
+        assertFalse(adapter.exists("bedroom", "orig-006"), "Nothing should be in cold storage");
     }
 
     // ===== Edge case: adapter throws exception =====
@@ -227,10 +227,8 @@ public class RetentionSchedulerColdMoveTest {
             fail("Should have thrown an exception");
         } catch (Exception e) {
             // InvocationTargetException wraps RuntimeException
-            assertTrue("Should wrap RuntimeException",
-                    e.getCause() instanceof RuntimeException);
-            assertTrue("Should contain original error message",
-                    e.getCause().getMessage().contains("Cold move failed"));
+            assertTrue(e.getCause() instanceof RuntimeException, "Should wrap RuntimeException");
+            assertTrue(e.getCause().getMessage().contains("Cold move failed"), "Should contain original error message");
         }
 
         // Verify state reverted to ARCHIVED_LOCAL

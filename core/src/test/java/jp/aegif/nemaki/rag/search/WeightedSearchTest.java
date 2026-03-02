@@ -1,8 +1,8 @@
 package jp.aegif.nemaki.rag.search;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for weighted search functionality.
@@ -91,7 +91,7 @@ public class WeightedSearchTest {
         float scoreB = (boost_property * docB_property) + (boost_content * docB_content);
 
         // Doc B should score higher with content-heavy weighting
-        assertTrue("Content-rich document should score higher with content boost", scoreB > scoreA);
+        assertTrue(scoreB > scoreA, "Content-rich document should score higher with content boost");
     }
 
     @Test
@@ -110,7 +110,7 @@ public class WeightedSearchTest {
         float scoreB = (boost_property * docB_property) + (boost_content * docB_content);
 
         // Doc A should score higher with property-heavy weighting
-        assertTrue("Property-rich document should score higher with property boost", scoreA > scoreB);
+        assertTrue(scoreA > scoreB, "Property-rich document should score higher with property boost");
     }
 
     @Test
@@ -157,8 +157,8 @@ public class WeightedSearchTest {
         float[] validScores = {0.0f, 0.5f, 1.0f};
 
         for (float score : validScores) {
-            assertTrue("Score should be >= 0", score >= 0.0f);
-            assertTrue("Score should be <= 1", score <= 1.0f);
+            assertTrue(score >= 0.0f, "Score should be >= 0");
+            assertTrue(score <= 1.0f, "Score should be <= 1");
         }
     }
 

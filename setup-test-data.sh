@@ -605,7 +605,7 @@ story.append(t)
 story.append(Paragraph('3. Docker 構成', styles['JPH1']))
 docker_data = [
     ['コンテナ', 'イメージ', 'ポート', '役割'],
-    ['core', 'tomcat:10.1-jre17', '8080', 'CMIS / REST / UI'],
+    ['core', 'tomcat:10.1-jre21', '8080', 'CMIS / REST / UI'],
     ['couchdb', 'couchdb:3.4', '5984', 'ドキュメントDB'],
     ['solr', 'solr:9.10-slim', '8983', '全文検索'],
 ]

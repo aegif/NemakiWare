@@ -1,10 +1,10 @@
 package jp.aegif.nemaki.api.v1;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.api.v1.model.response.JobControlResponse;
 import jp.aegif.nemaki.api.v1.resource.JobControlResource;
@@ -18,7 +18,7 @@ public class JobControlResourceTest {
     private JobControlResource jobControlResource;
     private HttpServletRequest adminRequest;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         jobControlResource = new JobControlResource();
         adminRequest = createAdminRequest();

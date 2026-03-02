@@ -21,7 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rss;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.Arrays;
 import java.util.Calendar;
@@ -29,14 +29,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class RssTokenServiceTest {
     
     private RssTokenService tokenService;
     
-    @Before
+    @BeforeEach
     public void setUp() {
         tokenService = new RssTokenService();
         tokenService.setDefaultExpiryDays(30);

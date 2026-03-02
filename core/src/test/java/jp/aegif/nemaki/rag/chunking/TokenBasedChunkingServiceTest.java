@@ -1,11 +1,13 @@
 package jp.aegif.nemaki.rag.chunking;
 
-import org.junit.Test;
-import org.junit.Before;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
-import static org.junit.Assert.*;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import jp.aegif.nemaki.rag.config.RAGConfig;
@@ -24,7 +26,8 @@ import java.util.List;
  * - Overlap extraction
  * - Token estimation
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class TokenBasedChunkingServiceTest {
 
     @Mock
@@ -32,7 +35,7 @@ public class TokenBasedChunkingServiceTest {
 
     private TokenBasedChunkingService chunkingService;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         // Default configuration for tests
         when(ragConfig.getChunkingMaxTokens()).thenReturn(512);
@@ -48,24 +51,24 @@ public class TokenBasedChunkingServiceTest {
     public void testChunkNullInput() {
         List<TextChunk> chunks = chunkingService.chunk(null);
         
-        assertNotNull("Result should not be null", chunks);
-        assertTrue("Result should be empty for null input", chunks.isEmpty());
+        assertNotNull(chunks, "Result should not be null");
+        assertTrue(chunks.isEmpty(), "Result should be empty for null input");
     }
 
     @Test
     public void testChunkEmptyString() {
         List<TextChunk> chunks = chunkingService.chunk("");
         
-        assertNotNull("Result should not be null", chunks);
-        assertTrue("Result should be empty for empty string", chunks.isEmpty());
+        assertNotNull(chunks, "Result should not be null");
+        assertTrue(chunks.isEmpty(), "Result should be empty for empty string");
     }
 
     @Test
     public void testChunkWhitespaceOnly() {
         List<TextChunk> chunks = chunkingService.chunk("   \t\n   ");
         
-        assertNotNull("Result should not be null", chunks);
-        assertTrue("Result should be empty for whitespace-only input", chunks.isEmpty());
+        assertNotNull(chunks, "Result should not be null");
+        assertTrue(chunks.isEmpty(), "Result should be empty for whitespace-only input");
     }
 
     // ========== English Text Chunking Tests ==========
@@ -76,11 +79,10 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertEquals("Short text should produce one chunk", 1, chunks.size());
-        assertEquals("Chunk index should be 0", 0, chunks.get(0).getIndex());
-        assertTrue("Chunk text should contain original content", 
-                chunks.get(0).getText().contains("short English text"));
+        assertNotNull(chunks, "Result should not be null");
+        assertEquals(1, chunks.size(), "Short text should produce one chunk");
+        assertEquals(0, chunks.get(0).getIndex(), "Chunk index should be 0");
+        assertTrue(chunks.get(0).getText().contains("short English text"), "Chunk text should contain original content");
     }
 
     @Test
@@ -94,12 +96,12 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertTrue("Long text should produce multiple chunks", chunks.size() >= 1);
+        assertNotNull(chunks, "Result should not be null");
+        assertTrue(chunks.size() >= 1, "Long text should produce multiple chunks");
         
         // Verify chunk indices are sequential
         for (int i = 0; i < chunks.size(); i++) {
-            assertEquals("Chunk index should be sequential", i, chunks.get(i).getIndex());
+            assertEquals(i, chunks.get(i).getIndex(), "Chunk index should be sequential");
         }
     }
 
@@ -111,13 +113,13 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertFalse("Result should not be empty", chunks.isEmpty());
+        assertNotNull(chunks, "Result should not be null");
+        assertFalse(chunks.isEmpty(), "Result should not be empty");
         
         // All chunks should have non-empty text
         for (TextChunk chunk : chunks) {
-            assertNotNull("Chunk text should not be null", chunk.getText());
-            assertFalse("Chunk text should not be empty", chunk.getText().isEmpty());
+            assertNotNull(chunk.getText(), "Chunk text should not be null");
+            assertFalse(chunk.getText().isEmpty(), "Chunk text should not be empty");
         }
     }
 
@@ -129,10 +131,9 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertEquals("Short Japanese text should produce one chunk", 1, chunks.size());
-        assertTrue("Chunk should contain Japanese text", 
-                chunks.get(0).getText().contains("日本語"));
+        assertNotNull(chunks, "Result should not be null");
+        assertEquals(1, chunks.size(), "Short Japanese text should produce one chunk");
+        assertTrue(chunks.get(0).getText().contains("日本語"), "Chunk should contain Japanese text");
     }
 
     @Test
@@ -146,8 +147,8 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertTrue("Long Japanese text should produce chunks", chunks.size() >= 1);
+        assertNotNull(chunks, "Result should not be null");
+        assertTrue(chunks.size() >= 1, "Long Japanese text should produce chunks");
     }
 
     @Test
@@ -156,8 +157,8 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertFalse("Result should not be empty", chunks.isEmpty());
+        assertNotNull(chunks, "Result should not be null");
+        assertFalse(chunks.isEmpty(), "Result should not be empty");
     }
 
     // ========== Mixed Language Text Tests ==========
@@ -168,15 +169,15 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertFalse("Result should not be empty", chunks.isEmpty());
+        assertNotNull(chunks, "Result should not be null");
+        assertFalse(chunks.isEmpty(), "Result should not be empty");
         
         // The chunk should contain both languages
         String allText = chunks.stream()
                 .map(TextChunk::getText)
                 .reduce("", (a, b) -> a + " " + b);
-        assertTrue("Should contain English", allText.contains("English"));
-        assertTrue("Should contain Japanese", allText.contains("日本語"));
+        assertTrue(allText.contains("English"), "Should contain English");
+        assertTrue(allText.contains("日本語"), "Should contain Japanese");
     }
 
     @Test
@@ -191,8 +192,8 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertTrue("Mixed long text should produce multiple chunks", chunks.size() >= 1);
+        assertNotNull(chunks, "Result should not be null");
+        assertTrue(chunks.size() >= 1, "Mixed long text should produce multiple chunks");
     }
 
     // ========== Token Estimation Tests ==========
@@ -200,13 +201,13 @@ public class TokenBasedChunkingServiceTest {
     @Test
     public void testEstimateTokenCountNull() {
         int tokens = chunkingService.estimateTokenCount(null);
-        assertEquals("Null input should return 0 tokens", 0, tokens);
+        assertEquals(0, tokens, "Null input should return 0 tokens");
     }
 
     @Test
     public void testEstimateTokenCountEmpty() {
         int tokens = chunkingService.estimateTokenCount("");
-        assertEquals("Empty input should return 0 tokens", 0, tokens);
+        assertEquals(0, tokens, "Empty input should return 0 tokens");
     }
 
     @Test
@@ -216,7 +217,7 @@ public class TokenBasedChunkingServiceTest {
         int tokens = chunkingService.estimateTokenCount(text);
         
         // 44 characters / 4 = ~11 tokens
-        assertTrue("English token count should be reasonable", tokens > 5 && tokens < 20);
+        assertTrue(tokens > 5 && tokens < 20, "English token count should be reasonable");
     }
 
     @Test
@@ -226,7 +227,7 @@ public class TokenBasedChunkingServiceTest {
         int tokens = chunkingService.estimateTokenCount(text);
         
         // 13 characters / 2 = ~6-7 tokens
-        assertTrue("Japanese token count should be reasonable", tokens > 3 && tokens < 15);
+        assertTrue(tokens > 3 && tokens < 15, "Japanese token count should be reasonable");
     }
 
     @Test
@@ -235,7 +236,7 @@ public class TokenBasedChunkingServiceTest {
         int tokens = chunkingService.estimateTokenCount(text);
         
         // Mixed text should have intermediate token count
-        assertTrue("Mixed text token count should be positive", tokens > 0);
+        assertTrue(tokens > 0, "Mixed text token count should be positive");
     }
 
     // ========== Configuration Tests ==========
@@ -243,13 +244,13 @@ public class TokenBasedChunkingServiceTest {
     @Test
     public void testGetMaxTokensPerChunk() {
         int maxTokens = chunkingService.getMaxTokensPerChunk();
-        assertEquals("Max tokens should match config", 512, maxTokens);
+        assertEquals(512, maxTokens, "Max tokens should match config");
     }
 
     @Test
     public void testGetOverlapTokens() {
         int overlapTokens = chunkingService.getOverlapTokens();
-        assertEquals("Overlap tokens should match config", 50, overlapTokens);
+        assertEquals(50, overlapTokens, "Overlap tokens should match config");
     }
 
     // ========== Chunk Metadata Tests ==========
@@ -260,12 +261,12 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertFalse("Result should not be empty", chunks.isEmpty());
+        assertNotNull(chunks, "Result should not be null");
+        assertFalse(chunks.isEmpty(), "Result should not be empty");
         
         // First chunk should start at offset 0 or close to it
         TextChunk firstChunk = chunks.get(0);
-        assertTrue("First chunk start offset should be >= 0", firstChunk.getStartOffset() >= 0);
+        assertTrue(firstChunk.getStartOffset() >= 0, "First chunk start offset should be >= 0");
     }
 
     @Test
@@ -274,11 +275,11 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertFalse("Result should not be empty", chunks.isEmpty());
+        assertNotNull(chunks, "Result should not be null");
+        assertFalse(chunks.isEmpty(), "Result should not be empty");
         
         TextChunk chunk = chunks.get(0);
-        assertTrue("Token count should be positive", chunk.getTokenCount() > 0);
+        assertTrue(chunk.getTokenCount() > 0, "Token count should be positive");
     }
 
     // ========== Edge Cases ==========
@@ -289,7 +290,7 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
+        assertNotNull(chunks, "Result should not be null");
         // Single character might be below min tokens threshold
         // but should not cause an error
     }
@@ -305,8 +306,8 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertTrue("Very long sentence should be split into chunks", chunks.size() >= 1);
+        assertNotNull(chunks, "Result should not be null");
+        assertTrue(chunks.size() >= 1, "Very long sentence should be split into chunks");
     }
 
     @Test
@@ -315,8 +316,8 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertFalse("Result should not be empty", chunks.isEmpty());
+        assertNotNull(chunks, "Result should not be null");
+        assertFalse(chunks.isEmpty(), "Result should not be empty");
     }
 
     @Test
@@ -325,12 +326,12 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertFalse("Result should not be empty", chunks.isEmpty());
+        assertNotNull(chunks, "Result should not be null");
+        assertFalse(chunks.isEmpty(), "Result should not be empty");
         
         // Multiple spaces should be normalized
         String chunkText = chunks.get(0).getText();
-        assertFalse("Multiple spaces should be normalized", chunkText.contains("    "));
+        assertFalse(chunkText.contains("    "), "Multiple spaces should be normalized");
     }
 
     // ========== Small Max Tokens Configuration Tests ==========
@@ -350,9 +351,8 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = smallChunkService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertTrue("Text should be split into multiple chunks with small max tokens", 
-                chunks.size() >= 1);
+        assertNotNull(chunks, "Result should not be null");
+        assertTrue(chunks.size() >= 1, "Text should be split into multiple chunks with small max tokens");
     }
 
     // ========== Unicode and Special Characters Tests ==========
@@ -363,8 +363,8 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertFalse("Result should not be empty", chunks.isEmpty());
+        assertNotNull(chunks, "Result should not be null");
+        assertFalse(chunks.isEmpty(), "Result should not be empty");
     }
 
     @Test
@@ -373,9 +373,9 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertFalse("Result should not be empty", chunks.isEmpty());
-        assertTrue("Should contain Chinese text", chunks.get(0).getText().contains("中文"));
+        assertNotNull(chunks, "Result should not be null");
+        assertFalse(chunks.isEmpty(), "Result should not be empty");
+        assertTrue(chunks.get(0).getText().contains("中文"), "Should contain Chinese text");
     }
 
     @Test
@@ -384,8 +384,8 @@ public class TokenBasedChunkingServiceTest {
         
         List<TextChunk> chunks = chunkingService.chunk(text);
         
-        assertNotNull("Result should not be null", chunks);
-        assertFalse("Result should not be empty", chunks.isEmpty());
-        assertTrue("Should contain Korean text", chunks.get(0).getText().contains("한국어"));
+        assertNotNull(chunks, "Result should not be null");
+        assertFalse(chunks.isEmpty(), "Result should not be empty");
+        assertTrue(chunks.get(0).getText().contains("한국어"), "Should contain Korean text");
     }
 }

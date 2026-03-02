@@ -1,11 +1,13 @@
 package jp.aegif.nemaki.rag.acl;
 
-import org.junit.Test;
-import org.junit.Before;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
-import static org.junit.Assert.*;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
@@ -32,7 +34,8 @@ import java.util.Set;
  * - Special principals (cmis:anyone, cmis:anonymous)
  * - Solr filter query building
  */
-@RunWith(MockitoJUnitRunner.Silent.class)
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class ACLExpanderTest {
 
     private static final String REPO_ID = "test-repo";
@@ -51,7 +54,7 @@ public class ACLExpanderTest {
 
     private ACLExpander aclExpander;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         aclExpander = new ACLExpander(principalService, contentService);
         // Default: contentService.calculateAcl returns the content's ACL
@@ -69,9 +72,9 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
+        assertNotNull(readers, "Readers should not be null");
         // Null ACL should now default to admin-only for security
-        assertTrue("Null ACL should result in admin-only readers", readers.contains("user:admin"));
+        assertTrue(readers.contains("user:admin"), "Null ACL should result in admin-only readers");
     }
 
     @Test
@@ -83,9 +86,9 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
+        assertNotNull(readers, "Readers should not be null");
         // Empty ACEs should now default to admin-only for security
-        assertTrue("Empty ACEs should result in admin-only readers", readers.contains("user:admin"));
+        assertTrue(readers.contains("user:admin"), "Empty ACEs should result in admin-only readers");
     }
 
     @Test
@@ -97,9 +100,9 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
+        assertNotNull(readers, "Readers should not be null");
         // Null ACEs should now default to admin-only for security
-        assertTrue("Null ACEs should result in admin-only readers", readers.contains("user:admin"));
+        assertTrue(readers.contains("user:admin"), "Null ACEs should result in admin-only readers");
     }
 
     @Test
@@ -113,8 +116,8 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
-        assertTrue("Should contain user:user1", readers.contains("user:user1"));
+        assertNotNull(readers, "Readers should not be null");
+        assertTrue(readers.contains("user:user1"), "Should contain user:user1");
     }
 
     @Test
@@ -128,8 +131,8 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
-        assertTrue("cmis:all should grant read access", readers.contains("user:user1"));
+        assertNotNull(readers, "Readers should not be null");
+        assertTrue(readers.contains("user:user1"), "cmis:all should grant read access");
     }
 
     @Test
@@ -140,8 +143,8 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
-        assertTrue("Should contain 'anyone'", readers.contains("anyone"));
+        assertNotNull(readers, "Readers should not be null");
+        assertTrue(readers.contains("anyone"), "Should contain 'anyone'");
     }
 
     @Test
@@ -152,8 +155,8 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
-        assertTrue("Should contain 'anyone'", readers.contains("anyone"));
+        assertNotNull(readers, "Readers should not be null");
+        assertTrue(readers.contains("anyone"), "Should contain 'anyone'");
     }
 
     @Test
@@ -176,10 +179,10 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
-        assertTrue("Should contain group:group1", readers.contains("group:group1"));
-        assertTrue("Should contain user:user1", readers.contains("user:user1"));
-        assertTrue("Should contain user:user2", readers.contains("user:user2"));
+        assertNotNull(readers, "Readers should not be null");
+        assertTrue(readers.contains("group:group1"), "Should contain group:group1");
+        assertTrue(readers.contains("user:user1"), "Should contain user:user1");
+        assertTrue(readers.contains("user:user2"), "Should contain user:user2");
     }
 
     @Test
@@ -209,11 +212,11 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
-        assertTrue("Should contain group:parentGroup", readers.contains("group:parentGroup"));
-        assertTrue("Should contain group:childGroup", readers.contains("group:childGroup"));
-        assertTrue("Should contain user:user1", readers.contains("user:user1"));
-        assertTrue("Should contain user:user2", readers.contains("user:user2"));
+        assertNotNull(readers, "Readers should not be null");
+        assertTrue(readers.contains("group:parentGroup"), "Should contain group:parentGroup");
+        assertTrue(readers.contains("group:childGroup"), "Should contain group:childGroup");
+        assertTrue(readers.contains("user:user1"), "Should contain user:user1");
+        assertTrue(readers.contains("user:user2"), "Should contain user:user2");
     }
 
     @Test
@@ -232,11 +235,10 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
-        assertTrue("Should contain user:user1", readers.contains("user:user1"));
-        assertTrue("Should contain user:user2", readers.contains("user:user2"));
-        assertFalse("Should not contain user:user3 (no read permission)", 
-                readers.contains("user:user3"));
+        assertNotNull(readers, "Readers should not be null");
+        assertTrue(readers.contains("user:user1"), "Should contain user:user1");
+        assertTrue(readers.contains("user:user2"), "Should contain user:user2");
+        assertFalse(readers.contains("user:user3"), "Should not contain user:user3 (no read permission)");
     }
 
     @Test
@@ -255,8 +257,8 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
-        assertTrue("Should fall back to admin users", readers.contains("user:admin"));
+        assertNotNull(readers, "Readers should not be null");
+        assertTrue(readers.contains("user:admin"), "Should fall back to admin users");
     }
 
     // ========== formatUserReader and formatGroupReader Tests ==========
@@ -282,11 +284,11 @@ public class ACLExpanderTest {
 
         String query = aclExpander.buildReaderFilterQuery(REPO_ID, "user1");
 
-        assertNotNull("Query should not be null", query);
-        assertTrue("Query should start with readers:(", query.startsWith("readers:("));
-        assertTrue("Query should contain 'anyone'", query.contains("anyone"));
-        assertTrue("Query should contain quoted user", query.contains("\"user:user1\""));
-        assertTrue("Query should end with )", query.endsWith(")"));
+        assertNotNull(query, "Query should not be null");
+        assertTrue(query.startsWith("readers:("), "Query should start with readers:(");
+        assertTrue(query.contains("anyone"), "Query should contain 'anyone'");
+        assertTrue(query.contains("\"user:user1\""), "Query should contain quoted user");
+        assertTrue(query.endsWith(")"), "Query should end with )");
     }
 
     @Test
@@ -299,11 +301,11 @@ public class ACLExpanderTest {
 
         String query = aclExpander.buildReaderFilterQuery(REPO_ID, "user1");
 
-        assertNotNull("Query should not be null", query);
-        assertTrue("Query should contain 'anyone'", query.contains("anyone"));
-        assertTrue("Query should contain quoted user", query.contains("\"user:user1\""));
-        assertTrue("Query should contain quoted group1", query.contains("\"group:group1\""));
-        assertTrue("Query should contain quoted group2", query.contains("\"group:group2\""));
+        assertNotNull(query, "Query should not be null");
+        assertTrue(query.contains("anyone"), "Query should contain 'anyone'");
+        assertTrue(query.contains("\"user:user1\""), "Query should contain quoted user");
+        assertTrue(query.contains("\"group:group1\""), "Query should contain quoted group1");
+        assertTrue(query.contains("\"group:group2\""), "Query should contain quoted group2");
     }
 
     @Test
@@ -313,9 +315,9 @@ public class ACLExpanderTest {
 
         String query = aclExpander.buildReaderFilterQuery(REPO_ID, "user1");
 
-        assertNotNull("Query should not be null", query);
-        assertTrue("Query should contain 'anyone'", query.contains("anyone"));
-        assertTrue("Query should contain quoted user", query.contains("\"user:user1\""));
+        assertNotNull(query, "Query should not be null");
+        assertTrue(query.contains("anyone"), "Query should contain 'anyone'");
+        assertTrue(query.contains("\"user:user1\""), "Query should contain quoted user");
     }
 
     @Test
@@ -326,7 +328,7 @@ public class ACLExpanderTest {
         String query = aclExpander.buildReaderFilterQuery(REPO_ID, "user1");
 
         // Values with colons should be quoted to prevent Solr from interpreting them
-        assertTrue("User should be quoted", query.contains("\"user:user1\""));
+        assertTrue(query.contains("\"user:user1\""), "User should be quoted");
     }
 
     // ========== Helper Methods ==========
@@ -352,7 +354,7 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
+        assertNotNull(readers, "Readers should not be null");
         // Should not throw exception
     }
 
@@ -367,7 +369,7 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
+        assertNotNull(readers, "Readers should not be null");
         // Should not throw exception
     }
 
@@ -385,9 +387,8 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
-        assertFalse("User without permissions should not be a reader", 
-                readers.contains("user:user1"));
+        assertNotNull(readers, "Readers should not be null");
+        assertFalse(readers.contains("user:user1"), "User without permissions should not be a reader");
     }
 
     @Test
@@ -401,9 +402,8 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
-        assertFalse("User with empty permissions should not be a reader", 
-                readers.contains("user:user1"));
+        assertNotNull(readers, "Readers should not be null");
+        assertFalse(readers.contains("user:user1"), "User with empty permissions should not be a reader");
     }
 
     @Test
@@ -417,9 +417,8 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
-        assertTrue("Permission check should be case-insensitive", 
-                readers.contains("user:user1"));
+        assertNotNull(readers, "Readers should not be null");
+        assertTrue(readers.contains("user:user1"), "Permission check should be case-insensitive");
     }
 
     @Test
@@ -430,8 +429,7 @@ public class ACLExpanderTest {
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertNotNull("Readers should not be null", readers);
-        assertTrue("cmis:anyone check should be case-insensitive", 
-                readers.contains("anyone"));
+        assertNotNull(readers, "Readers should not be null");
+        assertTrue(readers.contains("anyone"), "cmis:anyone check should be case-insensitive");
     }
 }

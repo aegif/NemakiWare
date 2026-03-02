@@ -2,8 +2,8 @@ package jp.aegif.nemaki.cmis.tck.tests;
 
 import org.apache.chemistry.opencmis.tck.tests.filing.MultifilingTest;
 import org.apache.chemistry.opencmis.tck.tests.filing.UnfilingTest;
-import org.junit.Test;
-import org.junit.Ignore;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Disabled;
 
 import jp.aegif.nemaki.cmis.tck.TckSuite;
 
@@ -29,7 +29,7 @@ import jp.aegif.nemaki.cmis.tck.TckSuite;
  *
  * This is a product specification limitation, not a bug.
  */
-@Ignore("NemakiWare does not support Multifiling/Unfiling - PRODUCT SPECIFICATION (see CLAUDE.md TCK IMPLEMENTATION POLICY)")
+@Disabled("NemakiWare does not support Multifiling/Unfiling - PRODUCT SPECIFICATION (see CLAUDE.md TCK IMPLEMENTATION POLICY)")
 public class FilingTestGroup extends TckSuite{
 	@Test
 	public void multifilingTest() throws Exception{
