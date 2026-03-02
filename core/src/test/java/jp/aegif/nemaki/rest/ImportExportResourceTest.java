@@ -3,9 +3,9 @@ package jp.aegif.nemaki.rest;
 import jp.aegif.nemaki.rest.importexport.ImportExportUtils;
 import jp.aegif.nemaki.rest.importexport.ZipImporter;
 
-import org.junit.Test;
-import org.junit.Before;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -28,7 +28,7 @@ public class ImportExportResourceTest {
 
     private ZipImporter zipImporter;
 
-    @Before
+    @BeforeEach
     public void setUp() throws Exception {
         zipImporter = new ZipImporter();
     }
@@ -37,151 +37,134 @@ public class ImportExportResourceTest {
 
     @Test
     public void testValidZipEntryNameSimple() {
-        assertTrue("Simple filename should be valid",
-                ImportExportUtils.isValidZipEntryName("test.txt"));
+        assertTrue(ImportExportUtils.isValidZipEntryName("test.txt"), "Simple filename should be valid");
     }
 
     @Test
     public void testValidZipEntryNameWithPath() {
-        assertTrue("Path with subdirectory should be valid",
-                ImportExportUtils.isValidZipEntryName("folder/test.txt"));
+        assertTrue(ImportExportUtils.isValidZipEntryName("folder/test.txt"), "Path with subdirectory should be valid");
     }
 
     @Test
     public void testValidZipEntryNameDeepPath() {
-        assertTrue("Deep path should be valid",
-                ImportExportUtils.isValidZipEntryName("a/b/c/d/test.txt"));
+        assertTrue(ImportExportUtils.isValidZipEntryName("a/b/c/d/test.txt"), "Deep path should be valid");
     }
 
     @Test
     public void testInvalidZipEntryNameNull() {
-        assertFalse("Null should be invalid",
-                ImportExportUtils.isValidZipEntryName(null));
+        assertFalse(ImportExportUtils.isValidZipEntryName(null), "Null should be invalid");
     }
 
     @Test
     public void testInvalidZipEntryNameEmpty() {
-        assertFalse("Empty string should be invalid",
-                ImportExportUtils.isValidZipEntryName(""));
+        assertFalse(ImportExportUtils.isValidZipEntryName(""), "Empty string should be invalid");
     }
 
     @Test
     public void testInvalidZipEntryNameWithDoubleDot() {
-        assertFalse("Path with .. should be invalid",
-                ImportExportUtils.isValidZipEntryName("../test.txt"));
+        assertFalse(ImportExportUtils.isValidZipEntryName("../test.txt"), "Path with .. should be invalid");
     }
 
     @Test
     public void testInvalidZipEntryNameWithDoubleDotMiddle() {
-        assertFalse("Path with .. in middle should be invalid",
-                ImportExportUtils.isValidZipEntryName("folder/../test.txt"));
+        assertFalse(ImportExportUtils.isValidZipEntryName("folder/../test.txt"), "Path with .. in middle should be invalid");
     }
 
     @Test
     public void testInvalidZipEntryNameAbsolutePath() {
-        assertFalse("Absolute path starting with / should be invalid",
-                ImportExportUtils.isValidZipEntryName("/etc/passwd"));
+        assertFalse(ImportExportUtils.isValidZipEntryName("/etc/passwd"), "Absolute path starting with / should be invalid");
     }
 
     @Test
     public void testInvalidZipEntryNameWindowsBackslash() {
-        assertFalse("Path with backslash should be invalid",
-                ImportExportUtils.isValidZipEntryName("folder\\test.txt"));
+        assertFalse(ImportExportUtils.isValidZipEntryName("folder\\test.txt"), "Path with backslash should be invalid");
     }
 
     @Test
     public void testInvalidZipEntryNameWindowsDriveLetter() {
-        assertFalse("Windows drive letter path should be invalid",
-                ImportExportUtils.isValidZipEntryName("C:\\Windows\\System32"));
+        assertFalse(ImportExportUtils.isValidZipEntryName("C:\\Windows\\System32"), "Windows drive letter path should be invalid");
     }
 
     @Test
     public void testInvalidZipEntryNameWithColon() {
-        assertFalse("Path with colon should be invalid",
-                ImportExportUtils.isValidZipEntryName("C:test.txt"));
+        assertFalse(ImportExportUtils.isValidZipEntryName("C:test.txt"), "Path with colon should be invalid");
     }
 
     @Test
     public void testInvalidZipEntryNameNullByte() {
-        assertFalse("Path with null byte should be invalid",
-                ImportExportUtils.isValidZipEntryName("test\0.txt"));
+        assertFalse(ImportExportUtils.isValidZipEntryName("test\0.txt"), "Path with null byte should be invalid");
     }
 
     @Test
     public void testInvalidZipEntryNameStartsWithBackslash() {
-        assertFalse("Path starting with backslash should be invalid",
-                ImportExportUtils.isValidZipEntryName("\\test.txt"));
+        assertFalse(ImportExportUtils.isValidZipEntryName("\\test.txt"), "Path starting with backslash should be invalid");
     }
 
     // ========== Version Sorting Tests ==========
 
     @Test
     public void testExtractVersionNumber() {
-        assertEquals("Should extract version 1", 1, ImportExportUtils.extractVersionNumber("file.txt.v1"));
-        assertEquals("Should extract version 2", 2, ImportExportUtils.extractVersionNumber("file.txt.v2"));
-        assertEquals("Should extract version 10", 10, ImportExportUtils.extractVersionNumber("file.txt.v10"));
-        assertEquals("Should extract version 99", 99, ImportExportUtils.extractVersionNumber("file.txt.v99"));
+        assertEquals(1, ImportExportUtils.extractVersionNumber("file.txt.v1"), "Should extract version 1");
+        assertEquals(2, ImportExportUtils.extractVersionNumber("file.txt.v2"), "Should extract version 2");
+        assertEquals(10, ImportExportUtils.extractVersionNumber("file.txt.v10"), "Should extract version 10");
+        assertEquals(99, ImportExportUtils.extractVersionNumber("file.txt.v99"), "Should extract version 99");
     }
 
     @Test
     public void testExtractVersionNumberNoVersion() {
-        assertEquals("Should return 0 for no version", 0, ImportExportUtils.extractVersionNumber("file.txt"));
+        assertEquals(0, ImportExportUtils.extractVersionNumber("file.txt"), "Should return 0 for no version");
     }
 
     @Test
     public void testExtractVersionNumberMiddle() {
-        assertEquals("Should extract version from middle", 3, ImportExportUtils.extractVersionNumber("file.v3.txt"));
+        assertEquals(3, ImportExportUtils.extractVersionNumber("file.v3.txt"), "Should extract version from middle");
     }
 
     // ========== isVersionFile Tests ==========
 
     @Test
     public void testIsVersionFileTrue() {
-        assertTrue("file.txt.v1 should be version file", ImportExportUtils.isVersionFile("file.txt.v1"));
-        assertTrue("file.txt.v10 should be version file", ImportExportUtils.isVersionFile("file.txt.v10"));
-        assertTrue("folder/file.txt.v2 should be version file", ImportExportUtils.isVersionFile("folder/file.txt.v2"));
+        assertTrue(ImportExportUtils.isVersionFile("file.txt.v1"), "file.txt.v1 should be version file");
+        assertTrue(ImportExportUtils.isVersionFile("file.txt.v10"), "file.txt.v10 should be version file");
+        assertTrue(ImportExportUtils.isVersionFile("folder/file.txt.v2"), "folder/file.txt.v2 should be version file");
     }
 
     @Test
     public void testIsVersionFileFalse() {
-        assertFalse("file.txt should not be version file", ImportExportUtils.isVersionFile("file.txt"));
-        assertFalse("file.meta.json should not be version file", ImportExportUtils.isVersionFile("file.meta.json"));
+        assertFalse(ImportExportUtils.isVersionFile("file.txt"), "file.txt should not be version file");
+        assertFalse(ImportExportUtils.isVersionFile("file.meta.json"), "file.meta.json should not be version file");
     }
 
     // ========== isVersionFileFor Tests ==========
 
     @Test
     public void testIsVersionFileForTrue() {
-        assertTrue("file.txt.v1 should be version of file.txt",
-                ImportExportUtils.isVersionFileFor("file.txt.v1", "file.txt"));
-        assertTrue("file.txt.v10 should be version of file.txt",
-                ImportExportUtils.isVersionFileFor("file.txt.v10", "file.txt"));
+        assertTrue(ImportExportUtils.isVersionFileFor("file.txt.v1", "file.txt"), "file.txt.v1 should be version of file.txt");
+        assertTrue(ImportExportUtils.isVersionFileFor("file.txt.v10", "file.txt"), "file.txt.v10 should be version of file.txt");
     }
 
     @Test
     public void testIsVersionFileForFalse() {
-        assertFalse("other.txt.v1 should not be version of file.txt",
-                ImportExportUtils.isVersionFileFor("other.txt.v1", "file.txt"));
-        assertFalse("file.txt should not be version of file.txt",
-                ImportExportUtils.isVersionFileFor("file.txt", "file.txt"));
+        assertFalse(ImportExportUtils.isVersionFileFor("other.txt.v1", "file.txt"), "other.txt.v1 should not be version of file.txt");
+        assertFalse(ImportExportUtils.isVersionFileFor("file.txt", "file.txt"), "file.txt should not be version of file.txt");
     }
 
     // ========== getFileName Tests ==========
 
     @Test
     public void testGetFileName() {
-        assertEquals("Should extract filename", "test.txt", ImportExportUtils.getFileName("folder/test.txt"));
-        assertEquals("Should handle no folder", "test.txt", ImportExportUtils.getFileName("test.txt"));
-        assertEquals("Should handle deep path", "test.txt", ImportExportUtils.getFileName("a/b/c/test.txt"));
+        assertEquals("test.txt", ImportExportUtils.getFileName("folder/test.txt"), "Should extract filename");
+        assertEquals("test.txt", ImportExportUtils.getFileName("test.txt"), "Should handle no folder");
+        assertEquals("test.txt", ImportExportUtils.getFileName("a/b/c/test.txt"), "Should handle deep path");
     }
 
     // ========== getParentPath Tests ==========
 
     @Test
     public void testGetParentPath() {
-        assertEquals("Should extract parent path", "folder", ImportExportUtils.getParentPath("folder/test.txt"));
-        assertEquals("Should handle no parent", "", ImportExportUtils.getParentPath("test.txt"));
-        assertEquals("Should handle deep path", "a/b/c", ImportExportUtils.getParentPath("a/b/c/test.txt"));
+        assertEquals("folder", ImportExportUtils.getParentPath("folder/test.txt"), "Should extract parent path");
+        assertEquals("", ImportExportUtils.getParentPath("test.txt"), "Should handle no parent");
+        assertEquals("a/b/c", ImportExportUtils.getParentPath("a/b/c/test.txt"), "Should handle deep path");
     }
 
     // ========== guessMimeType Tests ==========
@@ -250,8 +233,8 @@ public class ImportExportResourceTest {
 
         try (ZipFile zf = new ZipFile(tempZip)) {
             byte[] result = zipImporter.readZipEntryWithLimit(zf, "small.txt", ImportExportUtils.MAX_METADATA_SIZE);
-            assertNotNull("Should read small file successfully", result);
-            assertEquals("Content should match", "Hello World", new String(result));
+            assertNotNull(result, "Should read small file successfully");
+            assertEquals("Hello World", new String(result), "Content should match");
         }
     }
 
@@ -269,7 +252,7 @@ public class ImportExportResourceTest {
 
         try (ZipFile zf = new ZipFile(tempZip)) {
             byte[] result = zipImporter.readZipEntryWithLimit(zf, "nonexistent.txt", ImportExportUtils.MAX_METADATA_SIZE);
-            assertNull("Should return null for non-existent entry", result);
+            assertNull(result, "Should return null for non-existent entry");
         }
     }
 
@@ -286,7 +269,7 @@ public class ImportExportResourceTest {
 
         try (ZipFile zf = new ZipFile(tempZip)) {
             byte[] result = zipImporter.readZipEntryWithLimit(zf, "folder/", ImportExportUtils.MAX_METADATA_SIZE);
-            assertNull("Should return null for directory entry", result);
+            assertNull(result, "Should return null for directory entry");
         }
     }
 
@@ -309,7 +292,7 @@ public class ImportExportResourceTest {
 
         try (ZipFile zf = new ZipFile(tempZip)) {
             byte[] result = zipImporter.readZipEntryWithLimit(zf, "large.txt", customLimit);
-            assertNull("Should return null for file exceeding size limit", result);
+            assertNull(result, "Should return null for file exceeding size limit");
         }
     }
 
@@ -327,8 +310,8 @@ public class ImportExportResourceTest {
 
         try (ZipFile zf = new ZipFile(tempZip)) {
             byte[] result = zipImporter.readZipEntryWithLimit(zf, "test.txt", ImportExportUtils.MAX_METADATA_SIZE);
-            assertNotNull("Should read file with unknown size", result);
-            assertEquals("Content should match", "Test content", new String(result));
+            assertNotNull(result, "Should read file with unknown size");
+            assertEquals("Test content", new String(result), "Content should match");
         }
     }
 
@@ -350,12 +333,12 @@ public class ImportExportResourceTest {
         try (ZipFile zf = new ZipFile(tempZip)) {
             // Should succeed with limit of 200 bytes
             byte[] result = zipImporter.readZipEntryWithLimit(zf, "medium.txt", 200);
-            assertNotNull("Should read file within limit", result);
-            assertEquals("Content length should match", 100, result.length);
+            assertNotNull(result, "Should read file within limit");
+            assertEquals(100, result.length, "Content length should match");
 
             // Should fail with limit of 50 bytes
             byte[] resultSmall = zipImporter.readZipEntryWithLimit(zf, "medium.txt", 50);
-            assertNull("Should return null for file exceeding custom limit", resultSmall);
+            assertNull(resultSmall, "Should return null for file exceeding custom limit");
         }
     }
 
@@ -377,7 +360,7 @@ public class ImportExportResourceTest {
         try (ZipFile zf = new ZipFile(tempZip)) {
             // Should fail with limit of 512 bytes (entry size is known as 1024)
             byte[] result = zipImporter.readZipEntryWithLimit(zf, "kilobyte.txt", 512);
-            assertNull("Should return null when known size exceeds limit", result);
+            assertNull(result, "Should return null when known size exceeds limit");
         }
     }
 }

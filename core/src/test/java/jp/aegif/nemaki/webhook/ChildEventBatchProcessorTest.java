@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.webhook;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -9,8 +9,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for ChildEventBatchProcessor.
@@ -27,7 +27,7 @@ public class ChildEventBatchProcessorTest {
     private ChildEventBatchProcessor processor;
     private List<ChildEventBatch> deliveredBatches;
     
-    @Before
+    @BeforeEach
     public void setUp() {
         deliveredBatches = new ArrayList<>();
         processor = new ChildEventBatchProcessor(batch -> {
@@ -41,7 +41,7 @@ public class ChildEventBatchProcessorTest {
         
         processor.queueEvent("bedroom", event);
         
-        assertEquals("Event should be queued", 1, processor.getPendingEventCount("bedroom", "folder-1"));
+        assertEquals(1, processor.getPendingEventCount("bedroom", "folder-1"), "Event should be queued");
     }
     
     @Test
@@ -54,7 +54,7 @@ public class ChildEventBatchProcessorTest {
         processor.queueEvent("bedroom", event2);
         processor.queueEvent("bedroom", event3);
         
-        assertEquals("All events should be queued", 3, processor.getPendingEventCount("bedroom", "folder-1"));
+        assertEquals(3, processor.getPendingEventCount("bedroom", "folder-1"), "All events should be queued");
     }
     
     @Test
@@ -71,8 +71,8 @@ public class ChildEventBatchProcessorTest {
         Thread.sleep(1500);
         processor.processPendingBatches();
         
-        assertEquals("One batch should be delivered", 1, deliveredBatches.size());
-        assertEquals("Batch should contain 2 events", 2, deliveredBatches.get(0).getEvents().size());
+        assertEquals(1, deliveredBatches.size(), "One batch should be delivered");
+        assertEquals(2, deliveredBatches.get(0).getEvents().size(), "Batch should contain 2 events");
     }
     
     @Test
@@ -88,7 +88,7 @@ public class ChildEventBatchProcessorTest {
         Thread.sleep(1500);
         processor.processPendingBatches();
         
-        assertEquals("Two batches should be delivered (one per folder)", 2, deliveredBatches.size());
+        assertEquals(2, deliveredBatches.size(), "Two batches should be delivered (one per folder)");
     }
     
     @Test
@@ -105,10 +105,10 @@ public class ChildEventBatchProcessorTest {
         Thread.sleep(1500);
         processor.processPendingBatches();
         
-        assertEquals("Should deliver 3 batches", 3, deliveredBatches.size());
-        assertEquals("First batch should have 5 events", 5, deliveredBatches.get(0).getEvents().size());
-        assertEquals("Second batch should have 5 events", 5, deliveredBatches.get(1).getEvents().size());
-        assertEquals("Third batch should have 2 events", 2, deliveredBatches.get(2).getEvents().size());
+        assertEquals(3, deliveredBatches.size(), "Should deliver 3 batches");
+        assertEquals(5, deliveredBatches.get(0).getEvents().size(), "First batch should have 5 events");
+        assertEquals(5, deliveredBatches.get(1).getEvents().size(), "Second batch should have 5 events");
+        assertEquals(2, deliveredBatches.get(2).getEvents().size(), "Third batch should have 2 events");
     }
     
     @Test
@@ -127,10 +127,10 @@ public class ChildEventBatchProcessorTest {
         processor.processPendingBatches();
         
         // Only 2 batches should be delivered due to rate limit
-        assertEquals("Should deliver only 2 batches due to rate limit", 2, deliveredBatches.size());
+        assertEquals(2, deliveredBatches.size(), "Should deliver only 2 batches due to rate limit");
         
         // Remaining events should still be pending
-        assertTrue("Some events should remain pending", processor.getPendingEventCount("bedroom", "folder-1") > 0);
+        assertTrue(processor.getPendingEventCount("bedroom", "folder-1") > 0, "Some events should remain pending");
     }
     
     @Test
@@ -144,7 +144,7 @@ public class ChildEventBatchProcessorTest {
             processor.queueEvent("bedroom", event);
         }
         
-        assertTrue("Circuit breaker should be tripped", processor.isCircuitBreakerOpen("bedroom", "folder-1"));
+        assertTrue(processor.isCircuitBreakerOpen("bedroom", "folder-1"), "Circuit breaker should be tripped");
     }
     
     @Test
@@ -157,13 +157,13 @@ public class ChildEventBatchProcessorTest {
             processor.queueEvent("bedroom", event);
         }
         
-        assertTrue("Circuit breaker should be open", processor.isCircuitBreakerOpen("bedroom", "folder-1"));
+        assertTrue(processor.isCircuitBreakerOpen("bedroom", "folder-1"), "Circuit breaker should be open");
         
         // New events should be rejected
         ChildEvent newEvent = createEvent("folder-1", "doc-new", "CHILD_CREATED");
         boolean accepted = processor.queueEvent("bedroom", newEvent);
         
-        assertFalse("New events should be rejected when circuit breaker is open", accepted);
+        assertFalse(accepted, "New events should be rejected when circuit breaker is open");
     }
     
     @Test
@@ -181,10 +181,10 @@ public class ChildEventBatchProcessorTest {
         Thread.sleep(1500);
         processor.processPendingBatches();
         
-        assertEquals("One batch should be delivered", 1, deliveredBatches.size());
+        assertEquals(1, deliveredBatches.size(), "One batch should be delivered");
         ChildEventBatch batch = deliveredBatches.get(0);
-        assertEquals("Batch should contain 3 events", 3, batch.getEvents().size());
-        assertEquals("Batch event type should be CHILD_BATCH", "CHILD_BATCH", batch.getEventType());
+        assertEquals(3, batch.getEvents().size(), "Batch should contain 3 events");
+        assertEquals("CHILD_BATCH", batch.getEventType(), "Batch event type should be CHILD_BATCH");
     }
     
     @Test
@@ -199,10 +199,10 @@ public class ChildEventBatchProcessorTest {
         Thread.sleep(1500);
         processor.processPendingBatches();
         
-        assertEquals("One batch should be delivered", 1, deliveredBatches.size());
+        assertEquals(1, deliveredBatches.size(), "One batch should be delivered");
         ChildEventBatch batch = deliveredBatches.get(0);
-        assertEquals("Batch should have parent folder ID", "folder-1", batch.getParentFolderId());
-        assertEquals("Batch should have parent folder path", "/Sites/Documents", batch.getParentFolderPath());
+        assertEquals("folder-1", batch.getParentFolderId(), "Batch should have parent folder ID");
+        assertEquals("/Sites/Documents", batch.getParentFolderPath(), "Batch should have parent folder path");
     }
     
     @Test
@@ -217,11 +217,11 @@ public class ChildEventBatchProcessorTest {
         processor.processPendingBatches();
         long afterProcess = System.currentTimeMillis();
         
-        assertEquals("One batch should be delivered", 1, deliveredBatches.size());
+        assertEquals(1, deliveredBatches.size(), "One batch should be delivered");
         ChildEventBatch batch = deliveredBatches.get(0);
         
-        assertTrue("Window start should be after test start", batch.getWindowStart() >= beforeQueue);
-        assertTrue("Window end should be before test end", batch.getWindowEnd() <= afterProcess);
+        assertTrue(batch.getWindowStart() >= beforeQueue, "Window start should be after test start");
+        assertTrue(batch.getWindowEnd() <= afterProcess, "Window end should be before test end");
     }
     
     @Test
@@ -243,7 +243,7 @@ public class ChildEventBatchProcessorTest {
             .mapToInt(b -> b.getEvents().size())
             .sum();
         
-        assertTrue("Should not exceed absolute max per second", totalDelivered <= 5);
+        assertTrue(totalDelivered <= 5, "Should not exceed absolute max per second");
     }
     
     @Test
@@ -270,12 +270,10 @@ public class ChildEventBatchProcessorTest {
         
         // Since batch size (100) > absoluteMaxPerSecond (50), no batch should be delivered
         // because delivering it would exceed the limit
-        assertTrue("Should not exceed absolute max per second (batch of 100 > limit of 50)", 
-                   totalDelivered <= 50);
+        assertTrue(totalDelivered <= 50, "Should not exceed absolute max per second (batch of 100 > limit of 50)");
         
         // Events should remain pending since the batch couldn't be delivered
-        assertTrue("Events should remain pending when batch exceeds limit", 
-                   processor.getPendingEventCount("bedroom", "folder-1") > 0);
+        assertTrue(processor.getPendingEventCount("bedroom", "folder-1") > 0, "Events should remain pending when batch exceeds limit");
     }
     
     @Test
@@ -310,17 +308,15 @@ public class ChildEventBatchProcessorTest {
             .sum();
         
         // The explicit call should respect the per-second limit (may be 0 if scheduler already hit limit)
-        assertTrue("Explicit call should not exceed absolute max per second", 
-                   deliveredByExplicitCall <= 50);
+        assertTrue(deliveredByExplicitCall <= 50, "Explicit call should not exceed absolute max per second");
         
         // Total delivered (scheduler + explicit) should show progress
         int totalDelivered = deliveredByScheduler + deliveredByExplicitCall;
-        assertTrue("Some events should be delivered", totalDelivered > 0);
+        assertTrue(totalDelivered > 0, "Some events should be delivered");
         
         // Verify that not all events were delivered (limit should have blocked some)
         int pendingCount = processor.getPendingEventCount("bedroom", "folder-1");
-        assertTrue("Some events should remain pending due to rate limit", 
-                   totalDelivered + pendingCount == 100);
+        assertTrue(totalDelivered + pendingCount == 100, "Some events should remain pending due to rate limit");
     }
     
     @Test
@@ -333,7 +329,7 @@ public class ChildEventBatchProcessorTest {
         // Shutdown should process remaining batches
         processor.shutdown();
         
-        assertEquals("Shutdown should deliver remaining batch", 1, deliveredBatches.size());
+        assertEquals(1, deliveredBatches.size(), "Shutdown should deliver remaining batch");
     }
     
     @Test
@@ -359,7 +355,7 @@ public class ChildEventBatchProcessorTest {
         latch.await(5, TimeUnit.SECONDS);
         
         // All 100 events should be queued (unless circuit breaker trips)
-        assertTrue("Most events should be queued", queuedCount.get() >= 50);
+        assertTrue(queuedCount.get() >= 50, "Most events should be queued");
     }
     
     private ChildEvent createEvent(String parentFolderId, String objectId, String eventType) {

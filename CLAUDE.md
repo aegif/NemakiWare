@@ -20,7 +20,7 @@ NemakiWare は CMIS 1.1 準拠のオープンソースエンタープライズ�
 - Search: Apache Solr 9.x
 - UI: React 18 + TypeScript + Vite 7 + Ant Design 5
 - Server: Tomcat 10.1+ (Jakarta EE)
-- Java: 17 (必須)
+- Java: 21 (必須)
 
 **モジュール構成**:
 - `core/`: メインCMISリポジトリサーバー (WAR)
@@ -32,11 +32,11 @@ NemakiWare は CMIS 1.1 準拠のオープンソースエンタープライズ�
 
 ## 環境セットアップ
 
-### Java 17 設定 (必須)
+### Java 21 設定 (必須)
 ```bash
-export JAVA_HOME=/path/to/java-17
+export JAVA_HOME=/path/to/java-21
 export PATH=$JAVA_HOME/bin:$PATH
-java -version  # 17.x.x を確認
+java -version  # 21.x.x を確認
 ```
 
 ### 認証情報

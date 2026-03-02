@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.rag.search;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -10,7 +10,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for VectorSearchServiceImpl performance optimizations.
@@ -68,7 +68,7 @@ public class VectorSearchPerformanceTest {
         List<String> documentIds = new ArrayList<>();
 
         // Should not construct query for empty list
-        assertTrue("Empty list should result in no query", documentIds.isEmpty());
+        assertTrue(documentIds.isEmpty(), "Empty list should result in no query");
     }
 
     @Test
@@ -152,8 +152,7 @@ public class VectorSearchPerformanceTest {
             t.join();
         }
 
-        assertEquals("All increments should be counted",
-                threadCount * incrementsPerThread, scores.get("doc1").get());
+        assertEquals(threadCount * incrementsPerThread, scores.get("doc1").get(), "All increments should be counted");
     }
 
     @Test
@@ -185,8 +184,8 @@ public class VectorSearchPerformanceTest {
         // Wait for both to complete
         CompletableFuture.allOf(chunkSearchFuture, propertySearchFuture).join();
 
-        assertEquals("Chunk search should have run once", 1, chunkSearchCount.get());
-        assertEquals("Property search should have run once", 1, propertySearchCount.get());
+        assertEquals(1, chunkSearchCount.get(), "Chunk search should have run once");
+        assertEquals(1, propertySearchCount.get(), "Property search should have run once");
     }
 
     @Test
@@ -206,8 +205,7 @@ public class VectorSearchPerformanceTest {
 
         // Parallel should complete in ~100ms (not 200ms)
         // Allow some margin for thread scheduling
-        assertTrue("Parallel execution should be faster than sequential (took " + parallelDuration + "ms)",
-                parallelDuration < 180);
+        assertTrue(parallelDuration < 180, "Parallel execution should be faster than sequential (took " + parallelDuration + "ms)");
     }
 
     @Test
@@ -243,12 +241,12 @@ public class VectorSearchPerformanceTest {
         }
 
         // Should have exactly 10 unique documents
-        assertEquals("Should have 10 unique documents", 10, documentScores.size());
+        assertEquals(10, documentScores.size(), "Should have 10 unique documents");
 
         // Each document should have both scores set
         for (MockScoredDocument doc : documentScores.values()) {
-            assertTrue("Content score should be set", doc.contentScore > 0);
-            assertTrue("Property score should be set", doc.propertyScore > 0);
+            assertTrue(doc.contentScore > 0, "Content score should be set");
+            assertTrue(doc.propertyScore > 0, "Property score should be set");
         }
     }
 
@@ -273,8 +271,8 @@ public class VectorSearchPerformanceTest {
 
         CompletableFuture.allOf(successTask, errorTask).join();
 
-        assertEquals("Success task should complete", 1, successCount.get());
-        assertEquals("Error should be caught", 1, errorCount.get());
+        assertEquals(1, successCount.get(), "Success task should complete");
+        assertEquals(1, errorCount.get(), "Error should be caught");
     }
 
     // ========== Score Combination Tests ==========

@@ -1218,6 +1218,7 @@ public class SolrUtil implements ApplicationContextAware {
 				solrQuery.setFields("object_id", "parent_id");
 				solrQuery.setRows(10000);
 				solrQuery.setSort("object_id", SolrQuery.ORDER.asc);
+				solrQuery.addSort("id", SolrQuery.ORDER.asc);
 				solrQuery.set(org.apache.solr.common.params.CursorMarkParams.CURSOR_MARK_PARAM, cursorMark);
 
 				QueryResponse resp = solrClient.query(solrQuery);

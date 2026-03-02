@@ -1,13 +1,13 @@
 package jp.aegif.nemaki.businesslogic.impl;
 
-import org.junit.Test;
-import org.junit.Before;
-import org.junit.After;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.InjectMocks;
-import org.mockito.junit.MockitoJUnitRunner;
-import static org.junit.Assert.*;
+import org.mockito.junit.jupiter.MockitoExtension;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
@@ -33,7 +33,7 @@ import java.util.List;
  * 
  * Tests the executeSolrQuery method with proper Mockito mocking of dependencies.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 public class SolrIndexMaintenanceServiceImplQueryTest {
     
     private static final String TEST_REPO_ID = "test-repo";
@@ -59,7 +59,7 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
     @InjectMocks
     private SolrIndexMaintenanceServiceImpl service;
     
-    @After
+    @AfterEach
     public void tearDown() {
         if (service != null) {
             service.shutdown();
@@ -386,8 +386,7 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
         
         assertNotNull(result);
         assertNotNull(result.getErrorMessage());
-        assertTrue("Error should mention unbalanced parentheses", 
-            result.getErrorMessage().contains("parentheses") || result.getErrorMessage().contains("syntax"));
+        assertTrue(result.getErrorMessage().contains("parentheses") || result.getErrorMessage().contains("syntax"), "Error should mention unbalanced parentheses");
     }
     
     @Test
@@ -397,8 +396,7 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
         
         assertNotNull(result);
         assertNotNull(result.getErrorMessage());
-        assertTrue("Error should mention unbalanced parentheses", 
-            result.getErrorMessage().contains("parentheses") || result.getErrorMessage().contains("syntax"));
+        assertTrue(result.getErrorMessage().contains("parentheses") || result.getErrorMessage().contains("syntax"), "Error should mention unbalanced parentheses");
     }
     
     @Test
@@ -408,8 +406,7 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
         
         assertNotNull(result);
         assertNotNull(result.getErrorMessage());
-        assertTrue("Error should mention unbalanced brackets", 
-            result.getErrorMessage().contains("bracket") || result.getErrorMessage().contains("syntax"));
+        assertTrue(result.getErrorMessage().contains("bracket") || result.getErrorMessage().contains("syntax"), "Error should mention unbalanced brackets");
     }
     
     @Test
@@ -419,8 +416,7 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
         
         assertNotNull(result);
         assertNotNull(result.getErrorMessage());
-        assertTrue("Error should mention unbalanced brackets", 
-            result.getErrorMessage().contains("bracket") || result.getErrorMessage().contains("syntax"));
+        assertTrue(result.getErrorMessage().contains("bracket") || result.getErrorMessage().contains("syntax"), "Error should mention unbalanced brackets");
     }
     
     @Test
@@ -430,8 +426,7 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
         
         assertNotNull(result);
         assertNotNull(result.getErrorMessage());
-        assertTrue("Error should mention unclosed quote", 
-            result.getErrorMessage().contains("quote") || result.getErrorMessage().contains("syntax"));
+        assertTrue(result.getErrorMessage().contains("quote") || result.getErrorMessage().contains("syntax"), "Error should mention unclosed quote");
     }
     
     @Test
@@ -541,8 +536,7 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
         
         assertNotNull(result);
         assertNotNull(result.getErrorMessage());
-        assertTrue("Error should mention unbalanced parentheses", 
-            result.getErrorMessage().contains("parentheses") || result.getErrorMessage().contains("syntax"));
+        assertTrue(result.getErrorMessage().contains("parentheses") || result.getErrorMessage().contains("syntax"), "Error should mention unbalanced parentheses");
     }
     
     @Test
@@ -578,8 +572,7 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
         SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"test\\\\\"", 0, 10, null, null);
 
         assertNotNull(result);
-        assertNull("Double backslash before quote = even count = quote closes string (valid query)",
-            result.getErrorMessage());
+        assertNull(result.getErrorMessage(), "Double backslash before quote = even count = quote closes string (valid query)");
     }
     
     @Test
@@ -596,7 +589,7 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
         SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"test\\\\\\\" doc\"", 0, 10, null, null);
         
         assertNotNull(result);
-        assertNull("Triple backslash before quote should escape the quote (valid query)", result.getErrorMessage());
+        assertNull(result.getErrorMessage(), "Triple backslash before quote should escape the quote (valid query)");
     }
     
     @Test
@@ -614,8 +607,7 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
         SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"test\\\\\\\\\"", 0, 10, null, null);
 
         assertNotNull(result);
-        assertNull("Quadruple backslash before quote = even count = quote closes string (valid query)",
-            result.getErrorMessage());
+        assertNull(result.getErrorMessage(), "Quadruple backslash before quote = even count = quote closes string (valid query)");
     }
     
     @Test
@@ -631,7 +623,7 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
         SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"\\\"test\"", 0, 10, null, null);
         
         assertNotNull(result);
-        assertNull("Single backslash should escape the quote (valid query)", result.getErrorMessage());
+        assertNull(result.getErrorMessage(), "Single backslash should escape the quote (valid query)");
     }
     
     @Test
@@ -647,6 +639,6 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
         SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"test\\nvalue\"", 0, 10, null, null);
         
         assertNotNull(result);
-        assertNull("Backslash not before quote should not affect parsing", result.getErrorMessage());
+        assertNull(result.getErrorMessage(), "Backslash not before quote should not affect parsing");
     }
 }

@@ -10,7 +10,7 @@ import org.apache.chemistry.opencmis.tck.CmisTestResult;
 import org.apache.chemistry.opencmis.tck.CmisTestResultStatus;
 import org.apache.chemistry.opencmis.tck.impl.AbstractCmisTestGroup;
 import org.apache.chemistry.opencmis.tck.runner.AbstractRunner;
-import org.junit.Assert;
+import org.junit.jupiter.api.Assertions;
 
 import jp.aegif.nemaki.cmis.tck.tests.BasicsTestGroup;
 
@@ -43,7 +43,7 @@ public class TestHelper {
             for (CmisTest test : group.getTests()) {
                 for (CmisTestResult result : test.getResults()) {
                     if (result.getStatus().getLevel() >= CmisTestResultStatus.FAILURE.getLevel()) {
-                        Assert.fail(result.getMessage() + "\n" + result.getStackTrace().toString());
+                        Assertions.fail(result.getMessage() + "\n" + result.getStackTrace().toString());
                     }
                 }
             }

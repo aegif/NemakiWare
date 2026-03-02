@@ -223,7 +223,7 @@ git push origin <branch-name>
 ### 委譲先エージェント（Devin、Cursor等）
 
 **環境セットアップ**:
-- [ ] Java 17確認（TCKテストの場合のみ）
+- [ ] Java 21確認（TCKテストの場合のみ）
 - [ ] Node.js 18+確認（Playwrightテストの場合）
 - [ ] Playwrightブラウザインストール済み（`npx playwright install`）
 - [ ] Dockerコンテナ起動確認
@@ -371,7 +371,7 @@ npx playwright show-report
 - Recommended: Single worker (`--workers=1`) to avoid race conditions
 
 ## Coding Style & Naming
-- Java 17; use Jakarta APIs (`jakarta.*`), avoid `javax.*`.
+- Java 21; use Jakarta APIs (`jakarta.*`), avoid `javax.*`.
 - Indentation: 4 spaces, UTF-8, 120-col soft wrap.
 - Packages: `jp.aegif.nemaki...`; Classes `PascalCase`, methods/fields `camelCase`, constants `UPPER_SNAKE_CASE`.
 - Prefer SLF4J (`org.slf4j.Logger`) over `System.out`.
@@ -381,7 +381,7 @@ npx playwright show-report
 ## Testing Guidelines
 
 ### JUnit Tests (Backend)
-- Framework: JUnit 4 (Surefire configured with Java 17 module opens).
+- Framework: JUnit 4 (Surefire configured with Java 21 module opens).
 - Place tests in `src/test/java`; name files `*Test.java`.
 - Keep unit tests fast and isolated (mock Solr when applicable).
 - Useful scripts: `qa-test.sh`, `test-rest-api-comprehensive.sh`.
@@ -451,7 +451,7 @@ const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');  // Not 
 ## Security & Configuration Tips
 - Do not commit secrets. Local defaults: CouchDB `admin/password` (dev only).
 - Primary config: `core/nemakiware.properties`, `docker/repositories.yml`.
-- For Java 17, ensure `MAVEN_OPTS` includes required `--add-opens` (see `core/start-jetty-dev.sh`).
+- For Java 21, ensure `MAVEN_OPTS` includes required `--add-opens` (see `core/start-jetty-dev.sh`).
 
 ## Current Work Status (2026-01-05)
 

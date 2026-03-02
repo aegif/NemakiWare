@@ -1,10 +1,10 @@
 package jp.aegif.nemaki.api.v1;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -25,7 +25,7 @@ public class StatsResourceTest {
 
     private HttpServletRequest adminRequest;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         MockitoAnnotations.openMocks(this);
         statsResource = new StatsResource();

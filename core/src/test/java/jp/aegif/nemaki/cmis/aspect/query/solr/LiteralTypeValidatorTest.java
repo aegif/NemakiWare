@@ -23,9 +23,9 @@ package jp.aegif.nemaki.cmis.aspect.query.solr;
 
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.server.support.query.CmisQlStrictLexer;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for LiteralTypeValidator.
@@ -245,8 +245,7 @@ public class LiteralTypeValidatorTest {
             LiteralTypeValidator.validate(null, CmisQlStrictLexer.STRING_LIT, "unknown");
             fail("Expected IllegalArgumentException for null property type");
         } catch (IllegalArgumentException e) {
-            assertTrue("Error message should mention null",
-                    e.getMessage().contains("null") || e.getMessage().contains("Property type"));
+            assertTrue(e.getMessage().contains("null") || e.getMessage().contains("Property type"), "Error message should mention null");
         }
     }
 
@@ -259,8 +258,7 @@ public class LiteralTypeValidatorTest {
             LiteralTypeValidator.validate(PropertyType.STRING, 99999, "cmis:name");
             fail("Expected IllegalStateException for unknown literal type");
         } catch (IllegalStateException e) {
-            assertTrue("Error message should mention unknown literal type or incompatibility",
-                    e.getMessage().contains("Unknown") || e.getMessage().contains("not compatible"));
+            assertTrue(e.getMessage().contains("Unknown") || e.getMessage().contains("not compatible"), "Error message should mention unknown literal type or incompatibility");
         }
     }
 
@@ -350,8 +348,8 @@ public class LiteralTypeValidatorTest {
         } catch (IllegalStateException e) {
             // Expected exception - verify message contains useful information
             String message = e.getMessage();
-            assertTrue("Error message should mention property name, got: " + message,
-                    message.contains(propertyName) || message.contains(propertyType.toString()));
+            assertTrue(message.contains(propertyName) || message.contains(propertyType.toString()),
+                    "Error message should mention property name, got: " + message);
         }
     }
 }

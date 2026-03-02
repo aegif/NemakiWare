@@ -17,9 +17,9 @@
 	</parent>
 
 	<properties>
-		<java-version>17</java-version>
-		<maven.compiler.source>17</maven.compiler.source>
-		<maven.compiler.target>17</maven.compiler.target>
+		<java-version>21</java-version>
+		<maven.compiler.source>21</maven.compiler.source>
+		<maven.compiler.target>21</maven.compiler.target>
 		<nemakiware.version>${project.version}</nemakiware.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<org.springframework.version>6.1.21</org.springframework.version>
@@ -110,18 +110,30 @@
 			<version>1.0.0</version>
 		</dependency>
 
+		<!-- JUnit 5 (Jupiter) -->
 		<dependency>
-			<groupId>junit</groupId>
-			<artifactId>junit</artifactId>
-			<version>4.13.2</version>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<version>5.12.2</version>
 			<scope>test</scope>
 		</dependency>
-		<!-- SECURITY FIX (2025-11-19): Updated from 4.12 to 4.13.2 to fix CVE-2020-15250 (TemporaryFolder information disclosure) -->
+		<dependency>
+			<groupId>org.junit.platform</groupId>
+			<artifactId>junit-platform-suite</artifactId>
+			<version>1.12.2</version>
+			<scope>test</scope>
+		</dependency>
 
 		<!-- Mockito for unit testing -->
 		<dependency>
 			<groupId>org.mockito</groupId>
 			<artifactId>mockito-core</artifactId>
+			<version>5.22.0</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-junit-jupiter</artifactId>
 			<version>5.22.0</version>
 			<scope>test</scope>
 		</dependency>
@@ -240,8 +252,9 @@
 		<!-- server-support dependency moved down to avoid duplication -->
 
 		<!-- OpenCMIS 1.1.0-nemakiware Jakarta EE 10 Compatible JARs.
-		     Resolved from GitHub Packages (aegif/chemistry-opencmis-nemakiware).
-		     Requires ~/.m2/settings.xml with server id "github-opencmis". -->
+		     Resolved from local Maven repository (~/.m2/repository).
+		     For initial setup: ./scripts/install-opencmis-local.sh
+		     To refresh from GitHub Packages: ./scripts/fetch-opencmis-from-github-packages.sh -->
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-commons-impl</artifactId>
@@ -485,11 +498,11 @@
 
 		<!-- Removed Jersey 1.x test framework - conflicts with Jersey 3.x -->
 
-		<!-- Solr 9.10.0 - Unified version across all modules -->
+		<!-- Solr 9.10.1 - Unified version across all modules (CVE fixes) -->
 		<dependency>
 			<groupId>org.apache.solr</groupId>
 			<artifactId>solr-solrj</artifactId>
-			<version>9.10.0</version>
+			<version>9.10.1</version>
 			<exclusions>
 				<exclusion>
 					<groupId>org.apache.httpcomponents</groupId>
@@ -717,7 +730,7 @@
 			</exclusions>
 		</dependency>
 
-		<!-- Jakarta EE dependencies for Java 17+ and Spring 6.x compatibility -->
+		<!-- Jakarta EE dependencies for Java 21+ and Spring 6.x compatibility -->
 		<!-- JAX-WS dependencies already defined above - avoiding duplication -->
 		<dependency>
 			<groupId>jakarta.annotation</groupId>
@@ -986,8 +999,8 @@
 				<version>3.11.0</version>
 				<configuration>
 					<encoding>UTF-8</encoding>
-					<source>17</source>
-					<target>17</target>
+					<source>21</source>
+					<target>21</target>
 					<parameters>true</parameters>
 				</configuration>
 			</plugin>
@@ -1052,7 +1065,7 @@
 						<exclude>**/test/compatibility/**</exclude>
 						<exclude>**/*$*</exclude>
 					</excludes>
-					<!-- Java 17 Module System Compatibility -->
+					<!-- Java 21 Module System Compatibility -->
 					<argLine>
 						--add-opens=java.base/java.util=ALL-UNNAMED
 						--add-opens=java.base/java.lang=ALL-UNNAMED
@@ -1152,7 +1165,7 @@
 							<value>solr</value>
 						</systemProperty>
 					</systemProperties>
-					<!-- Java 17 module system compatibility for Jakarta EE -->
+					<!-- Java 21 module system compatibility for Jakarta EE -->
 					<jvmArgs>--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED --add-opens=java.desktop/java.awt.font=ALL-UNNAMED</jvmArgs>
 				</configuration>
 
@@ -1480,8 +1493,8 @@
 						<version>3.11.0</version>
 						<configuration>
 							<encoding>UTF-8</encoding>
-							<source>11</source>
-							<target>11</target>
+							<source>21</source>
+							<target>21</target>
 							<excludes>
 								<exclude>jp/aegif/nemaki/development/**/*.*</exclude>
 							</excludes>

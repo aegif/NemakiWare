@@ -1,11 +1,11 @@
 package jp.aegif.nemaki.cmis.service.impl;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for the oversampling pagination logic used in NavigationServiceImpl.getChildrenInternal().
@@ -149,15 +149,15 @@ public class NavigationPaginationTest {
             skipCount += result.items.size();
         }
 
-        assertEquals("All 250 items should be collected across pages", 250, allCollected.size());
+        assertEquals(250, allCollected.size(), "All 250 items should be collected across pages");
 
         // Check no duplicates
         long distinct = allCollected.stream().distinct().count();
-        assertEquals("No duplicates across pages", 250, distinct);
+        assertEquals(250, distinct, "No duplicates across pages");
 
         // Check order preserved
         for (int i = 0; i < 250; i++) {
-            assertEquals("Item order preserved", "item-" + i, allCollected.get(i));
+            assertEquals("item-" + i, allCollected.get(i), "Item order preserved");
         }
     }
 
@@ -185,13 +185,13 @@ public class NavigationPaginationTest {
             skipCount += result.items.size();
         }
 
-        assertEquals("150 permitted items should be collected", 150, allCollected.size());
+        assertEquals(150, allCollected.size(), "150 permitted items should be collected");
         long distinct = allCollected.stream().distinct().count();
-        assertEquals("No duplicates in permission-filtered pages", 150, distinct);
+        assertEquals(150, distinct, "No duplicates in permission-filtered pages");
 
         // Verify all collected are permitted
         for (String item : allCollected) {
-            assertTrue("Only permitted items collected", permitted.contains(item));
+            assertTrue(permitted.contains(item), "Only permitted items collected");
         }
     }
 
@@ -208,8 +208,8 @@ public class NavigationPaginationTest {
         PaginationResult result = simulateOversampling(
                 allItems, null, maxItems, 0, 0); // totalCount=0 = no reduce
 
-        assertEquals("All 50 items returned", 50, result.items.size());
-        assertFalse("hasMoreItems should be false for small folder without reduce", result.hasMoreItems);
+        assertEquals(50, result.items.size(), "All 50 items returned");
+        assertFalse(result.hasMoreItems, "hasMoreItems should be false for small folder without reduce");
     }
 
     @Test
@@ -221,8 +221,8 @@ public class NavigationPaginationTest {
         PaginationResult result = simulateOversampling(
                 allItems, null, maxItems, 0, 0);
 
-        assertEquals("First page has maxItems items", 100, result.items.size());
-        assertTrue("hasMoreItems should be true for large folder first page", result.hasMoreItems);
+        assertEquals(100, result.items.size(), "First page has maxItems items");
+        assertTrue(result.hasMoreItems, "hasMoreItems should be true for large folder first page");
     }
 
     @Test
@@ -237,18 +237,18 @@ public class NavigationPaginationTest {
         // Page 1
         PaginationResult page1 = simulateOversampling(allItems, null, maxItems, 0, 0);
         assertEquals(100, page1.items.size());
-        assertTrue("Page 1 hasMore should be true", page1.hasMoreItems);
+        assertTrue(page1.hasMoreItems, "Page 1 hasMore should be true");
 
         // Page 2: last full page — but without reduce, can't detect it's the last one
         PaginationResult page2 = simulateOversampling(allItems, null, maxItems, 100, 0);
         assertEquals(100, page2.items.size());
         // pageFilled=true, totalCountAccurate=false → hasMore=true (conservative)
-        assertTrue("Without reduce, last full page conservatively has hasMore=true", page2.hasMoreItems);
+        assertTrue(page2.hasMoreItems, "Without reduce, last full page conservatively has hasMore=true");
 
         // Page 3: beyond data — now returns empty, hasMore=false
         PaginationResult page3 = simulateOversampling(allItems, null, maxItems, 200, 0);
         assertEquals(0, page3.items.size());
-        assertFalse("Beyond data should have hasMore=false", page3.hasMoreItems);
+        assertFalse(page3.hasMoreItems, "Beyond data should have hasMore=false");
     }
 
     // ==========================================================================
@@ -265,13 +265,13 @@ public class NavigationPaginationTest {
         // Page 1: skip=0
         PaginationResult page1 = simulateOversampling(allItems, null, maxItems, 0, totalCount);
         assertEquals(100, page1.items.size());
-        assertTrue("Page 1 should have more", page1.hasMoreItems);
+        assertTrue(page1.hasMoreItems, "Page 1 should have more");
 
         // Page 2: skip=100
         PaginationResult page2 = simulateOversampling(allItems, null, maxItems, 100, totalCount);
         assertEquals(100, page2.items.size());
         // scanned=200 >= totalCount=200 and pageFilled=true → hasMore=false
-        assertFalse("Exact last full page should have hasMore=false", page2.hasMoreItems);
+        assertFalse(page2.hasMoreItems, "Exact last full page should have hasMore=false");
     }
 
     @Test
@@ -282,7 +282,7 @@ public class NavigationPaginationTest {
         PaginationResult result = simulateOversampling(allItems, null, 100, 0, 50);
 
         assertEquals(50, result.items.size());
-        assertFalse("Fewer items than maxItems → hasMore=false", result.hasMoreItems);
+        assertFalse(result.hasMoreItems, "Fewer items than maxItems → hasMore=false");
     }
 
     // ==========================================================================
@@ -293,8 +293,8 @@ public class NavigationPaginationTest {
     public void testEmptyFolder() {
         PaginationResult result = simulateOversampling(
                 new ArrayList<>(), null, 100, 0, 0);
-        assertTrue("Empty folder returns empty list", result.items.isEmpty());
-        assertFalse("Empty folder hasMore=false", result.hasMoreItems);
+        assertTrue(result.items.isEmpty(), "Empty folder returns empty list");
+        assertFalse(result.hasMoreItems, "Empty folder hasMore=false");
     }
 
     @Test
@@ -316,7 +316,7 @@ public class NavigationPaginationTest {
 
         PaginationResult result = simulateOversampling(allItems, null, 100, 100, 50);
 
-        assertTrue("Skip beyond available items → empty", result.items.isEmpty());
+        assertTrue(result.items.isEmpty(), "Skip beyond available items → empty");
         assertFalse(result.hasMoreItems);
     }
 

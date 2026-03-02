@@ -3,21 +3,21 @@ package jp.aegif.nemaki.sync.scheduler;
 import jp.aegif.nemaki.sync.service.CloudDirectorySyncService;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for CloudDirectorySyncScheduler.
  * Tests init/destroy lifecycle, cron validation, and scheduling behavior.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 public class CloudDirectorySyncSchedulerTest {
 
 	@Mock
@@ -28,14 +28,14 @@ public class CloudDirectorySyncSchedulerTest {
 
 	private CloudDirectorySyncScheduler scheduler;
 
-	@Before
+	@BeforeEach
 	public void setup() {
 		scheduler = new CloudDirectorySyncScheduler();
 		scheduler.setCloudDirectorySyncService(cloudDirectorySyncService);
 		scheduler.setPropertyManager(propertyManager);
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() {
 		scheduler.destroy();
 	}
@@ -46,7 +46,7 @@ public class CloudDirectorySyncSchedulerTest {
 
 		scheduler.init();
 
-		assertFalse("Scheduler should not be active when disabled", scheduler.isSchedulerActive());
+		assertFalse(scheduler.isSchedulerActive(), "Scheduler should not be active when disabled");
 	}
 
 	@Test
@@ -56,7 +56,7 @@ public class CloudDirectorySyncSchedulerTest {
 
 		scheduler.init();
 
-		assertFalse("Scheduler should not be active without cron expression", scheduler.isSchedulerActive());
+		assertFalse(scheduler.isSchedulerActive(), "Scheduler should not be active without cron expression");
 	}
 
 	@Test
@@ -66,7 +66,7 @@ public class CloudDirectorySyncSchedulerTest {
 
 		scheduler.init();
 
-		assertFalse("Scheduler should not be active with empty cron", scheduler.isSchedulerActive());
+		assertFalse(scheduler.isSchedulerActive(), "Scheduler should not be active with empty cron");
 	}
 
 	@Test
@@ -76,7 +76,7 @@ public class CloudDirectorySyncSchedulerTest {
 
 		scheduler.init();
 
-		assertFalse("Scheduler should not be active with invalid cron", scheduler.isSchedulerActive());
+		assertFalse(scheduler.isSchedulerActive(), "Scheduler should not be active with invalid cron");
 	}
 
 	@Test
@@ -87,7 +87,7 @@ public class CloudDirectorySyncSchedulerTest {
 
 		scheduler.init();
 
-		assertTrue("Scheduler should be active with valid cron", scheduler.isSchedulerActive());
+		assertTrue(scheduler.isSchedulerActive(), "Scheduler should be active with valid cron");
 	}
 
 	@Test
@@ -98,7 +98,7 @@ public class CloudDirectorySyncSchedulerTest {
 		scheduler.init();
 		scheduler.init(); // second call should be no-op
 
-		assertTrue("Scheduler should still be active after double init", scheduler.isSchedulerActive());
+		assertTrue(scheduler.isSchedulerActive(), "Scheduler should still be active after double init");
 	}
 
 	@Test
@@ -110,7 +110,7 @@ public class CloudDirectorySyncSchedulerTest {
 		assertTrue(scheduler.isSchedulerActive());
 
 		scheduler.destroy();
-		assertFalse("Scheduler should not be active after destroy", scheduler.isSchedulerActive());
+		assertFalse(scheduler.isSchedulerActive(), "Scheduler should not be active after destroy");
 	}
 
 	@Test

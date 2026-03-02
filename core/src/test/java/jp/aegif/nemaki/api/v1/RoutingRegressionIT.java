@@ -5,9 +5,9 @@ import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.filter.log.LogDetail;
 import io.restassured.http.ContentType;
 import io.restassured.specification.RequestSpecification;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
@@ -28,7 +28,7 @@ import static org.hamcrest.Matchers.*;
  * These tests require a running NemakiWare instance.
  * Run with: mvn test -Dtest=RoutingRegressionIT -Dnemaki.test.baseUrl=http://localhost:8080/core
  */
-@Ignore("Requires running NemakiWare instance - remove @Ignore to run integration tests")
+@Disabled("Requires running NemakiWare instance - remove @Ignore to run integration tests")
 public class RoutingRegressionIT {
     
     protected static String baseUrl;
@@ -38,7 +38,7 @@ public class RoutingRegressionIT {
     
     protected static RequestSpecification requestSpec;
     
-    @BeforeClass
+    @BeforeAll
     public static void setupRestAssured() {
         // Load configuration from system properties or environment variables
         baseUrl = getConfigValue("nemaki.test.baseUrl", "NEMAKI_TEST_BASE_URL", "http://localhost:8080/core");

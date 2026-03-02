@@ -13,8 +13,7 @@ import org.apache.chemistry.opencmis.tck.CmisTestReport;
 import org.apache.chemistry.opencmis.tck.impl.AbstractCmisTestGroup;
 import org.apache.chemistry.opencmis.tck.report.TextReport;
 import org.apache.chemistry.opencmis.tck.report.XmlReport;
-import org.junit.ClassRule;
-import org.junit.rules.ExternalResource;
+// JUnit 4 @ClassRule / ExternalResource removed (JUnit 5 migration)
 
 import jp.aegif.nemaki.cmis.tck.tests.BasicsTestGroup;
 import jp.aegif.nemaki.cmis.tck.tests.ControlTestGroup;
@@ -30,40 +29,9 @@ public class TckSuite extends TestGroupBase{
 	private static Map<String, DummyTestGroup> groupMapForReport = new HashMap<>();
 	private static Map<String, String> parameters = new HashMap<>();
 	
-	// CRITICAL FIX: Temporarily disable @ClassRule to isolate timeout problem
-	// @ClassRule
-    public static ExternalResource testRule = new ExternalResource(){
-        @Override
-        protected void before() throws Throwable{
-        	TestGroupBase dummy = new TestGroupBase();
-        	// Use lazy initialization for parameters file
-        	File paramsFile = TestGroupBase.getParametersFile();
-        	if (paramsFile != null) {
-        		dummy.loadParameters(paramsFile);
-        		parameters = dummy.getParameters();
-        	} else {
-        		System.err.println("[TCK ERROR] Failed to load parameters file in TckSuite");
-        		parameters = new HashMap<>();
-        	}
-        };
-
-        @Override
-        protected void after(){
-        	try{
-            	List<CmisTestGroup> groups = new ArrayList<>();
-            	groups.addAll(groupMapForReport.values());
-            	
-            	CmisTestReport report = new TextReport();
-    	        report.createReport(parameters, groups, new PrintWriter(System.out));
-    	        
-    	        CmisTestReport xmlReport = new XmlReport();
-    	        xmlReport.createReport(parameters, groups, new PrintWriter(System.out));
-    	        
-        	}catch(Exception e){
-        		e.printStackTrace();
-        	}
-        };
-    };
+	// JUnit 4 @ClassRule / ExternalResource removed (JUnit 5 migration)
+	// The testRule was disabled (@ClassRule commented out) and is no longer needed.
+	// Parameters are preloaded via TestGroupBase static initializer.
     
     public static <T extends TestGroupBase> void addToGroup(Class<T> clazz, CmisTest test) throws Exception{
 		System.out.println("[TckSuite] addToGroup called for class: " + clazz.getSimpleName());

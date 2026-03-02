@@ -61,7 +61,7 @@ NemakiWare は以下の4サービスで構成されます。すべて Docker Com
 
 | サービス | イメージ | ポート | 説明 |
 |----------|---------|--------|------|
-| **Core** | tomcat:10.1-jre17 (カスタム) | 8080 | CMIS サーバー + React SPA UI |
+| **Core** | tomcat:10.1-jre21 (カスタム) | 8080 | CMIS サーバー + React SPA UI |
 | **CouchDB** | couchdb:3.3.3 | 5984 | ドキュメントデータベース |
 | **Solr** | カスタムビルド | 8983 | 全文検索エンジン |
 | **TEI** | ghcr.io/huggingface/text-embeddings-inference:cpu-1.6 | 8081 | ベクトル埋め込みサーバー (RAG) |
@@ -75,7 +75,7 @@ NemakiWare は以下の4サービスで構成されます。すべて Docker Com
 - **AWS アカウント** — EC2, VPC, EBS, (オプション) ALB, ACM, Route 53 の操作権限
 - **Google Cloud Console プロジェクト** — OAuth クライアント ID 発行済み（[CLOUD_INTEGRATION.md](CLOUD_INTEGRATION.md) 参照）
 - **独自ドメイン** — HTTPS 必須のため（例: `nemakiware.example.com`）
-- **ローカル開発環境** — Java 17, Maven 3.6+, Node.js 18+, Docker
+- **ローカル開発環境** — Java 21, Maven 3.6+, Node.js 18+, Docker
 
 ### 推奨スペック
 
@@ -253,10 +253,10 @@ touch /opt/nemakiware/docker/secrets/microsoft-entra.env
 ### 5-1. ビルド環境の準備（EC2 上でビルドする場合）
 
 ```bash
-# Java 17 インストール
-sudo dnf install -y java-17-amazon-corretto-devel  # Amazon Linux 2023
+# Java 21 インストール
+sudo dnf install -y java-21-amazon-corretto-devel  # Amazon Linux 2023
 # または
-sudo apt-get install -y openjdk-17-jdk  # Ubuntu
+sudo apt-get install -y openjdk-21-jdk  # Ubuntu
 
 # Maven インストール
 sudo dnf install -y maven  # Amazon Linux 2023

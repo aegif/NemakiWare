@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.cmis.aspect.impl;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import java.util.ArrayList;
@@ -12,8 +12,8 @@ import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
@@ -41,7 +41,7 @@ public class CompileServiceImplChangeLogTokenTest {
 	private TypeManager typeManager;
 	private CallContext callContext;
 
-	@Before
+	@BeforeEach
 	public void setUp() {
 		compileService = new CompileServiceImpl();
 
@@ -117,8 +117,8 @@ public class CompileServiceImplChangeLogTokenTest {
 				callContext, REPO_ID, changes, token,
 				false, null, false, false);
 
-		assertEquals("Token should advance to last event", "30", token.getValue());
-		assertEquals("All 3 events should be in result", 3, result.getObjects().size());
+		assertEquals("30", token.getValue(), "Token should advance to last event");
+		assertEquals(3, result.getObjects().size(), "All 3 events should be in result");
 	}
 
 	// -----------------------------------------------------------------------
@@ -140,10 +140,9 @@ public class CompileServiceImplChangeLogTokenTest {
 				callContext, REPO_ID, changes, token,
 				false, null, false, false);
 
-		assertEquals("Token should stop at last consecutive success (A)",
-				"10", token.getValue());
+		assertEquals("10", token.getValue(), "Token should stop at last consecutive success (A)");
 		// A succeeds, B fails (skipped), C succeeds but token frozen
-		assertEquals("2 events should be compiled (A and C)", 2, result.getObjects().size());
+		assertEquals(2, result.getObjects().size(), "2 events should be compiled (A and C)");
 	}
 
 	// -----------------------------------------------------------------------
@@ -165,9 +164,8 @@ public class CompileServiceImplChangeLogTokenTest {
 				callContext, REPO_ID, changes, token,
 				false, null, false, false);
 
-		assertEquals("Token should not advance when first event fails",
-				"5", token.getValue());
-		assertEquals("2 events should be compiled (B and C)", 2, result.getObjects().size());
+		assertEquals("5", token.getValue(), "Token should not advance when first event fails");
+		assertEquals(2, result.getObjects().size(), "2 events should be compiled (B and C)");
 	}
 
 	// -----------------------------------------------------------------------
@@ -189,9 +187,8 @@ public class CompileServiceImplChangeLogTokenTest {
 				callContext, REPO_ID, changes, token,
 				false, null, false, false);
 
-		assertEquals("Token should not advance when all events fail",
-				"5", token.getValue());
-		assertEquals("No events should be compiled", 0, result.getObjects().size());
+		assertEquals("5", token.getValue(), "Token should not advance when all events fail");
+		assertEquals(0, result.getObjects().size(), "No events should be compiled");
 	}
 
 	// -----------------------------------------------------------------------
@@ -214,8 +211,7 @@ public class CompileServiceImplChangeLogTokenTest {
 				callContext, REPO_ID, batch1, token,
 				false, null, false, false);
 
-		assertEquals("After first poll, token should be at A's position",
-				"10", token.getValue());
+		assertEquals("10", token.getValue(), "After first poll, token should be at A's position");
 
 		// Second poll: simulates re-fetch starting from token "10".
 		// CouchDB startkey is inclusive, so the delegate would skip the
@@ -235,9 +231,8 @@ public class CompileServiceImplChangeLogTokenTest {
 				callContext, REPO_ID, batch2, token,
 				false, null, false, false);
 
-		assertEquals("After retry, token should advance to D",
-				"40", token.getValue());
-		assertEquals("All 3 events should be compiled", 3, result2.getObjects().size());
+		assertEquals("40", token.getValue(), "After retry, token should advance to D");
+		assertEquals(3, result2.getObjects().size(), "All 3 events should be compiled");
 	}
 
 	// -----------------------------------------------------------------------
@@ -252,8 +247,8 @@ public class CompileServiceImplChangeLogTokenTest {
 				callContext, REPO_ID, changes, token,
 				false, null, false, false);
 
-		assertEquals("Token should not change for empty list", "5", token.getValue());
-		assertEquals("No events should be in result", 0, result.getObjects().size());
+		assertEquals("5", token.getValue(), "Token should not change for empty list");
+		assertEquals(0, result.getObjects().size(), "No events should be in result");
 	}
 
 	// -----------------------------------------------------------------------
@@ -266,7 +261,7 @@ public class CompileServiceImplChangeLogTokenTest {
 				callContext, REPO_ID, null, token,
 				false, null, false, false);
 
-		assertEquals("Token should not change for null list", "5", token.getValue());
-		assertEquals("No events should be in result", 0, result.getObjects().size());
+		assertEquals("5", token.getValue(), "Token should not change for null list");
+		assertEquals(0, result.getObjects().size(), "No events should be in result");
 	}
 }

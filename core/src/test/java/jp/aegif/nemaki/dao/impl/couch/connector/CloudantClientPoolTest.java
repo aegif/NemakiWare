@@ -1,10 +1,10 @@
 package jp.aegif.nemaki.dao.impl.couch.connector;
 
-import org.junit.Test;
-import org.junit.Before;
-import org.junit.After;
-import org.junit.Ignore;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Disabled;
+import static org.junit.jupiter.api.Assertions.*;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -18,7 +18,7 @@ public class CloudantClientPoolTest {
     private static final Log log = LogFactory.getLog(CloudantClientPoolTest.class);
     private CloudantClientPool pool;
     
-    @Before
+    @BeforeEach
     public void setUp() {
         pool = new CloudantClientPool();
         // Set basic configuration
@@ -30,7 +30,7 @@ public class CloudantClientPoolTest {
         pool.setAuthPassword("password");
     }
     
-    @After
+    @AfterEach
     public void tearDown() {
         // Clean up system properties
         System.clearProperty("db.couchdb.url.override");
@@ -94,7 +94,7 @@ public class CloudantClientPoolTest {
             
             // Verify retry logic was executed (should take at least 4 seconds for 3 attempts with 2s delay)
             log.info("Connection failed after retries. Duration: " + duration + "ms");
-            assertTrue("Retry logic should have taken at least 4 seconds", duration >= 4000);
+            assertTrue(duration >= 4000, "Retry logic should have taken at least 4 seconds");
             assertTrue(e.getMessage().contains("Failed to initialize Cloudant client pool after 3 attempts") ||
                       e.getMessage().contains("Failed to connect to CouchDB"));
         }
@@ -114,8 +114,7 @@ public class CloudantClientPoolTest {
             log.info("Connection failed as expected: " + e.getMessage());
             assertTrue(e.getMessage().contains("localhost") || 
                       e.getMessage().contains("Failed to connect to CouchDB"));
-            assertFalse("URL should not contain 'couchdb' in non-Docker environment", 
-                       e.getMessage().contains("http://couchdb:5984"));
+            assertFalse(e.getMessage().contains("http://couchdb:5984"), "URL should not contain 'couchdb' in non-Docker environment");
         }
     }
 }

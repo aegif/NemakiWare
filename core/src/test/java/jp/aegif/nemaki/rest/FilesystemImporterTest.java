@@ -12,10 +12,9 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.Rule;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -29,7 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Tests for FilesystemImporter covering:
@@ -43,8 +42,8 @@ import static org.junit.Assert.*;
  */
 public class FilesystemImporterTest {
 
-    @Rule
-    public TemporaryFolder tempFolder = new TemporaryFolder();
+    @TempDir
+    Path tempDir;
 
     private FilesystemImporter importer;
 
@@ -66,7 +65,7 @@ public class FilesystemImporterTest {
     private static final String REPO_ID = "test-repo";
     private static final String TARGET_FOLDER_ID = "target-folder-id";
 
-    @Before
+    @BeforeEach
     public void setUp() {
         capturedStreamContents = new ArrayList<>();
         capturedStreamClasses = new ArrayList<>();
@@ -152,29 +151,27 @@ public class FilesystemImporterTest {
 
     @Test
     public void testStreamingImport_noHeapBuffering() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source"));
         byte[] content = "Hello, streaming world!".getBytes(StandardCharsets.UTF_8);
         Files.write(sourceDir.resolve("test.txt"), content);
 
         importer.importFromFilesystemDirectory(REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should have captured 1 createDocument call", 1, capturedStreamContents.size());
+        assertEquals(1, capturedStreamContents.size(), "Should have captured 1 createDocument call");
 
         // Verify the stream is NOT a ByteArrayInputStream (i.e., not from readAllBytes)
-        assertFalse("Stream should NOT be ByteArrayInputStream (proves streaming, not heap buffering)",
-                ByteArrayInputStream.class.isAssignableFrom(capturedStreamClasses.get(0)));
+        assertFalse(ByteArrayInputStream.class.isAssignableFrom(capturedStreamClasses.get(0)), "Stream should NOT be ByteArrayInputStream (proves streaming, not heap buffering)");
 
         // Verify content is correct
-        assertArrayEquals("Content should match original file", content, capturedStreamContents.get(0));
+        assertArrayEquals(content, capturedStreamContents.get(0), "Content should match original file");
 
         // Verify file size is correctly reported
-        assertEquals("Content length should match file size",
-                (long) content.length, capturedContentLengths.get(0).longValue());
+        assertEquals((long) content.length, capturedContentLengths.get(0).longValue(), "Content length should match file size");
     }
 
     @Test
     public void testStreamingImport_largeFileSkipped() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-large").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-large"));
         byte[] content = new byte[1024]; // 1KB file - well within limits
         java.util.Arrays.fill(content, (byte) 'A');
         Files.write(sourceDir.resolve("small.txt"), content);
@@ -182,19 +179,19 @@ public class FilesystemImporterTest {
         ImportResult result = importer.importFromFilesystemDirectory(
                 REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should import 1 document", 1, result.documentsCreated);
-        assertTrue("Should have no errors", result.errors.isEmpty());
+        assertEquals(1, result.documentsCreated, "Should import 1 document");
+        assertTrue(result.errors.isEmpty(), "Should have no errors");
     }
 
     @Test
     public void testStreamingImport_contentIntegrity() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-integrity").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-integrity"));
         byte[] originalContent = "This is test content for SHA-256 verification.\n日本語テスト。".getBytes(StandardCharsets.UTF_8);
         Files.write(sourceDir.resolve("integrity.txt"), originalContent);
 
         importer.importFromFilesystemDirectory(REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should have captured 1 stream", 1, capturedStreamContents.size());
+        assertEquals(1, capturedStreamContents.size(), "Should have captured 1 stream");
 
         // SHA-256 comparison
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -202,26 +199,25 @@ public class FilesystemImporterTest {
         digest.reset();
         byte[] streamHash = digest.digest(capturedStreamContents.get(0));
 
-        assertArrayEquals("SHA-256 hash of streamed content must match original", originalHash, streamHash);
+        assertArrayEquals(originalHash, streamHash, "SHA-256 hash of streamed content must match original");
     }
 
     @Test
     public void testStreamingImport_mimeTypeDetection() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-mime").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-mime"));
         Files.write(sourceDir.resolve("document.pdf"), "fake-pdf".getBytes());
 
         importer.importFromFilesystemDirectory(REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should have captured 1 call", 1, capturedMimeTypes.size());
-        assertEquals("MIME type should be application/pdf",
-                "application/pdf", capturedMimeTypes.get(0));
+        assertEquals(1, capturedMimeTypes.size(), "Should have captured 1 call");
+        assertEquals("application/pdf", capturedMimeTypes.get(0), "MIME type should be application/pdf");
     }
 
     // ========== P2: Custom Object Type Tests ==========
 
     @Test
     public void testCustomObjectType_preservedFromMetadata() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-type").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-type"));
         Files.write(sourceDir.resolve("typed.txt"), "content".getBytes());
 
         String metadata = "{\"properties\":{\"cmis:objectTypeId\":\"custom:report\",\"cmis:name\":\"typed.txt\"}}";
@@ -229,31 +225,29 @@ public class FilesystemImporterTest {
 
         importer.importFromFilesystemDirectory(REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should have captured 1 call", 1, capturedProperties.size());
+        assertEquals(1, capturedProperties.size(), "Should have captured 1 call");
         Properties capturedProps = capturedProperties.get(0);
         PropertyData<?> typeIdProp = capturedProps.getProperties().get(PropertyIds.OBJECT_TYPE_ID);
-        assertNotNull("OBJECT_TYPE_ID property should exist", typeIdProp);
-        assertEquals("Object type should be custom:report from metadata",
-                "custom:report", typeIdProp.getFirstValue());
+        assertNotNull(typeIdProp, "OBJECT_TYPE_ID property should exist");
+        assertEquals("custom:report", typeIdProp.getFirstValue(), "Object type should be custom:report from metadata");
     }
 
     @Test
     public void testCustomObjectType_defaultWhenNoMetadata() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-notype").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-notype"));
         Files.write(sourceDir.resolve("plain.txt"), "content".getBytes());
 
         importer.importFromFilesystemDirectory(REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should have captured 1 call", 1, capturedProperties.size());
+        assertEquals(1, capturedProperties.size(), "Should have captured 1 call");
         Properties capturedProps = capturedProperties.get(0);
         PropertyData<?> typeIdProp = capturedProps.getProperties().get(PropertyIds.OBJECT_TYPE_ID);
-        assertEquals("Object type should default to cmis:document",
-                "cmis:document", typeIdProp.getFirstValue());
+        assertEquals("cmis:document", typeIdProp.getFirstValue(), "Object type should default to cmis:document");
     }
 
     @Test
     public void testCustomObjectType_defaultWhenMetadataHasNoType() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-emptytype").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-emptytype"));
         Files.write(sourceDir.resolve("notype.txt"), "content".getBytes());
 
         String metadata = "{\"properties\":{\"custom:field\":\"value\"}}";
@@ -261,16 +255,15 @@ public class FilesystemImporterTest {
 
         importer.importFromFilesystemDirectory(REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should have captured 1 call", 1, capturedProperties.size());
+        assertEquals(1, capturedProperties.size(), "Should have captured 1 call");
         Properties capturedProps = capturedProperties.get(0);
         PropertyData<?> typeIdProp = capturedProps.getProperties().get(PropertyIds.OBJECT_TYPE_ID);
-        assertEquals("Object type should default to cmis:document when metadata has no type",
-                "cmis:document", typeIdProp.getFirstValue());
+        assertEquals("cmis:document", typeIdProp.getFirstValue(), "Object type should default to cmis:document when metadata has no type");
     }
 
     @Test
     public void testCustomObjectType_emptyTypeStringIgnored() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-emptystr").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-emptystr"));
         Files.write(sourceDir.resolve("empty.txt"), "content".getBytes());
 
         String metadata = "{\"properties\":{\"cmis:objectTypeId\":\"\"}}";
@@ -278,18 +271,17 @@ public class FilesystemImporterTest {
 
         importer.importFromFilesystemDirectory(REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should have captured 1 call", 1, capturedProperties.size());
+        assertEquals(1, capturedProperties.size(), "Should have captured 1 call");
         Properties capturedProps = capturedProperties.get(0);
         PropertyData<?> typeIdProp = capturedProps.getProperties().get(PropertyIds.OBJECT_TYPE_ID);
-        assertEquals("Empty type string should fall back to cmis:document",
-                "cmis:document", typeIdProp.getFirstValue());
+        assertEquals("cmis:document", typeIdProp.getFirstValue(), "Empty type string should fall back to cmis:document");
     }
 
     // ========== Metadata Size Limit Tests ==========
 
     @Test
     public void testMetadataSizeLimit_withinLimit() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-metalimit").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-metalimit"));
         Files.write(sourceDir.resolve("doc.txt"), "content".getBytes());
 
         String metadata = "{\"properties\":{\"cmis:name\":\"doc.txt\"}}";
@@ -298,15 +290,15 @@ public class FilesystemImporterTest {
         ImportResult result = importer.importFromFilesystemDirectory(
                 REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should import 1 document", 1, result.documentsCreated);
+        assertEquals(1, result.documentsCreated, "Should import 1 document");
         boolean hasMetaWarning = result.warnings.stream()
                 .anyMatch(w -> w.contains("Skipping large metadata"));
-        assertFalse("Should not have metadata size warning", hasMetaWarning);
+        assertFalse(hasMetaWarning, "Should not have metadata size warning");
     }
 
     @Test
     public void testMetadataSizeLimit_exceedsLimit() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-bigmeta").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-bigmeta"));
         Files.write(sourceDir.resolve("doc.txt"), "content".getBytes());
 
         // Create a metadata file exceeding MAX_METADATA_SIZE (10MB)
@@ -317,17 +309,17 @@ public class FilesystemImporterTest {
         ImportResult result = importer.importFromFilesystemDirectory(
                 REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should import 1 document", 1, result.documentsCreated);
+        assertEquals(1, result.documentsCreated, "Should import 1 document");
         boolean hasMetaWarning = result.warnings.stream()
                 .anyMatch(w -> w.contains("Skipping large metadata"));
-        assertTrue("Should have metadata size warning", hasMetaWarning);
+        assertTrue(hasMetaWarning, "Should have metadata size warning");
     }
 
     // ========== Custom Properties Tests ==========
 
     @Test
     public void testCustomProperties_includedInImport() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-props").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-props"));
         Files.write(sourceDir.resolve("custom.txt"), "content".getBytes());
 
         String metadata = "{\"properties\":{" +
@@ -340,23 +332,19 @@ public class FilesystemImporterTest {
 
         importer.importFromFilesystemDirectory(REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should have captured 1 call", 1, capturedProperties.size());
+        assertEquals(1, capturedProperties.size(), "Should have captured 1 call");
         Properties capturedProps = capturedProperties.get(0);
 
-        assertNotNull("custom:field1 should be present",
-                capturedProps.getProperties().get("custom:field1"));
-        assertEquals("custom:field1 value should be 'value1'",
-                "value1", capturedProps.getProperties().get("custom:field1").getFirstValue());
+        assertNotNull(capturedProps.getProperties().get("custom:field1"), "custom:field1 should be present");
+        assertEquals("value1", capturedProps.getProperties().get("custom:field1").getFirstValue(), "custom:field1 value should be 'value1'");
 
-        assertNotNull("custom:field2 should be present",
-                capturedProps.getProperties().get("custom:field2"));
-        assertEquals("custom:field2 value should be 'value2'",
-                "value2", capturedProps.getProperties().get("custom:field2").getFirstValue());
+        assertNotNull(capturedProps.getProperties().get("custom:field2"), "custom:field2 should be present");
+        assertEquals("value2", capturedProps.getProperties().get("custom:field2").getFirstValue(), "custom:field2 value should be 'value2'");
     }
 
     @Test
     public void testCustomProperties_systemPropertiesSkipped() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-sysprops").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-sysprops"));
         Files.write(sourceDir.resolve("sys.txt"), "content".getBytes());
 
         String metadata = "{\"properties\":{" +
@@ -372,21 +360,19 @@ public class FilesystemImporterTest {
 
         importer.importFromFilesystemDirectory(REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should have captured 1 call", 1, capturedProperties.size());
+        assertEquals(1, capturedProperties.size(), "Should have captured 1 call");
         Properties capturedProps = capturedProperties.get(0);
 
-        assertNull("cmis:objectId should be skipped",
-                capturedProps.getProperties().get(PropertyIds.OBJECT_ID));
+        assertNull(capturedProps.getProperties().get(PropertyIds.OBJECT_ID), "cmis:objectId should be skipped");
 
-        assertNotNull("custom:kept should be present",
-                capturedProps.getProperties().get("custom:kept"));
+        assertNotNull(capturedProps.getProperties().get("custom:kept"), "custom:kept should be present");
     }
 
     // ========== Multiple Files and Folder Structure Tests ==========
 
     @Test
     public void testMultipleFiles_importedCorrectly() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-multi").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-multi"));
         Files.write(sourceDir.resolve("file1.txt"), "content1".getBytes());
         Files.write(sourceDir.resolve("file2.txt"), "content2".getBytes());
         Files.write(sourceDir.resolve("file3.txt"), "content3".getBytes());
@@ -394,13 +380,13 @@ public class FilesystemImporterTest {
         ImportResult result = importer.importFromFilesystemDirectory(
                 REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should import 3 documents", 3, result.documentsCreated);
-        assertTrue("Should have no errors", result.errors.isEmpty());
+        assertEquals(3, result.documentsCreated, "Should import 3 documents");
+        assertTrue(result.errors.isEmpty(), "Should have no errors");
     }
 
     @Test
     public void testSubfolder_createdAndUsed() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-subfolder").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-subfolder"));
         Files.createDirectories(sourceDir.resolve("subfolder"));
         Files.write(sourceDir.resolve("subfolder/nested.txt"), "nested content".getBytes());
 
@@ -412,15 +398,15 @@ public class FilesystemImporterTest {
         ImportResult result = importer.importFromFilesystemDirectory(
                 REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should create 1 folder", 1, result.foldersCreated);
-        assertEquals("Should import 1 document", 1, result.documentsCreated);
+        assertEquals(1, result.foldersCreated, "Should create 1 folder");
+        assertEquals(1, result.documentsCreated, "Should import 1 document");
     }
 
     // ========== Meta Suffix and Version File Filtering ==========
 
     @Test
     public void testMetaFiles_notImportedAsDocuments() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-metaskip").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-metaskip"));
         Files.write(sourceDir.resolve("doc.txt"), "content".getBytes());
         Files.write(sourceDir.resolve("doc.txt.meta.json"),
                 "{\"properties\":{}}".getBytes(StandardCharsets.UTF_8));
@@ -428,12 +414,12 @@ public class FilesystemImporterTest {
         ImportResult result = importer.importFromFilesystemDirectory(
                 REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should import only 1 document (not the .meta.json)", 1, result.documentsCreated);
+        assertEquals(1, result.documentsCreated, "Should import only 1 document (not the .meta.json)");
     }
 
     @Test
     public void testVersionFiles_notImportedAsDocuments() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-verskip").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-verskip"));
         Files.write(sourceDir.resolve("doc.txt"), "content".getBytes());
         Files.write(sourceDir.resolve("doc.txt.v1"), "version 1".getBytes());
         Files.write(sourceDir.resolve("doc.txt.v2"), "version 2".getBytes());
@@ -441,40 +427,39 @@ public class FilesystemImporterTest {
         ImportResult result = importer.importFromFilesystemDirectory(
                 REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should import only 1 document (not version files)", 1, result.documentsCreated);
+        assertEquals(1, result.documentsCreated, "Should import only 1 document (not version files)");
     }
 
     // ========== Edge Case Tests ==========
 
     @Test
     public void testZeroByteFile_importedSuccessfully() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-zerobyte").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-zerobyte"));
         Files.write(sourceDir.resolve("empty.dat"), new byte[0]);
 
         ImportResult result = importer.importFromFilesystemDirectory(
                 REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should import 1 document", 1, result.documentsCreated);
-        assertTrue("Should have no errors", result.errors.isEmpty());
-        assertEquals("Content length should be 0", 0L, capturedContentLengths.get(0).longValue());
-        assertEquals("Content should be empty", 0, capturedStreamContents.get(0).length);
+        assertEquals(1, result.documentsCreated, "Should import 1 document");
+        assertTrue(result.errors.isEmpty(), "Should have no errors");
+        assertEquals(0L, capturedContentLengths.get(0).longValue(), "Content length should be 0");
+        assertEquals(0, capturedStreamContents.get(0).length, "Content should be empty");
     }
 
     @Test
     public void testFileWithNoExtension_mimeTypeFallback() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-noext").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-noext"));
         Files.write(sourceDir.resolve("README"), "some content".getBytes());
 
         importer.importFromFilesystemDirectory(REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should have captured 1 call", 1, capturedMimeTypes.size());
-        assertEquals("MIME type should fall back to application/octet-stream",
-                "application/octet-stream", capturedMimeTypes.get(0));
+        assertEquals(1, capturedMimeTypes.size(), "Should have captured 1 call");
+        assertEquals("application/octet-stream", capturedMimeTypes.get(0), "MIME type should fall back to application/octet-stream");
     }
 
     @Test
     public void testMalformedMetadata_warningRecordedFileStillImported() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-badjson").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-badjson"));
         Files.write(sourceDir.resolve("doc.txt"), "content".getBytes());
         Files.write(sourceDir.resolve("doc.txt.meta.json"),
                 "{ invalid json !!!".getBytes(StandardCharsets.UTF_8));
@@ -482,21 +467,20 @@ public class FilesystemImporterTest {
         ImportResult result = importer.importFromFilesystemDirectory(
                 REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should still import 1 document", 1, result.documentsCreated);
+        assertEquals(1, result.documentsCreated, "Should still import 1 document");
         boolean hasParseWarning = result.warnings.stream()
                 .anyMatch(w -> w.contains("Failed to parse metadata"));
-        assertTrue("Should have metadata parse warning", hasParseWarning);
+        assertTrue(hasParseWarning, "Should have metadata parse warning");
 
         // Without valid metadata, should default to cmis:document
         Properties capturedProps = capturedProperties.get(0);
         PropertyData<?> typeIdProp = capturedProps.getProperties().get(PropertyIds.OBJECT_TYPE_ID);
-        assertEquals("Object type should default to cmis:document",
-                "cmis:document", typeIdProp.getFirstValue());
+        assertEquals("cmis:document", typeIdProp.getFirstValue(), "Object type should default to cmis:document");
     }
 
     @Test
     public void testDeeplyNestedSubfolder_createdRecursively() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-deep").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-deep"));
         Files.createDirectories(sourceDir.resolve("a/b/c"));
         Files.write(sourceDir.resolve("a/b/c/deep.txt"), "deep content".getBytes());
 
@@ -558,13 +542,13 @@ public class FilesystemImporterTest {
         ImportResult result = importer.importFromFilesystemDirectory(
                 REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should create 3 folders (a, b, c)", 3, result.foldersCreated);
-        assertEquals("Should import 1 document", 1, result.documentsCreated);
+        assertEquals(3, result.foldersCreated, "Should create 3 folders (a, b, c)");
+        assertEquals(1, result.documentsCreated, "Should import 1 document");
     }
 
     @Test
     public void testPartialFailure_someSucceedSomeFail() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-partial").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-partial"));
         Files.write(sourceDir.resolve("good1.txt"), "content1".getBytes());
         Files.write(sourceDir.resolve("good2.txt"), "content2".getBytes());
 
@@ -608,33 +592,32 @@ public class FilesystemImporterTest {
         ImportResult result = importer.importFromFilesystemDirectory(
                 REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should have 1 successful import", 1, result.documentsCreated);
-        assertEquals("Should have 1 error", 1, result.errors.size());
+        assertEquals(1, result.documentsCreated, "Should have 1 successful import");
+        assertEquals(1, result.errors.size(), "Should have 1 error");
     }
 
     @Test
     public void testFileWithSpacesInName_importedCorrectly() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-spaces").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-spaces"));
         Files.write(sourceDir.resolve("my document (draft).txt"), "spaced content".getBytes());
 
         ImportResult result = importer.importFromFilesystemDirectory(
                 REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should import 1 document", 1, result.documentsCreated);
-        assertTrue("Should have no errors", result.errors.isEmpty());
+        assertEquals(1, result.documentsCreated, "Should import 1 document");
+        assertTrue(result.errors.isEmpty(), "Should have no errors");
 
         // Verify the filename preserves spaces
         Properties capturedProps = capturedProperties.get(0);
         PropertyData<?> nameProp = capturedProps.getProperties().get(PropertyIds.NAME);
-        assertEquals("Filename should preserve spaces",
-                "my document (draft).txt", nameProp.getFirstValue());
+        assertEquals("my document (draft).txt", nameProp.getFirstValue(), "Filename should preserve spaces");
     }
 
     // ========== Error Handling Tests ==========
 
     @Test
     public void testImportError_recordedInResult() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-error").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-error"));
         Files.write(sourceDir.resolve("fail.txt"), "content".getBytes());
 
         createDocumentException = new RuntimeException("Simulated CMIS error");
@@ -642,23 +625,21 @@ public class FilesystemImporterTest {
         ImportResult result = importer.importFromFilesystemDirectory(
                 REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should have 0 documents created", 0, result.documentsCreated);
-        assertEquals("Should have 1 error", 1, result.errors.size());
-        assertTrue("Error message should contain file name",
-                result.errors.get(0).contains("fail.txt"));
-        assertTrue("Error message should contain original error",
-                result.errors.get(0).contains("Simulated CMIS error"));
+        assertEquals(0, result.documentsCreated, "Should have 0 documents created");
+        assertEquals(1, result.errors.size(), "Should have 1 error");
+        assertTrue(result.errors.get(0).contains("fail.txt"), "Error message should contain file name");
+        assertTrue(result.errors.get(0).contains("Simulated CMIS error"), "Error message should contain original error");
     }
 
     @Test
     public void testEmptyDirectory_noErrors() throws Exception {
-        Path sourceDir = tempFolder.newFolder("source-empty").toPath();
+        Path sourceDir = Files.createDirectories(tempDir.resolve("source-empty"));
 
         ImportResult result = importer.importFromFilesystemDirectory(
                 REPO_ID, TARGET_FOLDER_ID, sourceDir, stubCallContext);
 
-        assertEquals("Should import 0 documents", 0, result.documentsCreated);
-        assertEquals("Should create 0 folders", 0, result.foldersCreated);
-        assertTrue("Should have no errors", result.errors.isEmpty());
+        assertEquals(0, result.documentsCreated, "Should import 0 documents");
+        assertEquals(0, result.foldersCreated, "Should create 0 folders");
+        assertTrue(result.errors.isEmpty(), "Should have no errors");
     }
 }

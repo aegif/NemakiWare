@@ -21,9 +21,9 @@
  ******************************************************************************/
 package jp.aegif.nemaki.sync.util;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for PasswordEncryptionUtil.
@@ -36,14 +36,14 @@ public class PasswordEncryptionUtilTest {
         
         String encrypted = PasswordEncryptionUtil.encrypt(originalPassword);
         
-        assertNotNull("Encrypted password should not be null", encrypted);
-        assertTrue("Encrypted password should start with ENC(", encrypted.startsWith("ENC("));
-        assertTrue("Encrypted password should end with )", encrypted.endsWith(")"));
-        assertNotEquals("Encrypted password should differ from original", originalPassword, encrypted);
+        assertNotNull(encrypted, "Encrypted password should not be null");
+        assertTrue(encrypted.startsWith("ENC("), "Encrypted password should start with ENC(");
+        assertTrue(encrypted.endsWith(")"), "Encrypted password should end with )");
+        assertNotEquals(originalPassword, encrypted, "Encrypted password should differ from original");
         
         String decrypted = PasswordEncryptionUtil.decrypt(encrypted);
         
-        assertEquals("Decrypted password should match original", originalPassword, decrypted);
+        assertEquals(originalPassword, decrypted, "Decrypted password should match original");
     }
 
     @Test
@@ -53,41 +53,30 @@ public class PasswordEncryptionUtilTest {
         String encrypted1 = PasswordEncryptionUtil.encrypt(password);
         String encrypted2 = PasswordEncryptionUtil.encrypt(password);
         
-        assertNotEquals("Each encryption should produce different output due to random salt/IV", 
-                encrypted1, encrypted2);
+        assertNotEquals(encrypted1, encrypted2, "Each encryption should produce different output due to random salt/IV");
         
-        assertEquals("Both should decrypt to same password", password, 
-                PasswordEncryptionUtil.decrypt(encrypted1));
-        assertEquals("Both should decrypt to same password", password, 
-                PasswordEncryptionUtil.decrypt(encrypted2));
+        assertEquals(password, PasswordEncryptionUtil.decrypt(encrypted1), "Both should decrypt to same password");
+        assertEquals(password, PasswordEncryptionUtil.decrypt(encrypted2), "Both should decrypt to same password");
     }
 
     @Test
     public void testIsEncrypted() {
-        assertTrue("Should detect ENC() format", 
-                PasswordEncryptionUtil.isEncrypted("ENC(somedata)"));
-        assertFalse("Should not detect plain text", 
-                PasswordEncryptionUtil.isEncrypted("plainPassword"));
-        assertFalse("Should not detect partial format", 
-                PasswordEncryptionUtil.isEncrypted("ENC(incomplete"));
-        assertFalse("Should handle null", 
-                PasswordEncryptionUtil.isEncrypted(null));
-        assertFalse("Should handle empty string", 
-                PasswordEncryptionUtil.isEncrypted(""));
+        assertTrue(PasswordEncryptionUtil.isEncrypted("ENC(somedata)"), "Should detect ENC() format");
+        assertFalse(PasswordEncryptionUtil.isEncrypted("plainPassword"), "Should not detect plain text");
+        assertFalse(PasswordEncryptionUtil.isEncrypted("ENC(incomplete"),
+                "Should not detect partial format");
+        assertFalse(PasswordEncryptionUtil.isEncrypted(null), "Should handle null");
+        assertFalse(PasswordEncryptionUtil.isEncrypted(""), "Should handle empty string");
     }
 
     @Test
     public void testIsEnvironmentVariable() {
-        assertTrue("Should detect ENV() format", 
-                PasswordEncryptionUtil.isEnvironmentVariable("ENV(MY_VAR)"));
-        assertFalse("Should not detect plain text", 
-                PasswordEncryptionUtil.isEnvironmentVariable("plainPassword"));
-        assertFalse("Should not detect partial format", 
-                PasswordEncryptionUtil.isEnvironmentVariable("ENV(incomplete"));
-        assertFalse("Should handle null", 
-                PasswordEncryptionUtil.isEnvironmentVariable(null));
-        assertFalse("Should handle empty string", 
-                PasswordEncryptionUtil.isEnvironmentVariable(""));
+        assertTrue(PasswordEncryptionUtil.isEnvironmentVariable("ENV(MY_VAR)"), "Should detect ENV() format");
+        assertFalse(PasswordEncryptionUtil.isEnvironmentVariable("plainPassword"), "Should not detect plain text");
+        assertFalse(PasswordEncryptionUtil.isEnvironmentVariable("ENV(incomplete"),
+                "Should not detect partial format");
+        assertFalse(PasswordEncryptionUtil.isEnvironmentVariable(null), "Should handle null");
+        assertFalse(PasswordEncryptionUtil.isEnvironmentVariable(""), "Should handle empty string");
     }
 
     @Test
@@ -96,7 +85,7 @@ public class PasswordEncryptionUtilTest {
         
         String resolved = PasswordEncryptionUtil.resolvePassword(plainPassword);
         
-        assertEquals("Plain text should be returned as-is", plainPassword, resolved);
+        assertEquals(plainPassword, resolved, "Plain text should be returned as-is");
     }
 
     @Test
@@ -106,17 +95,17 @@ public class PasswordEncryptionUtilTest {
         
         String resolved = PasswordEncryptionUtil.resolvePassword(encrypted);
         
-        assertEquals("Encrypted password should be decrypted", originalPassword, resolved);
+        assertEquals(originalPassword, resolved, "Encrypted password should be decrypted");
     }
 
     @Test
     public void testResolvePasswordNull() {
-        assertNull("Null should return null", PasswordEncryptionUtil.resolvePassword(null));
+        assertNull(PasswordEncryptionUtil.resolvePassword(null), "Null should return null");
     }
 
     @Test
     public void testResolvePasswordEmpty() {
-        assertEquals("Empty string should return empty", "", PasswordEncryptionUtil.resolvePassword(""));
+        assertEquals("", PasswordEncryptionUtil.resolvePassword(""), "Empty string should return empty");
     }
 
     @Test
@@ -124,9 +113,8 @@ public class PasswordEncryptionUtilTest {
         String encrypted = PasswordEncryptionUtil.encrypt("");
 
         // Empty string is returned as-is (not encrypted), which is the correct behavior
-        assertEquals("Empty password should be returned as-is", "", encrypted);
-        assertFalse("Empty password should not be in encrypted format",
-                PasswordEncryptionUtil.isEncrypted(encrypted));
+        assertEquals("", encrypted, "Empty password should be returned as-is");
+        assertFalse(PasswordEncryptionUtil.isEncrypted(encrypted), "Empty password should not be in encrypted format");
     }
 
     @Test
@@ -136,7 +124,7 @@ public class PasswordEncryptionUtilTest {
         String encrypted = PasswordEncryptionUtil.encrypt(specialPassword);
         String decrypted = PasswordEncryptionUtil.decrypt(encrypted);
         
-        assertEquals("Special characters should be preserved", specialPassword, decrypted);
+        assertEquals(specialPassword, decrypted, "Special characters should be preserved");
     }
 
     @Test
@@ -146,7 +134,7 @@ public class PasswordEncryptionUtilTest {
         String encrypted = PasswordEncryptionUtil.encrypt(unicodePassword);
         String decrypted = PasswordEncryptionUtil.decrypt(encrypted);
         
-        assertEquals("Unicode characters should be preserved", unicodePassword, decrypted);
+        assertEquals(unicodePassword, decrypted, "Unicode characters should be preserved");
     }
 
     @Test
@@ -160,16 +148,18 @@ public class PasswordEncryptionUtilTest {
         String encrypted = PasswordEncryptionUtil.encrypt(longPassword);
         String decrypted = PasswordEncryptionUtil.decrypt(encrypted);
         
-        assertEquals("Long password should be preserved", longPassword, decrypted);
+        assertEquals(longPassword, decrypted, "Long password should be preserved");
     }
 
-    @Test(expected = RuntimeException.class)
+    @Test
     public void testDecryptInvalidData() {
-        PasswordEncryptionUtil.decrypt("ENC(invalidbase64data!!!)");
+        assertThrows(RuntimeException.class, () ->
+            PasswordEncryptionUtil.decrypt("ENC(invalidbase64data!!!)"));
     }
 
-    @Test(expected = RuntimeException.class)
+    @Test
     public void testDecryptMalformedEncrypted() {
-        PasswordEncryptionUtil.decrypt("ENC()");
+        assertThrows(RuntimeException.class, () ->
+            PasswordEncryptionUtil.decrypt("ENC()"));
     }
 }

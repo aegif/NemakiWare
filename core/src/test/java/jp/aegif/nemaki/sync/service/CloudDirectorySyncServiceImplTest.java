@@ -1,13 +1,15 @@
 package jp.aegif.nemaki.sync.service;
 
-import org.junit.Test;
-import org.junit.Before;
-import org.junit.After;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.InjectMocks;
-import org.mockito.junit.MockitoJUnitRunner;
-import static org.junit.Assert.*;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.ArgumentMatchers.*;
@@ -21,7 +23,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class CloudDirectorySyncServiceImplTest {
 
 	private static final String TEST_REPO = "bedroom";
@@ -193,7 +196,7 @@ public class CloudDirectorySyncServiceImplTest {
 		CloudSyncResult second = service.startDeltaSync(TEST_REPO, "google");
 
 		// Second call should return the same RUNNING result (not create a new one)
-		assertSame("Duplicate startSync should return the existing RUNNING result", first, second);
+		assertSame(first, second, "Duplicate startSync should return the existing RUNNING result");
 		assertEquals(CloudSyncResult.Status.RUNNING, second.getStatus());
 	}
 
@@ -207,7 +210,7 @@ public class CloudDirectorySyncServiceImplTest {
 		CloudSyncResult microsoft = service.startDeltaSync(TEST_REPO, "microsoft");
 
 		// Different keys should produce independent results
-		assertNotSame("Different keys should have independent results", google, microsoft);
+		assertNotSame(google, microsoft, "Different keys should have independent results");
 		assertEquals(CloudSyncResult.Status.RUNNING, google.getStatus());
 		assertEquals(CloudSyncResult.Status.RUNNING, microsoft.getStatus());
 		assertEquals("google", google.getProvider());
@@ -241,11 +244,11 @@ public class CloudDirectorySyncServiceImplTest {
 		}
 
 		startLatch.countDown(); // release all threads
-		assertTrue("Threads should complete within 5s", doneLatch.await(5, TimeUnit.SECONDS));
+		assertTrue(doneLatch.await(5, TimeUnit.SECONDS), "Threads should complete within 5s");
 
 		// All threads should get the same result object
 		for (int i = 1; i < threadCount; i++) {
-			assertSame("All concurrent callers should get the same result", results[0], results[i]);
+			assertSame(results[0], results[i], "All concurrent callers should get the same result");
 		}
 	}
 
@@ -259,7 +262,7 @@ public class CloudDirectorySyncServiceImplTest {
 
 		java.util.List<String> groups = service.syncUserGroups(TEST_REPO, "dropbox", "ext-user", "user@example.com");
 		assertNotNull(groups);
-		assertTrue("Unknown provider should return empty list", groups.isEmpty());
+		assertTrue(groups.isEmpty(), "Unknown provider should return empty list");
 	}
 
 	@Test
@@ -268,7 +271,7 @@ public class CloudDirectorySyncServiceImplTest {
 
 		java.util.List<String> groups = service.syncUserGroups(TEST_REPO, "google", "ext-user", "user@example.com");
 		assertNotNull(groups);
-		assertTrue("Disabled provider should return empty list", groups.isEmpty());
+		assertTrue(groups.isEmpty(), "Disabled provider should return empty list");
 	}
 
 	@Test
@@ -278,7 +281,7 @@ public class CloudDirectorySyncServiceImplTest {
 
 		java.util.List<String> groups = service.syncUserGroups(TEST_REPO, "google", "ext-user", "user@example.com");
 		assertNotNull(groups);
-		assertTrue("Provider not in list should return empty list", groups.isEmpty());
+		assertTrue(groups.isEmpty(), "Provider not in list should return empty list");
 	}
 
 	// ---- testConnection ----
@@ -286,7 +289,7 @@ public class CloudDirectorySyncServiceImplTest {
 	@Test
 	public void testTestConnection_UnknownProvider_ReturnsFalse() {
 		boolean connected = service.testConnection("dropbox");
-		assertFalse("Unknown provider should return false", connected);
+		assertFalse(connected, "Unknown provider should return false");
 	}
 
 	@Test
@@ -294,14 +297,14 @@ public class CloudDirectorySyncServiceImplTest {
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_GOOGLE_SERVICE_ACCOUNT_KEY))
 				.thenReturn(null);
 		boolean connected = service.testConnection("google");
-		assertFalse("Google without creds should return false", connected);
+		assertFalse(connected, "Google without creds should return false");
 	}
 
 	@Test
 	public void testTestConnection_Microsoft_NoCreds_ReturnsFalse() {
 		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
 		boolean connected = service.testConnection("microsoft");
-		assertFalse("Microsoft without creds should return false", connected);
+		assertFalse(connected, "Microsoft without creds should return false");
 	}
 
 	// ---- startSync state transition: COMPLETED → new start ----
@@ -321,7 +324,7 @@ public class CloudDirectorySyncServiceImplTest {
 
 		// Second start after completion should create a new result
 		CloudSyncResult second = service.startDeltaSync(TEST_REPO, "google");
-		assertNotSame("After completion, a new result should be created", first, second);
+		assertNotSame(first, second, "After completion, a new result should be created");
 		assertEquals(CloudSyncResult.Status.RUNNING, second.getStatus());
 	}
 
@@ -335,7 +338,7 @@ public class CloudDirectorySyncServiceImplTest {
 		first.setStatus(CloudSyncResult.Status.ERROR);
 
 		CloudSyncResult second = service.startDeltaSync(TEST_REPO, "google");
-		assertNotSame("After error, a new result should be created", first, second);
+		assertNotSame(first, second, "After error, a new result should be created");
 		assertEquals(CloudSyncResult.Status.RUNNING, second.getStatus());
 	}
 }

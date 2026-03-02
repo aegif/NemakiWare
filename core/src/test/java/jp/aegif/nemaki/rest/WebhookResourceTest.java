@@ -21,7 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rest;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import java.util.ArrayList;
@@ -32,8 +32,8 @@ import java.util.List;
 import jakarta.servlet.http.HttpServletRequest;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.businesslogic.WebhookService;
 import jp.aegif.nemaki.util.constant.CallContextKey;
@@ -50,7 +50,7 @@ public class WebhookResourceTest {
 
     private WebhookResource resource;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         resource = new WebhookResource();
     }
@@ -446,9 +446,8 @@ public class WebhookResourceTest {
 
         assertEquals("failure", response.get("status"));
         org.json.simple.JSONArray errors = (org.json.simple.JSONArray) response.get("error");
-        assertNotNull("Failure response must contain 'error' array", errors);
-        assertTrue("Error message should mention Mango query failure",
-            errors.toString().contains("Mango query failed"));
+        assertNotNull(errors, "Failure response must contain 'error' array");
+        assertTrue(errors.toString().contains("Mango query failed"), "Error message should mention Mango query failure");
     }
 
     /**

@@ -1,8 +1,8 @@
 package jp.aegif.nemaki.webhook;
 
-import org.junit.Test;
-import org.junit.Before;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import static org.junit.jupiter.api.Assertions.*;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -25,7 +25,7 @@ public class WebhookConfigTest {
     
     private static final Log log = LogFactory.getLog(WebhookConfigTest.class);
     
-    @Before
+    @BeforeEach
     public void setUp() {
         log.info("Setting up WebhookConfigTest");
     }
@@ -37,12 +37,12 @@ public class WebhookConfigTest {
     @Test
     public void testDefaultConstructor() {
         WebhookConfig config = new WebhookConfig();
-        assertNotNull("WebhookConfig should be created", config);
-        assertNull("ID should be null by default", config.getId());
-        assertFalse("Should be disabled by default", config.isEnabled());
-        assertNull("URL should be null by default", config.getUrl());
-        assertNotNull("Events should be empty list, not null", config.getEvents());
-        assertTrue("Events should be empty by default", config.getEvents().isEmpty());
+        assertNotNull(config, "WebhookConfig should be created");
+        assertNull(config.getId(), "ID should be null by default");
+        assertFalse(config.isEnabled(), "Should be disabled by default");
+        assertNull(config.getUrl(), "URL should be null by default");
+        assertNotNull(config.getEvents(), "Events should be empty list, not null");
+        assertTrue(config.getEvents().isEmpty(), "Events should be empty by default");
     }
     
     @Test
@@ -179,9 +179,9 @@ public class WebhookConfigTest {
         config.setEnabled(true);
         config.setEvents(Arrays.asList("CREATED", "UPDATED"));
         
-        assertTrue("Should match CREATED event", config.matchesEvent("CREATED"));
-        assertTrue("Should match UPDATED event", config.matchesEvent("UPDATED"));
-        assertFalse("Should not match DELETED event", config.matchesEvent("DELETED"));
+        assertTrue(config.matchesEvent("CREATED"), "Should match CREATED event");
+        assertTrue(config.matchesEvent("UPDATED"), "Should match UPDATED event");
+        assertFalse(config.matchesEvent("DELETED"), "Should not match DELETED event");
     }
     
     @Test
@@ -190,8 +190,8 @@ public class WebhookConfigTest {
         config.setEnabled(false);
         config.setEvents(Arrays.asList("CREATED", "UPDATED"));
         
-        assertFalse("Should not match any event when disabled", config.matchesEvent("CREATED"));
-        assertFalse("Should not match any event when disabled", config.matchesEvent("UPDATED"));
+        assertFalse(config.matchesEvent("CREATED"), "Should not match any event when disabled");
+        assertFalse(config.matchesEvent("UPDATED"), "Should not match any event when disabled");
     }
     
     @Test
@@ -200,7 +200,7 @@ public class WebhookConfigTest {
         config.setEnabled(true);
         config.setEvents(Arrays.asList());
         
-        assertFalse("Should not match any event with empty events list", config.matchesEvent("CREATED"));
+        assertFalse(config.matchesEvent("CREATED"), "Should not match any event with empty events list");
     }
     
     @Test
@@ -209,8 +209,8 @@ public class WebhookConfigTest {
         config.setEnabled(true);
         config.setEvents(Arrays.asList("CREATED", "UPDATED"));
         
-        assertTrue("Should match case-insensitively", config.matchesEvent("created"));
-        assertTrue("Should match case-insensitively", config.matchesEvent("Created"));
+        assertTrue(config.matchesEvent("created"), "Should match case-insensitively");
+        assertTrue(config.matchesEvent("Created"), "Should match case-insensitively");
     }
     
     // ========================================
@@ -226,7 +226,7 @@ public class WebhookConfigTest {
             .events(Arrays.asList("CREATED"))
             .build();
         
-        assertTrue("Config with all required fields should be valid", config.isValid());
+        assertTrue(config.isValid(), "Config with all required fields should be valid");
     }
     
     @Test
@@ -237,7 +237,7 @@ public class WebhookConfigTest {
             .events(Arrays.asList("CREATED"))
             .build();
         
-        assertFalse("Config without ID should be invalid", config.isValid());
+        assertFalse(config.isValid(), "Config without ID should be invalid");
     }
     
     @Test
@@ -248,7 +248,7 @@ public class WebhookConfigTest {
             .events(Arrays.asList("CREATED"))
             .build();
         
-        assertFalse("Config without URL should be invalid", config.isValid());
+        assertFalse(config.isValid(), "Config without URL should be invalid");
     }
     
     @Test
@@ -259,7 +259,7 @@ public class WebhookConfigTest {
             .url("https://example.com/webhook")
             .build();
         
-        assertFalse("Config without events should be invalid", config.isValid());
+        assertFalse(config.isValid(), "Config without events should be invalid");
     }
     
     @Test
@@ -271,7 +271,7 @@ public class WebhookConfigTest {
             .events(Arrays.asList())
             .build();
         
-        assertFalse("Config with empty events should be invalid", config.isValid());
+        assertFalse(config.isValid(), "Config with empty events should be invalid");
     }
     
     // ========================================
@@ -283,7 +283,7 @@ public class WebhookConfigTest {
         WebhookConfig config = new WebhookConfig();
         config.setAuthType("none");
         assertEquals("none", config.getAuthType());
-        assertFalse("Should not require credential for 'none' auth", config.requiresAuthCredential());
+        assertFalse(config.requiresAuthCredential(), "Should not require credential for 'none' auth");
     }
     
     @Test
@@ -291,7 +291,7 @@ public class WebhookConfigTest {
         WebhookConfig config = new WebhookConfig();
         config.setAuthType("basic");
         assertEquals("basic", config.getAuthType());
-        assertTrue("Should require credential for 'basic' auth", config.requiresAuthCredential());
+        assertTrue(config.requiresAuthCredential(), "Should require credential for 'basic' auth");
     }
     
     @Test
@@ -299,7 +299,7 @@ public class WebhookConfigTest {
         WebhookConfig config = new WebhookConfig();
         config.setAuthType("bearer");
         assertEquals("bearer", config.getAuthType());
-        assertTrue("Should require credential for 'bearer' auth", config.requiresAuthCredential());
+        assertTrue(config.requiresAuthCredential(), "Should require credential for 'bearer' auth");
     }
     
     @Test
@@ -307,7 +307,7 @@ public class WebhookConfigTest {
         WebhookConfig config = new WebhookConfig();
         config.setAuthType("apikey");
         assertEquals("apikey", config.getAuthType());
-        assertTrue("Should require credential for 'apikey' auth", config.requiresAuthCredential());
+        assertTrue(config.requiresAuthCredential(), "Should require credential for 'apikey' auth");
     }
     
     // ========================================
@@ -322,9 +322,8 @@ public class WebhookConfigTest {
         WebhookConfig config2 = new WebhookConfig();
         config2.setId("webhook-1");
         
-        assertEquals("Configs with same ID should be equal", config1, config2);
-        assertEquals("Configs with same ID should have same hashCode", 
-            config1.hashCode(), config2.hashCode());
+        assertEquals(config1, config2, "Configs with same ID should be equal");
+        assertEquals(config1.hashCode(), config2.hashCode(), "Configs with same ID should have same hashCode");
     }
     
     @Test
@@ -335,7 +334,7 @@ public class WebhookConfigTest {
         WebhookConfig config2 = new WebhookConfig();
         config2.setId("webhook-2");
         
-        assertNotEquals("Configs with different ID should not be equal", config1, config2);
+        assertNotEquals(config1, config2, "Configs with different ID should not be equal");
     }
     
     // ========================================
@@ -352,9 +351,9 @@ public class WebhookConfigTest {
             .build();
         
         String str = config.toString();
-        assertNotNull("toString should not return null", str);
-        assertTrue("toString should contain ID", str.contains("webhook-1"));
-        assertTrue("toString should contain URL", str.contains("https://example.com/webhook"));
+        assertNotNull(str, "toString should not return null");
+        assertTrue(str.contains("webhook-1"), "toString should contain ID");
+        assertTrue(str.contains("https://example.com/webhook"), "toString should contain URL");
     }
     
     // ========================================
@@ -373,7 +372,7 @@ public class WebhookConfigTest {
             // authCredential not set
             .build();
         
-        assertFalse("Config with bearer auth but no credential should be invalid", config.isValid());
+        assertFalse(config.isValid(), "Config with bearer auth but no credential should be invalid");
     }
     
     @Test
@@ -388,7 +387,7 @@ public class WebhookConfigTest {
             .authCredential("my-token")
             .build();
         
-        assertTrue("Config with bearer auth and credential should be valid", config.isValid());
+        assertTrue(config.isValid(), "Config with bearer auth and credential should be valid");
     }
     
     @Test
@@ -402,7 +401,7 @@ public class WebhookConfigTest {
             .authType("none")
             .build();
         
-        assertTrue("Config with none auth should be valid without credential", config.isValid());
+        assertTrue(config.isValid(), "Config with none auth should be valid without credential");
     }
     
     @Test
@@ -415,7 +414,7 @@ public class WebhookConfigTest {
             .authType("basic")
             .build();
         
-        assertFalse("Config with basic auth but no credential should be invalid", config.isValid());
+        assertFalse(config.isValid(), "Config with basic auth but no credential should be invalid");
     }
     
     @Test
@@ -428,6 +427,6 @@ public class WebhookConfigTest {
             .authType("apikey")
             .build();
         
-        assertFalse("Config with apikey auth but no credential should be invalid", config.isValid());
+        assertFalse(config.isValid(), "Config with apikey auth but no credential should be invalid");
     }
 }

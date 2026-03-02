@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rag.indexing;
 
-import org.junit.Test;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for RAGIndexingException.
@@ -20,11 +20,10 @@ public class RAGIndexingExceptionTest {
     public void testConstructorWithMessage() {
         RAGIndexingException exception = new RAGIndexingException("Test error message");
 
-        assertEquals("Message should match", "Test error message", exception.getMessage());
-        assertEquals("Default error type should be UNKNOWN", 
-                RAGIndexingException.ErrorType.UNKNOWN, exception.getErrorType());
-        assertFalse("Default retryable should be false", exception.isRetryable());
-        assertNull("Cause should be null", exception.getCause());
+        assertEquals("Test error message", exception.getMessage(), "Message should match");
+        assertEquals(RAGIndexingException.ErrorType.UNKNOWN, exception.getErrorType(), "Default error type should be UNKNOWN");
+        assertFalse(exception.isRetryable(), "Default retryable should be false");
+        assertNull(exception.getCause(), "Cause should be null");
     }
 
     @Test
@@ -32,11 +31,10 @@ public class RAGIndexingExceptionTest {
         Throwable cause = new RuntimeException("Root cause");
         RAGIndexingException exception = new RAGIndexingException("Test error", cause);
 
-        assertEquals("Message should match", "Test error", exception.getMessage());
-        assertEquals("Cause should match", cause, exception.getCause());
-        assertEquals("Default error type should be UNKNOWN", 
-                RAGIndexingException.ErrorType.UNKNOWN, exception.getErrorType());
-        assertFalse("Default retryable should be false", exception.isRetryable());
+        assertEquals("Test error", exception.getMessage(), "Message should match");
+        assertEquals(cause, exception.getCause(), "Cause should match");
+        assertEquals(RAGIndexingException.ErrorType.UNKNOWN, exception.getErrorType(), "Default error type should be UNKNOWN");
+        assertFalse(exception.isRetryable(), "Default retryable should be false");
     }
 
     @Test
@@ -46,11 +44,10 @@ public class RAGIndexingExceptionTest {
                 RAGIndexingException.ErrorType.SOLR_ERROR, 
                 true);
 
-        assertEquals("Message should match", "Service error", exception.getMessage());
-        assertEquals("Error type should match", 
-                RAGIndexingException.ErrorType.SOLR_ERROR, exception.getErrorType());
-        assertTrue("Retryable should be true", exception.isRetryable());
-        assertNull("Cause should be null", exception.getCause());
+        assertEquals("Service error", exception.getMessage(), "Message should match");
+        assertEquals(RAGIndexingException.ErrorType.SOLR_ERROR, exception.getErrorType(), "Error type should match");
+        assertTrue(exception.isRetryable(), "Retryable should be true");
+        assertNull(exception.getCause(), "Cause should be null");
     }
 
     @Test
@@ -62,11 +59,10 @@ public class RAGIndexingExceptionTest {
                 RAGIndexingException.ErrorType.EMBEDDING_FAILED, 
                 true);
 
-        assertEquals("Message should match", "Embedding failed", exception.getMessage());
-        assertEquals("Cause should match", cause, exception.getCause());
-        assertEquals("Error type should match", 
-                RAGIndexingException.ErrorType.EMBEDDING_FAILED, exception.getErrorType());
-        assertTrue("Retryable should be true", exception.isRetryable());
+        assertEquals("Embedding failed", exception.getMessage(), "Message should match");
+        assertEquals(cause, exception.getCause(), "Cause should match");
+        assertEquals(RAGIndexingException.ErrorType.EMBEDDING_FAILED, exception.getErrorType(), "Error type should match");
+        assertTrue(exception.isRetryable(), "Retryable should be true");
     }
 
     // ========== Factory Method Tests ==========
@@ -75,25 +71,21 @@ public class RAGIndexingExceptionTest {
     public void testServiceDisabled() {
         RAGIndexingException exception = RAGIndexingException.serviceDisabled("RAG is disabled");
 
-        assertEquals("Message should match", "RAG is disabled", exception.getMessage());
-        assertNull("Cause should be null", exception.getCause());
-        assertEquals("Error type should be SERVICE_DISABLED", 
-                RAGIndexingException.ErrorType.SERVICE_DISABLED, exception.getErrorType());
-        assertFalse("Service disabled errors should NOT be retryable", exception.isRetryable());
+        assertEquals("RAG is disabled", exception.getMessage(), "Message should match");
+        assertNull(exception.getCause(), "Cause should be null");
+        assertEquals(RAGIndexingException.ErrorType.SERVICE_DISABLED, exception.getErrorType(), "Error type should be SERVICE_DISABLED");
+        assertFalse(exception.isRetryable(), "Service disabled errors should NOT be retryable");
     }
 
     @Test
     public void testUnsupportedMimeType() {
         RAGIndexingException exception = RAGIndexingException.unsupportedMimeType("image/png");
 
-        assertTrue("Message should contain MIME type", 
-                exception.getMessage().contains("image/png"));
-        assertTrue("Message should indicate unsupported", 
-                exception.getMessage().toLowerCase().contains("not supported"));
-        assertNull("Cause should be null", exception.getCause());
-        assertEquals("Error type should be UNSUPPORTED_MIME_TYPE", 
-                RAGIndexingException.ErrorType.UNSUPPORTED_MIME_TYPE, exception.getErrorType());
-        assertFalse("Unsupported MIME type errors should NOT be retryable", exception.isRetryable());
+        assertTrue(exception.getMessage().contains("image/png"), "Message should contain MIME type");
+        assertTrue(exception.getMessage().toLowerCase().contains("not supported"), "Message should indicate unsupported");
+        assertNull(exception.getCause(), "Cause should be null");
+        assertEquals(RAGIndexingException.ErrorType.UNSUPPORTED_MIME_TYPE, exception.getErrorType(), "Error type should be UNSUPPORTED_MIME_TYPE");
+        assertFalse(exception.isRetryable(), "Unsupported MIME type errors should NOT be retryable");
     }
 
     @Test
@@ -101,24 +93,20 @@ public class RAGIndexingExceptionTest {
         Throwable cause = new RuntimeException("Tika extraction error");
         RAGIndexingException exception = RAGIndexingException.textExtractionFailed("doc-123", cause);
 
-        assertTrue("Message should contain document ID", 
-                exception.getMessage().contains("doc-123"));
-        assertEquals("Cause should match", cause, exception.getCause());
-        assertEquals("Error type should be TEXT_EXTRACTION_FAILED", 
-                RAGIndexingException.ErrorType.TEXT_EXTRACTION_FAILED, exception.getErrorType());
-        assertFalse("Text extraction errors should NOT be retryable", exception.isRetryable());
+        assertTrue(exception.getMessage().contains("doc-123"), "Message should contain document ID");
+        assertEquals(cause, exception.getCause(), "Cause should match");
+        assertEquals(RAGIndexingException.ErrorType.TEXT_EXTRACTION_FAILED, exception.getErrorType(), "Error type should be TEXT_EXTRACTION_FAILED");
+        assertFalse(exception.isRetryable(), "Text extraction errors should NOT be retryable");
     }
 
     @Test
     public void testNoContent() {
         RAGIndexingException exception = RAGIndexingException.noContent("Document is empty");
 
-        assertTrue("Message should contain reason", 
-                exception.getMessage().contains("Document is empty"));
-        assertNull("Cause should be null", exception.getCause());
-        assertEquals("Error type should be NO_CONTENT", 
-                RAGIndexingException.ErrorType.NO_CONTENT, exception.getErrorType());
-        assertFalse("No content errors should NOT be retryable", exception.isRetryable());
+        assertTrue(exception.getMessage().contains("Document is empty"), "Message should contain reason");
+        assertNull(exception.getCause(), "Cause should be null");
+        assertEquals(RAGIndexingException.ErrorType.NO_CONTENT, exception.getErrorType(), "Error type should be NO_CONTENT");
+        assertFalse(exception.isRetryable(), "No content errors should NOT be retryable");
     }
 
     @Test
@@ -126,12 +114,10 @@ public class RAGIndexingExceptionTest {
         Throwable cause = new RuntimeException("TEI connection error");
         RAGIndexingException exception = RAGIndexingException.embeddingFailed("doc-456", cause);
 
-        assertTrue("Message should contain document ID", 
-                exception.getMessage().contains("doc-456"));
-        assertEquals("Cause should match", cause, exception.getCause());
-        assertEquals("Error type should be EMBEDDING_FAILED", 
-                RAGIndexingException.ErrorType.EMBEDDING_FAILED, exception.getErrorType());
-        assertTrue("Embedding errors should be retryable", exception.isRetryable());
+        assertTrue(exception.getMessage().contains("doc-456"), "Message should contain document ID");
+        assertEquals(cause, exception.getCause(), "Cause should match");
+        assertEquals(RAGIndexingException.ErrorType.EMBEDDING_FAILED, exception.getErrorType(), "Error type should be EMBEDDING_FAILED");
+        assertTrue(exception.isRetryable(), "Embedding errors should be retryable");
     }
 
     @Test
@@ -139,12 +125,10 @@ public class RAGIndexingExceptionTest {
         Throwable cause = new RuntimeException("Solr connection refused");
         RAGIndexingException exception = RAGIndexingException.solrError("doc-789", cause);
 
-        assertTrue("Message should contain document ID", 
-                exception.getMessage().contains("doc-789"));
-        assertEquals("Cause should match", cause, exception.getCause());
-        assertEquals("Error type should be SOLR_ERROR", 
-                RAGIndexingException.ErrorType.SOLR_ERROR, exception.getErrorType());
-        assertTrue("Solr errors should be retryable", exception.isRetryable());
+        assertTrue(exception.getMessage().contains("doc-789"), "Message should contain document ID");
+        assertEquals(cause, exception.getCause(), "Cause should match");
+        assertEquals(RAGIndexingException.ErrorType.SOLR_ERROR, exception.getErrorType(), "Error type should be SOLR_ERROR");
+        assertTrue(exception.isRetryable(), "Solr errors should be retryable");
     }
 
     @Test
@@ -152,12 +136,10 @@ public class RAGIndexingExceptionTest {
         Throwable cause = new RuntimeException("Principal service error");
         RAGIndexingException exception = RAGIndexingException.aclError("doc-abc", cause);
 
-        assertTrue("Message should contain document ID", 
-                exception.getMessage().contains("doc-abc"));
-        assertEquals("Cause should match", cause, exception.getCause());
-        assertEquals("Error type should be ACL_ERROR", 
-                RAGIndexingException.ErrorType.ACL_ERROR, exception.getErrorType());
-        assertFalse("ACL errors should NOT be retryable", exception.isRetryable());
+        assertTrue(exception.getMessage().contains("doc-abc"), "Message should contain document ID");
+        assertEquals(cause, exception.getCause(), "Cause should match");
+        assertEquals(RAGIndexingException.ErrorType.ACL_ERROR, exception.getErrorType(), "Error type should be ACL_ERROR");
+        assertFalse(exception.isRetryable(), "ACL errors should NOT be retryable");
     }
 
     // ========== Error Type Tests ==========
@@ -166,7 +148,7 @@ public class RAGIndexingExceptionTest {
     public void testAllErrorTypes() {
         RAGIndexingException.ErrorType[] types = RAGIndexingException.ErrorType.values();
         
-        assertEquals("Should have 8 error types", 8, types.length);
+        assertEquals(8, types.length, "Should have 8 error types");
         
         assertNotNull(RAGIndexingException.ErrorType.SERVICE_DISABLED);
         assertNotNull(RAGIndexingException.ErrorType.UNSUPPORTED_MIME_TYPE);
@@ -203,50 +185,49 @@ public class RAGIndexingExceptionTest {
     @Test
     public void testRetryableForEmbeddingFailed() {
         RAGIndexingException exception = RAGIndexingException.embeddingFailed("doc", null);
-        assertTrue("EMBEDDING_FAILED should be retryable", exception.isRetryable());
+        assertTrue(exception.isRetryable(), "EMBEDDING_FAILED should be retryable");
     }
 
     @Test
     public void testRetryableForSolrError() {
         RAGIndexingException exception = RAGIndexingException.solrError("doc", null);
-        assertTrue("SOLR_ERROR should be retryable", exception.isRetryable());
+        assertTrue(exception.isRetryable(), "SOLR_ERROR should be retryable");
     }
 
     @Test
     public void testNotRetryableForServiceDisabled() {
         RAGIndexingException exception = RAGIndexingException.serviceDisabled("disabled");
-        assertFalse("SERVICE_DISABLED should NOT be retryable", exception.isRetryable());
+        assertFalse(exception.isRetryable(), "SERVICE_DISABLED should NOT be retryable");
     }
 
     @Test
     public void testNotRetryableForUnsupportedMimeType() {
         RAGIndexingException exception = RAGIndexingException.unsupportedMimeType("image/png");
-        assertFalse("UNSUPPORTED_MIME_TYPE should NOT be retryable", exception.isRetryable());
+        assertFalse(exception.isRetryable(), "UNSUPPORTED_MIME_TYPE should NOT be retryable");
     }
 
     @Test
     public void testNotRetryableForTextExtractionFailed() {
         RAGIndexingException exception = RAGIndexingException.textExtractionFailed("doc", null);
-        assertFalse("TEXT_EXTRACTION_FAILED should NOT be retryable", exception.isRetryable());
+        assertFalse(exception.isRetryable(), "TEXT_EXTRACTION_FAILED should NOT be retryable");
     }
 
     @Test
     public void testNotRetryableForNoContent() {
         RAGIndexingException exception = RAGIndexingException.noContent("empty");
-        assertFalse("NO_CONTENT should NOT be retryable", exception.isRetryable());
+        assertFalse(exception.isRetryable(), "NO_CONTENT should NOT be retryable");
     }
 
     @Test
     public void testNotRetryableForAclError() {
         RAGIndexingException exception = RAGIndexingException.aclError("doc", null);
-        assertFalse("ACL_ERROR should NOT be retryable", exception.isRetryable());
+        assertFalse(exception.isRetryable(), "ACL_ERROR should NOT be retryable");
     }
 
     @Test
     public void testNotRetryableForDefaultConstructor() {
         RAGIndexingException exception = new RAGIndexingException("error");
-        assertFalse("Default constructor should create non-retryable exception", 
-                exception.isRetryable());
+        assertFalse(exception.isRetryable(), "Default constructor should create non-retryable exception");
     }
 
     // ========== Exception Hierarchy Tests ==========
@@ -255,12 +236,10 @@ public class RAGIndexingExceptionTest {
     public void testExceptionIsCheckedException() {
         RAGIndexingException exception = new RAGIndexingException("test");
 
-        assertTrue("RAGIndexingException should be an Exception",
-                exception instanceof Exception);
+        assertTrue(exception instanceof Exception, "RAGIndexingException should be an Exception");
         // RAGIndexingException extends Exception (not RuntimeException)
         // This is enforced by the type system - no runtime check needed
-        assertFalse("RAGIndexingException should not be a RuntimeException",
-                RuntimeException.class.isAssignableFrom(RAGIndexingException.class));
+        assertFalse(RuntimeException.class.isAssignableFrom(RAGIndexingException.class), "RAGIndexingException should not be a RuntimeException");
     }
 
     @Test
@@ -268,8 +247,7 @@ public class RAGIndexingExceptionTest {
         try {
             throw new RAGIndexingException("Test exception");
         } catch (RAGIndexingException e) {
-            assertEquals("Caught exception message should match", 
-                    "Test exception", e.getMessage());
+            assertEquals("Test exception", e.getMessage(), "Caught exception message should match");
         }
     }
 
@@ -278,7 +256,7 @@ public class RAGIndexingExceptionTest {
         try {
             throw new RAGIndexingException("Test exception");
         } catch (Exception e) {
-            assertTrue("Should be caught as Exception", e instanceof RAGIndexingException);
+            assertTrue(e instanceof RAGIndexingException, "Should be caught as Exception");
         }
     }
 
@@ -288,59 +266,54 @@ public class RAGIndexingExceptionTest {
     public void testNullMessage() {
         RAGIndexingException exception = new RAGIndexingException(null);
         
-        assertNull("Null message should be preserved", exception.getMessage());
-        assertEquals("Error type should still be UNKNOWN", 
-                RAGIndexingException.ErrorType.UNKNOWN, exception.getErrorType());
+        assertNull(exception.getMessage(), "Null message should be preserved");
+        assertEquals(RAGIndexingException.ErrorType.UNKNOWN, exception.getErrorType(), "Error type should still be UNKNOWN");
     }
 
     @Test
     public void testEmptyMessage() {
         RAGIndexingException exception = new RAGIndexingException("");
         
-        assertEquals("Empty message should be preserved", "", exception.getMessage());
+        assertEquals("", exception.getMessage(), "Empty message should be preserved");
     }
 
     @Test
     public void testNullCause() {
         RAGIndexingException exception = new RAGIndexingException("error", null);
         
-        assertNull("Null cause should be preserved", exception.getCause());
+        assertNull(exception.getCause(), "Null cause should be preserved");
     }
 
     @Test
     public void testTextExtractionFailedWithNullCause() {
         RAGIndexingException exception = RAGIndexingException.textExtractionFailed("doc", null);
         
-        assertNull("Null cause should be preserved in factory method", exception.getCause());
-        assertEquals("Error type should still be TEXT_EXTRACTION_FAILED", 
-                RAGIndexingException.ErrorType.TEXT_EXTRACTION_FAILED, exception.getErrorType());
+        assertNull(exception.getCause(), "Null cause should be preserved in factory method");
+        assertEquals(RAGIndexingException.ErrorType.TEXT_EXTRACTION_FAILED, exception.getErrorType(), "Error type should still be TEXT_EXTRACTION_FAILED");
     }
 
     @Test
     public void testEmbeddingFailedWithNullCause() {
         RAGIndexingException exception = RAGIndexingException.embeddingFailed("doc", null);
         
-        assertNull("Null cause should be preserved in factory method", exception.getCause());
-        assertEquals("Error type should still be EMBEDDING_FAILED", 
-                RAGIndexingException.ErrorType.EMBEDDING_FAILED, exception.getErrorType());
+        assertNull(exception.getCause(), "Null cause should be preserved in factory method");
+        assertEquals(RAGIndexingException.ErrorType.EMBEDDING_FAILED, exception.getErrorType(), "Error type should still be EMBEDDING_FAILED");
     }
 
     @Test
     public void testSolrErrorWithNullCause() {
         RAGIndexingException exception = RAGIndexingException.solrError("doc", null);
         
-        assertNull("Null cause should be preserved in factory method", exception.getCause());
-        assertEquals("Error type should still be SOLR_ERROR", 
-                RAGIndexingException.ErrorType.SOLR_ERROR, exception.getErrorType());
+        assertNull(exception.getCause(), "Null cause should be preserved in factory method");
+        assertEquals(RAGIndexingException.ErrorType.SOLR_ERROR, exception.getErrorType(), "Error type should still be SOLR_ERROR");
     }
 
     @Test
     public void testAclErrorWithNullCause() {
         RAGIndexingException exception = RAGIndexingException.aclError("doc", null);
         
-        assertNull("Null cause should be preserved in factory method", exception.getCause());
-        assertEquals("Error type should still be ACL_ERROR", 
-                RAGIndexingException.ErrorType.ACL_ERROR, exception.getErrorType());
+        assertNull(exception.getCause(), "Null cause should be preserved in factory method");
+        assertEquals(RAGIndexingException.ErrorType.ACL_ERROR, exception.getErrorType(), "Error type should still be ACL_ERROR");
     }
 
     // ========== Chained Exception Tests ==========
@@ -351,8 +324,8 @@ public class RAGIndexingExceptionTest {
         Throwable middleCause = new RuntimeException("Middle cause", rootCause);
         RAGIndexingException exception = new RAGIndexingException("Top level error", middleCause);
 
-        assertEquals("Direct cause should be middle cause", middleCause, exception.getCause());
-        assertEquals("Root cause should be accessible", rootCause, exception.getCause().getCause());
+        assertEquals(middleCause, exception.getCause(), "Direct cause should be middle cause");
+        assertEquals(rootCause, exception.getCause().getCause(), "Root cause should be accessible");
     }
 
     @Test
@@ -360,8 +333,8 @@ public class RAGIndexingExceptionTest {
         RAGIndexingException exception = new RAGIndexingException("test");
         
         StackTraceElement[] stackTrace = exception.getStackTrace();
-        assertNotNull("Stack trace should not be null", stackTrace);
-        assertTrue("Stack trace should have elements", stackTrace.length > 0);
+        assertNotNull(stackTrace, "Stack trace should not be null");
+        assertTrue(stackTrace.length > 0, "Stack trace should have elements");
     }
 
     // ========== Factory Method Message Format Tests ==========
@@ -370,47 +343,41 @@ public class RAGIndexingExceptionTest {
     public void testUnsupportedMimeTypeMessageFormat() {
         RAGIndexingException exception = RAGIndexingException.unsupportedMimeType("application/octet-stream");
         
-        assertEquals("Message format should match", 
-                "MIME type not supported: application/octet-stream", exception.getMessage());
+        assertEquals("MIME type not supported: application/octet-stream", exception.getMessage(), "Message format should match");
     }
 
     @Test
     public void testTextExtractionFailedMessageFormat() {
         RAGIndexingException exception = RAGIndexingException.textExtractionFailed("doc-123", null);
         
-        assertEquals("Message format should match", 
-                "Text extraction failed for document: doc-123", exception.getMessage());
+        assertEquals("Text extraction failed for document: doc-123", exception.getMessage(), "Message format should match");
     }
 
     @Test
     public void testNoContentMessageFormat() {
         RAGIndexingException exception = RAGIndexingException.noContent("empty document");
         
-        assertEquals("Message format should match", 
-                "No text content: empty document", exception.getMessage());
+        assertEquals("No text content: empty document", exception.getMessage(), "Message format should match");
     }
 
     @Test
     public void testEmbeddingFailedMessageFormat() {
         RAGIndexingException exception = RAGIndexingException.embeddingFailed("doc-456", null);
         
-        assertEquals("Message format should match", 
-                "Failed to generate embeddings for document: doc-456", exception.getMessage());
+        assertEquals("Failed to generate embeddings for document: doc-456", exception.getMessage(), "Message format should match");
     }
 
     @Test
     public void testSolrErrorMessageFormat() {
         RAGIndexingException exception = RAGIndexingException.solrError("doc-789", null);
         
-        assertEquals("Message format should match", 
-                "Solr indexing failed for document: doc-789", exception.getMessage());
+        assertEquals("Solr indexing failed for document: doc-789", exception.getMessage(), "Message format should match");
     }
 
     @Test
     public void testAclErrorMessageFormat() {
         RAGIndexingException exception = RAGIndexingException.aclError("doc-abc", null);
         
-        assertEquals("Message format should match", 
-                "ACL expansion failed for document: doc-abc", exception.getMessage());
+        assertEquals("ACL expansion failed for document: doc-abc", exception.getMessage(), "Message format should match");
     }
 }

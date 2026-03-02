@@ -5,7 +5,7 @@ import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.filter.log.LogDetail;
 import io.restassured.http.ContentType;
 import io.restassured.specification.RequestSpecification;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.BeforeAll;
 
 /**
  * Base class for OData 4.0 E2E/integration tests using REST Assured.
@@ -32,7 +32,7 @@ public abstract class ODataTestBase {
     
     protected static RequestSpecification requestSpec;
     
-    @BeforeClass
+    @BeforeAll
     public static void setupRestAssured() {
         // Load configuration from system properties or environment variables
         baseUrl = getConfigValue("nemaki.test.baseUrl", "NEMAKI_TEST_BASE_URL", "http://localhost:8080/core");

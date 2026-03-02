@@ -1,14 +1,14 @@
 package jp.aegif.nemaki.archive;
 
 import jp.aegif.nemaki.model.Archive;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.GregorianCalendar;
 import java.util.Calendar;
 import java.util.List;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Tests the filtering logic for cold-move candidates.
@@ -62,7 +62,7 @@ public class ColdTransitionCandidateFilterTest {
         archives.add(createArchive("a1", 60, null));  // 60 days old, no cold copy
 
         List<Archive> candidates = filterCandidates(archives, cutoff);
-        assertEquals("Normal old archive should be selected", 1, candidates.size());
+        assertEquals(1, candidates.size(), "Normal old archive should be selected");
     }
 
     @Test
@@ -74,7 +74,7 @@ public class ColdTransitionCandidateFilterTest {
         archives.add(createArchive("a1", 10, null));  // 10 days old, too recent
 
         List<Archive> candidates = filterCandidates(archives, cutoff);
-        assertEquals("Recent archive should not be selected", 0, candidates.size());
+        assertEquals(0, candidates.size(), "Recent archive should not be selected");
     }
 
     @Test
@@ -90,7 +90,7 @@ public class ColdTransitionCandidateFilterTest {
         archives.add(createArchive("a1", 60, coldArchivedAt));
 
         List<Archive> candidates = filterCandidates(archives, cutoff);
-        assertEquals("COPY-mode archive with coldArchivedAt should NOT be re-selected", 0, candidates.size());
+        assertEquals(0, candidates.size(), "COPY-mode archive with coldArchivedAt should NOT be re-selected");
     }
 
     @Test
@@ -108,7 +108,7 @@ public class ColdTransitionCandidateFilterTest {
         archives.add(createArchive("a5", 45, coldArchivedAt)); // Not eligible: already copied
 
         List<Archive> candidates = filterCandidates(archives, cutoff);
-        assertEquals("Only unprocessed old archives should be selected", 2, candidates.size());
+        assertEquals(2, candidates.size(), "Only unprocessed old archives should be selected");
         assertEquals("a1", candidates.get(0).getId());
         assertEquals("a4", candidates.get(1).getId());
     }
@@ -119,7 +119,7 @@ public class ColdTransitionCandidateFilterTest {
         cutoff.add(Calendar.DAY_OF_YEAR, -30);
 
         List<Archive> candidates = filterCandidates(new ArrayList<>(), cutoff);
-        assertTrue("Empty input should produce empty output", candidates.isEmpty());
+        assertTrue(candidates.isEmpty(), "Empty input should produce empty output");
     }
 
     @Test
@@ -136,6 +136,6 @@ public class ColdTransitionCandidateFilterTest {
         archives.add(archive);
 
         List<Archive> candidates = filterCandidates(archives, cutoff);
-        assertEquals("Archive with null archivedAt should not be selected", 0, candidates.size());
+        assertEquals(0, candidates.size(), "Archive with null archivedAt should not be selected");
     }
 }

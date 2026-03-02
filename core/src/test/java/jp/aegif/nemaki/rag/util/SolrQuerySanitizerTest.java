@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rag.util;
 
-import static org.junit.Assert.*;
-import org.junit.Test;
+import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for SolrQuerySanitizer.
@@ -168,19 +168,19 @@ public class SolrQuerySanitizerTest {
 
     // ========== sanitizeId() tests ==========
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test
     public void testSanitizeIdNull() {
-        SolrQuerySanitizer.sanitizeId(null);
+        assertThrows(IllegalArgumentException.class, () -> SolrQuerySanitizer.sanitizeId(null));
     }
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test
     public void testSanitizeIdEmpty() {
-        SolrQuerySanitizer.sanitizeId("");
+        assertThrows(IllegalArgumentException.class, () -> SolrQuerySanitizer.sanitizeId(""));
     }
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test
     public void testSanitizeIdWhitespaceOnly() {
-        SolrQuerySanitizer.sanitizeId("   ");
+        assertThrows(IllegalArgumentException.class, () -> SolrQuerySanitizer.sanitizeId("   "));
     }
 
     @Test

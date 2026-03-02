@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rag.embedding;
 
-import org.junit.Test;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for EmbeddingException.
@@ -19,11 +19,10 @@ public class EmbeddingExceptionTest {
     public void testConstructorWithMessage() {
         EmbeddingException exception = new EmbeddingException("Test error message");
 
-        assertEquals("Message should match", "Test error message", exception.getMessage());
-        assertEquals("Default error type should be UNKNOWN", 
-                EmbeddingException.ErrorType.UNKNOWN, exception.getErrorType());
-        assertFalse("Default retryable should be false", exception.isRetryable());
-        assertNull("Cause should be null", exception.getCause());
+        assertEquals("Test error message", exception.getMessage(), "Message should match");
+        assertEquals(EmbeddingException.ErrorType.UNKNOWN, exception.getErrorType(), "Default error type should be UNKNOWN");
+        assertFalse(exception.isRetryable(), "Default retryable should be false");
+        assertNull(exception.getCause(), "Cause should be null");
     }
 
     @Test
@@ -31,11 +30,10 @@ public class EmbeddingExceptionTest {
         Throwable cause = new RuntimeException("Root cause");
         EmbeddingException exception = new EmbeddingException("Test error", cause);
 
-        assertEquals("Message should match", "Test error", exception.getMessage());
-        assertEquals("Cause should match", cause, exception.getCause());
-        assertEquals("Default error type should be UNKNOWN", 
-                EmbeddingException.ErrorType.UNKNOWN, exception.getErrorType());
-        assertFalse("Default retryable should be false", exception.isRetryable());
+        assertEquals("Test error", exception.getMessage(), "Message should match");
+        assertEquals(cause, exception.getCause(), "Cause should match");
+        assertEquals(EmbeddingException.ErrorType.UNKNOWN, exception.getErrorType(), "Default error type should be UNKNOWN");
+        assertFalse(exception.isRetryable(), "Default retryable should be false");
     }
 
     @Test
@@ -45,11 +43,10 @@ public class EmbeddingExceptionTest {
                 EmbeddingException.ErrorType.SERVICE_UNAVAILABLE, 
                 true);
 
-        assertEquals("Message should match", "Service error", exception.getMessage());
-        assertEquals("Error type should match", 
-                EmbeddingException.ErrorType.SERVICE_UNAVAILABLE, exception.getErrorType());
-        assertTrue("Retryable should be true", exception.isRetryable());
-        assertNull("Cause should be null", exception.getCause());
+        assertEquals("Service error", exception.getMessage(), "Message should match");
+        assertEquals(EmbeddingException.ErrorType.SERVICE_UNAVAILABLE, exception.getErrorType(), "Error type should match");
+        assertTrue(exception.isRetryable(), "Retryable should be true");
+        assertNull(exception.getCause(), "Cause should be null");
     }
 
     @Test
@@ -61,11 +58,10 @@ public class EmbeddingExceptionTest {
                 EmbeddingException.ErrorType.CONNECTION_ERROR, 
                 true);
 
-        assertEquals("Message should match", "Connection failed", exception.getMessage());
-        assertEquals("Cause should match", cause, exception.getCause());
-        assertEquals("Error type should match", 
-                EmbeddingException.ErrorType.CONNECTION_ERROR, exception.getErrorType());
-        assertTrue("Retryable should be true", exception.isRetryable());
+        assertEquals("Connection failed", exception.getMessage(), "Message should match");
+        assertEquals(cause, exception.getCause(), "Cause should match");
+        assertEquals(EmbeddingException.ErrorType.CONNECTION_ERROR, exception.getErrorType(), "Error type should match");
+        assertTrue(exception.isRetryable(), "Retryable should be true");
     }
 
     // ========== Factory Method Tests ==========
@@ -75,22 +71,20 @@ public class EmbeddingExceptionTest {
         Throwable cause = new RuntimeException("Network error");
         EmbeddingException exception = EmbeddingException.connectionError("Connection failed", cause);
 
-        assertEquals("Message should match", "Connection failed", exception.getMessage());
-        assertEquals("Cause should match", cause, exception.getCause());
-        assertEquals("Error type should be CONNECTION_ERROR", 
-                EmbeddingException.ErrorType.CONNECTION_ERROR, exception.getErrorType());
-        assertTrue("Connection errors should be retryable", exception.isRetryable());
+        assertEquals("Connection failed", exception.getMessage(), "Message should match");
+        assertEquals(cause, exception.getCause(), "Cause should match");
+        assertEquals(EmbeddingException.ErrorType.CONNECTION_ERROR, exception.getErrorType(), "Error type should be CONNECTION_ERROR");
+        assertTrue(exception.isRetryable(), "Connection errors should be retryable");
     }
 
     @Test
     public void testServiceUnavailable() {
         EmbeddingException exception = EmbeddingException.serviceUnavailable("Service is down");
 
-        assertEquals("Message should match", "Service is down", exception.getMessage());
-        assertNull("Cause should be null", exception.getCause());
-        assertEquals("Error type should be SERVICE_UNAVAILABLE", 
-                EmbeddingException.ErrorType.SERVICE_UNAVAILABLE, exception.getErrorType());
-        assertTrue("Service unavailable errors should be retryable", exception.isRetryable());
+        assertEquals("Service is down", exception.getMessage(), "Message should match");
+        assertNull(exception.getCause(), "Cause should be null");
+        assertEquals(EmbeddingException.ErrorType.SERVICE_UNAVAILABLE, exception.getErrorType(), "Error type should be SERVICE_UNAVAILABLE");
+        assertTrue(exception.isRetryable(), "Service unavailable errors should be retryable");
     }
 
     @Test
@@ -98,22 +92,20 @@ public class EmbeddingExceptionTest {
         Throwable cause = new RuntimeException("Socket timeout");
         EmbeddingException exception = EmbeddingException.timeout("Request timed out", cause);
 
-        assertEquals("Message should match", "Request timed out", exception.getMessage());
-        assertEquals("Cause should match", cause, exception.getCause());
-        assertEquals("Error type should be TIMEOUT", 
-                EmbeddingException.ErrorType.TIMEOUT, exception.getErrorType());
-        assertTrue("Timeout errors should be retryable", exception.isRetryable());
+        assertEquals("Request timed out", exception.getMessage(), "Message should match");
+        assertEquals(cause, exception.getCause(), "Cause should match");
+        assertEquals(EmbeddingException.ErrorType.TIMEOUT, exception.getErrorType(), "Error type should be TIMEOUT");
+        assertTrue(exception.isRetryable(), "Timeout errors should be retryable");
     }
 
     @Test
     public void testInvalidInput() {
         EmbeddingException exception = EmbeddingException.invalidInput("Text cannot be empty");
 
-        assertEquals("Message should match", "Text cannot be empty", exception.getMessage());
-        assertNull("Cause should be null", exception.getCause());
-        assertEquals("Error type should be INVALID_INPUT", 
-                EmbeddingException.ErrorType.INVALID_INPUT, exception.getErrorType());
-        assertFalse("Invalid input errors should NOT be retryable", exception.isRetryable());
+        assertEquals("Text cannot be empty", exception.getMessage(), "Message should match");
+        assertNull(exception.getCause(), "Cause should be null");
+        assertEquals(EmbeddingException.ErrorType.INVALID_INPUT, exception.getErrorType(), "Error type should be INVALID_INPUT");
+        assertFalse(exception.isRetryable(), "Invalid input errors should NOT be retryable");
     }
 
     // ========== Error Type Tests ==========
@@ -123,7 +115,7 @@ public class EmbeddingExceptionTest {
         // Verify all error types exist
         EmbeddingException.ErrorType[] types = EmbeddingException.ErrorType.values();
         
-        assertEquals("Should have 6 error types", 6, types.length);
+        assertEquals(6, types.length, "Should have 6 error types");
         
         // Verify each type
         assertNotNull(EmbeddingException.ErrorType.CONNECTION_ERROR);
@@ -155,32 +147,31 @@ public class EmbeddingExceptionTest {
     @Test
     public void testRetryableForConnectionError() {
         EmbeddingException exception = EmbeddingException.connectionError("error", null);
-        assertTrue("CONNECTION_ERROR should be retryable", exception.isRetryable());
+        assertTrue(exception.isRetryable(), "CONNECTION_ERROR should be retryable");
     }
 
     @Test
     public void testRetryableForServiceUnavailable() {
         EmbeddingException exception = EmbeddingException.serviceUnavailable("error");
-        assertTrue("SERVICE_UNAVAILABLE should be retryable", exception.isRetryable());
+        assertTrue(exception.isRetryable(), "SERVICE_UNAVAILABLE should be retryable");
     }
 
     @Test
     public void testRetryableForTimeout() {
         EmbeddingException exception = EmbeddingException.timeout("error", null);
-        assertTrue("TIMEOUT should be retryable", exception.isRetryable());
+        assertTrue(exception.isRetryable(), "TIMEOUT should be retryable");
     }
 
     @Test
     public void testNotRetryableForInvalidInput() {
         EmbeddingException exception = EmbeddingException.invalidInput("error");
-        assertFalse("INVALID_INPUT should NOT be retryable", exception.isRetryable());
+        assertFalse(exception.isRetryable(), "INVALID_INPUT should NOT be retryable");
     }
 
     @Test
     public void testNotRetryableForDefaultConstructor() {
         EmbeddingException exception = new EmbeddingException("error");
-        assertFalse("Default constructor should create non-retryable exception", 
-                exception.isRetryable());
+        assertFalse(exception.isRetryable(), "Default constructor should create non-retryable exception");
     }
 
     // ========== Exception Hierarchy Tests ==========
@@ -189,12 +180,10 @@ public class EmbeddingExceptionTest {
     public void testExceptionIsCheckedException() {
         EmbeddingException exception = new EmbeddingException("test");
 
-        assertTrue("EmbeddingException should be an Exception",
-                exception instanceof Exception);
+        assertTrue(exception instanceof Exception, "EmbeddingException should be an Exception");
         // EmbeddingException extends Exception (not RuntimeException)
         // This is enforced by the type system - no runtime check needed
-        assertFalse("EmbeddingException should not be a RuntimeException",
-                RuntimeException.class.isAssignableFrom(EmbeddingException.class));
+        assertFalse(RuntimeException.class.isAssignableFrom(EmbeddingException.class), "EmbeddingException should not be a RuntimeException");
     }
 
     @Test
@@ -202,8 +191,7 @@ public class EmbeddingExceptionTest {
         try {
             throw new EmbeddingException("Test exception");
         } catch (EmbeddingException e) {
-            assertEquals("Caught exception message should match", 
-                    "Test exception", e.getMessage());
+            assertEquals("Test exception", e.getMessage(), "Caught exception message should match");
         }
     }
 
@@ -212,7 +200,7 @@ public class EmbeddingExceptionTest {
         try {
             throw new EmbeddingException("Test exception");
         } catch (Exception e) {
-            assertTrue("Should be caught as Exception", e instanceof EmbeddingException);
+            assertTrue(e instanceof EmbeddingException, "Should be caught as Exception");
         }
     }
 
@@ -222,41 +210,38 @@ public class EmbeddingExceptionTest {
     public void testNullMessage() {
         EmbeddingException exception = new EmbeddingException(null);
         
-        assertNull("Null message should be preserved", exception.getMessage());
-        assertEquals("Error type should still be UNKNOWN", 
-                EmbeddingException.ErrorType.UNKNOWN, exception.getErrorType());
+        assertNull(exception.getMessage(), "Null message should be preserved");
+        assertEquals(EmbeddingException.ErrorType.UNKNOWN, exception.getErrorType(), "Error type should still be UNKNOWN");
     }
 
     @Test
     public void testEmptyMessage() {
         EmbeddingException exception = new EmbeddingException("");
         
-        assertEquals("Empty message should be preserved", "", exception.getMessage());
+        assertEquals("", exception.getMessage(), "Empty message should be preserved");
     }
 
     @Test
     public void testNullCause() {
         EmbeddingException exception = new EmbeddingException("error", null);
         
-        assertNull("Null cause should be preserved", exception.getCause());
+        assertNull(exception.getCause(), "Null cause should be preserved");
     }
 
     @Test
     public void testConnectionErrorWithNullCause() {
         EmbeddingException exception = EmbeddingException.connectionError("error", null);
         
-        assertNull("Null cause should be preserved in factory method", exception.getCause());
-        assertEquals("Error type should still be CONNECTION_ERROR", 
-                EmbeddingException.ErrorType.CONNECTION_ERROR, exception.getErrorType());
+        assertNull(exception.getCause(), "Null cause should be preserved in factory method");
+        assertEquals(EmbeddingException.ErrorType.CONNECTION_ERROR, exception.getErrorType(), "Error type should still be CONNECTION_ERROR");
     }
 
     @Test
     public void testTimeoutWithNullCause() {
         EmbeddingException exception = EmbeddingException.timeout("error", null);
         
-        assertNull("Null cause should be preserved in factory method", exception.getCause());
-        assertEquals("Error type should still be TIMEOUT", 
-                EmbeddingException.ErrorType.TIMEOUT, exception.getErrorType());
+        assertNull(exception.getCause(), "Null cause should be preserved in factory method");
+        assertEquals(EmbeddingException.ErrorType.TIMEOUT, exception.getErrorType(), "Error type should still be TIMEOUT");
     }
 
     // ========== Chained Exception Tests ==========
@@ -267,8 +252,8 @@ public class EmbeddingExceptionTest {
         Throwable middleCause = new RuntimeException("Middle cause", rootCause);
         EmbeddingException exception = new EmbeddingException("Top level error", middleCause);
 
-        assertEquals("Direct cause should be middle cause", middleCause, exception.getCause());
-        assertEquals("Root cause should be accessible", rootCause, exception.getCause().getCause());
+        assertEquals(middleCause, exception.getCause(), "Direct cause should be middle cause");
+        assertEquals(rootCause, exception.getCause().getCause(), "Root cause should be accessible");
     }
 
     @Test
@@ -276,7 +261,7 @@ public class EmbeddingExceptionTest {
         EmbeddingException exception = new EmbeddingException("test");
         
         StackTraceElement[] stackTrace = exception.getStackTrace();
-        assertNotNull("Stack trace should not be null", stackTrace);
-        assertTrue("Stack trace should have elements", stackTrace.length > 0);
+        assertNotNull(stackTrace, "Stack trace should not be null");
+        assertTrue(stackTrace.length > 0, "Stack trace should have elements");
     }
 }

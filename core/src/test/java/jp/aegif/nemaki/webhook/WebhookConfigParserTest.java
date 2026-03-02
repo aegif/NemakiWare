@@ -1,8 +1,8 @@
 package jp.aegif.nemaki.webhook;
 
-import org.junit.Test;
-import org.junit.Before;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import static org.junit.jupiter.api.Assertions.*;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -24,7 +24,7 @@ public class WebhookConfigParserTest {
     
     private WebhookConfigParser parser;
     
-    @Before
+    @BeforeEach
     public void setUp() {
         log.info("Setting up WebhookConfigParserTest");
         parser = new WebhookConfigParser();
@@ -37,22 +37,22 @@ public class WebhookConfigParserTest {
     @Test
     public void testParseEmptyString() {
         List<WebhookConfig> configs = parser.parse("");
-        assertNotNull("Should return empty list for empty string", configs);
-        assertTrue("Should return empty list for empty string", configs.isEmpty());
+        assertNotNull(configs, "Should return empty list for empty string");
+        assertTrue(configs.isEmpty(), "Should return empty list for empty string");
     }
     
     @Test
     public void testParseNullString() {
         List<WebhookConfig> configs = parser.parse(null);
-        assertNotNull("Should return empty list for null", configs);
-        assertTrue("Should return empty list for null", configs.isEmpty());
+        assertNotNull(configs, "Should return empty list for null");
+        assertTrue(configs.isEmpty(), "Should return empty list for null");
     }
     
     @Test
     public void testParseEmptyArray() {
         List<WebhookConfig> configs = parser.parse("[]");
-        assertNotNull("Should return empty list for empty array", configs);
-        assertTrue("Should return empty list for empty array", configs.isEmpty());
+        assertNotNull(configs, "Should return empty list for empty array");
+        assertTrue(configs.isEmpty(), "Should return empty list for empty array");
     }
     
     @Test
@@ -66,8 +66,8 @@ public class WebhookConfigParserTest {
         
         List<WebhookConfig> configs = parser.parse(json);
         
-        assertNotNull("Should return list", configs);
-        assertEquals("Should have 1 config", 1, configs.size());
+        assertNotNull(configs, "Should return list");
+        assertEquals(1, configs.size(), "Should have 1 config");
         
         WebhookConfig config = configs.get(0);
         assertEquals("webhook-1", config.getId());
@@ -87,8 +87,8 @@ public class WebhookConfigParserTest {
         
         List<WebhookConfig> configs = parser.parse(json);
         
-        assertNotNull("Should return list", configs);
-        assertEquals("Should have 2 configs", 2, configs.size());
+        assertNotNull(configs, "Should return list");
+        assertEquals(2, configs.size(), "Should have 2 configs");
         
         assertEquals("webhook-1", configs.get(0).getId());
         assertTrue(configs.get(0).isEnabled());
@@ -115,8 +115,8 @@ public class WebhookConfigParserTest {
         
         List<WebhookConfig> configs = parser.parse(json);
         
-        assertNotNull("Should return list", configs);
-        assertEquals("Should have 1 config", 1, configs.size());
+        assertNotNull(configs, "Should return list");
+        assertEquals(1, configs.size(), "Should have 1 config");
         
         WebhookConfig config = configs.get(0);
         assertEquals("webhook-1", config.getId());
@@ -147,18 +147,18 @@ public class WebhookConfigParserTest {
         
         List<WebhookConfig> configs = parser.parse(json);
         
-        assertNotNull("Should return list", configs);
-        assertEquals("Should have 1 config", 1, configs.size());
+        assertNotNull(configs, "Should return list");
+        assertEquals(1, configs.size(), "Should have 1 config");
         
         WebhookConfig config = configs.get(0);
-        assertNull("authType should be null when not specified", config.getAuthType());
-        assertNull("authCredential should be null when not specified", config.getAuthCredential());
-        assertNull("secret should be null when not specified", config.getSecret());
-        assertNotNull("headers should be empty map, not null", config.getHeaders());
-        assertTrue("headers should be empty when not specified", config.getHeaders().isEmpty());
-        assertFalse("includeChildren should be false when not specified", config.isIncludeChildren());
-        assertNull("maxDepth should be null when not specified", config.getMaxDepth());
-        assertNull("retryCount should be null when not specified", config.getRetryCount());
+        assertNull(config.getAuthType(), "authType should be null when not specified");
+        assertNull(config.getAuthCredential(), "authCredential should be null when not specified");
+        assertNull(config.getSecret(), "secret should be null when not specified");
+        assertNotNull(config.getHeaders(), "headers should be empty map, not null");
+        assertTrue(config.getHeaders().isEmpty(), "headers should be empty when not specified");
+        assertFalse(config.isIncludeChildren(), "includeChildren should be false when not specified");
+        assertNull(config.getMaxDepth(), "maxDepth should be null when not specified");
+        assertNull(config.getRetryCount(), "retryCount should be null when not specified");
     }
     
     @Test
@@ -175,13 +175,13 @@ public class WebhookConfigParserTest {
         
         List<WebhookConfig> configs = parser.parse(json);
         
-        assertNotNull("Should return list", configs);
-        assertEquals("Should have 1 config", 1, configs.size());
+        assertNotNull(configs, "Should return list");
+        assertEquals(1, configs.size(), "Should have 1 config");
         
         WebhookConfig config = configs.get(0);
-        assertNull("authType should be null", config.getAuthType());
-        assertNull("maxDepth should be null", config.getMaxDepth());
-        assertNull("retryCount should be null", config.getRetryCount());
+        assertNull(config.getAuthType(), "authType should be null");
+        assertNull(config.getMaxDepth(), "maxDepth should be null");
+        assertNull(config.getRetryCount(), "retryCount should be null");
     }
     
     // ========================================
@@ -194,8 +194,8 @@ public class WebhookConfigParserTest {
         
         List<WebhookConfig> configs = parser.parse(invalidJson);
         
-        assertNotNull("Should return empty list for invalid JSON", configs);
-        assertTrue("Should return empty list for invalid JSON", configs.isEmpty());
+        assertNotNull(configs, "Should return empty list for invalid JSON");
+        assertTrue(configs.isEmpty(), "Should return empty list for invalid JSON");
     }
     
     @Test
@@ -205,8 +205,8 @@ public class WebhookConfigParserTest {
         
         List<WebhookConfig> configs = parser.parse(json);
         
-        assertNotNull("Should return empty list for non-array JSON", configs);
-        assertTrue("Should return empty list for non-array JSON", configs.isEmpty());
+        assertNotNull(configs, "Should return empty list for non-array JSON");
+        assertTrue(configs.isEmpty(), "Should return empty list for non-array JSON");
     }
     
     @Test
@@ -221,9 +221,9 @@ public class WebhookConfigParserTest {
         List<WebhookConfig> configs = parser.parse(json);
         
         // Should still parse but config will be invalid
-        assertNotNull("Should return list", configs);
-        assertEquals("Should have 1 config", 1, configs.size());
-        assertFalse("Config without ID should be invalid", configs.get(0).isValid());
+        assertNotNull(configs, "Should return list");
+        assertEquals(1, configs.size(), "Should have 1 config");
+        assertFalse(configs.get(0).isValid(), "Config without ID should be invalid");
     }
     
     // ========================================
@@ -235,7 +235,7 @@ public class WebhookConfigParserTest {
         List<WebhookConfig> configs = List.of();
         String json = parser.serialize(configs);
         
-        assertNotNull("Should return JSON string", json);
+        assertNotNull(json, "Should return JSON string");
         assertEquals("[]", json);
     }
     
@@ -250,10 +250,10 @@ public class WebhookConfigParserTest {
         
         String json = parser.serialize(List.of(config));
         
-        assertNotNull("Should return JSON string", json);
-        assertTrue("Should contain id", json.contains("webhook-1"));
-        assertTrue("Should contain url", json.contains("example.com") || json.contains("example.com\\/webhook"));
-        assertTrue("Should contain events", json.contains("CREATED"));
+        assertNotNull(json, "Should return JSON string");
+        assertTrue(json.contains("webhook-1"), "Should contain id");
+        assertTrue(json.contains("example.com") || json.contains("example.com\\/webhook"), "Should contain url");
+        assertTrue(json.contains("CREATED"), "Should contain events");
     }
     
     @Test
@@ -304,8 +304,8 @@ public class WebhookConfigParserTest {
         
         List<WebhookConfig> configs = parser.parse(json);
         
-        assertNotNull("Should handle whitespace", configs);
-        assertEquals("Should have 1 config", 1, configs.size());
+        assertNotNull(configs, "Should handle whitespace");
+        assertEquals(1, configs.size(), "Should have 1 config");
         assertEquals("webhook-1", configs.get(0).getId());
     }
     
@@ -321,8 +321,8 @@ public class WebhookConfigParserTest {
         
         List<WebhookConfig> configs = parser.parse(json);
         
-        assertNotNull("Should handle unicode", configs);
-        assertEquals("Should have 1 config", 1, configs.size());
+        assertNotNull(configs, "Should handle unicode");
+        assertEquals(1, configs.size(), "Should have 1 config");
     }
     
     @Test
@@ -336,9 +336,9 @@ public class WebhookConfigParserTest {
         
         List<WebhookConfig> configs = parser.parse(json);
         
-        assertNotNull("Should return list", configs);
-        assertEquals("Should have 1 config", 1, configs.size());
-        assertTrue("Events should be empty", configs.get(0).getEvents().isEmpty());
-        assertFalse("Config with empty events should be invalid", configs.get(0).isValid());
+        assertNotNull(configs, "Should return list");
+        assertEquals(1, configs.size(), "Should have 1 config");
+        assertTrue(configs.get(0).getEvents().isEmpty(), "Events should be empty");
+        assertFalse(configs.get(0).isValid(), "Config with empty events should be invalid");
     }
 }

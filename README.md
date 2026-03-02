@@ -5,7 +5,7 @@ NemakiWare is an open source Enterprise Content Management system, compliant wit
 ## Features
 - **All-in-one package** including CMIS server, full-text search engine, and modern React client
 - **Docker Compose deployment** with CouchDB, Solr, and Tomcat
-- **Jakarta EE 10 compatible** with Java 17
+- **Jakarta EE 10 compatible** with Java 21
 - **Modern React SPA UI** with TypeScript, Vite 7, and Ant Design 5
 - **SAML and OIDC authentication** support (Keycloak, Google, Microsoft)
 - **Cloud integration** with Google Workspace and Microsoft 365
@@ -49,6 +49,9 @@ Relax and enjoy happy enterprise time as if you are lying on the couch in your r
 ### 1. Build the Application
 
 ```bash
+# Install OpenCMIS JARs to local Maven repository (required on first build)
+./scripts/install-opencmis-local.sh
+
 # Build UI
 cd core/src/main/webapp/ui
 npm install
@@ -62,16 +65,24 @@ mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 cp core/target/core.war docker/core/core.war
 ```
 
-### OpenCMIS JAR Source (GitHub Packages)
+### OpenCMIS JAR Resolution
 
-NemakiWare uses OpenCMIS JARs from `lib/built-jars` by default.
-To refresh those JARs from `aegif/chemistry-opencmis-nemakiware` on GitHub Packages:
+NemakiWare uses custom OpenCMIS 1.1.0-nemakiware JARs (Jakarta EE 10 compatible).
+Pre-built JARs are committed to `lib/built-jars/` and must be installed to the local
+Maven repository before the first build:
+
+```bash
+# Required on first build (installs lib/built-jars/*.jar to ~/.m2/repository)
+./scripts/install-opencmis-local.sh
+```
+
+To refresh JARs from `aegif/chemistry-opencmis-nemakiware` on GitHub Packages:
 
 ```bash
 ./scripts/fetch-opencmis-from-github-packages.sh
 ```
 
-Prerequisite (`~/.m2/settings.xml`):
+Prerequisite for GitHub Packages (`~/.m2/settings.xml`):
 
 ```xml
 <settings>
@@ -83,13 +94,6 @@ Prerequisite (`~/.m2/settings.xml`):
     </server>
   </servers>
 </settings>
-```
-
-If you want to test against another Maven repository URL:
-
-```bash
-OPENCMIS_GITHUB_PACKAGES_URL=file:/tmp/opencmis-gpr-dryrun \
-  ./scripts/fetch-opencmis-from-github-packages.sh
 ```
 
 ### 2. Start Services
@@ -218,7 +222,7 @@ Keycloak will be available at http://localhost:8088
 For debugging and rapid development without Docker:
 
 ### Prerequisites
-- Java 17
+- Java 21
 - Maven 3.6+
 - Docker (for CouchDB only)
 
@@ -282,7 +286,7 @@ NemakiWare/
 | Database | CouchDB 3.x |
 | Search | Apache Solr 9.x |
 | UI | React 18, TypeScript, Vite 7, Ant Design 5 |
-| Java | 17 (required) |
+| Java | 21 (required) |
 
 ---
 

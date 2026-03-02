@@ -1,13 +1,13 @@
 package jp.aegif.nemaki.businesslogic.impl;
 
-import org.junit.Test;
-import org.junit.Before;
-import org.junit.After;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.InjectMocks;
-import org.mockito.junit.MockitoJUnitRunner;
-import static org.junit.Assert.*;
+import org.mockito.junit.jupiter.MockitoExtension;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
@@ -27,7 +27,7 @@ import org.apache.solr.client.solrj.util.ClientUtils;
  * Tests the reindexDocument, deleteFromIndex, clearIndex, and optimizeIndex methods
  * with proper Mockito mocking of dependencies.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 public class SolrIndexMaintenanceServiceImplOperationsTest {
     
     private static final String TEST_REPO_ID = "test-repo";
@@ -50,7 +50,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
     @InjectMocks
     private SolrIndexMaintenanceServiceImpl service;
     
-    @After
+    @AfterEach
     public void tearDown() {
         if (service != null) {
             service.shutdown();
@@ -66,7 +66,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
 
         boolean result = service.reindexDocument(TEST_REPO_ID, objectId);
 
-        assertTrue("reindexDocument should return true on success", result);
+        assertTrue(result, "reindexDocument should return true on success");
         verify(solrUtil).indexDocument(TEST_REPO_ID, document, true);
     }
 
@@ -77,7 +77,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         
         boolean result = service.reindexDocument(TEST_REPO_ID, objectId);
         
-        assertFalse("reindexDocument should return false when document not found", result);
+        assertFalse(result, "reindexDocument should return false when document not found");
         verify(solrUtil, never()).indexDocument(anyString(), any(Content.class), anyBoolean());
     }
     
@@ -91,7 +91,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         
         boolean result = service.reindexDocument(TEST_REPO_ID, objectId);
         
-        assertFalse("reindexDocument should return false on exception", result);
+        assertFalse(result, "reindexDocument should return false on exception");
     }
     
     @Test
@@ -100,7 +100,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
 
         boolean result = service.deleteFromIndex(TEST_REPO_ID, objectId);
 
-        assertTrue("deleteFromIndex should return true on success", result);
+        assertTrue(result, "deleteFromIndex should return true on success");
         verify(solrUtil).deleteDocument(TEST_REPO_ID, objectId, true);
     }
     
@@ -111,7 +111,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         
         boolean result = service.deleteFromIndex(TEST_REPO_ID, objectId);
         
-        assertFalse("deleteFromIndex should return false on exception", result);
+        assertFalse(result, "deleteFromIndex should return false on exception");
     }
     
     @Test
@@ -122,7 +122,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         
         boolean result = service.clearIndex(TEST_REPO_ID);
         
-        assertTrue("clearIndex should return true on success", result);
+        assertTrue(result, "clearIndex should return true on success");
         verify(solrClient).deleteByQuery("repository_id:" + ClientUtils.escapeQueryChars(TEST_REPO_ID));
         verify(solrClient).commit();
         // BTL-004: SolrClient is now shared and lifecycle-managed — no per-call close()
@@ -134,7 +134,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         
         boolean result = service.clearIndex(TEST_REPO_ID);
         
-        assertFalse("clearIndex should return false when Solr client is null", result);
+        assertFalse(result, "clearIndex should return false when Solr client is null");
     }
     
     @Test
@@ -144,7 +144,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         
         boolean result = service.clearIndex(TEST_REPO_ID);
         
-        assertFalse("clearIndex should return false on exception", result);
+        assertFalse(result, "clearIndex should return false on exception");
     }
     
     @Test
@@ -155,7 +155,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         
         boolean result = service.clearIndex(TEST_REPO_ID);
         
-        assertFalse("clearIndex should return false when status is non-zero", result);
+        assertFalse(result, "clearIndex should return false when status is non-zero");
     }
     
     @Test
@@ -166,7 +166,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         
         boolean result = service.optimizeIndex(TEST_REPO_ID);
         
-        assertTrue("optimizeIndex should return true on success", result);
+        assertTrue(result, "optimizeIndex should return true on success");
         verify(solrClient).optimize();
         // BTL-004: SolrClient is now shared and lifecycle-managed — no per-call close()
     }
@@ -177,7 +177,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         
         boolean result = service.optimizeIndex(TEST_REPO_ID);
         
-        assertFalse("optimizeIndex should return false when Solr client is null", result);
+        assertFalse(result, "optimizeIndex should return false when Solr client is null");
     }
     
     @Test
@@ -187,7 +187,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         
         boolean result = service.optimizeIndex(TEST_REPO_ID);
         
-        assertFalse("optimizeIndex should return false on exception", result);
+        assertFalse(result, "optimizeIndex should return false on exception");
     }
     
     @Test
@@ -198,7 +198,7 @@ public class SolrIndexMaintenanceServiceImplOperationsTest {
         
         boolean result = service.optimizeIndex(TEST_REPO_ID);
         
-        assertFalse("optimizeIndex should return false when status is non-zero", result);
+        assertFalse(result, "optimizeIndex should return false when status is non-zero");
     }
     
     @Test

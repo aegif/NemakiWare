@@ -24,8 +24,10 @@ import org.apache.chemistry.opencmis.commons.enums.UnfileObject;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.joda.time.DateTime;
 import org.joda.time.Duration;
-import org.junit.Test;
-import org.junit.Ignore;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.Disabled;
+import java.util.concurrent.TimeUnit;
 
 // ALL TESTS ENABLED (2025-12-16): All multi-thread tests now use versionable documents (nemaki:document)
 // for proper checkOut/checkIn support. Tests: readTest_All, checkOutTest_single, checkOutTest, checkInTest, copyTest, moveTest
@@ -99,7 +101,8 @@ public class MultiThreadTest extends TestBase{
 	}
 	
 	// @Ignore removed - now uses versionable nemaki:document type (2025-12-16)
-	@Test(timeout = 60000) // 60秒タイムアウト設定（バージョニング操作用に延長）
+	@Test
+	@Timeout(value = 60000, unit = TimeUnit.MILLISECONDS) // 60秒タイムアウト設定（バージョニング操作用に延長）
 	public void checkOutTest_single(){
 		String folderId = null;
 		try {

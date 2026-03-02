@@ -1,12 +1,12 @@
 package jp.aegif.nemaki.rest;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Tests ConfigResource's sensitive key detection and category determination.
@@ -32,38 +32,37 @@ public class ConfigResourceSensitiveKeyTest {
 
     @Test
     public void testSensitive_passwordKeys() throws Exception {
-        assertTrue("db.password should be sensitive", isSensitiveKey("db.password"));
-        assertTrue("couchdb.password should be sensitive", isSensitiveKey("couchdb.password"));
-        assertTrue("admin.password should be sensitive", isSensitiveKey("admin.password"));
+        assertTrue(isSensitiveKey("db.password"), "db.password should be sensitive");
+        assertTrue(isSensitiveKey("couchdb.password"), "couchdb.password should be sensitive");
+        assertTrue(isSensitiveKey("admin.password"), "admin.password should be sensitive");
     }
 
     @Test
     public void testSensitive_secretKeys() throws Exception {
-        assertTrue("oidc.client.secret should be sensitive", isSensitiveKey("oidc.client.secret"));
-        assertTrue("app.secret should be sensitive", isSensitiveKey("app.secret"));
+        assertTrue(isSensitiveKey("oidc.client.secret"), "oidc.client.secret should be sensitive");
+        assertTrue(isSensitiveKey("app.secret"), "app.secret should be sensitive");
     }
 
     @Test
     public void testSensitive_accessKeyVariants() throws Exception {
-        assertTrue("s3.access.key should be sensitive", isSensitiveKey("s3.access.key"));
-        assertTrue("aws.accessKey should be sensitive", isSensitiveKey("aws.accessKey"));
-        assertTrue("longterm.s3.secretKey should be sensitive", isSensitiveKey("longterm.s3.secretKey"));
+        assertTrue(isSensitiveKey("s3.access.key"), "s3.access.key should be sensitive");
+        assertTrue(isSensitiveKey("aws.accessKey"), "aws.accessKey should be sensitive");
+        assertTrue(isSensitiveKey("longterm.s3.secretKey"), "longterm.s3.secretKey should be sensitive");
     }
 
     @Test
     public void testSensitive_clientSecretAndServiceAccountKey() throws Exception {
-        assertTrue("oidc.clientSecret should be sensitive", isSensitiveKey("oidc.clientSecret"));
-        assertTrue("google.serviceAccountKey should be sensitive", isSensitiveKey("google.serviceAccountKey"));
+        assertTrue(isSensitiveKey("oidc.clientSecret"), "oidc.clientSecret should be sensitive");
+        assertTrue(isSensitiveKey("google.serviceAccountKey"), "google.serviceAccountKey should be sensitive");
     }
 
     @Test
     public void testNonSensitive_normalKeys() throws Exception {
-        assertFalse("db.host should not be sensitive", isSensitiveKey("db.host"));
-        assertFalse("solr.url should not be sensitive", isSensitiveKey("solr.url"));
-        assertFalse("cmis.server.port should not be sensitive", isSensitiveKey("cmis.server.port"));
-        assertFalse("rag.embedding.provider should not be sensitive", isSensitiveKey("rag.embedding.provider"));
-        assertFalse("retention.cold.move.after.days should not be sensitive",
-                isSensitiveKey("retention.cold.move.after.days"));
+        assertFalse(isSensitiveKey("db.host"), "db.host should not be sensitive");
+        assertFalse(isSensitiveKey("solr.url"), "solr.url should not be sensitive");
+        assertFalse(isSensitiveKey("cmis.server.port"), "cmis.server.port should not be sensitive");
+        assertFalse(isSensitiveKey("rag.embedding.provider"), "rag.embedding.provider should not be sensitive");
+        assertFalse(isSensitiveKey("retention.cold.move.after.days"), "retention.cold.move.after.days should not be sensitive");
     }
 
     // ===== Category determination =====
@@ -119,15 +118,13 @@ public class ConfigResourceSensitiveKeyTest {
     @Test
     public void testSensitive_caseInsensitive() throws Exception {
         // The method lowercases and strips dots/underscores before matching
-        assertTrue("DB.PASSWORD should be sensitive (case insensitive)",
-                isSensitiveKey("DB.PASSWORD"));
-        assertTrue("mixed.Password.key should be sensitive",
-                isSensitiveKey("mixed.Password.key"));
+        assertTrue(isSensitiveKey("DB.PASSWORD"), "DB.PASSWORD should be sensitive (case insensitive)");
+        assertTrue(isSensitiveKey("mixed.Password.key"), "mixed.Password.key should be sensitive");
     }
 
     @Test
     public void testSensitive_dotAndUnderscoreStripped() throws Exception {
         // "access_key" has underscore → stripped → "accesskey" → matches
-        assertTrue("s3.access_key should be sensitive", isSensitiveKey("s3.access_key"));
+        assertTrue(isSensitiveKey("s3.access_key"), "s3.access_key should be sensitive");
     }
 }

@@ -1,12 +1,12 @@
 package jp.aegif.nemaki.rag.config;
 
 import org.apache.solr.client.solrj.SolrClient;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for SolrClientProvider.
@@ -20,7 +20,7 @@ public class SolrClientProviderTest {
 
     private SolrClientProvider provider;
 
-    @Before
+    @BeforeEach
     public void setUp() throws Exception {
         provider = new SolrClientProvider();
 
@@ -48,15 +48,14 @@ public class SolrClientProviderTest {
     public void testGetClientReturnsSameInstance() {
         // First call creates the client
         SolrClient client1 = provider.getClient();
-        assertNotNull("First getClient() should return non-null", client1);
+        assertNotNull(client1, "First getClient() should return non-null");
 
         // Second call should return the same instance
         SolrClient client2 = provider.getClient();
-        assertNotNull("Second getClient() should return non-null", client2);
+        assertNotNull(client2, "Second getClient() should return non-null");
 
         // Should be the same instance (singleton)
-        assertSame("getClient() should return the same instance (singleton)",
-                client1, client2);
+        assertSame(client1, client2, "getClient() should return the same instance (singleton)");
     }
 
     @Test
@@ -66,8 +65,8 @@ public class SolrClientProviderTest {
         SolrClient client2 = provider.getClient();
         SolrClient client3 = provider.getClient();
 
-        assertSame("All calls should return same instance", client1, client2);
-        assertSame("All calls should return same instance", client2, client3);
+        assertSame(client1, client2, "All calls should return same instance");
+        assertSame(client2, client3, "All calls should return same instance");
     }
 
     // ========== Lazy Initialization Tests ==========
@@ -76,12 +75,12 @@ public class SolrClientProviderTest {
     public void testLazyInitialization() throws Exception {
         // Before calling getClient(), solrClient field should be null
         Object clientField = getField(provider, "solrClient");
-        assertNull("SolrClient should be null before first getClient() call", clientField);
+        assertNull(clientField, "SolrClient should be null before first getClient() call");
 
         // After calling getClient(), solrClient field should be non-null
         provider.getClient();
         clientField = getField(provider, "solrClient");
-        assertNotNull("SolrClient should be non-null after getClient() call", clientField);
+        assertNotNull(clientField, "SolrClient should be non-null after getClient() call");
     }
 
     // ========== URL Construction Tests ==========
@@ -90,9 +89,8 @@ public class SolrClientProviderTest {
     public void testGetSolrUrl() {
         String url = provider.getSolrUrl();
 
-        assertNotNull("getSolrUrl() should return non-null", url);
-        assertEquals("URL should be correctly formatted",
-                "http://localhost:8983/solr", url);
+        assertNotNull(url, "getSolrUrl() should return non-null");
+        assertEquals("http://localhost:8983/solr", url, "URL should be correctly formatted");
     }
 
     @Test
@@ -100,7 +98,7 @@ public class SolrClientProviderTest {
         setField(provider, "solrProtocol", "https");
 
         String url = provider.getSolrUrl();
-        assertTrue("URL should use https", url.startsWith("https://"));
+        assertTrue(url.startsWith("https://"), "URL should use https");
     }
 
     @Test
@@ -108,7 +106,7 @@ public class SolrClientProviderTest {
         setField(provider, "solrPort", 9999);
 
         String url = provider.getSolrUrl();
-        assertTrue("URL should contain custom port", url.contains(":9999"));
+        assertTrue(url.contains(":9999"), "URL should contain custom port");
     }
 
     @Test
@@ -116,7 +114,7 @@ public class SolrClientProviderTest {
         setField(provider, "solrHost", "solr.example.com");
 
         String url = provider.getSolrUrl();
-        assertTrue("URL should contain custom host", url.contains("solr.example.com"));
+        assertTrue(url.contains("solr.example.com"), "URL should contain custom host");
     }
 
     // ========== Thread Safety Tests (Basic) ==========
@@ -147,11 +145,10 @@ public class SolrClientProviderTest {
 
         // Verify all threads got the same instance
         SolrClient firstClient = clients[0];
-        assertNotNull("First client should not be null", firstClient);
+        assertNotNull(firstClient, "First client should not be null");
 
         for (int i = 1; i < threadCount; i++) {
-            assertSame("All threads should receive the same SolrClient instance",
-                    firstClient, clients[i]);
+            assertSame(firstClient, clients[i], "All threads should receive the same SolrClient instance");
         }
     }
 

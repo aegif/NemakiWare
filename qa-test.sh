@@ -9,7 +9,7 @@ set -e
 # Change to the project root directory
 cd "$(dirname "$0")"
 
-export JAVA_HOME=${JAVA_HOME:-/path/to/java-17}
+export JAVA_HOME=${JAVA_HOME:-/path/to/java-21}
 export PATH=$JAVA_HOME/bin:$PATH
 
 TEST_MODE=${1:-"qa"}
@@ -97,7 +97,7 @@ run_http_test() {
 }
 
 echo "=== 1. ENVIRONMENT VERIFICATION ==="
-run_test "Java 17 Environment" "java -version 2>&1 | grep 'version \"17'" ""
+run_test "Java 21 Environment" "java -version 2>&1 | grep 'version \"21'" ""
 # Check for at least 3 core containers (core, couchdb, solr). Keycloak may also be running.
 run_test "Core Container Running" "docker ps --filter 'name=core' --filter 'status=running' --format '{{.Names}}' | grep -c core" "1"
 run_test "CouchDB Container Running" "docker ps --filter 'name=couchdb' --filter 'status=running' --format '{{.Names}}' | grep -c couchdb" "1"

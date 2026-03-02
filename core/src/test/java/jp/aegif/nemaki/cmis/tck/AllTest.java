@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.cmis.tck;
 
-import org.junit.runner.RunWith;
-import org.junit.runners.Suite;
+import org.junit.platform.suite.api.SelectClasses;
+import org.junit.platform.suite.api.Suite;
 
 import jp.aegif.nemaki.cmis.tck.tests.BasicsTestGroup;
 import jp.aegif.nemaki.cmis.tck.tests.ControlTestGroup;
@@ -13,8 +13,8 @@ import jp.aegif.nemaki.cmis.tck.tests.VersioningTestGroup;
 
 // NOTE: FilingTestGroup is excluded because NemakiWare does not support
 // Multifiling/Unfiling (optional CMIS 1.1 capabilities) - PRODUCT SPECIFICATION
-@RunWith( Suite.class )
-@Suite.SuiteClasses( {
+@Suite
+@SelectClasses( {
     BasicsTestGroup.class,
     ControlTestGroup.class,
     CrudTestGroup1.class,

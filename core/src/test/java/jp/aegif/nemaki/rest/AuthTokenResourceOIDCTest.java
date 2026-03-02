@@ -1,12 +1,12 @@
 package jp.aegif.nemaki.rest;
 
 import org.json.simple.JSONObject;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for OIDC-related private methods in AuthTokenResource.
@@ -21,7 +21,7 @@ public class AuthTokenResourceOIDCTest {
 	private Method isAllowedMethod;
 	private Method extractUsernameMethod;
 
-	@Before
+	@BeforeEach
 	public void setup() throws Exception {
 		resource = new AuthTokenResource();
 
@@ -275,7 +275,7 @@ public class AuthTokenResourceOIDCTest {
 	@Test
 	public void testRejected_MicrosoftGraph_OidcUserInfoSuffix() throws Exception {
 		// /oidc/userinfo is exact-match (no trailing /), so /oidc/userinfos must be rejected
-		assertFalse("Exact path match should reject /oidc/userinfos", isAllowed("https://graph.microsoft.com/oidc/userinfos"));
+		assertFalse(isAllowed("https://graph.microsoft.com/oidc/userinfos"), "Exact path match should reject /oidc/userinfos");
 	}
 
 	@Test
@@ -291,7 +291,7 @@ public class AuthTokenResourceOIDCTest {
 	@Test
 	public void testRejected_MicrosoftGraph_V10MeSubPath() throws Exception {
 		// /v1.0/me is exact-match, so /v1.0/me/photo must be rejected
-		assertFalse("Exact path should reject sub-paths", isAllowed("https://graph.microsoft.com/v1.0/me/photo"));
+		assertFalse(isAllowed("https://graph.microsoft.com/v1.0/me/photo"), "Exact path should reject sub-paths");
 	}
 
 	@Test

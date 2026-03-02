@@ -1,13 +1,15 @@
 package jp.aegif.nemaki.businesslogic.impl;
 
-import org.junit.Test;
-import org.junit.Before;
-import org.junit.After;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.InjectMocks;
-import org.mockito.junit.MockitoJUnitRunner;
-import static org.junit.Assert.*;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
@@ -33,7 +35,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Tests the startFullReindex, startFolderReindex, and cancelReindex methods
  * with proper Mockito mocking of dependencies.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class SolrIndexMaintenanceServiceImplReindexTest {
     
     private static final String TEST_REPO_ID = "test-repo";
@@ -63,13 +66,13 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
     @InjectMocks
     private SolrIndexMaintenanceServiceImpl service;
     
-    @Before
+    @BeforeEach
     public void setUp() {
         when(repositoryInfoMap.get(TEST_REPO_ID)).thenReturn(repositoryInfo);
         when(repositoryInfo.getRootFolderId()).thenReturn(ROOT_FOLDER_ID);
     }
     
-    @After
+    @AfterEach
     public void tearDown() {
         if (service != null) {
             service.shutdown();
@@ -84,7 +87,7 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         
         boolean started = service.startFullReindex(TEST_REPO_ID);
         
-        assertTrue("startFullReindex should return true", started);
+        assertTrue(started, "startFullReindex should return true");
     }
     
     @Test
@@ -108,8 +111,8 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         boolean first = service.startFullReindex(TEST_REPO_ID);
         boolean second = service.startFullReindex(TEST_REPO_ID);
         
-        assertTrue("First start should succeed", first);
-        assertFalse("Second start should fail while running", second);
+        assertTrue(first, "First start should succeed");
+        assertFalse(second, "Second start should fail while running");
     }
     
     @Test
@@ -162,7 +165,7 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         
         boolean started = service.startFolderReindex(TEST_REPO_ID, folderId, true);
         
-        assertTrue("startFolderReindex should return true", started);
+        assertTrue(started, "startFolderReindex should return true");
     }
     
     @Test
@@ -218,7 +221,7 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
     public void testCancelReindexWhenIdle() {
         boolean cancelled = service.cancelReindex(TEST_REPO_ID);
         
-        assertFalse("Cancel should return false when no reindex is running", cancelled);
+        assertFalse(cancelled, "Cancel should return false when no reindex is running");
     }
     
     @Test
@@ -231,14 +234,14 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         
         boolean cancelled = service.cancelReindex(TEST_REPO_ID);
         
-        assertTrue("Cancel should return true when reindex is running", cancelled);
+        assertTrue(cancelled, "Cancel should return true when reindex is running");
     }
     
     @Test
     public void testCancelReindexForNonExistentRepo() {
         boolean cancelled = service.cancelReindex("non-existent-repo");
         
-        assertFalse("Cancel should return false for non-existent repo", cancelled);
+        assertFalse(cancelled, "Cancel should return false for non-existent repo");
     }
     
     @Test
@@ -260,8 +263,7 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         awaitReindexCompletion(TEST_REPO_ID, 10);
         
         ReindexStatus status = service.getReindexStatus(TEST_REPO_ID);
-        assertTrue("Status should be cancelled or completed", 
-            "cancelled".equals(status.getStatus()) || "completed".equals(status.getStatus()));
+        assertTrue("cancelled".equals(status.getStatus()) || "completed".equals(status.getStatus()), "Status should be cancelled or completed");
     }
     
     @Test
@@ -332,8 +334,8 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         boolean started1 = service.startFullReindex(repo1);
         boolean started2 = service.startFullReindex(repo2);
         
-        assertTrue("First repo should start", started1);
-        assertTrue("Second repo should also start", started2);
+        assertTrue(started1, "First repo should start");
+        assertTrue(started2, "Second repo should also start");
     }
     
     private void awaitReindexCompletion(String repositoryId, int timeoutSeconds) throws InterruptedException {

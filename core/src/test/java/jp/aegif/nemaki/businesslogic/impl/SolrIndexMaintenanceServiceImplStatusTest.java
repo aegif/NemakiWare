@@ -1,13 +1,13 @@
 package jp.aegif.nemaki.businesslogic.impl;
 
-import org.junit.Test;
-import org.junit.Before;
-import org.junit.After;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.InjectMocks;
-import org.mockito.junit.MockitoJUnitRunner;
-import static org.junit.Assert.*;
+import org.mockito.junit.jupiter.MockitoExtension;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
@@ -29,7 +29,7 @@ import java.util.Map;
  * Tests the ReindexStatus, IndexHealthStatus, and SolrQueryResult data classes
  * and their field accessors.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 public class SolrIndexMaintenanceServiceImplStatusTest {
     
     @Mock
@@ -44,7 +44,7 @@ public class SolrIndexMaintenanceServiceImplStatusTest {
     @InjectMocks
     private SolrIndexMaintenanceServiceImpl service;
     
-    @After
+    @AfterEach
     public void tearDown() {
         if (service != null) {
             service.shutdown();
@@ -55,22 +55,22 @@ public class SolrIndexMaintenanceServiceImplStatusTest {
     public void testReindexStatusInitialization() {
         ReindexStatus status = service.getReindexStatus("test-repo");
         
-        assertNotNull("Status should not be null", status);
-        assertEquals("Repository ID should match", "test-repo", status.getRepositoryId());
-        assertEquals("Initial status should be idle", "idle", status.getStatus());
-        assertEquals("Initial total documents should be 0", 0, status.getTotalDocuments());
-        assertEquals("Initial indexed count should be 0", 0, status.getIndexedCount());
-        assertEquals("Initial error count should be 0", 0, status.getErrorCount());
+        assertNotNull(status, "Status should not be null");
+        assertEquals("test-repo", status.getRepositoryId(), "Repository ID should match");
+        assertEquals("idle", status.getStatus(), "Initial status should be idle");
+        assertEquals(0, status.getTotalDocuments(), "Initial total documents should be 0");
+        assertEquals(0, status.getIndexedCount(), "Initial indexed count should be 0");
+        assertEquals(0, status.getErrorCount(), "Initial error count should be 0");
     }
     
     @Test
     public void testReindexStatusFields() {
         ReindexStatus status = service.getReindexStatus("test-repo");
         
-        assertNotNull("Repository ID should not be null", status.getRepositoryId());
-        assertNotNull("Status should not be null", status.getStatus());
-        assertTrue("Start time should be >= 0", status.getStartTime() >= 0);
-        assertTrue("End time should be >= 0", status.getEndTime() >= 0);
+        assertNotNull(status.getRepositoryId(), "Repository ID should not be null");
+        assertNotNull(status.getStatus(), "Status should not be null");
+        assertTrue(status.getStartTime() >= 0, "Start time should be >= 0");
+        assertTrue(status.getEndTime() >= 0, "End time should be >= 0");
         
         String currentFolder = status.getCurrentFolder();
         String errorMessage = status.getErrorMessage();
@@ -138,7 +138,7 @@ public class SolrIndexMaintenanceServiceImplStatusTest {
         healthStatus.setHealthy(false);
         healthStatus.setMessage("20 documents missing in Solr");
         
-        assertFalse("Health status should be unhealthy", healthStatus.isHealthy());
+        assertFalse(healthStatus.isHealthy(), "Health status should be unhealthy");
         assertEquals(20, healthStatus.getMissingInSolr());
         assertEquals(0, healthStatus.getOrphanedInSolr());
     }
@@ -153,7 +153,7 @@ public class SolrIndexMaintenanceServiceImplStatusTest {
         healthStatus.setOrphanedInSolr(20);
         healthStatus.setHealthy(false);
         
-        assertFalse("Health status should be unhealthy", healthStatus.isHealthy());
+        assertFalse(healthStatus.isHealthy(), "Health status should be unhealthy");
         assertEquals(0, healthStatus.getMissingInSolr());
         assertEquals(20, healthStatus.getOrphanedInSolr());
     }
@@ -206,7 +206,7 @@ public class SolrIndexMaintenanceServiceImplStatusTest {
         result.setNumFound(0);
         result.setDocs(new ArrayList<>());
         
-        assertNotNull("Error message should be set", result.getErrorMessage());
+        assertNotNull(result.getErrorMessage(), "Error message should be set");
         assertEquals("Connection refused", result.getErrorMessage());
         assertEquals(0, result.getNumFound());
     }
@@ -272,7 +272,7 @@ public class SolrIndexMaintenanceServiceImplStatusTest {
     public void testEmptyRepositoryId() {
         ReindexStatus status = service.getReindexStatus("");
         
-        assertNotNull("Status should not be null for empty repo ID", status);
+        assertNotNull(status, "Status should not be null for empty repo ID");
         assertEquals("", status.getRepositoryId());
         assertEquals("idle", status.getStatus());
     }
@@ -289,7 +289,7 @@ public class SolrIndexMaintenanceServiceImplStatusTest {
         
         for (String repoId : specialRepoIds) {
             ReindexStatus status = service.getReindexStatus(repoId);
-            assertNotNull("Status should not be null for repo: " + repoId, status);
+            assertNotNull(status, "Status should not be null for repo: " + repoId);
             assertEquals(repoId, status.getRepositoryId());
         }
     }
@@ -330,14 +330,14 @@ public class SolrIndexMaintenanceServiceImplStatusTest {
     public void testReindexStatusSilentDropCountInitialization() {
         ReindexStatus status = service.getReindexStatus("test-repo");
         
-        assertEquals("Initial silent drop count should be 0", 0, status.getSilentDropCount());
+        assertEquals(0, status.getSilentDropCount(), "Initial silent drop count should be 0");
     }
     
     @Test
     public void testReindexStatusReindexedCountInitialization() {
         ReindexStatus status = service.getReindexStatus("test-repo");
         
-        assertEquals("Initial reindexed count should be 0", 0, status.getReindexedCount());
+        assertEquals(0, status.getReindexedCount(), "Initial reindexed count should be 0");
     }
     
     @Test

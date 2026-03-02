@@ -1,14 +1,14 @@
 package jp.aegif.nemaki.mcp;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mindrot.jbcrypt.BCrypt;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -48,7 +48,7 @@ public class McpAuthenticationHandlerTest {
     private static final String VALID_TOKEN_3 = "55555555-5555-5555-5555-555555555555-66666666-6666-6666-6666-666666666666";
     private static final String VALID_TOKEN_4 = "77777777-7777-7777-7777-777777777777-88888888-8888-8888-8888-888888888888";
 
-    @Before
+    @BeforeEach
     public void setUp() {
         MockitoAnnotations.openMocks(this);
         authHandler = new McpAuthenticationHandler(principalService, apiKeyService, TEST_SESSION_TTL_SECONDS);

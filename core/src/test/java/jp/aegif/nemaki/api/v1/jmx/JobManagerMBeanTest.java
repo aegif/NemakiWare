@@ -1,15 +1,15 @@
 package jp.aegif.nemaki.api.v1.jmx;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class JobManagerMBeanTest {
 
     private JobManager jobManager;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         jobManager = new JobManager();
     }

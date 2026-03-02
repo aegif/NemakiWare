@@ -1,10 +1,10 @@
 package jp.aegif.nemaki.api.v1;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.api.v1.resource.MetricsResource;
 
@@ -17,7 +17,7 @@ public class MetricsResourceTest {
     private MetricsResource metricsResource;
     private HttpServletRequest adminRequest;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         metricsResource = new MetricsResource();
         adminRequest = createAdminRequest();
