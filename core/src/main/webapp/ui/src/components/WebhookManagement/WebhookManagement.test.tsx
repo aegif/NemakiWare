@@ -159,11 +159,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Count fetch calls targeting a specific repository */
-function countCallsForRepo(repoId: string): number {
-  return fetchCallLog.filter(url => url.includes(`/repo/${repoId}/`)).length;
-}
-
 describe('WebhookManagement repository switch race condition', () => {
   it('does not apply stale response after repository switch', async () => {
     // Slow down bedroom responses so they arrive after repo switch

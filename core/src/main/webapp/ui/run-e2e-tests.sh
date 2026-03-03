@@ -38,6 +38,13 @@ if [ "$SKIP_CLEANUP" = false ] && [ "$MODE" != "cleanup" ]; then
   echo ""
 fi
 
+# Ensure Playwright browser binaries are installed (skip for cleanup-only mode)
+if [ "$MODE" != "cleanup" ]; then
+  echo "🔧 Ensuring Playwright $PROJECT browser is installed..."
+  npx playwright install "$PROJECT"
+  echo ""
+fi
+
 case "$MODE" in
   cleanup)
     echo "🧹 Running cleanup only..."

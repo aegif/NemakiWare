@@ -21,7 +21,7 @@
  * - For full OIDC tests: Keycloak at localhost:8088 (skipped if unavailable)
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect, request as playwrightRequest } from '@playwright/test';
 import { generateTestId } from '../utils/test-helper';
 
 const BASE_URL = 'http://localhost:8080/core';
@@ -377,22 +377,21 @@ test.describe('Session Management - OIDC + Traditional Coexistence', () => {
 });
 
 test.describe('Session Management - Token Validation', () => {
-  test('S16: Invalid token format rejected (without Basic Auth fallback)', async ({ browser }) => {
-    // Use fresh context without httpCredentials to test pure token validation
-    const context = await browser.newContext({
-      httpCredentials: undefined,
+  test('S16: Invalid token format rejected (without Basic Auth fallback)', async () => {
+    // Use API request context without httpCredentials to test pure token validation
+    const apiContext = await playwrightRequest.newContext({
       extraHTTPHeaders: {},
     });
 
     try {
-      const response = await context.request.get(
+      const response = await apiContext.get(
         `${BASE_URL}/browser/${REPOSITORY_ID}/root?cmisselector=object`,
         { headers: { AUTH_TOKEN: 'invalid-token-format' } }
       );
       // Without Basic Auth fallback, invalid token should be rejected
       expect(response.status()).toBeGreaterThanOrEqual(400);
     } finally {
-      await context.close();
+      await apiContext.dispose();
     }
   });
 
@@ -406,30 +405,28 @@ test.describe('Session Management - Token Validation', () => {
     expect(response.ok()).toBe(true);
   });
 
-  test('S18: Expired token rejected (without Basic Auth fallback)', async ({ browser }) => {
-    // Use fresh context without httpCredentials
-    const context = await browser.newContext({
-      httpCredentials: undefined,
+  test('S18: Expired token rejected (without Basic Auth fallback)', async () => {
+    // Use API request context without httpCredentials
+    const apiContext = await playwrightRequest.newContext({
       extraHTTPHeaders: {},
     });
-    const freshRequest = context.request;
 
     try {
       // Get a real token
-      const token = await traditionalLogin(freshRequest, 'admin', 'admin');
+      const token = await traditionalLogin(apiContext, 'admin', 'admin');
       expect(token).not.toBeNull();
 
       // Logout to invalidate the token
-      await logout(freshRequest, 'admin', token!);
+      await logout(apiContext, 'admin', token!);
 
       // Token should now be rejected (no Basic Auth fallback)
-      const response = await freshRequest.get(
+      const response = await apiContext.get(
         `${BASE_URL}/browser/${REPOSITORY_ID}/root?cmisselector=object`,
         { headers: { AUTH_TOKEN: token! } }
       );
       expect(response.status()).toBeGreaterThanOrEqual(400);
     } finally {
-      await context.close();
+      await apiContext.dispose();
     }
   });
 });
