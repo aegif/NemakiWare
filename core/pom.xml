@@ -22,11 +22,11 @@
 		<maven.compiler.target>21</maven.compiler.target>
 		<nemakiware.version>${project.version}</nemakiware.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<org.springframework.version>6.1.21</org.springframework.version>
+		<org.springframework.version>7.0.5</org.springframework.version>
 		<org.apache.chemistry.opencmis.version>1.1.0-nemakiware</org.apache.chemistry.opencmis.version>
 		<opencmis.github.packages.url>https://maven.pkg.github.com/aegif/chemistry-opencmis-nemakiware</opencmis.github.packages.url>
 		<opencmis.github.packages.repository.id>github-opencmis</opencmis.github.packages.repository.id>
-		<jersey.version>3.1.10</jersey.version>
+		<jersey.version>4.0.0</jersey.version>
 		<org.apache.chemistry.opencmis.version.14>0.14.0</org.apache.chemistry.opencmis.version.14>
 		<aws.sdk.version>2.25.60</aws.sdk.version>
 	</properties>
@@ -237,11 +237,11 @@
 		    <version>1.4.01</version>
 		</dependency>
 
-		<!-- Jakarta EE servlet API for Spring 6.x, Jersey 3.x and OpenCMIS compatibility -->
+		<!-- Jakarta EE servlet API for Spring 7.x, Jersey 4.x and OpenCMIS compatibility -->
 		<dependency>
 			<groupId>jakarta.servlet</groupId>
 			<artifactId>jakarta.servlet-api</artifactId>
-			<version>6.0.0</version>
+			<version>6.1.0</version>
 			<scope>provided</scope>
 		</dependency>
 
@@ -251,7 +251,7 @@
 		<!-- OpenCMIS dependencies - excluded when Jakarta profile is active -->
 		<!-- server-support dependency moved down to avoid duplication -->
 
-		<!-- OpenCMIS 1.1.0-nemakiware Jakarta EE 10 Compatible JARs.
+		<!-- OpenCMIS 1.1.0-nemakiware Jakarta EE Compatible JARs.
 		     Resolved from local Maven repository (~/.m2/repository).
 		     For initial setup: ./scripts/install-opencmis-local.sh
 		     To refresh from GitHub Packages: ./scripts/fetch-opencmis-from-github-packages.sh -->
@@ -304,7 +304,7 @@
 			<version>3.5.3</version>
 		</dependency>
 
-		<!-- Metro JAX-WS RI 4.x Jakarta EE 10 compatible dependencies -->
+		<!-- Metro JAX-WS RI 4.x Jakarta EE compatible dependencies -->
 		<!-- jaxws-rt dependency moved down to avoid duplication -->
 		<!-- jaxws-ri removed due to enforcer conflicts -->
 		<!-- Using jaxws-rt directly instead -->
@@ -386,7 +386,7 @@
 		<dependency>
 			<groupId>org.springframework.ldap</groupId>
 			<artifactId>spring-ldap-core</artifactId>
-			<version>3.2.8</version>
+			<version>4.0.2</version>
 		</dependency>
 
 		<dependency>
@@ -762,22 +762,22 @@
 		<dependency>
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-rt-frontend-jaxws</artifactId>
-			<version>4.1.4</version>
+			<version>4.2.0</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-rt-transports-http</artifactId>
-			<version>4.1.4</version>
+			<version>4.2.0</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-rt-frontend-simple</artifactId>
-			<version>4.1.4</version>
+			<version>4.2.0</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-core</artifactId>
-			<version>4.1.4</version>
+			<version>4.2.0</version>
 		</dependency>
 		
 		<!-- Jakarta EE Web Services Runtime Implementation - version 4.0.1 used above -->
@@ -1092,9 +1092,9 @@
 			</plugin>
 
 			<plugin>
-				<groupId>org.eclipse.jetty</groupId>
-				<artifactId>jetty-maven-plugin</artifactId>
-				<version>11.0.24</version>
+				<groupId>org.eclipse.jetty.ee11</groupId>
+				<artifactId>jetty-ee11-maven-plugin</artifactId>
+				<version>12.1.5</version>
 				<configuration>
 					<scan>1</scan>
 					<stopPort>9967</stopPort>
@@ -1109,61 +1109,22 @@
 					<httpConnector>
 						<port>8081</port>
 					</httpConnector>
-					<!-- Development environment variables -->
+					<!-- Development environment variables (Jetty 12 flat key-value format) -->
 					<systemProperties>
-						<systemProperty>
-							<name>nemakiware.properties</name>
-							<value>file:${project.basedir}/src/main/webapp/WEB-INF/classes/nemakiware-jetty.properties</value>
-						</systemProperty>
-						<systemProperty>
-							<name>repositories.yml</name>
-							<value>file:${project.basedir}/src/main/webapp/WEB-INF/classes/repositories.yml</value>
-						</systemProperty>
-						<systemProperty>
-							<name>log4j.configuration</name>
-							<value>file:${project.basedir}/src/main/webapp/WEB-INF/classes/log4j-jetty.properties</value>
-						</systemProperty>
-						<systemProperty>
-							<name>db.couchdb.url</name>
-							<value>http://localhost:5984</value>
-						</systemProperty>
-						<systemProperty>
-							<name>spring.profiles.active</name>
-							<value>development</value>
-						</systemProperty>
-						<systemProperty>
-							<name>org.ektorp.support.AutoUpdateViewOnChange</name>
-							<value>false</value>
-						</systemProperty>
-						<systemProperty>
-							<name>org.ektorp.http.IdleConnectionMonitor.enabled</name>
-							<value>false</value>
-						</systemProperty>
-						<systemProperty>
-							<name>org.ektorp.support.DesignDocument.UPDATE_ON_DIFF</name>
-							<value>false</value>
-						</systemProperty>
-						<systemProperty>
-							<name>org.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE</name>
-							<value>true</value>
-						</systemProperty>
+						<nemakiware.properties>file:${project.basedir}/src/main/webapp/WEB-INF/classes/nemakiware-jetty.properties</nemakiware.properties>
+						<repositories.yml>file:${project.basedir}/src/main/webapp/WEB-INF/classes/repositories.yml</repositories.yml>
+						<log4j.configuration>file:${project.basedir}/src/main/webapp/WEB-INF/classes/log4j-jetty.properties</log4j.configuration>
+						<db.couchdb.url>http://localhost:5984</db.couchdb.url>
+						<spring.profiles.active>development</spring.profiles.active>
+						<org.ektorp.support.AutoUpdateViewOnChange>false</org.ektorp.support.AutoUpdateViewOnChange>
+						<org.ektorp.http.IdleConnectionMonitor.enabled>false</org.ektorp.http.IdleConnectionMonitor.enabled>
+						<org.ektorp.support.DesignDocument.UPDATE_ON_DIFF>false</org.ektorp.support.DesignDocument.UPDATE_ON_DIFF>
+						<org.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE>true</org.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE>
 						<!-- Solr configuration override for Jetty development -->
-						<systemProperty>
-							<name>solr.host</name>
-							<value>localhost</value>
-						</systemProperty>
-						<systemProperty>
-							<name>solr.port</name>
-							<value>8983</value>
-						</systemProperty>
-						<systemProperty>
-							<name>solr.protocol</name>
-							<value>http</value>
-						</systemProperty>
-						<systemProperty>
-							<name>solr.context</name>
-							<value>solr</value>
-						</systemProperty>
+						<solr.host>localhost</solr.host>
+						<solr.port>8983</solr.port>
+						<solr.protocol>http</solr.protocol>
+						<solr.context>solr</solr.context>
 					</systemProperties>
 					<!-- Java 21 module system compatibility for Jakarta EE -->
 					<jvmArgs>--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED --add-opens=java.desktop/java.awt.font=ALL-UNNAMED</jvmArgs>
@@ -1589,7 +1550,7 @@
 					</delete>
 					<echo message="Removed ALL OpenCMIS JARs (original and Jakarta) to prevent conflicts"/>
 										
-										<!-- DISABLED: Copy Jakarta EE 10 Compatible OpenCMIS 1.2.0-nemakiware JARs from build workspace -->
+										<!-- DISABLED: Copy Jakarta EE Compatible OpenCMIS 1.2.0-nemakiware JARs from build workspace -->
 										<!-- CRITICAL FIX: Disabled forced copy to allow Maven dependency management to use OpenCMIS version property -->
 										<!--
 										<copy todir="${project.build.directory}/${project.build.finalName}/WEB-INF/lib">
@@ -1607,7 +1568,7 @@
 					</plugin>
 					
 					<!-- Maven Enforcer Plugin - Relaxed rules for development -->
-					<!-- Only enforce critical dependencies that would break Tomcat 10 runtime -->
+					<!-- Only enforce critical dependencies that would break Tomcat 11 runtime -->
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>
 						<artifactId>maven-enforcer-plugin</artifactId>
@@ -1623,10 +1584,10 @@
 									<rules>
 										<bannedDependencies>
 											<excludes>
-												<!-- Only ban javax.servlet-api as it directly conflicts with Tomcat 10 -->
+												<!-- Only ban javax.servlet-api as it directly conflicts with Tomcat 11 -->
 												<exclude>javax.servlet:javax.servlet-api</exclude>
 											</excludes>
-											<message>javax.servlet-api is incompatible with Tomcat 10. Use jakarta.servlet-api instead.</message>
+											<message>javax.servlet-api is incompatible with Tomcat 11. Use jakarta.servlet-api instead.</message>
 										</bannedDependencies>
 									</rules>
 									<fail>false</fail> <!-- Warn but don't fail the build -->

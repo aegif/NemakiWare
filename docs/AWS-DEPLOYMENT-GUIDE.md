@@ -61,7 +61,7 @@ NemakiWare は以下の4サービスで構成されます。すべて Docker Com
 
 | サービス | イメージ | ポート | 説明 |
 |----------|---------|--------|------|
-| **Core** | tomcat:10.1-jre21 (カスタム) | 8080 | CMIS サーバー + React SPA UI |
+| **Core** | tomcat:11.0-jre21 (カスタム) | 8080 | CMIS サーバー + React SPA UI |
 | **CouchDB** | couchdb:3.3.3 | 5984 | ドキュメントデータベース |
 | **Solr** | カスタムビルド | 8983 | 全文検索エンジン |
 | **TEI** | ghcr.io/huggingface/text-embeddings-inference:cpu-1.6 | 8081 | ベクトル埋め込みサーバー (RAG) |

@@ -581,14 +581,14 @@ story.append(Paragraph(
 story.append(Paragraph('2. アーキテクチャ', styles['JPH1']))
 arch_data = [
     ['レイヤー', 'テクノロジー', 'バージョン'],
-    ['Backend', 'Spring Framework + Jakarta EE 10', '6.x'],
+    ['Backend', 'Spring Framework + Jakarta EE 11', '7.x'],
     ['CMIS Engine', 'Apache Chemistry OpenCMIS', '1.1.0-nemakiware'],
     ['Database', 'CouchDB', '3.4'],
     ['Search Engine', 'Apache Solr', '9.10'],
-    ['UI Framework', 'React + TypeScript + Vite', '18 / 5.x / 7.x'],
+    ['UI Framework', 'React + TypeScript + Vite', '19 / 5.x / 7.x'],
     ['UI Library', 'Ant Design', '5.x'],
-    ['App Server', 'Tomcat', '10.1'],
-    ['Java', 'OpenJDK', '17'],
+    ['App Server', 'Tomcat', '11.0'],
+    ['Java', 'OpenJDK', '21'],
 ]
 t = Table(arch_data, colWidths=[35*mm, 65*mm, 30*mm])
 t.setStyle(TableStyle([
@@ -605,7 +605,7 @@ story.append(t)
 story.append(Paragraph('3. Docker 構成', styles['JPH1']))
 docker_data = [
     ['コンテナ', 'イメージ', 'ポート', '役割'],
-    ['core', 'tomcat:10.1-jre21', '8080', 'CMIS / REST / UI'],
+    ['core', 'tomcat:11.0-jre21', '8080', 'CMIS / REST / UI'],
     ['couchdb', 'couchdb:3.4', '5984', 'ドキュメントDB'],
     ['solr', 'solr:9.10-slim', '8983', '全文検索'],
 ]

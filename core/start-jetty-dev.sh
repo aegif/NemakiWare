@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# NemakiWare Jakarta EE 10 Development Environment Startup Script
+# NemakiWare Jakarta EE 11 Development Environment Startup Script
 # This script configures the Java 21 module system and starts Jetty for development
 
-echo "=== NemakiWare Jakarta EE 10 Development Environment ==="
+echo "=== NemakiWare Jakarta EE 11 Development Environment ==="
 echo "Setting up Java 21 module system compatibility..."
 
 # Set MAVEN_OPTS for Java 21 module system compatibility
@@ -41,7 +41,7 @@ echo "  - Repository Info: http://localhost:8080/core/atom/bedroom"
 echo "  - Folder Operations: http://localhost:8080/core/atom/bedroom/children?id=e02f784f8360a02cc14d1314c10038ff"
 echo ""
 echo "Development Features:"
-echo "  - Jakarta EE 10 Compatible"
+echo "  - Jakarta EE 11 Compatible"
 echo "  - Solr Disabled (MockSolrUtil + MockQueryProcessor)"
 echo "  - Automatic code reloading"
 echo "  - CouchDB only dependency"

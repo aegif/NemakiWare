@@ -122,7 +122,7 @@ echo "=== 4. CORE APPLICATION TESTS ==="
 run_http_test "Core Application Root" "http://localhost:8080/core" "302"
 run_http_test "CMIS AtomPub (Bedroom)" "http://localhost:8080/core/atom/bedroom" "200" "admin:admin"
 run_http_test "CMIS AtomPub (Canopy)" "http://localhost:8080/core/atom/canopy" "200" "admin:admin"
-run_http_test "CMIS Web Services" "http://localhost:8080/core/services" "200"  # Jakarta EE 10 compatible
+run_http_test "CMIS Web Services" "http://localhost:8080/core/services" "200"  # Jakarta EE 11 compatible
 
 echo
 echo "=== 5. CMIS BROWSER BINDING TESTS ==="

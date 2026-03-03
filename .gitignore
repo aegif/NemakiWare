@@ -180,6 +180,9 @@ SimpleQueryTest.*
 !core/src/test/java/jp/aegif/nemaki/businesslogic/impl/SolrIndexMaintenanceServiceImpl*Test.java
 !core/src/test/java/jp/aegif/nemaki/archive/*Test.java
 !core/src/test/java/jp/aegif/nemaki/rest/*Test.java
+# Exception: Keep API v1 integration test support files and SpringPropertiesUtil test
+!core/src/test/java/jp/aegif/nemaki/api/v1/*Test.java
+!core/src/test/java/jp/aegif/nemaki/util/spring/*Test.java
 
 # Exception: Keep RAG unit test files
 !core/src/test/java/jp/aegif/nemaki/rag/**/*Test.java

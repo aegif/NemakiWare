@@ -79,7 +79,7 @@ public class AclServiceImpl implements AclService {
 	private final ExecutorService ragAclExecutor = new java.util.concurrent.ThreadPoolExecutor(
 			0, 1, 60L, java.util.concurrent.TimeUnit.SECONDS,
 			new java.util.concurrent.LinkedBlockingQueue<>(256),
-			r -> { Thread t = new Thread(r, "RAG-ACL-Updater"); t.setDaemon(true); return t; },
+			Thread.ofVirtual().name("RAG-ACL-vt-", 0).factory(),
 			new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
 
 	@Override

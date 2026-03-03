@@ -1408,7 +1408,7 @@ public class ObjectServiceImpl implements ObjectService {
 				maxThreads, maxThreads,
 				60L, TimeUnit.SECONDS,
 				new java.util.concurrent.LinkedBlockingQueue<>(1024),
-				r -> { Thread t = new Thread(r, "deleteTree-worker"); t.setDaemon(true); return t; },
+				Thread.ofVirtual().name("deleteTree-vt-", 0).factory(),
 				new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
 			tpe.allowCoreThreadTimeOut(true);
 			executor = tpe;
@@ -1437,7 +1437,7 @@ public class ObjectServiceImpl implements ObjectService {
 				maxThreads, maxThreads,
 				60L, TimeUnit.SECONDS,
 				new java.util.concurrent.LinkedBlockingQueue<>(1024),
-				r -> { Thread t = new Thread(r, "bulkUpdate-worker"); t.setDaemon(true); return t; },
+				Thread.ofVirtual().name("bulkUpdate-vt-", 0).factory(),
 				new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
 			tpe.allowCoreThreadTimeOut(true);
 			executor = tpe;

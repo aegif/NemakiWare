@@ -4,7 +4,9 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
-import org.springframework.beans.factory.config.PropertyPlaceholderConfigurer;
+import org.springframework.context.support.PropertySourcesPlaceholderConfigurer;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.env.PropertySources;
 import org.springframework.core.io.Resource;
 
 import java.io.IOException;
@@ -17,7 +19,15 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
-public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
+/**
+ * Extended PropertySourcesPlaceholderConfigurer that captures all resolved
+ * properties into a map for programmatic access throughout NemakiWare.
+ *
+ * <p>Migrated from PropertyPlaceholderConfigurer (deprecated for removal in Spring 7)
+ * to PropertySourcesPlaceholderConfigurer which leverages the Spring Environment
+ * and PropertySource abstractions.</p>
+ */
+public class SpringPropertiesUtil extends PropertySourcesPlaceholderConfigurer {
 
 	private static final Log log = LogFactory
 			.getLog(SpringPropertiesUtil.class);
@@ -25,14 +35,6 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
     private Map<String, String> propertiesMap;
     private Map<String, String> propertySourceMap = new HashMap<>();
     private Resource[] locationResources;
-    // Default as in PropertyPlaceholderConfigurer
-    private int springSystemPropertiesMode = SYSTEM_PROPERTIES_MODE_FALLBACK;
-
-    @Override
-    public void setSystemPropertiesMode(int systemPropertiesMode) {
-        super.setSystemPropertiesMode(systemPropertiesMode);
-        springSystemPropertiesMode = systemPropertiesMode;
-    }
 
     @Override
     public void setLocations(Resource... locations) {
@@ -71,14 +73,37 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
     }
 
     @Override
-    protected void processProperties(ConfigurableListableBeanFactory beanFactory, Properties props) throws BeansException {
-        super.processProperties(beanFactory, props);
+    public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
+        super.postProcessBeanFactory(beanFactory);
 
-        propertiesMap = new HashMap<String, String>();
-        for (Object key : props.keySet()) {
-            String keyStr = key.toString();
-            String valueStr = resolvePlaceholder(keyStr, props, springSystemPropertiesMode);
-            propertiesMap.put(keyStr, valueStr);
+        // Capture all resolved properties from the applied property sources
+        propertiesMap = new HashMap<>();
+        PropertySources appliedSources = getAppliedPropertySources();
+        if (appliedSources != null) {
+            PropertySource<?> localSource = appliedSources.get(LOCAL_PROPERTIES_PROPERTY_SOURCE_NAME);
+            if (localSource != null && localSource.getSource() instanceof Properties props) {
+                for (Object key : props.keySet()) {
+                    String keyStr = key.toString();
+                    // Resolve property value through the full property source chain
+                    // (environment properties override local when systemPropertiesMode=OVERRIDE)
+                    Object resolved = null;
+                    for (PropertySource<?> ps : appliedSources) {
+                        resolved = ps.getProperty(keyStr);
+                        if (resolved != null) {
+                            break;
+                        }
+                    }
+                    if (resolved != null) {
+                        propertiesMap.put(keyStr, resolved.toString());
+                    } else {
+                        // Fall back to the raw local value
+                        Object rawValue = props.get(key);
+                        if (rawValue != null) {
+                            propertiesMap.put(keyStr, rawValue.toString());
+                        }
+                    }
+                }
+            }
         }
     }
 

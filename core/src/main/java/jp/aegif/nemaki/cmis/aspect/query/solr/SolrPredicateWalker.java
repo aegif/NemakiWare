@@ -877,14 +877,6 @@ public class SolrPredicateWalker{
 	 */
 
 	/**
-	 * Convert String to BytesRef for Lucene TermRangeQuery
-	 * @deprecated No longer needed in Lucene 9.x - TermRangeQuery.newStringRange() accepts String directly
-	 *
-	 * @param s
-	 * @return
-	 */
-
-	/**
 	 * Translate a full-text search expression from SQL style to Solr style
 	 *
 	 * @param wildcardString

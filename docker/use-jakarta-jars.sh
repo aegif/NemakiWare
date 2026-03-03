@@ -64,7 +64,7 @@ fi
 cp "$JAKARTA_LIB_DIR/jaxws-rt-4.0.2-jakarta.jar" "$CORE_LIB_DIR/jaxws-rt-4.0.2.jar"
 
 echo "Jakarta JAR replacement completed successfully!"
-echo "You can now deploy to Jakarta EE containers (Tomcat 10+, Jetty 11+)"
+echo "You can now deploy to Jakarta EE containers (Tomcat 10+/11+, Jetty 11+/12+)"
 
 # List replaced JARs
 echo -e "\nReplaced JARs:"

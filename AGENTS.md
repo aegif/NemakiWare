@@ -245,7 +245,7 @@ git push origin <branch-name>
 
 ## Project Structure & Modules
 - `common/` — Shared utilities (JAR).
-- `core/` — CMIS REST/Web Services server (WAR, Jakarta EE 10, Spring 6).
+- `core/` — CMIS REST/Web Services server (WAR, Jakarta EE 11, Spring 7).
   - `core/src/main/webapp/ui/` — React SPA UI (Vite + TypeScript + Ant Design)
   - `core/src/main/webapp/ui/tests/` — Playwright E2E tests
 - `solr/` — Search integration helpers.

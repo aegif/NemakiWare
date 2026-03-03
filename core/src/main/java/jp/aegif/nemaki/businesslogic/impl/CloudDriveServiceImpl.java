@@ -34,10 +34,8 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Cloud drive integration implementation supporting Google Drive and OneDrive.
@@ -65,15 +63,7 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 		MAX_DOWNLOAD_THREADS,               // max pool size (same as core for fixed pool behavior)
 		60L, TimeUnit.SECONDS,              // keep-alive time for idle threads
 		new ArrayBlockingQueue<>(MAX_DOWNLOAD_QUEUE),  // BOUNDED queue
-		new ThreadFactory() {
-			private final AtomicInteger counter = new AtomicInteger(0);
-			@Override
-			public Thread newThread(Runnable r) {
-				Thread t = new Thread(r, "cloud-download-" + counter.incrementAndGet());
-				t.setDaemon(true);
-				return t;
-			}
-		},
+		Thread.ofVirtual().name("cloud-download-vt-", 0).factory(),
 		new ThreadPoolExecutor.AbortPolicy()  // Reject when queue is full
 	);
 

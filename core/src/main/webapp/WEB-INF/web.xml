@@ -9,10 +9,10 @@
 	License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
 	OF ANY KIND, either express or implied. See the License for the specific
 	language governing permissions and limitations under the License. -->
-<web-app version="5.0" xmlns="https://jakarta.ee/xml/ns/jakartaee"
+<web-app version="6.1" xmlns="https://jakarta.ee/xml/ns/jakartaee"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee https://jakarta.ee/xml/ns/jakartaee/web-app_5_0.xsd"
-    xmlns:web="https://jakarta.ee/xml/ns/jakartaee/web-app_5_0.xsd"
+	xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee https://jakarta.ee/xml/ns/jakartaee/web-app_6_1.xsd"
+    xmlns:web="https://jakarta.ee/xml/ns/jakartaee/web-app_6_1.xsd"
     metadata-complete="false">
 
 	<display-name>NemakiWare</display-name>
@@ -48,7 +48,7 @@
     </listener>
 
 	<!-- OpenCMIS servlets - All three bindings for CMIS 1.1 compliance -->
-	<!-- Web Services Binding with Jakarta EE 10 compatibility -->
+	<!-- Web Services Binding with Jakarta EE 11 compatibility -->
 	<servlet>
 		<servlet-name>cmisws</servlet-name>
 		<servlet-class>org.apache.chemistry.opencmis.server.impl.webservices.CmisWebServicesServlet</servlet-class>
@@ -264,7 +264,7 @@
     </servlet> -->
 
 	<!-- OpenCMIS servlet mappings - All three bindings for CMIS 1.1 compliance -->
-	<!-- Web Services Binding mapping - Jakarta EE 10 compatible -->
+	<!-- Web Services Binding mapping - Jakarta EE 11 compatible -->
 	<servlet-mapping>
 		<servlet-name>cmisws</servlet-name>
 		<url-pattern>/services/*</url-pattern>

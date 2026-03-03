@@ -15,12 +15,12 @@
 NemakiWare は CMIS 1.1 準拠のオープンソースエンタープライズコンテンツ管理システムです。
 
 **技術スタック**:
-- Backend: Spring Framework, Apache Chemistry OpenCMIS, Jakarta EE 10
+- Backend: Spring Framework 7, Apache Chemistry OpenCMIS, Jakarta EE 11
 - Database: CouchDB 3.x
 - Search: Apache Solr 9.x
-- UI: React 18 + TypeScript + Vite 7 + Ant Design 5
-- Server: Tomcat 10.1+ (Jakarta EE)
-- Java: 21 (必須)
+- UI: React 19 + TypeScript + Vite 7 + Ant Design 5
+- Server: Tomcat 11.0+ (Jakarta EE 11, Virtual Threads 有効)
+- Java: 21 (必須, Virtual Threads)
 
 **モジュール構成**:
 - `core/`: メインCMISリポジトリサーバー (WAR)
@@ -178,6 +178,12 @@ npm run dev  # http://localhost:5173
 ### テストユーザーパスワード
 - BCryptハッシュ必須（平文は拒否される）
 
+### Virtual Threads
+- Tomcat Connector: `StandardVirtualThreadExecutor` で全HTTPリクエストをVirtual Threadで処理（VTはプール上限なし、JVM管理）
+- アプリケーション内ThreadPoolExecutor: ThreadFactoryを `Thread.ofVirtual().name(...).factory()` に統一
+- ThreadPoolExecutor構造（キューサイズ、CallerRunsPolicy等）はバックプレッシャー維持のため変更不可
+- ScheduledExecutorService（McpAuthenticationHandler）はVT非対応のためプラットフォームスレッドのまま
+
 ### CMISクライアント互換性設定
 cmislib等のCMISクライアントは `/atom` にリポジトリID未指定でアクセスしてサービスドキュメントを取得します。
 
@@ -239,7 +245,7 @@ curl -u admin:password http://localhost:5984/_all_dbs
 - 多言語対応 (日本語/英語)
 - セキュリティ脆弱性全解消
 - タイプ管理機能強化
-- React 18 + Vite 7 移行完了
+- React 19 + Vite 7 移行完了
 - インポート/エクスポート機能改善 (同名上書き、リレーションシップ対応、ID読替)
 - Webhook機能 (CMIS権限チェック、CHILD_BATCH配送、設計書整合)
 - MCP (Model Context Protocol) サーバー

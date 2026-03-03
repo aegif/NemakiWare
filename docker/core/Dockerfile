@@ -1,4 +1,4 @@
-FROM tomcat:10-jdk21-openjdk-slim
+FROM tomcat:11.0-jdk21-openjdk-slim
 
 # Install curl for health checks and LibreOffice for Office document preview
 RUN apt-get update && apt-get install -y \
