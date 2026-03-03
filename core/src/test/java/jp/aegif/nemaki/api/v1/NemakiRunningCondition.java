@@ -41,7 +41,8 @@ class NemakiRunningCondition implements ExecutionCondition {
         String baseUrl = configValue("nemaki.test.baseUrl", "NEMAKI_TEST_BASE_URL", "http://localhost:8080/core");
         String user = configValue("nemaki.test.username", "NEMAKI_TEST_USERNAME", "admin");
         String pass = configValue("nemaki.test.password", "NEMAKI_TEST_PASSWORD", "admin");
-        String probeUrl = baseUrl + "/atom/bedroom";
+        String repoId = configValue("nemaki.test.repositoryId", "NEMAKI_TEST_REPOSITORY_ID", "bedroom");
+        String probeUrl = baseUrl + "/atom/" + repoId;
 
         try {
             HttpURLConnection conn = (HttpURLConnection) URI.create(probeUrl).toURL().openConnection();
