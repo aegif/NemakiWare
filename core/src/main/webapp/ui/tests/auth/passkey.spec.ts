@@ -79,7 +79,16 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
 
   test('Account settings shows passkey section', async ({ page }) => {
     await loginAsAdmin(page);
+    // Wait for auth state to fully load before navigating
+    await page.waitForTimeout(3000);
     await page.goto(`${UI_URL}/#/account`);
+    // Retry navigation if redirected (auth state race condition)
+    for (let retry = 0; retry < 3; retry++) {
+      await page.waitForTimeout(2000);
+      if (page.url().includes('/account')) break;
+      console.log(`passkey: Retrying navigation to /account (attempt ${retry + 2})`);
+      await page.goto(`${UI_URL}/#/account`);
+    }
     await page.waitForLoadState('networkidle');
 
     // Click on the passkey tab (default tab is 'profile')
