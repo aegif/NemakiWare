@@ -10,6 +10,19 @@ function getAuthHeader(): string {
   return `Basic ${Buffer.from('admin:admin').toString('base64')}`;
 }
 
+/** Dynamically fetch root folder ID from repository info */
+async function fetchRootFolderId(page: Page, repositoryId: string): Promise<string> {
+  const response = await page.request.get(
+    `http://localhost:8080/core/browser/${repositoryId}?cmisselector=repositoryInfo`,
+    { headers: { 'Authorization': getAuthHeader() } }
+  );
+  if (!response.ok()) {
+    throw new Error(`Failed to get repository info: ${response.status()}`);
+  }
+  const data = await response.json();
+  return data[repositoryId]?.rootFolderId;
+}
+
 /** Fetch ACL for a given object */
 async function getACL(page: Page, repositoryId: string, objectId: string): Promise<any> {
   const response = await page.request.get(
@@ -206,8 +219,8 @@ test.describe('ACL Operations - API Direct Tests', () => {
   let testFolderName: string;
   let testFolderId: string;
   let testUsername: string;
+  let rootFolderId: string;
   const repositoryId = 'bedroom';
-  const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(120000); // 2 minutes for setup
@@ -219,6 +232,9 @@ test.describe('ACL Operations - API Direct Tests', () => {
 
     const context = await browser.newContext();
     const page = await context.newPage();
+
+    // Dynamically fetch root folder ID
+    rootFolderId = await fetchRootFolderId(page, repositoryId);
 
     try {
       console.log(`Setup: Creating test folder "${testFolderName}" in root folder`);
@@ -405,7 +421,14 @@ test.describe('ACL Operations - API Direct Tests', () => {
  */
 test.describe('ACL Operations - Error Cases', () => {
   const repositoryId = 'bedroom';
-  const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
+  let rootFolderId: string;
+
+  test.beforeAll(async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    rootFolderId = await fetchRootFolderId(page, repositoryId);
+    await context.close();
+  });
 
   test('should handle invalid object ID gracefully', async ({ browser }) => {
     test.setTimeout(60000);
@@ -611,7 +634,14 @@ test.describe('ACL Operations - Error Cases', () => {
 
 test.describe('ACL Operations - Multiple Users', () => {
   const repositoryId = 'bedroom';
-  const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
+  let rootFolderId: string;
+
+  test.beforeAll(async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    rootFolderId = await fetchRootFolderId(page, repositoryId);
+    await context.close();
+  });
 
   /**
    * SKIPPED (2025-12-23) - ACL Multi-User Operations Timing Issues
@@ -755,7 +785,14 @@ test.describe('ACL Operations - Multiple Users', () => {
 // FIXED (2025-12-25): Enabled with extended timeout for multiple ACL operations
 test.describe('ACL Operations - Permission Combinations', () => {
   const repositoryId = 'bedroom';
-  const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
+  let rootFolderId: string;
+
+  test.beforeAll(async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    rootFolderId = await fetchRootFolderId(page, repositoryId);
+    await context.close();
+  });
 
   test('should correctly apply different permission combinations', async ({ browser }) => {
     test.setTimeout(120000); // 2 minutes for multiple ACL operations

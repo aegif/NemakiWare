@@ -5,7 +5,7 @@ NemakiWare is an open source Enterprise Content Management system, compliant wit
 ## Features
 - **All-in-one package** including CMIS server, full-text search engine, and modern React client
 - **Docker Compose deployment** with CouchDB, Solr, and Tomcat
-- **Jakarta EE 10 compatible** with Java 21
+- **Jakarta EE 11 compatible** with Java 21
 - **Modern React SPA UI** with TypeScript, Vite 7, and Ant Design 5
 - **SAML and OIDC authentication** support (Keycloak, Google, Microsoft)
 - **Cloud integration** with Google Workspace and Microsoft 365
@@ -67,7 +67,7 @@ cp core/target/core.war docker/core/core.war
 
 ### OpenCMIS JAR Resolution
 
-NemakiWare uses custom OpenCMIS 1.1.0-nemakiware JARs (Jakarta EE 10 compatible).
+NemakiWare uses custom OpenCMIS 1.1.0-nemakiware JARs (Jakarta EE compatible).
 Pre-built JARs are committed to `lib/built-jars/` and must be installed to the local
 Maven repository before the first build:
 
@@ -95,6 +95,18 @@ Prerequisite for GitHub Packages (`~/.m2/settings.xml`):
   </servers>
 </settings>
 ```
+
+### Jersey/Spring Compatibility Policy
+
+NemakiWare follows upstream Jersey compatibility modules for Spring integration.
+
+- Keep using the currently published Jersey/Spring integration artifact in release builds.
+- Adopt `jersey-spring7` only after it is officially published to Maven repositories
+  (Maven Central or Eclipse/Jakarta distribution repositories).
+- Run compatibility regression tests before adoption:
+  - `core` clean compile
+  - targeted REST tests
+  - `/api/v1/cmis/*` and `/api/v1/repo/*` routing coexistence checks
 
 ### 2. Start Services
 
@@ -281,12 +293,12 @@ NemakiWare/
 
 | Component | Technology |
 |-----------|------------|
-| Server | Tomcat 10.1 (Jakarta EE 10) |
-| Framework | Spring 6, Apache Chemistry OpenCMIS |
+| Server | Tomcat 11.0 (Jakarta EE 11, Virtual Threads) |
+| Framework | Spring 7, Apache Chemistry OpenCMIS |
 | Database | CouchDB 3.x |
 | Search | Apache Solr 9.x |
-| UI | React 18, TypeScript, Vite 7, Ant Design 5 |
-| Java | 21 (required) |
+| UI | React 19, TypeScript, Vite 7, Ant Design 5 |
+| Java | 21 (required, Virtual Threads enabled) |
 
 ---
 

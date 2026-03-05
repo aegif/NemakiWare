@@ -365,14 +365,9 @@ test.describe('Bulk Operations', () => {
     await selectAllCheckbox.check(isMobile ? { force: true } : {});
     await page.waitForTimeout(500);
 
-    // Look for bulk delete button
-    const bulkDeleteButton = page.locator('button').filter({
-      or: [
-        { hasText: '一括削除' },
-        { hasText: '削除' },
-        { has: page.locator('[data-icon="delete"]') }
-      ]
-    });
+    // Look for bulk delete button (toolbar button, NOT individual row delete buttons)
+    // ja: "5件を削除", en: "Delete 5 items" — must match both locales
+    const bulkDeleteButton = page.locator('button').filter({ hasText: /\d+件を削除|一括削除|Delete \d+ items?|Bulk Delete/i });
 
     if (await bulkDeleteButton.count() === 0) {
       // UPDATED (2025-12-26): Delete IS implemented in DocumentList.tsx - bulk delete may require selection
@@ -384,8 +379,9 @@ test.describe('Bulk Operations', () => {
     await bulkDeleteButton.first().click(isMobile ? { force: true } : {});
     await page.waitForTimeout(500);
 
-    // Confirm deletion
-    const confirmButton = page.locator('.ant-modal button.ant-btn-primary, .ant-popconfirm button.ant-btn-primary, button:has-text("OK")');
+    // Confirm bulk deletion — ja: "一括削除の確認", en: "Confirm Bulk Delete"
+    await page.waitForSelector('.ant-modal', { timeout: 5000 });
+    const confirmButton = page.locator('.ant-modal button.ant-btn-primary').filter({ hasText: /削除する|Delete|OK/i });
     if (await confirmButton.count() > 0) {
       await confirmButton.click(isMobile ? { force: true } : {});
 

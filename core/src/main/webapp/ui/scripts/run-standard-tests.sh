@@ -39,6 +39,12 @@ else
 fi
 
 echo ""
+
+# Ensure Playwright browser binaries are installed (idempotent — skips if already present)
+echo "🔧 Ensuring Playwright chromium browser is installed..."
+npx playwright install chromium
+echo ""
+
 echo "🧪 Running standard tests (external auth tests will be skipped)..."
 echo ""
 

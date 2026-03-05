@@ -432,6 +432,7 @@ async function createFolder(page: Page, folderName: string, isMobile: boolean): 
 test.describe('Folder Hierarchy Operations', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
+  let dynamicRootFolderId: string;
   let testFolderIds: { parent: string; child: string; grandchild: string } = {
     parent: '',
     child: '',
@@ -441,6 +442,14 @@ test.describe('Folder Hierarchy Operations', () => {
   test.beforeEach(async ({ page }) => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
+
+    // Dynamically fetch root folder ID
+    const repoResponse = await page.request.get(
+      'http://localhost:8080/core/browser/bedroom?cmisselector=repositoryInfo',
+      { headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}` } }
+    );
+    const repoData = await repoResponse.json();
+    dynamicRootFolderId = repoData['bedroom']?.rootFolderId;
 
     // Start with a clean session
     await page.context().clearCookies();
@@ -537,8 +546,7 @@ test.describe('Folder Hierarchy Operations', () => {
 
     // Verify navigation by checking URL changed from root
     const currentUrl = page.url();
-    const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
-    const navigatedSuccessfully = currentUrl.includes('folderId=') && !currentUrl.includes(rootFolderId);
+    const navigatedSuccessfully = currentUrl.includes('folderId=') && !currentUrl.includes(dynamicRootFolderId);
     expect(navigatedSuccessfully).toBe(true);
 
     // Verify empty folder state (no children)

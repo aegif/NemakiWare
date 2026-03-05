@@ -1,3 +1,7 @@
+// React 19 compatibility patch for antd v5 static APIs (message, notification, modal)
+// Must be imported BEFORE any antd imports to register createRoot-based rendering
+import '@ant-design/v5-patch-for-react-19'
+
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'

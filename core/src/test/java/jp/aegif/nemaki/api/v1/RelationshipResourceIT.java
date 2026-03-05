@@ -1,9 +1,8 @@
 package jp.aegif.nemaki.api.v1;
 
 import io.restassured.response.Response;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Disabled;
-
+import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -19,7 +18,7 @@ import static org.hamcrest.Matchers.*;
  * 
  * Run with: mvn test -Dtest=RelationshipResourceIT -Dnemaki.test.baseUrl=http://localhost:8080/core
  */
-@Disabled("Integration tests require a running NemakiWare instance")
+@Disabled("Test assertions do not match API implementation contract (request/response shape differs). Needs full rewrite against actual API.")
 public class RelationshipResourceIT extends ApiV1TestBase {
     
     @Test

@@ -34,18 +34,34 @@ test('PDF preview should render with react-pdf', async ({ page }) => {
     await page.waitForTimeout(2000);
   }
 
-  // Find any PDF file in the table
-  const pdfCell = page.locator('.ant-table-tbody td a').filter({ hasText: /\.pdf$/i }).first();
+  // Find any PDF file in the table — check both anchor links and button links
+  const pdfCellAnchor = page.locator('.ant-table-tbody td a').filter({ hasText: /\.pdf$/i }).first();
+  const pdfCellButton = page.locator('.ant-table-tbody td button.ant-btn-link').filter({ hasText: /\.pdf$/i }).first();
+  const pdfRow = page.locator('.ant-table-tbody tr').filter({ hasText: /\.pdf/i }).first();
 
-  if (await pdfCell.count() === 0) {
+  let pdfFound = false;
+  if (await pdfCellAnchor.count() > 0) {
+    await pdfCellAnchor.click();
+    pdfFound = true;
+  } else if (await pdfCellButton.count() > 0) {
+    await pdfCellButton.click();
+    pdfFound = true;
+  } else if (await pdfRow.count() > 0) {
+    // Click the eye icon (detail view) for the PDF row
+    const viewButton = pdfRow.locator('button').filter({ has: page.locator('.anticon-eye') });
+    if (await viewButton.count() > 0) {
+      await viewButton.click();
+      pdfFound = true;
+    }
+  }
+
+  if (!pdfFound) {
     // No PDF found in current folder - this is acceptable
     console.log('No PDF files found in repository root - skipping PDF preview test');
     test.skip(true, 'No PDF files available in repository root folder');
     return;
   }
 
-  // Click the PDF file to open document viewer
-  await pdfCell.click();
   await page.waitForTimeout(2000);
 
   // Click Preview tab

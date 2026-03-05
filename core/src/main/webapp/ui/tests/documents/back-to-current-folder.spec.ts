@@ -18,13 +18,31 @@ import { TestHelper } from '../utils/test-helper';
  * 4. Click "戻る" button
  * 5. Verify we are back in the same subfolder (not root)
  */
+// Helper function to dynamically fetch root folder ID
+async function fetchRootFolderId(page: import('@playwright/test').Page): Promise<string> {
+  const response = await page.request.get(
+    'http://localhost:8080/core/browser/bedroom?cmisselector=repositoryInfo',
+    { headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}` } }
+  );
+  if (!response.ok()) {
+    throw new Error(`Failed to get repository info: ${response.status()}`);
+  }
+  const data = await response.json();
+  return data['bedroom']?.rootFolderId;
+}
+
 test.describe('Back to Current Folder Navigation', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
+  let rootFolderId: string;
 
   test.beforeEach(async ({ page }) => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
+
+    // Dynamically fetch root folder ID
+    rootFolderId = await fetchRootFolderId(page);
+
     await authHelper.login();
     await page.waitForTimeout(2000);
   });
@@ -35,7 +53,6 @@ test.describe('Back to Current Folder Navigation', () => {
 
   test('should return to current folder when clicking back button', async ({ page, browserName }) => {
     const isMobile = testHelper.isMobile(browserName);
-    const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
 
     // Step 1: Wait for document list to load
     await page.waitForSelector('.ant-table-tbody', { timeout: 10000 });
@@ -74,7 +91,7 @@ test.describe('Back to Current Folder Navigation', () => {
     const viewerFolderId = viewerFolderIdMatch ? viewerFolderIdMatch[1] : null;
     console.log(`Viewer folderId: ${viewerFolderId}`);
 
-    expect(viewerFolderId).toBe(ROOT_FOLDER_ID);
+    expect(viewerFolderId).toBe(rootFolderId);
     console.log('✅ folderId preserved when navigating to DocumentViewer');
 
     // Step 5: Click the "戻る" button
@@ -97,7 +114,7 @@ test.describe('Back to Current Folder Navigation', () => {
     const finalFolderId = finalFolderIdMatch ? finalFolderIdMatch[1] : null;
     console.log(`Final folderId: ${finalFolderId}`);
 
-    expect(finalFolderId).toBe(ROOT_FOLDER_ID);
+    expect(finalFolderId).toBe(rootFolderId);
     console.log('✅ Returned to the correct folder!');
 
     // Step 7: Verify the same folder contents are visible
@@ -126,7 +143,7 @@ test.describe('Back to Current Folder Navigation', () => {
     // If root has enough documents, test there
     if (rootDocCount >= 2) {
       console.log('Testing with root folder documents');
-      const originalFolderId = 'e02f784f8360a02cc14d1314c10038ff'; // ROOT
+      const originalFolderId = rootFolderId; // ROOT (dynamically resolved)
 
       // Open first document
       await rootDocs.first().locator('button.ant-btn-link').first().click(isMobile ? { force: true } : {});

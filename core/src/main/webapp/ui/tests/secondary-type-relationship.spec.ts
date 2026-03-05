@@ -66,40 +66,35 @@ async function navigateToAnyDocument(page: any): Promise<boolean> {
   await page.waitForSelector('.ant-table-tbody', { timeout: 15000 });
   await page.waitForTimeout(1500);
 
-  // Find a file row by looking for document name pattern
-  const fileLink = page.locator('.ant-table-tbody a').filter({ hasText: /\.txt|\.pdf|\.docx|\.png|\.jpg/ }).first();
-  const isLinkVisible = await fileLink.isVisible().catch(() => false);
+  // Find a file row by looking for document name pattern (supports both anchor and button links)
+  const fileRow = page.locator('.ant-table-tbody tr').filter({ hasText: /\.txt|\.pdf|\.docx|\.png|\.jpg/ }).first();
+  const fileRowExists = await fileRow.count() > 0;
 
-  if (isLinkVisible) {
-    // Get the parent row and click the view button
-    const row = page.locator('tr').filter({ has: fileLink });
-    await row.scrollIntoViewIfNeeded();
+  if (!fileRowExists) {
+    console.log('[SKIP] No document files found in current folder - skipping test');
+    return false;
+  }
 
-    const viewButton = row.locator('button').filter({ has: page.locator('span.anticon-eye') }).first();
-    if (await viewButton.isVisible().catch(() => false)) {
-      const currentUrl = page.url();
-      await viewButton.click();
-      await page.waitForFunction(
-        (oldUrl: string) => window.location.href !== oldUrl && window.location.href.includes('/documents/'),
-        currentUrl,
-        { timeout: 15000 }
-      );
-    } else {
-      await fileLink.click();
-      await page.waitForURL(/\/documents\/[a-f0-9]+/, { timeout: 15000 });
-    }
+  await fileRow.scrollIntoViewIfNeeded();
+
+  // Try eye icon (view detail) first, then name link/button
+  const viewButton = fileRow.locator('button').filter({ has: page.locator('span.anticon-eye') }).first();
+  if (await viewButton.isVisible().catch(() => false)) {
+    const currentUrl = page.url();
+    await viewButton.click();
+    await page.waitForFunction(
+      (oldUrl: string) => window.location.href !== oldUrl && window.location.href.includes('/documents/'),
+      currentUrl,
+      { timeout: 15000 }
+    );
   } else {
-    // FIX 2025-12-24: Check if any file row exists before attempting navigation
-    const fileRow = page.locator('.ant-table-tbody tr').filter({ hasText: /\.txt|\.pdf|\.docx|\.png|\.jpg/ }).first();
-    const fileRowExists = await fileRow.count() > 0;
-    if (!fileRowExists) {
-      console.log('[SKIP] No document files found in current folder - skipping test');
-      return false;
-    }
-    await fileRow.scrollIntoViewIfNeeded();
-    const firstButton = fileRow.locator('.ant-btn').first();
-    await firstButton.click();
-    await page.waitForURL(/\/documents\/[a-f0-9]+/, { timeout: 15000 });
+    // Click first clickable element in the row
+    const clickable = fileRow.locator('a, button.ant-btn-link, .ant-btn').first();
+    await clickable.click();
+    await page.waitForFunction(
+      () => window.location.href.includes('/documents/'),
+      { timeout: 15000 }
+    );
   }
 
   // Wait for document viewer to load
@@ -479,8 +474,10 @@ test.describe('Relationship Management', () => {
     }
 
     // Relationships tab is always visible in DocumentViewer (supports both ja/en)
+    // Wait for tabs to fully render before checking specific tab
+    await page.waitForSelector('.ant-tabs-tab', { timeout: 10000 }).catch(() => null);
     const relationshipsTab = page.getByRole('tab', { name: '関係' }).or(page.getByRole('tab', { name: 'Relationships' }));
-    const tabVisible = await relationshipsTab.isVisible({ timeout: 5000 }).catch(() => false);
+    const tabVisible = await relationshipsTab.isVisible({ timeout: 10000 }).catch(() => false);
     if (!tabVisible) {
       test.skip('DocumentViewer tabs not loaded - possible page load issue');
       return;

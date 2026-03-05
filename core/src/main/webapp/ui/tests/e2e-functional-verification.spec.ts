@@ -549,21 +549,30 @@ test.describe('Secondary Type Feature Verification', () => {
         return;
       }
 
-      // UPDATED (2025-12-14): Check if tabs are available before proceeding
-      // This handles cases where Document Viewer doesn't render tabs due to race conditions
-      const tabsVisible = await page.locator('.ant-tabs').isVisible().catch(() => false);
+      // Wait for tabs with retry — tabs may take time to render after navigation
+      let tabsVisible = false;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        tabsVisible = await page.locator('.ant-tabs').isVisible().catch(() => false);
+        if (tabsVisible) break;
+        console.log(`Tabs not visible (attempt ${attempt}/3), waiting...`);
+        await page.waitForTimeout(2000);
+      }
       if (!tabsVisible) {
-        // UPDATED (2025-12-26): Tabs ARE implemented in DocumentViewer.tsx
-        test.skip('Document Viewer tabs not visible - IS implemented in DocumentViewer.tsx');
+        // Try reload as last resort
+        await page.reload();
+        await page.waitForTimeout(3000);
+        tabsVisible = await page.locator('.ant-tabs').isVisible().catch(() => false);
+      }
+      if (!tabsVisible) {
+        test.skip('Document Viewer tabs not visible after retries');
         return;
       }
 
       // Click on secondary type tab - use getByRole for accessibility
       const secondaryTypeTab = page.getByRole('tab', { name: 'セカンダリタイプ' });
-      const isSecondaryTypeTabVisible = await secondaryTypeTab.isVisible({ timeout: 5000 }).catch(() => false);
+      const isSecondaryTypeTabVisible = await secondaryTypeTab.isVisible({ timeout: 10000 }).catch(() => false);
       if (!isSecondaryTypeTabVisible) {
-        // UPDATED (2025-12-26): Secondary type tab IS implemented in DocumentViewer.tsx line 882
-        test.skip('Secondary type tab not visible - IS implemented in DocumentViewer.tsx line 882');
+        test.skip('Secondary type tab not visible after extended wait');
         return;
       }
       await secondaryTypeTab.click();

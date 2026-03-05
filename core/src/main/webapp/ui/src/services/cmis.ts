@@ -257,7 +257,7 @@
  *
  * Common Failure Scenarios:
  * - getRepositories() fails: Network error or server not running (resolve: [])
- * - getRootFolder() fails: Authentication required (fallback folder provided)
+ * - getRootFolder() fails: Authentication required or server error (throws Error)
  * - getChildren() fails: Invalid folderId or permission denied (reject with error)
  * - createDocument() fails: Invalid properties or missing required fields (reject with error)
  * - updateProperties() fails: Object locked by checkout (reject with error)
@@ -732,63 +732,41 @@ export class CMISService {
 
 
   /**
-   * Get root folder of a repository using the new AtomPubClient
-   * 
-   * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
-   * which provides better separation of concerns and testability.
-   * The fallback behavior is preserved: always resolves with a folder, never rejects.
-   * 
+   * Get root folder of a repository.
+   * Throws on failure — callers must handle errors.
+   *
    * @param repositoryId Repository ID (e.g., 'bedroom')
    * @returns Promise resolving to CMISObject (root folder)
+   * @throws Error if the API call fails or returns no data
    */
   async getRootFolder(repositoryId: string): Promise<CMISObject> {
-    // Fallback folder used when request fails or returns invalid data
-    const fallbackFolder: CMISObject = {
-      id: 'e02f784f8360a02cc14d1314c10038ff',
-      name: 'Root Folder',
-      objectType: 'cmis:folder',
-      baseType: 'cmis:folder',
-      properties: {},
-      allowableActions: { canGetChildren: true },
-      path: '/'
-    };
+    const result = await this.atomPubClient.getRootFolder(repositoryId);
 
-    try {
-      // Use the new AtomPubClient for getRootFolder
-      const result = await this.atomPubClient.getRootFolder(repositoryId);
-
-      if (!result.success) {
-        // Handle HTTP errors - notify about auth error but still return fallback
-        if (result.status === 401 || result.status === 403) {
-          this.handleHttpError(result.status, result.error || 'Unauthorized', '');
-        }
-        return fallbackFolder;
+    if (!result.success) {
+      if (result.status === 401 || result.status === 403) {
+        this.handleHttpError(result.status, result.error || 'Unauthorized', '');
       }
-
-      if (!result.data) {
-        return fallbackFolder;
-      }
-
-      // Convert ParsedAtomEntry to CMISObject
-      const rootFolder = convertParsedEntryToCmisObject(result.data);
-      
-      // Only default canGetChildren to true if allowableActions is completely missing
-      // or if canGetChildren is undefined (not present in server response).
-      // IMPORTANT: Do NOT override explicit false values from the server - this is
-      // critical for security to prevent UI from enabling actions for restricted users.
-      if (!rootFolder.allowableActions) {
-        rootFolder.allowableActions = { canGetChildren: true };
-      } else if (rootFolder.allowableActions.canGetChildren === undefined) {
-        // Only set default if the server didn't specify canGetChildren at all
-        rootFolder.allowableActions.canGetChildren = true;
-      }
-      // If server explicitly returned canGetChildren: false, we preserve it
-      
-      return rootFolder;
-    } catch (error) {
-      // Network error or exception - return fallback folder
-      return fallbackFolder;
+      throw new Error(result.error || `Failed to get root folder (HTTP ${result.status})`);
     }
+
+    if (!result.data) {
+      throw new Error('Root folder response contained no data');
+    }
+
+    // Convert ParsedAtomEntry to CMISObject
+    const rootFolder = convertParsedEntryToCmisObject(result.data);
+
+    // Only default canGetChildren to true if allowableActions is completely missing
+    // or if canGetChildren is undefined (not present in server response).
+    // IMPORTANT: Do NOT override explicit false values from the server - this is
+    // critical for security to prevent UI from enabling actions for restricted users.
+    if (!rootFolder.allowableActions) {
+      rootFolder.allowableActions = { canGetChildren: true };
+    } else if (rootFolder.allowableActions.canGetChildren === undefined) {
+      rootFolder.allowableActions.canGetChildren = true;
+    }
+
+    return rootFolder;
   }
 
   /**

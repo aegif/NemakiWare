@@ -15,12 +15,12 @@
 NemakiWare は CMIS 1.1 準拠のオープンソースエンタープライズコンテンツ管理システムです。
 
 **技術スタック**:
-- Backend: Spring Framework, Apache Chemistry OpenCMIS, Jakarta EE 10
+- Backend: Spring Framework 7, Apache Chemistry OpenCMIS, Jakarta EE 11
 - Database: CouchDB 3.x
 - Search: Apache Solr 9.x
-- UI: React 18 + TypeScript + Vite 7 + Ant Design 5
-- Server: Tomcat 10.1+ (Jakarta EE)
-- Java: 21 (必須)
+- UI: React 19 + TypeScript + Vite 7 + Ant Design 5
+- Server: Tomcat 11.0+ (Jakarta EE 11, Virtual Threads 有効)
+- Java: 21 (必須, Virtual Threads)
 
 **モジュール構成**:
 - `core/`: メインCMISリポジトリサーバー (WAR)
@@ -178,6 +178,12 @@ npm run dev  # http://localhost:5173
 ### テストユーザーパスワード
 - BCryptハッシュ必須（平文は拒否される）
 
+### Virtual Threads
+- Tomcat Connector: `StandardVirtualThreadExecutor` で全HTTPリクエストをVirtual Threadで処理（VTはプール上限なし、JVM管理）
+- アプリケーション内ThreadPoolExecutor: ThreadFactoryを `Thread.ofVirtual().name(...).factory()` に統一
+- ThreadPoolExecutor構造（キューサイズ、CallerRunsPolicy等）はバックプレッシャー維持のため変更不可
+- ScheduledExecutorService（McpAuthenticationHandler）はVT非対応のためプラットフォームスレッドのまま
+
 ### CMISクライアント互換性設定
 cmislib等のCMISクライアントは `/atom` にリポジトリID未指定でアクセスしてサービスドキュメントを取得します。
 
@@ -210,9 +216,9 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ---
 
-## セキュリティステータス (2026-02-28) ✅
+## セキュリティステータス (2026-03-05)
 
-- npm脆弱性: 0件
+- npm脆弱性: 3件 (swagger-ui-react経由: dompurify XSS moderate, immutable Prototype Pollution high×2 — 修正にはbreaking change必要、開発ツールのため低リスク)
 - Maven依存関係: 最新化済み
 - PDF.js CVE-2024-4367: 対応済み (react-pdf 10.0.1)
 - エクスポートACLリーク: 対応済み (CAN_GET_ACL権限チェック追加)
@@ -224,30 +230,53 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ## 現在のバージョン
 
-**3.1.0-RC4** (2026-02-28)
+**3.1.0-RC7** (2026-03-05)
+
+### RC7 (2026-03-05)
+- OOM修正: getLatestChange() 全件ロード→limit=1最適化 (CouchDB changesByToken 78k行対応)
+- 固定ROOT_FOLDER_ID除去: cmis.ts/DocumentList/DocumentViewer/テスト12ファイルから動的解決に移行
+- Virtual Threads標準有効化 (Tomcat StandardVirtualThreadExecutor + アプリ内ThreadFactory統一)
+- PropertyValue @JsonIgnore + ApiCrudSmokeIT 実API検証
+- Playwright E2Eテスト品質改善 (832 passed / 0 failed / 69 skipped)
+  - 管理画面ナビゲーション競合状態修正 (retry-navigate)
+  - Solrポーリングタイムアウト拡張 (30s→60s)
+  - API事前チェックによるテストユーザー存在確認 (120sタイムアウト回避)
+  - Cleanup テスト削除失敗検知 (fetchレスポンス検証追加)
+  - バルク削除セレクタ修正 (行ボタン誤マッチ防止 + 多言語対応)
+  - OIDC skipガード分離 (サーバー到達性 vs クライアント設定)
+- OOM負荷テストスクリプト追加 (7テスト、ピークヒープ1.26GB/3GB)
+- React 19互換パッチ適用
+
+### RC6 (2026-03-03)
+- Dependabotアラート対応 (全モジュール依存関係更新)
+- SLF4J 1.7→2.0バージョン統一
+- レガシーファイル大規模整理 (49ファイル削除)
+- レガシーモジュール削除
+
+### RC5 (2026-03-01)
+- systemPath依存をGitHub Packages通常解決に移行
+- OpenCMIS同梱ソース切り離し
+- SLF4Jバインディング一本化 (logback-classic)
+
+### RC1-RC4 (〜2026-02-28)
 - CMIS ContentChanges API 実装 (Cloudant SDK Document デシリアライゼーション修正、changeLogToken 数値キー対応)
-- ContentChanges イベント欠落防止 (lastSuccessfulToken トラッキング、warn ログ化)
-- ContentChanges 削除済み型フォールバック (OpenCMIS JSONConverter 型解決エラー防止)
-- CMIS 必須プロパティ null 安全化 (creationDate/lastModificationDate epoch フォールバック)
-- childByName ビュー HashMap→LinkedHashMap 修正 (順序保証)
-- Solr 多言語検索 (text_ja + text_en デュアルインデックス、Porter ステミング)
-- パフォーマンス改善 (deleteTree 並列化、getChildByName O(1) ビュー最適化、bulkUpdateProperties スレッドプール修正)
-- Versionable 文書の新 ID キャッシュ無効化
-- deleteTree 3層バグ修正 + Webhook 安全性改善
+- ContentChanges イベント欠落防止 + 削除済み型フォールバック
+- CMIS 必須プロパティ null 安全化 (epoch フォールバック)
+- childByName ビュー HashMap→LinkedHashMap 修正
+- Solr 多言語検索 (text_ja + text_en デュアルインデックス)
+- パフォーマンス改善 (deleteTree 並列化、getChildByName O(1) ビュー最適化)
 - クラウド統合 (Google Workspace / Microsoft Entra ID ディレクトリ同期、Cloud Drive連携)
 - OIDC認証 (Google / Microsoft)
 - 多言語対応 (日本語/英語)
-- セキュリティ脆弱性全解消
 - タイプ管理機能強化
-- React 18 + Vite 7 移行完了
+- React 19 + Vite 7 移行完了
 - インポート/エクスポート機能改善 (同名上書き、リレーションシップ対応、ID読替)
-- Webhook機能 (CMIS権限チェック、CHILD_BATCH配送、設計書整合)
+- Webhook機能 (CMIS権限チェック、CHILD_BATCH配送)
 - MCP (Model Context Protocol) サーバー
 - RAGセマンティック検索
 - アーカイブ管理強化 (検索・一括操作・ダウンロード)
 - WebAuthnパスキー認証
 - サーバーサイドページネーション + スケーラビリティ改善
-- パッチ冪等性・障害伝播修正
 
 ---
 

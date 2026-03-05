@@ -26,7 +26,9 @@
 		</property>
 		<property name="ignoreResourceNotFound" value="true"/>
 		<property name="ignoreUnresolvablePlaceholders" value="false"/>
-		<property name="systemPropertiesModeName" value="SYSTEM_PROPERTIES_MODE_OVERRIDE"/>
+		<!-- Note: systemPropertiesModeName removed in migration to PropertySourcesPlaceholderConfigurer.
+		     Default behavior: Environment properties (system props, env vars) override local file properties,
+		     equivalent to the previous SYSTEM_PROPERTIES_MODE_OVERRIDE setting. -->
 	</bean>
 	
 	<!-- Spring Property Manager for additional functionality -->

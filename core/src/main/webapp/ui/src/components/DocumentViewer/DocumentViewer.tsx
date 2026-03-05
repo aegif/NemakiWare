@@ -938,7 +938,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   // CRITICAL FIX (2025-12-28): Show proper error UI with back button when object load fails
   // Previously, failed loads showed "読み込み中..." indefinitely
   if (loadError) {
-    const errorFolderId = searchParams.get('folderId') || 'e02f784f8360a02cc14d1314c10038ff';
+    const errorFolderId = searchParams.get('folderId');
+    const backUrl = errorFolderId ? `/documents?folderId=${errorFolderId}` : '/documents';
     return (
       <Card>
         <Alert
@@ -949,7 +950,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           action={
             <Button
               icon={<ArrowLeftOutlined />}
-              onClick={() => navigate(`/documents?folderId=${errorFolderId}`)}
+              onClick={() => navigate(backUrl)}
             >
               {t('documentViewer.backToFolder')}
             </Button>
@@ -1134,14 +1135,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         <span
           style={{ color: '#1890ff', cursor: 'pointer' }}
           onClick={async () => {
-            // Navigate to root
-            try {
-              const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
-              navigate(`/documents?folderId=${rootFolderId}`);
-            } catch (error) {
-              console.error('Navigation error:', error);
-              message.error(t('common.errors.navigationFailed'));
-            }
+            // Navigate to root (DocumentList will resolve rootFolderId dynamically)
+            navigate('/documents');
           }}
         >
           /
@@ -1369,7 +1364,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 onClick={() => {
                   // CRITICAL FIX (2025-12-23): Use URL folderId as primary source for back navigation
                   // NemakiWare's CMIS implementation does NOT return cmis:parentId property
-                  // Priority: 1. URL folderId param (passed from DocumentList), 2. ROOT_FOLDER_ID
+                  // Priority: 1. URL folderId param (passed from DocumentList), 2. /documents (dynamic root resolution)
                   const urlFolderId = searchParams.get('folderId');
                   // CRITICAL FIX (2025-12-30): Also get currentFolderId from URL for tree pivot restoration
                   const urlCurrentFolderId = searchParams.get('currentFolderId');
@@ -1379,12 +1374,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                   console.log('[DocumentViewer] URL currentFolderId:', urlCurrentFolderId);
 
                   // Use URL folderId which was passed when navigating to this document
-                  const effectiveFolderId = urlFolderId || 'e02f784f8360a02cc14d1314c10038ff';
-                  // CRITICAL FIX (2025-12-30): Pass currentFolderId back to DocumentList for tree pivot restoration
-                  const effectiveCurrentFolderId = urlCurrentFolderId || effectiveFolderId;
-                  const targetUrl = `/documents?folderId=${effectiveFolderId}&currentFolderId=${effectiveCurrentFolderId}`;
-                  console.log('[DocumentViewer] Navigating to:', targetUrl);
-                  navigate(targetUrl);
+                  if (urlFolderId) {
+                    const effectiveCurrentFolderId = urlCurrentFolderId || urlFolderId;
+                    const targetUrl = `/documents?folderId=${urlFolderId}&currentFolderId=${effectiveCurrentFolderId}`;
+                    console.log('[DocumentViewer] Navigating to:', targetUrl);
+                    navigate(targetUrl);
+                  } else {
+                    // No URL folderId — DocumentList will resolve rootFolderId dynamically
+                    navigate('/documents');
+                  }
                 }}
               >
                 {t('documentViewer.back')}

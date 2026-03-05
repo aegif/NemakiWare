@@ -1,5 +1,6 @@
 package jp.aegif.nemaki.api.v1.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -193,6 +194,7 @@ public class PropertyValue {
         this.queryName = queryName;
     }
     
+    @JsonIgnore
     @SuppressWarnings("unchecked")
     public String getStringValue() {
         if (value == null) return null;
@@ -204,6 +206,7 @@ public class PropertyValue {
         return String.valueOf(value);
     }
     
+    @JsonIgnore
     public Long getIntegerValue() {
         if (value == null) return null;
         if (value instanceof Long) return (Long) value;
@@ -212,6 +215,7 @@ public class PropertyValue {
         return null;
     }
     
+    @JsonIgnore
     public Double getDecimalValue() {
         if (value == null) return null;
         if (value instanceof Double) return (Double) value;
@@ -224,6 +228,7 @@ public class PropertyValue {
      * Gets the value as a Boolean.
      * @return the Boolean value, or null if value is null or cannot be converted to Boolean
      */
+    @JsonIgnore
     public Boolean getBooleanValue() {
         if (value == null) return null;
         if (value instanceof Boolean) return (Boolean) value;
@@ -231,6 +236,7 @@ public class PropertyValue {
         return null;
     }
     
+    @JsonIgnore
     @SuppressWarnings("unchecked")
     public List<String> getMultiStringValue() {
         if (value == null) return null;

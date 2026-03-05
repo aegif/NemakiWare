@@ -23,7 +23,7 @@ NemakiWare 3.1.0 のシステムアーキテクチャ概要です。
 │                         NemakiWare System                          │
 │                                                                     │
 │  ┌──────────────────────────────────────────────────────────────┐   │
-│  │                    Core (Tomcat 10.1 + JRE 17)               │   │
+│  │                    Core (Tomcat 11.0 + Java 21)               │   │
 │  │                                                               │   │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │   │
 │  │  │  React SPA   │  │  CMIS Server │  │    REST API      │   │   │
@@ -70,7 +70,7 @@ docker-compose-simple.yml
 │
 ├── couchdb (:5984)     ── CouchDB 3.3.3
 ├── solr    (:8983)     ── カスタム Solr 9.x
-├── core    (:8080)     ── Tomcat 10.1 + Core WAR
+├── core    (:8080)     ── Tomcat 11.0 + Core WAR
 │   depends_on: couchdb (healthy), solr (healthy)
 │
 └── [profile: rag]
@@ -83,14 +83,14 @@ docker-compose-simple.yml
 
 ### Core (CMIS サーバー + React UI)
 
-NemakiWare のメインコンポーネント。Tomcat 10.1 上で動作する WAR アプリケーション。
+NemakiWare のメインコンポーネント。Tomcat 11.0 上で動作する WAR アプリケーション。
 
 | レイヤー | 技術 | 役割 |
 |----------|------|------|
-| **UI** | React 18, TypeScript, Vite 7, Ant Design 5 | ブラウザベースの管理インターフェース |
+| **UI** | React 19, TypeScript, Vite 7, Ant Design 5 | ブラウザベースの管理インターフェース |
 | **CMIS Binding** | Apache Chemistry OpenCMIS 1.1.0 | CMIS 1.1 プロトコル実装 (AtomPub, Browser, WSDL) |
 | **REST API** | JAX-RS (Jersey) | ユーザー管理、認証、アーカイブ等の拡張 API |
-| **Service** | Spring Framework 6 | ビジネスロジック (CMIS操作、権限、検索、同期) |
+| **Service** | Spring Framework 7 | ビジネスロジック (CMIS操作、権限、検索、同期) |
 | **DAO** | CouchDB クライアント (Ektorp) | データアクセス抽象化 |
 | **Cache** | EhCache 3 | コンテンツ・ACL・タイプ定義のキャッシュ |
 

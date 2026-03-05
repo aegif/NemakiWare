@@ -25,7 +25,7 @@ const TEST_USER = 'admin';
 const TEST_PASSWORD = 'admin';
 const REPOSITORY_ID = 'bedroom';
 const BASE_URL = 'http://localhost:8080';
-const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
+let ROOT_FOLDER_ID: string;
 
 // Unique search term that won't exist in other documents
 const UNIQUE_SEARCH_TERM = `UNIQUE_SEARCH_VERIFY_${generateTestId()}`;
@@ -152,6 +152,14 @@ test.describe('Search Tokenization Bug Verification', () => {
   let solrIndexingAvailable = true;
 
   test.beforeAll(async ({ request }) => {
+    // Dynamically fetch root folder ID
+    const repoInfoResponse = await request.get(
+      `${BASE_URL}/core/browser/${REPOSITORY_ID}?cmisselector=repositoryInfo`,
+      { headers: { 'Authorization': basicAuth() } }
+    );
+    const repoInfoData = await repoInfoResponse.json();
+    ROOT_FOLDER_ID = repoInfoData[REPOSITORY_ID]?.rootFolderId;
+
     // Create a probe document and check if it gets indexed
     const probeName = `solr-probe-${generateTestId()}.txt`;
     let probeId: string | null = null;

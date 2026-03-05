@@ -122,6 +122,7 @@ test.describe('Access Control and Permissions', () => {
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
+  let rootFolderId: string;
   const restrictedFolderName = `restricted-folder-${generateTestId()}`;
   const testDocName = `permission-test-doc-${generateTestId()}.txt`;
 
@@ -133,6 +134,14 @@ test.describe('Access Control and Permissions', () => {
   // REFACTORING (2026-01-26): Changed from UI-based to API-based cleanup for reliability
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(60000); // Reduced from 180s to 60s with API-based cleanup
+
+    // Dynamically fetch root folder ID
+    const repoInfoResponse = await fetch(
+      'http://localhost:8080/core/browser/bedroom?cmisselector=repositoryInfo',
+      { headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}` } }
+    );
+    const repoInfoData = await repoInfoResponse.json();
+    rootFolderId = repoInfoData['bedroom']?.rootFolderId;
 
     // Allow skipping pre-cleanup via environment variable for faster test execution
     if (process.env.SKIP_CLEANUP === 'true') {
@@ -466,8 +475,6 @@ test.describe('Access Control and Permissions', () => {
     try {
       console.log('Setup: Granting root folder access to test user via CMIS API');
 
-      const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
-
       // Use CMIS Browser Binding to apply ACL to root folder
       // Note: cmis:read alone is insufficient for getChildren operation
       // Grant cmis:all for full read access including folder navigation
@@ -566,7 +573,7 @@ test.describe('Access Control and Permissions', () => {
           headers: { 'Authorization': authHeader },
           form: {
             cmisaction: 'createFolder',
-            folderId: 'e02f784f8360a02cc14d1314c10038ff',
+            folderId: rootFolderId,
             'propertyId[0]': 'cmis:objectTypeId',
             'propertyValue[0]': 'cmis:folder',
             'propertyId[1]': 'cmis:name',
@@ -589,7 +596,6 @@ test.describe('Access Control and Permissions', () => {
     // Previous UI-based test had issues with conditional skipping
     test('should set ACL permissions on folder via API (admin only)', async ({ page }) => {
       const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
-      const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
       const testFolderName = `acl-set-test-${generateTestId()}`;
 
       // Step 1: Create a test folder via CMIS API
@@ -755,7 +761,6 @@ test.describe('Access Control and Permissions', () => {
     // API-based approach is more reliable and faster
     test('should modify permissions from read-only to read-write via API', async ({ page }) => {
       const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
-      const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
       const testFolderName = `permission-modify-test-${generateTestId()}`;
       const testPrincipal = 'testuser';
 
@@ -866,7 +871,6 @@ test.describe('Access Control and Permissions', () => {
     // API-based approach bypasses UI component limitations entirely
     test('should remove and restore ACL entry via API', async ({ page }) => {
       const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
-      const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
       const testFolderName = `acl-test-folder-${generateTestId()}`;
       const testPrincipal = 'testuser';
 
@@ -1010,7 +1014,6 @@ test.describe('Access Control and Permissions', () => {
 
       try {
         // Create folder using CMIS Browser Binding
-        const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
         const createFolderUrl = `http://localhost:8080/core/browser/bedroom`;
 
         const response = await page.request.post(createFolderUrl, {
@@ -1100,44 +1103,41 @@ test.describe('Access Control and Permissions', () => {
     });
 
     test.beforeEach(async ({ page, browserName }) => {
-      // CRITICAL FIX (2025-10-26): Extended timeout for test user login with permission delays
-      // Test users require additional time for ACL permission propagation after creation
-      test.setTimeout(120000); // 2 minutes for test user login and UI initialization
+      test.setTimeout(120000);
 
       authHelper = new AuthHelper(page);
       testHelper = new TestHelper(page);
 
+      // Pre-check: verify test user exists via API before attempting slow UI login
+      const adminAuth = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
+      try {
+        const userCheckResponse = await page.request.get(
+          `http://localhost:8080/core/api/v1/cmis/repositories/bedroom/users/${testUsername}`,
+          { headers: { 'Authorization': adminAuth }, timeout: 10000 }
+        );
+        if (!userCheckResponse.ok()) {
+          console.log(`Test: User ${testUsername} does not exist (HTTP ${userCheckResponse.status()})`);
+          test.skip(true, `Test user ${testUsername} not found — user creation may have failed`);
+          return;
+        }
+      } catch (e) {
+        console.log(`Test: User check failed:`, e);
+        test.skip(true, `Cannot verify test user ${testUsername} — API unreachable`);
+        return;
+      }
+
       await page.context().clearCookies();
 
-      // Try to login as test user - skip tests if user wasn't created
+      // Login as test user
       try {
-        console.log(`Test: Attempting login as ${testUsername} with password ${testUserPassword}`);
-        console.log('Test: Current URL before login:', page.url());
-
         await authHelper.login(testUsername, testUserPassword);
-        console.log('Test: Login method completed, waiting for UI initialization');
-
-        await page.waitForTimeout(2000); // Wait for UI initialization after login
-        console.log('Test: After 2s wait, current URL:', page.url());
-
-        await testHelper.waitForAntdLoad();
-        console.log('Test: Test user login successful - Ant Design loaded');
       } catch (error) {
-        console.log(`Test: Test user login failed - error details:`, error);
-        console.log('Test: Current URL after error:', page.url());
-
-        // Take screenshot for debugging
-        const screenshot = await page.screenshot();
-        console.log('Test: Screenshot size:', screenshot.length, 'bytes');
-
-        // Check for error messages on page
-        const errorMessages = await page.locator('.ant-message-error, .ant-notification-error').allTextContents();
-        if (errorMessages.length > 0) {
-          console.log('Test: Error messages visible:', errorMessages);
-        }
-
-        test.skip(true, `Test user ${testUsername} login failed. This may indicate the user was not created successfully or lacks repository access.`);
+        console.log(`Test: Test user login failed:`, error);
+        test.skip(true, `Test user ${testUsername} login failed (password may be incorrect)`);
+        return;
       }
+
+      await testHelper.waitForAntdLoad();
 
       // Navigate to documents
       const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -1157,7 +1157,6 @@ test.describe('Access Control and Permissions', () => {
       const adminAuth = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
       // Use the dynamically created test user credentials from the test suite
       const testUserAuth = `Basic ${Buffer.from(`${testUsername}:${testUserPassword}`).toString('base64')}`;
-      const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
       const testFolderName = `view-test-folder-${generateTestId()}`;
       const testDocumentName = `test-doc-${generateTestId()}.txt`;
 

@@ -41,11 +41,27 @@ const TEST_PASSWORD = 'admin';
 const REPOSITORY_ID = 'bedroom';
 const BASE_URL = 'http://localhost:8080';
 const UI_URL = `${BASE_URL}/core/ui`;
-const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
+
+// Resolved dynamically in beforeAll
+let ROOT_FOLDER_ID = '';
 
 function basicAuth(): string {
   return `Basic ${Buffer.from(`${TEST_USER}:${TEST_PASSWORD}`).toString('base64')}`;
 }
+
+// Resolve root folder ID dynamically from repository info
+test.beforeAll(async ({ request }) => {
+  const response = await request.get(
+    `${BASE_URL}/core/browser/${REPOSITORY_ID}?cmisselector=repositoryInfo`,
+    { headers: { 'Authorization': basicAuth() } }
+  );
+  const data = await response.json();
+  ROOT_FOLDER_ID = data.rootFolderId || data[REPOSITORY_ID]?.rootFolderId;
+  if (!ROOT_FOLDER_ID) {
+    throw new Error('Could not resolve root folder ID from repository info');
+  }
+  console.log('[SETUP] Resolved ROOT_FOLDER_ID:', ROOT_FOLDER_ID);
+});
 
 // Helper: Create document via API
 async function createDocument(request: any, name: string, content?: string): Promise<string> {
@@ -195,28 +211,29 @@ async function executeCmisQuery(request: any, query: string): Promise<any> {
 }
 
 /**
- * Execute a CMIS query with retry logic for Solr indexing delay.
- * Retries up to maxRetries times with retryDelay ms between attempts,
- * waiting for numItems > 0.
+ * Poll a CMIS query until expectedId appears in results (or timeout).
+ * Returns the result IDs array for further assertions.
  */
-async function executeCmisQueryWithRetry(
+async function pollQueryForId(
   request: any,
   query: string,
-  maxRetries: number = 5,
-  retryDelay: number = 3000
-): Promise<any> {
-  let result: any;
-  for (let i = 0; i < maxRetries; i++) {
-    result = await executeCmisQuery(request, query);
-    if (result.numItems > 0) {
-      return result;
+  expectedId: string,
+  { timeoutMs = 60000, intervalMs = 3000 } = {}
+): Promise<string[]> {
+  const deadline = Date.now() + timeoutMs;
+  let resultIds: string[] = [];
+  while (Date.now() < deadline) {
+    const result = await executeCmisQuery(request, query);
+    resultIds = result.results?.map((r: any) =>
+      r.properties?.['cmis:objectId']?.value || r.succinctProperties?.['cmis:objectId']
+    ) || [];
+    if (resultIds.includes(expectedId)) {
+      return resultIds;
     }
-    if (i < maxRetries - 1) {
-      console.log(`[RETRY] Query returned 0 results, retrying in ${retryDelay}ms (attempt ${i + 1}/${maxRetries})...`);
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
-    }
+    console.log(`[POLL] Waiting for ${expectedId} to appear in query results...`);
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
   }
-  return result;
+  return resultIds;
 }
 
 // ============================================================================
@@ -367,20 +384,12 @@ test.describe('Secondary Type Search', () => {
       await updateDocumentProperties(request, docId, {}, { addSecondaryTypeIds: ['nemaki:commentable'] });
       console.log('[TEST] Added secondary type');
 
-      // Wait for Solr indexing (initial wait)
-      await new Promise(resolve => setTimeout(resolve, 5000));
-
-      // Execute CMIS SQL query with retry for Solr indexing delay
+      // Poll until our docId appears in query results (Solr eventual consistency)
       const query = `SELECT cmis:objectId, cmis:name FROM cmis:document WHERE ANY cmis:secondaryObjectTypeIds IN ('nemaki:commentable')`;
-      console.log('[TEST] Executing query:', query);
+      console.log('[TEST] Polling query:', query);
 
-      const result = await executeCmisQueryWithRetry(request, query);
-      console.log('[TEST] Query returned', result.numItems, 'results');
-
-      // Verify our document is in the results
-      const resultIds = result.results?.map((r: any) =>
-        r.properties?.['cmis:objectId']?.value || r.succinctProperties?.['cmis:objectId']
-      ) || [];
+      const resultIds = await pollQueryForId(request, query, docId);
+      console.log('[TEST] Query returned', resultIds.length, 'results');
 
       expect(resultIds).toContain(docId);
       console.log('✓ Document found by secondary type query');
@@ -401,15 +410,12 @@ test.describe('Secondary Type Search', () => {
       docId = await createDocument(request, docName, 'Equality search test');
       await updateDocumentProperties(request, docId, {}, { addSecondaryTypeIds: ['nemaki:commentable'] });
 
-      // Wait for indexing (initial wait)
-      await new Promise(resolve => setTimeout(resolve, 5000));
-
-      // Execute equality query with retry
+      // Poll until our docId appears in query results (Solr eventual consistency)
       const query = `SELECT cmis:objectId FROM cmis:document WHERE cmis:secondaryObjectTypeIds = 'nemaki:commentable'`;
-      const result = await executeCmisQueryWithRetry(request, query);
+      const resultIds = await pollQueryForId(request, query, docId);
 
-      expect(result.numItems).toBeGreaterThan(0);
-      console.log('✓ Equality query for secondary type works:', result.numItems, 'results');
+      expect(resultIds).toContain(docId);
+      console.log('✓ Equality query for secondary type works:', resultIds.length, 'results');
 
     } finally {
       if (docId) await deleteDocument(request, docId).catch(() => {});
@@ -425,14 +431,12 @@ test.describe('Secondary Type Search', () => {
       docId = await createDocument(request, `multi-sec-${timestamp}.txt`, 'Multi type search');
       await updateDocumentProperties(request, docId, {}, { addSecondaryTypeIds: ['nemaki:commentable'] });
 
-      await new Promise(resolve => setTimeout(resolve, 5000));
-
-      // Query for multiple secondary types (one exists, one doesn't) with retry
+      // Poll until our docId appears in query results (Solr eventual consistency)
       const query = `SELECT cmis:objectId FROM cmis:document WHERE ANY cmis:secondaryObjectTypeIds IN ('nemaki:commentable', 'nemaki:testAspect')`;
-      const result = await executeCmisQueryWithRetry(request, query);
+      const resultIds = await pollQueryForId(request, query, docId);
 
-      expect(result.numItems).toBeGreaterThan(0);
-      console.log('✓ Multiple secondary types query works:', result.numItems, 'results');
+      expect(resultIds).toContain(docId);
+      console.log('✓ Multiple secondary types query works:', resultIds.length, 'results');
 
     } finally {
       if (docId) await deleteDocument(request, docId).catch(() => {});
@@ -452,20 +456,24 @@ test.describe('Secondary Type Search', () => {
       await updateDocumentProperties(request, docWithSecondary, {}, { addSecondaryTypeIds: ['nemaki:commentable'] });
 
       // Create document WITHOUT secondary type
-      docWithoutSecondary = await createDocument(request, `${uniquePrefix}-without.txt`, 'No secondary');
+      const docWithoutName = `${uniquePrefix}-without.txt`;
+      docWithoutSecondary = await createDocument(request, docWithoutName, 'No secondary');
 
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Query for secondary type
+      // Poll until docWithSecondary appears in secondary type query
       const query = `SELECT cmis:objectId, cmis:name FROM cmis:document WHERE ANY cmis:secondaryObjectTypeIds IN ('nemaki:commentable')`;
-      const result = await executeCmisQuery(request, query);
+      const resultIds = await pollQueryForId(request, query, docWithSecondary);
 
-      const resultIds = result.results?.map((r: any) =>
-        r.properties?.['cmis:objectId']?.value
-      ) || [];
+      // Also ensure docWithoutSecondary is indexed (search by name) before negative assertion
+      const nameQuery = `SELECT cmis:objectId FROM cmis:document WHERE cmis:name = '${docWithoutName}'`;
+      const nameResultIds = await pollQueryForId(request, nameQuery, docWithoutSecondary);
+      expect(nameResultIds).toContain(docWithoutSecondary);
+      console.log('[TEST] docWithoutSecondary confirmed indexed via name query');
 
-      expect(resultIds).toContain(docWithSecondary);
-      expect(resultIds).not.toContain(docWithoutSecondary);
+      // Re-run secondary type query now that both docs are indexed
+      const finalResultIds = await pollQueryForId(request, query, docWithSecondary);
+
+      expect(finalResultIds).toContain(docWithSecondary);
+      expect(finalResultIds).not.toContain(docWithoutSecondary);
       console.log('✓ Only documents WITH secondary type are returned');
 
     } finally {

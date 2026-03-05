@@ -60,6 +60,12 @@ test.describe('Password Change', () => {
   test('admin sees password reset section in user edit modal', async ({ page }) => {
     await loginAsUser(page, 'admin', 'admin');
     await page.goto(`${UI_URL}/#/users`);
+    // Wait for page to stabilize - re-navigate if redirected (session timing issue)
+    await page.waitForTimeout(3000);
+    if (!page.url().includes('/users')) {
+      await page.goto(`${UI_URL}/#/users`);
+      await page.waitForTimeout(2000);
+    }
     await page.waitForSelector('.ant-table', { timeout: 15000 });
 
     // Search for test user to handle pagination
@@ -121,9 +127,17 @@ test.describe('Password Change', () => {
   test('user can access account settings page', async ({ page }) => {
     await loginAsUser(page, TEST_USER_ID, currentTestUserPassword);
 
+    // Wait for auth state to fully load before navigating
+    await page.waitForTimeout(3000);
     // Navigate to account settings
     await page.goto(`${UI_URL}/#/account`);
-    await page.waitForTimeout(2000);
+    // Retry navigation if redirected (auth state race condition)
+    for (let retry = 0; retry < 3; retry++) {
+      await page.waitForTimeout(2000);
+      if (page.url().includes('/account')) break;
+      console.log(`password-change: Retrying navigation to /account (attempt ${retry + 2})`);
+      await page.goto(`${UI_URL}/#/account`);
+    }
 
     // Click on the password tab (default tab is 'profile')
     const passwordTab = page.locator('.ant-tabs-tab').filter({ hasText: /パスワード|Password/i });

@@ -400,7 +400,7 @@ public class DataUtil {
 						cardinality, updatability, inherited, required,
 						queryable, orderable, choices, openChoice,
 						convertListType(GregorianCalendar.class, defaultValue),
-						DateTimeResolution.TIME);
+						resolutionToDateTimeResolution(resolution));
 				break;
 			case DECIMAL:
 				result = createPropDecimalDef(id, localName, localNameSpace,
@@ -906,7 +906,7 @@ public class DataUtil {
 				clonedDefaultValue,
 				toLongSafe(typeSpecificValues.get("minValue")),
 				toLongSafe(typeSpecificValues.get("maxValue")),
-				(Resolution) typeSpecificValues.get("resolution"),
+				dateTimeResolutionToResolution((DateTimeResolution) typeSpecificValues.get("resolution")),
 				(DecimalPrecision) typeSpecificValues.get("decimalPrecision"),
 				(BigDecimal) typeSpecificValues.get("decimalMinValue"),
 				(BigDecimal) typeSpecificValues.get("decimalMaxValue"),
@@ -1022,6 +1022,41 @@ public class DataUtil {
 		}
 		
 		return typeSpecificValues;
+	}
+
+	/**
+	 * Convert Lucene DateTools.Resolution to OpenCMIS DateTimeResolution.
+	 * Model classes store Resolution (Lucene), but CMIS API uses DateTimeResolution.
+	 */
+	private static DateTimeResolution resolutionToDateTimeResolution(Resolution resolution) {
+		if (resolution == null) return DateTimeResolution.TIME;
+		switch (resolution) {
+			case YEAR:
+				return DateTimeResolution.YEAR;
+			case MONTH:
+			case DAY:
+				return DateTimeResolution.DATE;
+			default:
+				return DateTimeResolution.TIME;
+		}
+	}
+
+	/**
+	 * Convert OpenCMIS DateTimeResolution to Lucene DateTools.Resolution.
+	 * Used when cloning PropertyDefinitions (CMIS → model).
+	 */
+	private static Resolution dateTimeResolutionToResolution(DateTimeResolution resolution) {
+		if (resolution == null) return null;
+		switch (resolution) {
+			case YEAR:
+				return Resolution.YEAR;
+			case DATE:
+				return Resolution.DAY;
+			case TIME:
+				return Resolution.MILLISECOND;
+			default:
+				return Resolution.MILLISECOND;
+		}
 	}
 
 	public static ObjectData copyObjectData(ObjectData objectData) {

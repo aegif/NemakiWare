@@ -145,7 +145,7 @@ public class SolrUtil implements ApplicationContextAware {
 		java.util.concurrent.ThreadPoolExecutor tpe = new java.util.concurrent.ThreadPoolExecutor(
 			2, 4, 60L, java.util.concurrent.TimeUnit.SECONDS,
 			new java.util.concurrent.LinkedBlockingQueue<>(512),
-			r -> { Thread t = new Thread(r, "solr-async"); t.setDaemon(true); return t; },
+			Thread.ofVirtual().name("solr-async-", 0).factory(),
 			new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
 		tpe.allowCoreThreadTimeOut(true);
 		this.asyncSolrExecutor = tpe;

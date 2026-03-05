@@ -233,12 +233,12 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       await page.fill('textarea[id*="description"]', 'Test custom document type for E2E testing');
 
       // Select base type using combobox
-      const baseTypeCombobox = page.locator('input[role="combobox"]').filter({ hasText: 'ベースタイプ' }).or(
-        page.locator('.ant-select-selector').filter({ has: page.locator(':text("ベースタイプを選択")') })
-      ).first();
-      await baseTypeCombobox.click({ timeout: 10000 });
+      // Ant Design Form.Item with name="baseTypeId" renders a Select component
+      const baseTypeFormItem = page.locator('.ant-form-item').filter({ hasText: /ベースタイプ|Base Type/i });
+      const baseTypeSelect = baseTypeFormItem.locator('.ant-select').first();
+      await baseTypeSelect.click({ timeout: 10000 });
       await page.waitForTimeout(500);
-      const documentOption = page.locator('.ant-select-item-option').filter({ hasText: /ドキュメント|Documents/i }).first();
+      const documentOption = page.locator('.ant-select-item-option').filter({ hasText: /ドキュメント|Document/i }).first();
       await documentOption.click();
 
       // Switch to properties tab

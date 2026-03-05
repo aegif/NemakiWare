@@ -77,6 +77,7 @@ test.describe('Advanced ACL Management', () => {
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
+  let rootFolderId: string;
   // FIX: Enhanced uniqueness for parallel execution - timestamp + random value
   const testGroupName = `testgroup-${generateTestId()}-${Math.random().toString(36).substring(2, 8)}`;
   const testFolderName = `acl-test-folder-${generateTestId()}-${Math.random().toString(36).substring(2, 8)}`;
@@ -85,6 +86,14 @@ test.describe('Advanced ACL Management', () => {
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
+
+    // Dynamically fetch root folder ID
+    const repoResponse = await page.request.get(
+      'http://localhost:8080/core/browser/bedroom?cmisselector=repositoryInfo',
+      { headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}` } }
+    );
+    const repoData = await repoResponse.json();
+    rootFolderId = repoData['bedroom']?.rootFolderId;
 
     // Login as admin
     await authHelper.login();
@@ -145,7 +154,6 @@ test.describe('Advanced ACL Management', () => {
     // This test verifies that group permissions can be applied via CMIS Browser Binding API
 
     const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
-    const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff'; // bedroom root folder ID
 
     // Step 1: Create a test folder via CMIS API
     console.log('Test: Creating folder via CMIS API');
@@ -408,7 +416,7 @@ test.describe('Advanced ACL Management', () => {
       },
       form: {
         'cmisaction': 'createFolder',
-        'folderId': 'e02f784f8360a02cc14d1314c10038ff', // bedroom root folder ID
+        'folderId': rootFolderId,
         'propertyId[0]': 'cmis:objectTypeId',
         'propertyValue[0]': 'cmis:folder',
         'propertyId[1]': 'cmis:name',
@@ -496,7 +504,7 @@ test.describe('Advanced ACL Management', () => {
       },
       form: {
         'cmisaction': 'createFolder',
-        'folderId': 'e02f784f8360a02cc14d1314c10038ff', // bedroom root folder ID
+        'folderId': rootFolderId,
         'propertyId[0]': 'cmis:objectTypeId',
         'propertyValue[0]': 'cmis:folder',
         'propertyId[1]': 'cmis:name',

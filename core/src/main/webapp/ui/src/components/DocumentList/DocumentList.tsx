@@ -44,7 +44,7 @@
  * } />
  *
  * // Document Browsing Flow:
- * // 1. Component mounts → useEffect sets root folder ID (e02f784f8360a02cc14d1314c10038ff)
+ * // 1. Component mounts → useEffect resolves root folder ID dynamically via CMIS API
  * // 2. useEffect triggers loadObjects() when currentFolderId changes
  * // 3. CMISService.getChildren() fetches folder contents
  * // 4. Table displays objects with type icons, names, sizes, dates
@@ -185,7 +185,7 @@
  * - No column sorting/filtering (Ant Design Table sortable columns not configured)
  * - PWC detection requires both property checks (CMIS spec ambiguity)
  * - Debug logs in production (should be feature-gated)
- * - Hard-coded root folder ID (e02f784f8360a02cc14d1314c10038ff)
+ * - Root folder ID resolved dynamically via CMIS API (no longer hard-coded)
  * - Search query not sanitized (SQL injection risk with user input in LIKE clause)
  *
  * Relationships to Other Components:
@@ -274,9 +274,6 @@ interface DocumentListProps {
   repositoryId: string;
 }
 
-// Root folder ID constant - extracted to avoid hard-coded values throughout the component
-const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
-
 /**
  * Escape special characters in CMIS SQL LIKE clause to prevent SQL injection.
  * CMIS SQL uses single quotes for strings and % for wildcards.
@@ -292,6 +289,8 @@ const escapeForCmisSql = (input: string): string => {
 
 export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const { t } = useTranslation();
+  const [rootFolderId, setRootFolderId] = useState<string>('');
+  const [rootFolderLoading, setRootFolderLoading] = useState(true);
   const [objects, setObjects] = useState<CMISObject[]>([]);
   const [loading, setLoading] = useState(false);
   // selectedFolderId: The folder whose contents are displayed in the list pane
@@ -437,37 +436,51 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [cloudImporting, setCloudImporting] = useState(false);
   const [selectedCloudFile, setSelectedCloudFile] = useState<GoogleDriveFile | OneDriveFile | null>(null);
 
-  // Debug: Log component mount/unmount
+  // Resolve root folder ID dynamically from CMIS API
+  useEffect(() => {
+    const resolveRootFolder = async () => {
+      setRootFolderLoading(true);
+      try {
+        const cmis = new CMISService(handleAuthError);
+        const rootFolder = await cmis.getRootFolder(repositoryId);
+        setRootFolderId(rootFolder.id);
+      } catch (error) {
+        // Log only — FolderTree independently resolves root and handles user-facing errors.
+        // Showing message.error here would duplicate FolderTree's error dialog.
+        console.warn('[DocumentList] Failed to resolve root folder (FolderTree will handle UX):', error);
+      } finally {
+        setRootFolderLoading(false);
+      }
+    };
+    if (repositoryId) {
+      resolveRootFolder();
+    }
+  }, [repositoryId]);
+
   // Load cloud auth config for cloud import buttons (2026-02-03)
   useEffect(() => {
     fetchCloudAuthConfig().then(setCloudAuthConfig).catch(() => {});
   }, []);
 
   // Initialize folder ID from URL parameter or default to root
-  // CRITICAL FIX (2025-12-29): URL only affects selectedFolderId (folder being displayed)
-  // currentFolderId (tree pivot point) is preserved in sessionStorage and should NOT be set from URL
-  // This allows the tree pivot to be preserved even when viewing different folders
+  // Waits for rootFolderId to be resolved before defaulting
   useEffect(() => {
+    if (rootFolderLoading || !rootFolderId) return;
+
     const folderIdFromUrl = searchParams.get('folderId');
 
     if (folderIdFromUrl) {
-      // URL determines which folder's contents to display (selectedFolderId)
-      // Do NOT change currentFolderId - it should only change when user explicitly clicks an already-selected folder
       if (folderIdFromUrl !== selectedFolderId) {
         setSelectedFolderId(folderIdFromUrl);
       }
-      // REMOVED: Do not set currentFolderId from URL
-      // currentFolderId is preserved via sessionStorage and user action only
     } else if (!selectedFolderId) {
-      // Default to root folder if no URL parameter and no selected folder
-      setSelectedFolderId(ROOT_FOLDER_ID);
-      // Only set currentFolderId to ROOT if not already set (from sessionStorage)
+      setSelectedFolderId(rootFolderId);
       if (!currentFolderId) {
-        setCurrentFolderId(ROOT_FOLDER_ID);
+        setCurrentFolderId(rootFolderId);
       }
-      setSearchParams({ folderId: ROOT_FOLDER_ID });
+      setSearchParams({ folderId: rootFolderId });
     }
-  }, [repositoryId, searchParams, setSearchParams]); // Include searchParams to react to URL changes
+  }, [repositoryId, searchParams, setSearchParams, rootFolderId, rootFolderLoading]);
 
   // Load available document and folder types for upload/creation dialogs
   useEffect(() => {
@@ -558,37 +571,38 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       const is404 = status === 404
         || (error instanceof Error && /not found|404|objectNotFound/i.test(error.message));
 
-      if (is404 && selectedFolderId !== ROOT_FOLDER_ID) {
+      if (is404 && selectedFolderId !== rootFolderId) {
         console.warn('[DocumentList] Folder not found (404), clearing stale state and falling back to root');
         if (repositoryId) {
           sessionStorage.removeItem(`nemakiware_selectedFolderId_${repositoryId}`);
           sessionStorage.removeItem(`nemakiware_currentFolderId_${repositoryId}`);
           sessionStorage.removeItem(`nemakiware_expandedKeys_${repositoryId}`);
         }
-        setSelectedFolderId(ROOT_FOLDER_ID);
-        setCurrentFolderId(ROOT_FOLDER_ID);
+        setSelectedFolderId(rootFolderId);
+        setCurrentFolderId(rootFolderId);
         setCurrentFolderIdIsUserSet(false);
         setCurrentFolderPath('/');
-        setSearchParams({ folderId: ROOT_FOLDER_ID });
-        return; // The useEffect will re-trigger loadObjects with ROOT_FOLDER_ID
-      } else if (is404 && selectedFolderId === ROOT_FOLDER_ID) {
-        // ROOT_FOLDER_ID itself is stale (e.g., after DB re-initialization) - resolve dynamically
-        console.warn('[DocumentList] ROOT_FOLDER_ID is stale (404), attempting dynamic root resolution');
+        setSearchParams({ folderId: rootFolderId });
+        return;
+      } else if (is404 && selectedFolderId === rootFolderId) {
+        // rootFolderId is stale (e.g., after DB re-initialization) - resolve dynamically
+        console.warn('[DocumentList] rootFolderId is stale (404), attempting dynamic root resolution');
         try {
-          const rootFolder = await cmisService.getRootFolder(repositoryId);
-          if (rootFolder && rootFolder.id && rootFolder.id !== ROOT_FOLDER_ID) {
-            console.info('[DocumentList] Resolved new root folder ID:', rootFolder.id);
+          const freshRoot = await cmisService.getRootFolder(repositoryId);
+          if (freshRoot && freshRoot.id && freshRoot.id !== rootFolderId) {
+            console.info('[DocumentList] Resolved new root folder ID:', freshRoot.id);
+            setRootFolderId(freshRoot.id);
             if (repositoryId) {
               sessionStorage.removeItem(`nemakiware_selectedFolderId_${repositoryId}`);
               sessionStorage.removeItem(`nemakiware_currentFolderId_${repositoryId}`);
               sessionStorage.removeItem(`nemakiware_expandedKeys_${repositoryId}`);
             }
-            setSelectedFolderId(rootFolder.id);
-            setCurrentFolderId(rootFolder.id);
+            setSelectedFolderId(freshRoot.id);
+            setCurrentFolderId(freshRoot.id);
             setCurrentFolderIdIsUserSet(false);
             setCurrentFolderPath('/');
-            setSearchParams({ folderId: rootFolder.id });
-            return; // The useEffect will re-trigger loadObjects with the new root ID
+            setSearchParams({ folderId: freshRoot.id });
+            return;
           }
         } catch (resolveErr) {
           console.error('[DocumentList] Failed to dynamically resolve root folder:', resolveErr);
@@ -607,6 +621,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const handleFolderSelect = (folderId: string, folderPath: string) => {
     setSelectedFolderId(folderId);
     setCurrentFolderPath(folderPath);
+    // Fallback: if root folder resolution failed, infer rootFolderId from FolderTree's root selection
+    if (!rootFolderId && folderPath === '/') {
+      setRootFolderId(folderId);
+      setRootFolderLoading(false);
+    }
     // Update URL parameter to enable deep linking
     setSearchParams({ folderId });
   };
@@ -1206,7 +1225,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     try {
       const result = await cmisService.importContent(
         repositoryId,
-        selectedFolderId || ROOT_FOLDER_ID,
+        selectedFolderId || rootFolderId,
         file as File,
         (progress) => setImportProgress(progress)
       );
@@ -1328,11 +1347,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   // selectedFolderId = the folder whose contents are currently displayed
                   // currentFolderId = the tree pivot point (may differ from selected folder)
                   // When user clicks back from document detail, they should return to selectedFolderId
-                  // FALLBACK: If selectedFolderId is empty (race condition), use URL param or ROOT_FOLDER_ID
-                  const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
+                  // FALLBACK: If selectedFolderId is empty (race condition), use URL param or rootFolderId
+                  const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || rootFolderId;
                   // CRITICAL FIX (2025-12-30): Also pass currentFolderId in URL as backup for sessionStorage
                   // This ensures the tree pivot point is preserved even if sessionStorage fails
-                  const effectiveCurrentFolderId = currentFolderId || ROOT_FOLDER_ID;
+                  const effectiveCurrentFolderId = currentFolderId || rootFolderId;
                   const folderParam = `?folderId=${effectiveFolderId}&currentFolderId=${effectiveCurrentFolderId}`;
                   const targetUrl = `/documents/${record.id}${folderParam}`;
                   navigate(targetUrl);
@@ -1383,10 +1402,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 onClick={async (e) => {
                   e.stopPropagation();
                   try {
-                    setSelectedFolderId(ROOT_FOLDER_ID);
-                    setCurrentFolderId(ROOT_FOLDER_ID);
+                    setSelectedFolderId(rootFolderId);
+                    setCurrentFolderId(rootFolderId);
                     setCurrentFolderPath('/');
-                    setSearchParams({ folderId: ROOT_FOLDER_ID });
+                    setSearchParams({ folderId: rootFolderId });
                     setIsSearchMode(false);
                     setSearchQuery('');
                   } catch (error) {
@@ -1506,7 +1525,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 size="small"
                 onClick={() => {
                   // CRITICAL FIX (2025-12-16): Use selectedFolderId with URL fallback for back button navigation
-                  const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
+                  const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || rootFolderId;
                   const currentFolderParam = currentFolderId ? `&currentFolderId=${currentFolderId}` : '';
                   const folderParam = `?folderId=${effectiveFolderId}${currentFolderParam}`;
                   const targetUrl = `/documents/${record.id}${folderParam}`;
@@ -1576,7 +1595,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   size="small"
                   onClick={() => {
                     // CRITICAL FIX (2025-12-23): Preserve folderId when navigating to PermissionManagement
-                    const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
+                    const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || rootFolderId;
                     navigate(`/permissions/${record.id}?folderId=${effectiveFolderId}`);
                   }}
                 >
@@ -1609,10 +1628,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       if (index === 0) {
         // Click on home icon - navigate to root
         // Note: Breadcrumb navigation updates both selected and current folder IDs
-        setSelectedFolderId(ROOT_FOLDER_ID);
-        setCurrentFolderId(ROOT_FOLDER_ID);
+        setSelectedFolderId(rootFolderId);
+        setCurrentFolderId(rootFolderId);
         setCurrentFolderPath('/');
-        setSearchParams({ folderId: ROOT_FOLDER_ID });
+        setSearchParams({ folderId: rootFolderId });
       } else {
         // Click on folder segment - resolve path to folder ID
         const targetPath = '/' + pathSegments.slice(0, index).join('/');
@@ -1647,10 +1666,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       if (pathSegments.length === 1) {
         // Parent is root folder
         // Note: Parent navigation updates both selected and current folder IDs
-        setSelectedFolderId(ROOT_FOLDER_ID);
-        setCurrentFolderId(ROOT_FOLDER_ID);
+        setSelectedFolderId(rootFolderId);
+        setCurrentFolderId(rootFolderId);
         setCurrentFolderPath('/');
-        setSearchParams({ folderId: ROOT_FOLDER_ID });
+        setSearchParams({ folderId: rootFolderId });
       } else {
         // Parent is another subfolder - navigate up one level
         const parentPath = '/' + pathSegments.slice(0, -1).join('/');

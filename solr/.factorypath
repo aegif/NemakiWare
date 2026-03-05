@@ -1,13 +1,13 @@
 <factorypath>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/solr/solr-core/9.10.0/solr-core-9.10.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/solr/solr-core/9.10.1/solr-core-9.10.1.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/lucene/lucene-core/9.12.3/lucene-core-9.12.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/lucene/lucene-analysis-common/9.12.3/lucene-analysis-common-9.12.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/lucene/lucene-queries/9.12.3/lucene-queries-9.12.3.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/solr/solr-api/9.10.0/solr-api-9.10.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/solr/solr-api/9.10.1/solr-api-9.10.1.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/semver4j/semver4j/5.8.0/semver4j-5.8.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/solr/solr-solrj-zookeeper/9.10.0/solr-solrj-zookeeper-9.10.0.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/solr/solr-solrj-streaming/9.10.0/solr-solrj-streaming-9.10.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/solr/solr-solrj-zookeeper/9.10.1/solr-solrj-zookeeper-9.10.1.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/solr/solr-solrj-streaming/9.10.1/solr-solrj-streaming-9.10.1.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/dropwizard/metrics/metrics-core/4.2.26/metrics-core-4.2.26.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/opentracing/opentracing-api/0.33.0/opentracing-api-0.33.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/swagger/core/v3/swagger-annotations-jakarta/2.2.22/swagger-annotations-jakarta-2.2.22.jar" enabled="true" runInBatchMode="false"/>
@@ -99,8 +99,8 @@
     <factorypathentry kind="VARJAR" id="M2_REPO/io/opentracing/opentracing-noop/0.33.0/opentracing-noop-0.33.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/opentracing/opentracing-util/0.33.0/opentracing-util-0.33.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/commons/commons-exec/1.5.0/commons-exec-1.5.0.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/logging/log4j/log4j-api/2.21.0/log4j-api-2.21.0.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/logging/log4j/log4j-core/2.21.0/log4j-core-2.21.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/logging/log4j/log4j-api/2.25.3/log4j-api-2.25.3.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/logging/log4j/log4j-core/2.25.3/log4j-core-2.25.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/prometheus/prometheus-metrics-model/1.1.0/prometheus-metrics-model-1.1.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/prometheus/prometheus-metrics-exposition-formats/1.1.0/prometheus-metrics-exposition-formats-1.1.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/codehaus/woodstox/stax2-api/4.2.2/stax2-api-4.2.2.jar" enabled="true" runInBatchMode="false"/>
@@ -110,8 +110,8 @@
     <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/lucene/lucene-analysis-nori/9.12.3/lucene-analysis-nori-9.12.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/lucene/lucene-analysis-phonetic/9.12.3/lucene-analysis-phonetic-9.12.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/xerial/snappy/snappy-java/1.1.10.8/snappy-java-1.1.10.8.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/logging/log4j/log4j-slf4j2-impl/2.21.0/log4j-slf4j2-impl-2.21.0.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/solr/solr-solrj/9.10.0/solr-solrj-9.10.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/logging/log4j/log4j-slf4j2-impl/2.25.3/log4j-slf4j2-impl-2.25.3.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/solr/solr-solrj/9.10.1/solr-solrj-9.10.1.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/eclipse/jetty/http2/http2-client/10.0.26/http2-client-10.0.26.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/eclipse/jetty/http2/http2-common/10.0.26/http2-common-10.0.26.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/eclipse/jetty/http2/http2-hpack/10.0.26/http2-hpack-10.0.26.jar" enabled="true" runInBatchMode="false"/>
@@ -119,47 +119,41 @@
     <factorypathentry kind="VARJAR" id="M2_REPO/org/eclipse/jetty/http2/http2-http-client-transport/10.0.26/http2-http-client-transport-10.0.26.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/eclipse/jetty/jetty-util/10.0.26/jetty-util-10.0.26.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/eclipse/jetty/jetty-alpn-java-client/10.0.26/jetty-alpn-java-client-10.0.26.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/quartz-scheduler/quartz/2.3.2/quartz-2.3.2.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/com/mchange/c3p0/0.9.5.4/c3p0-0.9.5.4.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/com/mchange/mchange-commons-java/0.2.15/mchange-commons-java-0.2.15.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/com/zaxxer/HikariCP-java7/2.4.13/HikariCP-java7-2.4.13.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/quartz-scheduler/quartz/2.5.0/quartz-2.5.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/jakarta/xml/bind/jakarta.xml.bind-api/4.0.2/jakarta.xml.bind-api-4.0.2.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/jakarta/activation/jakarta.activation-api/2.1.3/jakarta.activation-api-2.1.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/slf4j/slf4j-api/2.0.12/slf4j-api-2.0.12.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/slf4j/jcl-over-slf4j/2.0.12/jcl-over-slf4j-2.0.12.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/ch/qos/logback/logback-core/1.4.14/logback-core-1.4.14.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/ch/qos/logback/logback-classic/1.4.14/logback-classic-1.4.14.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/ch/qos/logback/contrib/logback-json-core/0.1.5/logback-json-core-0.1.5.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/ch/qos/logback/contrib/logback-json-classic/0.1.5/logback-json-classic-0.1.5.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/ch/qos/logback/contrib/logback-jackson/0.1.5/logback-jackson-0.1.5.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/net/logstash/logback/logstash-logback-encoder/7.4/logstash-logback-encoder-7.4.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/com/fasterxml/jackson/core/jackson-core/2.17.1/jackson-core-2.17.1.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/com/fasterxml/jackson/core/jackson-databind/2.17.1/jackson-databind-2.17.1.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/com/fasterxml/jackson/core/jackson-annotations/2.17.1/jackson-annotations-2.17.1.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/com/ibm/cloud/cloudant/0.8.0/cloudant-0.8.0.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/com/ibm/cloud/cloudant-common/0.8.0/cloudant-common-0.8.0.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/com/ibm/cloud/sdk-core/9.18.7/sdk-core-9.18.7.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/ch/qos/logback/logback-core/1.5.16/logback-core-1.5.16.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/ch/qos/logback/logback-classic/1.5.16/logback-classic-1.5.16.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/net/logstash/logback/logstash-logback-encoder/8.0/logstash-logback-encoder-8.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/com/fasterxml/jackson/core/jackson-core/2.21.1/jackson-core-2.21.1.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/com/fasterxml/jackson/core/jackson-databind/2.21.1/jackson-databind-2.21.1.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/com/fasterxml/jackson/core/jackson-annotations/2.21/jackson-annotations-2.21.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/com/ibm/cloud/cloudant/0.10.12/cloudant-0.10.12.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/com/ibm/cloud/cloudant-common/0.10.12/cloudant-common-0.10.12.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/com/google/code/gson/gson/2.13.2/gson-2.13.2.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/com/ibm/cloud/sdk-core/9.24.3/sdk-core-9.24.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/squareup/okhttp3/okhttp/4.12.0/okhttp-4.12.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/squareup/okio/okio/3.6.0/okio-3.6.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/squareup/okio/okio-jvm/3.6.0/okio-jvm-3.6.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/jetbrains/kotlin/kotlin-stdlib-common/1.9.10/kotlin-stdlib-common-1.9.10.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/squareup/okhttp3/logging-interceptor/4.12.0/logging-interceptor-4.12.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/squareup/okhttp3/okhttp-urlconnection/4.12.0/okhttp-urlconnection-4.12.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/reactivex/rxjava2/rxjava/2.2.21/rxjava-2.2.21.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/reactivestreams/reactive-streams/1.0.3/reactive-streams-1.0.3.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.9.10/kotlin-stdlib-jdk8-1.9.10.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.9.10/kotlin-stdlib-jdk7-1.9.10.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/jetbrains/kotlin/kotlin-stdlib/1.9.10/kotlin-stdlib-1.9.10.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/jetbrains/kotlin/kotlin-stdlib-common/1.9.10/kotlin-stdlib-common-1.9.10.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.9.25/kotlin-stdlib-jdk8-1.9.25.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.9.25/kotlin-stdlib-jdk7-1.9.25.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/jetbrains/annotations/13.0/annotations-13.0.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/tika/tika-core/1.28.5/tika-core-1.28.5.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/jakarta/xml/bind/jakarta.xml.bind-api/2.3.3/jakarta.xml.bind-api-2.3.3.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/jakarta/activation/jakarta.activation-api/1.2.2/jakarta.activation-api-1.2.2.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/tika/tika-core/3.2.3/tika-core-3.2.3.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/commons/commons-lang3/3.17.0/commons-lang3-3.17.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/googlecode/json-simple/json-simple/1.1/json-simple-1.1.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/junit/junit/4.12/junit-4.12.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/junit/junit/4.13.2/junit-4.13.2.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/commons/commons-collections4/4.4/commons-collections4-4.4.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/com/esotericsoftware/yamlbeans/yamlbeans/1.09/yamlbeans-1.09.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/commons-io/commons-io/2.11.0/commons-io-2.11.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/commons/commons-collections4/4.5.0/commons-collections4-4.5.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/com/contrastsecurity/yamlbeans/1.17/yamlbeans-1.17.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/commons-io/commons-io/2.18.0/commons-io-2.18.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/chemistry/opencmis/chemistry-opencmis-client-impl/1.1.0/chemistry-opencmis-client-impl-1.1.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/chemistry/opencmis/chemistry-opencmis-commons-api/1.1.0/chemistry-opencmis-commons-api-1.1.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/apache/chemistry/opencmis/chemistry-opencmis-commons-impl/1.1.0/chemistry-opencmis-commons-impl-1.1.0.jar" enabled="true" runInBatchMode="false"/>

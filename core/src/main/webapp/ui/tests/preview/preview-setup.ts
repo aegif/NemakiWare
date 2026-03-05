@@ -8,8 +8,26 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const BASE_URL = 'http://localhost:8080/core/browser/bedroom';
+const REPO_INFO_URL = 'http://localhost:8080/core/browser/bedroom?cmisselector=repositoryInfo';
 const AUTH = 'Basic ' + Buffer.from('admin:admin').toString('base64');
-const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
+
+/**
+ * Dynamically fetch the root folder ID from the repository info
+ */
+async function fetchRootFolderId(): Promise<string> {
+  const response = await fetch(REPO_INFO_URL, {
+    headers: { 'Authorization': AUTH },
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to get repository info: ${response.status}`);
+  }
+  const data = await response.json();
+  const rootFolderId = data['bedroom']?.rootFolderId;
+  if (!rootFolderId) {
+    throw new Error('rootFolderId not found in repository info');
+  }
+  return rootFolderId;
+}
 
 export interface TestContext {
   folderId: string;
@@ -64,7 +82,9 @@ export async function setupPreviewTestData(): Promise<TestContext> {
   createFolderData.append('propertyValue[1]', folderName);
   createFolderData.append('succinct', 'true');
 
-  const folderResponse = await fetch(`${BASE_URL}?objectId=${ROOT_FOLDER_ID}`, {
+  const rootFolderId = await fetchRootFolderId();
+
+  const folderResponse = await fetch(`${BASE_URL}?objectId=${rootFolderId}`, {
     method: 'POST',
     headers: { 'Authorization': AUTH },
     body: createFolderData,

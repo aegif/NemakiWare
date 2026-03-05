@@ -13,6 +13,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { generateTestId } from '../utils/test-helper';
 import { AuthHelper } from '../utils/auth-helper';
+import { getKeycloakUrl } from '../utils/test-state';
 
 // Test configuration
 const TEST_USER = 'admin';
@@ -20,10 +21,52 @@ const TEST_PASSWORD = 'admin';
 const REPOSITORY_ID = 'bedroom';
 const BASE_URL = 'http://localhost:8080';
 const UI_URL = `${BASE_URL}/core/ui`;
-const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL || getKeycloakUrl();
+
+// Resolved dynamically in beforeAll
+let ROOT_FOLDER_ID = '';
 
 function basicAuth(): string {
   return `Basic ${Buffer.from(`${TEST_USER}:${TEST_PASSWORD}`).toString('base64')}`;
+}
+
+// Resolve root folder ID dynamically from repository info
+test.beforeAll(async ({ request }) => {
+  const response = await request.get(
+    `${BASE_URL}/core/browser/${REPOSITORY_ID}?cmisselector=repositoryInfo`,
+    { headers: { 'Authorization': basicAuth() } }
+  );
+  const data = await response.json();
+  ROOT_FOLDER_ID = data.rootFolderId || data[REPOSITORY_ID]?.rootFolderId;
+  if (!ROOT_FOLDER_ID) {
+    throw new Error('Could not resolve root folder ID from repository info');
+  }
+  console.log('[SETUP] Resolved ROOT_FOLDER_ID:', ROOT_FOLDER_ID);
+});
+
+/**
+ * Retry-poll a CMIS query until expectedId appears in results (or timeout).
+ * Returns the full result set on success.
+ */
+async function pollQueryForId(
+  request: any,
+  query: string,
+  expectedId: string,
+  { timeoutMs = 60000, intervalMs = 3000 } = {}
+): Promise<string[]> {
+  const deadline = Date.now() + timeoutMs;
+  let resultIds: string[] = [];
+  while (Date.now() < deadline) {
+    const result = await executeCmisQuery(request, query);
+    resultIds = result.results?.map((r: any) =>
+      r.properties?.['cmis:objectId']?.value || r.succinctProperties?.['cmis:objectId']
+    ) || [];
+    if (resultIds.includes(expectedId)) {
+      return resultIds;
+    }
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+  return resultIds; // return last attempt even if not found (caller asserts)
 }
 
 // Helper: Create document via API
@@ -275,9 +318,9 @@ test.describe('Bug Fix 1: Gray Overlay After Login', () => {
 
   test('OIDC login should not leave gray overlay', async ({ page }) => {
     // Skip if Keycloak is not running
-    const keycloakResponse = await page.request.get('http://localhost:8088/realms/nemakiware/.well-known/openid-configuration').catch(() => null);
+    const keycloakResponse = await page.request.get(`${KEYCLOAK_URL}/realms/nemakiware/.well-known/openid-configuration`).catch(() => null);
     if (!keycloakResponse || keycloakResponse.status() !== 200) {
-      test.skip('Keycloak not running at localhost:8088');
+      test.skip(`Keycloak not running at ${KEYCLOAK_URL}`);
       return;
     }
 
@@ -295,7 +338,8 @@ test.describe('Bug Fix 1: Gray Overlay After Login', () => {
 
     // Wait for Keycloak login page
     try {
-      await page.waitForURL(/.*localhost:8088.*/, { timeout: 10000 });
+      const keycloakHost = new URL(KEYCLOAK_URL).host;
+      await page.waitForURL(new RegExp(`.*${keycloakHost.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*`), { timeout: 10000 });
     } catch {
       test.skip('Did not redirect to Keycloak');
       return;
@@ -625,25 +669,28 @@ test.describe('Bug Fix 4: Commentable Search Tokenization', () => {
       docId2 = await createDocument(request, docWithPartial, 'Contains UNIQUE word and EXACT word and MATCH word separately');
       console.log('[TEST] Created doc with partial words:', docId2);
 
-      // Wait for Solr indexing
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Execute search
+      // Wait for BOTH documents to be indexed before testing negative assertion.
+      // First, poll until docId1 appears in the target query
       const query = `SELECT * FROM cmis:document WHERE CONTAINS('${uniqueSearchTerm}')`;
-      console.log('[TEST] Executing query:', query);
+      console.log('[TEST] Polling query:', query);
 
-      const result = await executeCmisQuery(request, query);
-      const resultIds = result.results?.map((r: any) =>
-        r.properties?.['cmis:objectId']?.value || r.succinctProperties?.['cmis:objectId']
-      ) || [];
-
+      const resultIds = await pollQueryForId(request, query, docId1);
       console.log('[TEST] Search returned', resultIds.length, 'results');
 
+      // Also ensure docId2 is indexed (search by its name) before negative assertion
+      const nameQuery = `SELECT cmis:objectId FROM cmis:document WHERE cmis:name = '${docWithPartial}'`;
+      const nameResultIds = await pollQueryForId(request, nameQuery, docId2);
+      expect(nameResultIds).toContain(docId2);
+      console.log('[TEST] docId2 confirmed indexed via name query');
+
+      // Re-run the target query now that both docs are indexed
+      const finalResultIds = await pollQueryForId(request, query, docId1);
+
       // CRITICAL ASSERTIONS
-      expect(resultIds).toContain(docId1);
+      expect(finalResultIds).toContain(docId1);
       console.log('✓ Document with exact term found');
 
-      expect(resultIds).not.toContain(docId2);
+      expect(finalResultIds).not.toContain(docId2);
       console.log('✓ Document with only partial words NOT returned (tokenization fix verified)');
 
     } finally {
@@ -660,13 +707,9 @@ test.describe('Bug Fix 4: Commentable Search Tokenization', () => {
     try {
       docId = await createDocument(request, `special-char-${timestamp}.txt`, `Content with ${searchTerm} here`);
 
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
+      // Poll until docId appears in search results (Solr eventual consistency)
       const query = `SELECT * FROM cmis:document WHERE CONTAINS('${searchTerm}')`;
-      const result = await executeCmisQuery(request, query);
-      const resultIds = result.results?.map((r: any) =>
-        r.properties?.['cmis:objectId']?.value || r.succinctProperties?.['cmis:objectId']
-      ) || [];
+      const resultIds = await pollQueryForId(request, query, docId);
 
       expect(resultIds).toContain(docId);
       console.log('✓ Search with underscore-separated term works correctly');

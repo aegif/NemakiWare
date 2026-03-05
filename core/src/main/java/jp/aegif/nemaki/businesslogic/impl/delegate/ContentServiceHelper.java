@@ -60,7 +60,7 @@ public class ContentServiceHelper {
 		java.util.concurrent.ThreadPoolExecutor tpe = new java.util.concurrent.ThreadPoolExecutor(
 			1, 2, 60L, java.util.concurrent.TimeUnit.SECONDS,
 			new java.util.concurrent.LinkedBlockingQueue<>(256),
-			r -> { Thread t = new Thread(r, "webhook-async"); t.setDaemon(true); return t; },
+			Thread.ofVirtual().name("webhook-vt-", 0).factory(),
 			new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
 		tpe.allowCoreThreadTimeOut(true);
 		webhookExecutor = tpe;
