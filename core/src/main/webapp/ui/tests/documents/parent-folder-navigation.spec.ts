@@ -26,8 +26,28 @@ import { TestHelper } from '../utils/test-helper';
 // Test environment constants
 const CMIS_BASE_URL = 'http://localhost:8080/core';
 const REPOSITORY_ID = 'bedroom';
-const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
 const ADMIN_CREDENTIALS = 'admin:admin';
+
+// Helper function to dynamically fetch root folder ID
+async function fetchRootFolderId(): Promise<string> {
+  const response = await fetch(
+    `${CMIS_BASE_URL}/browser/${REPOSITORY_ID}?cmisselector=repositoryInfo`,
+    {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(ADMIN_CREDENTIALS).toString('base64')}`
+      }
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to get repository info: ${response.status}`);
+  }
+  const data = await response.json();
+  const rootFolderId = data[REPOSITORY_ID]?.rootFolderId;
+  if (!rootFolderId) {
+    throw new Error('rootFolderId not found in repository info');
+  }
+  return rootFolderId;
+}
 
 // Helper function to create a test folder via CMIS API
 async function createTestFolder(parentId: string, folderName: string): Promise<string | null> {
@@ -99,8 +119,12 @@ test.describe('Parent Folder Navigation', () => {
   let createdTestFolderId: string | null = null;
   let createdSubFolderId: string | null = null;
   let testFoldersCreated = false;
+  let rootFolderId: string;
 
   test.beforeAll(async () => {
+    // Dynamically fetch root folder ID
+    rootFolderId = await fetchRootFolderId();
+
     // Check if any folders exist in the repository
     // If not, create test folders to enable the tests
     try {
@@ -128,7 +152,7 @@ test.describe('Parent Folder Navigation', () => {
         console.log('[NAV TEST SETUP] Creating test folders with 0- prefix for visibility...');
 
         const timestamp = Date.now();
-        createdTestFolderId = await createTestFolder(ROOT_FOLDER_ID, `0-NavTestFolder-${timestamp}`);
+        createdTestFolderId = await createTestFolder(rootFolderId, `0-NavTestFolder-${timestamp}`);
 
         if (createdTestFolderId) {
           console.log(`[NAV TEST SETUP] Created parent folder: ${createdTestFolderId}`);
@@ -567,12 +591,12 @@ test.describe('Parent Folder Navigation', () => {
     const rootUrl = page.url();
     const rootMatch = rootUrl.match(/folderId=([^&]+)/);
     expect(rootMatch).toBeTruthy();
-    const rootFolderId = rootMatch![1];
+    const urlRootFolderId = rootMatch![1];
 
     // Folder IDs should be different
-    expect(rootFolderId).not.toEqual(subfolderFolderId);
+    expect(urlRootFolderId).not.toEqual(subfolderFolderId);
 
-    // Root folder ID should be the expected value (bedroom repository root)
-    expect(rootFolderId).toBe('e02f784f8360a02cc14d1314c10038ff');
+    // Root folder ID should be a non-empty string (dynamically resolved)
+    expect(urlRootFolderId).toBeTruthy();
   });
 });

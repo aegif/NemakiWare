@@ -69,37 +69,39 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
         headers: { 'Authorization': authHeader }
       });
 
-      if (queryResponse.ok) {
-        const queryData = await queryResponse.json();
-        const results = queryData.results || [];
-        console.log(`[CLEANUP] Found ${results.length} test documents to delete`);
+      if (!queryResponse.ok) {
+        console.warn(`[CLEANUP] Query failed: HTTP ${queryResponse.status}`);
+        return;
+      }
+      const queryData = await queryResponse.json();
+      const results = queryData.results || [];
+      console.log(`[CLEANUP] Found ${results.length} test documents to delete`);
 
-        for (const result of results) {
-          const objectId = result.succinctProperties?.['cmis:objectId'];
-          const name = result.succinctProperties?.['cmis:name'];
-          if (objectId) {
-            try {
-              const formData = new URLSearchParams();
-              formData.append('cmisaction', 'delete');
-              formData.append('objectId', objectId);
+      for (const result of results) {
+        const objectId = result.succinctProperties?.['cmis:objectId'];
+        const name = result.succinctProperties?.['cmis:name'];
+        if (objectId) {
+          const formData = new URLSearchParams();
+          formData.append('cmisaction', 'delete');
+          formData.append('objectId', objectId);
 
-              await fetch(baseUrl, {
-                method: 'POST',
-                headers: {
-                  'Authorization': authHeader,
-                  'Content-Type': 'application/x-www-form-urlencoded'
-                },
-                body: formData.toString()
-              });
-              console.log(`[CLEANUP] Deleted: ${name} (${objectId})`);
-            } catch (e) {
-              console.log(`[CLEANUP] Failed to delete ${name}:`, e);
-            }
+          const deleteResponse = await fetch(baseUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': authHeader,
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: formData.toString()
+          });
+          if (!deleteResponse.ok) {
+            console.warn(`[CLEANUP] Failed to delete ${name} (${objectId}): HTTP ${deleteResponse.status}`);
+          } else {
+            console.log(`[CLEANUP] Deleted: ${name} (${objectId})`);
           }
         }
       }
     } catch (e) {
-      console.log(`[CLEANUP] Query failed:`, e);
+      console.warn(`[CLEANUP] Query failed:`, e);
     }
   });
 
@@ -359,38 +361,53 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     console.log(`[TEST] Verification complete`);
   });
 
-  test('Step 5: Cleanup - Delete test document', async ({ page, browserName }) => {
-    console.log(`[TEST] Cleaning up: ${testDocName}`);
-    const isMobile = testHelper.isMobile(browserName);
+  test('Step 5: Cleanup - Delete test document', async () => {
+    // Use API-based cleanup instead of fragile UI deletion
+    // afterAll hook already handles cleanup, but this ensures immediate cleanup
+    console.log(`[TEST] Cleaning up via API: ${testDocName}`);
+    const baseUrl = 'http://localhost:8080/core/browser/bedroom';
+    const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 
-    await page.waitForTimeout(2000);
-
-    const docRow = page.locator('tr').filter({ hasText: testDocName });
-    if (await docRow.count() === 0) {
-      console.log(`[TEST] Document not found, may have been deleted already`);
-      return;
-    }
-
-    // Find delete button
-    const deleteButton = docRow.locator('button').filter({
-      has: page.locator('[data-icon="delete"]')
-    });
-
-    if (await deleteButton.count() > 0) {
-      await deleteButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
-
-      // Confirm deletion
-      const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button:has-text("OK")');
-      if (await confirmButton.count() > 0) {
-        await confirmButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(2000);
-
-        const successMsg = page.locator('.ant-message-success');
-        if (await successMsg.count() > 0) {
-          console.log(`[TEST] ✅ Document deleted successfully`);
+    try {
+      const queryUrl = `${baseUrl}?cmisselector=query&q=${encodeURIComponent(`SELECT cmis:objectId FROM cmis:document WHERE cmis:name = '${testDocName}'`)}&succinct=true`;
+      const queryResponse = await fetch(queryUrl, { headers: { 'Authorization': authHeader } });
+      if (!queryResponse.ok) {
+        console.warn(`[TEST] Cleanup query failed: HTTP ${queryResponse.status}`);
+        return;
+      }
+      const queryData = await queryResponse.json();
+      const results = queryData.results || [];
+      if (results.length === 0) {
+        console.log('[TEST] Cleanup: Document not found (may have been cleaned up already)');
+        return;
+      }
+      const errors: string[] = [];
+      for (const result of results) {
+        const objectId = result.succinctProperties?.['cmis:objectId'];
+        if (objectId) {
+          const formData = new URLSearchParams();
+          formData.append('cmisaction', 'delete');
+          formData.append('objectId', objectId);
+          const deleteResponse = await fetch(baseUrl, {
+            method: 'POST',
+            headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formData.toString()
+          });
+          if (!deleteResponse.ok) {
+            const errorText = await deleteResponse.text().catch(() => '');
+            errors.push(`Failed to delete ${objectId}: HTTP ${deleteResponse.status} ${errorText}`);
+          } else {
+            console.log(`[TEST] ✅ Document deleted via API: ${objectId}`);
+          }
         }
       }
+      if (errors.length > 0) {
+        console.error(`[TEST] Cleanup errors:\n${errors.join('\n')}`);
+        throw new Error(`Cleanup failed: ${errors.length} deletion(s) failed`);
+      }
+    } catch (e) {
+      console.error(`[TEST] Cleanup failed:`, e);
+      throw e;
     }
   });
 });

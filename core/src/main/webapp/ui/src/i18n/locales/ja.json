@@ -1164,6 +1164,7 @@
       "createFolderSuccess": "フォルダを作成しました",
       "createFolderError": "フォルダの作成に失敗しました",
       "loadObjectsError": "オブジェクトの読み込みに失敗しました",
+      "loadRootFolderError": "ルートフォルダの取得に失敗しました",
       "selectFolder": "フォルダを選択してください",
       "deleteSuccess": "削除しました",
       "deleteSuccessWithCount": "{{count}}件のオブジェクトを削除しました",

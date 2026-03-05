@@ -17,7 +17,19 @@ import { TestHelper, generateTestId } from './utils/test-helper';
 
 const BASE_URL = 'http://localhost:8080';
 const REPOSITORY_ID = 'bedroom';
-const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
+
+// Helper function to dynamically fetch root folder ID
+async function fetchRootFolderId(page: Page): Promise<string> {
+  const response = await page.request.get(
+    `${BASE_URL}/core/browser/${REPOSITORY_ID}?cmisselector=repositoryInfo`,
+    { headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}` } }
+  );
+  if (!response.ok()) {
+    throw new Error(`Failed to get repository info: ${response.status()}`);
+  }
+  const data = await response.json();
+  return data[REPOSITORY_ID]?.rootFolderId;
+}
 
 // Helper function to extract property value from CMIS response
 function getPropertyValue(data: any, propertyId: string): any {
@@ -67,7 +79,7 @@ async function getObjectProperties(page: Page, objectId: string): Promise<any> {
 }
 
 // Helper function to create a test folder
-async function createTestFolder(page: Page, folderName: string, parentId: string = ROOT_FOLDER_ID): Promise<string> {
+async function createTestFolder(page: Page, folderName: string, parentId: string): Promise<string> {
   const response = await apiRequest(page, 'POST', `/core/browser/${REPOSITORY_ID}`, {
     'cmisaction': 'createFolder',
     'propertyId[0]': 'cmis:objectTypeId',
@@ -86,7 +98,7 @@ async function createTestFolder(page: Page, folderName: string, parentId: string
 }
 
 // Helper function to create a test document with content
-async function createTestDocument(page: Page, docName: string, parentId: string = ROOT_FOLDER_ID): Promise<string> {
+async function createTestDocument(page: Page, docName: string, parentId?: string): Promise<string> {
   const response = await page.request.post(`${BASE_URL}/core/browser/${REPOSITORY_ID}`, {
     headers: {
       'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
@@ -139,12 +151,16 @@ test.describe('Bug Fix Verification Tests', () => {
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
+  let rootFolderId: string;
   const testFolderIds: string[] = [];
   const testDocumentIds: string[] = [];
 
   test.beforeEach(async ({ page }) => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
+
+    // Dynamically fetch root folder ID
+    rootFolderId = await fetchRootFolderId(page);
 
     // Clear session
     await page.context().clearCookies();
@@ -223,7 +239,7 @@ test.describe('Bug Fix Verification Tests', () => {
 
     // Step 1: Create folder hierarchy via API
     console.log('Creating test folder hierarchy...');
-    const parentFolderId = await createTestFolder(page, parentFolderName);
+    const parentFolderId = await createTestFolder(page, parentFolderName, rootFolderId);
     testFolderIds.push(parentFolderId);
 
     const childFolderId = await createTestFolder(page, childFolderName, parentFolderId);
@@ -290,7 +306,7 @@ test.describe('Bug Fix Verification Tests', () => {
     // Should NOT contain child folder ID
     expect(currentUrl).not.toContain(childFolderId);
     // Should NOT be at root (no folderId or root folder ID)
-    expect(currentUrl).not.toContain(ROOT_FOLDER_ID);
+    expect(currentUrl).not.toContain(rootFolderId);
 
     // Verify child folder is visible in the current folder's contents
     await page.waitForSelector('.ant-table-row', { timeout: 10000 });
@@ -337,10 +353,10 @@ test.describe('Bug Fix Verification Tests', () => {
 
     // Step 1: Create test documents via API
     console.log('Creating test documents...');
-    const sourceDocId = await createTestDocument(page, sourceDocName);
+    const sourceDocId = await createTestDocument(page, sourceDocName, rootFolderId);
     testDocumentIds.push(sourceDocId);
 
-    const targetDocId = await createTestDocument(page, targetDocName);
+    const targetDocId = await createTestDocument(page, targetDocName, rootFolderId);
     testDocumentIds.push(targetDocId);
 
     console.log(`Created: ${sourceDocName} (${sourceDocId}), ${targetDocName} (${targetDocId})`);
@@ -373,7 +389,7 @@ test.describe('Bug Fix Verification Tests', () => {
     // FIX (2025-12-26): Navigate directly to root folder with folderId parameter
     // This ensures the newly created documents are visible
     console.log('Navigating to documents page...');
-    await page.goto(`/core/ui/index.html#/documents?folderId=${ROOT_FOLDER_ID}`);
+    await page.goto(`/core/ui/index.html#/documents?folderId=${rootFolderId}`);
     await page.waitForTimeout(3000);
     await testHelper.waitForAntdLoad();
 
@@ -465,7 +481,7 @@ test.describe('Bug Fix Verification Tests', () => {
 
     // Step 1: Create test document via API
     console.log('Creating test document...');
-    const docId = await createTestDocument(page, docName);
+    const docId = await createTestDocument(page, docName, rootFolderId);
     testDocumentIds.push(docId);
     console.log(`Created: ${docName} (${docId})`);
 
@@ -563,7 +579,7 @@ test.describe('Bug Fix Verification Tests', () => {
         'propertyValue[0]': 'cmis:document',
         'propertyId[1]': 'cmis:name',
         'propertyValue[1]': docName,
-        'folderId': ROOT_FOLDER_ID,
+        'folderId': rootFolderId,
         'content': {
           name: docName,
           mimeType: 'text/plain',
@@ -671,7 +687,7 @@ test.describe('Bug Fix Verification Tests', () => {
         'propertyValue[0]': 'cmis:document',
         'propertyId[1]': 'cmis:name',
         'propertyValue[1]': docName,
-        'folderId': ROOT_FOLDER_ID,
+        'folderId': rootFolderId,
         'content': {
           name: docName,
           mimeType: 'text/plain',

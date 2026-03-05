@@ -60,6 +60,12 @@ test.describe('Password Change', () => {
   test('admin sees password reset section in user edit modal', async ({ page }) => {
     await loginAsUser(page, 'admin', 'admin');
     await page.goto(`${UI_URL}/#/users`);
+    // Wait for page to stabilize - re-navigate if redirected (session timing issue)
+    await page.waitForTimeout(3000);
+    if (!page.url().includes('/users')) {
+      await page.goto(`${UI_URL}/#/users`);
+      await page.waitForTimeout(2000);
+    }
     await page.waitForSelector('.ant-table', { timeout: 15000 });
 
     // Search for test user to handle pagination

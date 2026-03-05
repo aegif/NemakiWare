@@ -147,7 +147,7 @@ test.describe('CMIS Versioning API', () => {
     ? 'http://localhost:8080/core/browser/bedroom'
     : 'http://localhost:8080/core/browser/bedroom';
 
-  const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff'; // Bedroom root folder
+  let rootFolderId: string;
   let authHeader: string;
   let testDocumentId: string;
   let pwcId: string; // Private Working Copy ID
@@ -156,6 +156,20 @@ test.describe('CMIS Versioning API', () => {
     // Setup basic auth header
     const credentials = Buffer.from('admin:admin').toString('base64');
     authHeader = `Basic ${credentials}`;
+
+    // Dynamically fetch root folder ID
+    const response = await fetch(
+      `${baseUrl}?cmisselector=repositoryInfo`,
+      { headers: { 'Authorization': authHeader } }
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to get repository info: ${response.status}`);
+    }
+    const data = await response.json();
+    rootFolderId = data['bedroom']?.rootFolderId;
+    if (!rootFolderId) {
+      throw new Error('rootFolderId not found in repository info');
+    }
   });
 
   test.afterEach(async ({ request }) => {

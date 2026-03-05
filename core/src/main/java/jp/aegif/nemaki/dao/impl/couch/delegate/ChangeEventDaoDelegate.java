@@ -51,10 +51,40 @@ public class ChangeEventDaoDelegate {
 	public Change getLatestChange(String repositoryId) {
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			List<CouchChange> couchChanges = client.queryView("_repo", "changesByToken", null, CouchChange.class);
+			Map<String, Object> queryParams = new HashMap<String, Object>();
+			queryParams.put("descending", true);
+			queryParams.put("limit", 1);
 
-			if (!couchChanges.isEmpty()) {
-				return couchChanges.get(0).convert();
+			ViewResult result = client.queryView("_repo", "changesByToken", queryParams);
+
+			if (result.getRows() != null) {
+				ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
+				for (ViewResultRow row : result.getRows()) {
+					if (row.getDoc() != null) {
+						try {
+							com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+							Map<String, Object> docMap = doc.getProperties();
+							if (docMap != null) {
+								if (!docMap.containsKey("_id") && doc.getId() != null) {
+									docMap.put("_id", doc.getId());
+								}
+								if (!docMap.containsKey("_rev") && doc.getRev() != null) {
+									docMap.put("_rev", doc.getRev());
+								}
+								String jsonString = mapper.writeValueAsString(docMap);
+								CouchChange cc = mapper.readValue(jsonString, CouchChange.class);
+								if (cc != null) {
+									if (cc.getId() == null && doc.getId() != null) {
+										cc.setId(doc.getId());
+									}
+									return cc.convert();
+								}
+							}
+						} catch (Exception e) {
+							log.warn("Failed to convert change document: " + e.getMessage());
+						}
+					}
+				}
 			}
 
 			log.debug("No changes found in repository: " + repositoryId + ", returning null");

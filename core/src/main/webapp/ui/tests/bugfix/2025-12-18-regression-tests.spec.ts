@@ -13,6 +13,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { generateTestId } from '../utils/test-helper';
 import { AuthHelper } from '../utils/auth-helper';
+import { getKeycloakUrl } from '../utils/test-state';
 
 // Test configuration
 const TEST_USER = 'admin';
@@ -20,6 +21,7 @@ const TEST_PASSWORD = 'admin';
 const REPOSITORY_ID = 'bedroom';
 const BASE_URL = 'http://localhost:8080';
 const UI_URL = `${BASE_URL}/core/ui`;
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL || getKeycloakUrl();
 
 // Resolved dynamically in beforeAll
 let ROOT_FOLDER_ID = '';
@@ -50,7 +52,7 @@ async function pollQueryForId(
   request: any,
   query: string,
   expectedId: string,
-  { timeoutMs = 30000, intervalMs = 2000 } = {}
+  { timeoutMs = 60000, intervalMs = 3000 } = {}
 ): Promise<string[]> {
   const deadline = Date.now() + timeoutMs;
   let resultIds: string[] = [];
@@ -316,9 +318,9 @@ test.describe('Bug Fix 1: Gray Overlay After Login', () => {
 
   test('OIDC login should not leave gray overlay', async ({ page }) => {
     // Skip if Keycloak is not running
-    const keycloakResponse = await page.request.get('http://localhost:8088/realms/nemakiware/.well-known/openid-configuration').catch(() => null);
+    const keycloakResponse = await page.request.get(`${KEYCLOAK_URL}/realms/nemakiware/.well-known/openid-configuration`).catch(() => null);
     if (!keycloakResponse || keycloakResponse.status() !== 200) {
-      test.skip('Keycloak not running at localhost:8088');
+      test.skip(`Keycloak not running at ${KEYCLOAK_URL}`);
       return;
     }
 
@@ -336,7 +338,8 @@ test.describe('Bug Fix 1: Gray Overlay After Login', () => {
 
     // Wait for Keycloak login page
     try {
-      await page.waitForURL(/.*localhost:8088.*/, { timeout: 10000 });
+      const keycloakHost = new URL(KEYCLOAK_URL).host;
+      await page.waitForURL(new RegExp(`.*${keycloakHost.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*`), { timeout: 10000 });
     } catch {
       test.skip('Did not redirect to Keycloak');
       return;

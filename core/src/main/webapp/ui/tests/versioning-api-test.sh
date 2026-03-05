@@ -7,8 +7,15 @@
 set -e  # Exit on error
 
 BASE_URL="http://localhost:8080/core/browser/bedroom"
-ROOT_FOLDER_ID="e02f784f8360a02cc14d1314c10038ff"
 AUTH="admin:admin"
+
+# Dynamically fetch root folder ID from repository info
+ROOT_FOLDER_ID=$(curl -s -u "$AUTH" "http://localhost:8080/core/browser/bedroom?cmisselector=repositoryInfo" | python3 -c "import sys, json; print(json.load(sys.stdin)['bedroom']['rootFolderId'])")
+if [ -z "$ROOT_FOLDER_ID" ]; then
+  echo "ERROR: Failed to fetch root folder ID from repository info"
+  exit 1
+fi
+echo "Root folder ID: $ROOT_FOLDER_ID"
 
 # Generate unique document name with timestamp
 TIMESTAMP=$(date +%s)

@@ -18,7 +18,24 @@ import { generateTestId } from '../utils/test-helper';
  */
 
 const REPOSITORY_ID = 'bedroom';
-const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
+const ADMIN_AUTH = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+
+// Helper function to dynamically fetch root folder ID
+async function fetchRootFolderId(): Promise<string> {
+  const response = await fetch(
+    `http://localhost:8080/core/browser/${REPOSITORY_ID}?cmisselector=repositoryInfo`,
+    { headers: { 'Authorization': ADMIN_AUTH } }
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to get repository info: ${response.status}`);
+  }
+  const data = await response.json();
+  const rootFolderId = data[REPOSITORY_ID]?.rootFolderId;
+  if (!rootFolderId) {
+    throw new Error('rootFolderId not found in repository info');
+  }
+  return rootFolderId;
+}
 
 /**
  * SKIPPED (2025-12-23) - Cascade Delete UI and API Timing Issues
@@ -54,10 +71,15 @@ test.describe('Cascade Delete Functionality', () => {
   let testParentId: string;
   let testChildIds: string[] = [];
   let testRelationshipIds: string[] = [];
+  let rootFolderId: string;
   const testUUID = generateTestId();
 
   test.beforeEach(async ({ page }) => {
     authHelper = new AuthHelper(page);
+
+    // Dynamically fetch root folder ID
+    rootFolderId = await fetchRootFolderId();
+
     await authHelper.login();
 
     // Wait for document list to load
@@ -99,7 +121,7 @@ test.describe('Cascade Delete Functionality', () => {
 
     // Step 1: Create parent folder via API
     const parentName = `cascade-test-parent-${testUUID}`;
-    const parentResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${ROOT_FOLDER_ID}`, {
+    const parentResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${rootFolderId}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -119,7 +141,7 @@ test.describe('Cascade Delete Functionality', () => {
 
     // Step 2: Create child document via API
     const childName = `cascade-test-child-${testUUID}.txt`;
-    const childResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${ROOT_FOLDER_ID}`, {
+    const childResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${rootFolderId}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -217,7 +239,7 @@ test.describe('Cascade Delete Functionality', () => {
 
     // Step 1: Create parent folder via API
     const parentName = `cascade-del-parent-${testUUID}`;
-    const parentResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${ROOT_FOLDER_ID}`, {
+    const parentResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${rootFolderId}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -237,7 +259,7 @@ test.describe('Cascade Delete Functionality', () => {
 
     // Step 2: Create child document via API
     const childName = `cascade-del-child-${testUUID}.txt`;
-    const childResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${ROOT_FOLDER_ID}`, {
+    const childResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${rootFolderId}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -360,7 +382,7 @@ test.describe('Cascade Delete Functionality', () => {
 
     // Step 1: Create a standalone document (no relationships)
     const docName = `standalone-doc-${testUUID}.txt`;
-    const docResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${ROOT_FOLDER_ID}`, {
+    const docResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${rootFolderId}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded'

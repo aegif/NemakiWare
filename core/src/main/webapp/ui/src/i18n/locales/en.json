@@ -1164,6 +1164,7 @@
       "createFolderSuccess": "Folder created successfully",
       "createFolderError": "Failed to create folder",
       "loadObjectsError": "Failed to load objects",
+      "loadRootFolderError": "Failed to load root folder",
       "selectFolder": "Please select a folder",
       "deleteSuccess": "Deleted successfully",
       "deleteSuccessWithCount": "{{count}} object(s) deleted successfully",

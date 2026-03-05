@@ -364,57 +364,52 @@ test.describe('Document Properties Edit and Persistence', () => {
     }
   });
 
-  test('should clean up test document', async ({ page, browserName }) => {
-    const isMobile = testHelper.isMobile(browserName);
+  test('should clean up test document', async () => {
+    // Use API-based cleanup for reliability (UI deletion is fragile with popconfirm timing)
+    console.log(`Cleanup: Deleting ${testDocName} via API`);
+    const baseUrl = 'http://localhost:8080/core/browser/bedroom';
+    const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 
-    console.log(`Cleanup test: Looking for document: ${testDocName}`);
-    await page.waitForTimeout(2000);
-
-    const docRow = page.locator('tr').filter({ hasText: testDocName });
-
-    if (await docRow.count() === 0) {
-      console.log('Cleanup: Test document not found (may have been cleaned up already)');
-      return;
-    }
-
-    console.log(`Cleanup test: Found document row`);
-    const deleteButton = docRow.locator('button').filter({
-      has: page.locator('[data-icon="delete"]')
-    });
-
-    if (await deleteButton.count() > 0) {
-      console.log(`Cleanup test: Found delete button, clicking...`);
-      await deleteButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
-
-      const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button:has-text("OK")');
-      console.log(`Cleanup test: Looking for confirm button, count: ${await confirmButton.count()}`);
-      if (await confirmButton.count() > 0) {
-        console.log(`Cleanup test: Clicking confirm button...`);
-        await confirmButton.click(isMobile ? { force: true } : {});
-
-        // Check for both success and error messages
-        console.log(`Cleanup test: Waiting for response message...`);
-        try {
-          await page.waitForSelector('.ant-message-success, .ant-message-error', { timeout: 30000 });
-
-          // Check which message appeared
-          const successMsg = await page.locator('.ant-message-success').count();
-          const errorMsg = await page.locator('.ant-message-error').count();
-
-          console.log(`Cleanup test: Success message: ${successMsg > 0}, Error message: ${errorMsg > 0}`);
-
-          if (errorMsg > 0) {
-            const errorText = await page.locator('.ant-message-error').textContent();
-            console.log(`Cleanup test: ERROR - ${errorText}`);
+    try {
+      const queryUrl = `${baseUrl}?cmisselector=query&q=${encodeURIComponent(`SELECT cmis:objectId FROM cmis:document WHERE cmis:name = '${testDocName}'`)}&succinct=true`;
+      const queryResponse = await fetch(queryUrl, { headers: { 'Authorization': authHeader } });
+      if (!queryResponse.ok) {
+        console.warn(`Cleanup: Query failed: HTTP ${queryResponse.status}`);
+        return;
+      }
+      const queryData = await queryResponse.json();
+      const results = queryData.results || [];
+      if (results.length === 0) {
+        console.log('Cleanup: Document not found (may have been cleaned up already)');
+        return;
+      }
+      const errors: string[] = [];
+      for (const result of results) {
+        const objectId = result.succinctProperties?.['cmis:objectId'];
+        if (objectId) {
+          const formData = new URLSearchParams();
+          formData.append('cmisaction', 'delete');
+          formData.append('objectId', objectId);
+          const deleteResponse = await fetch(baseUrl, {
+            method: 'POST',
+            headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formData.toString()
+          });
+          if (!deleteResponse.ok) {
+            const errorText = await deleteResponse.text().catch(() => '');
+            errors.push(`Failed to delete ${objectId}: HTTP ${deleteResponse.status} ${errorText}`);
+          } else {
+            console.log(`Cleanup: ✅ Deleted ${objectId}`);
           }
-        } catch (e) {
-          console.log(`Cleanup test: No success or error message appeared - timeout`);
-          throw e;
         }
       }
-    } else {
-      console.log(`Cleanup test: Delete button not found`);
+      if (errors.length > 0) {
+        console.error(`Cleanup errors:\n${errors.join('\n')}`);
+        throw new Error(`Cleanup failed: ${errors.length} deletion(s) failed`);
+      }
+    } catch (e) {
+      console.error('Cleanup: Failed:', e);
+      throw e;
     }
   });
 });

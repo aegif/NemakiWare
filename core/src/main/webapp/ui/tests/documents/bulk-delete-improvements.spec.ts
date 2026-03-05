@@ -31,15 +31,37 @@ import { generateTestId } from '../utils/test-helper';
  */
 
 const REPOSITORY_ID = 'bedroom';
-const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
+const ADMIN_AUTH = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+
+// Helper function to dynamically fetch root folder ID
+async function fetchRootFolderId(): Promise<string> {
+  const response = await fetch(
+    `http://localhost:8080/core/browser/${REPOSITORY_ID}?cmisselector=repositoryInfo`,
+    { headers: { 'Authorization': ADMIN_AUTH } }
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to get repository info: ${response.status}`);
+  }
+  const data = await response.json();
+  const rootFolderId = data[REPOSITORY_ID]?.rootFolderId;
+  if (!rootFolderId) {
+    throw new Error('rootFolderId not found in repository info');
+  }
+  return rootFolderId;
+}
 
 test.describe('Bulk Delete Improvements', () => {
   let authHelper: AuthHelper;
   let testObjectIds: string[] = [];
+  let rootFolderId: string;
   const testUUID = generateTestId();
 
   test.beforeEach(async ({ page }) => {
     authHelper = new AuthHelper(page);
+
+    // Dynamically fetch root folder ID
+    rootFolderId = await fetchRootFolderId();
+
     await authHelper.login();
     await page.waitForTimeout(2000);
   });
@@ -80,7 +102,7 @@ test.describe('Bulk Delete Improvements', () => {
 
     // Create a test document
     const docName = `bulk-del-test-${testUUID}.txt`;
-    const docResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${ROOT_FOLDER_ID}`, {
+    const docResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${rootFolderId}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -172,7 +194,7 @@ test.describe('Bulk Delete Improvements', () => {
 
     // Create parent folder
     const parentName = `bulk-parent-${testUUID}`;
-    const parentResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${ROOT_FOLDER_ID}`, {
+    const parentResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${rootFolderId}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -193,7 +215,7 @@ test.describe('Bulk Delete Improvements', () => {
 
     // Create child document
     const childName = `bulk-child-${testUUID}.txt`;
-    const childResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${ROOT_FOLDER_ID}`, {
+    const childResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${rootFolderId}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -295,7 +317,7 @@ test.describe('Bulk Delete Improvements', () => {
 
     // Create parent folder
     const parentName = `cascade-log-test-${testUUID}`;
-    const parentResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${ROOT_FOLDER_ID}`, {
+    const parentResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${rootFolderId}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -315,7 +337,7 @@ test.describe('Bulk Delete Improvements', () => {
 
     // Create child document
     const childName = `cascade-log-child-${testUUID}.txt`;
-    const childResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${ROOT_FOLDER_ID}`, {
+    const childResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${rootFolderId}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -398,7 +420,7 @@ test.describe('Bulk Delete Improvements', () => {
     const docNames: string[] = [];
     for (let i = 1; i <= 3; i++) {
       const docName = `bulk-count-${testUUID}-${i}.txt`;
-      const docResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${ROOT_FOLDER_ID}`, {
+      const docResponse = await request.post(`http://localhost:8080/core/browser/${REPOSITORY_ID}?objectId=${rootFolderId}`, {
         headers: {
           'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
           'Content-Type': 'application/x-www-form-urlencoded'

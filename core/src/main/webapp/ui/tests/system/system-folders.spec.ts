@@ -124,8 +124,8 @@ test.describe('System Folders (/.system)', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     // Navigate via folder hierarchy instead of path query (path queries don't work for .system folders)
-    // Step 1: Get root folder children
-    const rootResponse = await page.request.get('http://localhost:8080/core/browser/bedroom/root?cmisselector=children', {
+    // Step 1: Get root folder children (use maxItems=1000 to avoid pagination cutoff)
+    const rootResponse = await page.request.get('http://localhost:8080/core/browser/bedroom/root?cmisselector=children&maxItems=1000', {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
       },
@@ -201,8 +201,8 @@ test.describe('System Folders (/.system)', () => {
 
   test('should display groups in /.system/groups folder', async ({ page }) => {
     // Navigate via folder hierarchy instead of path query (path queries don't work for .system folders)
-    // Step 1: Get root folder children
-    const rootResponse = await page.request.get('http://localhost:8080/core/browser/bedroom/root?cmisselector=children', {
+    // Step 1: Get root folder children (use maxItems=1000 to avoid pagination cutoff)
+    const rootResponse = await page.request.get('http://localhost:8080/core/browser/bedroom/root?cmisselector=children&maxItems=1000', {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
       },
