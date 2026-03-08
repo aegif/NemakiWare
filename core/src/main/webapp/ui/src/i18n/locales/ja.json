@@ -2241,5 +2241,102 @@
     "feedUrlColumn": "フィードURL",
     "showFeedUrls": "URL表示",
     "pathResolveFailed": "パス解決失敗"
+  },
+  "setup": {
+    "title": "NemakiWare セットアップウィザード",
+    "token": {
+      "title": "セットアップトークン",
+      "description": "コンテナログまたはトークンファイルからセットアップトークンを取得してください。",
+      "placeholder": "セットアップトークンを入力",
+      "verify": "確認",
+      "invalid": "トークンが無効です"
+    },
+    "steps": {
+      "couchdb": "CouchDB接続",
+      "probe": "リポジトリ確認",
+      "auth": "認証設定",
+      "admin": "管理者設定",
+      "vector": "ベクトル検索",
+      "confirm": "確認・適用"
+    },
+    "nav": {
+      "previous": "前へ",
+      "next": "次へ"
+    },
+    "couchdb": {
+      "url": "CouchDB URL",
+      "username": "ユーザー名",
+      "password": "パスワード",
+      "testConnection": "接続テスト",
+      "connected": "接続成功",
+      "connectionFailed": "接続失敗"
+    },
+    "probe": {
+      "scanning": "リポジトリをスキャン中...",
+      "repository": "リポジトリ",
+      "documents": "ドキュメント数",
+      "views": "ビュー数",
+      "status": "状態",
+      "error": "スキャンエラー",
+      "connectionError": "一部のリポジトリに接続できません",
+      "connectionErrorDescription": "CouchDBの接続設定を確認して、前のステップに戻って再テストしてください。",
+      "legacyWarning": "レガシーリポジトリが検出されました",
+      "legacyDescription": "マイグレーションが必要なリポジトリがあります。セットアップ完了後にマイグレーションを実行してください。"
+    },
+    "auth": {
+      "password": "パスワード認証",
+      "google": "Google OIDC",
+      "microsoft": "Microsoft OIDC",
+      "clientId": "クライアントID",
+      "tenantId": "テナントID",
+      "testOidc": "OIDCテスト",
+      "oidcReachable": "到達可能",
+      "oidcUnreachable": "到達不可",
+      "clientIdValid": "クライアントID有効",
+      "clientIdInvalid": "クライアントIDが見つかりません",
+      "lockoutWarning": "少なくとも1つの認証方式を有効にしてください"
+    },
+    "admin": {
+      "info": "管理者パスワードを変更できます。空欄の場合は変更されません。",
+      "newPassword": "新しいパスワード",
+      "confirmPassword": "パスワード確認",
+      "passwordPlaceholder": "8文字以上",
+      "confirmPlaceholder": "パスワードを再入力",
+      "passwordTooShort": "パスワードは8文字以上必要です",
+      "passwordMismatch": "パスワードが一致しません",
+      "noChange": "変更なし",
+      "passkeyNote": "パスキー（WebAuthn）の登録はセットアップ完了後にログイン画面から行えます。"
+    },
+    "vector": {
+      "type": "ベクトル検索タイプ",
+      "disabled": "無効",
+      "tei": "TEI (Text Embeddings Inference)",
+      "bedrock": "Amazon Bedrock",
+      "url": "TEI URL",
+      "testConnection": "接続テスト",
+      "connected": "接続成功",
+      "connectionFailed": "接続失敗",
+      "bedrockRegion": "AWSリージョン",
+      "bedrockModelId": "モデルID",
+      "bedrockAccessKeyId": "Access Key ID",
+      "bedrockSecretAccessKey": "Secret Access Key",
+      "bedrockCredentialNote": "空欄の場合は環境変数またはIAMロールで認証します",
+      "bedrockCredentials": "認証方式",
+      "bedrockExplicitCredentials": "明示キー",
+      "bedrockDefaultCredentials": "デフォルト（環境変数/IAMロール）"
+    },
+    "confirm": {
+      "apply": "適用",
+      "applying": "適用中...",
+      "success": "セットアップ完了",
+      "successWithWarnings": "セットアップ完了（一部警告あり）",
+      "warningsTitle": "以下の設定は適用できませんでした",
+      "successDescription": "NemakiWareの初期設定が完了しました。",
+      "startNemakiWare": "NemakiWareを開始",
+      "retry": "リトライ",
+      "proceedAnyway": "このまま続行",
+      "applyFailed": "セットアップの適用に失敗しました",
+      "persistenceNote": "CouchDB接続設定はランタイムに適用されました。再起動後も有効にするには docker-compose.yml の環境変数を設定してください。ベクトル検索設定は再起動後に反映されます。"
+    }
   }
 }

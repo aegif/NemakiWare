@@ -312,6 +312,20 @@ public class TypeResource extends ResourceBase {
 		// Initialize services from Spring context if not already injected
 		ensureServicesInitialized();
 
+		// Parse JSON to extract type IDs before modifying shared state
+		List<String> requestedTypeIds;
+		try {
+			requestedTypeIds = extractTypeIdsFromJson(jsonInput);
+		} catch (Exception e) {
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("status", "error");
+			errorResult.put("message", "Invalid JSON input: " + e.getMessage());
+			return Response.status(Response.Status.BAD_REQUEST)
+					.entity(errorResult.toJSONString())
+					.type(MediaType.APPLICATION_JSON)
+					.build();
+		}
+
 		try {
 
 			if (typeService == null) {
@@ -354,6 +368,32 @@ public class TypeResource extends ResourceBase {
 					.build();
 			
 		} catch (Exception e) {
+			// Check if this is a concurrent creation conflict:
+			// Another thread may have created the same type between our existType()
+			// check and the actual creation, causing a race condition.
+			boolean typeNowExists = false;
+			try {
+				for (String typeId : requestedTypeIds) {
+					if (existType(repositoryId, typeId)) {
+						typeNowExists = true;
+						break;
+					}
+				}
+			} catch (Exception checkEx) {
+				// Ignore check errors
+			}
+
+			if (typeNowExists) {
+				log.info("Concurrent type creation detected — type already exists (returning 409): " + e.getMessage());
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("status", "error");
+				errorResult.put("message", "Type definition already exists (concurrent creation conflict)");
+				return Response.status(Response.Status.CONFLICT)
+						.entity(errorResult.toJSONString())
+						.type(MediaType.APPLICATION_JSON)
+						.build();
+			}
+
 			log.error("Exception occurred in create(): " + e.getMessage(), e);
 			
 			JSONObject errorResult = new JSONObject();
@@ -1022,6 +1062,35 @@ public class TypeResource extends ResourceBase {
 			result = makeResult(false, result, errMsg);
 			return result.toJSONString();
 		}
+	}
+
+
+	/**
+	 * Extract type IDs from JSON input without modifying shared state.
+	 * Used for conflict detection after concurrent creation failures.
+	 */
+	private List<String> extractTypeIdsFromJson(String jsonData) throws Exception {
+		List<String> typeIds = new ArrayList<>();
+		org.json.simple.parser.JSONParser parser = new org.json.simple.parser.JSONParser();
+		Object parsed = parser.parse(jsonData);
+
+		if (parsed instanceof JSONObject) {
+			JSONObject jsonObj = (JSONObject) parsed;
+			String typeId = (String) jsonObj.get("typeId");
+			if (typeId == null) typeId = (String) jsonObj.get("id");
+			if (typeId != null) typeIds.add(typeId);
+		} else if (parsed instanceof JSONArray) {
+			JSONArray jsonArray = (JSONArray) parsed;
+			for (Object item : jsonArray) {
+				if (item instanceof JSONObject) {
+					JSONObject jsonObj = (JSONObject) item;
+					String typeId = (String) jsonObj.get("typeId");
+					if (typeId == null) typeId = (String) jsonObj.get("id");
+					if (typeId != null) typeIds.add(typeId);
+				}
+			}
+		}
+		return typeIds;
 	}
 
 	/**

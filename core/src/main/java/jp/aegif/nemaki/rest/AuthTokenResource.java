@@ -1066,6 +1066,7 @@ public class AuthTokenResource extends ResourceBase{
 			// if the issuer itself uses HTTP (validated in isAllowedByOidcIssuer).
 
 			java.net.HttpURLConnection conn = (java.net.HttpURLConnection) uri.toURL().openConnection();
+			conn.setInstanceFollowRedirects(false);  // SSRF: prevent redirect to internal/metadata IPs
 			conn.setRequestMethod("GET");
 			conn.setRequestProperty("Authorization", "Bearer " + accessToken);
 			conn.setRequestProperty("Accept", "application/json");
@@ -1116,6 +1117,7 @@ public class AuthTokenResource extends ResourceBase{
 
 			java.net.URI uri = java.net.URI.create(discoveryUrl);
 			java.net.HttpURLConnection conn = (java.net.HttpURLConnection) uri.toURL().openConnection();
+			conn.setInstanceFollowRedirects(false);  // SSRF: prevent redirect to internal/metadata IPs
 			conn.setRequestMethod("GET");
 			conn.setRequestProperty("Accept", "application/json");
 			conn.setConnectTimeout(10000);

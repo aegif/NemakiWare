@@ -147,6 +147,10 @@
 		<filter-name>corsFilter</filter-name>
 		<url-pattern>/odata/*</url-pattern>
 	</filter-mapping>
+	<filter-mapping>
+		<filter-name>corsFilter</filter-name>
+		<url-pattern>/api/v1/setup/*</url-pattern>
+	</filter-mapping>
 	
 	<!-- Audit request context filter mapping - CMIS binding paths -->
 	<filter-mapping>
@@ -355,6 +359,27 @@
  <servlet-mapping>
   <servlet-name>odata</servlet-name>
   <url-pattern>/odata/*</url-pattern>
+ </servlet-mapping>
+
+ <!-- Setup Wizard API for initial configuration -->
+ <servlet>
+  <servlet-name>jersey-setup</servlet-name>
+  <servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
+  <init-param>
+        <param-name>jakarta.ws.rs.Application</param-name>
+        <param-value>jp.aegif.nemaki.api.setup.SetupApplication</param-value>
+    </init-param>
+    <!-- Enable Jersey-Spring integration -->
+    <init-param>
+        <param-name>jersey.config.server.provider.classnames</param-name>
+        <param-value>org.glassfish.jersey.server.spring.SpringLifecycleListener</param-value>
+    </init-param>
+    <load-on-startup>14</load-on-startup>
+ </servlet>
+
+ <servlet-mapping>
+  <servlet-name>jersey-setup</servlet-name>
+  <url-pattern>/api/v1/setup/*</url-pattern>
  </servlet-mapping>
 
  <!-- MCP (Model Context Protocol) application for LLM integration -->

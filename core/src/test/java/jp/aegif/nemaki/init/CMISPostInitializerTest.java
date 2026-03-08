@@ -154,4 +154,54 @@ public class CMISPostInitializerTest {
         initializer.onApplicationEvent(event);
         assertTrue(CMISPostInitializer.isPatchesApplied(), "Second call should be no-op");
     }
+
+    /**
+     * After failure, executePatches() must allow retry and actually re-execute.
+     * Verifies the guard is reset on failure so the next call runs patches again.
+     */
+    @Test
+    public void testRetryAfterFailureReExecutesPatches() {
+        CMISPostInitializer initializer = new CMISPostInitializer();
+
+        // First call: fail
+        List<AbstractNemakiPatch> failPatches = new ArrayList<>();
+        failPatches.add(new StubFailPatch());
+        initializer.setCmisPatchList(failPatches);
+
+        boolean firstResult = initializer.executePatches();
+        assertFalse(firstResult, "First call should return false (patch failed)");
+        assertFalse(CMISPostInitializer.isPatchesApplied(), "isPatchesApplied should be false after failure");
+
+        // Second call: succeed (simulating user fixed the issue and retried)
+        List<AbstractNemakiPatch> successPatches = new ArrayList<>();
+        successPatches.add(new StubSuccessPatch());
+        initializer.setCmisPatchList(successPatches);
+
+        boolean secondResult = initializer.executePatches();
+        assertTrue(secondResult, "Retry should return true (patch succeeded)");
+        assertTrue(CMISPostInitializer.isPatchesApplied(), "isPatchesApplied should be true after successful retry");
+    }
+
+    /**
+     * After success, executePatches() must return true without re-executing.
+     */
+    @Test
+    public void testNoReExecutionAfterSuccess() {
+        CMISPostInitializer initializer = new CMISPostInitializer();
+
+        List<AbstractNemakiPatch> patches = new ArrayList<>();
+        patches.add(new StubSuccessPatch());
+        initializer.setCmisPatchList(patches);
+
+        assertTrue(initializer.executePatches(), "First call should succeed");
+        assertTrue(CMISPostInitializer.isPatchesApplied());
+
+        // Replace with failing patches — should NOT be executed
+        List<AbstractNemakiPatch> failPatches = new ArrayList<>();
+        failPatches.add(new StubFailPatch());
+        initializer.setCmisPatchList(failPatches);
+
+        assertTrue(initializer.executePatches(), "Second call should return true (already completed)");
+        assertTrue(CMISPostInitializer.isPatchesApplied(), "isPatchesApplied should remain true");
+    }
 }

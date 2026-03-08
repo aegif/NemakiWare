@@ -340,6 +340,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	}
 
 	private UserItem getAuthenticatedUserItem(String repositoryId, String userId, String password) {
+		if (StringUtils.isBlank(userId)) {
+			log.debug("Authentication attempt with null/empty userId — rejecting");
+			return null;
+		}
 		UserItem u = contentService.getUserItemById(repositoryId, userId);
 
 		if (log.isDebugEnabled()) {

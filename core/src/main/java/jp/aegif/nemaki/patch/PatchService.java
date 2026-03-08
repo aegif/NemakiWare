@@ -46,6 +46,8 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl
 public class PatchService implements ApplicationListener<ContextRefreshedEvent> {
 	private static final Log log = LogFactory.getLog(PatchService.class);
 	private static final AtomicBoolean initialized = new AtomicBoolean(false);
+	// Set to true only after all operations have completed successfully
+	private static final AtomicBoolean completedSuccessfully = new AtomicBoolean(false);
 
 	private RepositoryInfoMap repositoryInfoMap;
 
@@ -113,40 +115,95 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	 */
 	@Override
 	public void onApplicationEvent(ContextRefreshedEvent event) {
-		// Idempotency check: Execute only once despite multiple ContextRefreshedEvent firings
+		// Setup Mode guard: skip patch execution when CouchDB is not ready.
+		// Do NOT set `initialized` yet — let executePatchService() handle
+		// the one-shot guard so that SetupApplyResource can trigger it later.
+		try {
+			jp.aegif.nemaki.init.StartupProbeService probeService =
+					event.getApplicationContext().getBean(jp.aegif.nemaki.init.StartupProbeService.class);
+			if (probeService != null && probeService.isSetupRequired()) {
+				log.info("=== PHASE 3: Setup Mode detected — suppressing PatchService execution ===");
+				return;
+			}
+		} catch (Exception e) {
+			log.debug("StartupProbeService not available, proceeding normally: " + e.getMessage());
+		}
+
+		executePatchService();
+	}
+
+	/**
+	 * Execute deferred Phase 3 patch logic.  Called from onApplicationEvent()
+	 * during normal startup and also from SetupApplyResource after setup
+	 * completes (to initialise patches that were skipped in Setup Mode).
+	 *
+	 * Thread-safe: uses initialized AtomicBoolean to guard against concurrent
+	 * execution. On failure the guard is reset so that a subsequent retry
+	 * (e.g. via /apply/mark-complete) can re-execute.
+	 *
+	 * @return true if all operations succeeded, false if any failed
+	 */
+	public boolean executePatchService() {
+		// Already completed successfully — idempotent, no re-execution needed
+		if (completedSuccessfully.get()) {
+			log.info("=== PHASE 3: executePatchService() — already completed successfully, skipping ===");
+			return true;
+		}
+
+		// Guard against concurrent execution (but allow retry after failure)
 		if (!initialized.compareAndSet(false, true)) {
-			log.warn("PatchService.onApplicationEvent() called but already executed - skipping duplicate");
-			return;
+			log.info("=== PHASE 3: executePatchService() — execution in progress, skipping ===");
+			return false;
 		}
 
 		log.info("=== PHASE 3: PatchService initialization starting ===");
 
 		try {
+			boolean allSucceeded = true;
+
 			log.info("Starting CMIS patch application (Phase 3)");
 
 			// CRITICAL FIX: Create PropertyDefinitionDetail records for system CMIS properties
-			initializeSystemPropertyDefinitionDetails();
+			if (!initializeSystemPropertyDefinitionDetails()) {
+				allSucceeded = false;
+			}
 
 			// TCK REQUIREMENT: Create custom secondary type for TCK tests
-			createTCKSecondaryType();
+			if (!createTCKSecondaryType()) {
+				allSucceeded = false;
+			}
 
 			// PRIORITY 4: TypeManager cache forced update for TCK compliance
-			invalidateTypeManagerCaches();
+			if (!invalidateTypeManagerCaches()) {
+				allSucceeded = false;
+			}
 
 			// CRITICAL TCK FIX: Index root folders in Solr for query tests
+			// Non-critical: Solr may not be available, don't fail Phase 3 for this
 			indexRootFoldersInSolr();
 
 			// Apply any future patches if they exist
 			if (patchList != null && !patchList.isEmpty()) {
 				log.info("Applying " + patchList.size() + " CMIS patches from patchList");
-				apply();
+				if (!applyPatches()) {
+					allSucceeded = false;
+				}
 			} else {
 				log.info("No CMIS patches to apply (patchList is " + (patchList == null ? "null" : "empty") + ") - Phase 3 completed");
 			}
 
-			log.info("=== CMIS patch application completed successfully ===");
+			if (allSucceeded) {
+				log.info("=== PHASE 3: PatchService initialization completed successfully ===");
+				completedSuccessfully.set(true);
+			} else {
+				log.warn("=== PHASE 3: PatchService initialization completed with failures — retry allowed ===");
+				initialized.set(false);  // Reset guard to allow retry
+			}
+			return allSucceeded;
 		} catch (Exception e) {
-			log.error("Failed to apply CMIS patches on startup", e);
+			log.error("Failed to apply CMIS patches on startup — retry allowed", e);
+			initialized.set(false);  // Reset guard to allow retry
+			return false;
 		}
 	}
 	
@@ -154,23 +211,25 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	 * CRITICAL FIX: Initialize PropertyDefinitionDetail records for system CMIS properties
 	 * Root cause: RepositoryServiceImpl.createType excludes systemIds from PropertyDefinitionDetail creation
 	 * This causes TypeManagerImpl to have zero PropertyDefinitionDetail records, leading to contamination
+	 *
+	 * @return true if succeeded, false if a required dependency was missing or an error occurred
 	 */
-	private void initializeSystemPropertyDefinitionDetails() {
+	private boolean initializeSystemPropertyDefinitionDetails() {
 		log.info("=== CRITICAL FIX: Initializing PropertyDefinitionDetail for system CMIS properties ===");
 		
 		if (typeService == null) {
 			log.error("TypeService not injected - cannot create PropertyDefinitionDetail records");
-			return;
+			return false;
 		}
 		
 		if (typeManager == null) {
 			log.error("TypeManager not injected - cannot get system property IDs");
-			return;
+			return false;
 		}
 		
 		if (repositoryInfoMap == null) {
 			log.error("RepositoryInfoMap not injected - cannot iterate repositories");
-			return;
+			return false;
 		}
 		
 		try {
@@ -188,10 +247,11 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 				}
 			}
 			
-			log.info("✅ System PropertyDefinitionDetail initialization completed successfully");
+			log.info("System PropertyDefinitionDetail initialization completed successfully");
+			return true;
 		} catch (Exception e) {
-			log.error("❌ Failed to initialize system PropertyDefinitionDetail records", e);
-			// Continue with startup even if this fails
+			log.error("Failed to initialize system PropertyDefinitionDetail records", e);
+			return false;
 		}
 	}
 	
@@ -199,18 +259,20 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	 * PRIORITY 4: Force TypeManager cache invalidation for TCK compliance
 	 * This ensures that PropertyDefinitionDetail changes are immediately reflected in type definitions
 	 * and resolves Browser Binding JSON serialization issues with property definitions
+	 *
+	 * @return true if succeeded, false if a required dependency was missing or an error occurred
 	 */
-	private void invalidateTypeManagerCaches() {
+	private boolean invalidateTypeManagerCaches() {
 		log.info("=== PRIORITY 4: TypeManager cache forced update for TCK compliance ===");
 		
 		if (typeManager == null) {
 			log.error("TypeManager not injected - cannot invalidate type caches");
-			return;
+			return false;
 		}
 		
 		if (repositoryInfoMap == null) {
 			log.error("RepositoryInfoMap not injected - cannot iterate repositories for cache invalidation");
-			return;
+			return false;
 		}
 		
 		try {
@@ -222,13 +284,14 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 				// This ensures PropertyDefinitionDetail changes are reflected immediately
 				typeManager.invalidateTypeCache(repositoryId);
 				
-				log.info("✅ TypeManager cache invalidated for repository: " + repositoryId);
+				log.info("TypeManager cache invalidated for repository: " + repositoryId);
 			}
 			
-			log.info("✅ All TypeManager caches invalidated successfully - TCK compliance enhanced");
+			log.info("All TypeManager caches invalidated successfully - TCK compliance enhanced");
+			return true;
 		} catch (Exception e) {
-			log.error("❌ Failed to invalidate TypeManager caches", e);
-			// Continue with startup even if cache invalidation fails
+			log.error("Failed to invalidate TypeManager caches", e);
+			return false;
 		}
 	}
 	
@@ -387,14 +450,21 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	 * - test user (password: test) as member of TestUsers
 	 */
 
-	public void apply(){
+	/**
+	 * Apply patches from patchList.
+	 * @return true if all patches succeeded, false if any patch failed
+	 */
+	private boolean applyPatches(){
+		boolean allSucceeded = true;
 		createPathView();
 		for(AbstractNemakiPatch patch : patchList){
 			boolean success = patch.apply();
 			if (!success) {
 				log.warn("Patch returned failure: " + patch.getClass().getSimpleName());
+				allSucceeded = false;
 			}
 		}
+		return allSucceeded;
 	}
 
 	private void createPathView(){
@@ -498,18 +568,20 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	 * The TCK SecondaryTypesTest requires a custom secondary type to test attach/detach operations.
 	 * By default, TCK uses "cmis:secondary" which is a base type and cannot be attached to documents.
 	 * This method creates "tck:testSecondaryType" which extends cmis:secondary and can be attached.
+	 *
+	 * @return true if succeeded, false if a required dependency was missing or an error occurred
 	 */
-	private void createTCKSecondaryType() {
+	private boolean createTCKSecondaryType() {
 		log.info("=== TCK REQUIREMENT: Creating custom secondary type for TCK tests ===");
 
 		if (typeService == null) {
 			log.error("TypeService not injected - cannot create TCK secondary type");
-			return;
+			return false;
 		}
 
 		if (repositoryInfoMap == null) {
 			log.error("RepositoryInfoMap not injected - cannot iterate repositories");
-			return;
+			return false;
 		}
 
 		try {
@@ -552,16 +624,17 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 
 				// Create the type
 				typeService.createTypeDefinition(repositoryId, typeDef);
-				log.info("✅ TCK secondary type created successfully in repository: " + repositoryId);
+				log.info("TCK secondary type created successfully in repository: " + repositoryId);
 			}
 
 			// Invalidate type manager caches to ensure new type is immediately available
 			invalidateTypeManagerCaches();
 
-			log.info("✅ TCK custom secondary type creation completed successfully");
+			log.info("TCK custom secondary type creation completed successfully");
+			return true;
 		} catch (Exception e) {
-			log.error("❌ Failed to create TCK secondary type", e);
-			// Continue with startup even if this fails
+			log.error("Failed to create TCK secondary type", e);
+			return false;
 		}
 	}
 

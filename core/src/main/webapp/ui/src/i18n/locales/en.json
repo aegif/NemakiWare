@@ -2241,5 +2241,102 @@
     "feedUrlColumn": "Feed URL",
     "showFeedUrls": "Show URLs",
     "pathResolveFailed": "Path resolution failed"
+  },
+  "setup": {
+    "title": "NemakiWare Setup Wizard",
+    "token": {
+      "title": "Setup Token",
+      "description": "Retrieve the setup token from the container log or token file.",
+      "placeholder": "Enter setup token",
+      "verify": "Verify",
+      "invalid": "Invalid token"
+    },
+    "steps": {
+      "couchdb": "CouchDB Connection",
+      "probe": "Repository Check",
+      "auth": "Authentication",
+      "admin": "Admin Settings",
+      "vector": "Vector Search",
+      "confirm": "Confirm & Apply"
+    },
+    "nav": {
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "couchdb": {
+      "url": "CouchDB URL",
+      "username": "Username",
+      "password": "Password",
+      "testConnection": "Test Connection",
+      "connected": "Connected",
+      "connectionFailed": "Connection Failed"
+    },
+    "probe": {
+      "scanning": "Scanning repositories...",
+      "repository": "Repository",
+      "documents": "Documents",
+      "views": "Views",
+      "status": "Status",
+      "error": "Scan Error",
+      "connectionError": "Some repositories are not accessible",
+      "connectionErrorDescription": "Please check the CouchDB connection settings and go back to re-test.",
+      "legacyWarning": "Legacy repositories detected",
+      "legacyDescription": "Some repositories require migration. Please run migration after setup is complete."
+    },
+    "auth": {
+      "password": "Password Authentication",
+      "google": "Google OIDC",
+      "microsoft": "Microsoft OIDC",
+      "clientId": "Client ID",
+      "tenantId": "Tenant ID",
+      "testOidc": "Test OIDC",
+      "oidcReachable": "Reachable",
+      "oidcUnreachable": "Unreachable",
+      "clientIdValid": "Client ID Valid",
+      "clientIdInvalid": "Client ID Not Found",
+      "lockoutWarning": "At least one authentication method must be enabled"
+    },
+    "admin": {
+      "info": "You can change the admin password. Leave blank to keep the current password.",
+      "newPassword": "New Password",
+      "confirmPassword": "Confirm Password",
+      "passwordPlaceholder": "8 characters minimum",
+      "confirmPlaceholder": "Re-enter password",
+      "passwordTooShort": "Password must be at least 8 characters",
+      "passwordMismatch": "Passwords do not match",
+      "noChange": "No change",
+      "passkeyNote": "Passkey (WebAuthn) registration can be done from the login screen after setup is complete."
+    },
+    "vector": {
+      "type": "Vector Search Type",
+      "disabled": "Disabled",
+      "tei": "TEI (Text Embeddings Inference)",
+      "bedrock": "Amazon Bedrock",
+      "url": "TEI URL",
+      "testConnection": "Test Connection",
+      "connected": "Connected",
+      "connectionFailed": "Connection Failed",
+      "bedrockRegion": "AWS Region",
+      "bedrockModelId": "Model ID",
+      "bedrockAccessKeyId": "Access Key ID",
+      "bedrockSecretAccessKey": "Secret Access Key",
+      "bedrockCredentialNote": "Leave blank to use environment variables or IAM role for authentication",
+      "bedrockCredentials": "Authentication",
+      "bedrockExplicitCredentials": "Explicit Keys",
+      "bedrockDefaultCredentials": "Default (Environment Variables / IAM Role)"
+    },
+    "confirm": {
+      "apply": "Apply",
+      "applying": "Applying...",
+      "success": "Setup Complete",
+      "successWithWarnings": "Setup Complete (with warnings)",
+      "warningsTitle": "The following settings could not be applied",
+      "successDescription": "NemakiWare initial setup has been completed.",
+      "startNemakiWare": "Start NemakiWare",
+      "retry": "Retry",
+      "proceedAnyway": "Proceed Anyway",
+      "applyFailed": "Setup apply failed",
+      "persistenceNote": "CouchDB connection settings have been applied at runtime. To persist across restarts, configure the environment variables in docker-compose.yml. Vector search settings will take effect after restart."
+    }
   }
 }

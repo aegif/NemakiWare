@@ -362,7 +362,35 @@ test.describe('Webhook Settings UI Tests', () => {
     const folderId = folderData.properties?.['cmis:objectId']?.value || folderData.succinctProperties?.['cmis:objectId'];
 
     try {
-      // Attempt to create webhook config as non-admin user
+      // Ensure test user exists
+      const restBase = `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}`;
+      const checkRes = await request.get(`${restBase}/user/show/api-e2e-testuser`, {
+        headers: { 'Authorization': AUTH_HEADER },
+      });
+      const checkData = await checkRes.json();
+      if (checkData.status !== 'success' || !checkData.user) {
+        const createUserRes = await request.post(`${restBase}/user/create/api-e2e-testuser`, {
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/x-www-form-urlencoded' },
+          data: new URLSearchParams({ name: 'api-e2e-testuser', password: 'testtest' }).toString(),
+        });
+        expect(createUserRes.status()).toBe(200);
+      }
+
+      // Restrict test user to read-only on this folder (webhook requires CAN_UPDATE_PROPERTIES)
+      await request.post(
+        `${BASE_URL}/core/browser/${REPOSITORY_ID}`,
+        {
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/x-www-form-urlencoded' },
+          form: {
+            cmisaction: 'applyACL',
+            objectId: folderId,
+            'addACEPrincipal[0]': 'api-e2e-testuser',
+            'addACEPermission[0][0]': 'cmis:read',
+          },
+        }
+      );
+
+      // Attempt to create webhook config as non-admin user (read-only)
       const addRes = await request.post(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/webhook/config/${folderId}`,
         {
@@ -380,7 +408,7 @@ test.describe('Webhook Settings UI Tests', () => {
       );
 
       const addData = await addRes.json().catch(() => ({}));
-      // Should be denied
+      // Should be denied (user has only cmis:read, not CAN_UPDATE_PROPERTIES)
       expect(addRes.status() === 403 || addData.status === 'failure').toBeTruthy();
 
     } finally {

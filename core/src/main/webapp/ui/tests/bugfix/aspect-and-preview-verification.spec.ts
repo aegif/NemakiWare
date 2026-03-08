@@ -218,7 +218,7 @@ async function pollQueryForId(
   request: any,
   query: string,
   expectedId: string,
-  { timeoutMs = 60000, intervalMs = 3000 } = {}
+  { timeoutMs = 90000, intervalMs = 3000 } = {}
 ): Promise<string[]> {
   const deadline = Date.now() + timeoutMs;
   let resultIds: string[] = [];

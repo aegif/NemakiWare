@@ -119,6 +119,9 @@ async function applyACL(request: any, objectId: string, addPrincipal: string, ad
     'addACEPrincipal[0]': addPrincipal,
     'addACEPermission[0][0]': addPermission,
   });
+  if (!res.ok()) {
+    console.log(`applyACL warning: ${objectId} ${addPrincipal}=${addPermission} => ${res.status()}`);
+  }
   return res;
 }
 
@@ -131,6 +134,25 @@ async function getObjectExists(request: any, objectId: string, authHeader: strin
 
 test.describe('Server-Side Cascade Delete', () => {
   test.setTimeout(120000);
+
+  // Ensure test user exists for permission-based tests (E4, E5)
+  test.beforeAll(async ({ request }) => {
+    const restBase = `${BASE_URL}/rest/repo/${REPOSITORY_ID}`;
+    const checkRes = await request.get(`${restBase}/user/show/${TEST_USER}`, {
+      headers: { 'Authorization': AUTH_HEADER },
+    });
+    const checkData = await checkRes.json();
+    if (checkData.status !== 'success' || !checkData.user) {
+      const createRes = await request.post(`${restBase}/user/create/${TEST_USER}`, {
+        headers: {
+          'Authorization': AUTH_HEADER,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        data: new URLSearchParams({ name: TEST_USER, password: TEST_USER_PASS }).toString(),
+      });
+      expect(createRes.status()).toBe(200);
+    }
+  });
 
   test('B1: deleteObject(parent) cascades to child', async ({ request }) => {
     const rootId = await getRootFolderId(request);
@@ -213,10 +235,15 @@ test.describe('Server-Side Cascade Delete', () => {
     const childId = await createDocument(request, `srv-e4-child-${uuid}.txt`, rootId);
     const relId = await createParentChildRel(request, parentId, childId, `rel-e4-${uuid}`);
 
-    await applyACL(request, parentId, TEST_USER, 'cmis:all');
-    await applyACL(request, childId, TEST_USER, 'cmis:read');
+    const aclRes1 = await applyACL(request, parentId, TEST_USER, 'cmis:all');
+    const aclRes2 = await applyACL(request, childId, TEST_USER, 'cmis:read');
+    // ACL apply must succeed — test user is guaranteed by beforeAll.
+    // Failure here indicates a product bug, not an environment issue.
+    expect(aclRes1.ok(), `E4: applyACL(parent, cmis:all) failed with ${aclRes1.status()}`).toBeTruthy();
+    expect(aclRes2.ok(), `E4: applyACL(child, cmis:read) failed with ${aclRes2.status()}`).toBeTruthy();
 
     const delRes = await deleteObject(request, parentId, TEST_USER_AUTH);
+    console.log(`E4: deleteObject(parent) as test user => ${delRes.status()}`);
     expect(delRes.ok()).toBeTruthy();
 
     expect(await getObjectExists(request, parentId)).toBe(false);
@@ -258,11 +285,17 @@ test.describe('Server-Side Cascade Delete', () => {
     await createParentChildRel(request, parentId, nonDeletableChildId, `rel-deny-${uuid}`);
 
     // Grant test user full access to parent and deletable child, but only read to non-deletable
-    await applyACL(request, parentId, TEST_USER, 'cmis:all');
-    await applyACL(request, deletableChildId, TEST_USER, 'cmis:all');
-    await applyACL(request, nonDeletableChildId, TEST_USER, 'cmis:read');
+    const aclRes1 = await applyACL(request, parentId, TEST_USER, 'cmis:all');
+    const aclRes2 = await applyACL(request, deletableChildId, TEST_USER, 'cmis:all');
+    const aclRes3 = await applyACL(request, nonDeletableChildId, TEST_USER, 'cmis:read');
+    // ACL apply must succeed — test user is guaranteed by beforeAll.
+    // Failure here indicates a product bug, not an environment issue.
+    expect(aclRes1.ok(), `E5: applyACL(parent, cmis:all) failed with ${aclRes1.status()}`).toBeTruthy();
+    expect(aclRes2.ok(), `E5: applyACL(deletable, cmis:all) failed with ${aclRes2.status()}`).toBeTruthy();
+    expect(aclRes3.ok(), `E5: applyACL(nonDeletable, cmis:read) failed with ${aclRes3.status()}`).toBeTruthy();
 
     const delRes = await deleteObject(request, parentId, TEST_USER_AUTH);
+    console.log(`E5: deleteObject(parent) as test user => ${delRes.status()}`);
     expect(delRes.ok()).toBeTruthy();
 
     expect(await getObjectExists(request, parentId)).toBe(false);

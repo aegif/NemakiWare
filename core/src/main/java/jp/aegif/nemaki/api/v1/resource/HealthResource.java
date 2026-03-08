@@ -16,7 +16,12 @@ import jakarta.ws.rs.core.Response;
 import jp.aegif.nemaki.api.v1.model.response.HealthResponse;
 import jp.aegif.nemaki.api.v1.model.response.HealthCheckResult;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+
+import jp.aegif.nemaki.init.CouchDbConnectionResult;
+import jp.aegif.nemaki.init.StartupProbeService;
+import jp.aegif.nemaki.util.PropertyManager;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
@@ -45,6 +50,12 @@ public class HealthResource {
 
     private static final double MEMORY_WARNING_THRESHOLD = 80.0;
     private static final double MEMORY_CRITICAL_THRESHOLD = 95.0;
+
+    @Autowired(required = false)
+    private StartupProbeService startupProbeService;
+
+    @Autowired(required = false)
+    private PropertyManager propertyManager;
 
     @GET
     @Operation(
@@ -82,17 +93,36 @@ public class HealthResource {
     }
 
     /**
-     * Check CouchDB connectivity.
-     * Currently returns a basic check; can be enhanced to actually ping CouchDB.
+     * Check CouchDB connectivity via StartupProbeService.
      */
     private HealthCheckResult checkCouchDB() {
         HealthCheckResult result = new HealthCheckResult();
-        long startTime = System.currentTimeMillis();
+
+        if (startupProbeService == null) {
+            result.setStatus("down");
+            result.setError("StartupProbeService not available — initialization anomaly");
+            logger.warning("CouchDB health check: StartupProbeService is null (wiring failure)");
+            return result;
+        }
 
         try {
-            result.setStatus("up");
-            result.setResponseTimeMs(System.currentTimeMillis() - startTime);
-            result.addDetail("message", "CouchDB check placeholder - actual connectivity check to be implemented");
+            String url = propertyManager != null ? propertyManager.readValue("db.couchdb.url") : null;
+            if (url == null || url.trim().isEmpty()) url = "http://couchdb:5984";
+            String user = propertyManager != null ? propertyManager.readValue("db.couchdb.auth.username") : "admin";
+            if (user == null || user.trim().isEmpty()) user = "admin";
+            String pass = propertyManager != null ? propertyManager.readValue("db.couchdb.auth.password") : "password";
+            if (pass == null || pass.trim().isEmpty()) pass = "password";
+
+            CouchDbConnectionResult conn = startupProbeService.testConnection(url, user, pass);
+            result.setResponseTimeMs(conn.getResponseTimeMs());
+
+            if (conn.isReachable()) {
+                result.setStatus("up");
+                result.addDetail("version", conn.getCouchDbVersion());
+            } else {
+                result.setStatus("down");
+                result.setError(conn.getErrorMessage());
+            }
         } catch (Exception e) {
             result.setStatus("down");
             result.setError(e.getMessage());

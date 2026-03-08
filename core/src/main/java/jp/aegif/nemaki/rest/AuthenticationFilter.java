@@ -128,6 +128,18 @@ public class AuthenticationFilter implements Filter {
 				return;
 			}
 
+			// Bypass authentication for Setup Wizard API endpoints
+			// Setup API must be accessible before CouchDB is configured (no auth possible)
+			// Use contextPath + prefix match to prevent partial URI matching
+			if (requestURI != null) {
+				String setupPrefix = hreq.getContextPath() + "/api/v1/setup/";
+				if (requestURI.startsWith(setupPrefix)) {
+					log.debug("Bypassing authentication for Setup API endpoint: " + requestURI);
+					chain.doFilter(req, res);
+					return;
+				}
+			}
+
 			// Bypass authentication for OpenAPI specification endpoints (allow public access to API docs)
 			// Note: API v1 CMIS endpoints are at /api/v1/cmis/* to avoid conflict with legacy /api/v1/repo/* endpoints
 			if (requestURI != null && (requestURI.contains("/api/v1/cmis/openapi.json") || requestURI.contains("/api/v1/cmis/openapi.yaml"))) {

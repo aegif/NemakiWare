@@ -42,6 +42,24 @@ test.describe('Password Change', () => {
   // Track the current password of the test user for sequential tests
   let currentTestUserPassword = 'testtest';
 
+  test.beforeAll(async ({ request }) => {
+    // Ensure test user exists (global-setup may have failed or Docker was reset)
+    const checkRes = await request.get(`${REST_BASE}/user/show/${TEST_USER_ID}`, {
+      headers: { 'Authorization': ADMIN_AUTH },
+    });
+    const checkData = await checkRes.json();
+    if (checkData.status !== 'success' || !checkData.user) {
+      const createRes = await request.post(`${REST_BASE}/user/create/${TEST_USER_ID}`, {
+        headers: {
+          'Authorization': ADMIN_AUTH,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        data: new URLSearchParams({ name: TEST_USER_ID, password: 'testtest' }).toString(),
+      });
+      expect(createRes.status()).toBe(200);
+    }
+  });
+
   test.afterAll(async ({ request }) => {
     // Reset test user password back to 'test' via admin
     const formData = new URLSearchParams();
@@ -72,11 +90,24 @@ test.describe('Password Change', () => {
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], input[placeholder*="Search"], .ant-input-search input');
     if (await searchInput.count() > 0) {
       await searchInput.first().fill(TEST_USER_ID);
-      await page.waitForTimeout(1000);
+      await searchInput.first().press('Enter');
+      await page.waitForTimeout(1500);
     }
 
-    // Find test user row and click edit
+    // Find test user row and click edit (retry search if CouchDB view not yet updated)
     const testUserRow = page.locator('.ant-table-row').filter({ hasText: TEST_USER_ID });
+    for (let retry = 0; retry < 3; retry++) {
+      if (await testUserRow.isVisible()) break;
+      if (retry < 2) {
+        await page.waitForTimeout(2000);
+        if (await searchInput.count() > 0) {
+          await searchInput.first().clear();
+          await searchInput.first().fill(TEST_USER_ID);
+          await searchInput.first().press('Enter');
+          await page.waitForTimeout(1500);
+        }
+      }
+    }
     await expect(testUserRow).toBeVisible({ timeout: 10000 });
     const editButton = testUserRow.locator('button').filter({ has: page.locator('[data-icon="edit"]') });
     if (await editButton.count() > 0) {

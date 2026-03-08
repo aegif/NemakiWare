@@ -201,8 +201,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { ConfigProvider, App as AntApp } from 'antd';
+import { ConfigProvider, App as AntApp, Spin } from 'antd';
 import { Layout } from './components/Layout/Layout';
+import { SetupWizard } from './components/SetupWizard/SetupWizard';
 import { DocumentList } from './components/DocumentList/DocumentList';
 import { DocumentViewer } from './components/DocumentViewer/DocumentViewer';
 import { UserManagement } from './components/UserManagement/UserManagement';
@@ -257,7 +258,36 @@ const ROUTE_FEATURE_MAP: Record<string, string> = {
 function AppRoutes() {
   const { isAuthenticated, authToken } = useAuth();
   const location = useLocation();
+  const [setupRequired, setSetupRequired] = useState<boolean | null>(null);
   const [featureToggles, setFeatureToggles] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    let retryTimer: ReturnType<typeof setTimeout>;
+    let retryCount = 0;
+    const MAX_RETRIES = 5;
+    const checkSetup = () => {
+      fetch('/core/api/v1/setup/state')
+        .then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
+        .then(data => setSetupRequired(data.setupRequired === true))
+        .catch(() => {
+          retryCount++;
+          if (retryCount >= MAX_RETRIES) {
+            // Fallback: assume setup is not required so the login screen is accessible.
+            console.warn(`Setup state check failed after ${MAX_RETRIES} retries. Falling back to login screen.`);
+            setSetupRequired(false);
+            return;
+          }
+          // Retry after 3s — handles initial deployment where the server
+          // is still starting up, or transient error responses (500, 502).
+          retryTimer = setTimeout(checkSetup, 3000);
+        });
+    };
+    checkSetup();
+    return () => clearTimeout(retryTimer);
+  }, []);
 
   const fetchToggles = useCallback(async () => {
     if (!authToken?.token || !authToken?.repositoryId) return;
@@ -287,6 +317,14 @@ function AppRoutes() {
   useEffect(() => {
     fetchToggles();
   }, [fetchToggles]);
+
+  // Setup Wizard: show when setupRequired is true
+  if (setupRequired === null) {
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><Spin size="large" /></div>;
+  }
+  if (setupRequired) {
+    return <SetupWizard onComplete={() => setSetupRequired(false)} />;
+  }
 
   // Public routes that don't require authentication
   // cloud-login needs to be accessible for MCP cloud authentication flow

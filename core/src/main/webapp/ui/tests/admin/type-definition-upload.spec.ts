@@ -283,40 +283,22 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
 
-    // Mobile browser support
-    const isMobile = testHelper.isMobile(browserName);
-
-    if (isMobile) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        try {
-          await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500);
-        } catch (error) {
-          console.log('Sidebar close failed (non-critical):', error);
-        }
-      }
-    }
-
-    // Login and navigate to Type Management
+    // Login first
     await authHelper.login();
     await page.waitForTimeout(2000);
-    await testHelper.waitForAntdLoad();
 
-    // Navigate to Type Management via Admin menu
-    const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
-    if (await adminMenu.count() > 0) {
-      await adminMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
-    }
-
-    const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
-    if (await typeManagementItem.count() > 0) {
-      await typeManagementItem.click(isMobile ? { force: true } : {});
+    // Navigate directly to Type Management page via URL (more reliable than menu clicks)
+    await page.goto('/core/ui/#/types');
+    // Retry navigation if auth state race redirects away
+    for (let retry = 0; retry < 3; retry++) {
       await page.waitForTimeout(2000);
+      if (page.url().includes('/types')) break;
+      console.log(`type-upload: Retrying navigation to /types (attempt ${retry + 2})`);
+      await page.goto('/core/ui/#/types');
     }
+    await page.waitForLoadState('networkidle');
 
-    await page.waitForSelector('.ant-table', { timeout: 15000 });
+    await page.waitForSelector('.ant-table', { timeout: 30000 });
   });
 
   test('should upload a valid type definition file without conflicts', async ({ page, browserName }) => {

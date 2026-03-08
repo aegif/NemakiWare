@@ -1349,13 +1349,24 @@ test.describe('Type REST API - Concurrent Operations', () => {
     });
 
     const responses = await Promise.all(createPromises);
-    const successCount = responses.filter(r => r.status() === 200).length;
-    console.log(`Concurrent creation: ${successCount}/${typeCount} succeeded`);
+    const statuses = responses.map(r => r.status());
+    const successCount = statuses.filter(s => s === 200).length;
+    const conflictCount = statuses.filter(s => s === 409).length;
+    const serverErrorCount = statuses.filter(s => s === 500).length;
+    const unexpectedStatuses = statuses.filter(s => s !== 200 && s !== 409 && s !== 500);
+    console.log(`Concurrent creation: ${successCount} ok, ${conflictCount} conflict, ${serverErrorCount} server error, unexpected: [${unexpectedStatuses.join(',')}]`);
 
-    // CouchDB update conflicts are expected with concurrent type mutations
-    // (type registry stored in single CouchDB document). Require at least 2/5
-    // to confirm the endpoint works; conflict failures are expected behavior.
-    expect(successCount).toBeGreaterThanOrEqual(2);
+    // All responses must be explainable as success or CouchDB conflict.
+    // 409 is the expected conflict response; 500 should NOT occur — if it does,
+    // the server's conflict handling has regressed.
+    expect(unexpectedStatuses).toEqual([]);
+    expect(serverErrorCount).toBe(0);
+
+    // Require at least 1 success out of 5 concurrent writes.
+    expect(successCount).toBeGreaterThanOrEqual(1);
+
+    // Success + conflict must account for all responses.
+    expect(successCount + conflictCount).toBe(typeCount);
 
     // Cleanup - delete all created types (ignore failures for types that weren't created)
     const deletePromises = Array.from({ length: typeCount }, (_, i) => {

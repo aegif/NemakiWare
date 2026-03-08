@@ -953,6 +953,22 @@
 
 	<build>
 		<finalName>core</finalName>
+		<resources>
+			<resource>
+				<directory>src/main/resources</directory>
+				<filtering>true</filtering>
+				<includes>
+					<include>version.properties</include>
+				</includes>
+			</resource>
+			<resource>
+				<directory>src/main/resources</directory>
+				<filtering>false</filtering>
+				<excludes>
+					<exclude>version.properties</exclude>
+				</excludes>
+			</resource>
+		</resources>
 		<plugins>
 			<!-- Frontend Maven Plugin: Integrates npm build into Maven lifecycle -->
 			<!-- This ensures UI is always built fresh with WAR, eliminating asset hash mismatches -->

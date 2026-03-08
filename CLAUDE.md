@@ -216,10 +216,10 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ---
 
-## セキュリティステータス (2026-03-05)
+## セキュリティステータス (2026-03-08)
 
-- npm脆弱性: 3件 (swagger-ui-react経由: dompurify XSS moderate, immutable Prototype Pollution high×2 — 修正にはbreaking change必要、開発ツールのため低リスク)
-- Maven依存関係: 最新化済み
+- npm脆弱性: 0件 (dompurify 3.3.2 overrides適用、immutable 3.8.3 へ更新)
+- Maven要注意: netty 4.1.97 (odata-server-core経由、CVE-2025-24970/58056)、logback 1.4.14 (CVE-2025-11226/CVE-2026-1225)
 - PDF.js CVE-2024-4367: 対応済み (react-pdf 10.0.1)
 - エクスポートACLリーク: 対応済み (CAN_GET_ACL権限チェック追加)
 - アーカイブDAO例外伝播: 対応済み (null返却→CmisRuntimeException)
@@ -230,7 +230,21 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ## 現在のバージョン
 
-**3.1.0-RC7** (2026-03-05)
+**3.1.0-RC8** (2026-03-08)
+
+### RC8 (2026-03-08)
+- Setup Wizard: "bedroom" ハードコーディング除去 — _all_dbs ベース動的リポジトリ検出
+- Setup Wizard: StartupProbeService/DatabasePreInitializer/SetupAdminResource/SetupApplyResource の全リポジトリ対応
+- Setup Wizard: ProbeStep.tsx bedroom 固定参照除去
+- TypeResource.create() 並行リクエスト衝突修正 (500→409 CONFLICT)
+- WebAuthn パッチ常時実行化 (Patch_WebAuthnCredentialViews.apply() idempotent override)
+- WebAuthn CouchDB ビューを bedroom_init.dump に追加 (新規インストール対応)
+- npm 脆弱性 0 件達成 (dompurify 3.3.2 override + immutable 3.8.3)
+- Playwright E2E テスト品質改善 (827 passed / 0 failed / 74 skipped)
+  - type-definition-upload: beforeEach 直接URL遷移に修正
+  - type-rest-api: 並行作成テスト厳密化 (409 CONFLICT 検証)
+  - server-cascade-delete: ACL テスト test.skip→expect 検証に変更
+- passkey テスト安定性向上
 
 ### RC7 (2026-03-05)
 - OOM修正: getLatestChange() 全件ロード→limit=1最適化 (CouchDB changesByToken 78k行対応)

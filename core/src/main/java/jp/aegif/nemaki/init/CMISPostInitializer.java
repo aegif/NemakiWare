@@ -113,10 +113,44 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
      */
     @Override
     public void onApplicationEvent(ContextRefreshedEvent event) {
-        // Ensure this runs only once
+        // Setup Mode guard: skip patch execution when CouchDB is not ready.
+        // Do NOT set `started` yet — let executePatches() handle the one-shot guard
+        // so that SetupApplyResource can trigger it later.
+        try {
+            StartupProbeService probeService = event.getApplicationContext().getBean(StartupProbeService.class);
+            if (probeService != null && probeService.isSetupRequired()) {
+                log.info("=== PHASE 2: Setup Mode detected — suppressing CMIS patch execution ===");
+                return;
+            }
+        } catch (Exception e) {
+            log.debug("StartupProbeService not available, proceeding normally: " + e.getMessage());
+        }
+
+        executePatches();
+    }
+
+    /**
+     * Execute deferred CMIS patches.  Called from onApplicationEvent() during
+     * normal startup and also from SetupApplyResource after setup completes
+     * (to initialise patches that were skipped in Setup Mode).
+     *
+     * Thread-safe: uses started AtomicBoolean to guard against concurrent
+     * execution. On failure the guard is reset so that a subsequent retry
+     * (e.g. via /apply/mark-complete) can re-execute the patches.
+     *
+     * @return true if all patches succeeded, false if any failed
+     */
+    public boolean executePatches() {
+        // Already completed successfully — idempotent, no re-execution needed
+        if (completedSuccessfully.get()) {
+            log.info("=== PHASE 2: executePatches() — already completed successfully, skipping ===");
+            return true;
+        }
+
+        // Guard against concurrent execution (but allow retry after failure)
         if (!started.compareAndSet(false, true)) {
-            log.info("=== PHASE 2: CMISPostInitializer already started, skipping ===");
-            return;
+            log.info("=== PHASE 2: executePatches() — execution in progress, skipping ===");
+            return false;
         }
 
         log.info("=== PHASE 2: CMIS POST-INITIALIZATION STARTED ===");
@@ -136,13 +170,15 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
                 completedSuccessfully.set(true);
                 log.info("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED (allSucceeded=true) ===");
             } else {
-                log.warn("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED WITH FAILURES (allSucceeded=false) ===");
-                // completedSuccessfully stays false → NemakiPatchInitializationListener can retry
+                log.warn("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED WITH FAILURES — retry allowed ===");
+                started.set(false);  // Reset guard to allow retry
             }
+            return allSucceeded;
 
         } catch (Exception e) {
-            log.error("Phase 2 CMIS post-initialization failed", e);
-            // completedSuccessfully stays false → NemakiPatchInitializationListener can retry
+            log.error("Phase 2 CMIS post-initialization failed — retry allowed", e);
+            started.set(false);  // Reset guard to allow retry
+            return false;
         }
     }
     

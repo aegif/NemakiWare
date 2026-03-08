@@ -201,6 +201,12 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- WebAuthn credential views for passkey support -->
+				<bean class="jp.aegif.nemaki.patch.Patch_WebAuthnCredentialViews">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
@@ -353,6 +359,12 @@
 	</bean>
 
 	<bean id="patch_NarrowUserGroupViews" class="jp.aegif.nemaki.patch.Patch_NarrowUserGroupViews">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_WebAuthnCredentialViews" class="jp.aegif.nemaki.patch.Patch_WebAuthnCredentialViews">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

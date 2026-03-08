@@ -136,6 +136,12 @@
         "dupLatestVersion": {
           "map": "function(doc) { if (doc.baseType == 'cmis:document' && doc.latestVersion )  emit([doc.name,doc.versionSeriesId],1) }",
           "reduce": "function(keys, values) { return sum(values) }"
+        },
+        "webauthnCredentialsByUserId": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:webauthnCredential') emit(doc.userId, doc) }"
+        },
+        "webauthnCredentialsByCredentialId": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:webauthnCredential') emit(doc.credentialId, doc) }"
         }
       }
     },

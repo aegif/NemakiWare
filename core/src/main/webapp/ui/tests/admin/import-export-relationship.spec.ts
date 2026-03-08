@@ -758,7 +758,13 @@ test.describe('Import/Export: Custom Types + Relationships + ID Remapping', () =
       const result1 = await importZip(page.request, importTarget, zipBuffer);
       console.log('First import:', JSON.stringify(result1));
       expect(['success', 'partial']).toContain(result1.status);
-      const firstCount = result1.documentsCreated;
+
+      // Measure actual child count after first import (more reliable than documentsCreated,
+      // which only counts documents while getChildren includes folders too)
+      const childrenAfterFirst = await getChildren(page.request, importTarget);
+      const firstChildCount = childrenAfterFirst.length;
+      console.log(`Children after first import: ${firstChildCount}`);
+      expect(firstChildCount).toBeGreaterThan(0);
 
       // Import again to the same target (should overwrite, not duplicate)
       const result2 = await importZip(page.request, importTarget, zipBuffer);
@@ -768,7 +774,7 @@ test.describe('Import/Export: Custom Types + Relationships + ID Remapping', () =
       // Verify no duplicates: child count should be same as first import
       const children = await getChildren(page.request, importTarget);
       console.log(`Children after two imports: ${children.length}`);
-      expect(children.length).toBe(firstCount);
+      expect(children.length).toBe(firstChildCount);
     });
   });
 });

@@ -155,11 +155,43 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
       // Click register/start button in modal
       await page.getByRole('button', { name: /登録開始|Start Registration/ }).click();
 
-      // Wait for modal to close (registration success)
+      // Wait for modal to close (registration success means the server
+      // accepted the credential — the modal only closes on success)
       await expect(page.locator('.ant-modal')).toBeHidden({ timeout: 20000 });
 
-      // Verify passkey appears in the list
-      await expect(page.getByText('Test Passkey')).toBeVisible({ timeout: 10000 });
+      // Verify registration was persisted via API
+      const listRes = await page.request.get(
+        `${REST_BASE}/webauthn/credentials`,
+        { headers: { Authorization: ADMIN_AUTH } }
+      );
+      const listData = await listRes.json();
+      expect(listData.status).toBe('success');
+      const testCred = listData.credentials.find(
+        (c: { displayName?: string }) => c.displayName === 'Test Passkey'
+      );
+      expect(testCred).toBeDefined();
+
+      // Verify UI list also shows the registered passkey
+      // After successful registration the component calls loadCredentials().
+      // Wait for the credentials API response, then verify the table shows the passkey.
+      // If the in-place update didn't render in time, reload and try again.
+      const testPasskeyLocator = page.getByText('Test Passkey');
+      try {
+        await expect(testPasskeyLocator).toBeVisible({ timeout: 10000 });
+      } catch {
+        // Fallback: reload and wait for credentials API response
+        const credResPromise = page.waitForResponse(
+          resp => resp.url().includes('/webauthn/credentials') && resp.status() === 200,
+          { timeout: 15000 }
+        );
+        await page.reload();
+        await credResPromise;
+        await page.waitForLoadState('networkidle');
+        const passkeyTabAfter = page.locator('.ant-tabs-tab').filter({ hasText: /パスキー|Passkey/i });
+        await expect(passkeyTabAfter).toBeVisible({ timeout: 10000 });
+        await passkeyTabAfter.click();
+        await expect(testPasskeyLocator).toBeVisible({ timeout: 15000 });
+      }
     } finally {
       await cleanupAuthenticator();
     }

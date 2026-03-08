@@ -73,6 +73,21 @@ public class NemakiPatchInitializationListener implements ServletContextListener
             // Get Spring WebApplicationContext
             WebApplicationContext springContext = WebApplicationContextUtils.getWebApplicationContext(servletContext);
 
+            // Setup Mode guard: skip patch execution when CouchDB is not ready.
+            // Reset `initialized` so patches can be triggered after setup completes.
+            if (springContext != null) {
+                try {
+                    StartupProbeService probeService = springContext.getBean(StartupProbeService.class);
+                    if (probeService != null && probeService.isSetupRequired()) {
+                        log.info("NemakiPatchInitializationListener: Setup Mode detected — suppressing patch execution");
+                        initialized.set(false);
+                        return;
+                    }
+                } catch (Exception e) {
+                    log.debug("StartupProbeService not available, proceeding normally: " + e.getMessage());
+                }
+            }
+
             if (springContext == null) {
                 log.error("Spring WebApplicationContext not found - cannot apply patches");
                 return;
@@ -114,7 +129,8 @@ public class NemakiPatchInitializationListener implements ServletContextListener
                 "patch_RetentionSecondaryTypes",  // Retention secondary types
                 "patch_RetentionExpirationView",  // Retention expiration view
                 "patch_McpServiceAccount",        // Creates MCP service account for API access
-                "patch_RssTokenViews"             // Creates RSS token views for token persistence
+                "patch_RssTokenViews",            // Creates RSS token views for token persistence
+                "patch_WebAuthnCredentialViews"   // WebAuthn credential views (passkey support)
             };
 
             for (String beanName : patchBeanNames) {
