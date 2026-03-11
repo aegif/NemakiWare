@@ -154,7 +154,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     // Mobile browser fix
     await testHelper.closeMobileSidebar(browserName);

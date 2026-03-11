@@ -10,12 +10,99 @@ import { TestHelper, ApiHelper } from './utils/test-helper';
  *
  * Note: comprehensive-preview.spec.ts also covers PDF preview.
  */
-test('PDF preview should render with react-pdf', async ({ page }) => {
-  test.setTimeout(180000); // Allow more time for login + PDF rendering
-  const testHelper = new TestHelper(page);
-  const apiHelper = new ApiHelper(page);
 
-  // Direct login for stability (AuthHelper can be flaky with Ant Design form timing)
+let uploadedPdfId: string = '';
+const testPdfName = `pdf-preview-test-${Date.now()}.pdf`;
+
+test.beforeAll(async ({ browser }) => {
+  // Upload a minimal PDF file via API to ensure one exists
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const adminAuth = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
+
+  try {
+    // Get root folder ID
+    const rootResp = await page.request.get(
+      'http://localhost:8080/core/browser/bedroom/root?cmisselector=object',
+      { headers: { 'Authorization': adminAuth } }
+    );
+    const rootData = await rootResp.json();
+    const rootFolderId = rootData?.properties?.['cmis:objectId']?.value;
+    if (!rootFolderId) {
+      console.log('Could not get root folder ID');
+      return;
+    }
+
+    // Create a minimal valid PDF
+    const pdfContent = '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R/Resources<<>>>>endobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n206\n%%EOF';
+
+    // Upload via CMIS Browser Binding
+    const formData = new URLSearchParams();
+    // Use multipart form data via fetch
+    const uploadResp = await page.request.post(
+      'http://localhost:8080/core/browser/bedroom/root',
+      {
+        headers: { 'Authorization': adminAuth },
+        multipart: {
+          cmisaction: 'createDocument',
+          'propertyId[0]': 'cmis:objectTypeId',
+          'propertyValue[0]': 'cmis:document',
+          'propertyId[1]': 'cmis:name',
+          'propertyValue[1]': testPdfName,
+          content: {
+            name: testPdfName,
+            mimeType: 'application/pdf',
+            buffer: Buffer.from(pdfContent, 'utf-8'),
+          },
+        },
+      }
+    );
+
+    if (uploadResp.ok()) {
+      const data = await uploadResp.json();
+      uploadedPdfId = data?.properties?.['cmis:objectId']?.value || '';
+      console.log(`Uploaded test PDF: ${testPdfName}, ID: ${uploadedPdfId}`);
+    } else {
+      console.log(`PDF upload failed: ${uploadResp.status()}`);
+    }
+  } catch (e) {
+    console.log(`PDF upload error: ${e}`);
+  } finally {
+    await context.close();
+  }
+});
+
+test.afterAll(async ({ browser }) => {
+  if (!uploadedPdfId) return;
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const adminAuth = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
+  try {
+    await page.request.post(
+      'http://localhost:8080/core/browser/bedroom/root',
+      {
+        headers: { 'Authorization': adminAuth },
+        form: {
+          cmisaction: 'delete',
+          objectId: uploadedPdfId,
+          allVersions: 'true',
+        },
+      }
+    );
+    console.log(`Cleaned up test PDF: ${testPdfName}`);
+  } catch (e) {
+    console.log(`Cleanup error: ${e}`);
+  } finally {
+    await context.close();
+  }
+});
+
+test('PDF preview should render with react-pdf', async ({ page }) => {
+  test.setTimeout(180000);
+
+  expect(uploadedPdfId).toBeTruthy();
+
+  // Login and navigate directly to the uploaded PDF's DocumentViewer
   await page.goto('http://localhost:8080/core/ui/');
   await page.waitForSelector('input[placeholder*="ユーザー"], input[placeholder*="User"]', { timeout: 15000 });
   await page.fill('input[placeholder*="ユーザー"], input[placeholder*="User"]', 'admin');
@@ -23,70 +110,36 @@ test('PDF preview should render with react-pdf', async ({ page }) => {
   await page.click('button[type="submit"], button:has-text("ログイン"), button:has-text("Login")');
   await page.waitForURL(/\/#\/documents/, { timeout: 45000 });
 
-  // Wait for folder tree to load
-  await page.waitForSelector('.ant-tree', { timeout: 15000 }).catch(() => null);
-  await page.waitForTimeout(2000);
-
-  // Click Repository Root to ensure children are displayed
-  const rootFolder = page.locator('.ant-tree-title').filter({ hasText: 'Repository Root' }).first();
-  if (await rootFolder.isVisible().catch(() => false)) {
-    await rootFolder.click();
-    await page.waitForTimeout(2000);
-  }
-
-  // Find any PDF file in the table — check both anchor links and button links
-  const pdfCellAnchor = page.locator('.ant-table-tbody td a').filter({ hasText: /\.pdf$/i }).first();
-  const pdfCellButton = page.locator('.ant-table-tbody td button.ant-btn-link').filter({ hasText: /\.pdf$/i }).first();
-  const pdfRow = page.locator('.ant-table-tbody tr').filter({ hasText: /\.pdf/i }).first();
-
-  let pdfFound = false;
-  if (await pdfCellAnchor.count() > 0) {
-    await pdfCellAnchor.click();
-    pdfFound = true;
-  } else if (await pdfCellButton.count() > 0) {
-    await pdfCellButton.click();
-    pdfFound = true;
-  } else if (await pdfRow.count() > 0) {
-    // Click the eye icon (detail view) for the PDF row
-    const viewButton = pdfRow.locator('button').filter({ has: page.locator('.anticon-eye') });
-    if (await viewButton.count() > 0) {
-      await viewButton.click();
-      pdfFound = true;
-    }
-  }
-
-  if (!pdfFound) {
-    // No PDF found in current folder - this is acceptable
-    console.log('No PDF files found in repository root - skipping PDF preview test');
-    test.skip(true, 'No PDF files available in repository root folder');
-    return;
-  }
-
-  await page.waitForTimeout(2000);
+  // Navigate directly to DocumentViewer for the uploaded PDF
+  await page.goto(`http://localhost:8080/core/ui/index.html#/documents/${uploadedPdfId}`);
+  await page.waitForSelector('.ant-tabs-tab', { timeout: 20000 });
 
   // Click Preview tab
   const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: /プレビュー|Preview/i });
-  if (await previewTab.count() > 0) {
-    await previewTab.click();
-    await page.waitForTimeout(8000);
+  await expect(previewTab).toBeVisible({ timeout: 10000 });
+  await previewTab.click();
+  await page.waitForTimeout(8000);
 
-    // Check for react-pdf elements
-    const pdfDocument = page.locator('.react-pdf__Document');
-    const pdfCanvas = page.locator('.react-pdf__Page__canvas');
+  // Check for react-pdf elements
+  const pdfDocument = page.locator('.react-pdf__Document');
+  const pdfCanvas = page.locator('.react-pdf__Page__canvas');
 
-    const hasDocument = await pdfDocument.isVisible();
-    const hasCanvas = await pdfCanvas.isVisible();
+  const hasDocument = await pdfDocument.isVisible();
+  const hasCanvas = await pdfCanvas.isVisible();
 
-    console.log('PDF Document visible:', hasDocument);
-    console.log('PDF Canvas visible:', hasCanvas);
+  console.log('PDF Document visible:', hasDocument);
+  console.log('PDF Canvas visible:', hasCanvas);
 
-    const success = hasCanvas || hasDocument;
-    console.log(success ? 'PDF preview rendered' : 'PDF preview not rendered (may still be loading)');
-    // Soft assertion - PDF rendering can be slow
-    if (!success) {
-      console.log('PDF rendering not complete within timeout - this is acceptable');
-    }
-  } else {
-    console.log('Preview tab not found - document viewer may have different layout');
+  const success = hasCanvas || hasDocument;
+  console.log(success ? 'PDF preview rendered' : 'PDF preview not rendered');
+
+  if (!success) {
+    // Retry with longer wait
+    await page.waitForTimeout(10000);
+    const hasCanvasRetry = await pdfCanvas.isVisible();
+    const hasDocumentRetry = await pdfDocument.isVisible();
+    const successRetry = hasCanvasRetry || hasDocumentRetry;
+    console.log(successRetry ? 'PDF preview rendered on retry' : 'PDF preview not rendered on retry');
+    expect(successRetry).toBe(true);
   }
 });

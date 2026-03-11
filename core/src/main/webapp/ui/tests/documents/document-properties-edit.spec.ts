@@ -161,7 +161,7 @@ test.describe('Document Properties Edit and Persistence', () => {
     if (await documentsMenuItem.count() > 0) {
       console.error('!!! Documents menu found, clicking... !!!');
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
       console.error('!!! Documents page loaded !!!');
     } else {
       console.error('!!! Documents menu NOT found !!!');
@@ -330,7 +330,7 @@ test.describe('Document Properties Edit and Persistence', () => {
     if (await docRow.count() > 0) {
       // Open properties view
       const detailButton = docRow.locator('button').filter({
-        has: page.locator('[data-icon="eye"], [data-icon="edit"], [data-icon="setting"]')
+        has: page.locator('.anticon-eye, [aria-label="eye"], .anticon-edit, [aria-label="edit"], .anticon-setting, [aria-label="setting"]')
       });
 
       if (await detailButton.count() > 0) {
@@ -345,7 +345,7 @@ test.describe('Document Properties Edit and Persistence', () => {
         } else {
           // If not in view, try opening edit modal
           const editButton = page.locator('button:has-text("編集"), button').filter({
-            has: page.locator('[data-icon="edit"]')
+            has: page.locator('.anticon-edit, [aria-label="edit"]')
           });
           if (await editButton.count() > 0) {
             await editButton.first().click(isMobile ? { force: true } : {});

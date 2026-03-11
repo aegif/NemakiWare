@@ -54,7 +54,7 @@ test.describe('Office Document Preview', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
@@ -62,7 +62,7 @@ test.describe('Office Document Preview', () => {
 
     if (isMobile) {
       const menuToggle = page.locator('button').filter({
-        has: page.locator('[data-icon="menu-fold"], [data-icon="menu-unfold"]')
+        has: page.locator('.anticon-menu-fold, [aria-label="menu-fold"], .anticon-menu-unfold, [aria-label="menu-unfold"]')
       }).first();
       if (await menuToggle.count() > 0) {
         try {
@@ -87,7 +87,7 @@ test.describe('Office Document Preview', () => {
         if (await fileRow.count() > 0) {
           // Look for delete button
           const deleteButton = fileRow.locator('button').filter({
-            has: page.locator('[data-icon="delete"]')
+            has: page.locator('.anticon-delete, [aria-label="delete"]')
           });
           if (await deleteButton.count() > 0) {
             await deleteButton.click();
@@ -444,7 +444,7 @@ test.describe('Office Document Preview', () => {
 
     // Click the eye icon to open preview
     const eyeButton = excelRow.locator('button').filter({
-      has: page.locator('[data-icon="eye"]')
+      has: page.locator('.anticon-eye, [aria-label="eye"]')
     });
 
     if (await eyeButton.count() > 0) {

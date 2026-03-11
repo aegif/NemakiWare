@@ -62,16 +62,6 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
         log.error("=== INITIAL CONTENT SETUP PATCH STARTED for repository: " + repositoryId + " ===");
         log.info("Starting Initial Content Setup Patch for repository: " + repositoryId);
 
-        if ("canopy".equals(repositoryId)) {
-            log.info("Skipping Initial Content Setup for canopy - information management area");
-            return;
-        }
-
-        if ("bedroom_closet".equals(repositoryId) || "canopy_closet".equals(repositoryId)) {
-            log.info("Skipping Initial Content Setup for archive repositories");
-            return;
-        }
-
         try {
             ContentService contentService = patchUtil.getContentService();
             if (contentService == null) {

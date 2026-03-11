@@ -22,7 +22,7 @@
 import { test, expect } from '@playwright/test';
 import { isKeycloakAvailable, KEYCLOAK_SKIP_MESSAGE } from '../utils/test-state';
 
-const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8180';
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';
 const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID || 'nemakiware-ui';
 
 test.describe('NemakiWare OIDC Authentication', () => {

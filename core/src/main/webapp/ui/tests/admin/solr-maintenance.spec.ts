@@ -72,7 +72,7 @@ test.describe('Solr Index Maintenance', () => {
 
     // Login as admin
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     await testHelper.closeMobileSidebar(browserName);
 
@@ -130,15 +130,24 @@ test.describe('Solr Index Maintenance', () => {
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle');
 
-    // Check for health check card
+    // Wait for health check card to appear (API loads healthStatus asynchronously)
     const healthCard = page.locator('.ant-card').filter({
       hasText: /インデックスヘルスチェック|Index Health/i
     });
 
+    // Wait up to 15 seconds for health status to load (initially shows Spin, then Card)
+    await expect(healthCard).toBeVisible({ timeout: 15000 }).catch(() => {});
+
     if (await healthCard.count() === 0) {
-      test.skip('Health check card not visible - feature may not be implemented');
+      // Retry: reload and wait longer
+      await page.reload({ waitUntil: 'networkidle' });
+      await expect(healthCard).toBeVisible({ timeout: 15000 }).catch(() => {});
+    }
+
+    if (await healthCard.count() === 0) {
+      test.skip('Health check card not visible after retries - Solr health API may be unavailable');
       return;
     }
 
@@ -441,7 +450,13 @@ test.describe('Solr Index Maintenance', () => {
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle');
+
+    // Wait for health check card to load (API is async)
+    const healthCardLocator = page.locator('.ant-card').filter({
+      hasText: /インデックスヘルスチェック|Index Health/i
+    });
+    await expect(healthCardLocator).toBeVisible({ timeout: 15000 }).catch(() => {});
 
     // Find refresh button in health check card
     const refreshButton = page.locator('.ant-card').filter({

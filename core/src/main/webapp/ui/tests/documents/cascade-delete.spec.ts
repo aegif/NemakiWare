@@ -83,7 +83,7 @@ test.describe('Cascade Delete Functionality', () => {
     await authHelper.login();
 
     // Wait for document list to load
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
   });
 
   test.afterEach(async ({ page, request }) => {
@@ -195,7 +195,7 @@ test.describe('Cascade Delete Functionality', () => {
     await expect(parentRow).toBeVisible({ timeout: 10000 });
 
     // Click the delete button in that row
-    const deleteButton = parentRow.locator('button:has([data-icon="delete"])');
+    const deleteButton = parentRow.locator('button:has(.anticon-delete, [aria-label="delete"])');
     if (await deleteButton.count() > 0) {
       await deleteButton.click();
 
@@ -308,7 +308,7 @@ test.describe('Cascade Delete Functionality', () => {
     const parentRow = page.locator(`tr:has-text("${parentName}")`);
     await expect(parentRow).toBeVisible({ timeout: 10000 });
 
-    const deleteButton = parentRow.locator('button:has([data-icon="delete"])');
+    const deleteButton = parentRow.locator('button:has(.anticon-delete, [aria-label="delete"])');
     if (await deleteButton.count() === 0) {
       test.skip(true, 'Delete button not found in document list');
       return;
@@ -409,7 +409,7 @@ test.describe('Cascade Delete Functionality', () => {
     const docRow = page.locator(`tr:has-text("${docName}")`);
     await expect(docRow).toBeVisible({ timeout: 10000 });
 
-    const deleteButton = docRow.locator('button:has([data-icon="delete"])');
+    const deleteButton = docRow.locator('button:has(.anticon-delete, [aria-label="delete"])');
     if (await deleteButton.count() === 0) {
       test.skip(true, 'Delete button not found in document list');
       return;

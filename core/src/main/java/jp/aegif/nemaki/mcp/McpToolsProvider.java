@@ -153,10 +153,10 @@ public class McpToolsProvider {
             );
         } catch (JsonProcessingException e) {
             log.error("Failed to generate login tool schema", e);
-            // Fallback: use defaultRepository if it's safe (no quotes), otherwise use "bedroom"
+            // Fallback: use defaultRepository if it's safe (no quotes)
             String safeDefaultRepo = defaultRepository != null && !defaultRepository.contains("\"")
                 ? defaultRepository
-                : "bedroom";
+                : getDefaultRepositoryIdFallback();
             String safeSchema = String.format(
                 "{\"type\":\"object\",\"properties\":{\"username\":{\"type\":\"string\",\"description\":\"ユーザー名\"},\"password\":{\"type\":\"string\",\"description\":\"パスワード\"},\"repositoryId\":{\"type\":\"string\",\"description\":\"リポジトリID\",\"default\":\"%s\"}},\"required\":[\"username\",\"password\"]}",
                 safeDefaultRepo);
@@ -1206,5 +1206,23 @@ public class McpToolsProvider {
         }
 
         return filtered;
+    }
+
+    /**
+     * Get default repository ID from RepositoryInfoMap as fallback.
+     */
+    private String getDefaultRepositoryIdFallback() {
+        try {
+            jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repoInfoMap =
+                jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+                    .getBean("repositoryInfoMap", jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+            if (repoInfoMap != null) {
+                String id = repoInfoMap.getDefaultRepositoryId();
+                if (id != null) return id;
+            }
+        } catch (Exception e) {
+            // Fall through
+        }
+        return defaultRepository;
     }
 }

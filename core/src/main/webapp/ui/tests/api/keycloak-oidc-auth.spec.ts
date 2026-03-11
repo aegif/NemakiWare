@@ -23,7 +23,8 @@ const KEYCLOAK_URL = process.env.KEYCLOAK_URL || getKeycloakUrl();
 const REPO_ID = 'bedroom';
 const OIDC_TOKEN_URL = `${KEYCLOAK_URL}/realms/nemakiware/protocol/openid-connect/token`;
 const NEMAKI_OIDC_URL = `${BASE_URL}/core/api/v1/cmis/auth/repositories/${REPO_ID}/oidc`;
-const AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+// NemakiWare backend runs in Docker and accesses Keycloak via container name
+const USERINFO_ENDPOINT = 'http://keycloak:8080/realms/nemakiware/protocol/openid-connect/userinfo';
 
 let keycloakReachable = false;
 let keycloakClientConfigured = false;
@@ -235,25 +236,16 @@ test.describe('Keycloak OIDC - NemakiWare OIDC Auth Flow', () => {
   });
 
   test('Full OIDC flow: Keycloak token → NemakiWare auth token (ldapuser1)', async ({ request }) => {
-    // Step 1: Get Keycloak OIDC token
+    // Step 1: Get Keycloak OIDC access token
     const kcToken = await getKeycloakToken(request, 'ldapuser1', 'ldappass1');
     expect(kcToken).not.toBeNull();
 
-    // Step 2: Extract user_info from JWT
-    const payload = decodeJwtPayload(kcToken!);
-    expect(payload).not.toBeNull();
-
-    // Step 3: Call NemakiWare OIDC endpoint
+    // Step 2: Call NemakiWare OIDC endpoint with access_token + userinfo_endpoint
     const response = await request.post(NEMAKI_OIDC_URL, {
       headers: { 'Content-Type': 'application/json' },
       data: {
-        user_info: {
-          preferred_username: payload!.preferred_username,
-          email: payload!.email,
-          name: payload!.name,
-          given_name: payload!.given_name,
-          family_name: payload!.family_name
-        }
+        access_token: kcToken,
+        userinfo_endpoint: USERINFO_ENDPOINT
       }
     });
     expect(response.status()).toBe(200);
@@ -269,16 +261,11 @@ test.describe('Keycloak OIDC - NemakiWare OIDC Auth Flow', () => {
     const kcToken = await getKeycloakToken(request, 'yamada', 'yamadapass');
     expect(kcToken).not.toBeNull();
 
-    const payload = decodeJwtPayload(kcToken!);
-
     const response = await request.post(NEMAKI_OIDC_URL, {
       headers: { 'Content-Type': 'application/json' },
       data: {
-        user_info: {
-          preferred_username: payload!.preferred_username,
-          email: payload!.email,
-          name: payload!.name
-        }
+        access_token: kcToken,
+        userinfo_endpoint: USERINFO_ENDPOINT
       }
     });
     expect(response.status()).toBe(200);
@@ -291,15 +278,12 @@ test.describe('Keycloak OIDC - NemakiWare OIDC Auth Flow', () => {
     // Get NemakiWare token via OIDC flow
     const kcToken = await getKeycloakToken(request, 'ldapuser1', 'ldappass1');
     expect(kcToken).not.toBeNull();
-    const payload = decodeJwtPayload(kcToken!);
 
     const authResponse = await request.post(NEMAKI_OIDC_URL, {
       headers: { 'Content-Type': 'application/json' },
       data: {
-        user_info: {
-          preferred_username: payload!.preferred_username,
-          email: payload!.email
-        }
+        access_token: kcToken,
+        userinfo_endpoint: USERINFO_ENDPOINT
       }
     });
     const authData = await authResponse.json();
@@ -317,7 +301,7 @@ test.describe('Keycloak OIDC - NemakiWare OIDC Auth Flow', () => {
     expect(name).toBeDefined();
   });
 
-  test('OIDC endpoint rejects missing user_info', async ({ request }) => {
+  test('OIDC endpoint rejects missing access_token', async ({ request }) => {
     const response = await request.post(NEMAKI_OIDC_URL, {
       headers: { 'Content-Type': 'application/json' },
       data: {}
@@ -325,17 +309,15 @@ test.describe('Keycloak OIDC - NemakiWare OIDC Auth Flow', () => {
     expect(response.status()).toBe(400);
   });
 
-  test('OIDC endpoint rejects empty preferred_username', async ({ request }) => {
+  test('OIDC endpoint rejects invalid access_token', async ({ request }) => {
     const response = await request.post(NEMAKI_OIDC_URL, {
       headers: { 'Content-Type': 'application/json' },
       data: {
-        user_info: {
-          preferred_username: '',
-          email: ''
-        }
+        access_token: 'invalid-token-value',
+        userinfo_endpoint: USERINFO_ENDPOINT
       }
     });
-    // Should fail with 401 (can't extract username)
+    // Should fail with 401 (access token validation failed)
     expect(response.status()).toBeGreaterThanOrEqual(400);
   });
 
@@ -343,16 +325,12 @@ test.describe('Keycloak OIDC - NemakiWare OIDC Auth Flow', () => {
     // Use testuser (Keycloak realm user, not from LDAP sync)
     const kcToken = await getKeycloakToken(request, 'testuser', 'password');
     expect(kcToken).not.toBeNull();
-    const payload = decodeJwtPayload(kcToken!);
 
     const response = await request.post(NEMAKI_OIDC_URL, {
       headers: { 'Content-Type': 'application/json' },
       data: {
-        user_info: {
-          preferred_username: payload!.preferred_username,
-          email: payload!.email,
-          name: payload!.name
-        }
+        access_token: kcToken,
+        userinfo_endpoint: USERINFO_ENDPOINT
       }
     });
     expect(response.status()).toBe(200);

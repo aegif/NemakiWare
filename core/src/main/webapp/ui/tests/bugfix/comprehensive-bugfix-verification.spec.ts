@@ -470,7 +470,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
 
     // Find delete button
     const deleteButton = docRow.locator('button').filter({
-      has: page.locator('[data-icon="delete"]')
+      has: page.locator('.anticon-delete, [aria-label="delete"]')
     });
 
     if (await deleteButton.count() > 0) {
@@ -672,7 +672,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
     for (const docName of [docExact, docPartial]) {
       const docRow = page.locator('tr').filter({ hasText: docName });
       if (await docRow.count() > 0) {
-        const deleteBtn = docRow.locator('button').filter({ has: page.locator('[data-icon="delete"]') });
+        const deleteBtn = docRow.locator('button').filter({ has: page.locator('.anticon-delete, [aria-label="delete"]') });
         if (await deleteBtn.count() > 0) {
           await deleteBtn.click({ force: true });
 

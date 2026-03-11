@@ -169,295 +169,51 @@ test.describe('Access Control and Permissions', () => {
     }
   });
 
-  // Setup: Create test user
-  // REFACTORING (2026-01-26): Reduced timeout from 180s to 90s
+  // Setup: Create test user via REST API (reliable, no UI dependency)
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(90000); // Reduced from 180s - user creation should be faster
+    test.setTimeout(30000);
     const context = await browser.newContext();
     const page = await context.newPage();
-    const setupAuthHelper = new AuthHelper(page);
+    const adminAuth = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
 
     try {
-      // Login as admin
-      await setupAuthHelper.login();
-      await page.waitForTimeout(2000);
+      console.log(`Setup: Creating test user ${testUsername} via REST API`);
 
-      // Navigate to user management
-      console.log('Setup: Navigating to user management');
-      const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
-      if (await adminMenu.count() > 0) {
-        console.log('Setup: Found 管理 menu, clicking...');
-        await adminMenu.click();
-        await page.waitForTimeout(1000);
-      } else {
-        console.log('Setup: 管理 menu not found');
-      }
-
-      const userManagementItem = page.locator('.ant-menu-item:has-text("ユーザー管理")');
-      if (await userManagementItem.count() > 0) {
-        console.log('Setup: Found ユーザー管理 menu item, clicking...');
-        await userManagementItem.click();
-        await page.waitForTimeout(2000);
-
-        // With unique username approach, no need to check for existing user
-        console.log(`Setup: Creating test user: ${testUsername}`);
-
-        // Debug: Check what's on the page
-        const allButtons = await page.locator('button').allTextContents();
-        console.log(`Setup: Found ${allButtons.length} buttons on page:`, allButtons.slice(0, 10));
-
-        // Create test user
-        const createButton = page.locator('button').filter({
-          hasText: /新規ユーザー|新規作成|ユーザー追加|追加/
-        });
-
-        if (await createButton.count() > 0) {
-          console.log('Setup: Found create button, clicking...');
-          await createButton.first().click();
-          await page.waitForTimeout(1000);
-
-          // Wait for modal/drawer to be visible
-          const modal = page.locator('.ant-modal:not(.ant-modal-hidden), .ant-drawer:not(.ant-drawer-hidden)');
-          await modal.waitFor({ state: 'visible', timeout: 5000 });
-          console.log('Setup: Modal opened');
-
-          // Debug: Check all form fields
-          const allInputs = await modal.locator('input').all();
-          console.log(`Setup: Found ${allInputs.length} input fields in modal`);
-          for (let i = 0; i < allInputs.length; i++) {
-            const input = allInputs[i];
-            const type = await input.getAttribute('type');
-            const name = await input.getAttribute('name');
-            const id = await input.getAttribute('id');
-            const placeholder = await input.getAttribute('placeholder');
-            console.log(`Setup: Input ${i}: type=${type}, name=${name}, id=${id}, placeholder=${placeholder}`);
+      // Create user via REST API
+      const createUserResponse = await page.request.post(
+        `http://localhost:8080/core/api/v1/cmis/repositories/bedroom/users`,
+        {
+          headers: { 'Authorization': adminAuth, 'Content-Type': 'application/json' },
+          data: {
+            userId: testUsername,
+            userName: `${testUsername}_display`,
+            firstName: 'Test',
+            lastName: 'User',
+            email: `${testUsername}@example.com`,
+            password: testUserPassword
           }
-
-          // Fill user ID (primary identifier)
-          const userIdInput = modal.locator('input#id, input[placeholder*="ユーザーID"]');
-          if (await userIdInput.count() > 0) {
-            await userIdInput.first().fill(testUsername);
-            console.log(`Setup: Filled user ID: ${testUsername}`);
-          } else {
-            console.log('Setup: Warning - User ID field not found');
-          }
-
-          // Fill display name (optional but good to have)
-          const nameInput = modal.locator('input#name, input[placeholder*="ユーザー名を入力"]');
-          if (await nameInput.count() > 0) {
-            await nameInput.first().fill(`${testUsername}_display`);
-            console.log('Setup: Filled display name');
-          }
-
-          // Fill firstName (required)
-          const firstNameInput = modal.locator('input#firstName, input[placeholder*="名を入力"]');
-          if (await firstNameInput.count() > 0) {
-            await firstNameInput.first().fill('Test');
-            console.log('Setup: Filled firstName');
-          } else {
-            console.log('Setup: Warning - firstName field not found');
-          }
-
-          // Fill lastName (required)
-          const lastNameInput = modal.locator('input#lastName, input[placeholder*="姓を入力"]');
-          if (await lastNameInput.count() > 0) {
-            await lastNameInput.first().fill('User');
-            console.log('Setup: Filled lastName');
-          } else {
-            console.log('Setup: Warning - lastName field not found');
-          }
-
-          // Fill email (required)
-          const emailInput = modal.locator('input#email, input[type="email"], input[placeholder*="メールアドレス"]');
-          if (await emailInput.count() > 0) {
-            await emailInput.first().fill(`${testUsername}@example.com`);
-            console.log('Setup: Filled email');
-          } else {
-            console.log('Setup: Warning - email field not found');
-          }
-
-          // Fill password (required)
-          const passwordInput = modal.locator('input#password, input[type="password"]');
-          if (await passwordInput.count() > 0) {
-            await passwordInput.first().fill(testUserPassword);
-            console.log('Setup: Filled password');
-          } else {
-            console.log('Setup: Warning - password field not found');
-          }
-
-          // Submit - try multiple strategies
-          console.log('Setup: Looking for submit button...');
-          const allModalButtons = await modal.locator('button').allTextContents();
-          console.log('Setup: All modal buttons:', allModalButtons);
-
-          let submitButton = modal.locator('button').filter({ hasText: /作成|保存|OK|確認/ });
-          let submitCount = await submitButton.count();
-          console.log(`Setup: Submit button candidates with text filter: ${submitCount}`);
-
-          if (submitCount === 0) {
-            // Try without text filter
-            submitButton = modal.locator('button[type="submit"], button.ant-btn-primary');
-            submitCount = await submitButton.count();
-            console.log(`Setup: Submit button candidates without text filter: ${submitCount}`);
-          }
-
-          if (submitCount > 0) {
-            console.log('Setup: Found submit button, clicking...');
-            await submitButton.first().click();
-
-            // Wait for success message or modal to close
-            let successMessageAppeared = false;
-            try {
-              await page.waitForSelector('.ant-message-success, .ant-notification-success', { timeout: 5000 });
-              console.log('Setup: Success message appeared');
-              successMessageAppeared = true;
-            } catch (e) {
-              console.log('Setup: No success message detected');
-            }
-
-            // Wait for modal to close
-            try {
-              await modal.waitFor({ state: 'hidden', timeout: 5000 });
-              console.log('Setup: Modal closed');
-            } catch (e) {
-              console.log('Setup: Modal did not close - may indicate form validation error');
-              // Check for error messages
-              const errorMessages = await modal.locator('.ant-form-item-explain-error, .ant-message-error').allTextContents();
-              if (errorMessages.length > 0) {
-                console.log('Setup: Form validation errors:', errorMessages);
-              }
-            }
-
-            // Wait for database write to complete
-            await page.waitForTimeout(2000);
-
-            // Verify test user was created by checking user table (faster than login verification)
-            let userCreated = false;
-            if (successMessageAppeared) {
-              console.log('Setup: Verifying user creation in user table...');
-
-              // Refresh user list via UI navigation instead of page.reload() to avoid breaking React Router
-              // Navigate away to Documents
-              const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
-              if (await documentsMenu.count() > 0) {
-                await documentsMenu.click();
-                await page.waitForTimeout(1000);
-                console.log('Setup: Navigated away to Documents');
-              }
-
-              // Navigate back to User Management to refresh the list
-              const adminMenuRefresh = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
-              if (await adminMenuRefresh.count() > 0) {
-                await adminMenuRefresh.click();
-                await page.waitForTimeout(500);
-              }
-
-              const userManagementRefresh = page.locator('.ant-menu-item:has-text("ユーザー管理")');
-              if (await userManagementRefresh.count() > 0) {
-                await userManagementRefresh.click();
-                await page.waitForTimeout(2000);
-                console.log('Setup: Navigated back to User Management');
-              }
-
-              // Check if test user appears in table
-              // New users are added to the end of the list, so check the last page first
-              const paginationExists = await page.locator('.ant-pagination').count();
-              console.log(`Setup: DEBUG - Pagination exists: ${paginationExists > 0}`);
-
-              if (paginationExists > 0) {
-                // Navigate to the last page where new user should appear
-                console.log('Setup: Navigating to last page to find new user...');
-
-                // Debug: Show all pagination items
-                const paginationItems = await page.locator('.ant-pagination-item').allTextContents();
-                console.log(`Setup: DEBUG - Pagination items: ${JSON.stringify(paginationItems)}`);
-
-                const lastPageButton = page.locator('.ant-pagination-item').last();
-                const lastPageCount = await lastPageButton.count();
-                console.log(`Setup: DEBUG - Last page button count: ${lastPageCount}`);
-
-                if (lastPageCount > 0) {
-                  const lastPageText = await lastPageButton.textContent();
-                  console.log(`Setup: DEBUG - Clicking last page button: ${lastPageText}`);
-                  await lastPageButton.click();
-                  await page.waitForTimeout(3000); // Increased from 2000ms for table loading
-                }
-              }
-
-              // Debug: Show what's actually in the table
-              const allTableRows = page.locator('.ant-table-tbody tr');
-              const rowCount = await allTableRows.count();
-              console.log(`Setup: DEBUG - Total rows in table: ${rowCount}`);
-
-              if (rowCount > 0) {
-                // Show first few rows for debugging
-                for (let i = 0; i < Math.min(rowCount, 5); i++) {
-                  const row = allTableRows.nth(i);
-                  const rowText = await row.textContent();
-                  console.log(`Setup: DEBUG - Row ${i}: ${rowText?.substring(0, 100)}`);
-                }
-              }
-
-              // Check if test user appears in table
-              const userTableRow = page.locator(`tr:has-text("${testUsername}")`);
-              const userRowCount = await userTableRow.count();
-
-              if (userRowCount > 0) {
-                console.log(`Setup: ${testUsername} found in user table`);
-                userCreated = true;
-              } else {
-                console.log(`Setup: ${testUsername} not found in table after navigation to last page`);
-                // Debug: Try exact match with username
-                const exactMatch = await page.locator('.ant-table-tbody').textContent();
-                if (exactMatch?.includes(testUsername)) {
-                  console.log(`Setup: DEBUG - Username found in table content but tr:has-text() selector didn't match`);
-                } else {
-                  console.log(`Setup: DEBUG - Username not found anywhere in table content`);
-                }
-              }
-            } else {
-              console.log('Setup: Success message not detected - skipping user verification');
-            }
-
-            console.log(`Setup: ${testUsername} creation ${userCreated ? 'SUCCESSFUL' : 'failed'}`);
-
-            if (!userCreated && successMessageAppeared) {
-              console.log('Setup: Warning - Success message appeared but user not found in table');
-            }
-          } else {
-            console.log('Setup: Submit button not found!');
-          }
-        } else {
-          console.log('Setup: Create button not found - user creation UI may not be accessible');
         }
-      } else {
-        console.log('Setup: ユーザー管理 menu item not found');
+      );
+      console.log(`Setup: REST API user create response: ${createUserResponse.status()}`);
+
+      // Verify user exists (retry up to 3 times)
+      let userVerified = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const verifyResponse = await page.request.get(
+          `http://localhost:8080/core/api/v1/cmis/repositories/bedroom/users/${testUsername}`,
+          { headers: { 'Authorization': adminAuth }, timeout: 10000 }
+        );
+        if (verifyResponse.ok()) {
+          userVerified = true;
+          console.log(`Setup: User ${testUsername} verified (attempt ${attempt + 1})`);
+          break;
+        }
+        console.log(`Setup: User verification attempt ${attempt + 1} failed (${verifyResponse.status()}), retrying...`);
+        await page.waitForTimeout(2000);
       }
 
-      // API Fallback: If UI creation may have failed, ensure user exists via REST API
-      console.log(`Setup: Ensuring test user exists via REST API fallback`);
-      try {
-        const createUserResponse = await page.request.post(
-          `http://localhost:8080/core/api/v1/cmis/repositories/bedroom/users`,
-          {
-            headers: {
-              'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`,
-              'Content-Type': 'application/json'
-            },
-            data: {
-              userId: testUsername,
-              userName: `${testUsername}_display`,
-              firstName: 'Test',
-              lastName: 'User',
-              email: `${testUsername}@example.com`,
-              password: testUserPassword
-            }
-          }
-        );
-        const responseText = await createUserResponse.text();
-        console.log(`Setup: REST API user create response: ${createUserResponse.status()} - ${responseText.substring(0, 200)}`);
-      } catch (apiError) {
-        console.log(`Setup: REST API user create fallback error (may already exist):`, apiError);
+      if (!userVerified) {
+        console.log(`Setup: WARNING - User ${testUsername} could not be verified after creation`);
       }
     } catch (error) {
       console.log(`Setup: ${testUsername} creation failed:`, error);
@@ -509,14 +265,14 @@ test.describe('Access Control and Permissions', () => {
 
       await page.context().clearCookies();
       await authHelper.login(); // Login as admin
-      await page.waitForTimeout(2000); // Wait for UI initialization after login
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 }); // Wait for UI initialization after login
       await testHelper.waitForAntdLoad();
 
       // Navigate to documents
       const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
       if (await documentsMenuItem.count() > 0) {
         await documentsMenuItem.click();
-        await page.waitForTimeout(2000);
+        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
       }
 
       await testHelper.closeMobileSidebar(browserName);
@@ -676,13 +432,13 @@ test.describe('Access Control and Permissions', () => {
     test('should upload document to restricted folder', async ({ page, browserName }) => {
       const isMobile = testHelper.isMobile(browserName);
 
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
       // Navigate into restricted folder
       const folderLink = page.locator('a, span').filter({ hasText: restrictedFolderName });
       if (await folderLink.count() > 0) {
         await folderLink.first().click();
-        await page.waitForTimeout(2000);
+        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
         // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
         let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
@@ -705,7 +461,7 @@ test.describe('Access Control and Permissions', () => {
           await submitBtn.click();
 
           await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-          await page.waitForTimeout(2000);
+          await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
         }
       }
     });
@@ -718,14 +474,14 @@ test.describe('Access Control and Permissions', () => {
 
       await page.context().clearCookies();
       await authHelper.login(); // Login as admin
-      await page.waitForTimeout(2000); // Wait for UI initialization after login
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 }); // Wait for UI initialization after login
       await testHelper.waitForAntdLoad();
 
       // Navigate to documents
       const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
       if (await documentsMenuItem.count() > 0) {
         await documentsMenuItem.click();
-        await page.waitForTimeout(2000);
+        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
       }
 
       // CRITICAL FIX: Create restricted folder if it doesn't exist
@@ -746,7 +502,7 @@ test.describe('Access Control and Permissions', () => {
           await submitButton.click();
 
           await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-          await page.waitForTimeout(2000);
+          await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
           console.log(`BeforeEach: Successfully created ${restrictedFolderName}`);
         }
       } else {
@@ -1143,7 +899,7 @@ test.describe('Access Control and Permissions', () => {
       const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
       if (await documentsMenuItem.count() > 0) {
         await documentsMenuItem.click();
-        await page.waitForTimeout(2000);
+        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
       }
 
       await testHelper.closeMobileSidebar(browserName);
@@ -1279,14 +1035,14 @@ test.describe('Access Control and Permissions', () => {
     test('should NOT be able to delete document (read-only)', async ({ page, browserName }) => {
       const isMobile = testHelper.isMobile(browserName);
 
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
       // Navigate to restricted folder
       // Bug fix: Use specific selector for table button to avoid ambiguity with tree view
       const folderLink = page.locator(`.ant-table-tbody button:has-text("${restrictedFolderName}")`);
       if (await folderLink.count() > 0) {
         await folderLink.click();
-        await page.waitForTimeout(2000);
+        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
         // Find document row
         const docRow = page.locator('tr').filter({ hasText: testDocName });
@@ -1294,7 +1050,7 @@ test.describe('Access Control and Permissions', () => {
         if (await docRow.count() > 0) {
           // Check if delete button exists
           const deleteButton = docRow.locator('button').filter({
-            has: page.locator('[data-icon="delete"]')
+            has: page.locator('.anticon-delete, [aria-label="delete"]')
           });
 
           if (await deleteButton.count() > 0) {
@@ -1337,14 +1093,14 @@ test.describe('Access Control and Permissions', () => {
     test('should NOT be able to upload to restricted folder', async ({ page, browserName }) => {
       const isMobile = testHelper.isMobile(browserName);
 
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
       // Navigate to restricted folder
       // Bug fix: Use specific selector for table button to avoid ambiguity with tree view
       const folderLink = page.locator(`.ant-table-tbody button:has-text("${restrictedFolderName}")`);
       if (await folderLink.count() > 0) {
         await folderLink.click();
-        await page.waitForTimeout(2000);
+        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
         // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
         let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
@@ -1383,12 +1139,12 @@ test.describe('Access Control and Permissions', () => {
     test.beforeEach(async ({ page }) => {
       authHelper = new AuthHelper(page);
       await authHelper.login(); // Login as admin again
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
       const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
       if (await documentsMenuItem.count() > 0) {
         await documentsMenuItem.click();
-        await page.waitForTimeout(2000);
+        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
       }
     });
 

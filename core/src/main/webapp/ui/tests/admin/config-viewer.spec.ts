@@ -37,7 +37,7 @@ test.describe('Config Viewer - Admin Access', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     await testHelper.closeMobileSidebar(browserName);
     await testHelper.waitForAntdLoad();
   });
@@ -190,7 +190,7 @@ test.describe('Config Viewer - i18n', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     await testHelper.closeMobileSidebar(browserName);
     await testHelper.waitForAntdLoad();
   });
@@ -226,7 +226,7 @@ test.describe('Config Viewer - Navigation', () => {
     const testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     await testHelper.closeMobileSidebar(browserName);
     await testHelper.waitForAntdLoad();
 

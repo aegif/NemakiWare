@@ -2,7 +2,7 @@ import { SAMLConfig } from '../services/saml';
 import { getAuthConfig } from '../services/authConfig';
 
 export const defaultSAMLConfig: SAMLConfig = {
-  sso_url: 'http://localhost:8180/realms/nemakiware/protocol/saml',
+  sso_url: 'http://localhost:8088/realms/nemakiware/protocol/saml',
   entity_id: 'nemakiware-sp',
   callback_url: `${window.location.origin}/core/ui/saml-callback.html`,
   logout_url: `${window.location.origin}/core/ui/`

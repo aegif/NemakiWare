@@ -109,7 +109,7 @@ test.describe('Password Change', () => {
       }
     }
     await expect(testUserRow).toBeVisible({ timeout: 10000 });
-    const editButton = testUserRow.locator('button').filter({ has: page.locator('[data-icon="edit"]') });
+    const editButton = testUserRow.locator('button').filter({ has: page.locator('.anticon-edit, [aria-label="edit"]') });
     if (await editButton.count() > 0) {
       await editButton.first().click();
     } else {

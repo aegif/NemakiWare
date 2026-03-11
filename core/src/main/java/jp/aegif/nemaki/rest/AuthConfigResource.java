@@ -31,12 +31,16 @@ import org.json.simple.JSONObject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 
 /**
  * Authentication configuration resource for SSO button visibility.
  * This endpoint is public (no authentication required) because it needs
  * to be accessed before the user logs in.
+ *
+ * Supports optional repositoryId parameter for repository-specific overrides.
+ * When repositoryId is not specified, returns global settings (backward compatible).
  */
 @Path("/auth/config")
 public class AuthConfigResource extends ResourceBase {
@@ -72,42 +76,45 @@ public class AuthConfigResource extends ResourceBase {
 	 * Get SSO configuration for login page button visibility.
 	 * Returns whether OIDC and SAML login buttons should be displayed.
 	 *
+	 * @param repositoryId Optional repository ID for repository-specific overrides.
+	 *                     When null, returns global settings (backward compatible).
 	 * @return JSON object with oidcEnabled and samlEnabled booleans
 	 */
 	@SuppressWarnings("unchecked")
 	@GET
 	@Produces(MediaType.APPLICATION_JSON)
-	public String getAuthConfig() {
+	public String getAuthConfig(@QueryParam("repositoryId") String repositoryId) {
 		JSONObject result = new JSONObject();
 
 		try {
 			// Read SSO settings from properties (default: false)
-			boolean oidcEnabled = readBooleanProperty(PropertyKey.SSO_OIDC_ENABLED, false);
-			boolean samlEnabled = readBooleanProperty(PropertyKey.SSO_SAML_ENABLED, false);
+			boolean oidcEnabled = readBooleanProperty(repositoryId, PropertyKey.SSO_OIDC_ENABLED, false);
+			boolean samlEnabled = readBooleanProperty(repositoryId, PropertyKey.SSO_SAML_ENABLED, false);
 
 			result.put("oidcEnabled", oidcEnabled);
 			result.put("samlEnabled", samlEnabled);
 
 			// Cloud authentication providers (Google / Microsoft direct OIDC)
-			boolean googleEnabled = readBooleanProperty(PropertyKey.CLOUD_AUTH_GOOGLE_ENABLED, false);
-			boolean microsoftEnabled = readBooleanProperty(PropertyKey.CLOUD_AUTH_MICROSOFT_ENABLED, false);
+			boolean googleEnabled = readBooleanProperty(repositoryId, PropertyKey.CLOUD_AUTH_GOOGLE_ENABLED, false);
+			boolean microsoftEnabled = readBooleanProperty(repositoryId, PropertyKey.CLOUD_AUTH_MICROSOFT_ENABLED, false);
 
 			result.put("googleEnabled", googleEnabled);
 			result.put("microsoftEnabled", microsoftEnabled);
 
 			// Return client IDs (never secrets) so UI can initiate OAuth flows
 			if (googleEnabled) {
-				result.put("googleClientId", readStringProperty(PropertyKey.CLOUD_AUTH_GOOGLE_CLIENT_ID, ""));
+				result.put("googleClientId", readStringProperty(repositoryId, PropertyKey.CLOUD_AUTH_GOOGLE_CLIENT_ID, ""));
 			}
 			if (microsoftEnabled) {
-				result.put("microsoftClientId", readStringProperty(PropertyKey.CLOUD_AUTH_MICROSOFT_CLIENT_ID, ""));
-				result.put("microsoftTenantId", readStringProperty(PropertyKey.CLOUD_AUTH_MICROSOFT_TENANT_ID, "common"));
+				result.put("microsoftClientId", readStringProperty(repositoryId, PropertyKey.CLOUD_AUTH_MICROSOFT_CLIENT_ID, ""));
+				result.put("microsoftTenantId", readStringProperty(repositoryId, PropertyKey.CLOUD_AUTH_MICROSOFT_TENANT_ID, "common"));
 			}
 
 			result.put("status", "success");
 
 			log.debug("Auth config requested: OIDC=" + oidcEnabled + ", SAML=" + samlEnabled
-					+ ", Google=" + googleEnabled + ", Microsoft=" + microsoftEnabled);
+					+ ", Google=" + googleEnabled + ", Microsoft=" + microsoftEnabled
+					+ (repositoryId != null ? ", repositoryId=" + repositoryId : ""));
 		} catch (Exception e) {
 			log.error("Failed to read auth config: " + e.getMessage(), e);
 			// Return safe defaults on error (buttons hidden)
@@ -123,14 +130,19 @@ public class AuthConfigResource extends ResourceBase {
 	}
 
 	/**
-	 * Read a string property value with a default fallback.
+	 * Read a string property value with optional repository-specific override.
 	 */
-	private String readStringProperty(String key, String defaultValue) {
+	private String readStringProperty(String repositoryId, String key, String defaultValue) {
 		PropertyManager pm = getPropertyManager();
 		if (pm == null) {
 			return defaultValue;
 		}
-		String value = pm.readValue(key);
+		String value;
+		if (repositoryId != null && !repositoryId.trim().isEmpty()) {
+			value = pm.readValue(repositoryId, key);
+		} else {
+			value = pm.readValue(key);
+		}
 		if (value == null || value.trim().isEmpty()) {
 			return defaultValue;
 		}
@@ -138,16 +150,21 @@ public class AuthConfigResource extends ResourceBase {
 	}
 
 	/**
-	 * Read a boolean property value with a default fallback.
+	 * Read a boolean property value with optional repository-specific override.
 	 */
-	private boolean readBooleanProperty(String key, boolean defaultValue) {
+	private boolean readBooleanProperty(String repositoryId, String key, boolean defaultValue) {
 		PropertyManager pm = getPropertyManager();
 		if (pm == null) {
 			log.warn("PropertyManager is null, returning default value for " + key);
 			return defaultValue;
 		}
 
-		String value = pm.readValue(key);
+		String value;
+		if (repositoryId != null && !repositoryId.trim().isEmpty()) {
+			value = pm.readValue(repositoryId, key);
+		} else {
+			value = pm.readValue(key);
+		}
 		if (value == null || value.trim().isEmpty()) {
 			return defaultValue;
 		}

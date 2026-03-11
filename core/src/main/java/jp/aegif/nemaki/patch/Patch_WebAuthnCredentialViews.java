@@ -32,13 +32,6 @@ public class Patch_WebAuthnCredentialViews extends AbstractNemakiPatch {
     protected void applyPerRepositoryPatch(String repositoryId) {
         log.info("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Adding WebAuthn credential views");
 
-        if ("canopy".equals(repositoryId) ||
-            "bedroom_closet".equals(repositoryId) ||
-            "canopy_closet".equals(repositoryId)) {
-            log.info("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Skipping - archive/canopy repository");
-            return;
-        }
-
         try {
             CloudantClientWrapper client = patchUtil.getConnectorPool().getClient(repositoryId);
             if (client == null) {
@@ -107,6 +100,13 @@ public class Patch_WebAuthnCredentialViews extends AbstractNemakiPatch {
 
         boolean allSucceeded = true;
         for (String repositoryId : patchUtil.getRepositoryInfoMap().keys()) {
+            // Skip archive repositories — patches are only for main repositories
+            if (patchUtil.getRepositoryInfoMap().isArchiveRepository(repositoryId)) {
+                if (log.isDebugEnabled()) {
+                    log.debug("[patch=" + getName() + "] Skipping archive repository: " + repositoryId);
+                }
+                continue;
+            }
             try {
                 applyPerRepositoryPatch(repositoryId);
                 if (!patchUtil.isApplied(repositoryId, getName())) {

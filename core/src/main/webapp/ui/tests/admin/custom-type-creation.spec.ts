@@ -171,7 +171,7 @@ test.describe('Custom Type Creation and Property Management', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     // MOBILE FIX: Close sidebar
     await testHelper.closeMobileSidebar(browserName);
@@ -188,7 +188,7 @@ test.describe('Custom Type Creation and Property Management', () => {
     const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
     if (await typeManagementItem.count() > 0) {
       await typeManagementItem.click();
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     }
   });
 

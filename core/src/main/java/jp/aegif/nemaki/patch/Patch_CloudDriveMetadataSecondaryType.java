@@ -55,16 +55,6 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 	protected void applyPerRepositoryPatch(String repositoryId) {
 		log.error("=== CLOUD DRIVE METADATA SECONDARY TYPE PATCH STARTED for repository: " + repositoryId + " ===");
 
-		if ("canopy".equals(repositoryId)) {
-			log.error("Skipping cloudDriveMetadata type for canopy - information management area");
-			return;
-		}
-
-		if ("bedroom_closet".equals(repositoryId) || "canopy_closet".equals(repositoryId)) {
-			log.error("Skipping cloudDriveMetadata type for archive repositories");
-			return;
-		}
-
 		try {
 			TypeService typeService = patchUtil.getTypeService();
 			if (typeService == null) {

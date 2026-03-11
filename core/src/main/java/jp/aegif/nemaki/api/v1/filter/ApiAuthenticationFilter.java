@@ -293,9 +293,17 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
             }
         }
 
-        // Hard-coded fallback
-        logger.warning("ApiAuthenticationFilter: No default repository found, using 'bedroom'");
-        return "bedroom";
+        // No default repository configured — return first key from RepositoryInfoMap if available
+        if (repositoryInfoMap != null) {
+            java.util.Set<String> keys = repositoryInfoMap.keys();
+            if (keys != null && !keys.isEmpty()) {
+                String first = keys.iterator().next();
+                logger.warning("ApiAuthenticationFilter: No default repository configured, using first available: " + first);
+                return first;
+            }
+        }
+        logger.severe("ApiAuthenticationFilter: No repository available for authentication");
+        return null;
     }
 
     private void abortWithUnauthorized(ContainerRequestContext requestContext, String message) {

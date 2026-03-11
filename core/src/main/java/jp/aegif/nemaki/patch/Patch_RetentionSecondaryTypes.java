@@ -50,16 +50,6 @@ public class Patch_RetentionSecondaryTypes extends AbstractNemakiPatch {
 	protected void applyPerRepositoryPatch(String repositoryId) {
 		log.error("=== RETENTION SECONDARY TYPE PATCH STARTED for repository: " + repositoryId + " ===");
 
-		if ("canopy".equals(repositoryId)) {
-			log.error("Skipping retention secondary type for canopy");
-			return;
-		}
-
-		if ("bedroom_closet".equals(repositoryId) || "canopy_closet".equals(repositoryId)) {
-			log.error("Skipping retention secondary type for archive repositories");
-			return;
-		}
-
 		try {
 			TypeService typeService = patchUtil.getTypeService();
 			if (typeService == null) {

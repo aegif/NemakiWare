@@ -129,102 +129,90 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
   });
 
-  test('Step 1: Create root folder', async ({ page, browserName }) => {
-    console.log(`Creating root folder: ${rootFolderName}`);
+  test('Step 1: Create root folder', async ({ page }) => {
+    console.log(`Creating root folder via API: ${rootFolderName}`);
 
-    const isMobile = testHelper.isMobile(browserName);
+    const baseUrl = 'http://localhost:8080/core/browser/bedroom';
+    const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 
-    // Navigate to documents page
-    const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-    await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    // Get root folder ID
+    const rootResp = await page.request.get(`${baseUrl}/root?cmisselector=object`, {
+      headers: { 'Authorization': authHeader }
+    });
+    const rootData = await rootResp.json();
+    const parentId = rootData.properties['cmis:objectId'].value;
 
-    // Create root folder
-    const folderCreated = await testHelper.createFolder(rootFolderName, isMobile);
-    expect(folderCreated).toBe(true);
+    // Create root folder via API
+    const formData = new URLSearchParams();
+    formData.append('cmisaction', 'createFolder');
+    formData.append('objectId', parentId);
+    formData.append('propertyId[0]', 'cmis:objectTypeId');
+    formData.append('propertyValue[0]', 'cmis:folder');
+    formData.append('propertyId[1]', 'cmis:name');
+    formData.append('propertyValue[1]', rootFolderName);
 
-    if (folderCreated) {
-      const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: rootFolderName }).first();
-      const rowKey = await folderRow.getAttribute('data-row-key');
-      if (rowKey) {
-        rootFolderId = rowKey;
-        console.log(`Root folder ID: ${rootFolderId}`);
-      }
-    }
+    const resp = await page.request.post(baseUrl, {
+      headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
+      data: formData.toString()
+    });
+    expect(resp.ok()).toBe(true);
+    const respData = await resp.json();
+    rootFolderId = respData.properties?.['cmis:objectId']?.value || respData.succinctProperties?.['cmis:objectId'];
+    console.log(`Root folder created: ${rootFolderId}`);
+    expect(rootFolderId).toBeTruthy();
   });
 
-  test('Step 2: Create subfolders inside root folder', async ({ page, browserName }) => {
-    test.setTimeout(120000); // Extended timeout for creating multiple folders
-    console.log('Creating subfolders...');
+  test('Step 2: Create subfolders inside root folder', async ({ page }) => {
+    console.log('Creating subfolders via API...');
 
-    const isMobile = testHelper.isMobile(browserName);
-
-    // Navigate to documents page
-    const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-    await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
-
-    // Navigate into root folder
-    const rootFolderRow = page.locator('.ant-table-tbody tr').filter({ hasText: rootFolderName }).first();
-    if (await rootFolderRow.count() === 0) {
-      test.skip('Root folder not found');
-      return;
-    }
-
-    await rootFolderRow.dblclick(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    const baseUrl = 'http://localhost:8080/core/browser/bedroom';
+    const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 
     // Create subfolder 1
-    const subfolder1Created = await testHelper.createFolder(subFolder1Name, isMobile);
-    console.log(`Subfolder 1 created: ${subfolder1Created}`);
+    const form1 = new URLSearchParams();
+    form1.append('cmisaction', 'createFolder');
+    form1.append('objectId', rootFolderId);
+    form1.append('propertyId[0]', 'cmis:objectTypeId');
+    form1.append('propertyValue[0]', 'cmis:folder');
+    form1.append('propertyId[1]', 'cmis:name');
+    form1.append('propertyValue[1]', subFolder1Name);
 
-    if (subfolder1Created) {
-      const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: subFolder1Name }).first();
-      const rowKey = await folderRow.getAttribute('data-row-key');
-      if (rowKey) {
-        subFolder1Id = rowKey;
-        console.log(`Subfolder 1 ID: ${subFolder1Id}`);
-      }
-    }
-
-    // Wait for UI to stabilize and close any notifications before creating second folder
-    await page.waitForTimeout(2000);
-
-    // Dismiss any notification messages that might interfere
-    const notifications = page.locator('.ant-message, .ant-notification');
-    if (await notifications.count() > 0) {
-      console.log(`Found ${await notifications.count()} notification(s), waiting for them to dismiss...`);
-      await page.waitForTimeout(3000);
-    }
-
-    // CRITICAL FIX: Reload the page to ensure clean state for second folder creation
-    // This avoids issues with React state not being properly reset after closeAllOverlays
-    console.log('Reloading page to ensure clean state...');
-    await page.reload();
-    await page.waitForSelector('.ant-table', { timeout: 10000 });
-    await page.waitForTimeout(1000);
+    const resp1 = await page.request.post(baseUrl, {
+      headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
+      data: form1.toString()
+    });
+    expect(resp1.ok()).toBe(true);
+    const data1 = await resp1.json();
+    subFolder1Id = data1.properties?.['cmis:objectId']?.value || data1.succinctProperties?.['cmis:objectId'];
+    console.log(`Subfolder 1 created: ${subFolder1Id}`);
 
     // Create subfolder 2
-    const subfolder2Created = await testHelper.createFolder(subFolder2Name, isMobile);
-    console.log(`Subfolder 2 created: ${subfolder2Created}`);
+    const form2 = new URLSearchParams();
+    form2.append('cmisaction', 'createFolder');
+    form2.append('objectId', rootFolderId);
+    form2.append('propertyId[0]', 'cmis:objectTypeId');
+    form2.append('propertyValue[0]', 'cmis:folder');
+    form2.append('propertyId[1]', 'cmis:name');
+    form2.append('propertyValue[1]', subFolder2Name);
 
-    if (subfolder2Created) {
-      const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: subFolder2Name }).first();
-      const rowKey = await folderRow.getAttribute('data-row-key');
-      if (rowKey) {
-        subFolder2Id = rowKey;
-        console.log(`Subfolder 2 ID: ${subFolder2Id}`);
-      }
-    }
+    const resp2 = await page.request.post(baseUrl, {
+      headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
+      data: form2.toString()
+    });
+    expect(resp2.ok()).toBe(true);
+    const data2 = await resp2.json();
+    subFolder2Id = data2.properties?.['cmis:objectId']?.value || data2.succinctProperties?.['cmis:objectId'];
+    console.log(`Subfolder 2 created: ${subFolder2Id}`);
 
-    expect(subfolder1Created && subfolder2Created).toBe(true);
+    expect(subFolder1Id).toBeTruthy();
+    expect(subFolder2Id).toBeTruthy();
   });
 
   test('Step 3: Create documents in different subfolders', async ({ page, browserName }) => {

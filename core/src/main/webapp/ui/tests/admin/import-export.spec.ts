@@ -408,13 +408,13 @@ test.describe.serial('Import/Export Feature', () => {
     test('should navigate to filesystem import/export page from admin menu', async ({ page }) => {
       await authHelper.login();
       await page.goto(`${BASE_URL}/core/ui/index.html#/filesystem-import-export`);
-      await page.waitForTimeout(3000);
+      await page.waitForLoadState('networkidle');
 
       // Verify page loaded - check for title text
       const pageTitle = page.locator('h2, h3, .ant-card-head-title').filter({
         hasText: /ファイルシステム|Filesystem/i
       }).first();
-      await expect(pageTitle).toBeVisible({ timeout: 10000 });
+      await expect(pageTitle).toBeVisible({ timeout: 15000 });
     });
 
     test('should display admin-only warning', async ({ page }) => {

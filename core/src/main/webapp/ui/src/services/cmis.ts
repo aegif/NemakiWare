@@ -690,44 +690,62 @@ export class CMISService {
     return error;
   }
 
-  async getRepositories(): Promise<string[]> {
-    try {
-      // Use unauthenticated endpoint for getting repository list
-      // This is needed for the login screen where user hasn't authenticated yet
-      const response = await this.httpClient.request({
-        method: 'GET',
-        url: '/core/rest/all/repositories',
-        accept: 'application/json',
-        includeAuth: false  // No auth needed for repository list
-      });
+  async getRepositories(): Promise<{ repositories: string[]; defaultRepositoryId?: string }> {
+    const maxRetries = 3;
+    const retryDelay = 3000; // ms
 
-      if (response.status === 200) {
-        try {
-          const data = JSON.parse(response.responseText);
-          // Extract repository IDs from the response
-          if (Array.isArray(data)) {
-            const repositoryIds = data.map(repo => repo.id).filter(id => id);
-            return repositoryIds;
-          } else if (data.repositories) {
-            return data.repositories;
-          } else {
-            return [];
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Use unauthenticated endpoint for getting repository list
+        // This is needed for the login screen where user hasn't authenticated yet
+        const response = await this.httpClient.request({
+          method: 'GET',
+          url: '/core/rest/all/repositories',
+          accept: 'application/json',
+          includeAuth: false  // No auth needed for repository list
+        });
+
+        if (response.status === 200) {
+          try {
+            const data = JSON.parse(response.responseText);
+            // Extract repository IDs from the response
+            if (Array.isArray(data)) {
+              const repositoryIds = data.map(repo => repo.id).filter(id => id);
+              return { repositories: repositoryIds };
+            } else if (data.repositories) {
+              return {
+                repositories: data.repositories,
+                defaultRepositoryId: data.defaultRepositoryId || undefined
+              };
+            } else {
+              return { repositories: [] };
+            }
+          } catch (e) {
+            // Failed to parse response
+            return { repositories: [] };
           }
-        } catch (e) {
-          // Failed to parse response - return empty array
-          return [];
+        } else if (response.status === 503 && attempt < maxRetries) {
+          // Server not ready yet — retry after delay
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          continue;
+        } else {
+          // Failed to fetch repositories
+          if (response.status === 401) {
+            this.handleHttpError(response.status, response.statusText, response.responseURL);
+          }
+          return { repositories: [] };
         }
-      } else {
-        // Failed to fetch repositories
-        if (response.status === 401) {
-          this.handleHttpError(response.status, response.statusText, response.responseURL);
+      } catch (error) {
+        if (attempt < maxRetries) {
+          // Network error — retry after delay
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          continue;
         }
-        return [];
+        // Final attempt failed
+        return { repositories: [] };
       }
-    } catch (error) {
-      // Network error or exception - return empty array
-      return [];
     }
+    return { repositories: [] };
   }
 
 

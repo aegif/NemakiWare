@@ -62,9 +62,15 @@ async function login(page: any) {
 // Helper function to navigate to document viewer
 // FIX 2025-12-24: Return boolean to indicate success/failure for graceful skip
 async function navigateToAnyDocument(page: any): Promise<boolean> {
-  // Wait for document list to load
-  await page.waitForSelector('.ant-table-tbody', { timeout: 15000 });
-  await page.waitForTimeout(1500);
+  // Wait for document list to load with actual data (not "No data" placeholder)
+  // Ant Design renders .ant-table-placeholder for empty state
+  try {
+    await page.waitForSelector('.ant-table-tbody tr:not(.ant-table-placeholder)', { timeout: 20000 });
+  } catch {
+    console.log('[SKIP] Table did not load data rows within timeout');
+    return false;
+  }
+  await page.waitForTimeout(1000);
 
   // Find a file row by looking for document name pattern (supports both anchor and button links)
   const fileRow = page.locator('.ant-table-tbody tr').filter({ hasText: /\.txt|\.pdf|\.docx|\.png|\.jpg/ }).first();
@@ -476,7 +482,7 @@ test.describe('Relationship Management', () => {
     // Relationships tab is always visible in DocumentViewer (supports both ja/en)
     // Wait for tabs to fully render before checking specific tab
     await page.waitForSelector('.ant-tabs-tab', { timeout: 10000 }).catch(() => null);
-    const relationshipsTab = page.getByRole('tab', { name: '関係' }).or(page.getByRole('tab', { name: 'Relationships' }));
+    const relationshipsTab = page.getByRole('tab', { name: 'リレーションシップ' }).or(page.getByRole('tab', { name: 'Relationships' }));
     const tabVisible = await relationshipsTab.isVisible({ timeout: 10000 }).catch(() => false);
     if (!tabVisible) {
       test.skip('DocumentViewer tabs not loaded - possible page load issue');

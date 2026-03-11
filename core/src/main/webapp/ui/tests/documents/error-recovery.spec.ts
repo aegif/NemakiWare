@@ -42,7 +42,7 @@ test.describe('Error Recovery Tests', () => {
 
     // Login - AuthHelper.login() already navigates to documents page
     await authHelper.login();
-    await page.waitForTimeout(2000);  // Wait for page stabilization
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });  // Wait for page stabilization
     await testHelper.waitForAntdLoad();
 
     // Use TestHelper's mobile sidebar handling

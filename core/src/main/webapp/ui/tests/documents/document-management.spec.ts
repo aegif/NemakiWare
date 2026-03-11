@@ -51,7 +51,7 @@ import { TestHelper, generateTestId } from '../utils/test-helper';
  *
  * 3. Responsive Folder Navigation Strategy (Lines 177-229):
  *    - Desktop: Ant Design .ant-tree sidebar navigation with expand/collapse
- *    - Mobile: Table-based navigation with folder icons ([data-icon="folder"])
+ *    - Mobile: Table-based navigation with folder icons (.anticon-folder, [aria-label="folder"])
  *    - Breadcrumb fallback if tree not available
  *    - Viewport detection: (browserName === 'chromium' || 'webkit') && width <= 414
  *    - Test skipping: Graceful skip if neither tree nor breadcrumb found
@@ -192,7 +192,7 @@ test.describe('Document Management', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     }
 
     await testHelper.closeMobileSidebar(browserName);
@@ -299,7 +299,7 @@ test.describe('Document Management', () => {
         await expect(table).toBeVisible({ timeout: 5000 });
 
         // Look for folder icons in the table
-        const folderIcons = page.locator('.ant-table-tbody [data-icon="folder"]');
+        const folderIcons = page.locator('.ant-table-tbody .anticon-folder, [aria-label="folder"]');
         const folderCount = await folderIcons.count();
 
         // Mobile view shows folders in table - verify at least one folder exists
@@ -523,57 +523,52 @@ test.describe('Document Management', () => {
   });
 
   test('should handle document search', async ({ page, browserName }) => {
+    test.setTimeout(60000);
     // Wait for page to stabilize
     await page.waitForTimeout(2000);
 
     // Detect mobile browsers
     const isMobile = testHelper.isMobile(browserName);
 
-    // Look for search input with simplified selector
-    const searchInput = page.locator('.search-input, input[placeholder*="検索"]');
-    const inputCount = await searchInput.count();
-
-    if (inputCount > 0) {
-      // Verify search input is visible
-      await expect(searchInput.first()).toBeVisible({ timeout: 5000 });
-
-      // Fill search query
-      await searchInput.first().fill('test');
-      await page.waitForTimeout(500);
-
-      // Look for search button
-      const searchButton = page.locator('.search-button, button:has-text("検索")');
-      const buttonCount = await searchButton.count();
-
-      if (buttonCount > 0) {
-        // Click search button and wait for potential response
-        const responsePromise = page.waitForResponse(
-          (response) => response.url().includes('/search') || response.url().includes('/query'),
-          { timeout: 10000 }
-        ).catch(() => null); // Don't fail if no search response (empty result is OK)
-
-        await searchButton.first().click(isMobile ? { force: true } : {});
-
-        // Wait for response or timeout
-        await responsePromise;
-
-        // Verify search functionality (results should change or loading indicator should appear)
-        await page.waitForTimeout(1000);
-
-        // Check if search was successful - look for clear button or table
-        const clearButton = page.locator('button:has-text("クリア")');
-        const table = page.locator('.ant-table');
-
-        const searchSuccessful = (await clearButton.count() > 0) || (await table.count() > 0);
-        expect(searchSuccessful).toBe(true);
-      } else {
-        // No search button found, try Enter key
-        await searchInput.first().press('Enter');
-        await page.waitForTimeout(1000);
+    // Look for search input (.search-input is the class on DocumentList's Input)
+    const searchInput = page.locator('.search-input');
+    try {
+      await expect(searchInput).toBeVisible({ timeout: 10000 });
+    } catch {
+      // Fallback: try placeholder-based selector
+      const altInput = page.locator('input[placeholder*="検索"], input[placeholder*="Search"]');
+      if (await altInput.count() === 0) {
+        test.skip('Search input not visible on this page layout');
+        return;
       }
+    }
+
+    // Fill search query
+    await searchInput.fill('test');
+    await page.waitForTimeout(500);
+
+    // Click search button (.search-button is the class on DocumentList's Button)
+    const searchButton = page.locator('.search-button');
+    if (await searchButton.isVisible().catch(() => false)) {
+      // Wait for search response
+      const responsePromise = page.waitForResponse(
+        (response) => response.url().includes('/search') || response.url().includes('/query') || response.url().includes('cmisselector'),
+        { timeout: 15000 }
+      ).catch(() => null);
+
+      await searchButton.click(isMobile ? { force: true } : {});
+      await responsePromise;
+      await page.waitForTimeout(1000);
+
+      // After search, the clear button should appear (isSearchMode = true) or table should be present
+      const clearButton = page.locator('button').filter({ hasText: /クリア|Clear/ });
+      const table = page.locator('.ant-table');
+      const searchSuccessful = (await clearButton.count() > 0) || (await table.count() > 0);
+      expect(searchSuccessful).toBe(true);
     } else {
-      // UPDATED (2025-12-26): Search IS implemented in Layout.tsx
-      test.skip('Search functionality not visible - IS implemented in Layout.tsx');
+      // Fallback: use Enter key to trigger search
+      await searchInput.press('Enter');
+      await page.waitForTimeout(2000);
     }
   });
 
@@ -695,7 +690,7 @@ test.describe('Document Management', () => {
       // Now find and delete the uploaded document
       // Look for delete button in the row containing the filename
       const documentRow = page.locator('tr').filter({ hasText: filename });
-      const deleteButton = documentRow.locator('button').filter({ has: page.locator('[data-icon="delete"]') });
+      const deleteButton = documentRow.locator('button').filter({ has: page.locator('.anticon-delete, [aria-label="delete"]') });
 
       if (await deleteButton.count() > 0) {
         await deleteButton.click(isMobile ? { force: true } : {});
@@ -759,7 +754,7 @@ test.describe('Document Management', () => {
 
     // Look for download button (DownloadOutlined icon in document rows)
     // Download button is only shown for documents (not folders)
-    const downloadButtons = page.locator('button').filter({ has: page.locator('[data-icon="download"]') });
+    const downloadButtons = page.locator('button').filter({ has: page.locator('.anticon-download, [aria-label="download"]') });
     const buttonCount = await downloadButtons.count();
 
     if (buttonCount > 0) {

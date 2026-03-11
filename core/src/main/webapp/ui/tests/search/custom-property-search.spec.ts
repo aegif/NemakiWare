@@ -31,7 +31,7 @@ test.describe('Custom Property Search Functionality', () => {
     await authHelper.login();
 
     // Wait for UI initialization
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     // Mobile sidebar close logic (if needed)
     await testHelper.closeMobileSidebar(browserName);
@@ -40,11 +40,11 @@ test.describe('Custom Property Search Functionality', () => {
     const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
     if (await searchMenu.count() > 0) {
       await searchMenu.click();
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     } else {
       // Fallback: Navigate directly to search page
       await page.goto('http://localhost:8080/core/ui/#/search');
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     }
   });
 
@@ -452,7 +452,7 @@ test.describe('Custom Property Range Search', () => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     // Mobile sidebar handling
     await testHelper.closeMobileSidebar(browserName);
@@ -461,10 +461,10 @@ test.describe('Custom Property Range Search', () => {
     const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
     if (await searchMenu.count() > 0) {
       await searchMenu.click();
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     } else {
       await page.goto('http://localhost:8080/core/ui/#/search');
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     }
   });
 
@@ -711,7 +711,7 @@ test.describe('Custom Property Input Types', () => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     // Mobile sidebar handling
     await testHelper.closeMobileSidebar(browserName);
@@ -720,10 +720,10 @@ test.describe('Custom Property Input Types', () => {
     const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
     if (await searchMenu.count() > 0) {
       await searchMenu.click();
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     } else {
       await page.goto('http://localhost:8080/core/ui/#/search');
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     }
   });
 

@@ -63,7 +63,7 @@ test.describe('Bulk Delete Improvements', () => {
     rootFolderId = await fetchRootFolderId();
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
   });
 
   test.afterEach(async ({ request }) => {
@@ -129,7 +129,7 @@ test.describe('Bulk Delete Improvements', () => {
     const docRow = page.locator(`tr:has-text("${docName}")`);
     await expect(docRow).toBeVisible({ timeout: 10000 });
 
-    const deleteButton = docRow.locator('button:has([data-icon="delete"])');
+    const deleteButton = docRow.locator('button:has(.anticon-delete, [aria-label="delete"])');
     if (await deleteButton.count() === 0) {
       test.skip(true, 'Delete button not found in document list');
       return;
@@ -381,7 +381,7 @@ test.describe('Bulk Delete Improvements', () => {
     const parentRow = page.locator(`tr:has-text("${parentName}")`);
     await expect(parentRow).toBeVisible({ timeout: 10000 });
 
-    const deleteButton = parentRow.locator('button:has([data-icon="delete"])');
+    const deleteButton = parentRow.locator('button:has(.anticon-delete, [aria-label="delete"])');
     if (await deleteButton.count() === 0) {
       test.skip(true, 'Delete button not found');
       return;
@@ -471,7 +471,7 @@ test.describe('Bulk Delete Improvements', () => {
     const bulkDeleteButton = page.locator('button').filter({
       or: [
         { hasText: '一括削除' },
-        { has: page.locator('[data-icon="delete"]') }
+        { has: page.locator('.anticon-delete, [aria-label="delete"]') }
       ]
     });
 

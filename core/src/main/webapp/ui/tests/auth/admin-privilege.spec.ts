@@ -131,7 +131,7 @@ test.describe('Admin Privilege Management', () => {
     // Find the test user row and click edit
     const testUserRow = page.locator('tr').filter({ hasText: TEST_USER_ID });
     await expect(testUserRow.first()).toBeVisible({ timeout: 10000 });
-    const editButton = testUserRow.first().locator('button').filter({ has: page.locator('[data-icon="edit"]') });
+    const editButton = testUserRow.first().locator('button').filter({ has: page.locator('.anticon-edit, [aria-label="edit"]') });
     if (await editButton.count() > 0) {
       await editButton.first().click();
     } else {
@@ -186,7 +186,7 @@ test.describe('Admin Privilege Management', () => {
 
     // Find the test user row and click edit
     const testUserRow = page.locator('.ant-table-row').filter({ hasText: TEST_USER_ID });
-    const editButton = testUserRow.locator('button').filter({ has: page.locator('[data-icon="edit"]') });
+    const editButton = testUserRow.locator('button').filter({ has: page.locator('.anticon-edit, [aria-label="edit"]') });
     if (await editButton.count() > 0) {
       await editButton.first().click();
     } else {
@@ -244,7 +244,7 @@ test.describe('Admin Privilege Management', () => {
     await expect(adminRow).toBeVisible({ timeout: 5000 });
 
     // Click edit button
-    const editButton = adminRow.locator('button').filter({ has: page.locator('[data-icon="edit"]') });
+    const editButton = adminRow.locator('button').filter({ has: page.locator('.anticon-edit, [aria-label="edit"]') });
     if (await editButton.count() > 0) {
       await editButton.first().click();
     } else {

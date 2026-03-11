@@ -55,16 +55,6 @@ public class Patch_WebhookableSecondaryType extends AbstractNemakiPatch {
     protected void applyPerRepositoryPatch(String repositoryId) {
         log.info("=== WEBHOOKABLE SECONDARY TYPE PATCH STARTED for repository: " + repositoryId + " ===");
 
-        if ("canopy".equals(repositoryId)) {
-            log.info("Skipping webhookable type for canopy - information management area");
-            return;
-        }
-
-        if ("bedroom_closet".equals(repositoryId) || "canopy_closet".equals(repositoryId)) {
-            log.info("Skipping webhookable type for archive repositories");
-            return;
-        }
-
         try {
             TypeService typeService = patchUtil.getTypeService();
             if (typeService == null) {

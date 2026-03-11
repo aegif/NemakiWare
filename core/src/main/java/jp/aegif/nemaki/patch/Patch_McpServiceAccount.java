@@ -68,18 +68,6 @@ public class Patch_McpServiceAccount extends AbstractNemakiPatch {
         // Use ERROR level for visibility (consistent with other patches in this codebase)
         log.error("=== MCP SERVICE ACCOUNT PATCH STARTED for repository: " + repositoryId + " ===");
 
-        // Skip archive repositories
-        if (repositoryId.endsWith("_closet")) {
-            log.error("Skipping MCP service account for archive repository: " + repositoryId);
-            return;
-        }
-
-        // Skip canopy (management repository)
-        if ("canopy".equals(repositoryId)) {
-            log.error("Skipping MCP service account for canopy repository");
-            return;
-        }
-
         try {
             log.error("Getting ContentService from Spring context...");
             ContentService contentService = SpringContext.getApplicationContext()

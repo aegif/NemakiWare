@@ -122,7 +122,7 @@ test.describe('ACL Inheritance Breaking', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     const repoInfoResponse = await page.request.get(
       'http://localhost:8080/core/browser/bedroom?cmisselector=repositoryInfo',

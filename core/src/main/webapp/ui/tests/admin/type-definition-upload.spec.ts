@@ -285,13 +285,13 @@ test.describe('Type Definition Upload and JSON Editing', () => {
 
     // Login first
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     // Navigate directly to Type Management page via URL (more reliable than menu clicks)
     await page.goto('/core/ui/#/types');
     // Retry navigation if auth state race redirects away
     for (let retry = 0; retry < 3; retry++) {
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
       if (page.url().includes('/types')) break;
       console.log(`type-upload: Retrying navigation to /types (attempt ${retry + 2})`);
       await page.goto('/core/ui/#/types');
@@ -786,8 +786,8 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     await page.waitForTimeout(500);
 
     // Popconfirm should appear
-    const popconfirm = page.locator('.ant-popconfirm:has-text("このタイプを削除しますか？")');
-    await expect(popconfirm).toBeVisible({ timeout: 3000 });
+    const popconfirm = page.locator('.ant-popconfirm, .ant-popover-inner:has(.ant-popconfirm-message)');
+    await expect(popconfirm.first()).toBeVisible({ timeout: 5000 });
 
     // CRITICAL FIX (2025-12-14): Start waiting for message BEFORE clicking
     const successMessagePromise = page.waitForSelector(

@@ -1143,21 +1143,21 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 
 	/**
 	 * Find the .system folder by searching root folder children directly.
-	 * Uses known root folder IDs for supported repositories (same as UserItemResource).
+	 * Uses RepositoryInfoMap for dynamic root folder ID lookup.
 	 */
 	private Folder findSystemFolderInRoot(String repositoryId) {
 		try {
-			String rootFolderId;
-			switch (repositoryId) {
-				case "bedroom":
-					rootFolderId = "e02f784f8360a02cc14d1314c10038ff";
-					break;
-				case "canopy":
-					rootFolderId = "ddd70e3ed8b847c2a364be81117c57ae";
-					break;
-				default:
-					log.warn("Unknown repository for .system folder lookup: " + repositoryId);
-					return null;
+			jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repoInfoMap =
+				jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+					.getBean("repositoryInfoMap", jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+			if (repoInfoMap == null || repoInfoMap.get(repositoryId) == null) {
+				log.warn("RepositoryInfoMap not available for .system folder lookup: " + repositoryId);
+				return null;
+			}
+			String rootFolderId = repoInfoMap.get(repositoryId).getRootFolderId();
+			if (rootFolderId == null) {
+				log.warn("Root folder ID not found for repository: " + repositoryId);
+				return null;
 			}
 			List<Content> rootChildren = contentService.getChildren(repositoryId, rootFolderId);
 			if (rootChildren != null) {

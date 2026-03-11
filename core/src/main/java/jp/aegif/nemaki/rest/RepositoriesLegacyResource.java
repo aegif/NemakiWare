@@ -32,7 +32,7 @@ public class RepositoriesLegacyResource extends ResourceBase {
 
     /**
      * Get filtered list of CMIS repositories
-     * Excludes "canopy" as it's an information management area, not a CMIS repository
+     * Returns only uiSelectable repositories (excludes non-selectable and archive repos)
      * Requires authentication (CallContext must be present).
      *
      * @return JSON array of repository information
@@ -51,11 +51,7 @@ public class RepositoriesLegacyResource extends ResourceBase {
 
             List<RepositoryInfo> allRepositories = new ArrayList<>();
 
-            for (String repositoryId : getRepositoryInfoMap().keys()) {
-                if ("canopy".equals(repositoryId)) {
-                    continue;
-                }
-
+            for (String repositoryId : getRepositoryInfoMap().getUiSelectableKeys()) {
                 RepositoryInfo repoInfo = getRepositoryInfoMap().get(repositoryId);
                 if (repoInfo != null) {
                     allRepositories.add(repoInfo);

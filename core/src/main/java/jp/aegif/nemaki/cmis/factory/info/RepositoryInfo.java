@@ -38,6 +38,7 @@ public class RepositoryInfo extends org.apache.chemistry.opencmis.commons.impl.d
 	//Custom info property
 	private String nameSpace;
 	private String archiveId;
+	private boolean uiSelectable = true;
 	
 	public void setup(){
 		//Set changesOnType property
@@ -61,5 +62,13 @@ public class RepositoryInfo extends org.apache.chemistry.opencmis.commons.impl.d
 
 	public void setArchiveId(String archiveId) {
 		this.archiveId = archiveId;
+	}
+
+	public boolean isUiSelectable() {
+		return uiSelectable;
+	}
+
+	public void setUiSelectable(boolean uiSelectable) {
+		this.uiSelectable = uiSelectable;
 	}
 }

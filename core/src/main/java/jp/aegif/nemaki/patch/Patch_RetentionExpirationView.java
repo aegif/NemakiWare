@@ -38,14 +38,6 @@ public class Patch_RetentionExpirationView extends AbstractNemakiPatch {
 	protected void applyPerRepositoryPatch(String repositoryId) {
 		log.info("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Adding expiration date view");
 
-		// Only apply to main repositories, skip archive/closet
-		if ("canopy".equals(repositoryId) ||
-			"bedroom_closet".equals(repositoryId) ||
-			"canopy_closet".equals(repositoryId)) {
-			log.info("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Skipping - archive/canopy repository");
-			return;
-		}
-
 		try {
 			CloudantClientWrapper client = patchUtil.getConnectorPool().getClient(repositoryId);
 			if (client == null) {

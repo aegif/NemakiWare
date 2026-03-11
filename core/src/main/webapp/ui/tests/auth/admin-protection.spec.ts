@@ -95,7 +95,7 @@ test.describe('Admin Route Protection', () => {
 
     test('should be able to access /archive (open to all users)', async ({ page }) => {
       // Wait for feature toggles to load before navigating to archive
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
       await page.goto(`${BASE_URL}/#/archive`);
       // Archive is accessible to all authenticated users (not admin-only)
       // Retry navigation if redirected (feature toggles may not have loaded yet)
@@ -133,7 +133,7 @@ test.describe('Admin Route Protection', () => {
       // Re-navigate if redirected (session timing issue)
       if (!page.url().includes('/users')) {
         await page.goto(`${BASE_URL}/#/users`);
-        await page.waitForTimeout(2000);
+        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
       }
       expect(page.url()).toContain('/users');
 
@@ -148,7 +148,7 @@ test.describe('Admin Route Protection', () => {
       // Re-navigate if redirected (session timing issue)
       if (!page.url().includes('/groups')) {
         await page.goto(`${BASE_URL}/#/groups`);
-        await page.waitForTimeout(2000);
+        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
       }
       expect(page.url()).toContain('/groups');
     });
@@ -160,7 +160,7 @@ test.describe('Admin Route Protection', () => {
       // Re-navigate if redirected (session timing issue)
       if (!page.url().includes('/types')) {
         await page.goto(`${BASE_URL}/#/types`);
-        await page.waitForTimeout(2000);
+        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
       }
       expect(page.url()).toContain('/types');
     });
@@ -172,7 +172,7 @@ test.describe('Admin Route Protection', () => {
       // Re-navigate if redirected (session timing issue)
       if (!page.url().includes('/archive')) {
         await page.goto(`${BASE_URL}/#/archive`);
-        await page.waitForTimeout(2000);
+        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
       }
       expect(page.url()).toContain('/archive');
     });

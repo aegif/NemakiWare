@@ -58,7 +58,7 @@ test.describe('PreviewComponent File Type Routing', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
@@ -66,7 +66,7 @@ test.describe('PreviewComponent File Type Routing', () => {
 
     if (isMobile) {
       const menuToggle = page.locator('button').filter({
-        has: page.locator('[data-icon="menu-fold"], [data-icon="menu-unfold"]')
+        has: page.locator('.anticon-menu-fold, [aria-label="menu-fold"], .anticon-menu-unfold, [aria-label="menu-unfold"]')
       }).first();
       if (await menuToggle.count() > 0) {
         try {
@@ -136,7 +136,7 @@ test.describe('PreviewComponent File Type Routing', () => {
         if (await documentRow.count() > 0) {
           // Click on eye icon (preview button) to open document viewer
           const eyeButton = documentRow.locator('button').filter({
-            has: page.locator('[data-icon="eye"]')
+            has: page.locator('.anticon-eye, [aria-label="eye"]')
           }).first();
 
           if (await eyeButton.count() > 0) {
@@ -175,7 +175,7 @@ test.describe('PreviewComponent File Type Routing', () => {
 
     // Look for a folder (folders don't have content streams)
     const folderRow = page.locator('.ant-table-tbody tr').filter({
-      has: page.locator('[data-icon="folder"]')
+      has: page.locator('.anticon-folder, [aria-label="folder"]')
     }).first();
 
     if (await folderRow.count() > 0) {
@@ -219,7 +219,7 @@ test.describe('PreviewComponent Image Preview', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
@@ -227,7 +227,7 @@ test.describe('PreviewComponent Image Preview', () => {
 
     if (isMobile) {
       const menuToggle = page.locator('button').filter({
-        has: page.locator('[data-icon="menu-fold"], [data-icon="menu-unfold"]')
+        has: page.locator('.anticon-menu-fold, [aria-label="menu-fold"], .anticon-menu-unfold, [aria-label="menu-unfold"]')
       }).first();
       if (await menuToggle.count() > 0) {
         try {
@@ -326,7 +326,7 @@ test.describe('PreviewComponent Text Preview', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
@@ -334,7 +334,7 @@ test.describe('PreviewComponent Text Preview', () => {
 
     if (isMobile) {
       const menuToggle = page.locator('button').filter({
-        has: page.locator('[data-icon="menu-fold"], [data-icon="menu-unfold"]')
+        has: page.locator('.anticon-menu-fold, [aria-label="menu-fold"], .anticon-menu-unfold, [aria-label="menu-unfold"]')
       }).first();
       if (await menuToggle.count() > 0) {
         try {
@@ -422,7 +422,7 @@ test.describe('PreviewComponent Error Handling', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
@@ -430,7 +430,7 @@ test.describe('PreviewComponent Error Handling', () => {
 
     if (isMobile) {
       const menuToggle = page.locator('button').filter({
-        has: page.locator('[data-icon="menu-fold"], [data-icon="menu-unfold"]')
+        has: page.locator('.anticon-menu-fold, [aria-label="menu-fold"], .anticon-menu-unfold, [aria-label="menu-unfold"]')
       }).first();
       if (await menuToggle.count() > 0) {
         try {
@@ -597,7 +597,7 @@ test.describe('PreviewComponent PDF Preview', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
@@ -605,7 +605,7 @@ test.describe('PreviewComponent PDF Preview', () => {
 
     if (isMobile) {
       const menuToggle = page.locator('button').filter({
-        has: page.locator('[data-icon="menu-fold"], [data-icon="menu-unfold"]')
+        has: page.locator('.anticon-menu-fold, [aria-label="menu-fold"], .anticon-menu-unfold, [aria-label="menu-unfold"]')
       }).first();
       if (await menuToggle.count() > 0) {
         try {
@@ -715,7 +715,7 @@ test.describe('PreviewComponent Video Preview', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
@@ -723,7 +723,7 @@ test.describe('PreviewComponent Video Preview', () => {
 
     if (isMobile) {
       const menuToggle = page.locator('button').filter({
-        has: page.locator('[data-icon="menu-fold"], [data-icon="menu-unfold"]')
+        has: page.locator('.anticon-menu-fold, [aria-label="menu-fold"], .anticon-menu-unfold, [aria-label="menu-unfold"]')
       }).first();
       if (await menuToggle.count() > 0) {
         try {

@@ -22,7 +22,7 @@
 import { test, expect } from '@playwright/test';
 import { isKeycloakAvailable, KEYCLOAK_SKIP_MESSAGE } from '../utils/test-state';
 
-const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8180';
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';
 const SAML_ENTITY_ID = process.env.SAML_ENTITY_ID || 'nemakiware-sp';
 
 test.describe('NemakiWare SAML Authentication', () => {

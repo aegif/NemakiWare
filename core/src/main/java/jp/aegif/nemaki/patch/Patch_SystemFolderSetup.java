@@ -43,36 +43,7 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
     public String getName() {
         return PATCH_NAME;
     }
-    
-    /**
-     * Get CouchDB URL from configuration file (PropertyManager)
-     */
-    private String getCouchDbUrl() {
-        PropertyManager propertyManager = patchUtil.getPropertyManager();
-        if (propertyManager == null) {
-            log.warn("PropertyManager not available - using fallback URL detection");
-            // Fallback to original logic if PropertyManager not available
-            try {
-                java.net.InetAddress.getByName("couchdb");
-                log.info("Docker environment detected - using couchdb:5984");
-                return "http://couchdb:5984";
-            } catch (java.net.UnknownHostException e) {
-                log.info("Local environment detected - using localhost:5984");
-                return "http://localhost:5984";
-            }
-        }
-        
-        // Use PropertyManager to read configuration
-        String couchDbUrl = propertyManager.readValue("db.couchdb.url");
-        if (couchDbUrl != null && !couchDbUrl.trim().isEmpty()) {
-            log.info("Using CouchDB URL from configuration: " + couchDbUrl);
-            return couchDbUrl;
-        } else {
-            log.warn("db.couchdb.url not found in configuration - using default");
-            return "http://localhost:5984";
-        }
-    }
-    
+
     @Override
     protected void applySystemPatch() {
         log.info("Creating system configuration entries in nemaki_conf database");
@@ -90,11 +61,6 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
     @Override
     protected void applyPerRepositoryPatch(String repositoryId) {
         log.info("Starting System Folder Setup Patch for repository: " + repositoryId);
-        
-        if ("canopy".equals(repositoryId)) {
-            log.info("Skipping System Folder Setup for canopy - information management area");
-            return;
-        }
         
         try {
             ContentService contentService = patchUtil.getContentService();
@@ -414,7 +380,7 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
             PropertyManager propertyManager = patchUtil.getPropertyManager();
             if (propertyManager != null) {
                 // Create configuration entry for systemFolder
-                createRepositoryConfigurationEntry(repositoryId, "systemFolder", systemFolderId, 
+                createRepositoryConfigurationEntry(repositoryId, "system.folder", systemFolderId,
                     "System folder ID for " + repositoryId + " repository");
                     
                 log.info("SystemFolder configuration set successfully for repository: " + repositoryId);
@@ -432,32 +398,8 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
      */
     private void createSystemConfigurationEntry(String key, String value, String description) {
         try {
-            // Create configuration document for nemaki_conf database
             String configId = "system_config_" + key.replace(".", "_");
-            
-            String configJson = String.format(
-                "{\n" +
-                "  \"_id\": \"%s\",\n" +
-                "  \"type\": \"configuration\",\n" +
-                "  \"created\": \"%s\",\n" +
-                "  \"creator\": \"system\",\n" +
-                "  \"modified\": \"%s\",\n" +
-                "  \"modifier\": \"system\",\n" +
-                "  \"key\": \"%s\",\n" +
-                "  \"value\": \"%s\",\n" +
-                "  \"description\": \"%s\"\n" +
-                "}",
-                configId,
-                java.time.Instant.now().toString(),
-                java.time.Instant.now().toString(),
-                key,
-                value,
-                description
-            );
-            
-            // Use direct HTTP approach to create configuration
-            createConfigurationDocument("nemaki_conf", configId, configJson);
-            
+            createConfigurationDocument(configId, key, value, description, null);
         } catch (Exception e) {
             log.error("Error creating system configuration entry: " + key, e);
         }
@@ -468,85 +410,56 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
      */
     private void createRepositoryConfigurationEntry(String repositoryId, String key, String value, String description) {
         try {
-            // Create configuration document for nemaki_conf database
             String configId = repositoryId + "_" + key;
-            
-            String configJson = String.format(
-                "{\n" +
-                "  \"_id\": \"%s\",\n" +
-                "  \"type\": \"configuration\",\n" +
-                "  \"created\": \"%s\",\n" +
-                "  \"creator\": \"system\",\n" +
-                "  \"modified\": \"%s\",\n" +
-                "  \"modifier\": \"system\",\n" +
-                "  \"repositoryId\": \"%s\",\n" +
-                "  \"key\": \"%s\",\n" +
-                "  \"value\": \"%s\",\n" +
-                "  \"description\": \"%s\"\n" +
-                "}",
-                configId,
-                java.time.Instant.now().toString(),
-                java.time.Instant.now().toString(),
-                repositoryId,
-                key,
-                value,
-                description
-            );
-            
-            // Use direct HTTP approach to create configuration
-            createConfigurationDocument("nemaki_conf", configId, configJson);
-            
+            createConfigurationDocument(configId, key, value, description, repositoryId);
         } catch (Exception e) {
             log.error("Error creating repository configuration entry: " + repositoryId + "." + key, e);
         }
     }
     
     /**
-     * Create configuration document using direct HTTP approach
-     * This avoids circular dependency issues during initialization
+     * Create configuration document using CloudantClientWrapper (authenticated via connectorPool)
+     * @param documentId the CouchDB document ID
+     * @param key the configuration key
+     * @param value the configuration value
+     * @param description a human-readable description
+     * @param repositoryId if non-null, marks this as a repository-specific config entry
      */
-    private void createConfigurationDocument(String database, String documentId, String jsonContent) {
+    private void createConfigurationDocument(String documentId, String key, String value,
+                                             String description, String repositoryId) {
         try {
-            // Check if document already exists
-            java.net.URL checkUrl = new java.net.URL(getCouchDbUrl() + "/" + database + "/" + documentId);
-            java.net.HttpURLConnection checkConn = (java.net.HttpURLConnection) checkUrl.openConnection();
-            
-            String auth = "admin:password";
-            String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            checkConn.setRequestProperty("Authorization", "Basic " + encodedAuth);
-            checkConn.setRequestMethod("HEAD");
-            
-            int checkResponse = checkConn.getResponseCode();
-            checkConn.disconnect();
-            
-            if (checkResponse == 200) {
+            jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper confClient =
+                patchUtil.getConnectorPool().getClient("nemaki_conf");
+            if (confClient == null) {
+                log.error("Cannot get nemaki_conf client from connectorPool");
+                return;
+            }
+
+            if (confClient.exists(documentId)) {
                 log.info("Configuration document already exists: " + documentId);
                 return;
             }
-            
-            // Create document
-            java.net.URL createUrl = new java.net.URL(getCouchDbUrl() + "/" + database + "/" + documentId);
-            java.net.HttpURLConnection createConn = (java.net.HttpURLConnection) createUrl.openConnection();
-            
-            createConn.setRequestProperty("Authorization", "Basic " + encodedAuth);
-            createConn.setRequestProperty("Content-Type", "application/json");
-            createConn.setRequestMethod("PUT");
-            createConn.setDoOutput(true);
-            
-            // Write JSON content
-            try (java.io.OutputStream os = createConn.getOutputStream()) {
-                os.write(jsonContent.getBytes("UTF-8"));
+
+            java.util.Map<String, Object> doc = new java.util.HashMap<>();
+            doc.put("_id", documentId);
+            doc.put("type", "configuration");
+            doc.put("created", java.time.Instant.now().toString());
+            doc.put("creator", "system");
+            doc.put("modified", java.time.Instant.now().toString());
+            doc.put("modifier", "system");
+            doc.put("key", key);
+            doc.put("value", value);
+            doc.put("description", description);
+            if (repositoryId != null) {
+                doc.put("repositoryId", repositoryId);
             }
-            
-            int createResponse = createConn.getResponseCode();
-            createConn.disconnect();
-            
-            if (createResponse == 201) {
+
+            com.ibm.cloud.cloudant.v1.model.DocumentResult result = confClient.create(documentId, doc);
+            if (result != null) {
                 log.info("Configuration document created successfully: " + documentId);
             } else {
-                log.warn("Failed to create configuration document: " + documentId + " (HTTP " + createResponse + ")");
+                log.warn("Failed to create configuration document: " + documentId);
             }
-            
         } catch (Exception e) {
             log.error("Error creating configuration document: " + documentId, e);
         }

@@ -102,19 +102,16 @@ async function oidcLogin(request: any, username: string, password: string): Prom
   const kcToken = await getKeycloakToken(request, username, password);
   if (!kcToken) return null;
 
-  const payload = decodeJwtPayload(kcToken);
-  if (!payload) return null;
+  // NemakiWare backend runs in Docker and accesses Keycloak via container name
+  const userinfoEndpoint = 'http://keycloak:8080/realms/nemakiware/protocol/openid-connect/userinfo';
 
   const response = await request.post(
     `${BASE_URL}/api/v1/cmis/auth/repositories/${REPOSITORY_ID}/oidc`,
     {
       headers: { 'Content-Type': 'application/json' },
       data: {
-        user_info: {
-          preferred_username: payload.preferred_username,
-          email: payload.email,
-          name: payload.name,
-        },
+        access_token: kcToken,
+        userinfo_endpoint: userinfoEndpoint,
       },
     }
   );
@@ -535,7 +532,7 @@ test.describe('Session Management - CMIS Operations with Different Auth', () => 
     );
   });
 
-  test.skip('S22: Create document with OIDC auth token (requires Keycloak)', async ({ request }) => {
+  test('S22: Create document with OIDC auth token (requires Keycloak)', async ({ request }) => {
     // Skip if Keycloak OIDC client not configured
     if (!keycloakClientConfigured) {
       test.skip(true, 'Keycloak OIDC client not configured');

@@ -748,7 +748,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
      *
      * <p>Delegates to {@link StartupProbeService#discoverNemakiDatabases} which
      * reads {@code repositories.yml} as the authoritative source.
-     * Falls back to the default list if the probe service is unavailable.
+     * Falls back to legacy defaults if {@code -Dnemaki.startup.require-repositories-yml=false}.
      */
     private List<String> getRepositoryDbNames() {
         if (startupProbeService != null) {
@@ -758,11 +758,25 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                 if (discovered != null && !discovered.isEmpty()) {
                     return discovered;
                 }
+            } catch (IllegalStateException e) {
+                // Propagate fail-fast from StartupProbeService
+                throw e;
             } catch (Exception e) {
-                log.debug("getRepositoryDbNames: StartupProbeService discovery failed: " + e.getMessage());
+                log.warn("getRepositoryDbNames: StartupProbeService discovery failed: " + e.getMessage());
             }
         }
-        return Arrays.asList("bedroom", "bedroom_closet", "canopy", "canopy_closet", "nemaki_conf");
+
+        // Feature flag: allow legacy fallback during migration period
+        String requireYaml = System.getProperty("nemaki.startup.require-repositories-yml", "true");
+        if ("false".equalsIgnoreCase(requireYaml)) {
+            log.warn("getRepositoryDbNames: StartupProbeService unavailable — using legacy default list");
+            return Arrays.asList("bedroom", "bedroom_closet", "canopy", "canopy_closet", "nemaki_conf");
+        }
+
+        throw new IllegalStateException(
+                "Cannot determine repository databases: StartupProbeService is unavailable. " +
+                "Ensure repositories.yml is properly configured. " +
+                "Set -Dnemaki.startup.require-repositories-yml=false to use legacy defaults during migration.");
     }
 
     /**

@@ -82,49 +82,45 @@ public class PropertyManager{
 		if (log.isDebugEnabled()) {
 			log.debug("readValue called with repositoryId='" + repositoryId + "', key='" + key + "'");
 		}
-		
-		// Check system properties first
+
+		// Priority 1: System properties (JVM -D flags, Jetty environment overrides)
 		String systemPropertyValue = System.getProperty(key);
-		if(systemPropertyValue != null){
-			if (log.isDebugEnabled()) {
-				log.debug("Using system property value for key='" + key + "'");
-			}
+		if (systemPropertyValue != null) {
 			return systemPropertyValue;
 		}
-		
-		// Check environment variables (Docker support)
+
+		// Priority 2: Environment variables (Docker/container support)
 		String envKey = key.toUpperCase().replace('.', '_');
 		String envValue = System.getenv(envKey);
-		if(envValue != null){
-			if (log.isDebugEnabled()) {
-				log.debug("Using environment variable " + envKey + " for key='" + key + "'");
-			}
+		if (envValue != null) {
 			return envValue;
 		}
-		
-		Object configVal = getDynamicValue(repositoryId, key);
-		
-		if (log.isDebugEnabled()) {
-			log.debug("getDynamicValue returned: " + (configVal != null ? "'" + configVal.toString() + "'" : "NULL"));
-		}
-		
-		if(configVal == null){
-			String fallbackValue = propertyConfigurer.getValue(key);
-			
-			if (log.isDebugEnabled()) {
-				log.debug("Using fallback propertyConfigurer.getValue('" + key + "') = " + (fallbackValue != null ? "'" + fallbackValue + "'" : "NULL"));
+
+		// Priority 3: Repo-specific dynamic value (CouchDB repo Configuration document)
+		try {
+			Configuration repoConf = getConfiguration(repositoryId);
+			if (repoConf != null && repoConf.getConfiguration().containsKey(key)) {
+				Object repoVal = repoConf.getConfiguration().get(key);
+				if (repoVal != null) {
+					String result = repoVal.toString();
+					if (log.isDebugEnabled()) {
+						log.debug("Using repo-specific dynamic value for repositoryId='" + repositoryId + "', key='" + key + "': '" + result + "'");
+					}
+					return result;
+				}
 			}
-			
-			return fallbackValue;
-		}else{
-			String result = configVal.toString();
-			
-			if (log.isDebugEnabled()) {
-				log.debug("Returning dynamic value: '" + result + "'");
-			}
-			
-			return result;
+		} catch (Exception e) {
+			log.warn("Repo-specific getDynamicValue failed for repositoryId='" + repositoryId + "', key='" + key + "': " + e.getMessage());
 		}
+
+		// Priority 4: Global dynamic value (CouchDB global Configuration document)
+		Object configVal = getDynamicValue(key);
+		if (configVal != null) {
+			return configVal.toString();
+		}
+
+		// Priority 5: Properties file (nemakiware.properties)
+		return propertyConfigurer.getValue(key);
 	}
 
 	public String readHeadValue(String repositoryId, String key) throws Exception{

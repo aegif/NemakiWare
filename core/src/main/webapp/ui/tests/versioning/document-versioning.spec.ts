@@ -153,7 +153,9 @@ test.describe('Document Versioning', () => {
 
     // Login as admin
     await authHelper.login();
-    await page.waitForTimeout(2000);
+
+    // Wait for UI to fully load
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     await testHelper.closeMobileSidebar(browserName);
 
@@ -255,7 +257,7 @@ test.describe('Document Versioning', () => {
     await page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first().click();
     await page.waitForTimeout(500);
 
-    const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
+    const deleteButton = page.locator('button.anticon-delete, [aria-label="delete"], button').filter({ hasText: /削除|Delete/i }).first();
     if (await deleteButton.count() > 0) {
       await deleteButton.click(isMobile ? { force: true } : {});
       await page.waitForTimeout(500);
@@ -286,77 +288,107 @@ test.describe('Document Versioning', () => {
       return;
     }
 
-    // Select the document
+    // Find the uploaded document in the table
     console.log(`Test: Looking for ${filename} in document table`);
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     await expect(documentRow).toBeVisible();
-    await documentRow.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
 
-    // Check-out the document first
-    const checkoutButton = page.locator('button, .ant-btn').filter({ hasText: /チェックアウト|Check.*Out/i }).first();
-    if (await checkoutButton.count() > 0) {
-      await checkoutButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
-
-      // Now check-in with new content
-      const checkinButton = page.locator('button, .ant-btn').filter({ hasText: /チェックイン|Check.*In/i }).first();
-      if (await checkinButton.count() > 0) {
-        await checkinButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
-
-        // Fill check-in form if modal appears
-        const versionCommentInput = page.locator('input[placeholder*="バージョン"], textarea[placeholder*="コメント"]').first();
-        if (await versionCommentInput.count() > 0) {
-          await versionCommentInput.fill('Updated to version 2.0');
-        }
-
-        // Upload new version content if file input appears
-        const checkinFileInput = page.locator('input[type="file"]').last();
-        if (await checkinFileInput.isVisible()) {
-          await checkinFileInput.setInputFiles({
-            name: filename,
-            mimeType: 'text/plain',
-            buffer: Buffer.from('Version 2.0 content - updated', 'utf-8'),
-          });
-        }
-
-        // Submit check-in
-        const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal button').filter({ hasText: /OK|確認|チェックイン/i }).first();
-        if (await submitButton.count() > 0) {
-          await submitButton.click();
-          await page.waitForTimeout(2000);
-        }
-
-        // Verify check-in success (PWC indicator should disappear)
-        const pwcIndicator = page.locator('.ant-tag, .ant-badge').filter({ hasText: /PWC|作業中/i });
-        await expect(pwcIndicator).toHaveCount(0, { timeout: 5000 });
-      }
-    } else {
-      // UPDATED (2025-12-26): Versioning buttons ARE implemented in DocumentList.tsx lines 964-981
-      test.skip('Versioning buttons not visible - document may not be a PWC (check-in/cancel only shown for PWC)');
+    // Step 1: Check-out using icon button in the row (EditOutlined = aria-label="edit")
+    const checkoutButton = documentRow.locator('button').filter({ has: page.locator('span[role="img"][aria-label="edit"]') }).first();
+    if (await checkoutButton.count() === 0) {
+      test.skip('Check-out button not visible in document row');
       return;
     }
 
-    // Cleanup: Delete the test document
-    // Note: After check-in, loadObjects() automatically updates the table
-    // Wait for table to refresh after check-in operation
-    await page.waitForTimeout(2000);
+    await checkoutButton.click(isMobile ? { force: true } : {});
+    console.log('Test: Clicked checkout button, waiting for table reload...');
 
-    const cleanupDocRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
-    if (await cleanupDocRow.count() > 0) {
-      await cleanupDocRow.click();
-      await page.waitForTimeout(500);
+    // Wait for success message and table refresh
+    await page.waitForSelector('.ant-message-success', { timeout: 10000 }).catch(() => {
+      console.log('Test: No success message appeared');
+    });
+    await page.waitForTimeout(5000);
 
-      const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
-      if (await deleteButton.count() > 0) {
-        await deleteButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+    // Step 2: Find check-in button (CheckOutlined = aria-label="check") in the refreshed row
+    const refreshedRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
+    const checkinButton = refreshedRow.locator('button').filter({ has: page.locator('span[role="img"][aria-label="check"]') }).first();
 
-        const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|はい|削除|確認/i }).first();
-        if (await confirmButton.count() > 0) {
-          await confirmButton.click();
-          await page.waitForTimeout(2000);
+    if (await checkinButton.count() > 0) {
+      console.log('Test: Found check-in button, clicking...');
+      await checkinButton.click(isMobile ? { force: true } : {});
+
+      // Wait for check-in modal to appear (filter by check-in title to avoid matching upload modal)
+      const modal = page.locator('.ant-modal').filter({ hasText: 'チェックイン' }).last().locator('.ant-modal-content');
+      await expect(modal).toBeVisible({ timeout: 10000 });
+      console.log('Test: Check-in modal opened');
+
+      // Fill comment using textarea selector (not input - that would match hidden file input or radio)
+      const commentTextarea = modal.locator('textarea').first();
+      if (await commentTextarea.count() > 0) {
+        await commentTextarea.fill('Updated to version 2.0');
+        console.log('Test: Filled check-in comment');
+      }
+
+      // Upload new version file
+      const checkinFileInput = modal.locator('input[type="file"]');
+      if (await checkinFileInput.count() > 0) {
+        await checkinFileInput.setInputFiles({
+          name: filename,
+          mimeType: 'text/plain',
+          buffer: Buffer.from('Version 2.0 content - updated', 'utf-8'),
+        });
+        console.log('Test: Attached new version file');
+        await page.waitForTimeout(1000);
+      }
+
+      // Submit check-in (primary button in the modal)
+      const submitButton = modal.locator('button.ant-btn-primary').first();
+      await expect(submitButton).toBeVisible({ timeout: 5000 });
+      await submitButton.click();
+      console.log('Test: Clicked check-in submit button');
+
+      // Wait for success message or modal to close
+      await Promise.race([
+        page.waitForSelector('.ant-message-success', { timeout: 15000 }),
+        modal.waitFor({ state: 'hidden', timeout: 15000 }),
+      ]).catch(() => {
+        console.log('Test: No explicit success signal, continuing...');
+      });
+      await page.waitForTimeout(3000);
+
+      // Verify check-in success (PWC indicator should disappear)
+      const pwcTag = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).locator('.ant-tag').filter({ hasText: '作業中' });
+      const stillCheckedOut = await pwcTag.count() > 0;
+      console.log(`Test: PWC tag still visible after check-in: ${stillCheckedOut}`);
+      // After successful check-in, PWC tag should be gone
+      expect(stillCheckedOut).toBe(false);
+    } else {
+      console.log('Test: Check-in button not found after checkout - verifying PWC state');
+      // Verify checkout was successful at least (PWC tag or different buttons)
+      const pwcTag = refreshedRow.locator('.ant-tag').filter({ hasText: '作業中' });
+      expect(await pwcTag.count()).toBeGreaterThan(0);
+    }
+
+    // Cleanup: Delete the test document via API
+    const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+    const queryResp = await page.request.post('http://localhost:8080/core/browser/bedroom', {
+      headers: { 'Authorization': authHeader },
+      form: {
+        cmisaction: 'query',
+        q: `SELECT cmis:objectId FROM cmis:document WHERE cmis:name = '${filename}'`,
+        maxItems: '10'
+      }
+    });
+    if (queryResp.ok()) {
+      const queryData = await queryResp.json();
+      for (const result of (queryData.results || [])) {
+        const docId = result?.['cmis:objectId']?.value || result?.succinctProperties?.['cmis:objectId'];
+        if (docId) {
+          await page.request.post('http://localhost:8080/core/browser/bedroom', {
+            headers: { 'Authorization': authHeader },
+            form: { cmisaction: 'delete', objectId: docId, allVersions: 'true' }
+          }).catch(() => {});
         }
       }
     }
@@ -424,7 +456,7 @@ test.describe('Document Versioning', () => {
       await cleanupDocRow2.click();
       await page.waitForTimeout(500);
 
-      const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
+      const deleteButton = page.locator('button.anticon-delete, [aria-label="delete"], button').filter({ hasText: /削除|Delete/i }).first();
       if (await deleteButton.count() > 0) {
         await deleteButton.click(isMobile ? { force: true } : {});
         await page.waitForTimeout(500);
@@ -510,7 +542,7 @@ test.describe('Document Versioning', () => {
       await cleanupDocRow3.click();
       await page.waitForTimeout(500);
 
-      const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
+      const deleteButton = page.locator('button.anticon-delete, [aria-label="delete"], button').filter({ hasText: /削除|Delete/i }).first();
       if (await deleteButton.count() > 0) {
         await deleteButton.click(isMobile ? { force: true } : {});
         await page.waitForTimeout(500);
@@ -608,7 +640,7 @@ test.describe('Document Versioning', () => {
       await cleanupDocRow4.click();
       await page.waitForTimeout(500);
 
-      const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
+      const deleteButton = page.locator('button.anticon-delete, [aria-label="delete"], button').filter({ hasText: /削除|Delete/i }).first();
       if (await deleteButton.count() > 0) {
         await deleteButton.click(isMobile ? { force: true } : {});
         await page.waitForTimeout(500);

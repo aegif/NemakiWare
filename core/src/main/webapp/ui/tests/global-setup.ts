@@ -19,7 +19,7 @@ import * as fs from 'fs';
  * - External auth tests: Require Keycloak (OIDC, SAML, LDAP integration)
  */
 
-const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8180';
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';
 const SKIP_KEYCLOAK = process.env.SKIP_KEYCLOAK === 'true';
 
 // Global state file to share Keycloak availability with tests
@@ -372,11 +372,115 @@ async function ensureTestPdfExists(baseURL: string): Promise<void> {
   }
 }
 
+/**
+ * Create a folder in root with proper ACL (admin:all, GROUP_EVERYONE:read, system:all).
+ * This matches the ACL set by Patch_InitialContentSetup.
+ */
+async function createFolderWithAcl(
+  baseURL: string,
+  authHeader: string,
+  folderName: string
+): Promise<boolean> {
+  // First, get root folder objectId
+  const rootResponse = await fetch(
+    `${baseURL}/core/browser/bedroom/root?cmisselector=object`,
+    {
+      headers: { 'Authorization': authHeader },
+      signal: AbortSignal.timeout(10000)
+    }
+  );
+  if (!rootResponse.ok) {
+    console.log(`⚠️ Could not get root folder for creating ${folderName}`);
+    return false;
+  }
+  const rootData = await rootResponse.json();
+  const rootFolderId = rootData.succinctProperties?.['cmis:objectId'] || rootData.properties?.['cmis:objectId']?.value;
+
+  const formData = new URLSearchParams();
+  formData.append('cmisaction', 'createFolder');
+  formData.append('objectId', rootFolderId);
+  formData.append('propertyId[0]', 'cmis:objectTypeId');
+  formData.append('propertyValue[0]', 'cmis:folder');
+  formData.append('propertyId[1]', 'cmis:name');
+  formData.append('propertyValue[1]', folderName);
+
+  const createResponse = await fetch(
+    `${baseURL}/core/browser/bedroom`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData.toString(),
+      signal: AbortSignal.timeout(10000)
+    }
+  );
+
+  let folderId: string | null = null;
+  if (createResponse.ok) {
+    const createData = await createResponse.json();
+    folderId = createData.succinctProperties?.['cmis:objectId'] || createData.properties?.['cmis:objectId']?.value;
+  } else {
+    const errorText = await createResponse.text();
+    if (errorText.includes('already exists') || errorText.includes('nameConstraintViolation')) {
+      console.log(`✅ ${folderName} folder already exists`);
+      return true;
+    }
+    console.log(`⚠️ Could not create ${folderName} folder: ${createResponse.status} ${errorText.substring(0, 200)}`);
+    return false;
+  }
+
+  if (!folderId) {
+    console.log(`⚠️ ${folderName} folder created but could not get ID`);
+    return false;
+  }
+
+  // Set proper ACL via direct CouchDB update (matches Patch_InitialContentSetup)
+  const couchDbAuth = 'Basic ' + Buffer.from('admin:password').toString('base64');
+  const couchDocResponse = await fetch(`http://localhost:5984/bedroom/${folderId}`, {
+    headers: { 'Authorization': couchDbAuth },
+    signal: AbortSignal.timeout(10000)
+  });
+
+  if (couchDocResponse.ok) {
+    const doc = await couchDocResponse.json();
+    doc.acl = {
+      entries: [
+        { principal: 'admin', permissions: ['cmis:all'] },
+        { principal: 'GROUP_EVERYONE', permissions: ['cmis:read'] },
+        { principal: 'system', permissions: ['cmis:all'] },
+      ]
+    };
+
+    const updateResponse = await fetch(`http://localhost:5984/bedroom/${folderId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': couchDbAuth,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(doc),
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (updateResponse.ok) {
+      console.log(`✅ ${folderName} folder created with proper ACL`);
+      return true;
+    } else {
+      console.log(`⚠️ ${folderName} folder created but ACL update failed: ${updateResponse.status}`);
+      return false;
+    }
+  } else {
+    console.log(`⚠️ ${folderName} folder created but CouchDB access failed for ACL update`);
+    return false;
+  }
+}
+
 async function ensureTestDataExists(baseURL: string): Promise<void> {
   const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 
   try {
-    // Check if root folder has any children (folders)
+    // Check existing root folder children
     const childrenResponse = await fetch(
       `${baseURL}/core/browser/bedroom/root?cmisselector=children`,
       {
@@ -392,45 +496,19 @@ async function ensureTestDataExists(baseURL: string): Promise<void> {
 
     const childrenData = await childrenResponse.json();
     const objects = childrenData.objects || [];
-    const hasFolders = objects.some((obj: any) =>
-      obj.object?.properties?.['cmis:baseTypeId']?.value === 'cmis:folder'
-    );
+    const existingNames = objects
+      .filter((obj: any) => obj.object?.properties?.['cmis:baseTypeId']?.value === 'cmis:folder')
+      .map((obj: any) => obj.object?.properties?.['cmis:name']?.value);
 
-    if (hasFolders) {
-      console.log('✅ Root folder has existing folders');
-    } else {
-      // Create a Sites folder for tests that need folder navigation
-      console.log('📁 Creating Sites folder for navigation tests...');
-      const formData = new URLSearchParams();
-      formData.append('cmisaction', 'createFolder');
-      formData.append('propertyId[0]', 'cmis:objectTypeId');
-      formData.append('propertyValue[0]', 'cmis:folder');
-      formData.append('propertyId[1]', 'cmis:name');
-      formData.append('propertyValue[1]', 'Sites');
-
-      // POST to root folder URL for createFolder
-      const createResponse = await fetch(
-        `${baseURL}/core/browser/bedroom/root`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': authHeader,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: formData.toString(),
-          signal: AbortSignal.timeout(10000)
-        }
-      );
-
-      if (createResponse.ok) {
-        console.log('✅ Sites folder created');
+    // Ensure required folders exist (these are created by Patch_InitialContentSetup,
+    // but may be deleted by cascade-delete or bulk-operations tests)
+    const requiredFolders = ['Sites', 'Technical Documents'];
+    for (const folderName of requiredFolders) {
+      if (existingNames.includes(folderName)) {
+        console.log(`✅ ${folderName} folder exists`);
       } else {
-        const errorText = await createResponse.text();
-        if (errorText.includes('already exists') || errorText.includes('nameConstraintViolation')) {
-          console.log('✅ Sites folder already exists');
-        } else {
-          console.log(`⚠️ Could not create Sites folder: ${createResponse.status} ${errorText.substring(0, 200)}`);
-        }
+        console.log(`📁 Creating ${folderName} folder (may have been deleted by previous tests)...`);
+        await createFolderWithAcl(baseURL, authHeader, folderName);
       }
     }
   } catch (error) {

@@ -36,7 +36,7 @@ test.beforeEach(async ({}, testInfo) => {
   }
 });
 
-const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8180';
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';
 const NEMAKIWARE_URL = process.env.NEMAKIWARE_URL || 'http://localhost:8080';
 
 // Test users from LDAP

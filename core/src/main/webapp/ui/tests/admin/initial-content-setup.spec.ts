@@ -191,8 +191,9 @@ async function findInitialFolder(folderName: string): Promise<any | null> {
 
 test.describe('Initial Content Setup - Folder Creation and ACL', () => {
 
-  // Track whether initial content exists (set during beforeAll)
-  let initialContentExists = false;
+  // Track whether each folder exists independently (set during beforeAll)
+  let sitesExists = false;
+  let techDocsExists = false;
 
   test.beforeAll(async () => {
     // Verify server is accessible
@@ -206,22 +207,22 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
       throw new Error(`Server not accessible: ${response.status} ${response.statusText}`);
     }
 
-    // Check if initial content exists (Sites folder is required for these tests)
+    // Check each folder independently
     const sitesFolder = await findInitialFolder('Sites');
     const techDocsFolder = await findInitialFolder('Technical Documents');
-    initialContentExists = sitesFolder !== null && techDocsFolder !== null;
+    sitesExists = sitesFolder !== null;
+    techDocsExists = techDocsFolder !== null;
 
-    if (!initialContentExists) {
-      console.log('⚠️ Initial content folders not found. Patch_InitialContentSetup may not have run.');
-      console.log('   These tests validate backend initialization and require:');
-      console.log('   - Sites folder in root');
-      console.log('   - Technical Documents folder in root');
-      console.log('   Tests will be skipped. To enable, ensure Patch_InitialContentSetup executes on startup.');
+    if (!sitesExists) {
+      console.log('⚠️ Sites folder not found. May have been deleted by other tests.');
+    }
+    if (!techDocsExists) {
+      console.log('⚠️ Technical Documents folder not found. May have been deleted by other tests.');
     }
   });
 
   test('Sites folder should exist in root folder', async () => {
-    test.skip(!initialContentExists, 'Initial content not found - Patch_InitialContentSetup may not have run');
+    test.skip(!sitesExists, 'Sites folder not found - may have been deleted by other tests');
     const response = await fetch(
       `${CMIS_BASE_URL}/browser/${REPOSITORY_ID}/root?cmisselector=children`,
       {
@@ -257,7 +258,7 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
   });
 
   test('Technical Documents folder should exist in root folder', async () => {
-    test.skip(!initialContentExists, 'Initial content not found - Patch_InitialContentSetup may not have run');
+    test.skip(!techDocsExists, 'Technical Documents folder not found - may have been deleted by other tests');
     const response = await fetch(
       `${CMIS_BASE_URL}/browser/${REPOSITORY_ID}/root?cmisselector=children`,
       {
@@ -293,7 +294,7 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
   });
 
   test('Sites folder should have correct ACL (admin:all, GROUP_EVERYONE:read, system:all)', async () => {
-    test.skip(!initialContentExists, 'Initial content not found - Patch_InitialContentSetup may not have run');
+    test.skip(!sitesExists, 'Sites folder not found - may have been deleted by other tests');
     // First, get folder ID
     const childrenResponse = await fetch(
       `${CMIS_BASE_URL}/browser/${REPOSITORY_ID}/root?cmisselector=children`,
@@ -363,7 +364,7 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
   });
 
   test('Technical Documents folder should have correct ACL (admin:all, GROUP_EVERYONE:read, system:all)', async () => {
-    test.skip(!initialContentExists, 'Initial content not found - Patch_InitialContentSetup may not have run');
+    test.skip(!techDocsExists, 'Technical Documents folder not found - may have been deleted by other tests');
     // First, get folder ID
     const childrenResponse = await fetch(
       `${CMIS_BASE_URL}/browser/${REPOSITORY_ID}/root?cmisselector=children`,
@@ -430,7 +431,7 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
   });
 
   test('Regression test: Folders should NOT have only system principal', async () => {
-    test.skip(!initialContentExists, 'Initial content not found - Patch_InitialContentSetup may not have run');
+    test.skip(!sitesExists, 'Sites folder not found - may have been deleted by other tests');
     // This test specifically catches the regression where PatchService.createInitialFolders()
     // was creating folders with ACL=null, resulting in only system principal
 

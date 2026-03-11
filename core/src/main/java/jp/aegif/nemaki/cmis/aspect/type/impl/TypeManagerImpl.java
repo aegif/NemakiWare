@@ -359,12 +359,9 @@ public class TypeManagerImpl implements TypeManager {
 		if (log.isDebugEnabled()) {
 			log.debug("TYPES cache initialized/refreshed with keys: " + TYPES.keySet());
 		}
-		log.info("*** DIAGNOSIS: TYPES cache initialized/refreshed with keys: " + TYPES.keySet() + " ***");
-		boolean hasBedroomTypes = TYPES.containsKey("bedroom");
-		if (log.isDebugEnabled()) {
-			log.debug("TYPES cache contains 'bedroom': " + hasBedroomTypes);
-		}
-		log.info("*** DIAGNOSIS: TYPES cache contains 'bedroom': " + hasBedroomTypes + " ***");
+		String defaultRepoId = repositoryInfoMap.getDefaultRepositoryId();
+		boolean hasDefaultRepoTypes = defaultRepoId != null && TYPES.containsKey(defaultRepoId);
+		log.info("TYPES cache initialized with keys: " + TYPES.keySet() + ", default repo '" + defaultRepoId + "' present: " + hasDefaultRepoTypes);
 	}
 	
 	private void generate(){

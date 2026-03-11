@@ -18,6 +18,79 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
+// Suite-scoped document created by beforeAll — no dependency on other tests' data
+let suiteDocId = '';
+const suiteDocName = `type-migration-suite-${Date.now()}.txt`;
+
+/**
+ * Helper: Navigate to the suite-owned document's DocumentViewer.
+ * Falls back to creating one via API if not yet available.
+ */
+async function navigateToDocument(page: any): Promise<string | null> {
+  if (!suiteDocId) return null;
+
+  // Navigate directly to DocumentViewer
+  await page.goto(`/core/ui/index.html#/documents/${suiteDocId}`);
+  await page.waitForTimeout(3000);
+
+  return suiteDocName;
+}
+
+test.beforeAll(async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const adminAuth = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
+  try {
+    const uploadResp = await page.request.post(
+      'http://localhost:8080/core/browser/bedroom/root',
+      {
+        headers: { 'Authorization': adminAuth },
+        multipart: {
+          cmisaction: 'createDocument',
+          'propertyId[0]': 'cmis:objectTypeId',
+          'propertyValue[0]': 'cmis:document',
+          'propertyId[1]': 'cmis:name',
+          'propertyValue[1]': suiteDocName,
+          content: {
+            name: suiteDocName,
+            mimeType: 'text/plain',
+            buffer: Buffer.from('Type migration test content', 'utf-8'),
+          },
+        },
+      }
+    );
+    if (uploadResp.ok()) {
+      const data = await uploadResp.json();
+      suiteDocId = data?.properties?.['cmis:objectId']?.value || '';
+      console.log(`[type-migration] Created suite doc: ${suiteDocName}, ID: ${suiteDocId}`);
+    } else {
+      console.log(`[type-migration] Doc upload failed: ${uploadResp.status()}`);
+    }
+  } catch (e) {
+    console.log(`[type-migration] Doc upload error: ${e}`);
+  } finally {
+    await context.close();
+  }
+});
+
+test.afterAll(async ({ browser }) => {
+  if (!suiteDocId) return;
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const adminAuth = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
+  try {
+    await page.request.post('http://localhost:8080/core/browser/bedroom/root', {
+      headers: { 'Authorization': adminAuth },
+      form: { cmisaction: 'delete', objectId: suiteDocId, allVersions: 'true' },
+    });
+    console.log(`[type-migration] Cleaned up suite doc: ${suiteDocName}`);
+  } catch (e) {
+    console.log(`[type-migration] Cleanup error: ${e}`);
+  } finally {
+    await context.close();
+  }
+});
+
 test.describe('Type Migration Features', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
@@ -31,359 +104,161 @@ test.describe('Type Migration Features', () => {
 
   test.describe('Type Migration Button', () => {
     test('should display type migration button in document viewer', async ({ page }) => {
-      // Wait for document table to load
-      await page.waitForSelector('.ant-table-tbody tr', { timeout: 10000 });
-
-      // Find and click on a document (not folder) to open DocumentViewer
-      const docRows = page.locator('.ant-table-tbody tr');
-      const rowCount = await docRows.count();
-
-      if (rowCount === 0) {
-        test.skip('No document rows found');
+      const docName = await navigateToDocument(page);
+      if (!docName) {
+        test.skip(true, 'No document found via CMIS API');
         return;
       }
 
-      // Look for a document row (has file extension in name)
-      let found = false;
-      for (let i = 0; i < Math.min(rowCount, 5); i++) {
-        const row = docRows.nth(i);
-        const nameCell = row.locator('td').first();
-        const buttons = nameCell.locator('button');
-
-        if (await buttons.count() > 0) {
-          const nameButton = buttons.first();
-          const buttonText = await nameButton.textContent();
-          if (buttonText && buttonText.includes('.')) {
-            await nameButton.click();
-            found = true;
-            break;
-          }
-        }
-      }
-
-      if (!found) {
-        test.skip('No document found');
-        return;
-      }
-
-      // Wait for DocumentViewer to load
-      await page.waitForTimeout(2000);
-
-      // Verify "タイプを変更" button exists
-      const typeMigrationButton = page.locator('button').filter({ hasText: 'タイプを変更' });
-      await expect(typeMigrationButton).toBeVisible({ timeout: 5000 });
+      // Verify "タイプを変更" button exists in DocumentViewer
+      const typeMigrationButton = page.locator('button').filter({ hasText: /タイプを変更|Change Type/i });
+      await expect(typeMigrationButton).toBeVisible({ timeout: 10000 });
+      console.log(`Type migration button found for document: ${docName}`);
     });
 
     test('should open type migration modal when button clicked', async ({ page }) => {
-      // Wait for document table to load
-      await page.waitForSelector('.ant-table-tbody tr', { timeout: 10000 });
-
-      // Find and click on a document
-      const docRows = page.locator('.ant-table-tbody tr');
-      const rowCount = await docRows.count();
-
-      if (rowCount === 0) {
-        test.skip('No document rows found');
+      const docName = await navigateToDocument(page);
+      if (!docName) {
+        test.skip(true, 'No document found via CMIS API');
         return;
       }
-
-      // Look for a document row
-      let found = false;
-      for (let i = 0; i < Math.min(rowCount, 5); i++) {
-        const row = docRows.nth(i);
-        const nameCell = row.locator('td').first();
-        const buttons = nameCell.locator('button');
-
-        if (await buttons.count() > 0) {
-          const nameButton = buttons.first();
-          const buttonText = await nameButton.textContent();
-          if (buttonText && buttonText.includes('.')) {
-            await nameButton.click();
-            found = true;
-            break;
-          }
-        }
-      }
-
-      if (!found) {
-        test.skip('No document found');
-        return;
-      }
-
-      // Wait for DocumentViewer to load
-      await page.waitForTimeout(2000);
 
       // Click "タイプを変更" button
-      const typeMigrationButton = page.locator('button').filter({ hasText: 'タイプを変更' });
+      const typeMigrationButton = page.locator('button').filter({ hasText: /タイプを変更|Change Type/i });
+      await expect(typeMigrationButton).toBeVisible({ timeout: 10000 });
       await typeMigrationButton.click();
 
       // Verify modal appears
-      await page.waitForSelector('.ant-modal:has-text("オブジェクトタイプの変更")', { timeout: 5000 });
-      const modal = page.locator('.ant-modal:has-text("オブジェクトタイプの変更")');
-      await expect(modal).toBeVisible();
+      const modal = page.locator('.ant-modal').filter({ hasText: /オブジェクトタイプの変更|Change Object Type/i });
+      await expect(modal).toBeVisible({ timeout: 5000 });
+      console.log('Type migration modal opened successfully');
     });
   });
 
   test.describe('Type Migration Modal Content', () => {
     test('should display object information in modal', async ({ page }) => {
-      // Navigate to a document and open the modal
-      await page.waitForSelector('.ant-table-tbody tr', { timeout: 10000 });
-
-      const docRows = page.locator('.ant-table-tbody tr');
-      const rowCount = await docRows.count();
-
-      if (rowCount === 0) {
-        test.skip('No document rows found');
+      const docName = await navigateToDocument(page);
+      if (!docName) {
+        test.skip(true, 'No document found via CMIS API');
         return;
       }
-
-      let documentName = '';
-      let found = false;
-
-      for (let i = 0; i < Math.min(rowCount, 5); i++) {
-        const row = docRows.nth(i);
-        const nameCell = row.locator('td').first();
-        const buttons = nameCell.locator('button');
-
-        if (await buttons.count() > 0) {
-          const nameButton = buttons.first();
-          const buttonText = await nameButton.textContent();
-          if (buttonText && buttonText.includes('.')) {
-            documentName = buttonText;
-            await nameButton.click();
-            found = true;
-            break;
-          }
-        }
-      }
-
-      if (!found) {
-        test.skip('No document found');
-        return;
-      }
-
-      await page.waitForTimeout(2000);
 
       // Open type migration modal
-      const typeMigrationButton = page.locator('button').filter({ hasText: 'タイプを変更' });
+      const typeMigrationButton = page.locator('button').filter({ hasText: /タイプを変更|Change Type/i });
+      await expect(typeMigrationButton).toBeVisible({ timeout: 10000 });
       await typeMigrationButton.click();
 
       // Verify modal shows object name
-      await page.waitForSelector('.ant-modal:has-text("オブジェクトタイプの変更")', { timeout: 5000 });
+      const modal = page.locator('.ant-modal').filter({ hasText: /オブジェクトタイプの変更|Change Object Type/i });
+      await expect(modal).toBeVisible({ timeout: 5000 });
 
       // Check for object name in descriptions
-      const objectNameLabel = page.locator('.ant-modal .ant-descriptions-item-label').filter({ hasText: 'オブジェクト名' });
+      const objectNameLabel = modal.locator('.ant-descriptions-item-label').filter({ hasText: /オブジェクト名|Object Name/i });
       await expect(objectNameLabel).toBeVisible();
 
       // Check for current type label
-      const currentTypeLabel = page.locator('.ant-modal .ant-descriptions-item-label').filter({ hasText: '現在のタイプ' });
+      const currentTypeLabel = modal.locator('.ant-descriptions-item-label').filter({ hasText: /現在のタイプ|Current Type/i });
       await expect(currentTypeLabel).toBeVisible();
 
       // Check for base type label
-      const baseTypeLabel = page.locator('.ant-modal .ant-descriptions-item-label').filter({ hasText: 'ベースタイプ' });
+      const baseTypeLabel = modal.locator('.ant-descriptions-item-label').filter({ hasText: /ベースタイプ|Base Type/i });
       await expect(baseTypeLabel).toBeVisible();
+      console.log('Object information displayed correctly in modal');
     });
 
     test('should show CMIS non-standard warning', async ({ page }) => {
-      // Navigate to a document and open the modal
-      await page.waitForSelector('.ant-table-tbody tr', { timeout: 10000 });
-
-      const docRows = page.locator('.ant-table-tbody tr');
-      const rowCount = await docRows.count();
-
-      if (rowCount === 0) {
-        test.skip('No document rows found');
+      const docName = await navigateToDocument(page);
+      if (!docName) {
+        test.skip(true, 'No document found via CMIS API');
         return;
       }
-
-      let found = false;
-      for (let i = 0; i < Math.min(rowCount, 5); i++) {
-        const row = docRows.nth(i);
-        const nameCell = row.locator('td').first();
-        const buttons = nameCell.locator('button');
-
-        if (await buttons.count() > 0) {
-          const nameButton = buttons.first();
-          const buttonText = await nameButton.textContent();
-          if (buttonText && buttonText.includes('.')) {
-            await nameButton.click();
-            found = true;
-            break;
-          }
-        }
-      }
-
-      if (!found) {
-        test.skip('No document found');
-        return;
-      }
-
-      await page.waitForTimeout(2000);
 
       // Open type migration modal
-      const typeMigrationButton = page.locator('button').filter({ hasText: 'タイプを変更' });
+      const typeMigrationButton = page.locator('button').filter({ hasText: /タイプを変更|Change Type/i });
+      await expect(typeMigrationButton).toBeVisible({ timeout: 10000 });
       await typeMigrationButton.click();
 
-      await page.waitForSelector('.ant-modal:has-text("オブジェクトタイプの変更")', { timeout: 5000 });
+      const modal = page.locator('.ant-modal').filter({ hasText: /オブジェクトタイプの変更|Change Object Type/i });
+      await expect(modal).toBeVisible({ timeout: 5000 });
 
       // Verify non-standard operation warning is displayed
-      const warningAlert = page.locator('.ant-modal .ant-alert').filter({ hasText: 'CMIS標準外の操作' });
+      const warningAlert = modal.locator('.ant-alert').filter({ hasText: /CMIS標準外|non-standard/i });
       await expect(warningAlert).toBeVisible();
+      console.log('CMIS non-standard warning displayed correctly');
     });
 
     test('should display type selector with compatible types', async ({ page }) => {
-      // Navigate to a document and open the modal
-      await page.waitForSelector('.ant-table-tbody tr', { timeout: 10000 });
-
-      const docRows = page.locator('.ant-table-tbody tr');
-      const rowCount = await docRows.count();
-
-      if (rowCount === 0) {
-        test.skip('No document rows found');
+      const docName = await navigateToDocument(page);
+      if (!docName) {
+        test.skip(true, 'No document found via CMIS API');
         return;
       }
-
-      let found = false;
-      for (let i = 0; i < Math.min(rowCount, 5); i++) {
-        const row = docRows.nth(i);
-        const nameCell = row.locator('td').first();
-        const buttons = nameCell.locator('button');
-
-        if (await buttons.count() > 0) {
-          const nameButton = buttons.first();
-          const buttonText = await nameButton.textContent();
-          if (buttonText && buttonText.includes('.')) {
-            await nameButton.click();
-            found = true;
-            break;
-          }
-        }
-      }
-
-      if (!found) {
-        test.skip('No document found');
-        return;
-      }
-
-      await page.waitForTimeout(2000);
 
       // Open type migration modal
-      const typeMigrationButton = page.locator('button').filter({ hasText: 'タイプを変更' });
+      const typeMigrationButton = page.locator('button').filter({ hasText: /タイプを変更|Change Type/i });
+      await expect(typeMigrationButton).toBeVisible({ timeout: 10000 });
       await typeMigrationButton.click();
 
-      await page.waitForSelector('.ant-modal:has-text("オブジェクトタイプの変更")', { timeout: 5000 });
+      const modal = page.locator('.ant-modal').filter({ hasText: /オブジェクトタイプの変更|Change Object Type/i });
+      await expect(modal).toBeVisible({ timeout: 5000 });
       await page.waitForTimeout(1000); // Wait for types to load
 
       // Verify type selector label exists
-      const typeSelectorLabel = page.locator('.ant-modal').filter({ hasText: '新しいタイプを選択' });
+      const typeSelectorLabel = modal.locator('text=/新しいタイプを選択|Select new type/i');
       await expect(typeSelectorLabel).toBeVisible();
 
       // Verify select component exists
-      const typeSelector = page.locator('.ant-modal .ant-select');
+      const typeSelector = modal.locator('.ant-select');
       await expect(typeSelector).toBeVisible();
+      console.log('Type selector with compatible types displayed correctly');
     });
   });
 
   test.describe('Type Migration Modal Actions', () => {
     test('should disable OK button when no type selected', async ({ page }) => {
-      // Navigate to a document and open the modal
-      await page.waitForSelector('.ant-table-tbody tr', { timeout: 10000 });
-
-      const docRows = page.locator('.ant-table-tbody tr');
-      const rowCount = await docRows.count();
-
-      if (rowCount === 0) {
-        test.skip('No document rows found');
+      const docName = await navigateToDocument(page);
+      if (!docName) {
+        test.skip(true, 'No document found via CMIS API');
         return;
       }
-
-      let found = false;
-      for (let i = 0; i < Math.min(rowCount, 5); i++) {
-        const row = docRows.nth(i);
-        const nameCell = row.locator('td').first();
-        const buttons = nameCell.locator('button');
-
-        if (await buttons.count() > 0) {
-          const nameButton = buttons.first();
-          const buttonText = await nameButton.textContent();
-          if (buttonText && buttonText.includes('.')) {
-            await nameButton.click();
-            found = true;
-            break;
-          }
-        }
-      }
-
-      if (!found) {
-        test.skip('No document found');
-        return;
-      }
-
-      await page.waitForTimeout(2000);
 
       // Open type migration modal
-      const typeMigrationButton = page.locator('button').filter({ hasText: 'タイプを変更' });
+      const typeMigrationButton = page.locator('button').filter({ hasText: /タイプを変更|Change Type/i });
+      await expect(typeMigrationButton).toBeVisible({ timeout: 10000 });
       await typeMigrationButton.click();
 
-      await page.waitForSelector('.ant-modal:has-text("オブジェクトタイプの変更")', { timeout: 5000 });
+      const modal = page.locator('.ant-modal').filter({ hasText: /オブジェクトタイプの変更|Change Object Type/i });
+      await expect(modal).toBeVisible({ timeout: 5000 });
       await page.waitForTimeout(1000);
 
       // Verify OK button is disabled when no type selected
-      const okButton = page.locator('.ant-modal .ant-btn-primary').filter({ hasText: 'タイプを変更' });
+      const okButton = modal.locator('.ant-btn-primary').filter({ hasText: /タイプを変更|Change Type/i });
       await expect(okButton).toBeDisabled();
+      console.log('OK button correctly disabled when no type selected');
     });
 
     test('should close modal on cancel', async ({ page }) => {
-      // Navigate to a document and open the modal
-      await page.waitForSelector('.ant-table-tbody tr', { timeout: 10000 });
-
-      const docRows = page.locator('.ant-table-tbody tr');
-      const rowCount = await docRows.count();
-
-      if (rowCount === 0) {
-        test.skip('No document rows found');
+      const docName = await navigateToDocument(page);
+      if (!docName) {
+        test.skip(true, 'No document found via CMIS API');
         return;
       }
-
-      let found = false;
-      for (let i = 0; i < Math.min(rowCount, 5); i++) {
-        const row = docRows.nth(i);
-        const nameCell = row.locator('td').first();
-        const buttons = nameCell.locator('button');
-
-        if (await buttons.count() > 0) {
-          const nameButton = buttons.first();
-          const buttonText = await nameButton.textContent();
-          if (buttonText && buttonText.includes('.')) {
-            await nameButton.click();
-            found = true;
-            break;
-          }
-        }
-      }
-
-      if (!found) {
-        test.skip('No document found');
-        return;
-      }
-
-      await page.waitForTimeout(2000);
 
       // Open type migration modal
-      const typeMigrationButton = page.locator('button').filter({ hasText: 'タイプを変更' });
+      const typeMigrationButton = page.locator('button').filter({ hasText: /タイプを変更|Change Type/i });
+      await expect(typeMigrationButton).toBeVisible({ timeout: 10000 });
       await typeMigrationButton.click();
 
-      await page.waitForSelector('.ant-modal:has-text("オブジェクトタイプの変更")', { timeout: 5000 });
+      const modal = page.locator('.ant-modal').filter({ hasText: /オブジェクトタイプの変更|Change Object Type/i });
+      await expect(modal).toBeVisible({ timeout: 5000 });
 
       // Click cancel button
-      const cancelButton = page.locator('.ant-modal button').filter({ hasText: 'キャンセル' });
+      const cancelButton = modal.locator('button').filter({ hasText: /キャンセル|Cancel/i });
       await cancelButton.click();
 
       // Verify modal closes
-      await page.waitForSelector('.ant-modal:has-text("オブジェクトタイプの変更")', {
-        state: 'hidden',
-        timeout: 3000
-      });
+      await expect(modal).not.toBeVisible({ timeout: 5000 });
+      console.log('Modal closed correctly on cancel');
     });
   });
 });
@@ -400,52 +275,23 @@ test.describe('Type Migration - Error Handling', () => {
   });
 
   test('should handle case when no compatible types available', async ({ page }) => {
-    // This test verifies the UI properly shows a message when no compatible types exist
-    // Skip if no documents available
-    await page.waitForSelector('.ant-table-tbody tr', { timeout: 10000 });
-
-    const docRows = page.locator('.ant-table-tbody tr');
-    const rowCount = await docRows.count();
-
-    if (rowCount === 0) {
-      test.skip('No document rows found');
+    const docName = await navigateToDocument(page);
+    if (!docName) {
+      test.skip(true, 'No document found via CMIS API');
       return;
     }
-
-    let found = false;
-    for (let i = 0; i < Math.min(rowCount, 5); i++) {
-      const row = docRows.nth(i);
-      const nameCell = row.locator('td').first();
-      const buttons = nameCell.locator('button');
-
-      if (await buttons.count() > 0) {
-        const nameButton = buttons.first();
-        const buttonText = await nameButton.textContent();
-        if (buttonText && buttonText.includes('.')) {
-          await nameButton.click();
-          found = true;
-          break;
-        }
-      }
-    }
-
-    if (!found) {
-      test.skip('No document found');
-      return;
-    }
-
-    await page.waitForTimeout(2000);
 
     // Open type migration modal
-    const typeMigrationButton = page.locator('button').filter({ hasText: 'タイプを変更' });
+    const typeMigrationButton = page.locator('button').filter({ hasText: /タイプを変更|Change Type/i });
+    await expect(typeMigrationButton).toBeVisible({ timeout: 10000 });
     await typeMigrationButton.click();
 
-    await page.waitForSelector('.ant-modal:has-text("オブジェクトタイプの変更")', { timeout: 5000 });
+    const modal = page.locator('.ant-modal').filter({ hasText: /オブジェクトタイプの変更|Change Object Type/i });
+    await expect(modal).toBeVisible({ timeout: 5000 });
     await page.waitForTimeout(2000); // Wait for types to load
 
     // Check if "互換タイプなし" warning is shown (only if no custom types defined)
-    // This will depend on the repository configuration
-    const noTypesWarning = page.locator('.ant-modal .ant-alert').filter({ hasText: '互換タイプなし' });
+    const noTypesWarning = modal.locator('.ant-alert').filter({ hasText: /互換タイプなし|No compatible types/i });
     const warningVisible = await noTypesWarning.count() > 0;
     console.log('No compatible types warning visible:', warningVisible);
 

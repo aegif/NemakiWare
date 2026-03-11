@@ -660,8 +660,8 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 		try {
 			// Iterate through all repositories
 			for (String repositoryId : repositoryInfoMap.keys()) {
-				if ("canopy".equals(repositoryId) || repositoryId.endsWith("_closet")) {
-					log.info("Skipping initial folders for repository: " + repositoryId);
+				if (repositoryInfoMap.isArchiveRepository(repositoryId)) {
+					log.info("Skipping initial folders for archive repository: " + repositoryId);
 					continue;
 				}
 
@@ -817,8 +817,8 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 
 		try {
 			for (String repositoryId : repositoryInfoMap.keys()) {
-				if (repositoryId.endsWith("_closet")) {
-					log.debug("Skipping closet repository: " + repositoryId);
+				if (repositoryInfoMap.isArchiveRepository(repositoryId)) {
+					log.debug("Skipping archive repository: " + repositoryId);
 					continue;
 				}
 
