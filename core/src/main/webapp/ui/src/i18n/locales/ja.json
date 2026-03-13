@@ -2294,6 +2294,7 @@
       "oidcUnreachable": "到達不可",
       "clientIdValid": "クライアントID有効",
       "clientIdInvalid": "クライアントIDが見つかりません",
+      "microsoftClientIdAcknowledge": "このクライアントIDが正しいことを確認しました（Microsoftは事前検証できません）",
       "lockoutWarning": "少なくとも1つの認証方式を有効にしてください"
     },
     "admin": {

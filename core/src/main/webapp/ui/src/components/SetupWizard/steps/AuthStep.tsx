@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Form, Switch, Input, Button, Alert, Space, Tag } from 'antd';
+import { useState, useEffect, useCallback } from 'react';
+import { Form, Switch, Input, Button, Alert, Space, Tag, Checkbox } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { setupApi } from '../../../services/setupApi';
 import type { AuthConfig } from '../../../services/setupApi';
@@ -14,25 +14,61 @@ interface AuthStepProps {
 
 export function AuthStep({ value, onChange, onValidChange }: AuthStepProps) {
   const { t } = useTranslation();
-  const [googleOidcTest, setGoogleOidcTest] = useState<{ testing: boolean; reachable?: boolean; error?: string; clientIdValid?: boolean; clientIdError?: string }>({ testing: false });
-  const [microsoftOidcTest, setMicrosoftOidcTest] = useState<{ testing: boolean; reachable?: boolean; error?: string; clientIdValid?: boolean; clientIdError?: string }>({ testing: false });
+  const [googleOidcTest, setGoogleOidcTest] = useState<{ testing: boolean; reachable?: boolean; error?: string; clientIdValid?: boolean; clientIdIndeterminate?: boolean; clientIdError?: string }>({ testing: false });
+  const [microsoftOidcTest, setMicrosoftOidcTest] = useState<{ testing: boolean; reachable?: boolean; error?: string; clientIdValid?: boolean; clientIdIndeterminate?: boolean; clientIdError?: string }>({ testing: false });
+  const [microsoftClientIdAcknowledged, setMicrosoftClientIdAcknowledged] = useState(false);
 
-  const validateAuth = (config: AuthConfig) => {
+  const validateAuth = useCallback((config: AuthConfig) => {
     const anyEnabled = config.passwordEnabled || config.googleEnabled || config.microsoftEnabled;
-    const googleValid = !config.googleEnabled || !!config.googleClientId;
-    const microsoftValid = !config.microsoftEnabled || !!config.microsoftClientId;
-    return anyEnabled && googleValid && microsoftValid;
-  };
+    const googleConfigured = !config.googleEnabled || !!config.googleClientId?.trim();
+    const microsoftConfigured = !config.microsoftEnabled || !!config.microsoftClientId?.trim();
 
-  // Report initial validity on mount (passwordEnabled defaults to true → valid)
+    // Require OIDC test pass when provider auth is enabled.
+    // Google: requires explicit clientIdValid===true.
+    // Microsoft: provider cannot pre-validate clientId (always returns indeterminate).
+    //   If clientIdValid===true  → pass (explicit validation by provider).
+    //   If clientIdValid===false → fail (explicitly rejected).
+    //   Otherwise (indeterminate) → require user acknowledgement checkbox.
+    // Server-side /auth/apply enforces clientId non-empty as additional safeguard.
+    const googleTestPassed =
+      !config.googleEnabled ||
+      (googleOidcTest.reachable === true && googleOidcTest.clientIdValid === true);
+
+    let microsoftTestPassed: boolean;
+    if (!config.microsoftEnabled) {
+      microsoftTestPassed = true;
+    } else if (microsoftOidcTest.reachable === true && microsoftOidcTest.clientIdValid === true) {
+      microsoftTestPassed = true;
+    } else if (microsoftOidcTest.reachable === true && microsoftOidcTest.clientIdValid === false) {
+      microsoftTestPassed = false;
+    } else if (microsoftOidcTest.reachable === true && microsoftOidcTest.clientIdIndeterminate === true) {
+      // Provider cannot pre-validate: require explicit user acknowledgement
+      microsoftTestPassed = microsoftClientIdAcknowledged;
+    } else {
+      microsoftTestPassed = false;
+    }
+
+    return anyEnabled && googleConfigured && microsoftConfigured && googleTestPassed && microsoftTestPassed;
+  }, [googleOidcTest, microsoftOidcTest, microsoftClientIdAcknowledged]);
+
+  // Recompute step validity whenever config/test result changes.
   useEffect(() => {
     onValidChange(validateAuth(value));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [value, validateAuth, onValidChange]);
 
   const handleChange = (field: keyof AuthConfig, val: boolean | string) => {
     const updated = { ...value, [field]: val };
+
+    // Input change invalidates previous OIDC test result for that provider.
+    if (field === 'googleEnabled' || field === 'googleClientId') {
+      setGoogleOidcTest({ testing: false });
+    }
+    if (field === 'microsoftEnabled' || field === 'microsoftClientId' || field === 'microsoftTenantId') {
+      setMicrosoftOidcTest({ testing: false });
+      setMicrosoftClientIdAcknowledged(false);
+    }
+
     onChange(updated);
-    onValidChange(validateAuth(updated));
   };
 
   const testGoogleOidc = async () => {
@@ -47,6 +83,7 @@ export function AuthStep({ value, onChange, onValidChange }: AuthStepProps) {
         reachable: result.reachable,
         error: result.error,
         clientIdValid: result.clientIdValid,
+        clientIdIndeterminate: result.clientIdIndeterminate,
         clientIdError: result.clientIdError,
       });
     } catch (e) {
@@ -67,6 +104,7 @@ export function AuthStep({ value, onChange, onValidChange }: AuthStepProps) {
         reachable: result.reachable,
         error: result.error,
         clientIdValid: result.clientIdValid,
+        clientIdIndeterminate: result.clientIdIndeterminate,
         clientIdError: result.clientIdError,
       });
     } catch (e) {
@@ -176,8 +214,19 @@ export function AuthStep({ value, onChange, onValidChange }: AuthStepProps) {
                 {!microsoftOidcTest.reachable && microsoftOidcTest.error && (
                   <Alert type="warning" message={microsoftOidcTest.error} showIcon />
                 )}
-                {microsoftOidcTest.reachable && microsoftOidcTest.clientIdError && (
-                  <Alert type="info" message={microsoftOidcTest.clientIdError} showIcon />
+                {microsoftOidcTest.reachable && microsoftOidcTest.clientIdError && !microsoftOidcTest.clientIdIndeterminate && (
+                  <Alert type="error" message={microsoftOidcTest.clientIdError} showIcon />
+                )}
+                {microsoftOidcTest.reachable && microsoftOidcTest.clientIdIndeterminate && (
+                  <>
+                    <Alert type="warning" message={microsoftOidcTest.clientIdError} showIcon />
+                    <Checkbox
+                      checked={microsoftClientIdAcknowledged}
+                      onChange={(e) => setMicrosoftClientIdAcknowledged(e.target.checked)}
+                    >
+                      {t('setup.auth.microsoftClientIdAcknowledge')}
+                    </Checkbox>
+                  </>
                 )}
               </Space>
             )}

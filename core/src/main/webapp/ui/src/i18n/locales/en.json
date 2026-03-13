@@ -2294,6 +2294,7 @@
       "oidcUnreachable": "Unreachable",
       "clientIdValid": "Client ID Valid",
       "clientIdInvalid": "Client ID Not Found",
+      "microsoftClientIdAcknowledge": "I confirm this Client ID is correct (Microsoft cannot pre-validate)",
       "lockoutWarning": "At least one authentication method must be enabled"
     },
     "admin": {

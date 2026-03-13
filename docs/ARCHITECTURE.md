@@ -102,7 +102,7 @@ NemakiWare のメインコンポーネント。Tomcat 11.0 上で動作する WA
 |-------------|------|
 | `bedroom` | メインドキュメントリポジトリ |
 | `bedroom_closet` | bedroom のアーカイブ（削除されたドキュメント） |
-| `canopy` | マルチリポジトリ管理 |
+| `canopy` | 標準リポジトリ（初期作成・UIからは非表示） |
 | `canopy_closet` | canopy のアーカイブ |
 | `nemaki_conf` | システム設定 |
 
@@ -423,7 +423,7 @@ CouchDB
 │   └── _design/change # 変更ログ用ビュー
 │
 ├── bedroom_closet     # アーカイブ（削除されたドキュメント）
-├── canopy             # マルチリポジトリ管理
+├── canopy             # 標準リポジトリ（UIからは非表示）
 ├── canopy_closet      # canopy アーカイブ
 └── nemaki_conf        # システム設定
 ```

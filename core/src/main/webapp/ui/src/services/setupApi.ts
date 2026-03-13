@@ -46,6 +46,7 @@ export interface OidcTestResult {
   discoveryUrl?: string;
   error?: string;
   clientIdValid?: boolean;
+  clientIdIndeterminate?: boolean;
   clientIdError?: string;
 }
 
