@@ -54,6 +54,7 @@ export interface VectorTestResult {
   reachable: boolean;
   error?: string;
   dimension?: number;
+  dimensionWarning?: string;
 }
 
 export interface ApplyRequest {

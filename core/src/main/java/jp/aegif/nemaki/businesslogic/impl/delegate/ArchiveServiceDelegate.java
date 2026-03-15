@@ -576,6 +576,10 @@ public class ArchiveServiceDelegate {
 		return contentDaoService.getExpiredDocumentIds(repositoryId, beforeDate);
 	}
 
+	public List<String> getStaleDocumentIds(String repositoryId, GregorianCalendar beforeDate) {
+		return contentDaoService.getStaleDocumentIds(repositoryId, beforeDate);
+	}
+
 	public List<Content> getExpiredDocuments(String repositoryId, GregorianCalendar beforeDate) {
 		List<String> ids = getExpiredDocumentIds(repositoryId, beforeDate);
 		List<Content> results = new java.util.ArrayList<>();
@@ -620,6 +624,10 @@ public class ArchiveServiceDelegate {
 
 	public void updateArchiveColdMoveMode(String repositoryId, String archiveId, String coldMoveMode) {
 		contentDaoService.updateArchiveColdMoveMode(repositoryId, archiveId, coldMoveMode);
+	}
+
+	public void resetColdMoveMetadata(String repositoryId, String archiveId) {
+		contentDaoService.resetColdMoveMetadata(repositoryId, archiveId);
 	}
 
 	public Long getAttachmentActualSize(String repositoryId, String attachmentId) {

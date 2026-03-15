@@ -166,6 +166,8 @@ public class StubContentDaoServiceBase implements ContentDaoService {
     @Override public InputStream getArchiveContentStream(String r, Archive archive) { return null; }
     @Override public boolean deleteArchiveContent(String r, Archive archive) { return false; }
     @Override public List<String> getExpiredDocumentIds(String r, GregorianCalendar beforeDate) { return Collections.emptyList(); }
+    @Override public List<String> getStaleDocumentIds(String r, GregorianCalendar beforeDate) { return Collections.emptyList(); }
+    @Override public void resetColdMoveMetadata(String r, String archiveId) {}
     @Override public void updateArchiveColdMoveMode(String r, String archiveId, String coldMoveMode) {}
 
     // WebAuthn

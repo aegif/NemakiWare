@@ -180,6 +180,73 @@ public class RetentionSchedulerColdMoveTest {
         assertTrue(adapter.exists("bedroom", "orig-005"), "Content should exist in cold storage");
     }
 
+
+    // ===== MOVE mode: deleteArchiveContent fails → cleanup cold storage =====
+
+    @Test
+    public void testMoveMode_deleteLocalFails_cleansUpColdStorageAndResetsMetadata() throws Exception {
+        Archive archive = createTestArchive("arch-010", "orig-010");
+        InputStream stream = new ByteArrayInputStream("move-content".getBytes(StandardCharsets.UTF_8));
+
+        // Use mock adapter to verify removeProtection + version-specific delete
+        LongTermStorageAdapter mockAdapter = mock(LongTermStorageAdapter.class);
+        when(mockAdapter.put(eq("bedroom"), eq("orig-010"), any(InputStream.class), any()))
+                .thenReturn("version-abc-123");
+
+        when(contentService.getArchiveContentStream("bedroom", "arch-010")).thenReturn(stream);
+        when(propertyManager.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY)).thenReturn(false);
+        when(propertyManager.readValue(PropertyKey.LONGTERM_STORAGE_TYPE)).thenReturn("s3");
+        // Simulate local delete failure
+        when(contentService.deleteArchiveContent("bedroom", "arch-010")).thenReturn(false);
+
+        Method moveToCold = getMoveToColdMethod();
+        boolean result = (boolean) moveToCold.invoke(scheduler, "bedroom", archive, mockAdapter);
+
+        assertFalse(result, "moveToCold should return false when local delete fails");
+
+        // Verify removeProtection was called before delete
+        var inOrder = inOrder(mockAdapter, contentService);
+        inOrder.verify(mockAdapter).put(eq("bedroom"), eq("orig-010"), any(InputStream.class), any());
+        inOrder.verify(mockAdapter).enforceImmutability("bedroom", "orig-010");
+        inOrder.verify(mockAdapter).removeProtection("bedroom", "orig-010");
+        inOrder.verify(mockAdapter).delete("bedroom", "orig-010", "version-abc-123");
+        inOrder.verify(contentService).resetColdMoveMetadata("bedroom", "arch-010");
+    }
+
+    // ===== Exception after put+enforceImmutability → cleanup with removeProtection =====
+
+    @Test
+    public void testExceptionAfterPut_cleansUpWithRemoveProtectionAndVersionDelete() throws Exception {
+        Archive archive = createTestArchive("arch-011", "orig-011");
+        InputStream stream = new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8));
+
+        LongTermStorageAdapter mockAdapter = mock(LongTermStorageAdapter.class);
+        when(mockAdapter.put(eq("bedroom"), eq("orig-011"), any(InputStream.class), any()))
+                .thenReturn("version-xyz-789");
+        // enforceImmutability succeeds, but readValue for LONGTERM_STORAGE_TYPE throws
+        when(propertyManager.readValue(PropertyKey.LONGTERM_STORAGE_TYPE))
+                .thenThrow(new RuntimeException("Config read error"));
+
+        when(contentService.getArchiveContentStream("bedroom", "arch-011")).thenReturn(stream);
+        when(propertyManager.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY)).thenReturn(false);
+
+        Method moveToCold = getMoveToColdMethod();
+
+        try {
+            moveToCold.invoke(scheduler, "bedroom", archive, mockAdapter);
+            fail("Should have thrown an exception");
+        } catch (Exception e) {
+            assertTrue(e.getCause() instanceof RuntimeException);
+        }
+
+        // Verify cleanup: removeProtection + version-specific delete
+        verify(mockAdapter).removeProtection("bedroom", "orig-011");
+        verify(mockAdapter).delete("bedroom", "orig-011", "version-xyz-789");
+
+        // Verify metadata reset for retry
+        verify(contentService).resetColdMoveMetadata("bedroom", "arch-011");
+    }
+
     // ===== Edge case: no content stream =====
 
     @Test
@@ -231,8 +298,41 @@ public class RetentionSchedulerColdMoveTest {
             assertTrue(e.getCause().getMessage().contains("Cold move failed"), "Should contain original error message");
         }
 
-        // Verify state reverted to ARCHIVED_LOCAL
-        verify(contentService, atLeastOnce()).updateArchiveState(eq("bedroom"), eq("arch-007"),
-                eq(Archive.STATE_ARCHIVED_LOCAL), isNull(), isNull());
+        // Verify cold-move metadata reset for retry eligibility
+        verify(contentService).resetColdMoveMetadata("bedroom", "arch-007");
+    }
+
+    // ===== enforceImmutability fails → removeProtection also fails → delete still attempted =====
+
+    @Test
+    public void testEnforceImmutabilityFails_deleteStillAttemptedEvenIfRemoveProtectionFails() throws Exception {
+        Archive archive = createTestArchive("arch-012", "orig-012");
+        InputStream stream = new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8));
+
+        LongTermStorageAdapter mockAdapter = mock(LongTermStorageAdapter.class);
+        when(mockAdapter.put(eq("bedroom"), eq("orig-012"), any(InputStream.class), any()))
+                .thenReturn("version-nolh-001");
+        // Simulate: bucket has no Object Lock — both enforceImmutability and removeProtection fail
+        doThrow(new RuntimeException("Bucket has no Object Lock"))
+                .when(mockAdapter).enforceImmutability("bedroom", "orig-012");
+        doThrow(new RuntimeException("Bucket has no Object Lock"))
+                .when(mockAdapter).removeProtection("bedroom", "orig-012");
+
+        when(contentService.getArchiveContentStream("bedroom", "arch-012")).thenReturn(stream);
+
+        Method moveToCold = getMoveToColdMethod();
+
+        try {
+            moveToCold.invoke(scheduler, "bedroom", archive, mockAdapter);
+            fail("Should have thrown an exception");
+        } catch (Exception e) {
+            assertTrue(e.getCause() instanceof RuntimeException);
+        }
+
+        // Key assertion: delete is called even though removeProtection failed
+        verify(mockAdapter).delete("bedroom", "orig-012", "version-nolh-001");
+
+        // Verify metadata reset for retry
+        verify(contentService).resetColdMoveMetadata("bedroom", "arch-012");
     }
 }

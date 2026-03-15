@@ -2487,6 +2487,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public void resetColdMoveMetadata(String repositoryId, String archiveId) {
+		archiveDao.resetColdMoveMetadata(repositoryId, archiveId);
+	}
+
+	@Override
 	public java.io.InputStream getArchiveContentStream(String repositoryId, Archive archive) {
 		return archiveDao.getArchiveContentStream(repositoryId, archive);
 	}
@@ -2499,6 +2504,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<String> getExpiredDocumentIds(String repositoryId, GregorianCalendar beforeDate) {
 		return archiveDao.getExpiredDocumentIds(repositoryId, beforeDate);
+	}
+
+	@Override
+	public List<String> getStaleDocumentIds(String repositoryId, GregorianCalendar beforeDate) {
+		return archiveDao.getStaleDocumentIds(repositoryId, beforeDate);
 	}
 
 	@Override

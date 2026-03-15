@@ -435,11 +435,11 @@ public class ArchiveResource extends ResourceBase {
 
 			settings.put("keepLocalCopy", pm.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY));
 
-			String localArchiveAfterDays = pm.readValue(PropertyKey.RETENTION_ARCHIVE_LOCAL_AFTER_DAYS);
-			settings.put("localArchiveAfterDays", localArchiveAfterDays != null ? localArchiveAfterDays : "");
-
 			String localArchiveCron = pm.readValue(PropertyKey.RETENTION_SCHEDULE_ARCHIVE_LOCAL);
 			settings.put("localArchiveCron", localArchiveCron != null ? localArchiveCron : "");
+
+			String localArchiveAfterDays = pm.readValue(repositoryId, PropertyKey.RETENTION_ARCHIVE_LOCAL_AFTER_DAYS);
+			settings.put("localArchiveAfterDays", localArchiveAfterDays != null ? localArchiveAfterDays : "");
 
 			result.put("settings", settings);
 		} catch (Exception e) {

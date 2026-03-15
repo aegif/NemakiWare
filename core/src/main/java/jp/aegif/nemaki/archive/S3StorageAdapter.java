@@ -8,6 +8,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
@@ -36,13 +37,21 @@ public class S3StorageAdapter implements LongTermStorageAdapter {
     private final boolean objectLockEnabled;
 
     public S3StorageAdapter(String bucket, String region, String endpoint,
-                            String accessKey, String secretKey, String objectLockMode) {
+                            String accessKey, String secretKey, boolean legalHoldEnabled) {
         this.bucket = bucket;
-        this.objectLockEnabled = (objectLockMode != null && !objectLockMode.isEmpty());
+        this.objectLockEnabled = legalHoldEnabled;
 
-        S3ClientBuilder builder = S3Client.builder()
-                .credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(accessKey, secretKey)));
+        S3ClientBuilder builder = S3Client.builder();
+
+        // Use explicit credentials if provided, otherwise fall back to the default
+        // AWS credential chain (environment variables, instance profile, ECS task role, etc.)
+        if (accessKey != null && !accessKey.trim().isEmpty()
+                && secretKey != null && !secretKey.trim().isEmpty()) {
+            builder.credentialsProvider(StaticCredentialsProvider.create(
+                    AwsBasicCredentials.create(accessKey.trim(), secretKey.trim())));
+        } else {
+            builder.credentialsProvider(DefaultCredentialsProvider.create());
+        }
 
         if (region != null && !region.isEmpty()) {
             builder.region(Region.of(region));
@@ -54,7 +63,8 @@ public class S3StorageAdapter implements LongTermStorageAdapter {
 
         this.s3Client = builder.build();
         log.info("S3StorageAdapter initialized: bucket=" + bucket + ", region=" + region
-                + ", objectLockEnabled=" + objectLockEnabled);
+                + ", legalHold=" + legalHoldEnabled
+                + ", credentials=" + (accessKey != null && !accessKey.trim().isEmpty() ? "explicit" : "default-chain"));
     }
 
     @Override
@@ -127,6 +137,25 @@ public class S3StorageAdapter implements LongTermStorageAdapter {
     }
 
     @Override
+    public void delete(String repositoryId, String objectId, String storageRef) {
+        String key = buildKey(repositoryId, objectId);
+        try {
+            DeleteObjectRequest.Builder builder = DeleteObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key);
+            // If storageRef looks like a versionId (not a key path), use it to target the specific version
+            if (storageRef != null && !storageRef.equals(key) && !storageRef.contains("/")) {
+                builder.versionId(storageRef);
+                log.info("Deleting specific S3 version: key=" + key + ", versionId=" + storageRef);
+            }
+            s3Client.deleteObject(builder.build());
+            log.info("Deleted object from S3: key=" + key + ", storageRef=" + storageRef);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to delete object from S3: key=" + key + ", storageRef=" + storageRef, e);
+        }
+    }
+
+    @Override
     public boolean exists(String repositoryId, String objectId) {
         String key = buildKey(repositoryId, objectId);
         try {
@@ -161,7 +190,28 @@ public class S3StorageAdapter implements LongTermStorageAdapter {
                     .build());
             log.info("Enforced legal hold on S3 object: " + key);
         } catch (Exception e) {
-            log.warn("Failed to enforce immutability on S3 object: " + key + " - " + e.getMessage());
+            throw new RuntimeException("Failed to enforce legal hold on S3 object: " + key, e);
+        }
+    }
+
+    @Override
+    public void removeProtection(String repositoryId, String objectId) {
+        if (!objectLockEnabled) {
+            return;
+        }
+
+        String key = buildKey(repositoryId, objectId);
+        try {
+            s3Client.putObjectLegalHold(PutObjectLegalHoldRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .legalHold(ObjectLockLegalHold.builder()
+                            .status(ObjectLockLegalHoldStatus.OFF)
+                            .build())
+                    .build());
+            log.info("Removed legal hold from S3 object: " + key);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to remove legal hold from S3 object: " + key, e);
         }
     }
 

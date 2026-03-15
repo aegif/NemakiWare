@@ -1,304 +1,283 @@
 # NemakiWare
 
-NemakiWare is an open source Enterprise Content Management system, compliant with CMIS ver1.1.
+**Permission-aware document repository for RAG** — an open source platform that stores documents with fine-grained access control and makes them searchable via semantic vector search, ready to plug into any LLM pipeline.
 
-## Features
-- **All-in-one package** including CMIS server, full-text search engine, and modern React client
-- **Docker Compose deployment** with CouchDB, Solr, and Tomcat
-- **Jakarta EE 11 compatible** with Java 21
-- **Modern React SPA UI** with TypeScript, Vite 7, and Ant Design 5
-- **SAML and OIDC authentication** support (Keycloak, Google, Microsoft)
-- **Cloud integration** with Google Workspace and Microsoft 365
-- **RAG semantic search** powered by Hugging Face TEI and Solr DenseVector
-- **Full CMIS 1.1 compliance** verified with Apache Chemistry TCK
+## Why NemakiWare?
 
-## Key Capabilities
+Building RAG on top of file storage or generic databases means bolting on permissions after the fact. NemakiWare solves this at the repository layer: every document, every chunk, every search result is governed by the same ACL model. Your LLM only sees what the requesting user is allowed to see.
 
-* **CMIS ver1.1 compliant and CMIS-native server**
-    * Easy integration with any CMIS-compliant client
-    * Extended features: user/group management, archive, custom types
-    * Highly customizable within CMIS specification
+- **ACL-filtered semantic search** — vector search results are filtered by the current user's permissions in real time
+- **Automatic chunking & embedding** — upload a document and it is chunked, embedded, and indexed with zero extra work
+- **MCP server built in** — connect Claude, ChatGPT, or any MCP-compatible agent directly to your repository
+- **Bring your own embeddings** — Hugging Face TEI (self-hosted) or Amazon Bedrock (managed)
+- **Full document lifecycle** — versioning, relationships, retention, archival to S3 cold storage
+- **Modern React UI** — browse, search, manage users/groups, configure everything from the browser
 
-* **Enhanced Full-Text Search** (Apache Solr 9.x with Solr Cell)
-    * PDF, Microsoft Office (Word, Excel, PowerPoint)
-    * OpenDocument (Writer, Calc, Impress)
-    * HTML, XML, RTF, plain text
-
-* **RAG Semantic Search** (Hugging Face TEI + Solr DenseVector)
-    * Multilingual vector search with `intfloat/multilingual-e5-large` (1024 dim)
-    * Automatic document chunking and embedding
-    * Combined keyword + semantic search results
-
-* **NoSQL CouchDB backend**
-    * Document-based storage with easy replication
-    * Simple database management
-
-## Etymology
-
-"Nemaki" derives from the Japanese word "寝巻き" (pajamas/night clothes).
-Relax and enjoy happy enterprise time as if you are lying on the couch in your room!
-
----
-
-## Quick Start (Docker Compose)
+## Quick Start
 
 ### Prerequisites
-- Docker and Docker Compose
-- 4GB+ available memory
 
-### 1. Build the Application
+- Docker and Docker Compose
+- 4GB+ available memory (16GB+ if enabling the self-hosted embedding server)
+
+### 1. Build
 
 ```bash
-# Install OpenCMIS JARs to local Maven repository (required on first build)
+# Install OpenCMIS JARs to local Maven repository (first build only)
 ./scripts/install-opencmis-local.sh
 
 # Build UI
-cd core/src/main/webapp/ui
-npm install
-npm run build
+cd core/src/main/webapp/ui && npm install && npm run build && cd ../../../..
 
-# Build Core WAR
-cd ../../../..
+# Build server
 mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 
 # Copy WAR to Docker directory
 cp core/target/core.war docker/core/core.war
 ```
 
-### OpenCMIS JAR Resolution
-
-NemakiWare uses custom OpenCMIS 1.1.0-nemakiware JARs (Jakarta EE compatible).
-Pre-built JARs are committed to `lib/built-jars/` and must be installed to the local
-Maven repository before the first build:
-
-```bash
-# Required on first build (installs lib/built-jars/*.jar to ~/.m2/repository)
-./scripts/install-opencmis-local.sh
-```
-
-To refresh JARs from `aegif/chemistry-opencmis-nemakiware` on GitHub Packages:
-
-```bash
-./scripts/fetch-opencmis-from-github-packages.sh
-```
-
-Prerequisite for GitHub Packages (`~/.m2/settings.xml`):
-
-```xml
-<settings>
-  <servers>
-    <server>
-      <id>github-opencmis</id>
-      <username>YOUR_GITHUB_USERNAME</username>
-      <password>YOUR_GITHUB_TOKEN</password>
-    </server>
-  </servers>
-</settings>
-```
-
-### Jersey/Spring Compatibility Policy
-
-NemakiWare follows upstream Jersey compatibility modules for Spring integration.
-
-- Keep using the currently published Jersey/Spring integration artifact in release builds.
-- Adopt `jersey-spring7` only after it is officially published to Maven repositories
-  (Maven Central or Eclipse/Jakarta distribution repositories).
-- Run compatibility regression tests before adoption:
-  - `core` clean compile
-  - targeted REST tests
-  - `/api/v1/cmis/*` and `/api/v1/repo/*` routing coexistence checks
-
-### 2. Start Services
+### 2. Start
 
 ```bash
 cd docker
+
+# Core services (CouchDB + Solr + NemakiWare)
 docker compose -f docker-compose-simple.yml up -d --build
-```
 
-This starts:
-| Service | Port | Description |
-|---------|------|-------------|
-| CouchDB | 5984 | Document database |
-| Solr | 8983 | Full-text search engine |
-| Core | 8080 | CMIS server + React UI |
-
-To also enable RAG semantic search (requires 16GB+ memory):
-
-```bash
+# With self-hosted embedding server (TEI)
 docker compose -f docker-compose-simple.yml --profile rag up -d --build
 ```
 
-This additionally starts:
 | Service | Port | Description |
 |---------|------|-------------|
-| TEI | 8081 | Vector embedding server (Hugging Face TEI) |
+| NemakiWare | 8080 | Repository server + React UI |
+| CouchDB | 5984 | Document database |
+| Solr | 8983 | Full-text & vector search |
+| TEI | 8081 | Embedding server (rag profile) |
 
-### 3. Wait for Startup
+### 3. Open
 
-```bash
-# Wait for NemakiWare to be ready (approximately 60-90 seconds)
-curl -u admin:admin http://localhost:8080/core/atom/bedroom
-```
+- **UI**: http://localhost:8080/core/ui/
+- **Credentials**: `admin` / `admin`
 
-### 4. Access the Application
-
-- **Web UI**: http://localhost:8080/core/ui/
-- **CMIS Atom Binding**: http://localhost:8080/core/atom/bedroom
-- **CMIS Browser Binding**: http://localhost:8080/core/browser/bedroom
-
-**Default credentials**: `admin` / `admin`
-
-### Stopping Services
-
-```bash
-cd docker
-docker compose -f docker-compose-simple.yml down
-```
-
-### Rebuilding After Code Changes
-
-⚠️ **Important**: Always use `--build --force-recreate`. Never use `docker compose restart` as it won't pick up WAR changes.
-
-```bash
-# 1. Rebuild UI (if frontend changed)
-cd core/src/main/webapp/ui
-npm run build
-
-# 2. Rebuild WAR
-cd ../../../..
-mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
-
-# 3. Deploy to Docker
-cp core/target/core.war docker/core/core.war
-cd docker
-docker compose -f docker-compose-simple.yml up -d --build --force-recreate core
-```
-
-### Complete Clean Rebuild (Full Reset)
-
-For a complete environment reset including database:
-
-```bash
-# 1. Clean UI build artifacts
-cd core/src/main/webapp/ui
-rm -rf node_modules dist
-npm install
-npm run build
-
-# 2. Clean and rebuild WAR
-cd ../../../..
-mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
-cp core/target/core.war docker/core/core.war
-
-# 3. Reset Docker environment (removes all data!)
-cd docker
-docker compose -f docker-compose-simple.yml down -v
-docker compose -f docker-compose-simple.yml up -d --build --force-recreate
-
-# 4. Wait for startup (90 seconds)
-sleep 90
-curl -u admin:admin http://localhost:8080/core/atom/bedroom
-```
+A Setup Wizard runs on first launch to configure database, authentication, and embedding provider.
 
 ---
 
-## Cloud Integration (Google / Microsoft)
+## Features
 
-NemakiWare supports integration with Google Workspace and Microsoft 365:
+### Semantic Search (RAG)
+
+Upload documents and search by meaning, not just keywords.
+
+- **Hybrid search**: combines keyword full-text search with vector similarity
+- **Supported formats**: PDF, Word, Excel, PowerPoint, HTML, XML, plain text
+- **Configurable weighting**: property boost (metadata) vs content boost (document body)
+- **Folder-scoped search**: restrict results to a specific folder tree
+- **Similar documents**: find documents related to a given document
+- **Rate limiting**: per-user token bucket (configurable)
+- **Admin tools**: full reindex, folder reindex, index health monitoring, search-as-user testing
+
+### Permission Model
+
+Every search result is checked against the requesting user's permissions before being returned.
+
+- CMIS ACL (Access Control List) on every object
+- Inherited permissions from parent folders
+- User/group-based access control
+- Admin simulation mode for verifying what a specific user can see
+
+### MCP Server
+
+NemakiWare exposes an MCP (Model Context Protocol) server so AI agents can directly search and retrieve documents.
+
+| Tool | Description |
+|------|-------------|
+| `nemakiware_login` | Authenticate (username/password, API key, or OIDC) |
+| `nemakiware_search` | Full-text keyword search |
+| `nemakiware_rag_search` | Semantic vector search |
+| `nemakiware_similar_documents` | Find similar documents |
+| `nemakiware_get_document_content` | Retrieve document content |
+
+Protocol: JSON-RPC 2.0 via HTTP/SSE.
+
+### Embedding Providers
+
+| Provider | Type | Notes |
+|----------|------|-------|
+| **Hugging Face TEI** | Self-hosted | Default. Ships as a Docker service. Uses `intfloat/multilingual-e5-large` (1024 dim) |
+| **Amazon Bedrock** | Managed (Beta) | Titan Embedding V2. IAM role or explicit credentials. See [Bedrock guide](docs/BEDROCK_EMBEDDING.md) |
+
+### Authentication
+
+- Password (BCrypt)
+- WebAuthn / Passkey (FIDO2 — Touch ID, Face ID, security keys)
+- OIDC (Google, Microsoft)
+- SAML (Keycloak)
+
+### Webhooks
+
+Subscribe to document events (created, updated, deleted, ACL changed) and receive HTTP callbacks. Supports Basic, Bearer, API key, and HMAC signing.
+
+### Import / Export
+
+- **ACP (Alfresco Content Package)** import
+- **NemakiWare ZIP** format with JSON metadata — preserves folder hierarchy, relationships, and IDs
+- **Filesystem** import/export (admin)
+
+### Cloud Integration
 
 | Feature | Google | Microsoft |
 |---------|--------|-----------|
-| **OIDC Login** | ✅ Google Account | ✅ Microsoft Account |
-| **Cloud Drive** | ✅ Google Drive | ✅ OneDrive |
-| **Directory Sync** | ✅ Google Workspace | ✅ Entra ID |
+| OIDC login | Google Account | Microsoft Account |
+| Cloud Drive import | Google Drive | OneDrive |
+| Directory sync | Google Workspace | Entra ID |
 
-📖 **Setup Guide**: [docs/CLOUD_INTEGRATION.md](docs/CLOUD_INTEGRATION.md)
+See [Cloud Integration Guide](docs/CLOUD_INTEGRATION.md).
 
----
+### Archive & Retention (Beta)
 
-## Optional: Keycloak (SAML/OIDC Authentication)
-
-For external authentication via Keycloak:
-
-```bash
-cd docker
-docker compose -f docker-compose.keycloak.yml up -d
-```
-
-Keycloak will be available at http://localhost:8088
+- Scheduled archival of expired or stale documents
+- Cold storage to Amazon S3 (with Legal Hold support)
+- COPY mode (keep local + S3) or MOVE mode (S3 only)
+- Restore from archive, download archived content
 
 ---
 
-## Development Environment (Jetty)
-
-For debugging and rapid development without Docker:
-
-### Prerequisites
-- Java 21
-- Maven 3.6+
-- Docker (for CouchDB only)
-
-### Setup
-
-1. **Start CouchDB**
-   ```bash
-   docker run -d --name couchdb-dev -p 5984:5984 \
-     -e COUCHDB_USER=admin -e COUCHDB_PASSWORD=password \
-     couchdb:3
-   ```
-
-2. **Start Development Server**
-   ```bash
-   cd core
-   ./start-jetty-dev.sh
-   ```
-
-**Note**: This mode uses MockSolrUtil (search disabled) for simplified development.
-
----
-
-## Testing
-
-### CMIS TCK Tests
-
-```bash
-# Run TCK tests (requires Docker environment running)
-mvn test -Dtest=BasicsTestGroup,TypesTestGroup,ControlTestGroup,VersioningTestGroup \
-  -f core/pom.xml -Pdevelopment
-```
-
-### Playwright E2E Tests
-
-```bash
-cd core/src/main/webapp/ui
-npx playwright test --project=chromium
-```
-
-環境リセット・検証については [docs/e2e-test-environment.md](docs/e2e-test-environment.md) を参照してください。
-
----
-
-## Project Structure
+## Architecture
 
 ```
-NemakiWare/
-├── core/                    # CMIS server (Spring + OpenCMIS)
-│   └── src/main/webapp/ui/  # React SPA (TypeScript + Vite)
-├── docker/                  # Docker Compose configurations
-├── solr/                    # Solr search engine configuration
-└── common/                  # Shared utilities
+                        ┌───────────────┐
+                        │   React UI    │
+                        └──────┬────────┘
+                               │
+┌──────────┐  MCP/REST  ┌──────┴────────┐  Embedding   ┌────────────┐
+│ AI Agent ├───────────►│  NemakiWare   ├─────────────►│ TEI / Bedrock │
+└──────────┘            │  (Tomcat 11)  │              └────────────┘
+                        └──┬────────┬───┘
+                           │        │
+                     ┌─────┘        └─────┐
+                     ▼                    ▼
+               ┌──────────┐        ┌──────────┐
+               │ CouchDB  │        │   Solr   │
+               │ (data)   │        │ (search) │
+               └──────────┘        └──────────┘
 ```
 
-## Technical Stack
+### Technical Stack
 
 | Component | Technology |
 |-----------|------------|
-| Server | Tomcat 11.0 (Jakarta EE 11, Virtual Threads) |
+| Server | Tomcat 11 (Jakarta EE 11, Virtual Threads) |
 | Framework | Spring 7, Apache Chemistry OpenCMIS |
 | Database | CouchDB 3.x |
-| Search | Apache Solr 9.x |
+| Search | Apache Solr 9.x (full-text + DenseVector) |
 | UI | React 19, TypeScript, Vite 7, Ant Design 5 |
-| Java | 21 (required, Virtual Threads enabled) |
+| Java | 21 (required) |
+
+### Project Structure
+
+```
+NemakiWare/
+├── core/                    # Server (Spring + OpenCMIS)
+│   └── src/main/webapp/ui/  # React SPA (TypeScript + Vite)
+├── docker/                  # Docker Compose configurations
+├── solr/                    # Solr configuration + vector schema
+└── common/                  # Shared utilities
+```
+
+---
+
+## REST API
+
+### RAG Search
+
+```bash
+# Semantic search
+curl -u admin:admin -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"query":"quarterly revenue report","topK":5,"minScore":0.6}' \
+  http://localhost:8080/core/api/v1/cmis/repositories/bedroom/rag/search
+
+# Find similar documents
+curl -u admin:admin \
+  http://localhost:8080/core/api/v1/cmis/repositories/bedroom/rag/similar/{documentId}
+
+# Health check
+curl -u admin:admin \
+  http://localhost:8080/core/api/v1/cmis/repositories/bedroom/rag/health
+```
+
+### CMIS Browser Binding
+
+```bash
+# List children of root folder
+curl -u admin:admin \
+  "http://localhost:8080/core/browser/bedroom/root?cmisselector=children"
+
+# Create a document
+curl -u admin:admin -X POST \
+  -F "cmisaction=createDocument" \
+  -F "propertyId[0]=cmis:objectTypeId" -F "propertyValue[0]=cmis:document" \
+  -F "propertyId[1]=cmis:name" -F "propertyValue[1]=report.pdf" \
+  -F "file=@report.pdf" \
+  "http://localhost:8080/core/browser/bedroom/root"
+```
+
+---
+
+## Development
+
+### Prerequisites
+
+- Java 21, Maven 3.6+, Node.js 18+
+- Docker (for CouchDB)
+
+### Development Server (without Docker)
+
+```bash
+# Start CouchDB
+docker run -d --name couchdb-dev -p 5984:5984 \
+  -e COUCHDB_USER=admin -e COUCHDB_PASSWORD=password couchdb:3
+
+# Start backend (Jetty, search disabled)
+cd core && ./start-jetty-dev.sh
+
+# Start frontend dev server (hot reload)
+cd core/src/main/webapp/ui && npm run dev
+```
+
+### Rebuilding After Changes
+
+```bash
+# Rebuild UI + WAR + deploy (never use docker compose restart)
+cd core/src/main/webapp/ui && npm run build && cd ../../../..
+mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
+cp core/target/core.war docker/core/core.war
+cd docker && docker compose -f docker-compose-simple.yml up -d --build --force-recreate core
+```
+
+### Testing
+
+```bash
+# CMIS TCK tests (requires running Docker environment)
+mvn test -Dtest=BasicsTestGroup,TypesTestGroup,ControlTestGroup,VersioningTestGroup \
+  -f core/pom.xml -Pdevelopment
+
+# Playwright E2E tests
+cd core/src/main/webapp/ui && npx playwright test --project=chromium
+
+# QA integration tests
+./qa-test.sh qa
+```
+
+### OpenCMIS JAR Resolution
+
+NemakiWare uses custom OpenCMIS 1.1.0-nemakiware JARs (Jakarta EE compatible). Pre-built JARs are in `lib/built-jars/` and must be installed before the first build:
+
+```bash
+./scripts/install-opencmis-local.sh
+```
 
 ---
 
@@ -307,12 +286,14 @@ NemakiWare/
 | Document | Description |
 |----------|-------------|
 | [Architecture](docs/ARCHITECTURE.md) | System architecture overview |
-| [AWS Deployment Guide](docs/AWS-DEPLOYMENT-GUIDE.md) | Production deployment on AWS |
-| [Cloud Integration](docs/CLOUD_INTEGRATION.md) | Google / Microsoft integration setup |
-| [E2E Test Environment](docs/e2e-test-environment.md) | Playwright test environment setup |
-| [SSO Authentication](docs/SSO-AUTHENTICATION.md) | SAML / OIDC authentication with Keycloak |
+| [AWS Deployment](docs/AWS-DEPLOYMENT-GUIDE.md) | Production deployment on AWS |
+| [Bedrock Embedding](docs/BEDROCK_EMBEDDING.md) | Amazon Bedrock setup |
+| [Cloud Integration](docs/CLOUD_INTEGRATION.md) | Google / Microsoft setup |
+| [Archive Enhancement](docs/ARCHIVE_ENHANCEMENT.md) | Retention & cold storage |
 
----
+## Etymology
+
+"Nemaki" derives from the Japanese word "寝巻き" (pajamas). Relax and enjoy happy enterprise time as if you are lying on the couch in your room!
 
 ## License
 

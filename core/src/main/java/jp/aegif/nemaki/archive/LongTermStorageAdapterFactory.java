@@ -26,14 +26,14 @@ public class LongTermStorageAdapterFactory {
             String endpoint = propertyManager.readValue(PropertyKey.LONGTERM_S3_ENDPOINT);
             String accessKey = propertyManager.readValue(PropertyKey.LONGTERM_S3_ACCESS_KEY);
             String secretKey = propertyManager.readValue(PropertyKey.LONGTERM_S3_SECRET_KEY);
-            String objectLockMode = propertyManager.readValue(PropertyKey.LONGTERM_S3_OBJECT_LOCK_MODE);
+            boolean legalHold = propertyManager.readBoolean(PropertyKey.LONGTERM_S3_LEGAL_HOLD);
 
             if (bucket == null || bucket.isEmpty()) {
                 log.error("S3 storage type configured but longterm.s3.bucket is not set");
                 return;
             }
 
-            adapter = new S3StorageAdapter(bucket, region, endpoint, accessKey, secretKey, objectLockMode);
+            adapter = new S3StorageAdapter(bucket, region, endpoint, accessKey, secretKey, legalHold);
             log.info("[BETA] Long-term storage adapter initialized: S3 (bucket=" + bucket + ")");
         } else if ("inmemory".equalsIgnoreCase(storageType)) {
             adapter = new InMemoryStorageAdapter();

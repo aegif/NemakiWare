@@ -1903,6 +1903,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<String> getStaleDocumentIds(String repositoryId, GregorianCalendar beforeDate) {
+		return nonCachedContentDaoService.getStaleDocumentIds(repositoryId, beforeDate);
+	}
+
+	@Override
+	public void resetColdMoveMetadata(String repositoryId, String archiveId) {
+		nonCachedContentDaoService.resetColdMoveMetadata(repositoryId, archiveId);
+	}
+
+	@Override
 	public void updateArchiveColdMoveMode(String repositoryId, String archiveId, String coldMoveMode) {
 		nonCachedContentDaoService.updateArchiveColdMoveMode(repositoryId, archiveId, coldMoveMode);
 	}

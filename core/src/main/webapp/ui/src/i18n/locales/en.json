@@ -49,6 +49,7 @@
     "items": "{{count}} items",
     "moreResults": "More results available",
     "unknownError": "Unknown error",
+    "beta": "Beta",
     "showSettings": "Show Settings",
     "hideSettings": "Hide Settings",
     "validation": {
@@ -1386,8 +1387,8 @@
       "coldMoveMode": "Cold Storage Transfer Mode",
       "copyMode": "Copy Mode (keep local copy)",
       "moveMode": "Move Mode (delete local copy)",
-      "localArchiveAfterDays": "Local Archive After Days (Fallback)",
-      "localArchiveCron": "Local Archive Schedule (Cron)"
+      "localArchiveCron": "Local Archive Schedule (Cron)",
+      "localArchiveAfterDays": "Auto-Archive After Inactivity"
     },
     "migrationLogs": {
       "startedAt": "Started At",
@@ -2256,7 +2257,7 @@
       "probe": "Repository Check",
       "auth": "Authentication",
       "admin": "Admin Settings",
-      "vector": "Vector Search",
+      "vector": "Vector Search (Beta)",
       "confirm": "Confirm & Apply"
     },
     "nav": {

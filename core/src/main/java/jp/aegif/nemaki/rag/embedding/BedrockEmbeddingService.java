@@ -19,10 +19,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import jp.aegif.nemaki.rag.config.RAGConfig;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
+import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClientBuilder;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelRequest;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelResponse;
 
@@ -41,6 +44,14 @@ public class BedrockEmbeddingService implements EmbeddingService {
     private final ObjectMapper objectMapper;
 
     private final AtomicReference<BedrockRuntimeClient> clientRef = new AtomicReference<>();
+    /** Tracks the config used to create the cached client, so changes trigger re-creation. */
+    private volatile String clientConfigKey = "";
+
+    // Health check TTL cache (mirrors TEI pattern)
+    private static final long HEALTH_CACHE_TTL_SUCCESS_MS = 30_000;  // 30s when healthy
+    private static final long HEALTH_CACHE_TTL_FAILURE_MS = 10_000;  // 10s when unhealthy
+    private volatile boolean lastHealthy = false;
+    private volatile long lastHealthCheckTime = 0;
 
     @Autowired
     public BedrockEmbeddingService(RAGConfig ragConfig) {
@@ -80,21 +91,13 @@ public class BedrockEmbeddingService implements EmbeddingService {
         }
 
         // Note: isQuery is intentionally unused — see embed() for rationale.
-
-        int batchSize = ragConfig.getBedrockBatchSize();
-        if (batchSize <= 0) {
-            batchSize = 1;
+        // Amazon Titan does not support batch embedding in a single InvokeModel call,
+        // so each text is embedded individually. The batchSize config is reserved for
+        // future models that may support native batching.
+        List<float[]> results = new ArrayList<>(texts.size());
+        for (String text : texts) {
+            results.add(embedSingle(text));
         }
-        List<float[]> results = new ArrayList<>();
-
-        for (int i = 0; i < texts.size(); i += batchSize) {
-            int endIndex = Math.min(i + batchSize, texts.size());
-            List<String> batch = texts.subList(i, endIndex);
-            for (String text : batch) {
-                results.add(embedSingle(text));
-            }
-        }
-
         return results;
     }
 
@@ -102,8 +105,51 @@ public class BedrockEmbeddingService implements EmbeddingService {
     public boolean isHealthy() {
         try {
             validateConfig();
-            return true;
         } catch (EmbeddingException e) {
+            return false;
+        }
+
+        long now = System.currentTimeMillis();
+        long ttl = lastHealthy ? HEALTH_CACHE_TTL_SUCCESS_MS : HEALTH_CACHE_TTL_FAILURE_MS;
+        if (now - lastHealthCheckTime < ttl) {
+            return lastHealthy;
+        }
+
+        boolean healthy = doHealthCheck();
+        lastHealthy = healthy;
+        lastHealthCheckTime = now;
+        return healthy;
+    }
+
+    /**
+     * Perform a lightweight InvokeModel call to verify Bedrock connectivity and credentials.
+     */
+    private boolean doHealthCheck() {
+        try {
+            ObjectNode requestBody = objectMapper.createObjectNode();
+            requestBody.put("inputText", "health");
+
+            InvokeModelRequest request = InvokeModelRequest.builder()
+                    .modelId(ragConfig.getBedrockModelId())
+                    .contentType("application/json")
+                    .accept("application/json")
+                    .body(SdkBytes.fromUtf8String(objectMapper.writeValueAsString(requestBody)))
+                    .build();
+
+            InvokeModelResponse response = getClient().invokeModel(request);
+            String body = response.body().asUtf8String();
+            JsonNode root = objectMapper.readTree(body);
+            JsonNode embeddingNode = root.get("embedding");
+            boolean ok = embeddingNode != null && embeddingNode.isArray() && embeddingNode.size() > 0;
+            if (log.isDebugEnabled()) {
+                log.debug("Bedrock health check result: " + ok + " (dimension=" +
+                        (embeddingNode != null ? embeddingNode.size() : 0) + ")");
+            }
+            return ok;
+        } catch (Exception e) {
+            if (log.isDebugEnabled()) {
+                log.debug("Bedrock health check failed: " + e.getMessage());
+            }
             return false;
         }
     }
@@ -137,6 +183,9 @@ public class BedrockEmbeddingService implements EmbeddingService {
             String responseBody = response.body().asUtf8String();
 
             return parseEmbeddingResponse(responseBody);
+        } catch (EmbeddingException e) {
+            // Re-throw EmbeddingException from parseEmbeddingResponse() as-is
+            throw e;
         } catch (JsonProcessingException e) {
             throw new EmbeddingException("Failed to serialize Bedrock request", e);
         } catch (Exception e) {
@@ -181,31 +230,50 @@ public class BedrockEmbeddingService implements EmbeddingService {
         }
     }
 
-    private BedrockRuntimeClient getClient() throws EmbeddingException {
+    private synchronized BedrockRuntimeClient getClient() throws EmbeddingException {
+        validateConfig();
+
+        // Build a config key from current settings so the client is recreated when
+        // the Setup Wizard changes region, model, or credentials at runtime.
+        String currentConfigKey = ragConfig.getBedrockRegion()
+                + "|" + ragConfig.getBedrockModelId()
+                + "|" + StringUtils.defaultString(ragConfig.getBedrockAccessKeyId())
+                + "|" + StringUtils.defaultString(ragConfig.getBedrockSecretAccessKey());
+
         BedrockRuntimeClient existing = clientRef.get();
-        if (existing != null) {
+        if (existing != null && currentConfigKey.equals(clientConfigKey)) {
             return existing;
         }
 
-        validateConfig();
-
+        // Config changed or first call — create a new client
         ClientOverrideConfiguration overrideConfiguration = ClientOverrideConfiguration.builder()
                 .apiCallAttemptTimeout(Duration.ofMillis(ragConfig.getBedrockTimeoutMs()))
                 .build();
 
-        BedrockRuntimeClient created = BedrockRuntimeClient.builder()
+        BedrockRuntimeClientBuilder builder = BedrockRuntimeClient.builder()
                 .region(Region.of(ragConfig.getBedrockRegion()))
-                .overrideConfiguration(overrideConfiguration)
-                .build();
+                .overrideConfiguration(overrideConfiguration);
 
-        if (!clientRef.compareAndSet(null, created)) {
-            // Another thread won the race; close the client we just created
+        // Use explicit credentials if configured, otherwise default credential chain
+        String accessKey = ragConfig.getBedrockAccessKeyId();
+        String secretKey = ragConfig.getBedrockSecretAccessKey();
+        if (StringUtils.isNotBlank(accessKey) && StringUtils.isNotBlank(secretKey)) {
+            builder.credentialsProvider(StaticCredentialsProvider.create(
+                    AwsBasicCredentials.create(accessKey.trim(), secretKey.trim())));
+        }
+
+        BedrockRuntimeClient created = builder.build();
+
+        // Swap out old client and close it
+        BedrockRuntimeClient old = clientRef.getAndSet(created);
+        clientConfigKey = currentConfigKey;
+        if (old != null) {
             try {
-                created.close();
+                old.close();
             } catch (Exception e) {
-                log.warn("Failed to close redundant BedrockRuntimeClient", e);
+                log.warn("Failed to close previous BedrockRuntimeClient", e);
             }
         }
-        return clientRef.get();
+        return created;
     }
 }

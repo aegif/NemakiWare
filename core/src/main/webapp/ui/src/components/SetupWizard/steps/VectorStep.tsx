@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Form, Radio, Input, Button, Tag, Space, Alert, Typography } from 'antd';
+import { Form, Radio, Input, Button, Tag, Space, Alert, Typography, Badge } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { setupApi } from '../../../services/setupApi';
 
@@ -23,7 +23,7 @@ interface VectorStepProps {
 export function VectorStep({ value, onChange, onValidChange }: VectorStepProps) {
   const { t } = useTranslation();
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ reachable: boolean; error?: string; dimension?: number } | null>(null);
+  const [testResult, setTestResult] = useState<{ reachable: boolean; error?: string; dimension?: number; dimensionWarning?: string } | null>(null);
 
   // Report initial validity on mount (type defaults to 'none' → valid)
   useEffect(() => {
@@ -57,7 +57,9 @@ export function VectorStep({ value, onChange, onValidChange }: VectorStepProps) 
         : { type: 'tei' as const, url: value.url };
       const result = await setupApi.testVector(req);
       setTestResult(result);
-      onValidChange(result.reachable);
+      // Block setup if unreachable OR if dimension is incompatible with Solr schema (1024)
+      const dimensionOk = !result.dimensionWarning;
+      onValidChange(result.reachable && dimensionOk);
     } catch (e) {
       setTestResult({ reachable: false, error: e instanceof Error ? e.message : String(e) });
       onValidChange(false);
@@ -78,7 +80,7 @@ export function VectorStep({ value, onChange, onValidChange }: VectorStepProps) 
           >
             <Radio.Button value="none">{t('setup.vector.disabled')}</Radio.Button>
             <Radio.Button value="tei">{t('setup.vector.tei')}</Radio.Button>
-            <Radio.Button value="bedrock">{t('setup.vector.bedrock')}</Radio.Button>
+            <Radio.Button value="bedrock">{t('setup.vector.bedrock')} <Tag color="orange" style={{ fontSize: '10px', lineHeight: '16px', padding: '0 4px', marginLeft: 2 }}>{t('common.beta')}</Tag></Radio.Button>
           </Radio.Group>
         </Form.Item>
 
@@ -142,6 +144,9 @@ export function VectorStep({ value, onChange, onValidChange }: VectorStepProps) 
                   </Space>
                   {!testResult.reachable && testResult.error && (
                     <Alert type="warning" message={testResult.error} showIcon />
+                  )}
+                  {testResult.reachable && testResult.dimensionWarning && (
+                    <Alert type="error" message={testResult.dimensionWarning} showIcon />
                   )}
                 </Space>
               )}

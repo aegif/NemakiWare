@@ -326,6 +326,7 @@ public interface PropertyKey {
 
 	//Retention
 	final String RETENTION_ENABLED = "retention.enabled";
+	/** Days after last modification before auto-archiving documents without cmis:rm_expirationDate. */
 	final String RETENTION_ARCHIVE_LOCAL_AFTER_DAYS = "retention.archive.local.after.days";
 	final String RETENTION_ARCHIVE_COLD_AFTER_DAYS = "retention.archive.cold.after.days";
 	final String RETENTION_SCHEDULE_ARCHIVE_LOCAL = "retention.schedule.archive.local";
@@ -341,7 +342,8 @@ public interface PropertyKey {
 	final String LONGTERM_S3_ENDPOINT = "longterm.s3.endpoint";
 	final String LONGTERM_S3_ACCESS_KEY = "longterm.s3.accessKey";
 	final String LONGTERM_S3_SECRET_KEY = "longterm.s3.secretKey";
-	final String LONGTERM_S3_OBJECT_LOCK_MODE = "longterm.s3.objectLockMode";
+	/** Enable S3 Legal Hold on cold-archived objects (true/false). */
+	final String LONGTERM_S3_LEGAL_HOLD = "longterm.s3.legalHold";
 	final String LONGTERM_FS_PATH = "longterm.fs.path";
 
 	//Deletion

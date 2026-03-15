@@ -38,6 +38,19 @@ public interface LongTermStorageAdapter {
     void delete(String repositoryId, String objectId);
 
     /**
+     * Delete a specific version of content from long-term storage.
+     * On versioned S3 buckets, this targets the exact version uploaded by put().
+     *
+     * @param repositoryId the repository identifier
+     * @param objectId     the CMIS object identifier
+     * @param storageRef   the storage reference (versionId) returned by put()
+     */
+    default void delete(String repositoryId, String objectId, String storageRef) {
+        // Default: fall back to non-versioned delete
+        delete(repositoryId, objectId);
+    }
+
+    /**
      * Check if content exists in long-term storage.
      *
      * @param repositoryId the repository identifier
@@ -53,6 +66,18 @@ public interface LongTermStorageAdapter {
      * @param objectId     the CMIS object identifier
      */
     void enforceImmutability(String repositoryId, String objectId);
+
+
+    /**
+     * Remove protection (e.g., S3 legal hold) from stored content so it can be deleted.
+     * Called before delete() in cleanup paths where enforceImmutability() was already applied.
+     *
+     * @param repositoryId the repository identifier
+     * @param objectId     the CMIS object identifier
+     */
+    default void removeProtection(String repositoryId, String objectId) {
+        // No-op by default (filesystem adapter uses chmod which doesn't block delete)
+    }
 
     /**
      * Check if the storage backend is reachable and writable.

@@ -207,7 +207,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Layout as AntLayout, Menu, Button, Dropdown, Avatar, Space, Tooltip } from 'antd';
+import { Layout as AntLayout, Menu, Button, Dropdown, Avatar, Space, Tooltip, Tag } from 'antd';
 import {
   FileOutlined,
   SearchOutlined,
@@ -369,7 +369,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
     ...(featureToggles['rest.archive.enabled'] ? [{
       key: '/archive',
       icon: <InboxOutlined />,
-      label: t('navigation.archive'),
+      label: <>{t('navigation.archive')} <Tag color="orange" style={{ marginLeft: 4, fontSize: '10px', lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></>,
     }] : []),
     // Only include admin menu for admin users
     ...(isAdmin ? [{

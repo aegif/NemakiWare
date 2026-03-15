@@ -66,58 +66,70 @@ ACTIVE -> ARCHIVED_LOCAL -> COLD_MOVING -> ARCHIVED_LOCAL（coldArchivedAt/conte
 - content_ref (bucket/key/versionId/checksum/size for S3; or path for filesystem)
 - source_storage_ref (existing archive store reference)
 
-`retention_policy`:
-- archive_local_after_days
-- archive_cold_after_days
-- schedule_archive_local (cron or interval)
-- schedule_archive_cold (cron or interval)
-- enabled
+`retention_policy` (nemakiware.properties):
+- `retention.enabled` — enable/disable retention lifecycle
+- `retention.archive.local.after.days` — days of inactivity before auto-archiving
+- `retention.archive.cold.after.days` — days after archiving before cold move
+- `retention.schedule.archive.local` — cron for local archive job
+- `retention.schedule.archive.cold` — cron for cold move job
+- `retention.cold.keep.local.copy` — true=COPY, false=MOVE
 
-`retention_job`:
-- job_id, job_type (local/cold)
-- started_at, finished_at
-- targets_total, targets_success, targets_failed
-- error_summary
+`retention_migration_log` (CouchDB document, class: `RetentionMigrationLog`):
+- id
+- jobType (`local-archive` / `cold-move`)
+- repositoryId
+- startedAt, completedAt
+- processed, succeeded, failed
+- status (`COMPLETED` / `COMPLETED_WITH_ERRORS` / `FAILED`)
+- details (error summary text)
 
 ## Retention Scheduling
 Two independent scheduled jobs inside the application:
 
 ### A) Live -> Archive Store (ARCHIVED_LOCAL)
-- Run daily (e.g., 02:00)
-- Selection criteria:
-  - lastModified < now - archive_local_after_days
+- Run daily (configurable via `retention.schedule.archive.local`, e.g., `0 0 3 * * *`)
+- Two independent selection paths:
+  1. **Expiration-based (Phase 1)**: documents with `cmis:rm_expirationDate < now`
+  2. **Inactivity-based (Phase 2)**: documents with `cmis:lastModificationDate < now - retention.archive.local.after.days`
+     (only runs when `retention.archive.local.after.days` is configured as a positive integer)
+- Common guards:
   - not locked / not checked out
   - not under legal hold
-  - archive_state == ACTIVE
+  - `archive.create.enabled=true` in configuration
 
 ### B) Archive Store -> Long-Term (ARCHIVED_COLD)
-- Run weekly or daily (e.g., Sunday 03:00)
+- Run daily (configurable via `retention.schedule.archive.cold`, e.g., `0 30 3 * * *`)
 - Selection criteria:
-  - archived_at < now - archive_cold_after_days
-  - archive_state == ARCHIVED_LOCAL
+  - `archived_at < now - retention.archive.cold.after.days`
+  - `archive_state == ARCHIVED_LOCAL`
+  - **document archives only** (folder archives are excluded)
 
 ## Long-Term Storage Adapter
 Introduce an adapter to avoid coupling the archive pipeline to S3 specifics.
 
-```
+```java
 interface LongTermStorageAdapter {
-  put(objectId, InputStream content, metadata)  // 書き込み（NemakiWare が使用）
-  get(objectId) -> InputStream                  // 読み取り（未使用: S3 直接アクセスに委譲）
-  delete(objectId)                              // 削除（未使用: S3 Lifecycle に委譲）
-  exists(objectId)                              // 存在確認
-  enforceImmutability(objectId)                 // Object Lock 設定（NemakiWare が使用）
+  // All methods take (repositoryId, objectId) for multi-repo isolation
+  String put(repositoryId, objectId, InputStream content, Map<String,String> metadata)
+                                       // 書き込み → storageRef (S3 versionId等) を返却
+  InputStream get(repositoryId, objectId)  // 読み取り
+  void delete(repositoryId, objectId)      // 削除
+  void delete(repositoryId, objectId, storageRef)  // バージョン指定削除（cleanup 用）
+  boolean exists(repositoryId, objectId)   // 存在確認
+  void enforceImmutability(repositoryId, objectId)   // Legal Hold ON
+  void removeProtection(repositoryId, objectId)      // Legal Hold OFF（cleanup 前に呼出）
+  boolean checkConnection()               // 接続確認
 }
 ```
 
-> **注意**: `get()` と `delete()` はインターフェースに定義されていますが、
-> 現行のアーキテクチャでは NemakiWare からは呼び出しません。
-> S3 コンテンツの読み取り・削除は AWS 側で直接行います。
+> **注意**: `delete()` は MOVE モード失敗時のクリーンアップに使用。
+> `removeProtection()` は cleanup パスで `enforceImmutability()` 適用済みオブジェクトを
+> 削除可能にするために呼び出す。通常の Disposition は S3 Lifecycle Policy に委譲。
 
 ### S3StorageAdapter (Primary)
-- Requires bucket versioning + Object Lock.
-- Use Compliance mode by default, Governance as alternative if ops requires.
-- Persist versionId + checksum in content_ref.
-- enforceImmutability() validates Object Lock settings (retention until date, legal hold if used).
+- Requires bucket versioning. Legal Hold は `longterm.s3.legalHold=true` で有効化（default: false）。
+- Legal Hold 方式: `enforceImmutability()` で Legal Hold ON、`removeProtection()` で OFF。
+- Persist versionId in content_ref（`put()` の戻り値）。バージョン指定 `delete()` で cleanup。
 
 ### FilesystemStorageAdapter (Fallback)
 - Storage path: `/mnt/archive/{repositoryId}/{objectId}/content`
@@ -152,11 +164,13 @@ interface LongTermStorageAdapter {
 - Use intermediate states: ARCHIVING / COLD_MOVING.
 - If a transition fails, keep state and retry next job.
 - Keep idempotency in adapter methods.
+- Cold move cleanup: `enforceImmutability()` 適用済みオブジェクトを削除する場合、
+  `removeProtection()` → `delete()` の順で呼び出す（S3 Legal Hold を先に解除）。
 
 ## Disposition (廃棄)
 - NemakiWare は Disposition を実装しない。
 - S3 Lifecycle Policy で保持期間経過後の自動削除を設定する。
-- COMPLIANCE モードの Object Lock 期間中は Lifecycle Policy による削除も実行されない。
+- Legal Hold が有効なオブジェクトは Lifecycle Policy による削除も実行されない（`removeProtection()` で解除が必要）。
 - CouchDB 上のメタデータ（ARCHIVED_COLD レコード）は S3 コンテンツ削除後も残存する（参照整合性は保証しない）。
 
 ### Orphan コンテンツについて
@@ -177,14 +191,15 @@ interface LongTermStorageAdapter {
 6) ACL enforcement + immutability guards
 
 ## Configuration
-- retention.archive_local_after_days
-- retention.archive_cold_after_days
-- retention.cold.keep.local.copy (true=COPY, false=MOVE; default: false)
-- retention.schedule_archive_local
-- retention.schedule_archive_cold
-- longterm.storage.type = s3 | filesystem
-- longterm.s3.* (bucket, region, objectLock settings)
-- longterm.fs.path
+- `retention.enabled` — enable/disable retention lifecycle (default: false)
+- `retention.archive.local.after.days` — days of inactivity before auto-archiving (empty = disabled)
+- `retention.archive.cold.after.days` — days after archiving before cold move
+- `retention.cold.keep.local.copy` — true=COPY, false=MOVE (default: true)
+- `retention.schedule.archive.local` — cron for local archive job (e.g., `0 0 3 * * *`)
+- `retention.schedule.archive.cold` — cron for cold move job (e.g., `0 30 3 * * *`)
+- `longterm.storage.type` — s3 | filesystem | inmemory
+- `longterm.s3.*` — bucket, region, endpoint, accessKey, secretKey, legalHold
+- `longterm.fs.path` — filesystem storage base path
 
 ## Open Questions
 None.

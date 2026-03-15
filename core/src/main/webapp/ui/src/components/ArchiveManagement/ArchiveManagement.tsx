@@ -479,11 +479,13 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
                     {retentionSettings.keepLocalCopy ? t('archiveManagement.settings.copyMode') : t('archiveManagement.settings.moveMode')}
                   </Tag>
                 </Descriptions.Item>
-                <Descriptions.Item label={t('archiveManagement.settings.localArchiveAfterDays')}>
-                  {retentionSettings.localArchiveAfterDays || '-'} {retentionSettings.localArchiveAfterDays ? t('archiveManagement.settings.days') : ''}
-                </Descriptions.Item>
                 <Descriptions.Item label={t('archiveManagement.settings.localArchiveCron')}>
                   <code>{retentionSettings.localArchiveCron || '-'}</code>
+                </Descriptions.Item>
+                <Descriptions.Item label={t('archiveManagement.settings.localArchiveAfterDays')}>
+                  {retentionSettings.localArchiveAfterDays
+                    ? `${retentionSettings.localArchiveAfterDays} ${t('archiveManagement.settings.days')}`
+                    : '-'}
                 </Descriptions.Item>
               </Descriptions>
             )}
@@ -563,7 +565,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
     <Card>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ margin: 0 }}>
-          <InboxOutlined /> {t('archiveManagement.title')}
+          <InboxOutlined /> {t('archiveManagement.title')} <Tag color="orange" style={{ fontSize: '11px', verticalAlign: 'middle' }}>{t('common.beta')}</Tag>
         </h2>
       </div>
 

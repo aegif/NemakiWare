@@ -49,6 +49,7 @@
     "items": "{{count}}個",
     "moreResults": "さらに結果があります",
     "unknownError": "不明なエラー",
+    "beta": "Beta",
     "showSettings": "設定を表示",
     "hideSettings": "設定を非表示",
     "validation": {
@@ -1386,8 +1387,8 @@
       "coldMoveMode": "コールドストレージ移動モード",
       "copyMode": "コピーモード (ローカルコピー保持)",
       "moveMode": "移動モード (ローカルコピー削除)",
-      "localArchiveAfterDays": "ローカルアーカイブ日数 (フォールバック)",
-      "localArchiveCron": "ローカルアーカイブスケジュール (Cron式)"
+      "localArchiveCron": "ローカルアーカイブスケジュール (Cron式)",
+      "localArchiveAfterDays": "未更新ドキュメント自動アーカイブ"
     },
     "migrationLogs": {
       "startedAt": "実行日時",
@@ -2256,7 +2257,7 @@
       "probe": "リポジトリ確認",
       "auth": "認証設定",
       "admin": "管理者設定",
-      "vector": "ベクトル検索",
+      "vector": "ベクトル検索 (Beta)",
       "confirm": "確認・適用"
     },
     "nav": {

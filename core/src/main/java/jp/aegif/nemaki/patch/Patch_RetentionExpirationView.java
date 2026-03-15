@@ -16,7 +16,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  *   efficient range queries to find expired documents.
  *
  * The view scans subTypeProperties for cmis:rm_expirationDate and only
- * indexes isLatestVersion documents of type cmis:document.
+ * indexes latestVersion documents of type cmis:document.
  *
  * Query: startkey=0&endkey=<currentEpochMillis> to find expired documents.
  *
@@ -27,7 +27,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 public class Patch_RetentionExpirationView extends AbstractNemakiPatch {
 	private static final Log log = LogFactory.getLog(Patch_RetentionExpirationView.class);
-	private static final String PATCH_NAME = "RetentionExpirationView";
+	private static final String PATCH_NAME = "RetentionExpirationViewV2";
 
 	@Override
 	protected void applySystemPatch() {
@@ -63,16 +63,30 @@ public class Patch_RetentionExpirationView extends AbstractNemakiPatch {
 
 			// View: documentsByExpirationDate
 			// Scans subTypeProperties for cmis:rm_expirationDate and emits its value as key.
-			// Only indexes isLatestVersion documents.
+			// Only indexes latestVersion documents.
+			// NOTE: CouchDB field is "latestVersion" (not "isLatestVersion").
 			String mapFunction =
 				"function(doc) { " +
-				"if (doc.type == 'cmis:document' && doc.isLatestVersion && doc.subTypeProperties) { " +
+				"if (doc.type == 'cmis:document' && doc.latestVersion && doc.subTypeProperties) { " +
 				"for (var i in doc.subTypeProperties) { " +
 				"if (doc.subTypeProperties[i].key == 'cmis:rm_expirationDate') { " +
 				"emit(doc.subTypeProperties[i].value, doc._id); " +
 				"} } } }";
 
-			addViewIfMissing(views, "documentsByExpirationDate", mapFunction, null, repositoryId);
+			// Force-update the view to fix the isLatestVersion→latestVersion field name bug
+			if (views.has("documentsByExpirationDate")) {
+				JsonNode existingView = views.get("documentsByExpirationDate");
+				String existingMap = existingView.has("map") ? existingView.get("map").asText() : "";
+				if (existingMap.contains("isLatestVersion")) {
+					log.info("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId
+						+ "] Updating documentsByExpirationDate view: fixing isLatestVersion→latestVersion");
+					ObjectNode viewDef = mapper.createObjectNode();
+					viewDef.put("map", mapFunction);
+					views.set("documentsByExpirationDate", viewDef);
+				}
+			} else {
+				addViewIfMissing(views, "documentsByExpirationDate", mapFunction, null, repositoryId);
+			}
 
 			client.update(updatedDoc);
 
