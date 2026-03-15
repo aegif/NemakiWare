@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Steps, Button, Card, Typography, Space } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { TokenEntry } from './TokenEntry';
@@ -8,6 +8,7 @@ import { AuthStep, AuthConfig } from './steps/AuthStep';
 import { AdminStep, AdminConfig } from './steps/AdminStep';
 import { VectorStep, VectorConfig } from './steps/VectorStep';
 import { ConfirmStep } from './steps/ConfirmStep';
+import { setupApi } from '../../services/setupApi';
 
 const { Title } = Typography;
 
@@ -31,6 +32,15 @@ const initialState: WizardState = {
     googleClientId: '',
     microsoftClientId: '',
     microsoftTenantId: '',
+    keycloakOidcEnabled: false,
+    samlEnabled: false,
+    keycloakIssuerUrl: '',
+    keycloakClientId: '',
+    samlIdpSsoUrl: '',
+    samlSpEntityId: 'nemakiware-sp',
+    samlIdpCertificate: '',
+    samlSloUrl: '',
+    samlAttributeMapping: '',
   },
   admin: { newPassword: '', confirmPassword: '' },
   vector: { type: 'none', url: '', region: '', modelId: '', accessKeyId: '', secretAccessKey: '' },
@@ -48,6 +58,62 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const handleTokenVerified = () => {
     setTokenVerified(true);
   };
+
+  // Hydrate existing auth/vector settings when the wizard opens.
+  // This prevents overwriting existing SSO or vector configuration with
+  // defaults when the operator resumes or re-runs the setup wizard.
+  useEffect(() => {
+    if (!tokenVerified) return;
+    let cancelled = false;
+
+    const hydrate = async () => {
+      const results = await Promise.allSettled([
+        setupApi.getAuthState(),
+        setupApi.getVectorState(),
+      ]);
+
+      if (cancelled) return;
+
+      const [authResult, vectorResult] = results;
+      setState(prev => {
+        const next = { ...prev };
+        if (authResult.status === 'fulfilled') {
+          const a = authResult.value;
+          next.auth = {
+            passwordEnabled: a.passwordEnabled ?? prev.auth.passwordEnabled,
+            googleEnabled: a.googleEnabled ?? prev.auth.googleEnabled,
+            microsoftEnabled: a.microsoftEnabled ?? prev.auth.microsoftEnabled,
+            googleClientId: a.googleClientId ?? prev.auth.googleClientId,
+            microsoftClientId: a.microsoftClientId ?? prev.auth.microsoftClientId,
+            microsoftTenantId: a.microsoftTenantId ?? prev.auth.microsoftTenantId,
+            keycloakOidcEnabled: a.keycloakOidcEnabled ?? prev.auth.keycloakOidcEnabled,
+            samlEnabled: a.samlEnabled ?? prev.auth.samlEnabled,
+            keycloakIssuerUrl: a.keycloakIssuerUrl ?? prev.auth.keycloakIssuerUrl,
+            keycloakClientId: a.keycloakClientId ?? prev.auth.keycloakClientId,
+            samlIdpSsoUrl: a.samlIdpSsoUrl ?? prev.auth.samlIdpSsoUrl,
+            samlSpEntityId: a.samlSpEntityId ?? prev.auth.samlSpEntityId,
+            samlIdpCertificate: a.samlIdpCertificate ?? prev.auth.samlIdpCertificate,
+            samlSloUrl: a.samlSloUrl ?? prev.auth.samlSloUrl,
+            samlAttributeMapping: a.samlAttributeMapping ?? prev.auth.samlAttributeMapping,
+          };
+        }
+        if (vectorResult.status === 'fulfilled') {
+          const v = vectorResult.value;
+          next.vector = {
+            ...prev.vector,
+            type: v.type ?? prev.vector.type,
+            url: v.url ?? prev.vector.url,
+            region: v.region ?? prev.vector.region,
+            modelId: v.modelId ?? prev.vector.modelId,
+          };
+        }
+        return next;
+      });
+    };
+
+    hydrate();
+    return () => { cancelled = true; };
+  }, [tokenVerified]);
 
   const handleStepValid = useCallback((step: number) => (valid: boolean) => {
     setStepValid(prev => ({ ...prev, [step]: valid }));
