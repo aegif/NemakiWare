@@ -327,6 +327,52 @@ Core: NemakiAuthCallContextHandler
 CMIS サービス実行
 ```
 
+### SAML 認証フロー（Keycloak SAML 2.0）
+
+```
+ブラウザ: SAML ログインボタンクリック
+  │
+  │  SAMLService.initiateLogin()
+  │  SAMLRequest (DEFLATE + Base64) + RelayState
+  ▼
+IdP (Keycloak): SAML SSO URL
+  │  ユーザー認証 (ログインフォーム)
+  ▼
+IdP → ブラウザ: HTML 自動送信フォーム (POST binding)
+  │  SAMLResponse (署名付き Assertion)
+  │  POST /core/saml/acs
+  ▼
+Core: SamlAcsServlet.doPost()
+  │  - SAMLResponse/RelayState を sessionStorage に保存する
+  │    JavaScript を含む HTML を返却
+  │  - /core/ui/saml-callback.html にリダイレクト
+  ▼
+ブラウザ: React SPA (Login.tsx)
+  │  sessionStorage から SAMLResponse を読み取り
+  │  POST /core/rest/repo/{repoId}/authtoken/saml/convert
+  ▼
+Core: AuthTokenResource.convertSAMLToken()
+  │  - Base64 デコード + オプショナル DEFLATE 解凍
+  │  - XXE 安全 XML パーサー
+  │  - SamlSignatureVerifier: 署名検証 + ラッピング攻撃防御
+  │  - AudienceRestriction/Conditions 検証
+  │  - NameID からユーザー名抽出 → getOrCreateUser()
+  │  - Auth Token 生成
+  ▼
+ブラウザ: Auth Token を Cookie/localStorage に設定
+
+--- SLO (Single Logout) ---
+
+ブラウザ: ログアウトボタン
+  │  SAMLService.initiateLogout(username)
+  │  SAMLLogoutRequest (NameID 付き, DEFLATE + Base64)
+  ▼
+IdP (Keycloak): SAML SLO URL
+  │  IdP セッション終了
+  ▼
+ブラウザ: ログインページにリダイレクト
+```
+
 ---
 
 ## 6. ディレクトリ構成
@@ -344,7 +390,9 @@ NemakiWare/
 │   │   │   │   └── impl/       # ObjectService, AclService 等
 │   │   │   └── servlet/        # CMIS サーブレット定義
 │   │   ├── rest/               # REST API エンドポイント
-│   │   │   ├── AuthTokenResource.java
+│   │   │   ├── AuthTokenResource.java  # 認証トークン (SAML/OIDC変換含む)
+│   │   │   ├── SamlAcsServlet.java     # SAML POST binding ACS
+│   │   │   ├── SamlSignatureVerifier.java # SAML署名検証 (XSW攻撃防御)
 │   │   │   ├── UserResource.java
 │   │   │   ├── GroupResource.java
 │   │   │   └── TypeResource.java
