@@ -110,6 +110,13 @@ public class AuthConfigResource extends ResourceBase {
 				result.put("microsoftTenantId", readStringProperty(repositoryId, PropertyKey.CLOUD_AUTH_MICROSOFT_TENANT_ID, "common"));
 			}
 
+			// SAML configuration (SSO URL, SP Entity ID, SLO URL — never certificate PEM)
+			if (samlEnabled) {
+				result.put("samlSsoUrl", readStringProperty(repositoryId, PropertyKey.SAML_IDP_SSO_URL, ""));
+				result.put("samlSpEntityId", readStringProperty(repositoryId, PropertyKey.SAML_SP_ENTITY_ID, "nemakiware-sp"));
+				result.put("samlSloUrl", readStringProperty(repositoryId, PropertyKey.SAML_SLO_URL, ""));
+			}
+
 			result.put("status", "success");
 
 			log.debug("Auth config requested: OIDC=" + oidcEnabled + ", SAML=" + samlEnabled

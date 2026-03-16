@@ -314,6 +314,18 @@ public interface PropertyKey {
 	/** Enable/disable SAML login button on login page. Default: false */
 	final String SSO_SAML_ENABLED = "sso.saml.enabled";
 
+	//SAML configuration
+	/** IdP SSO URL for SAML authentication (e.g. https://idp.example.com/sso/saml) */
+	final String SAML_IDP_SSO_URL = "saml.idp.sso.url";
+	/** SP Entity ID for SAML authentication (e.g. nemakiware-sp) */
+	final String SAML_SP_ENTITY_ID = "saml.sp.entity.id";
+	/** IdP X.509 signing certificate in PEM format for SAML signature verification */
+	final String SAML_IDP_CERTIFICATE = "saml.idp.certificate";
+	/** Single Logout URL (optional) */
+	final String SAML_SLO_URL = "saml.slo.url";
+	/** Username attribute mapping (optional, default: NameID) */
+	final String SAML_ATTRIBUTE_MAPPING = "saml.attribute.mapping";
+
 	//OIDC configuration
 	/** OIDC issuer URL (e.g. http://keycloak:8080/realms/nemakiware). Used for token validation. */
 	final String OIDC_ISSUER = "oidc.issuer";

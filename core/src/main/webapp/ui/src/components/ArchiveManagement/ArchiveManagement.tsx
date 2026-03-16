@@ -565,7 +565,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
     <Card>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ margin: 0 }}>
-          <InboxOutlined /> {t('archiveManagement.title')} <Tag color="orange" style={{ fontSize: '11px', verticalAlign: 'middle' }}>{t('common.beta')}</Tag>
+          <InboxOutlined /> {t('archiveManagement.title')}
         </h2>
       </div>
 

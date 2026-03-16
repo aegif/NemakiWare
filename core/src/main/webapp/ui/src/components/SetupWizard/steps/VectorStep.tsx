@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Form, Radio, Input, Button, Tag, Space, Alert, Typography, Badge } from 'antd';
+import { Form, Radio, Input, Button, Tag, Space, Alert, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { setupApi } from '../../../services/setupApi';
 

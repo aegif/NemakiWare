@@ -8,6 +8,11 @@
 export interface AuthConfig {
   oidcEnabled: boolean;
   samlEnabled: boolean;
+  googleEnabled: boolean;
+  microsoftEnabled: boolean;
+  samlSsoUrl?: string;
+  samlSpEntityId?: string;
+  samlSloUrl?: string;
 }
 
 // Cache for auth configuration (keyed by repositoryId, '' = global)
@@ -73,6 +78,11 @@ export const fetchAuthConfig = async (repositoryId?: string): Promise<AuthConfig
     return {
       oidcEnabled: data.oidcEnabled === true,
       samlEnabled: data.samlEnabled === true,
+      googleEnabled: data.googleEnabled === true,
+      microsoftEnabled: data.microsoftEnabled === true,
+      samlSsoUrl: data.samlSsoUrl || undefined,
+      samlSpEntityId: data.samlSpEntityId || undefined,
+      samlSloUrl: data.samlSloUrl || undefined,
     };
   } catch (error) {
     console.warn('Error fetching auth config:', error);
@@ -87,6 +97,8 @@ export const fetchAuthConfig = async (repositoryId?: string): Promise<AuthConfig
 const getDefaultConfig = (): AuthConfig => ({
   oidcEnabled: false,
   samlEnabled: false,
+  googleEnabled: false,
+  microsoftEnabled: false,
 });
 
 /**

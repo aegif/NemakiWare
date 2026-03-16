@@ -165,8 +165,44 @@ public class SetupApplyResource {
         AuthConfigRequest auth = req.getAuth();
         if (auth != null) {
             // Lockout prevention: same guard as /auth/apply
-            if (!auth.isPasswordEnabled() && !auth.isGoogleEnabled() && !auth.isMicrosoftEnabled()) {
+            if (!auth.isPasswordEnabled() && !auth.isGoogleEnabled() && !auth.isMicrosoftEnabled()
+                    && !auth.isKeycloakOidcEnabled() && !auth.isSamlEnabled()) {
                 return error(400, "At least one authentication method must be enabled");
+            }
+            // Require clientId when OIDC provider is enabled (mirrors /auth/apply)
+            if (auth.isGoogleEnabled() && (auth.getGoogleClientId() == null || auth.getGoogleClientId().trim().isEmpty())) {
+                return error(400, "Google Client ID is required when Google authentication is enabled");
+            }
+            if (auth.isMicrosoftEnabled() && (auth.getMicrosoftClientId() == null || auth.getMicrosoftClientId().trim().isEmpty())) {
+                return error(400, "Microsoft Client ID is required when Microsoft authentication is enabled");
+            }
+            if (auth.isKeycloakOidcEnabled()) {
+                if (auth.getKeycloakIssuerUrl() == null || auth.getKeycloakIssuerUrl().trim().isEmpty()) {
+                    return error(400, "Issuer URL is required when Keycloak OIDC is enabled");
+                }
+                if (auth.getKeycloakClientId() == null || auth.getKeycloakClientId().trim().isEmpty()) {
+                    return error(400, "Client ID is required when Keycloak OIDC is enabled");
+                }
+            }
+            if (auth.isSamlEnabled()) {
+                if (auth.getSamlIdpSsoUrl() == null || auth.getSamlIdpSsoUrl().trim().isEmpty()) {
+                    return error(400, "IdP SSO URL is required when SAML is enabled");
+                }
+                if (auth.getSamlIdpCertificate() == null || auth.getSamlIdpCertificate().trim().isEmpty()) {
+                    return error(400, "IdP signing certificate is required when SAML is enabled");
+                }
+                // "[configured]" placeholder: verify that a real certificate is already stored
+                if ("[configured]".equals(auth.getSamlIdpCertificate())) {
+                    try {
+                        String stored = CouchDbConfigWriter.getConfigValue(couchUrl, authHeader, "saml.idp.certificate");
+                        if (stored == null) {
+                            return error(400, "IdP signing certificate placeholder sent but no certificate is stored");
+                        }
+                    } catch (Exception e) {
+                        logger.log(java.util.logging.Level.WARNING, "Failed to verify stored SAML certificate", e);
+                        return error(400, "Unable to verify stored SAML certificate: " + e.getMessage());
+                    }
+                }
             }
             try {
                 CouchDbConfigWriter.putConfigValue(couchUrl, authHeader, "auth.password.enabled", String.valueOf(auth.isPasswordEnabled()));
@@ -190,6 +226,45 @@ public class SetupApplyResource {
                     if (auth.getMicrosoftTenantId() != null) {
                         CouchDbConfigWriter.putConfigValue(couchUrl, authHeader, "cloud.auth.microsoft.tenantId", auth.getMicrosoftTenantId());
                         System.setProperty("cloud.auth.microsoft.tenantId", auth.getMicrosoftTenantId());
+                    }
+                }
+                // Keycloak OIDC settings
+                CouchDbConfigWriter.putConfigValue(couchUrl, authHeader, "sso.oidc.enabled", String.valueOf(auth.isKeycloakOidcEnabled()));
+                System.setProperty("sso.oidc.enabled", String.valueOf(auth.isKeycloakOidcEnabled()));
+                if (auth.isKeycloakOidcEnabled()) {
+                    if (auth.getKeycloakIssuerUrl() != null) {
+                        CouchDbConfigWriter.putConfigValue(couchUrl, authHeader, "oidc.issuer", auth.getKeycloakIssuerUrl().trim());
+                        System.setProperty("oidc.issuer", auth.getKeycloakIssuerUrl().trim());
+                    }
+                    if (auth.getKeycloakClientId() != null) {
+                        CouchDbConfigWriter.putConfigValue(couchUrl, authHeader, "oidc.clientId", auth.getKeycloakClientId().trim());
+                        System.setProperty("oidc.clientId", auth.getKeycloakClientId().trim());
+                    }
+                }
+                // SAML settings
+                CouchDbConfigWriter.putConfigValue(couchUrl, authHeader, "sso.saml.enabled", String.valueOf(auth.isSamlEnabled()));
+                System.setProperty("sso.saml.enabled", String.valueOf(auth.isSamlEnabled()));
+                if (auth.isSamlEnabled()) {
+                    if (auth.getSamlIdpSsoUrl() != null && !auth.getSamlIdpSsoUrl().trim().isEmpty()) {
+                        CouchDbConfigWriter.putConfigValue(couchUrl, authHeader, "saml.idp.sso.url", auth.getSamlIdpSsoUrl().trim());
+                        System.setProperty("saml.idp.sso.url", auth.getSamlIdpSsoUrl().trim());
+                    }
+                    String spEntityId = auth.getSamlSpEntityId() != null && !auth.getSamlSpEntityId().trim().isEmpty()
+                            ? auth.getSamlSpEntityId().trim() : "nemakiware-sp";
+                    CouchDbConfigWriter.putConfigValue(couchUrl, authHeader, "saml.sp.entity.id", spEntityId);
+                    System.setProperty("saml.sp.entity.id", spEntityId);
+                    if (auth.getSamlIdpCertificate() != null && !"[configured]".equals(auth.getSamlIdpCertificate())
+                            && !auth.getSamlIdpCertificate().trim().isEmpty()) {
+                        CouchDbConfigWriter.putConfigValue(couchUrl, authHeader, "saml.idp.certificate", auth.getSamlIdpCertificate().trim());
+                        System.setProperty("saml.idp.certificate", auth.getSamlIdpCertificate().trim());
+                    }
+                    if (auth.getSamlSloUrl() != null && !auth.getSamlSloUrl().trim().isEmpty()) {
+                        CouchDbConfigWriter.putConfigValue(couchUrl, authHeader, "saml.slo.url", auth.getSamlSloUrl().trim());
+                        System.setProperty("saml.slo.url", auth.getSamlSloUrl().trim());
+                    }
+                    if (auth.getSamlAttributeMapping() != null && !auth.getSamlAttributeMapping().trim().isEmpty()) {
+                        CouchDbConfigWriter.putConfigValue(couchUrl, authHeader, "saml.attribute.mapping", auth.getSamlAttributeMapping().trim());
+                        System.setProperty("saml.attribute.mapping", auth.getSamlAttributeMapping().trim());
                     }
                 }
                 logger.info("Auth configuration persisted");

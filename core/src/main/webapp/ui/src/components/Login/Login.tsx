@@ -214,7 +214,7 @@ import { CMISService } from '../../services/cmis';
 import { OIDCService } from '../../services/oidc';
 import { getOIDCConfig, isOIDCEnabled } from '../../config/oidc';
 import { SAMLService } from '../../services/saml';
-import { getSAMLConfig, isSAMLEnabled } from '../../config/saml';
+import { loadSAMLConfig, isSAMLEnabled } from '../../config/saml';
 import { DEFAULT_REPOSITORY_ID } from '../../config/app';
 import { fetchAuthConfig } from '../../services/authConfig';
 import { CloudAuthConfig, fetchCloudAuthConfig, signInWithGoogle, signInWithMicrosoft } from '../../services/cloud-auth';
@@ -275,7 +275,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           setOidcService(new OIDCService(getOIDCConfig()));
         }
         if (samlResult) {
-          setSamlService(new SAMLService(getSAMLConfig()));
+          const samlConfig = await loadSAMLConfig();
+          setSamlService(new SAMLService(samlConfig));
         }
       } catch (error) {
         console.warn('Failed to load SSO configuration:', error);
@@ -359,7 +360,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         setOidcService(null);
       }
       if (authCfg.samlEnabled) {
-        setSamlService(new SAMLService(getSAMLConfig()));
+        const samlConfig = await loadSAMLConfig(repoId);
+        setSamlService(new SAMLService(samlConfig));
       } else {
         setSamlService(null);
       }
@@ -534,9 +536,16 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError(null);
 
     try {
+      // Check sessionStorage first (set by SamlAcsServlet for POST binding),
+      // then fall back to URL params (for HTTP-Redirect binding).
+      const storedResponse = sessionStorage.getItem('nemakiware_saml_response');
+      const storedRelayState = sessionStorage.getItem('nemakiware_saml_relay_state');
+      sessionStorage.removeItem('nemakiware_saml_response');
+      sessionStorage.removeItem('nemakiware_saml_relay_state');
+
       const urlParams = new URLSearchParams(window.location.search);
-      const samlResponse = urlParams.get('SAMLResponse');
-      const relayState = urlParams.get('RelayState');
+      const samlResponse = storedResponse || urlParams.get('SAMLResponse');
+      const relayState = storedRelayState || urlParams.get('RelayState');
 
       if (samlResponse) {
         const auth = await samlService.handleSAMLResponse(samlResponse, relayState || undefined);

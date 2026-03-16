@@ -2,9 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { Form, Switch, Input, Button, Alert, Space, Tag, Checkbox } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { setupApi } from '../../../services/setupApi';
-import type { AuthConfig } from '../../../services/setupApi';
+import type { AuthConfig, SamlCertTestResult } from '../../../services/setupApi';
 
 export type { AuthConfig };
+
+/** Docker default Keycloak values */
+const KEYCLOAK_DEFAULTS = {
+  issuerUrl: 'http://keycloak:8080/realms/nemakiware',
+  clientId: 'nemakiware-ui',
+};
 
 interface AuthStepProps {
   value: AuthConfig;
@@ -17,19 +23,18 @@ export function AuthStep({ value, onChange, onValidChange }: AuthStepProps) {
   const [googleOidcTest, setGoogleOidcTest] = useState<{ testing: boolean; reachable?: boolean; error?: string; clientIdValid?: boolean; clientIdIndeterminate?: boolean; clientIdError?: string }>({ testing: false });
   const [microsoftOidcTest, setMicrosoftOidcTest] = useState<{ testing: boolean; reachable?: boolean; error?: string; clientIdValid?: boolean; clientIdIndeterminate?: boolean; clientIdError?: string }>({ testing: false });
   const [microsoftClientIdAcknowledged, setMicrosoftClientIdAcknowledged] = useState(false);
+  const [keycloakOidcTest, setKeycloakOidcTest] = useState<{ testing: boolean; reachable?: boolean; error?: string }>({ testing: false });
+  const [samlCertTest, setSamlCertTest] = useState<{ testing: boolean; result?: SamlCertTestResult }>({ testing: false });
 
   const validateAuth = useCallback((config: AuthConfig) => {
-    const anyEnabled = config.passwordEnabled || config.googleEnabled || config.microsoftEnabled;
+    const anyEnabled = config.passwordEnabled || config.googleEnabled || config.microsoftEnabled || config.keycloakOidcEnabled || config.samlEnabled;
     const googleConfigured = !config.googleEnabled || !!config.googleClientId?.trim();
     const microsoftConfigured = !config.microsoftEnabled || !!config.microsoftClientId?.trim();
+    const keycloakConfigured = !config.keycloakOidcEnabled || (!!config.keycloakIssuerUrl?.trim() && !!config.keycloakClientId?.trim());
 
-    // Require OIDC test pass when provider auth is enabled.
-    // Google: requires explicit clientIdValid===true.
-    // Microsoft: provider cannot pre-validate clientId (always returns indeterminate).
-    //   If clientIdValid===true  → pass (explicit validation by provider).
-    //   If clientIdValid===false → fail (explicitly rejected).
-    //   Otherwise (indeterminate) → require user acknowledgement checkbox.
-    // Server-side /auth/apply enforces clientId non-empty as additional safeguard.
+    const samlConfigured = !config.samlEnabled || (!!config.samlIdpSsoUrl?.trim() && !!config.samlIdpCertificate?.trim());
+    const samlTestPassed = !config.samlEnabled || samlCertTest.result?.valid === true;
+
     const googleTestPassed =
       !config.googleEnabled ||
       (googleOidcTest.reachable === true && googleOidcTest.clientIdValid === true);
@@ -42,16 +47,17 @@ export function AuthStep({ value, onChange, onValidChange }: AuthStepProps) {
     } else if (microsoftOidcTest.reachable === true && microsoftOidcTest.clientIdValid === false) {
       microsoftTestPassed = false;
     } else if (microsoftOidcTest.reachable === true && microsoftOidcTest.clientIdIndeterminate === true) {
-      // Provider cannot pre-validate: require explicit user acknowledgement
       microsoftTestPassed = microsoftClientIdAcknowledged;
     } else {
       microsoftTestPassed = false;
     }
 
-    return anyEnabled && googleConfigured && microsoftConfigured && googleTestPassed && microsoftTestPassed;
-  }, [googleOidcTest, microsoftOidcTest, microsoftClientIdAcknowledged]);
+    // Keycloak OIDC: require successful discovery test
+    const keycloakTestPassed = !config.keycloakOidcEnabled || keycloakOidcTest.reachable === true;
 
-  // Recompute step validity whenever config/test result changes.
+    return anyEnabled && googleConfigured && microsoftConfigured && keycloakConfigured && samlConfigured && samlTestPassed && googleTestPassed && microsoftTestPassed && keycloakTestPassed;
+  }, [googleOidcTest, microsoftOidcTest, microsoftClientIdAcknowledged, keycloakOidcTest, samlCertTest]);
+
   useEffect(() => {
     onValidChange(validateAuth(value));
   }, [value, validateAuth, onValidChange]);
@@ -59,13 +65,18 @@ export function AuthStep({ value, onChange, onValidChange }: AuthStepProps) {
   const handleChange = (field: keyof AuthConfig, val: boolean | string) => {
     const updated = { ...value, [field]: val };
 
-    // Input change invalidates previous OIDC test result for that provider.
     if (field === 'googleEnabled' || field === 'googleClientId') {
       setGoogleOidcTest({ testing: false });
     }
     if (field === 'microsoftEnabled' || field === 'microsoftClientId' || field === 'microsoftTenantId') {
       setMicrosoftOidcTest({ testing: false });
       setMicrosoftClientIdAcknowledged(false);
+    }
+    if (field === 'keycloakOidcEnabled' || field === 'keycloakIssuerUrl' || field === 'keycloakClientId') {
+      setKeycloakOidcTest({ testing: false });
+    }
+    if (field === 'samlEnabled' || field === 'samlIdpCertificate') {
+      setSamlCertTest({ testing: false });
     }
 
     onChange(updated);
@@ -112,7 +123,43 @@ export function AuthStep({ value, onChange, onValidChange }: AuthStepProps) {
     }
   };
 
-  const noneEnabled = !value.passwordEnabled && !value.googleEnabled && !value.microsoftEnabled;
+  const testKeycloakOidc = async () => {
+    setKeycloakOidcTest({ testing: true });
+    try {
+      const result = await setupApi.testOidc({
+        issuerUrl: value.keycloakIssuerUrl || '',
+      });
+      setKeycloakOidcTest({
+        testing: false,
+        reachable: result.reachable,
+        error: result.error,
+      });
+    } catch (e) {
+      setKeycloakOidcTest({ testing: false, reachable: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  const fillKeycloakDefaults = () => {
+    const updated = {
+      ...value,
+      keycloakIssuerUrl: KEYCLOAK_DEFAULTS.issuerUrl,
+      keycloakClientId: KEYCLOAK_DEFAULTS.clientId,
+    };
+    setKeycloakOidcTest({ testing: false });
+    onChange(updated);
+  };
+
+  const testSamlCertificate = async () => {
+    setSamlCertTest({ testing: true });
+    try {
+      const result = await setupApi.testSamlCertificate(value.samlIdpCertificate || '');
+      setSamlCertTest({ testing: false, result });
+    } catch (e) {
+      setSamlCertTest({ testing: false, result: { valid: false, error: e instanceof Error ? e.message : String(e) } });
+    }
+  };
+
+  const noneEnabled = !value.passwordEnabled && !value.googleEnabled && !value.microsoftEnabled && !value.keycloakOidcEnabled && !value.samlEnabled;
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -131,6 +178,115 @@ export function AuthStep({ value, onChange, onValidChange }: AuthStepProps) {
             onChange={(v) => handleChange('passwordEnabled', v)}
           />
         </Form.Item>
+
+        <Form.Item label={t('setup.auth.keycloakOidc')}>
+          <Switch
+            checked={value.keycloakOidcEnabled}
+            onChange={(v) => handleChange('keycloakOidcEnabled', v)}
+          />
+        </Form.Item>
+        {value.keycloakOidcEnabled && (
+          <Space direction="vertical" style={{ width: '100%', paddingLeft: 24 }}>
+            <Button size="small" type="dashed" onClick={fillKeycloakDefaults}>
+              {t('setup.auth.keycloakDefaults')}
+            </Button>
+            <Form.Item label={t('setup.auth.issuerUrl')}>
+              <Input
+                value={value.keycloakIssuerUrl}
+                onChange={(e) => handleChange('keycloakIssuerUrl', e.target.value)}
+                placeholder={KEYCLOAK_DEFAULTS.issuerUrl}
+              />
+            </Form.Item>
+            <Form.Item label={t('setup.auth.keycloakClientId')}>
+              <Input
+                value={value.keycloakClientId}
+                onChange={(e) => handleChange('keycloakClientId', e.target.value)}
+                placeholder={KEYCLOAK_DEFAULTS.clientId}
+              />
+            </Form.Item>
+            <Button size="small" onClick={testKeycloakOidc} loading={keycloakOidcTest.testing} disabled={!value.keycloakIssuerUrl}>
+              {t('setup.auth.testOidc')}
+            </Button>
+            {keycloakOidcTest.reachable !== undefined && (
+              <Tag color={keycloakOidcTest.reachable ? 'green' : 'red'}>
+                {keycloakOidcTest.reachable ? t('setup.auth.oidcReachable') : t('setup.auth.oidcUnreachable')}
+              </Tag>
+            )}
+            {!keycloakOidcTest.reachable && keycloakOidcTest.error && (
+              <Alert type="warning" message={keycloakOidcTest.error} showIcon />
+            )}
+          </Space>
+        )}
+
+        <Form.Item label={t('setup.auth.saml')}>
+          <Switch
+            checked={value.samlEnabled}
+            onChange={(v) => handleChange('samlEnabled', v)}
+          />
+        </Form.Item>
+        {value.samlEnabled && (
+          <Space direction="vertical" style={{ width: '100%', paddingLeft: 24 }}>
+            <Alert type="info" message={t('setup.auth.samlNote')} showIcon />
+            <Form.Item label={t('setup.auth.samlIdpSsoUrl')} required>
+              <Input
+                value={value.samlIdpSsoUrl}
+                onChange={(e) => handleChange('samlIdpSsoUrl', e.target.value)}
+                placeholder="https://idp.example.com/sso/saml"
+              />
+            </Form.Item>
+            <Form.Item label={t('setup.auth.samlSpEntityId')}>
+              <Input
+                value={value.samlSpEntityId}
+                onChange={(e) => handleChange('samlSpEntityId', e.target.value)}
+                placeholder="nemakiware-sp"
+              />
+            </Form.Item>
+            <Form.Item label={t('setup.auth.samlIdpCertificate')} required>
+              <Input.TextArea
+                value={value.samlIdpCertificate}
+                onChange={(e) => handleChange('samlIdpCertificate', e.target.value)}
+                placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                rows={6}
+                style={{ fontFamily: 'monospace', fontSize: 12 }}
+              />
+            </Form.Item>
+            <Button
+              size="small"
+              onClick={testSamlCertificate}
+              loading={samlCertTest.testing}
+              disabled={!value.samlIdpCertificate?.trim()}
+            >
+              {t('setup.auth.testSamlCertificate')}
+            </Button>
+            {samlCertTest.result && (
+              <Tag color={samlCertTest.result.valid ? 'green' : 'red'}>
+                {samlCertTest.result.valid
+                  ? t('setup.auth.samlCertValid', { subject: samlCertTest.result.subject })
+                  : t('setup.auth.samlCertInvalid')}
+              </Tag>
+            )}
+            {samlCertTest.result && !samlCertTest.result.valid && samlCertTest.result.error && (
+              <Alert type="error" message={samlCertTest.result.error} showIcon />
+            )}
+            {samlCertTest.result?.warning && (
+              <Alert type="warning" message={samlCertTest.result.warning} showIcon />
+            )}
+            <Form.Item label={t('setup.auth.samlSloUrl')}>
+              <Input
+                value={value.samlSloUrl}
+                onChange={(e) => handleChange('samlSloUrl', e.target.value)}
+                placeholder="https://idp.example.com/slo"
+              />
+            </Form.Item>
+            <Form.Item label={t('setup.auth.samlAttributeMapping')}>
+              <Input
+                value={value.samlAttributeMapping}
+                onChange={(e) => handleChange('samlAttributeMapping', e.target.value)}
+                placeholder="NameID"
+              />
+            </Form.Item>
+          </Space>
+        )}
 
         <Form.Item label={t('setup.auth.google')}>
           <Switch

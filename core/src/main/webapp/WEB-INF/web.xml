@@ -151,6 +151,10 @@
 		<filter-name>corsFilter</filter-name>
 		<url-pattern>/api/v1/setup/*</url-pattern>
 	</filter-mapping>
+	<filter-mapping>
+		<filter-name>corsFilter</filter-name>
+		<url-pattern>/saml/*</url-pattern>
+	</filter-mapping>
 	
 	<!-- Audit request context filter mapping - CMIS binding paths -->
 	<filter-mapping>
@@ -402,6 +406,19 @@
  <servlet-mapping>
   <servlet-name>jersey-mcp</servlet-name>
   <url-pattern>/mcp/*</url-pattern>
+ </servlet-mapping>
+
+ <!-- SAML ACS (Assertion Consumer Service) servlet -->
+ <!-- Receives POST binding SAMLResponse from IdP, bridges to SPA via sessionStorage -->
+ <!-- No authentication filter: user has not authenticated yet at this point -->
+ <servlet>
+  <servlet-name>saml-acs</servlet-name>
+  <servlet-class>jp.aegif.nemaki.rest.SamlAcsServlet</servlet-class>
+ </servlet>
+
+ <servlet-mapping>
+  <servlet-name>saml-acs</servlet-name>
+  <url-pattern>/saml/acs</url-pattern>
  </servlet-mapping>
 
  <!-- Simple servlet for /rest/all/repositories endpoint -->

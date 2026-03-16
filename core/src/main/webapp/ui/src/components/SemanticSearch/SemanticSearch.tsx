@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Input, Button, List, Card, Typography, Space, Spin, Alert, Tooltip, Slider, Empty, Tag } from 'antd';
+import { Input, Button, List, Card, Typography, Space, Spin, Alert, Tooltip, Slider, Empty } from 'antd';
 import { SearchOutlined, FileTextOutlined, FolderOutlined, InfoCircleOutlined, EyeOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { RAGService, RAGSearchResult, RAGHealthStatus } from '../../services/rag';
@@ -170,7 +170,6 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
         <Space>
           <SearchOutlined />
           {t('semanticSearch.title')}
-          <Tag color="orange" style={{ fontSize: '11px' }}>{t('common.beta')}</Tag>
           <Tooltip title={t('semanticSearch.helpText')}>
             <InfoCircleOutlined style={{ color: '#999' }} />
           </Tooltip>

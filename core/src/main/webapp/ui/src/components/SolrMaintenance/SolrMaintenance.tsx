@@ -1198,7 +1198,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     },
     {
       key: 'rag-status',
-      label: <>{t('ragMaintenance.tabs.status')} <Tag color="orange" style={{ fontSize: '10px', lineHeight: '16px', padding: '0 4px', marginLeft: 4 }}>{t('common.beta')}</Tag></>,
+      label: t('ragMaintenance.tabs.status'),
       children: (
         <>
           {renderRagHealthStatus()}
@@ -1208,12 +1208,12 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     },
     {
       key: 'rag-reindex',
-      label: <>{t('ragMaintenance.tabs.reindex')} <Tag color="orange" style={{ fontSize: '10px', lineHeight: '16px', padding: '0 4px', marginLeft: 4 }}>{t('common.beta')}</Tag></>,
+      label: t('ragMaintenance.tabs.reindex'),
       children: renderRagReindexActions(),
     },
     {
       key: 'rag-search',
-      label: <>{t('ragMaintenance.tabs.search')} <Tag color="orange" style={{ fontSize: '10px', lineHeight: '16px', padding: '0 4px', marginLeft: 4 }}>{t('common.beta')}</Tag></>,
+      label: t('ragMaintenance.tabs.search'),
       children: <RAGSearchAdmin repositoryId={repositoryId} />,
     },
   ];

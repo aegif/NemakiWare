@@ -10,9 +10,13 @@ const testOidcMock = vi.fn(async (req: { issuerUrl: string; clientId?: string })
   return testOidcResponses[key] ?? { reachable: true };
 });
 
+let testSamlCertResponse: unknown = { valid: true, subject: 'CN=TestIdP' };
+const testSamlCertMock = vi.fn(async (_certificate: string) => testSamlCertResponse);
+
 vi.mock('../../../services/setupApi', () => ({
   setupApi: {
     testOidc: (...args: unknown[]) => testOidcMock(...(args as [{ issuerUrl: string; clientId?: string }])),
+    testSamlCertificate: (...args: unknown[]) => testSamlCertMock(...(args as [string])),
   },
 }));
 
@@ -29,6 +33,15 @@ function defaultConfig(): AuthConfig {
     googleClientId: undefined,
     microsoftClientId: undefined,
     microsoftTenantId: undefined,
+    keycloakOidcEnabled: false,
+    samlEnabled: false,
+    keycloakIssuerUrl: undefined,
+    keycloakClientId: undefined,
+    samlIdpSsoUrl: undefined,
+    samlSpEntityId: undefined,
+    samlIdpCertificate: undefined,
+    samlSloUrl: undefined,
+    samlAttributeMapping: undefined,
   };
 }
 
@@ -42,6 +55,8 @@ describe('AuthStep validation', () => {
     onChange.mockClear();
     testOidcResponses = {};
     testOidcMock.mockClear();
+    testSamlCertResponse = { valid: true, subject: 'CN=TestIdP' };
+    testSamlCertMock.mockClear();
   });
 
   it('password-only config is valid without OIDC test', () => {
@@ -217,6 +232,51 @@ describe('AuthStep validation', () => {
     // Change tenantId → test result and acknowledgement should reset → invalid
     const tenantInput = screen.getByPlaceholderText('common');
     await act(async () => { fireEvent.change(tenantInput, { target: { value: 'new-tenant' } }); });
+
+    await waitFor(() => {
+      expect(validHistory[validHistory.length - 1]).toBe(false);
+    });
+  });
+
+  it('SAML enabled without SSO URL is invalid', () => {
+    const config = { ...defaultConfig(), samlEnabled: true, samlIdpSsoUrl: '', samlIdpCertificate: 'some-cert' };
+    render(<AuthStep value={config} onChange={onChange} onValidChange={onValidChange} />);
+    expect(validHistory[validHistory.length - 1]).toBe(false);
+  });
+
+  it('SAML enabled without certificate is invalid', () => {
+    const config = { ...defaultConfig(), samlEnabled: true, samlIdpSsoUrl: 'https://idp/sso', samlIdpCertificate: '' };
+    render(<AuthStep value={config} onChange={onChange} onValidChange={onValidChange} />);
+    expect(validHistory[validHistory.length - 1]).toBe(false);
+  });
+
+  it('SAML enabled with SSO URL and cert but no cert test is invalid', () => {
+    const config = { ...defaultConfig(), samlEnabled: true, samlIdpSsoUrl: 'https://idp/sso', samlIdpCertificate: '-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----' };
+    render(<AuthStep value={config} onChange={onChange} onValidChange={onValidChange} />);
+    // cert test not run → samlTestPassed is false
+    expect(validHistory[validHistory.length - 1]).toBe(false);
+  });
+
+  it('SAML passes after certificate validation succeeds', async () => {
+    testSamlCertResponse = { valid: true, subject: 'CN=TestIdP' };
+    const config = { ...defaultConfig(), samlEnabled: true, samlIdpSsoUrl: 'https://idp/sso', samlIdpCertificate: '-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----' };
+    render(<AuthStep value={config} onChange={onChange} onValidChange={onValidChange} />);
+
+    const testButton = screen.getByText('setup.auth.testSamlCertificate');
+    await act(async () => { fireEvent.click(testButton); });
+
+    await waitFor(() => {
+      expect(validHistory[validHistory.length - 1]).toBe(true);
+    });
+  });
+
+  it('SAML fails after certificate validation returns invalid', async () => {
+    testSamlCertResponse = { valid: false, error: 'Invalid PEM' };
+    const config = { ...defaultConfig(), samlEnabled: true, samlIdpSsoUrl: 'https://idp/sso', samlIdpCertificate: 'bad-cert' };
+    render(<AuthStep value={config} onChange={onChange} onValidChange={onValidChange} />);
+
+    const testButton = screen.getByText('setup.auth.testSamlCertificate');
+    await act(async () => { fireEvent.click(testButton); });
 
     await waitFor(() => {
       expect(validHistory[validHistory.length - 1]).toBe(false);

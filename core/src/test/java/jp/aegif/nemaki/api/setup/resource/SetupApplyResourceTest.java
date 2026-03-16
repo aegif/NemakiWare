@@ -313,6 +313,208 @@ public class SetupApplyResourceTest {
     }
 
     // ================================================================
+    // Auth validation: lockout prevention + OIDC clientId enforcement in one-shot /apply
+    // ================================================================
+
+    @Nested
+    @DisplayName("One-shot /apply: auth validation")
+    class AuthValidation {
+
+        @Test
+        @DisplayName("All auth methods disabled → 400 (lockout prevention)")
+        public void testAllAuthDisabled() {
+            SetupApplyRequest req = validRequest();
+            AuthConfigRequest auth = new AuthConfigRequest();
+            auth.setPasswordEnabled(false);
+            auth.setGoogleEnabled(false);
+            auth.setMicrosoftEnabled(false);
+            req.setAuth(auth);
+
+            Response resp = resource.apply(req);
+            assertEquals(400, resp.getStatus());
+            String body = (String) resp.getEntity();
+            assertTrue(body.contains("At least one authentication method"), body);
+        }
+
+        @Test
+        @DisplayName("Google enabled without clientId → 400")
+        public void testGoogleWithoutClientId() {
+            SetupApplyRequest req = validRequest();
+            AuthConfigRequest auth = new AuthConfigRequest();
+            auth.setPasswordEnabled(false);
+            auth.setGoogleEnabled(true);
+            auth.setMicrosoftEnabled(false);
+            // googleClientId is null
+            req.setAuth(auth);
+
+            Response resp = resource.apply(req);
+            assertEquals(400, resp.getStatus());
+            String body = (String) resp.getEntity();
+            assertTrue(body.contains("Google Client ID is required"), body);
+        }
+
+        @Test
+        @DisplayName("Google enabled with empty clientId → 400")
+        public void testGoogleWithEmptyClientId() {
+            SetupApplyRequest req = validRequest();
+            AuthConfigRequest auth = new AuthConfigRequest();
+            auth.setPasswordEnabled(false);
+            auth.setGoogleEnabled(true);
+            auth.setMicrosoftEnabled(false);
+            auth.setGoogleClientId("   ");
+            req.setAuth(auth);
+
+            Response resp = resource.apply(req);
+            assertEquals(400, resp.getStatus());
+            String body = (String) resp.getEntity();
+            assertTrue(body.contains("Google Client ID is required"), body);
+        }
+
+        @Test
+        @DisplayName("Microsoft enabled without clientId → 400")
+        public void testMicrosoftWithoutClientId() {
+            SetupApplyRequest req = validRequest();
+            AuthConfigRequest auth = new AuthConfigRequest();
+            auth.setPasswordEnabled(false);
+            auth.setGoogleEnabled(false);
+            auth.setMicrosoftEnabled(true);
+            // microsoftClientId is null
+            req.setAuth(auth);
+
+            Response resp = resource.apply(req);
+            assertEquals(400, resp.getStatus());
+            String body = (String) resp.getEntity();
+            assertTrue(body.contains("Microsoft Client ID is required"), body);
+        }
+
+        @Test
+        @DisplayName("Microsoft enabled with empty clientId → 400")
+        public void testMicrosoftWithEmptyClientId() {
+            SetupApplyRequest req = validRequest();
+            AuthConfigRequest auth = new AuthConfigRequest();
+            auth.setPasswordEnabled(false);
+            auth.setGoogleEnabled(false);
+            auth.setMicrosoftEnabled(true);
+            auth.setMicrosoftClientId("  ");
+            req.setAuth(auth);
+
+            Response resp = resource.apply(req);
+            assertEquals(400, resp.getStatus());
+            String body = (String) resp.getEntity();
+            assertTrue(body.contains("Microsoft Client ID is required"), body);
+        }
+
+        @Test
+        @DisplayName("Password only (no OIDC) → passes validation")
+        public void testPasswordOnlyPassesValidation() {
+            SetupApplyRequest req = validRequest();
+            AuthConfigRequest auth = new AuthConfigRequest();
+            auth.setPasswordEnabled(true);
+            auth.setGoogleEnabled(false);
+            auth.setMicrosoftEnabled(false);
+            req.setAuth(auth);
+
+            // CouchDB is unavailable → warning path, but validation passes
+            Response resp = resource.apply(req);
+            assertEquals(200, resp.getStatus());
+        }
+
+        @Test
+        @DisplayName("SAML enabled without SSO URL → 400")
+        public void testSamlWithoutSsoUrl() {
+            SetupApplyRequest req = validRequest();
+            AuthConfigRequest auth = new AuthConfigRequest();
+            auth.setPasswordEnabled(false);
+            auth.setSamlEnabled(true);
+            auth.setSamlIdpSsoUrl(null);
+            auth.setSamlIdpCertificate("MIICpDCCAYwCCQDU...");
+            req.setAuth(auth);
+
+            Response resp = resource.apply(req);
+            assertEquals(400, resp.getStatus());
+            String body = (String) resp.getEntity();
+            assertTrue(body.contains("IdP SSO URL is required"), body);
+        }
+
+        @Test
+        @DisplayName("SAML enabled without certificate → 400")
+        public void testSamlWithoutCertificate() {
+            SetupApplyRequest req = validRequest();
+            AuthConfigRequest auth = new AuthConfigRequest();
+            auth.setPasswordEnabled(false);
+            auth.setSamlEnabled(true);
+            auth.setSamlIdpSsoUrl("https://idp.example.com/sso");
+            auth.setSamlIdpCertificate(null);
+            req.setAuth(auth);
+
+            Response resp = resource.apply(req);
+            assertEquals(400, resp.getStatus());
+            String body = (String) resp.getEntity();
+            assertTrue(body.contains("IdP signing certificate is required"), body);
+        }
+
+        @Test
+        @DisplayName("SAML enabled with [configured] but no stored certificate → 400")
+        public void testSamlConfiguredPlaceholderNoStoredCert() {
+            SetupApplyRequest req = validRequest();
+            AuthConfigRequest auth = new AuthConfigRequest();
+            auth.setPasswordEnabled(false);
+            auth.setSamlEnabled(true);
+            auth.setSamlIdpSsoUrl("https://idp.example.com/sso");
+            auth.setSamlIdpCertificate("[configured]");
+            req.setAuth(auth);
+
+            // CouchDB getConfigValue will fail (no server) → 400
+            Response resp = resource.apply(req);
+            assertEquals(400, resp.getStatus());
+        }
+
+        @Test
+        @DisplayName("SAML enabled with [configured] and stored certificate → passes validation")
+        public void testSamlConfiguredPlaceholderWithStoredCert() {
+            SetupApplyRequest req = validRequest();
+            AuthConfigRequest auth = new AuthConfigRequest();
+            auth.setPasswordEnabled(false);
+            auth.setSamlEnabled(true);
+            auth.setSamlIdpSsoUrl("https://idp.example.com/sso");
+            auth.setSamlIdpCertificate("[configured]");
+            req.setAuth(auth);
+
+            when(probeService.getCurrentState()).thenReturn(StartupProbeService.StartupState.DB_CONNECTED_CURRENT);
+
+            try (MockedStatic<CouchDbConfigWriter> mocked = mockStatic(CouchDbConfigWriter.class)) {
+                mocked.when(() -> CouchDbConfigWriter.getConfigValue(anyString(), anyString(), eq("saml.idp.certificate")))
+                        .thenReturn("MIICpDCCAYwCCQDU...");
+                mocked.when(() -> CouchDbConfigWriter.putConfigValue(anyString(), anyString(), anyString(), anyString()))
+                        .then(invocation -> null);
+                mocked.when(() -> CouchDbConfigWriter.basicAuth(anyString(), anyString()))
+                        .thenCallRealMethod();
+                mocked.when(() -> CouchDbConfigWriter.escapeJson(anyString()))
+                        .thenCallRealMethod();
+
+                Response resp = resource.apply(req);
+                assertEquals(200, resp.getStatus());
+            }
+        }
+
+        @Test
+        @DisplayName("SAML enabled with real PEM certificate → passes validation")
+        public void testSamlWithRealCertificate() {
+            SetupApplyRequest req = validRequest();
+            AuthConfigRequest auth = new AuthConfigRequest();
+            auth.setPasswordEnabled(false);
+            auth.setSamlEnabled(true);
+            auth.setSamlIdpSsoUrl("https://idp.example.com/sso");
+            auth.setSamlIdpCertificate("MIICpDCCAYwCCQDU...");
+            req.setAuth(auth);
+
+            // CouchDB is unavailable → warning path, but validation passes (no [configured] check)
+            Response resp = resource.apply(req);
+            assertEquals(200, resp.getStatus());
+        }
+    }
+
+    // ================================================================
     // Vector validation (P2): reject incomplete payloads in one-shot /apply
     // ================================================================
 

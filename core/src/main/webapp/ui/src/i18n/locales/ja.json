@@ -26,6 +26,7 @@
     "optional": "任意",
     "enabled": "有効",
     "disabled": "無効",
+    "configured": "設定済み",
     "single": "単一",
     "multi": "複数",
     "direct": "直接",
@@ -2264,6 +2265,12 @@
       "previous": "前へ",
       "next": "次へ"
     },
+    "hydration": {
+      "loading": "既存の設定を読み込んでいます...",
+      "errorTitle": "設定の読み込みに失敗しました",
+      "errorDescription": "既存の認証・ベクトル検索設定を取得できませんでした。リトライするか、サーバーの状態を確認してください。",
+      "retry": "リトライ"
+    },
     "couchdb": {
       "url": "CouchDB URL",
       "username": "ユーザー名",
@@ -2296,6 +2303,20 @@
       "clientIdValid": "クライアントID有効",
       "clientIdInvalid": "クライアントIDが見つかりません",
       "microsoftClientIdAcknowledge": "このクライアントIDが正しいことを確認しました（Microsoftは事前検証できません）",
+      "keycloakOidc": "Keycloak OIDC",
+      "saml": "SAML",
+      "issuerUrl": "Issuer URL",
+      "keycloakClientId": "クライアントID",
+      "keycloakDefaults": "Docker標準環境のデフォルト値を使用",
+      "samlNote": "SAML認証にはIdPの設定が必要です。SSO URL と署名証明書を入力してください。",
+      "samlIdpSsoUrl": "IdP SSO URL",
+      "samlSpEntityId": "SP Entity ID",
+      "samlIdpCertificate": "IdP署名証明書 (PEM)",
+      "samlSloUrl": "Single Logout URL (任意)",
+      "samlAttributeMapping": "ユーザー名属性 (任意)",
+      "testSamlCertificate": "証明書を検証",
+      "samlCertValid": "有効 ({{subject}})",
+      "samlCertInvalid": "無効な証明書",
       "lockoutWarning": "少なくとも1つの認証方式を有効にしてください"
     },
     "admin": {

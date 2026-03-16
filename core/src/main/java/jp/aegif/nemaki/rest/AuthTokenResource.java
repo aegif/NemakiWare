@@ -38,7 +38,7 @@ import java.io.ByteArrayInputStream;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.UUID;
-import java.util.zip.Inflater;
+
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.Document;
@@ -357,17 +357,163 @@ public class AuthTokenResource extends ResourceBase{
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_JSON)
 	public String convertSAMLToken(@PathParam("repositoryId") String repositoryId, String requestBody) {
+		boolean status = false;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		// SECURITY FIX: SAML response signature verification is not implemented.
-		// Without signature verification, an attacker can forge arbitrary SAML responses
-		// and impersonate any user. This endpoint is disabled until proper SAML signature
-		// validation (e.g., via OpenSAML) is implemented.
-		logger.warn("SAML token conversion rejected - signature verification not implemented");
-		addErrMsg(errMsg, "saml", "SAML authentication is not available. " +
-				"SAML response signature verification is not implemented. Use OIDC authentication instead.");
-		return makeResult(false, result, errMsg).toString();
+		logger.info("=== SAML token conversion requested for repository: {} ===", repositoryId);
+
+		if (StringUtils.isBlank(repositoryId)) {
+			addErrMsg(errMsg, "repositoryId", "isNull");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		try {
+			JSONParser parser = new JSONParser();
+			JSONObject requestJson = (JSONObject) parser.parse(requestBody);
+
+			String samlResponse = (String) requestJson.get("saml_response");
+			if (StringUtils.isBlank(samlResponse)) {
+				addErrMsg(errMsg, "saml_response", "isNull");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Load SAML configuration from PropertyManager
+			PropertyManager pm = getPropertyManager();
+			if (pm == null) {
+				addErrMsg(errMsg, "saml", "PropertyManager not available");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			String idpCertPem = pm.readValue(repositoryId, PropertyKey.SAML_IDP_CERTIFICATE);
+			if (StringUtils.isBlank(idpCertPem)) {
+				addErrMsg(errMsg, "saml", "IdP certificate not configured. Configure via Setup Wizard.");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			String spEntityId = pm.readValue(repositoryId, PropertyKey.SAML_SP_ENTITY_ID);
+			if (StringUtils.isBlank(spEntityId)) {
+				spEntityId = "nemakiware-sp"; // default
+			}
+
+			// Parse IdP certificate
+			java.security.cert.X509Certificate idpCert;
+			try {
+				idpCert = SamlSignatureVerifier.parseCertificate(idpCertPem);
+			} catch (Exception e) {
+				logger.error("Failed to parse IdP certificate", e);
+				addErrMsg(errMsg, "saml", "Invalid IdP certificate: " + e.getMessage());
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Base64 decode + optional DEFLATE decompression (10 MB limit to prevent DoS)
+			byte[] decodedBytes = Base64.getDecoder().decode(samlResponse);
+			byte[] xmlBytes;
+			try {
+				final int MAX_INFLATED_SIZE = 10 * 1024 * 1024; // 10 MB
+				java.util.zip.Inflater inflater = new java.util.zip.Inflater(true);
+				inflater.setInput(decodedBytes);
+				java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+				byte[] buf = new byte[8192];
+				int n;
+				while ((n = inflater.inflate(buf)) > 0) {
+					if (baos.size() + n > MAX_INFLATED_SIZE) {
+						inflater.end();
+						addErrMsg(errMsg, "saml", "SAML response exceeds 10 MB inflated size limit");
+						return makeResult(false, result, errMsg).toString();
+					}
+					baos.write(buf, 0, n);
+				}
+				inflater.end();
+				xmlBytes = baos.toByteArray();
+				logger.debug("SAML response was deflate-compressed, inflated {} -> {} bytes",
+						decodedBytes.length, xmlBytes.length);
+			} catch (java.util.zip.DataFormatException e) {
+				xmlBytes = decodedBytes;
+				logger.debug("SAML response was not deflate-compressed, using raw bytes");
+			}
+
+			// XXE-safe XML parsing (same pattern as extractUserNameFromSAMLResponse)
+			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+			factory.setNamespaceAware(true);
+			factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+			factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+			factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+			factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
+			try {
+				factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
+				factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+			} catch (IllegalArgumentException e) {
+				logger.debug("XML parser does not support ACCESS_EXTERNAL_DTD/SCHEMA (XXE prevented via other features)");
+			}
+
+			DocumentBuilder builder = factory.newDocumentBuilder();
+			Document document = builder.parse(new ByteArrayInputStream(xmlBytes));
+
+			// Verify SAML signature, conditions, and audience
+			SamlSignatureVerifier.VerificationResult verifyResult =
+					SamlSignatureVerifier.verify(document, idpCert, spEntityId);
+			if (!verifyResult.isValid()) {
+				logger.warn("SAML signature verification failed: {}", verifyResult.getError());
+				addErrMsg(errMsg, "saml", verifyResult.getError());
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Extract username only from the signed subtree (Response or Assertion)
+			// to prevent unsigned sibling assertion injection attacks
+			String attributeMapping = pm.readValue(repositoryId, PropertyKey.SAML_ATTRIBUTE_MAPPING);
+			String userName = extractUserNameFromSAMLElement(verifyResult.getSignedElement(), attributeMapping);
+			if (StringUtils.isBlank(userName)) {
+				addErrMsg(errMsg, "userName", "couldNotExtract");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			logger.info("SAML authentication successful for user: {}", userName);
+
+			UserItem userItem = getOrCreateUser(repositoryId, userName);
+			if (userItem == null) {
+				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Check if SAML/cloud authentication is allowed for this user
+			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
+			if (authService != null && !authService.isAuthMethodAllowed(userItem, "cloud")) {
+				logger.info("SAML authentication denied for user {} (not in allowedAuthMethods)", userName);
+				addErrMsg(errMsg, "auth", "methodNotAllowed");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			TokenService tokenService = getTokenService();
+			if (tokenService == null) {
+				addErrMsg(errMsg, "tokenService", "notAvailable");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			String app = "";
+			Token token = tokenService.setToken(app, repositoryId, userName);
+			setAuthTokenCookie(token.getToken(), repositoryId);
+
+			JSONObject obj = new JSONObject();
+			obj.put("app", app);
+			obj.put("repositoryId", repositoryId);
+			obj.put("userName", userName);
+			obj.put("token", token.getToken());
+			obj.put("expiration", token.getExpiration());
+			result.put("value", obj);
+
+			status = true;
+			logger.info("=== SAML token conversion successful for user: {} ===", userName);
+
+		} catch (ParseException e) {
+			logger.error("Failed to parse SAML request body", e);
+			addErrMsg(errMsg, "requestBody", "invalidJson");
+		} catch (Exception e) {
+			logger.error("SAML token conversion failed", e);
+			addErrMsg(errMsg, "saml", "conversionFailed");
+		}
+
+		return makeResult(status, result, errMsg).toString();
 	}
 
 	/**
@@ -741,80 +887,74 @@ public class AuthTokenResource extends ResourceBase{
 		return makeResult(status, result, errMsg).toString();
 	}
 
-	private String extractUserNameFromSAMLResponse(String samlResponse) {
+
+
+	/**
+	 * Extract username from the signed SAML subtree (Response or Assertion element).
+	 * Only searches within the verified signed element to prevent unsigned
+	 * sibling assertion injection attacks.
+	 *
+	 * Attribute mapping priority:
+	 * 1. If attributeMapping is specified, look for that attribute name first
+	 * 2. NameID
+	 * 3. email / emailaddress claim
+	 * 4. preferred_username
+	 *
+	 * @param signedElement    the signed Response or Assertion element
+	 * @param attributeMapping optional custom attribute name for username extraction
+	 * @return extracted username, or null if not found
+	 */
+	private String extractUserNameFromSAMLElement(Element signedElement, String attributeMapping) {
 		try {
-			byte[] decodedBytes = Base64.getDecoder().decode(samlResponse);
-			byte[] xmlBytes;
-
-			// Try to inflate (decompress) the SAML response
-			// HTTP-Redirect binding uses DEFLATE compression, HTTP-POST does not
-			try {
-				Inflater inflater = new Inflater(true); // true = nowrap (raw deflate)
-				inflater.setInput(decodedBytes);
-				byte[] result = new byte[decodedBytes.length * 10]; // Estimate 10x expansion
-				int resultLength = inflater.inflate(result);
-				inflater.end();
-				xmlBytes = new byte[resultLength];
-				System.arraycopy(result, 0, xmlBytes, 0, resultLength);
-				logger.debug("SAML response was deflate-compressed, inflated {} bytes to {} bytes",
-				            decodedBytes.length, resultLength);
-			} catch (Exception e) {
-				// Not compressed, use decoded bytes directly (HTTP-POST binding)
-				xmlBytes = decodedBytes;
-				logger.debug("SAML response was not deflate-compressed, using raw bytes");
+			// 1. If custom attribute mapping is specified, try it first
+			if (attributeMapping != null && !attributeMapping.trim().isEmpty() && !"NameID".equalsIgnoreCase(attributeMapping.trim())) {
+				String mapped = findSAMLAttribute(signedElement, attributeMapping.trim());
+				if (mapped != null) return mapped;
 			}
 
-			// XXE prevention: disable external entities and DTDs
-			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-			factory.setNamespaceAware(true);
-			factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-			factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-			factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-			factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
-			// ACCESS_EXTERNAL_DTD/SCHEMA may not be supported by all parsers (e.g. Apache Xerces in Tomcat)
-			// The disallow-doctype-decl feature above already provides XXE protection
-			try {
-				factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
-				factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
-			} catch (IllegalArgumentException e) {
-				logger.debug("XML parser does not support ACCESS_EXTERNAL_DTD/SCHEMA properties (XXE prevention via other features)");
-			}
-
-			DocumentBuilder builder = factory.newDocumentBuilder();
-			Document document = builder.parse(new ByteArrayInputStream(xmlBytes));
-
-			// WARNING: This implementation does NOT verify the SAML response signature.
-			// In production, you MUST validate the XML signature against the IdP's certificate
-			// to prevent identity spoofing. Consider using OpenSAML or a similar library
-			// for proper SAML signature validation, issuer/audience/conditions checking.
-			logger.warn("SAML response signature validation is not implemented. " +
-					"This is a security risk in production environments.");
-
-			NodeList nameIdNodes = document.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "NameID");
+			// 2. NameID (default)
+			NodeList nameIdNodes = signedElement.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "NameID");
 			if (nameIdNodes.getLength() > 0) {
-				return nameIdNodes.item(0).getTextContent();
+				String nameId = nameIdNodes.item(0).getTextContent();
+				if (nameId != null && !nameId.trim().isEmpty()) return nameId.trim();
 			}
 
-			NodeList attributeNodes = document.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "Attribute");
-			for (int i = 0; i < attributeNodes.getLength(); i++) {
-				Element attr = (Element) attributeNodes.item(i);
-				String attrName = attr.getAttribute("Name");
-				if ("email".equalsIgnoreCase(attrName) || 
-				    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress".equals(attrName) ||
-				    "preferred_username".equalsIgnoreCase(attrName)) {
-					NodeList valueNodes = attr.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "AttributeValue");
-					if (valueNodes.getLength() > 0) {
-						return valueNodes.item(0).getTextContent();
-					}
-				}
+			// 3. email attribute
+			String email = findSAMLAttribute(signedElement, "email");
+			if (email == null) {
+				email = findSAMLAttribute(signedElement, "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress");
 			}
+			if (email != null) return email;
+
+			// 4. preferred_username
+			String pu = findSAMLAttribute(signedElement, "preferred_username");
+			if (pu != null) return pu;
 
 			logger.warn("Could not extract username from SAML response");
 			return null;
 		} catch (Exception e) {
-			logger.error("Failed to parse SAML response", e);
+			logger.error("Failed to extract username from SAML element", e);
 			return null;
 		}
+	}
+
+	/**
+	 * Find a SAML Attribute value by name within the given element subtree.
+	 */
+	private String findSAMLAttribute(Element element, String attributeName) {
+		NodeList attributeNodes = element.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "Attribute");
+		for (int i = 0; i < attributeNodes.getLength(); i++) {
+			Element attr = (Element) attributeNodes.item(i);
+			String attrName = attr.getAttribute("Name");
+			if (attributeName.equalsIgnoreCase(attrName) || attributeName.equals(attrName)) {
+				NodeList valueNodes = attr.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "AttributeValue");
+				if (valueNodes.getLength() > 0) {
+					String value = valueNodes.item(0).getTextContent();
+					if (value != null && !value.trim().isEmpty()) return value.trim();
+				}
+			}
+		}
+		return null;
 	}
 
 	/**

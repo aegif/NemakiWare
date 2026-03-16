@@ -1,5 +1,5 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Steps, Button, Card, Typography, Space } from 'antd';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { Steps, Button, Card, Typography, Space, Spin, Alert } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { TokenEntry } from './TokenEntry';
 import { CouchDbStep, CouchDbConfig } from './steps/CouchDbStep';
@@ -55,65 +55,74 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     0: false, 1: false, 2: false, 3: false, 4: false,
   });
 
+  // Hydration state: blocks wizard UI until existing config is loaded.
+  // Prevents overwriting existing SSO/vector configuration with defaults
+  // and prevents late hydration from reverting operator's in-progress edits.
+  const [hydrationStatus, setHydrationStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const hydrationAttemptRef = useRef(0);
+
   const handleTokenVerified = () => {
     setTokenVerified(true);
   };
 
   // Hydrate existing auth/vector settings when the wizard opens.
-  // This prevents overwriting existing SSO or vector configuration with
-  // defaults when the operator resumes or re-runs the setup wizard.
-  useEffect(() => {
-    if (!tokenVerified) return;
-    let cancelled = false;
+  const runHydration = useCallback(async () => {
+    const attemptId = ++hydrationAttemptRef.current;
+    setHydrationStatus('loading');
 
-    const hydrate = async () => {
-      const results = await Promise.allSettled([
+    try {
+      const [authState, vectorState] = await Promise.all([
         setupApi.getAuthState(),
         setupApi.getVectorState(),
       ]);
 
-      if (cancelled) return;
+      if (attemptId !== hydrationAttemptRef.current) return;
 
-      const [authResult, vectorResult] = results;
       setState(prev => {
         const next = { ...prev };
-        if (authResult.status === 'fulfilled') {
-          const a = authResult.value;
-          next.auth = {
-            passwordEnabled: a.passwordEnabled ?? prev.auth.passwordEnabled,
-            googleEnabled: a.googleEnabled ?? prev.auth.googleEnabled,
-            microsoftEnabled: a.microsoftEnabled ?? prev.auth.microsoftEnabled,
-            googleClientId: a.googleClientId ?? prev.auth.googleClientId,
-            microsoftClientId: a.microsoftClientId ?? prev.auth.microsoftClientId,
-            microsoftTenantId: a.microsoftTenantId ?? prev.auth.microsoftTenantId,
-            keycloakOidcEnabled: a.keycloakOidcEnabled ?? prev.auth.keycloakOidcEnabled,
-            samlEnabled: a.samlEnabled ?? prev.auth.samlEnabled,
-            keycloakIssuerUrl: a.keycloakIssuerUrl ?? prev.auth.keycloakIssuerUrl,
-            keycloakClientId: a.keycloakClientId ?? prev.auth.keycloakClientId,
-            samlIdpSsoUrl: a.samlIdpSsoUrl ?? prev.auth.samlIdpSsoUrl,
-            samlSpEntityId: a.samlSpEntityId ?? prev.auth.samlSpEntityId,
-            samlIdpCertificate: a.samlIdpCertificate ?? prev.auth.samlIdpCertificate,
-            samlSloUrl: a.samlSloUrl ?? prev.auth.samlSloUrl,
-            samlAttributeMapping: a.samlAttributeMapping ?? prev.auth.samlAttributeMapping,
-          };
-        }
-        if (vectorResult.status === 'fulfilled') {
-          const v = vectorResult.value;
-          next.vector = {
-            ...prev.vector,
-            type: v.type ?? prev.vector.type,
-            url: v.url ?? prev.vector.url,
-            region: v.region ?? prev.vector.region,
-            modelId: v.modelId ?? prev.vector.modelId,
-          };
-        }
+        next.auth = {
+          passwordEnabled: authState.passwordEnabled ?? prev.auth.passwordEnabled,
+          googleEnabled: authState.googleEnabled ?? prev.auth.googleEnabled,
+          microsoftEnabled: authState.microsoftEnabled ?? prev.auth.microsoftEnabled,
+          googleClientId: authState.googleClientId ?? prev.auth.googleClientId,
+          microsoftClientId: authState.microsoftClientId ?? prev.auth.microsoftClientId,
+          microsoftTenantId: authState.microsoftTenantId ?? prev.auth.microsoftTenantId,
+          keycloakOidcEnabled: authState.keycloakOidcEnabled ?? prev.auth.keycloakOidcEnabled,
+          samlEnabled: authState.samlEnabled ?? prev.auth.samlEnabled,
+          keycloakIssuerUrl: authState.keycloakIssuerUrl ?? prev.auth.keycloakIssuerUrl,
+          keycloakClientId: authState.keycloakClientId ?? prev.auth.keycloakClientId,
+          samlIdpSsoUrl: authState.samlIdpSsoUrl ?? prev.auth.samlIdpSsoUrl,
+          samlSpEntityId: authState.samlSpEntityId ?? prev.auth.samlSpEntityId,
+          samlIdpCertificate: authState.samlIdpCertificate ?? prev.auth.samlIdpCertificate,
+          samlSloUrl: authState.samlSloUrl ?? prev.auth.samlSloUrl,
+          samlAttributeMapping: authState.samlAttributeMapping ?? prev.auth.samlAttributeMapping,
+        };
+        const validVectorTypes = ['none', 'tei', 'bedrock'] as const;
+        const vectorType = validVectorTypes.includes(vectorState.type as any)
+          ? (vectorState.type as VectorConfig['type'])
+          : prev.vector.type;
+        next.vector = {
+          ...prev.vector,
+          type: vectorType,
+          url: vectorState.url ?? prev.vector.url,
+          region: vectorState.region ?? prev.vector.region,
+          modelId: vectorState.modelId ?? prev.vector.modelId,
+        };
         return next;
       });
-    };
+      setHydrationStatus('ready');
+    } catch (err) {
+      if (attemptId !== hydrationAttemptRef.current) return;
+      console.error('Setup wizard hydration failed:', err);
+      setHydrationStatus('error');
+    }
+  }, []);
 
-    hydrate();
-    return () => { cancelled = true; };
-  }, [tokenVerified]);
+  useEffect(() => {
+    if (tokenVerified && hydrationStatus === 'idle') {
+      runHydration();
+    }
+  }, [tokenVerified, hydrationStatus, runHydration]);
 
   const handleStepValid = useCallback((step: number) => (valid: boolean) => {
     setStepValid(prev => ({ ...prev, [step]: valid }));
@@ -130,6 +139,39 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
   if (!tokenVerified) {
     return <TokenEntry onTokenVerified={handleTokenVerified} />;
+  }
+
+  // Block wizard UI until hydration completes to prevent:
+  // - submitting hardcoded defaults that overwrite existing config (P2-1)
+  // - late hydration reverting operator's in-progress edits (P2-2)
+  if (hydrationStatus !== 'ready') {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f5f5f5', padding: '24px 0' }}>
+        <div style={{ maxWidth: 800, margin: '0 auto', padding: '0 24px' }}>
+          <Space direction="vertical" size="large" style={{ width: '100%', textAlign: 'center' }}>
+            <Title level={2} style={{ margin: 0 }}>{t('setup.title')}</Title>
+            {hydrationStatus === 'error' ? (
+              <Card>
+                <Alert
+                  type="error"
+                  message={t('setup.hydration.errorTitle')}
+                  description={t('setup.hydration.errorDescription')}
+                  style={{ marginBottom: 16 }}
+                />
+                <Button type="primary" onClick={runHydration}>
+                  {t('setup.hydration.retry')}
+                </Button>
+              </Card>
+            ) : (
+              <Card>
+                <Spin size="large" />
+                <p style={{ marginTop: 16 }}>{t('setup.hydration.loading')}</p>
+              </Card>
+            )}
+          </Space>
+        </div>
+      </div>
+    );
   }
 
   const steps = [
