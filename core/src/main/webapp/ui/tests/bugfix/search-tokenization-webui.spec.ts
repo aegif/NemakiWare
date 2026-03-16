@@ -284,16 +284,10 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
 
     const isMobile = testHelper.isMobile(browserName);
 
-    // Navigate to search page
-    const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
-    if (await searchMenu.count() > 0) {
-      await searchMenu.click();
-      await page.waitForTimeout(2000);
-    } else {
-      // UPDATED (2025-12-26): Search IS implemented in Layout.tsx lines 313-314
-      test.skip('Search menu not visible - IS implemented in Layout.tsx lines 313-314');
-      return;
-    }
+    // Navigate directly to search page via URL
+    await page.goto('http://localhost:8080/core/ui/index.html#/search');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
 
     // Find search input
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
@@ -385,7 +379,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
 
       if (await docRow.count() > 0) {
         const deleteButton = docRow.locator('button').filter({
-          has: page.locator('[data-icon="delete"]')
+          has: page.locator('.anticon-delete, [aria-label="delete"]')
         });
 
         if (await deleteButton.count() > 0) {

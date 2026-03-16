@@ -892,6 +892,11 @@ public interface ContentService {
 			String newState, java.util.Map<String, String> contentRef, GregorianCalendar coldArchivedAt);
 
 	/**
+	 * Reset cold-move metadata and revert state to ARCHIVED_LOCAL for retry.
+	 */
+	void resetColdMoveMetadata(String repositoryId, String archiveId);
+
+	/**
 	 * Get the binary content stream for an archived document.
 	 *
 	 * @param repositoryId the repository ID
@@ -919,6 +924,17 @@ public interface ContentService {
 	 * @return list of expired document IDs
 	 */
 	List<String> getExpiredDocumentIds(String repositoryId, java.util.GregorianCalendar beforeDate);
+
+	/**
+	 * Get IDs of latestVersion documents whose lastModificationDate is before the cutoff
+	 * and that do NOT have cmis:rm_expirationDate set.
+	 * Used by the "archive after N days of inactivity" retention feature.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param beforeDate documents modified before this date are returned
+	 * @return list of stale document IDs
+	 */
+	List<String> getStaleDocumentIds(String repositoryId, java.util.GregorianCalendar beforeDate);
 
 	/**
 	 * Get Content objects for documents whose cmis:rm_expirationDate has passed

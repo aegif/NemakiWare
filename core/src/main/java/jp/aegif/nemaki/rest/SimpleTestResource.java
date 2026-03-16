@@ -69,8 +69,21 @@ public class SimpleTestResource {
                     "{\"error\":\"Spring ApplicationContext not available\"}").build();
             }
             
-            // Use a default repository for testing - this is acceptable for test endpoints
-            String repositoryId = "bedroom"; // Default test repository
+            // Use the default repository for testing
+            String repositoryId = null;
+            try {
+                jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repoInfoMap =
+                    appContext.getBean("repositoryInfoMap", jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+                if (repoInfoMap != null) {
+                    repositoryId = repoInfoMap.getDefaultRepositoryId();
+                }
+            } catch (Exception e) {
+                log.warn("Failed to get default repository ID");
+            }
+            if (repositoryId == null) {
+                return Response.status(500).entity(
+                    "{\"error\":\"Default repository not configured\"}").build();
+            }
             
             if (log.isDebugEnabled()) {
                 log.debug("TYPE CACHE INVALIDATION REQUEST - Repository: " + repositoryId + 

@@ -48,7 +48,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     await testHelper.closeMobileSidebar(browserName);
 

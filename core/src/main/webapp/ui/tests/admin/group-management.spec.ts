@@ -155,14 +155,14 @@ test.describe('Group Management', () => {
     await authHelper.login();
 
     // Navigate to group management
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
       await page.waitForTimeout(1000);
     }
     await page.locator('.ant-menu-item:has-text("グループ管理")').click();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     await testHelper.closeMobileSidebar(browserName);
   });

@@ -16,16 +16,19 @@ public abstract class AbstractNemakiPatch {
 	protected PrincipalService principalService;
 
 
-	/**
-	 * Apply this patch to all repositories.
-	 * @return true if the patch succeeded for all repositories, false if any failed
-	 */
 	public boolean apply(){
 		log.info("Applying patch: " + getName());
 		applySystemPatch();
 
 		boolean allSucceeded = true;
 		for(String repositoryId : patchUtil.getRepositoryInfoMap().keys()){
+			// Skip archive repositories — patches are only for main repositories
+			if (patchUtil.getRepositoryInfoMap().isArchiveRepository(repositoryId)) {
+				if (log.isDebugEnabled()) {
+					log.debug("[patch=" + getName() + "] Skipping archive repository: " + repositoryId);
+				}
+				continue;
+			}
 			if (log.isDebugEnabled()) {
 				log.debug("[patch=" + getName() + "] Processing repository: " + repositoryId);
 			}

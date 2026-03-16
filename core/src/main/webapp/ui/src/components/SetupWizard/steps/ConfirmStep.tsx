@@ -39,6 +39,15 @@ export function ConfirmStep({ couchdb, auth, admin, vector, onComplete }: Confir
           googleClientId: auth.googleEnabled ? auth.googleClientId : undefined,
           microsoftClientId: auth.microsoftEnabled ? auth.microsoftClientId : undefined,
           microsoftTenantId: auth.microsoftEnabled ? auth.microsoftTenantId : undefined,
+          keycloakOidcEnabled: auth.keycloakOidcEnabled,
+          samlEnabled: auth.samlEnabled,
+          keycloakIssuerUrl: auth.keycloakOidcEnabled ? auth.keycloakIssuerUrl : undefined,
+          keycloakClientId: auth.keycloakOidcEnabled ? auth.keycloakClientId : undefined,
+          samlIdpSsoUrl: auth.samlEnabled ? auth.samlIdpSsoUrl : undefined,
+          samlSpEntityId: auth.samlEnabled ? auth.samlSpEntityId : undefined,
+          samlIdpCertificate: auth.samlEnabled ? auth.samlIdpCertificate : undefined,
+          samlSloUrl: auth.samlEnabled ? auth.samlSloUrl : undefined,
+          samlAttributeMapping: auth.samlEnabled ? auth.samlAttributeMapping : undefined,
         },
         vector: {
           type: vector.type,
@@ -157,6 +166,28 @@ export function ConfirmStep({ couchdb, auth, admin, vector, onComplete }: Confir
             {auth.microsoftEnabled ? t('common.enabled') : t('common.disabled')}
           </Tag>
         </Descriptions.Item>
+        <Descriptions.Item label={t('setup.auth.keycloakOidc')}>
+          <Tag color={auth.keycloakOidcEnabled ? 'green' : 'default'}>
+            {auth.keycloakOidcEnabled ? t('common.enabled') : t('common.disabled')}
+          </Tag>
+        </Descriptions.Item>
+        {auth.keycloakOidcEnabled && (
+          <Descriptions.Item label={t('setup.auth.issuerUrl')}>{auth.keycloakIssuerUrl}</Descriptions.Item>
+        )}
+        <Descriptions.Item label={t('setup.auth.saml')}>
+          <Tag color={auth.samlEnabled ? 'green' : 'default'}>
+            {auth.samlEnabled ? t('common.enabled') : t('common.disabled')}
+          </Tag>
+        </Descriptions.Item>
+        {auth.samlEnabled && (
+          <>
+            <Descriptions.Item label={t('setup.auth.samlIdpSsoUrl')}>{auth.samlIdpSsoUrl}</Descriptions.Item>
+            <Descriptions.Item label={t('setup.auth.samlSpEntityId')}>{auth.samlSpEntityId || 'nemakiware-sp'}</Descriptions.Item>
+            <Descriptions.Item label={t('setup.auth.samlIdpCertificate')}>
+              <Tag color="green">{t('common.configured')}</Tag>
+            </Descriptions.Item>
+          </>
+        )}
         <Descriptions.Item label={t('setup.admin.newPassword')}>
           {admin.newPassword ? '********' : t('setup.admin.noChange')}
         </Descriptions.Item>

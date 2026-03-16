@@ -242,8 +242,23 @@ public class CouchAttachmentNode extends CouchNodeBase{
 					.getBean("connectorPool", jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
 			
 			if (connectorPool != null && getId() != null) {
-				// Try common repository IDs to find the attachment
-				String[] repositoryIds = {"bedroom", "canopy", "nemaki_conf"};
+				// Try all main repository IDs + nemaki_conf to find the attachment
+				java.util.List<String> repositoryIds = new java.util.ArrayList<>();
+				try {
+					jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repoInfoMap =
+						jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+							.getBean("repositoryInfoMap", jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+					if (repoInfoMap != null) {
+						repositoryIds.addAll(repoInfoMap.getMainRepositoryKeys());
+					}
+				} catch (Exception e) {
+					// RepositoryInfoMap not available yet — use known defaults
+					repositoryIds.add("bedroom");
+					repositoryIds.add("canopy");
+				}
+				if (!repositoryIds.contains("nemaki_conf")) {
+					repositoryIds.add("nemaki_conf");
+				}
 				boolean streamSet = false;
 				
 				for (String repositoryId : repositoryIds) {

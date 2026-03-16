@@ -130,7 +130,8 @@ public class NemakiPatchInitializationListener implements ServletContextListener
                 "patch_RetentionExpirationView",  // Retention expiration view
                 "patch_McpServiceAccount",        // Creates MCP service account for API access
                 "patch_RssTokenViews",            // Creates RSS token views for token persistence
-                "patch_WebAuthnCredentialViews"   // WebAuthn credential views (passkey support)
+                "patch_WebAuthnCredentialViews",  // WebAuthn credential views (passkey support)
+                "patch_RetentionLastModificationView" // Retention last-modification view (localArchiveAfterDays)
             };
 
             for (String beanName : patchBeanNames) {

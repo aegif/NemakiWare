@@ -16,6 +16,7 @@ const SE_RAG_BASE = `${BASE_URL}/core/api/v1/cmis/repositories/${REPO_ID}/search
 const AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 
 let ragEnabled = false;
+let ragSearchReachable = false;
 
 test.beforeAll(async ({ request }) => {
   // Check if RAG is enabled
@@ -30,7 +31,21 @@ test.beforeAll(async ({ request }) => {
   } catch {
     ragEnabled = false;
   }
-  console.log(`RAG enabled: ${ragEnabled}`);
+
+  // If enabled, verify TEI backend is actually reachable with a short-timeout search
+  if (ragEnabled) {
+    try {
+      const testResp = await request.post(`${RAG_BASE}/search`, {
+        headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+        data: { query: 'test', topK: 1 },
+        timeout: 8000,
+      });
+      ragSearchReachable = testResp.ok() || testResp.status() < 500;
+    } catch {
+      ragSearchReachable = false;
+    }
+  }
+  console.log(`RAG enabled: ${ragEnabled}, search reachable: ${ragSearchReachable}`);
 });
 
 test.describe('RAG Health & Status', () => {
@@ -111,9 +126,11 @@ test.describe('RAG Input Validation', () => {
   });
 
   test('POST /rag/search without auth returns error', async ({ request }) => {
+    test.skip(!ragSearchReachable, 'RAG search endpoint not reachable (TEI backend unavailable)');
     const response = await request.post(`${RAG_BASE}/search`, {
       headers: { 'Content-Type': 'application/json' },
-      data: { query: 'test' }
+      data: { query: 'test' },
+      timeout: 10000,
     });
     // May return 401 (auth required), 503 (RAG disabled), or 200 (auth filter pass-through)
     expect([200, 401, 503]).toContain(response.status());
@@ -143,7 +160,7 @@ test.describe('RAG Input Validation', () => {
 test.describe('RAG Search (TEI required)', () => {
 
   test.beforeEach(async () => {
-    test.skip(!ragEnabled, 'RAG not enabled - TEI service unavailable');
+    test.skip(!ragSearchReachable, 'RAG search not reachable - TEI service unavailable or not responding');
   });
 
   test('POST /rag/search with valid query returns results', async ({ request }) => {

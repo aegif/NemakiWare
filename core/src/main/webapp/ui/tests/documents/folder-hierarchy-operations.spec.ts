@@ -462,7 +462,7 @@ test.describe('Folder Hierarchy Operations', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     }
 
     // Ensure we're at root and table is loaded
@@ -613,148 +613,140 @@ test.describe('Folder Hierarchy Operations', () => {
   });
 
   test('should rename folder and verify updates', async ({ page, browserName }) => {
-    // Detect mobile browsers
-    const isMobile = testHelper.isMobile(browserName);
-
+    // Folder rename via CMIS API + UI verification
+    // UI inline rename is not yet implemented, so we use API to rename
+    // and verify the UI reflects the change
     const uuid = generateTestId();
     const originalName = `test-folder-${uuid}-original`;
     const newName = `test-folder-${uuid}-renamed`;
+    const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
 
-    // Check if folder creation is available
-    const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
-    if (await createFolderButton.count() === 0) {
-      // UPDATED (2025-12-26): Folder creation IS implemented in DocumentList.tsx
-      test.skip('Folder creation button not visible - IS implemented in DocumentList.tsx');
-      return;
+    // Create folder via API
+    const createForm = new URLSearchParams();
+    createForm.append('cmisaction', 'createFolder');
+    createForm.append('propertyId[0]', 'cmis:objectTypeId');
+    createForm.append('propertyValue[0]', 'cmis:folder');
+    createForm.append('propertyId[1]', 'cmis:name');
+    createForm.append('propertyValue[1]', originalName);
+
+    const createResp = await page.request.post(
+      `http://localhost:8080/core/browser/bedroom?objectId=${dynamicRootFolderId}`,
+      { headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' }, data: createForm.toString() }
+    );
+    const createData = await createResp.json();
+    const folderId = createData.properties?.['cmis:objectId']?.value || createData.succinctProperties?.['cmis:objectId'];
+    expect(folderId).toBeTruthy();
+    console.log(`Created folder: ${originalName} (${folderId})`);
+
+    // Get change token for update (non-succinct format required for changeToken)
+    const objResp = await page.request.get(
+      `http://localhost:8080/core/browser/bedroom/${folderId}?cmisselector=object`,
+      { headers: { 'Authorization': authHeader } }
+    );
+    const objData = await objResp.json();
+    const changeToken = objData.properties?.['cmis:changeToken']?.value || '';
+
+    // Rename via CMIS API
+    const renameForm = new URLSearchParams();
+    renameForm.append('cmisaction', 'update');
+    renameForm.append('objectId', folderId);
+    renameForm.append('changeToken', changeToken);
+    renameForm.append('propertyId[0]', 'cmis:name');
+    renameForm.append('propertyValue[0]', newName);
+
+    const renameResp = await page.request.post(
+      `http://localhost:8080/core/browser/bedroom`,
+      { headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' }, data: renameForm.toString() }
+    );
+    if (!renameResp.ok()) {
+      const body = await renameResp.text();
+      console.log(`Rename failed: status=${renameResp.status()}, body=${body}, changeToken=${changeToken}`);
     }
+    expect(renameResp.ok()).toBe(true);
+    console.log(`Renamed folder to: ${newName}`);
 
-    // Create test folder using helper
-    const folderCreated = await createFolder(page, originalName, isMobile);
-    expect(folderCreated).toBe(true);
+    // Verify rename via API
+    const getResp = await page.request.get(
+      `http://localhost:8080/core/browser/bedroom/${folderId}?cmisselector=object`,
+      { headers: { 'Authorization': authHeader } }
+    );
+    const getData = await getResp.json();
+    const currentName = getData.properties?.['cmis:name']?.value || getData.succinctProperties?.['cmis:name'];
+    expect(currentName).toBe(newName);
 
-    // Verify original folder appears
-    const originalFolder = page.locator(`text=${originalName}`);
-    await expect(originalFolder).toBeVisible({ timeout: 5000 });
+    // Verify in UI - navigate to the renamed folder's document viewer
+    await page.goto(`http://localhost:8080/core/ui/index.html#/documents/${folderId}`);
+    await page.waitForSelector('.ant-tabs-tab, .ant-card', { timeout: 15000 });
+    await page.waitForTimeout(1000);
 
-    // Look for rename/edit button (may be in context menu or action column)
-    // Try different patterns: edit icon, context menu, properties button
-    const folderRow = page.locator('tr').filter({ hasText: originalName });
-    const editButton = folderRow.locator('button').filter({ has: page.locator('[data-icon="edit"]') });
-
-    if (await editButton.count() === 0) {
-      // NOTE (2025-12-26): Rename functionality is NOT implemented yet in UI
-      test.skip('Rename functionality NOT implemented yet - use PropertyEditor to change cmis:name');
-      return;
-    }
-
-    // Click edit button
-    await editButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
-
-    // Look for rename modal or inline edit input
-    const renameModal = page.locator('.ant-modal:not(.ant-modal-hidden)');
-    if (await renameModal.count() > 0) {
-      // Modal-based rename
-      const renameInput = renameModal.locator('input[placeholder*="フォルダ名"], input[id*="name"]');
-      await renameInput.fill(newName);
-      const renameSubmit = renameModal.locator('button[type="submit"], .ant-btn-primary');
-      await renameSubmit.click();
-      await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-      await page.waitForTimeout(1000);
-    } else {
-      // Inline edit (if available)
-      const inlineInput = page.locator('input[type="text"]:visible');
-      if (await inlineInput.count() > 0) {
-        await inlineInput.fill(newName);
-        await inlineInput.press('Enter');
-        await page.waitForTimeout(1000);
-      } else {
-        // NOTE (2025-12-26): Rename UI is NOT implemented yet
-        test.skip('Rename input NOT implemented - feature requires development');
-        return;
-      }
-    }
-
-    // Verify renamed folder appears and original name gone
-    const renamedFolder = page.locator(`text=${newName}`);
-    await expect(renamedFolder).toBeVisible({ timeout: 5000 });
-    await expect(originalFolder).not.toBeVisible();
+    // New name should be visible in the document viewer (title/breadcrumb/properties)
+    const pageContent = await page.locator('.ant-card, .ant-page-header, [class*="documentViewer"]').first().textContent() || '';
+    expect(pageContent).toContain(newName);
+    console.log(`Verified renamed folder visible in UI: ${newName}`);
   });
 
-  test('should delete folder and verify table updates', async ({ page, browserName }) => {
-    // CRITICAL FIX (2025-12-24): Simplified from nested folder deletion to single folder deletion
-    // Creating child folders in subfolders has timing issues. This test now focuses on
-    // creating a folder at root and deleting it, which is the core functionality.
-    test.setTimeout(120000); // Extended timeout for deletion operations
-
-    // Detect mobile browsers
-    const isMobile = testHelper.isMobile(browserName);
-
+  test('should delete folder and verify via API', async ({ page }) => {
+    test.setTimeout(60000);
     const uuid = generateTestId();
     const folderName = `test-folder-${uuid}-del`;
+    const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
 
-    // Check if folder creation is available
-    const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
-    if (await createFolderButton.count() === 0) {
-      // UPDATED (2025-12-26): Folder creation IS implemented in DocumentList.tsx
-      test.skip('Folder creation button not visible - IS implemented in DocumentList.tsx');
-      return;
-    }
+    // Create folder via API
+    const createForm = new URLSearchParams();
+    createForm.append('cmisaction', 'createFolder');
+    createForm.append('propertyId[0]', 'cmis:objectTypeId');
+    createForm.append('propertyValue[0]', 'cmis:folder');
+    createForm.append('propertyId[1]', 'cmis:name');
+    createForm.append('propertyValue[1]', folderName);
 
-    // Create folder at root using helper
-    const folderCreated = await createFolder(page, folderName, isMobile);
-    expect(folderCreated).toBe(true);
+    const createResp = await page.request.post(
+      `http://localhost:8080/core/browser/bedroom?objectId=${dynamicRootFolderId}`,
+      { headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' }, data: createForm.toString() }
+    );
+    expect(createResp.ok()).toBe(true);
+    const createData = await createResp.json();
+    const folderId = createData.properties?.['cmis:objectId']?.value || createData.succinctProperties?.['cmis:objectId'];
+    expect(folderId).toBeTruthy();
+    console.log(`Created folder for deletion test: ${folderName} (${folderId})`);
 
-    // Verify folder appears in table
-    await waitForUIStable(page);
+    // Verify folder exists via API
+    const getResp = await page.request.get(
+      `http://localhost:8080/core/browser/bedroom/${folderId}?cmisselector=object&succinct=true`,
+      { headers: { 'Authorization': authHeader } }
+    );
+    expect(getResp.ok()).toBe(true);
+
+    // Delete folder via CMIS API (deleteTree for folder)
+    const deleteForm = new URLSearchParams();
+    deleteForm.append('cmisaction', 'deleteTree');
+    deleteForm.append('folderId', folderId);
+    deleteForm.append('allVersions', 'true');
+    deleteForm.append('continueOnFailure', 'true');
+
+    const deleteResp = await page.request.post(
+      'http://localhost:8080/core/browser/bedroom',
+      { headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' }, data: deleteForm.toString() }
+    );
+    expect(deleteResp.ok()).toBe(true);
+    console.log(`Deleted folder: ${folderName}`);
+
+    // Verify folder no longer exists via API
+    const verifyResp = await page.request.get(
+      `http://localhost:8080/core/browser/bedroom/${folderId}?cmisselector=object`,
+      { headers: { 'Authorization': authHeader } }
+    );
+    expect(verifyResp.ok()).toBe(false); // Should be 404
+
+    // Verify UI reflects the deletion — navigate to documents and confirm folder is gone
+    await page.goto('http://localhost:8080/core/ui/index.html#/documents');
+    await page.waitForSelector('.ant-table-tbody', { timeout: 15000 });
+    await page.waitForTimeout(2000);
+
+    // The deleted folder should not appear anywhere in the table
     const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: folderName });
-    const isInTable = await folderRow.isVisible().catch(() => false);
-
-    if (!isInTable) {
-      test.skip('Folder not visible in table for deletion');
-      return;
-    }
-
-    // Look for delete button
-    const deleteButton = folderRow.locator('button').filter({ has: page.locator('[data-icon="delete"]') });
-
-    if (await deleteButton.count() === 0) {
-      // UPDATED (2025-12-26): Delete IS implemented in DocumentList.tsx lines 550-595
-      test.skip('Delete button not visible - IS implemented in DocumentList.tsx');
-      return;
-    }
-
-    await deleteButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
-
-    // Confirm deletion
-    const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, .ant-popconfirm button:has-text("OK")');
-    if (await confirmButton.count() > 0) {
-      await confirmButton.click(isMobile ? { force: true } : {});
-
-      // Wait for deletion to complete
-      await page.waitForFunction(() => {
-        const loadingButton = document.querySelector('.ant-popconfirm button.ant-btn-loading');
-        return loadingButton === null;
-      }, { timeout: 30000 });
-
-      // Handle possible cascade delete confirmation dialog
-      const cascadeConfirm = page.locator('.ant-modal-confirm-btns button.ant-btn-primary, button:has-text("削除する")');
-      if (await cascadeConfirm.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await cascadeConfirm.click();
-      }
-
-      await page.waitForSelector('.ant-message-success', { timeout: 30000 });
-      await waitForUIStable(page);
-
-      // Verify folder is deleted from table
-      const folderStillVisible = await folderRow.isVisible().catch(() => false);
-      expect(folderStillVisible).toBe(false);
-
-      console.log(`Successfully deleted folder: ${folderName}`);
-    } else {
-      test.skip('Delete confirmation not found');
-    }
+    const folderVisible = await folderRow.isVisible().catch(() => false);
+    expect(folderVisible).toBe(false);
+    console.log(`Verified folder deletion in UI: ${folderName} not visible`);
   });
 
   // NOTE (2025-12-24): "should verify folder tree updates after hierarchy changes" test

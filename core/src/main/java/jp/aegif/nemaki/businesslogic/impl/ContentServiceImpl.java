@@ -3661,6 +3661,11 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public void resetColdMoveMetadata(String repositoryId, String archiveId) {
+		archiveDelegate.resetColdMoveMetadata(repositoryId, archiveId);
+	}
+
+	@Override
 	public java.io.InputStream getArchiveContentStream(String repositoryId, String archiveId) {
 		return archiveDelegate.getArchiveContentStream(repositoryId, archiveId);
 	}
@@ -3673,6 +3678,11 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public List<String> getExpiredDocumentIds(String repositoryId, GregorianCalendar beforeDate) {
 		return archiveDelegate.getExpiredDocumentIds(repositoryId, beforeDate);
+	}
+
+	@Override
+	public List<String> getStaleDocumentIds(String repositoryId, GregorianCalendar beforeDate) {
+		return archiveDelegate.getStaleDocumentIds(repositoryId, beforeDate);
 	}
 
 	@Override

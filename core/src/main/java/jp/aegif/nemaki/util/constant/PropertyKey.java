@@ -314,6 +314,18 @@ public interface PropertyKey {
 	/** Enable/disable SAML login button on login page. Default: false */
 	final String SSO_SAML_ENABLED = "sso.saml.enabled";
 
+	//SAML configuration
+	/** IdP SSO URL for SAML authentication (e.g. https://idp.example.com/sso/saml) */
+	final String SAML_IDP_SSO_URL = "saml.idp.sso.url";
+	/** SP Entity ID for SAML authentication (e.g. nemakiware-sp) */
+	final String SAML_SP_ENTITY_ID = "saml.sp.entity.id";
+	/** IdP X.509 signing certificate in PEM format for SAML signature verification */
+	final String SAML_IDP_CERTIFICATE = "saml.idp.certificate";
+	/** Single Logout URL (optional) */
+	final String SAML_SLO_URL = "saml.slo.url";
+	/** Username attribute mapping (optional, default: NameID) */
+	final String SAML_ATTRIBUTE_MAPPING = "saml.attribute.mapping";
+
 	//OIDC configuration
 	/** OIDC issuer URL (e.g. http://keycloak:8080/realms/nemakiware). Used for token validation. */
 	final String OIDC_ISSUER = "oidc.issuer";
@@ -326,6 +338,7 @@ public interface PropertyKey {
 
 	//Retention
 	final String RETENTION_ENABLED = "retention.enabled";
+	/** Days after last modification before auto-archiving documents without cmis:rm_expirationDate. */
 	final String RETENTION_ARCHIVE_LOCAL_AFTER_DAYS = "retention.archive.local.after.days";
 	final String RETENTION_ARCHIVE_COLD_AFTER_DAYS = "retention.archive.cold.after.days";
 	final String RETENTION_SCHEDULE_ARCHIVE_LOCAL = "retention.schedule.archive.local";
@@ -341,7 +354,8 @@ public interface PropertyKey {
 	final String LONGTERM_S3_ENDPOINT = "longterm.s3.endpoint";
 	final String LONGTERM_S3_ACCESS_KEY = "longterm.s3.accessKey";
 	final String LONGTERM_S3_SECRET_KEY = "longterm.s3.secretKey";
-	final String LONGTERM_S3_OBJECT_LOCK_MODE = "longterm.s3.objectLockMode";
+	/** Enable S3 Legal Hold on cold-archived objects (true/false). */
+	final String LONGTERM_S3_LEGAL_HOLD = "longterm.s3.legalHold";
 	final String LONGTERM_FS_PATH = "longterm.fs.path";
 
 	//Deletion

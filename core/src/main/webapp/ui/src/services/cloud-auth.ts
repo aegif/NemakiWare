@@ -20,10 +20,14 @@ export interface CloudAuthConfig {
 
 /**
  * Fetch cloud auth configuration from server.
+ * @param repositoryId Optional repository ID for repository-specific overrides
  */
-export async function fetchCloudAuthConfig(): Promise<CloudAuthConfig> {
+export async function fetchCloudAuthConfig(repositoryId?: string): Promise<CloudAuthConfig> {
   try {
-    const response = await fetch('/core/rest/auth/config');
+    const url = repositoryId
+      ? `/core/rest/auth/config?repositoryId=${encodeURIComponent(repositoryId)}`
+      : '/core/rest/auth/config';
+    const response = await fetch(url);
     if (!response.ok) {
       return { googleEnabled: false, microsoftEnabled: false };
     }

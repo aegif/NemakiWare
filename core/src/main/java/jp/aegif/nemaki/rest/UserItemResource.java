@@ -909,10 +909,9 @@ private ContentService getContentServiceSafe() {
 
 	/**
 	 * Get root folder ID for the specified repository.
-	 * Uses RepositoryInfoMap for dynamic lookup with hardcoded fallback.
+	 * Uses RepositoryInfoMap for dynamic lookup from repositories.yml.
 	 */
 	private String getRootFolderIdForRepository(String repositoryId) {
-		// Dynamic lookup via RepositoryInfoMap (works regardless of DB re-initialization)
 		try {
 			jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repoInfoMap =
 				jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
@@ -925,20 +924,10 @@ private ContentService getContentServiceSafe() {
 				}
 			}
 		} catch (Exception e) {
-			log.warn("Failed to get root folder ID from RepositoryInfoMap for repository: " + repositoryId + ", falling back to hardcoded IDs");
+			log.warn("Failed to get root folder ID from RepositoryInfoMap for repository: " + repositoryId);
 		}
-
-		// Fallback: hardcoded IDs from default CouchDB initialization
-		// These may become stale if the database is re-initialized
-		switch (repositoryId) {
-			case "bedroom":
-				return "e02f784f8360a02cc14d1314c10038ff";
-			case "canopy":
-				return "ddd70e3ed8b847c2a364be81117c57ae";
-			default:
-				log.warn("Unknown repository ID: " + repositoryId + ". Add mapping if this is a valid repository.");
-				return null;
-		}
+		log.warn("Root folder ID not found for repository: " + repositoryId);
+		return null;
 	}
 
 	@PUT

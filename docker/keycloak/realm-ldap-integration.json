@@ -38,7 +38,9 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["user"]
+      "realmRoles": [
+        "user"
+      ]
     },
     {
       "username": "admin",
@@ -54,7 +56,10 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["admin", "user"]
+      "realmRoles": [
+        "admin",
+        "user"
+      ]
     },
     {
       "username": "ldapuser1",
@@ -70,7 +75,9 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["user"]
+      "realmRoles": [
+        "user"
+      ]
     },
     {
       "username": "ldapuser2",
@@ -86,7 +93,9 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["user"]
+      "realmRoles": [
+        "user"
+      ]
     },
     {
       "username": "ldapadmin",
@@ -102,7 +111,24 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["admin", "user"]
+      "realmRoles": [
+        "admin",
+        "user"
+      ]
+    },
+    {
+      "username": "yamada",
+      "email": "yamada@nemakiware.example.com",
+      "firstName": "Taro",
+      "lastName": "Yamada",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "yamadapass",
+          "temporary": false
+        }
+      ]
     }
   ],
   "clients": [
@@ -121,7 +147,9 @@
         "http://127.0.0.1:8080/*",
         "http://127.0.0.1:5173/*"
       ],
-      "webOrigins": ["*"],
+      "webOrigins": [
+        "*"
+      ],
       "defaultClientScopes": [
         "web-origins",
         "acr",
@@ -150,6 +178,29 @@
         "http://localhost:5173/*"
       ],
       "baseUrl": "http://localhost:8080/core/ui"
+    },
+    {
+      "clientId": "nemakiware-ui",
+      "name": "NemakiWare UI",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "redirectUris": [
+        "http://localhost:8080/*",
+        "http://localhost:5173/*",
+        "http://127.0.0.1:8080/*",
+        "http://127.0.0.1:5173/*",
+        "http://localhost:8080/core/ui/*",
+        "http://localhost:8080/core/ui/oidc-callback.html",
+        "http://localhost:8080/core/ui/silent-callback.html"
+      ],
+      "webOrigins": [
+        "*"
+      ],
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true
     }
   ]
 }

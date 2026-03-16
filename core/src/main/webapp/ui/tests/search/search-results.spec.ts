@@ -35,7 +35,7 @@ test.describe('Search Results Detailed Verification', () => {
     await authHelper.login();
 
     // Wait for UI initialization
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     // Mobile sidebar close logic (if needed)
     const isMobile = testHelper.isMobile(browserName);
@@ -51,7 +51,7 @@ test.describe('Search Results Detailed Verification', () => {
 
     // Navigate to documents page
     await page.goto('http://localhost:8080/core/ui/#/documents');
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
   });
 
   test('should display search-specific columns in search mode', async ({ page, browserName }) => {

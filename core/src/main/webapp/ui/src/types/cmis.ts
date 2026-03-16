@@ -238,8 +238,8 @@ export interface RetentionSettings {
   storageType: string;
   storageConnected: boolean;
   keepLocalCopy: boolean;
-  localArchiveAfterDays: string;
   localArchiveCron: string;
+  localArchiveAfterDays: string;
 }
 
 export interface PendingArchive {

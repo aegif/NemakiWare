@@ -26,6 +26,7 @@
     "optional": "Optional",
     "enabled": "Enabled",
     "disabled": "Disabled",
+    "configured": "Configured",
     "single": "Single",
     "multi": "Multi",
     "direct": "Direct",
@@ -49,6 +50,7 @@
     "items": "{{count}} items",
     "moreResults": "More results available",
     "unknownError": "Unknown error",
+    "beta": "Beta",
     "showSettings": "Show Settings",
     "hideSettings": "Hide Settings",
     "validation": {
@@ -1386,8 +1388,8 @@
       "coldMoveMode": "Cold Storage Transfer Mode",
       "copyMode": "Copy Mode (keep local copy)",
       "moveMode": "Move Mode (delete local copy)",
-      "localArchiveAfterDays": "Local Archive After Days (Fallback)",
-      "localArchiveCron": "Local Archive Schedule (Cron)"
+      "localArchiveCron": "Local Archive Schedule (Cron)",
+      "localArchiveAfterDays": "Auto-Archive After Inactivity"
     },
     "migrationLogs": {
       "startedAt": "Started At",
@@ -2256,12 +2258,18 @@
       "probe": "Repository Check",
       "auth": "Authentication",
       "admin": "Admin Settings",
-      "vector": "Vector Search",
+      "vector": "Vector Search (Beta)",
       "confirm": "Confirm & Apply"
     },
     "nav": {
       "previous": "Previous",
       "next": "Next"
+    },
+    "hydration": {
+      "loading": "Loading existing settings...",
+      "errorTitle": "Failed to load settings",
+      "errorDescription": "Could not retrieve existing authentication and vector search settings. Please retry or check the server status.",
+      "retry": "Retry"
     },
     "couchdb": {
       "url": "CouchDB URL",
@@ -2294,6 +2302,21 @@
       "oidcUnreachable": "Unreachable",
       "clientIdValid": "Client ID Valid",
       "clientIdInvalid": "Client ID Not Found",
+      "microsoftClientIdAcknowledge": "I confirm this Client ID is correct (Microsoft cannot pre-validate)",
+      "keycloakOidc": "Keycloak OIDC",
+      "saml": "SAML",
+      "issuerUrl": "Issuer URL",
+      "keycloakClientId": "Client ID",
+      "keycloakDefaults": "Use Docker default values",
+      "samlNote": "SAML authentication requires IdP configuration. Enter the SSO URL and signing certificate.",
+      "samlIdpSsoUrl": "IdP SSO URL",
+      "samlSpEntityId": "SP Entity ID",
+      "samlIdpCertificate": "IdP Signing Certificate (PEM)",
+      "samlSloUrl": "Single Logout URL (optional)",
+      "samlAttributeMapping": "Username Attribute (optional)",
+      "testSamlCertificate": "Validate Certificate",
+      "samlCertValid": "Valid ({{subject}})",
+      "samlCertInvalid": "Invalid certificate",
       "lockoutWarning": "At least one authentication method must be enabled"
     },
     "admin": {

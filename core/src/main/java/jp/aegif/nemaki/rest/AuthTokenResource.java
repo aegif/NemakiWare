@@ -38,7 +38,7 @@ import java.io.ByteArrayInputStream;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.UUID;
-import java.util.zip.Inflater;
+
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.Document;
@@ -357,17 +357,163 @@ public class AuthTokenResource extends ResourceBase{
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_JSON)
 	public String convertSAMLToken(@PathParam("repositoryId") String repositoryId, String requestBody) {
+		boolean status = false;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		// SECURITY FIX: SAML response signature verification is not implemented.
-		// Without signature verification, an attacker can forge arbitrary SAML responses
-		// and impersonate any user. This endpoint is disabled until proper SAML signature
-		// validation (e.g., via OpenSAML) is implemented.
-		logger.warn("SAML token conversion rejected - signature verification not implemented");
-		addErrMsg(errMsg, "saml", "SAML authentication is not available. " +
-				"SAML response signature verification is not implemented. Use OIDC authentication instead.");
-		return makeResult(false, result, errMsg).toString();
+		logger.info("=== SAML token conversion requested for repository: {} ===", repositoryId);
+
+		if (StringUtils.isBlank(repositoryId)) {
+			addErrMsg(errMsg, "repositoryId", "isNull");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		try {
+			JSONParser parser = new JSONParser();
+			JSONObject requestJson = (JSONObject) parser.parse(requestBody);
+
+			String samlResponse = (String) requestJson.get("saml_response");
+			if (StringUtils.isBlank(samlResponse)) {
+				addErrMsg(errMsg, "saml_response", "isNull");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Load SAML configuration from PropertyManager
+			PropertyManager pm = getPropertyManager();
+			if (pm == null) {
+				addErrMsg(errMsg, "saml", "PropertyManager not available");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			String idpCertPem = pm.readValue(repositoryId, PropertyKey.SAML_IDP_CERTIFICATE);
+			if (StringUtils.isBlank(idpCertPem)) {
+				addErrMsg(errMsg, "saml", "IdP certificate not configured. Configure via Setup Wizard.");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			String spEntityId = pm.readValue(repositoryId, PropertyKey.SAML_SP_ENTITY_ID);
+			if (StringUtils.isBlank(spEntityId)) {
+				spEntityId = "nemakiware-sp"; // default
+			}
+
+			// Parse IdP certificate
+			java.security.cert.X509Certificate idpCert;
+			try {
+				idpCert = SamlSignatureVerifier.parseCertificate(idpCertPem);
+			} catch (Exception e) {
+				logger.error("Failed to parse IdP certificate", e);
+				addErrMsg(errMsg, "saml", "Invalid IdP certificate: " + e.getMessage());
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Base64 decode + optional DEFLATE decompression (10 MB limit to prevent DoS)
+			byte[] decodedBytes = Base64.getDecoder().decode(samlResponse);
+			byte[] xmlBytes;
+			try {
+				final int MAX_INFLATED_SIZE = 10 * 1024 * 1024; // 10 MB
+				java.util.zip.Inflater inflater = new java.util.zip.Inflater(true);
+				inflater.setInput(decodedBytes);
+				java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+				byte[] buf = new byte[8192];
+				int n;
+				while ((n = inflater.inflate(buf)) > 0) {
+					if (baos.size() + n > MAX_INFLATED_SIZE) {
+						inflater.end();
+						addErrMsg(errMsg, "saml", "SAML response exceeds 10 MB inflated size limit");
+						return makeResult(false, result, errMsg).toString();
+					}
+					baos.write(buf, 0, n);
+				}
+				inflater.end();
+				xmlBytes = baos.toByteArray();
+				logger.debug("SAML response was deflate-compressed, inflated {} -> {} bytes",
+						decodedBytes.length, xmlBytes.length);
+			} catch (java.util.zip.DataFormatException e) {
+				xmlBytes = decodedBytes;
+				logger.debug("SAML response was not deflate-compressed, using raw bytes");
+			}
+
+			// XXE-safe XML parsing (same pattern as extractUserNameFromSAMLResponse)
+			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+			factory.setNamespaceAware(true);
+			factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+			factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+			factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+			factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
+			try {
+				factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
+				factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+			} catch (IllegalArgumentException e) {
+				logger.debug("XML parser does not support ACCESS_EXTERNAL_DTD/SCHEMA (XXE prevented via other features)");
+			}
+
+			DocumentBuilder builder = factory.newDocumentBuilder();
+			Document document = builder.parse(new ByteArrayInputStream(xmlBytes));
+
+			// Verify SAML signature, conditions, and audience
+			SamlSignatureVerifier.VerificationResult verifyResult =
+					SamlSignatureVerifier.verify(document, idpCert, spEntityId);
+			if (!verifyResult.isValid()) {
+				logger.warn("SAML signature verification failed: {}", verifyResult.getError());
+				addErrMsg(errMsg, "saml", verifyResult.getError());
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Extract username only from the signed subtree (Response or Assertion)
+			// to prevent unsigned sibling assertion injection attacks
+			String attributeMapping = pm.readValue(repositoryId, PropertyKey.SAML_ATTRIBUTE_MAPPING);
+			String userName = extractUserNameFromSAMLElement(verifyResult.getSignedElement(), attributeMapping);
+			if (StringUtils.isBlank(userName)) {
+				addErrMsg(errMsg, "userName", "couldNotExtract");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			logger.info("SAML authentication successful for user: {}", userName);
+
+			UserItem userItem = getOrCreateUser(repositoryId, userName);
+			if (userItem == null) {
+				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Check if SAML/cloud authentication is allowed for this user
+			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
+			if (authService != null && !authService.isAuthMethodAllowed(userItem, "cloud")) {
+				logger.info("SAML authentication denied for user {} (not in allowedAuthMethods)", userName);
+				addErrMsg(errMsg, "auth", "methodNotAllowed");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			TokenService tokenService = getTokenService();
+			if (tokenService == null) {
+				addErrMsg(errMsg, "tokenService", "notAvailable");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			String app = "";
+			Token token = tokenService.setToken(app, repositoryId, userName);
+			setAuthTokenCookie(token.getToken(), repositoryId);
+
+			JSONObject obj = new JSONObject();
+			obj.put("app", app);
+			obj.put("repositoryId", repositoryId);
+			obj.put("userName", userName);
+			obj.put("token", token.getToken());
+			obj.put("expiration", token.getExpiration());
+			result.put("value", obj);
+
+			status = true;
+			logger.info("=== SAML token conversion successful for user: {} ===", userName);
+
+		} catch (ParseException e) {
+			logger.error("Failed to parse SAML request body", e);
+			addErrMsg(errMsg, "requestBody", "invalidJson");
+		} catch (Exception e) {
+			logger.error("SAML token conversion failed", e);
+			addErrMsg(errMsg, "saml", "conversionFailed");
+		}
+
+		return makeResult(status, result, errMsg).toString();
 	}
 
 	/**
@@ -417,7 +563,7 @@ public class AuthTokenResource extends ResourceBase{
 			if (StringUtils.isBlank(userinfoEndpoint)) {
 				PropertyManager pm = getPropertyManager();
 				if (pm != null) {
-					String issuerUrl = pm.readValue(PropertyKey.OIDC_ISSUER);
+					String issuerUrl = pm.readValue(repositoryId, PropertyKey.OIDC_ISSUER);
 					if (StringUtils.isNotBlank(issuerUrl)) {
 						userinfoEndpoint = discoverUserInfoEndpoint(issuerUrl);
 						if (userinfoEndpoint != null) {
@@ -433,7 +579,7 @@ public class AuthTokenResource extends ResourceBase{
 			}
 
 			// Server-side validation: call the provider's UserInfo endpoint with the access token
-			JSONObject verifiedUserInfo = fetchUserInfoFromProvider(userinfoEndpoint, accessToken);
+			JSONObject verifiedUserInfo = fetchUserInfoFromProvider(userinfoEndpoint, accessToken, repositoryId);
 			if (verifiedUserInfo == null) {
 				addErrMsg(errMsg, "access_token", "invalidOrExpired - UserInfo endpoint returned error");
 				return makeResult(false, result, errMsg).toString();
@@ -527,9 +673,9 @@ public class AuthTokenResource extends ResourceBase{
 				return makeResult(false, result, errMsg).toString();
 			}
 
-			// Get Google client ID from configuration
+			// Get Google client ID from configuration (repo-specific → global fallback)
 			PropertyManager pm = getPropertyManager();
-			String clientId = pm != null ? pm.readValue(PropertyKey.CLOUD_AUTH_GOOGLE_CLIENT_ID) : null;
+			String clientId = pm != null ? pm.readValue(repositoryId, PropertyKey.CLOUD_AUTH_GOOGLE_CLIENT_ID) : null;
 			if (StringUtils.isBlank(clientId)) {
 				addErrMsg(errMsg, "google", "notConfigured");
 				return makeResult(false, result, errMsg).toString();
@@ -630,10 +776,10 @@ public class AuthTokenResource extends ResourceBase{
 				return makeResult(false, result, errMsg).toString();
 			}
 
-			// Get Microsoft configuration
+			// Get Microsoft configuration (repo-specific → global fallback)
 			PropertyManager pm = getPropertyManager();
-			String clientId = pm != null ? pm.readValue(PropertyKey.CLOUD_AUTH_MICROSOFT_CLIENT_ID) : null;
-			String tenantId = pm != null ? pm.readValue(PropertyKey.CLOUD_AUTH_MICROSOFT_TENANT_ID) : null;
+			String clientId = pm != null ? pm.readValue(repositoryId, PropertyKey.CLOUD_AUTH_MICROSOFT_CLIENT_ID) : null;
+			String tenantId = pm != null ? pm.readValue(repositoryId, PropertyKey.CLOUD_AUTH_MICROSOFT_TENANT_ID) : null;
 			if (StringUtils.isBlank(clientId)) {
 				addErrMsg(errMsg, "microsoft", "notConfigured");
 				return makeResult(false, result, errMsg).toString();
@@ -741,80 +887,74 @@ public class AuthTokenResource extends ResourceBase{
 		return makeResult(status, result, errMsg).toString();
 	}
 
-	private String extractUserNameFromSAMLResponse(String samlResponse) {
+
+
+	/**
+	 * Extract username from the signed SAML subtree (Response or Assertion element).
+	 * Only searches within the verified signed element to prevent unsigned
+	 * sibling assertion injection attacks.
+	 *
+	 * Attribute mapping priority:
+	 * 1. If attributeMapping is specified, look for that attribute name first
+	 * 2. NameID
+	 * 3. email / emailaddress claim
+	 * 4. preferred_username
+	 *
+	 * @param signedElement    the signed Response or Assertion element
+	 * @param attributeMapping optional custom attribute name for username extraction
+	 * @return extracted username, or null if not found
+	 */
+	private String extractUserNameFromSAMLElement(Element signedElement, String attributeMapping) {
 		try {
-			byte[] decodedBytes = Base64.getDecoder().decode(samlResponse);
-			byte[] xmlBytes;
-
-			// Try to inflate (decompress) the SAML response
-			// HTTP-Redirect binding uses DEFLATE compression, HTTP-POST does not
-			try {
-				Inflater inflater = new Inflater(true); // true = nowrap (raw deflate)
-				inflater.setInput(decodedBytes);
-				byte[] result = new byte[decodedBytes.length * 10]; // Estimate 10x expansion
-				int resultLength = inflater.inflate(result);
-				inflater.end();
-				xmlBytes = new byte[resultLength];
-				System.arraycopy(result, 0, xmlBytes, 0, resultLength);
-				logger.debug("SAML response was deflate-compressed, inflated {} bytes to {} bytes",
-				            decodedBytes.length, resultLength);
-			} catch (Exception e) {
-				// Not compressed, use decoded bytes directly (HTTP-POST binding)
-				xmlBytes = decodedBytes;
-				logger.debug("SAML response was not deflate-compressed, using raw bytes");
+			// 1. If custom attribute mapping is specified, try it first
+			if (attributeMapping != null && !attributeMapping.trim().isEmpty() && !"NameID".equalsIgnoreCase(attributeMapping.trim())) {
+				String mapped = findSAMLAttribute(signedElement, attributeMapping.trim());
+				if (mapped != null) return mapped;
 			}
 
-			// XXE prevention: disable external entities and DTDs
-			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-			factory.setNamespaceAware(true);
-			factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-			factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-			factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-			factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
-			// ACCESS_EXTERNAL_DTD/SCHEMA may not be supported by all parsers (e.g. Apache Xerces in Tomcat)
-			// The disallow-doctype-decl feature above already provides XXE protection
-			try {
-				factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
-				factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
-			} catch (IllegalArgumentException e) {
-				logger.debug("XML parser does not support ACCESS_EXTERNAL_DTD/SCHEMA properties (XXE prevention via other features)");
-			}
-
-			DocumentBuilder builder = factory.newDocumentBuilder();
-			Document document = builder.parse(new ByteArrayInputStream(xmlBytes));
-
-			// WARNING: This implementation does NOT verify the SAML response signature.
-			// In production, you MUST validate the XML signature against the IdP's certificate
-			// to prevent identity spoofing. Consider using OpenSAML or a similar library
-			// for proper SAML signature validation, issuer/audience/conditions checking.
-			logger.warn("SAML response signature validation is not implemented. " +
-					"This is a security risk in production environments.");
-
-			NodeList nameIdNodes = document.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "NameID");
+			// 2. NameID (default)
+			NodeList nameIdNodes = signedElement.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "NameID");
 			if (nameIdNodes.getLength() > 0) {
-				return nameIdNodes.item(0).getTextContent();
+				String nameId = nameIdNodes.item(0).getTextContent();
+				if (nameId != null && !nameId.trim().isEmpty()) return nameId.trim();
 			}
 
-			NodeList attributeNodes = document.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "Attribute");
-			for (int i = 0; i < attributeNodes.getLength(); i++) {
-				Element attr = (Element) attributeNodes.item(i);
-				String attrName = attr.getAttribute("Name");
-				if ("email".equalsIgnoreCase(attrName) || 
-				    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress".equals(attrName) ||
-				    "preferred_username".equalsIgnoreCase(attrName)) {
-					NodeList valueNodes = attr.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "AttributeValue");
-					if (valueNodes.getLength() > 0) {
-						return valueNodes.item(0).getTextContent();
-					}
-				}
+			// 3. email attribute
+			String email = findSAMLAttribute(signedElement, "email");
+			if (email == null) {
+				email = findSAMLAttribute(signedElement, "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress");
 			}
+			if (email != null) return email;
+
+			// 4. preferred_username
+			String pu = findSAMLAttribute(signedElement, "preferred_username");
+			if (pu != null) return pu;
 
 			logger.warn("Could not extract username from SAML response");
 			return null;
 		} catch (Exception e) {
-			logger.error("Failed to parse SAML response", e);
+			logger.error("Failed to extract username from SAML element", e);
 			return null;
 		}
+	}
+
+	/**
+	 * Find a SAML Attribute value by name within the given element subtree.
+	 */
+	private String findSAMLAttribute(Element element, String attributeName) {
+		NodeList attributeNodes = element.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "Attribute");
+		for (int i = 0; i < attributeNodes.getLength(); i++) {
+			Element attr = (Element) attributeNodes.item(i);
+			String attrName = attr.getAttribute("Name");
+			if (attributeName.equalsIgnoreCase(attrName) || attributeName.equals(attrName)) {
+				NodeList valueNodes = attr.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "AttributeValue");
+				if (valueNodes.getLength() > 0) {
+					String value = valueNodes.item(0).getTextContent();
+					if (value != null && !value.trim().isEmpty()) return value.trim();
+				}
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -873,8 +1013,10 @@ public class AuthTokenResource extends ResourceBase{
 	 *
 	 * In addition to the static allowlist (Google, Microsoft), the configured OIDC issuer
 	 * host is dynamically allowed, supporting Keycloak and other OIDC providers.
+	 *
+	 * @param repositoryId the repository ID for repo-specific OIDC issuer lookup (may be null for global)
 	 */
-	private boolean isAllowedUserInfoEndpoint(String url) {
+	private boolean isAllowedUserInfoEndpoint(String url, String repositoryId) {
 		if (url == null || url.isEmpty()) {
 			return false;
 		}
@@ -909,8 +1051,8 @@ public class AuthTokenResource extends ResourceBase{
 				}
 			}
 
-			// Check dynamic allowlist: configured OIDC issuer host
-			if (isAllowedByOidcIssuer(uri, host, port, scheme)) {
+			// Check dynamic allowlist: configured OIDC issuer host (repo-aware)
+			if (isAllowedByOidcIssuer(uri, host, port, scheme, repositoryId)) {
 				return true;
 			}
 
@@ -955,76 +1097,71 @@ public class AuthTokenResource extends ResourceBase{
 		return false;
 	}
 
+	/** Cache for OIDC Discovery results: issuerUrl -> Set of allowed endpoint URLs */
+	private static final java.util.concurrent.ConcurrentHashMap<String, java.util.Set<String>> oidcDiscoveryCache =
+			new java.util.concurrent.ConcurrentHashMap<>();
+	private static final java.util.concurrent.ConcurrentHashMap<String, Long> oidcDiscoveryCacheTime =
+			new java.util.concurrent.ConcurrentHashMap<>();
+	private static final long OIDC_DISCOVERY_CACHE_TTL_MS = 300_000; // 5 minutes
+
 	/**
-	 * Check if the UserInfo endpoint matches the configured OIDC issuer host.
-	 * This allows Keycloak and other self-hosted OIDC providers.
-	 * The endpoint must be on the same host/port/scheme as the configured issuer
-	 * and the path must start with /realms/ (for Keycloak) or /protocol/ path.
+	 * Check if the endpoint matches a known OIDC endpoint from Discovery.
+	 * Uses OIDC Discovery (/.well-known/openid-configuration) to obtain the exact
+	 * userinfo_endpoint and token_endpoint URLs, then validates via exact URL match.
+	 * This is stricter than path prefix matching and supports all OIDC providers.
+	 *
+	 * @param repositoryId the repository ID for repo-specific OIDC issuer lookup (may be null for global)
 	 */
-	private boolean isAllowedByOidcIssuer(java.net.URI endpointUri, String host, int port, String scheme) {
+	private boolean isAllowedByOidcIssuer(java.net.URI endpointUri, String host, int port, String scheme, String repositoryId) {
 		try {
 			PropertyManager pm = getPropertyManager();
 			if (pm == null) {
 				return false;
 			}
-			String issuerUrl = pm.readValue(PropertyKey.OIDC_ISSUER);
+			String issuerUrl = (repositoryId != null)
+					? pm.readValue(repositoryId, PropertyKey.OIDC_ISSUER)
+					: pm.readValue(PropertyKey.OIDC_ISSUER);
 			if (issuerUrl == null || issuerUrl.isEmpty()) {
 				return false;
 			}
-
-			java.net.URI issuerUri = new java.net.URI(issuerUrl.trim());
-			String issuerHost = issuerUri.getHost();
-			if (issuerHost == null) {
-				return false;
+			issuerUrl = issuerUrl.trim();
+			if (issuerUrl.endsWith("/")) {
+				issuerUrl = issuerUrl.substring(0, issuerUrl.length() - 1);
 			}
+
+			// First, verify host/scheme/port match the issuer (basic SSRF check)
+			java.net.URI issuerUri = new java.net.URI(issuerUrl);
+			String issuerHost = issuerUri.getHost();
+			if (issuerHost == null) return false;
 			issuerHost = issuerHost.toLowerCase(java.util.Locale.ROOT);
 			String issuerScheme = issuerUri.getScheme();
-			if (issuerScheme == null) {
-				return false;
-			}
+			if (issuerScheme == null) return false;
 			issuerScheme = issuerScheme.toLowerCase(java.util.Locale.ROOT);
 			int issuerPort = issuerUri.getPort();
 
-			// Host must match exactly
-			if (!host.equals(issuerHost)) {
-				return false;
-			}
-			// Scheme must match
-			if (!scheme.equals(issuerScheme)) {
-				return false;
-			}
-			// Port must match (considering default ports)
+			if (!host.equals(issuerHost)) return false;
+			if (!scheme.equals(issuerScheme)) return false;
 			int effectivePort = port == -1 ? ("https".equals(scheme) ? 443 : 80) : port;
 			int effectiveIssuerPort = issuerPort == -1 ? ("https".equals(issuerScheme) ? 443 : 80) : issuerPort;
-			if (effectivePort != effectiveIssuerPort) {
-				return false;
+			if (effectivePort != effectiveIssuerPort) return false;
+
+			// Get allowed endpoints from Discovery (cached)
+			java.util.Set<String> allowedEndpoints = getDiscoveredEndpoints(issuerUrl);
+			String normalizedEndpoint = endpointUri.toString();
+			if (normalizedEndpoint.endsWith("/")) {
+				normalizedEndpoint = normalizedEndpoint.substring(0, normalizedEndpoint.length() - 1);
 			}
 
-			// Path must match a known OIDC endpoint under the issuer path
-			String path = endpointUri.getPath();
-			if (path == null) {
-				return false;
-			}
-			String issuerPath = issuerUri.getPath();
-			if (issuerPath == null) {
-				issuerPath = "";
-			}
-			// Remove trailing slash for consistent matching
-			if (issuerPath.endsWith("/")) {
-				issuerPath = issuerPath.substring(0, issuerPath.length() - 1);
+			if (allowedEndpoints.contains(normalizedEndpoint)) {
+				logger.info("Endpoint allowed via OIDC Discovery: {}", endpointUri);
+				return true;
 			}
 
-			// Only allow known OIDC protocol endpoints (SSRF prevention)
-			java.util.List<String> allowedSuffixes = java.util.Arrays.asList(
-				"/protocol/openid-connect/userinfo",
-				"/protocol/openid-connect/token",
-				"/.well-known/openid-configuration"
-			);
-			for (String suffix : allowedSuffixes) {
-				if (path.equals(issuerPath + suffix)) {
-					logger.info("UserInfo endpoint allowed via OIDC issuer: {}", endpointUri);
-					return true;
-				}
+			// Also allow the Discovery endpoint itself
+			String discoveryUrl = issuerUrl + "/.well-known/openid-configuration";
+			if (normalizedEndpoint.equals(discoveryUrl)) {
+				logger.info("Endpoint allowed: OIDC Discovery URL");
+				return true;
 			}
 
 			return false;
@@ -1035,14 +1172,89 @@ public class AuthTokenResource extends ResourceBase{
 	}
 
 	/**
+	 * Fetch and cache allowed OIDC endpoints from the Discovery document.
+	 * Returns a set of normalized endpoint URLs (userinfo_endpoint, token_endpoint, etc.).
+	 */
+	private java.util.Set<String> getDiscoveredEndpoints(String issuerUrl) {
+		Long cachedTime = oidcDiscoveryCacheTime.get(issuerUrl);
+		if (cachedTime != null && (System.currentTimeMillis() - cachedTime) < OIDC_DISCOVERY_CACHE_TTL_MS) {
+			java.util.Set<String> cached = oidcDiscoveryCache.get(issuerUrl);
+			if (cached != null) return cached;
+		}
+
+		java.util.Set<String> endpoints = new java.util.HashSet<>();
+		try {
+			String discoveryUrl = issuerUrl + "/.well-known/openid-configuration";
+			java.net.URI discoveryUri = java.net.URI.create(discoveryUrl);
+			java.net.HttpURLConnection conn = (java.net.HttpURLConnection) discoveryUri.toURL().openConnection();
+			conn.setInstanceFollowRedirects(false);
+			conn.setRequestMethod("GET");
+			conn.setRequestProperty("Accept", "application/json");
+			conn.setConnectTimeout(5000);
+			conn.setReadTimeout(5000);
+
+			if (conn.getResponseCode() == 200) {
+				try (java.io.InputStream is = conn.getInputStream();
+					 java.io.InputStreamReader reader = new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8)) {
+					StringBuilder sb = new StringBuilder();
+					char[] buf = new char[4096];
+					int n;
+					while ((n = reader.read(buf)) != -1) sb.append(buf, 0, n);
+
+					com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+					@SuppressWarnings("unchecked")
+					java.util.Map<String, Object> discovery = mapper.readValue(sb.toString(), java.util.Map.class);
+
+					// Extract standard OIDC endpoints
+					for (String key : new String[]{"userinfo_endpoint", "token_endpoint", "authorization_endpoint",
+							"jwks_uri", "revocation_endpoint", "introspection_endpoint", "end_session_endpoint"}) {
+						Object val = discovery.get(key);
+						if (val instanceof String) {
+							String ep = ((String) val).trim();
+							if (ep.endsWith("/")) ep = ep.substring(0, ep.length() - 1);
+							endpoints.add(ep);
+						}
+					}
+				}
+			}
+		} catch (Exception e) {
+			logger.debug("Failed to fetch OIDC Discovery for {}: {}", issuerUrl, e.getMessage());
+		}
+
+		// Fallback: if Discovery failed, allow common OIDC paths under the issuer
+		if (endpoints.isEmpty()) {
+			String issuerPath = java.net.URI.create(issuerUrl).getPath();
+			if (issuerPath == null) issuerPath = "";
+			if (issuerPath.endsWith("/")) issuerPath = issuerPath.substring(0, issuerPath.length() - 1);
+
+			String base = issuerUrl.substring(0, issuerUrl.length() - (issuerPath.isEmpty() ? 0 : issuerPath.length()));
+			// Keycloak
+			endpoints.add(base + issuerPath + "/protocol/openid-connect/userinfo");
+			endpoints.add(base + issuerPath + "/protocol/openid-connect/token");
+			// Standard OIDC (Okta, Auth0, etc.)
+			endpoints.add(base + "/userinfo");
+			endpoints.add(base + "/oauth/token");
+			endpoints.add(base + "/oauth2/v1/userinfo");
+			endpoints.add(base + "/oauth2/v1/token");
+			logger.info("OIDC Discovery unavailable for {}, using fallback endpoint list", issuerUrl);
+		}
+
+		oidcDiscoveryCache.put(issuerUrl, endpoints);
+		oidcDiscoveryCacheTime.put(issuerUrl, System.currentTimeMillis());
+		return endpoints;
+	}
+
+	/**
 	 * Fetch user info from an OIDC provider's UserInfo endpoint using the access token.
 	 * This provides server-side validation that the access token is valid.
 	 *
 	 * SSRF prevention: Only known OIDC provider hosts and path prefixes are allowed.
 	 * URI is normalized (trailing slash removed) before validation.
+	 *
+	 * @param repositoryId the repository ID for repo-specific OIDC issuer lookup (may be null for global)
 	 */
 	@SuppressWarnings("unchecked")
-	private JSONObject fetchUserInfoFromProvider(String userinfoEndpoint, String accessToken) {
+	private JSONObject fetchUserInfoFromProvider(String userinfoEndpoint, String accessToken, String repositoryId) {
 		if (userinfoEndpoint == null || userinfoEndpoint.trim().isEmpty()) {
 			return null;
 		}
@@ -1053,8 +1265,8 @@ public class AuthTokenResource extends ResourceBase{
 			normalized = normalized.substring(0, normalized.length() - 1);
 		}
 
-		// SSRF prevention: validate against allowed hosts/paths via URI parsing
-		if (!isAllowedUserInfoEndpoint(normalized)) {
+		// SSRF prevention: validate against allowed hosts/paths via URI parsing (repo-aware)
+		if (!isAllowedUserInfoEndpoint(normalized, repositoryId)) {
 			logger.error("UserInfo endpoint not allowed: {}", userinfoEndpoint);
 			return null;
 		}
@@ -1091,12 +1303,12 @@ public class AuthTokenResource extends ResourceBase{
 	}
 
 	/**
-	 * Discover the userinfo_endpoint from an OIDC issuer via OpenID Connect Discovery.
+	 * Discover the userinfo_endpoint from an OIDC issuer via standard OIDC Discovery.
 	 * Fetches {issuerUrl}/.well-known/openid-configuration and extracts "userinfo_endpoint".
-	 * This is provider-agnostic (works with Keycloak, Google, Microsoft, Auth0, etc.).
+	 * Falls back to Keycloak-specific URL pattern if Discovery fails.
 	 *
-	 * @param issuerUrl the OIDC issuer URL (e.g. "https://keycloak.example.com/realms/myrealm")
-	 * @return the userinfo_endpoint URL, or null if discovery fails
+	 * @param issuerUrl the OIDC issuer URL (e.g. "http://keycloak:8080/realms/myrealm")
+	 * @return the userinfo_endpoint URL, or null if issuerUrl is blank or discovery fails
 	 */
 	private String discoverUserInfoEndpoint(String issuerUrl) {
 		if (issuerUrl == null || issuerUrl.trim().isEmpty()) {
@@ -1107,43 +1319,41 @@ public class AuthTokenResource extends ResourceBase{
 			normalized = normalized.substring(0, normalized.length() - 1);
 		}
 
+		// Primary: OIDC Discovery via .well-known/openid-configuration (RFC 8414)
 		String discoveryUrl = normalized + "/.well-known/openid-configuration";
 		try {
-			// SSRF prevention: validate discovery URL against allowed OIDC issuer hosts
-			if (!isAllowedUserInfoEndpoint(discoveryUrl)) {
-				logger.warn("OIDC Discovery URL not allowed: {}", discoveryUrl);
-				return null;
-			}
-
-			java.net.URI uri = java.net.URI.create(discoveryUrl);
-			java.net.HttpURLConnection conn = (java.net.HttpURLConnection) uri.toURL().openConnection();
-			conn.setInstanceFollowRedirects(false);  // SSRF: prevent redirect to internal/metadata IPs
+			java.net.HttpURLConnection conn = (java.net.HttpURLConnection)
+					java.net.URI.create(discoveryUrl).toURL().openConnection();
+			conn.setInstanceFollowRedirects(false);
 			conn.setRequestMethod("GET");
 			conn.setRequestProperty("Accept", "application/json");
-			conn.setConnectTimeout(10000);
-			conn.setReadTimeout(10000);
+			conn.setConnectTimeout(5000);
+			conn.setReadTimeout(5000);
 
 			int responseCode = conn.getResponseCode();
-			if (responseCode != 200) {
-				logger.warn("OIDC Discovery returned HTTP {} for {}", responseCode, discoveryUrl);
-				return null;
-			}
-
-			try (java.io.InputStream is = conn.getInputStream();
-			     java.io.InputStreamReader reader = new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8)) {
-				JSONParser parser = new JSONParser();
-				JSONObject config = (JSONObject) parser.parse(reader);
-				String endpoint = (String) config.get("userinfo_endpoint");
-				if (endpoint != null && !endpoint.trim().isEmpty()) {
-					return endpoint.trim();
+			if (responseCode == 200) {
+				try (java.io.InputStream is = conn.getInputStream();
+				     java.io.InputStreamReader reader = new java.io.InputStreamReader(
+						     is, java.nio.charset.StandardCharsets.UTF_8)) {
+					JSONParser parser = new JSONParser();
+					JSONObject config = (JSONObject) parser.parse(reader);
+					String userinfoEndpoint = (String) config.get("userinfo_endpoint");
+					if (StringUtils.isNotBlank(userinfoEndpoint)) {
+						logger.info("Discovered userinfo_endpoint via OIDC Discovery: {}", userinfoEndpoint);
+						return userinfoEndpoint;
+					}
 				}
-				logger.warn("OIDC Discovery response missing userinfo_endpoint field");
-				return null;
+			} else {
+				logger.warn("OIDC Discovery returned HTTP {} for {}", responseCode, discoveryUrl);
 			}
 		} catch (Exception e) {
 			logger.warn("OIDC Discovery failed for {}: {}", discoveryUrl, e.getMessage());
-			return null;
 		}
+
+		// Fallback: Keycloak-specific URL pattern
+		String fallback = normalized + "/protocol/openid-connect/userinfo";
+		logger.info("Falling back to Keycloak-specific userinfo_endpoint: {}", fallback);
+		return fallback;
 	}
 
 	/**
@@ -1301,10 +1511,9 @@ public class AuthTokenResource extends ResourceBase{
 
 	/**
 	 * Get root folder ID for the specified repository.
-	 * Uses RepositoryInfoMap for dynamic lookup with hardcoded fallback.
+	 * Uses RepositoryInfoMap for dynamic lookup from repositories.yml.
 	 */
 	private String getRootFolderIdForRepository(String repositoryId) {
-		// Dynamic lookup via RepositoryInfoMap (works regardless of DB re-initialization)
 		try {
 			jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repoInfoMap =
 				jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
@@ -1317,20 +1526,10 @@ public class AuthTokenResource extends ResourceBase{
 				}
 			}
 		} catch (Exception e) {
-			logger.warn("Failed to get root folder ID from RepositoryInfoMap for repository: {}, falling back to hardcoded IDs", repositoryId);
+			logger.warn("Failed to get root folder ID from RepositoryInfoMap for repository: {}", repositoryId);
 		}
-
-		// Fallback: hardcoded IDs from default CouchDB initialization
-		// These may become stale if the database is re-initialized
-		switch (repositoryId) {
-			case "bedroom":
-				return "e02f784f8360a02cc14d1314c10038ff";
-			case "canopy":
-				return "ddd70e3ed8b847c2a364be81117c57ae";
-			default:
-				logger.warn("Unknown repository ID for root folder lookup: {}", repositoryId);
-				return null;
-		}
+		logger.warn("Root folder ID not found for repository: {}", repositoryId);
+		return null;
 	}
 
 	/**

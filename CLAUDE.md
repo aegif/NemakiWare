@@ -139,7 +139,7 @@ curl -u admin:admin -X POST \
 
 ### リポジトリ
 - `bedroom`: 主要リポジトリ (テスト用)
-- `canopy`: マルチリポジトリ管理用
+- `canopy`: 標準リポジトリ (初期作成・UIからは非表示、それ以外は通常リポジトリと同等)
 
 ---
 
@@ -216,7 +216,7 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ---
 
-## セキュリティステータス (2026-03-08)
+## セキュリティステータス (2026-03-16)
 
 - npm脆弱性: 0件 (dompurify 3.3.2 overrides適用、immutable 3.8.3 へ更新)
 - Maven要注意: netty 4.1.97 (odata-server-core経由、CVE-2025-24970/58056)、logback 1.4.14 (CVE-2025-11226/CVE-2026-1225)
@@ -225,12 +225,26 @@ curl -u admin:password http://localhost:5984/_all_dbs
 - アーカイブDAO例外伝播: 対応済み (null返却→CmisRuntimeException)
 - Webhook REST API: CMIS権限チェックに移行済み (admin限定→CAN_GET/UPDATE_PROPERTIES)
 - ContentChanges 削除済み型フォールバック: 対応済み (JSONConverter型解決エラー防止)
+- SAML署名ラッピング攻撃: 対応済み (Reference URI DOM解決 + duplicate-ID防御)
+- SAML DEFLATE DoS: 対応済み (10MB上限 + ByteArrayOutputStream)
+- Setup Wizard設定上書き防止: 対応済み (ハイドレーションゲート + エラーリトライ)
 
 ---
 
 ## 現在のバージョン
 
-**3.1.0-RC8** (2026-03-08)
+**3.1.0-RC9** (2026-03-16)
+
+### RC9 (2026-03-16)
+- SAML 2.0認証: POST binding ACS (SamlAcsServlet — sessionStorageブリッジ)
+- SAML 2.0認証: SLO LogoutRequest生成 (NameID付きSAMLLogoutRequest)
+- SAML署名検証: XML署名ラッピング攻撃対策 (Reference URI DOM解決 + duplicate-ID防御)
+- SAML DEFLATE: ByteArrayOutputStream + 10MB上限 (DoS防止)
+- Setup Wizard: 既存設定ハイドレーションゲート (ローディング/エラー/リトライ状態)
+- Setup Wizard: SAML設定バリデーション追加 (IdP SSO URL/証明書必須チェック)
+- Setup Wizard: `[configured]`プレースホルダ round-trip対応
+- authConfig.ts: インターフェース補完 (googleEnabled/microsoftEnabled)
+- VectorConfig.type: union型バリデーション追加 (TS2322修正)
 
 ### RC8 (2026-03-08)
 - Setup Wizard: "bedroom" ハードコーディング除去 — _all_dbs ベース動的リポジトリ検出

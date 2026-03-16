@@ -36,14 +36,6 @@ public class Patch_WebhookDeliveryLogViews extends AbstractNemakiPatch {
     protected void applyPerRepositoryPatch(String repositoryId) {
         log.info("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Adding webhook delivery log views");
 
-        // Skip archive and canopy repositories
-        if ("canopy".equals(repositoryId) || 
-            "bedroom_closet".equals(repositoryId) || 
-            "canopy_closet".equals(repositoryId)) {
-            log.info("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Skipping - archive/canopy repository");
-            return;
-        }
-
         try {
             CloudantClientWrapper client = patchUtil.getConnectorPool().getClient(repositoryId);
             if (client == null) {

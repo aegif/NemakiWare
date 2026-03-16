@@ -70,7 +70,7 @@
  *
  * 8. Cleanup with Delete Confirmation (Lines 141-156, 225-240, 245-262):
  *    - Clicks file row to select
- *    - Finds delete button with [data-icon="delete"]
+ *    - Finds delete button with .anticon-delete, [aria-label="delete"]
  *    - Clicks delete, waits for popconfirm
  *    - Clicks OK/確認 button in confirmation dialog
  *    - Waits 5 seconds for large file deletion to complete
@@ -150,7 +150,7 @@ test.describe('Large File Upload', () => {
 
     // Login as admin
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     // MOBILE FIX: Close sidebar
     await testHelper.closeMobileSidebar(browserName);
@@ -160,7 +160,7 @@ test.describe('Large File Upload', () => {
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
   });
 
   test('should upload a large file (>100MB) with progress tracking', async ({ page, browserName }) => {
@@ -267,7 +267,7 @@ test.describe('Large File Upload', () => {
         await uploadedFile.click();
         await page.waitForTimeout(500);
 
-        const deleteButton = page.locator('button').filter({ has: page.locator('[data-icon="delete"]') });
+        const deleteButton = page.locator('button').filter({ has: page.locator('.anticon-delete, [aria-label="delete"]') });
         if (await deleteButton.count() > 0) {
           await deleteButton.first().click();
           await page.waitForTimeout(500);
@@ -328,7 +328,7 @@ test.describe('Large File Upload', () => {
 
       // Look for cancel/close button in upload list item
       const cancelButton = page.locator('.ant-upload-list-item-card-actions button, .ant-upload-list-item button').filter({
-        has: page.locator('[data-icon="close"], [data-icon="delete"]')
+        has: page.locator('.anticon-close, [aria-label="close"], .anticon-delete, [aria-label="delete"]')
       });
 
       if (await cancelButton.count() > 0) {
@@ -350,7 +350,7 @@ test.describe('Large File Upload', () => {
           await cancelledFile.click();
           await page.waitForTimeout(500);
 
-          const deleteButton = page.locator('button').filter({ has: page.locator('[data-icon="delete"]') });
+          const deleteButton = page.locator('button').filter({ has: page.locator('.anticon-delete, [aria-label="delete"]') });
           if (await deleteButton.count() > 0) {
             await deleteButton.first().click();
             await page.waitForTimeout(500);
@@ -372,7 +372,7 @@ test.describe('Large File Upload', () => {
           await uploadedFile.click();
           await page.waitForTimeout(500);
 
-          const deleteButton = page.locator('button').filter({ has: page.locator('[data-icon="delete"]') });
+          const deleteButton = page.locator('button').filter({ has: page.locator('.anticon-delete, [aria-label="delete"]') });
           if (await deleteButton.count() > 0) {
             await deleteButton.first().click();
             await page.waitForTimeout(500);

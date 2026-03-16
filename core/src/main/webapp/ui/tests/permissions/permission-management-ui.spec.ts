@@ -172,7 +172,7 @@ test.describe('Permission Management UI - ACL Display', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     // MOBILE FIX: Close sidebar
     await testHelper.closeMobileSidebar(browserName);
@@ -345,7 +345,7 @@ test.describe('Permission Management UI - ACL Display', () => {
       await cleanupFolderRow.first().click();
       await page.waitForTimeout(500);
 
-      const deleteButton = page.locator('button').filter({ has: page.locator('[data-icon="delete"]') });
+      const deleteButton = page.locator('button').filter({ has: page.locator('.anticon-delete, [aria-label="delete"]') });
       if (await deleteButton.count() > 0) {
         await deleteButton.first().click();
         await page.waitForTimeout(500);
@@ -447,7 +447,7 @@ test.describe('Permission Management UI - ACL Display', () => {
     await page.waitForTimeout(2000);
 
     // Find root folder or any folder
-    const anyFolder = page.locator('tr').filter({ has: page.locator('[data-icon="folder"]') }).first();
+    const anyFolder = page.locator('tr').filter({ has: page.locator('.anticon-folder, [aria-label="folder"]') }).first();
 
     if (await anyFolder.count() > 0) {
       await anyFolder.click();

@@ -686,7 +686,7 @@ export class TestHelper {
       uploadButton = this.page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
     }
     if (await uploadButton.count() === 0) {
-      uploadButton = this.page.locator('button').filter({ has: this.page.locator('[data-icon="upload"]') }).first();
+      uploadButton = this.page.locator('button').filter({ has: this.page.locator('.anticon-upload, [aria-label="upload"]') }).first();
     }
 
     if (await uploadButton.count() === 0) {
@@ -857,7 +857,7 @@ export class TestHelper {
       'button:has-text("アップロード")',
       'button:has-text("Upload")',
       'button:has-text("File Upload")',
-      'button:has([data-icon="upload"])',
+      'button:has(.anticon-upload, [aria-label="upload"])',
     ];
 
     for (const selector of uploadButtonSelectors) {
@@ -879,8 +879,8 @@ export class TestHelper {
       'button:has-text("新規フォルダ")',
       'button:has-text("Create Folder")',
       'button:has-text("New Folder")',
-      'button:has([data-icon="folder-add"])',
-      'button:has([data-icon="plus"])',
+      'button:has(.anticon-folder-add, [aria-label="folder-add"])',
+      'button:has(.anticon-plus, [aria-label="plus"])',
     ];
 
     for (const selector of folderButtonSelectors) {
@@ -931,7 +931,7 @@ export class TestHelper {
       'button:has-text("アップロード")',
       'button:has-text("Upload")',
       'button:has-text("File Upload")',
-      'button:has([data-icon="upload"])',
+      'button:has(.anticon-upload, [aria-label="upload"])',
     ];
 
     for (const selector of selectors) {
@@ -952,7 +952,7 @@ export class TestHelper {
       'button:has-text("新規フォルダ")',
       'button:has-text("Create Folder")',
       'button:has-text("New Folder")',
-      'button:has([data-icon="folder-add"])',
+      'button:has(.anticon-folder-add, [aria-label="folder-add"])',
     ];
 
     for (const selector of selectors) {

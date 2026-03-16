@@ -101,9 +101,22 @@ public class CloudDirectorySyncScheduler {
 			return;
 		}
 
-		// For each configured provider, run delta sync on default repository
-		// TODO: support multi-repository via repositoryInfoMap if needed
-		String repositoryId = "bedroom";
+		// Run delta sync on the default repository
+		String repositoryId = null;
+		try {
+			jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repoInfoMap =
+				jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+					.getBean("repositoryInfoMap", jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+			if (repoInfoMap != null) {
+				repositoryId = repoInfoMap.getDefaultRepositoryId();
+			}
+		} catch (Exception e) {
+			log.warn("Failed to get default repository ID from RepositoryInfoMap");
+		}
+		if (repositoryId == null) {
+			log.warn("Default repository ID not available, skipping cloud directory sync");
+			return;
+		}
 
 		for (String provider : providers.split(",")) {
 			provider = provider.trim();

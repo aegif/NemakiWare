@@ -20,7 +20,7 @@ const TEST_USER = 'admin';
 const TEST_PASSWORD = 'admin';
 const REPOSITORY_ID = 'bedroom';
 const BASE_URL = 'http://localhost:8080';
-const UI_URL = `${BASE_URL}/core/ui`;
+const UI_URL = `${BASE_URL}/core/ui/`;
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL || getKeycloakUrl();
 
 // Resolved dynamically in beforeAll
@@ -324,11 +324,19 @@ test.describe('Bug Fix 1: Gray Overlay After Login', () => {
       return;
     }
 
+    // Clear cookies to ensure we're on the login page (previous test may have logged in)
+    await page.context().clearCookies();
+    await page.context().clearPermissions();
+
     await page.goto(UI_URL);
     await page.waitForLoadState('networkidle');
+    // Wait for login page to fully render (auth config loads asynchronously)
+    await page.waitForTimeout(3000);
 
-    // Look for OIDC login button
+    // Look for OIDC login button (text may be "OIDC認証でログイン" or "OIDC")
     const oidcButton = page.locator('button:has-text("OIDC"), button:has-text("OpenID")').first();
+    // Wait up to 10 seconds for the button to appear (auth config determines visibility)
+    await expect(oidcButton).toBeVisible({ timeout: 10000 }).catch(() => {});
     if (await oidcButton.count() === 0) {
       test.skip('OIDC button not found on login page');
       return;
@@ -345,9 +353,9 @@ test.describe('Bug Fix 1: Gray Overlay After Login', () => {
       return;
     }
 
-    // Fill Keycloak credentials
-    await page.fill('#username', 'testuser');
-    await page.fill('#password', 'testpassword');
+    // Fill Keycloak credentials (using LDAP user from OpenLDAP)
+    await page.fill('#username', 'ldapuser1');
+    await page.fill('#password', 'ldappass1');
     await page.click('#kc-login');
 
     // Wait for redirect back

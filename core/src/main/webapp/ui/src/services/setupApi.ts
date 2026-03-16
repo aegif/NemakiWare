@@ -39,6 +39,25 @@ export interface AuthConfig {
   googleClientId?: string;
   microsoftClientId?: string;
   microsoftTenantId?: string;
+  keycloakOidcEnabled: boolean;
+  samlEnabled: boolean;
+  keycloakIssuerUrl?: string;
+  keycloakClientId?: string;
+  samlIdpSsoUrl?: string;
+  samlSpEntityId?: string;
+  samlIdpCertificate?: string;
+  samlSloUrl?: string;
+  samlAttributeMapping?: string;
+}
+
+export interface SamlCertTestResult {
+  valid: boolean;
+  subject?: string;
+  issuer?: string;
+  notBefore?: string;
+  notAfter?: string;
+  warning?: string;
+  error?: string;
 }
 
 export interface OidcTestResult {
@@ -46,6 +65,7 @@ export interface OidcTestResult {
   discoveryUrl?: string;
   error?: string;
   clientIdValid?: boolean;
+  clientIdIndeterminate?: boolean;
   clientIdError?: string;
 }
 
@@ -53,6 +73,7 @@ export interface VectorTestResult {
   reachable: boolean;
   error?: string;
   dimension?: number;
+  dimensionWarning?: string;
 }
 
 export interface ApplyRequest {
@@ -149,6 +170,14 @@ class SetupApiClient {
   /** GET /auth/state */
   async getAuthState(): Promise<AuthConfig> {
     return this.request<AuthConfig>('/auth/state');
+  }
+
+  /** POST /auth/test-saml-certificate */
+  async testSamlCertificate(certificate: string): Promise<SamlCertTestResult> {
+    return this.request<SamlCertTestResult>('/auth/test-saml-certificate', {
+      method: 'POST',
+      body: JSON.stringify({ certificate }),
+    });
   }
 
   /** POST /auth/test-oidc */

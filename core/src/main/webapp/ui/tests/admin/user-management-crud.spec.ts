@@ -192,17 +192,10 @@ test.describe('User Management CRUD Operations', () => {
     testHelper = new TestHelper(page);
     await authHelper.login();
 
-    // Navigate to user management
-    await page.waitForTimeout(2000);
-    const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
-    if (await adminMenu.count() > 0) {
-      await adminMenu.click();
-      await page.waitForTimeout(1000);
-    }
-    await page.locator('.ant-menu-item:has-text("ユーザー管理")').click();
-    await page.waitForTimeout(2000);
-
-    await testHelper.closeMobileSidebar(browserName);
+    // Navigate directly to user management page via URL
+    await page.goto('http://localhost:8080/core/ui/index.html#/users');
+    await page.waitForLoadState('networkidle');
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
   });
 
   test('should create new user with full details', async ({ page, browserName }) => {
@@ -322,7 +315,7 @@ test.describe('User Management CRUD Operations', () => {
 
     // Click edit button
     const editButton = testUserRow.locator('button').filter({
-      has: page.locator('[data-icon="edit"]')
+      has: page.locator('.anticon-edit, [aria-label="edit"]')
     });
     await expect(editButton.first()).toBeVisible({ timeout: 5000 });
     await editButton.first().click(isMobile ? { force: true } : {});
@@ -397,7 +390,7 @@ test.describe('User Management CRUD Operations', () => {
 
     // Open edit modal to verify user data persists
     const editButton = testUserRow.locator('button').filter({
-      has: page.locator('[data-icon="edit"]')
+      has: page.locator('.anticon-edit, [aria-label="edit"]')
     });
     await expect(editButton.first()).toBeVisible({ timeout: 5000 });
     await editButton.first().click(isMobile ? { force: true } : {});
@@ -448,7 +441,7 @@ test.describe('User Management CRUD Operations', () => {
 
     // Click delete button
     const deleteButton = testUserRow.locator('button').filter({
-      has: page.locator('[data-icon="delete"]')
+      has: page.locator('.anticon-delete, [aria-label="delete"]')
     });
     await expect(deleteButton.first()).toBeVisible({ timeout: 5000 });
     console.log(`Delete test: Found delete button, clicking...`);

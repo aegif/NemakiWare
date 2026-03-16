@@ -319,9 +319,33 @@ export class SAMLService {
     };
   }
 
-  initiateLogout(): void {
-    if (this.config.logout_url) {
+  initiateLogout(username?: string): void {
+    if (!this.config.logout_url) return;
+
+    if (!username) {
+      // No NameID available — fall back to bare redirect (will likely fail at IdP)
       window.location.href = this.config.logout_url;
+      return;
     }
+
+    const id = '_' + this.generateUUID();
+    const issueInstant = new Date().toISOString();
+
+    const logoutRequest = `<?xml version="1.0" encoding="UTF-8"?>
+<samlp:LogoutRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"
+                     xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"
+                     ID="${id}"
+                     Version="2.0"
+                     IssueInstant="${issueInstant}"
+                     Destination="${this.config.logout_url}">
+    <saml:Issuer>${this.config.entity_id}</saml:Issuer>
+    <saml:NameID>${username}</saml:NameID>
+</samlp:LogoutRequest>`;
+
+    const params = new URLSearchParams({
+      SAMLRequest: this.deflateAndEncode(logoutRequest),
+    });
+
+    window.location.href = `${this.config.logout_url}?${params.toString()}`;
   }
 }

@@ -123,18 +123,25 @@ test.describe('Custom Property Input Feature', () => {
         }
       });
 
-      // First, check if a custom document type exists
-      const typesResponse = await page.request.get(
-        'http://localhost:8080/core/rest/repo/bedroom/type/list',
-        {
-          headers: {
-            'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
-          },
-        }
-      );
+      // First, check if a custom document type exists (retry up to 3 times for busy server)
+      let typesResponse;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        typesResponse = await page.request.get(
+          'http://localhost:8080/core/rest/repo/bedroom/type/list',
+          {
+            headers: {
+              'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+            },
+            timeout: 15000,
+          }
+        );
+        if (typesResponse.ok()) break;
+        console.log(`Type API attempt ${attempt + 1} failed (${typesResponse.status()}), retrying...`);
+        await page.waitForTimeout(2000);
+      }
 
-      if (!typesResponse.ok()) {
-        test.skip('Type API request failed');
+      if (!typesResponse!.ok()) {
+        test.skip('Type API request failed after retries');
         return;
       }
 
@@ -259,18 +266,24 @@ test.describe('Custom Property Input Feature', () => {
     });
 
     test('should upload document with custom type and properties', async ({ page }) => {
-      // Check for custom document type
-      const typesResponse = await page.request.get(
-        'http://localhost:8080/core/rest/repo/bedroom/type/list',
-        {
-          headers: {
-            'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
-          },
-        }
-      );
+      // Check for custom document type (retry for busy server)
+      let typesResponse;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        typesResponse = await page.request.get(
+          'http://localhost:8080/core/rest/repo/bedroom/type/list',
+          {
+            headers: {
+              'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+            },
+            timeout: 15000,
+          }
+        );
+        if (typesResponse.ok()) break;
+        await page.waitForTimeout(2000);
+      }
 
-      if (!typesResponse.ok()) {
-        test.skip('Type API request failed');
+      if (!typesResponse!.ok()) {
+        test.skip('Type API request failed after retries');
         return;
       }
 
@@ -408,18 +421,24 @@ test.describe('Custom Property Input Feature', () => {
     });
 
     test('should show custom properties when custom folder type is selected', async ({ page }) => {
-      // Check if a custom folder type exists
-      const typesResponse = await page.request.get(
-        'http://localhost:8080/core/rest/repo/bedroom/type/list',
-        {
-          headers: {
-            'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
-          },
-        }
-      );
+      // Check if a custom folder type exists (retry for busy server)
+      let typesResponse;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        typesResponse = await page.request.get(
+          'http://localhost:8080/core/rest/repo/bedroom/type/list',
+          {
+            headers: {
+              'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+            },
+            timeout: 15000,
+          }
+        );
+        if (typesResponse.ok()) break;
+        await page.waitForTimeout(2000);
+      }
 
-      if (!typesResponse.ok()) {
-        test.skip('Type API request failed');
+      if (!typesResponse!.ok()) {
+        test.skip('Type API request failed after retries');
         return;
       }
 
@@ -548,7 +567,7 @@ test.describe('Custom Property Input Feature', () => {
       await expect(folderRow).toBeVisible({ timeout: 10000 });
 
       // Cleanup - delete the test folder
-      const deleteButton = folderRow.locator('button[class*="danger"], button:has([data-icon="delete"])');
+      const deleteButton = folderRow.locator('button[class*="danger"], button:has(.anticon-delete)');
       if (await deleteButton.count() > 0) {
         await deleteButton.click();
         // Handle delete confirmation
@@ -564,7 +583,7 @@ test.describe('Custom Property Input Feature', () => {
   test.describe('Relationship Creation Modal', () => {
     test('should navigate to document detail and show relationship tab', async ({ page }) => {
       // First, find a document to work with
-      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) .ant-btn-link').first();
+      const documentLink = page.locator('.ant-table-row:has(.anticon-file) .ant-btn-link').first();
 
       if (await documentLink.count() === 0) {
         test.skip('No documents found in list');
@@ -583,7 +602,7 @@ test.describe('Custom Property Input Feature', () => {
 
     test('should show type selection in relationship creation modal', async ({ page }) => {
       // Find a document
-      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) .ant-btn-link').first();
+      const documentLink = page.locator('.ant-table-row:has(.anticon-file) .ant-btn-link').first();
 
       if (await documentLink.count() === 0) {
         test.skip('No documents found in list');
@@ -664,7 +683,7 @@ test.describe('Custom Property Input Feature', () => {
       }
 
       // Find a document
-      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) .ant-btn-link').first();
+      const documentLink = page.locator('.ant-table-row:has(.anticon-file) .ant-btn-link').first();
       if (await documentLink.count() === 0) {
         test.skip('No documents found in list');
         return;
@@ -719,7 +738,7 @@ test.describe('Custom Property Input Feature', () => {
 
     test('should not lose form data when clicking outside relationship modal', async ({ page }) => {
       // Find a document
-      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) .ant-btn-link').first();
+      const documentLink = page.locator('.ant-table-row:has(.anticon-file) .ant-btn-link').first();
       if (await documentLink.count() === 0) {
         test.skip('No documents found in list');
         return;
@@ -845,8 +864,12 @@ test.describe('Custom Property Input Feature', () => {
         }
       }
 
+      // Close any open dropdowns first by pressing Escape
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(500);
+
       // Close modal
-      await page.locator('.ant-modal button:has-text("キャンセル")').click();
+      await page.locator('.ant-modal button:has-text("キャンセル")').click({ timeout: 10000 });
     });
   });
 });

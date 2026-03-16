@@ -66,39 +66,6 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	// Required dependency for Solr indexing
 	private SolrUtil solrUtil;
 
-	// Configuration properties for database initialization - Docker environment compatible
-	private String couchdbUrl = getCouchDbUrl();
-	private String couchdbUsername = "admin";
-	private String couchdbPassword = "password";
-	
-	/**
-	 * Get CouchDB URL from configuration file (PropertyManager)
-	 */
-	private String getCouchDbUrl() {
-		if (propertyManager == null) {
-			log.warn("PropertyManager not injected - using fallback URL detection");
-			// Fallback to original logic if PropertyManager not available
-			try {
-				java.net.InetAddress.getByName("couchdb");
-				log.info("Docker environment detected - using couchdb:5984");
-				return "http://couchdb:5984";
-			} catch (java.net.UnknownHostException e) {
-				log.info("Local environment detected - using localhost:5984");
-				return "http://localhost:5984";
-			}
-		}
-		
-		// Use PropertyManager to read configuration
-		String couchDbUrl = propertyManager.readValue("db.couchdb.url");
-		if (couchDbUrl != null && !couchDbUrl.trim().isEmpty()) {
-			log.info("Using CouchDB URL from configuration: " + couchDbUrl);
-			return couchDbUrl;
-		} else {
-			log.warn("db.couchdb.url not found in configuration - using default");
-			return "http://localhost:5984";
-		}
-	}
-
 	private List<AbstractNemakiPatch> patchList;
 	
 	public PatchService() {
@@ -525,19 +492,6 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 		this.propertyManager = propertyManager;
 	}
 	
-	// Setters for configuration properties
-	public void setCouchdbUrl(String couchdbUrl) {
-		this.couchdbUrl = couchdbUrl;
-	}
-	
-	public void setCouchdbUsername(String couchdbUsername) {
-		this.couchdbUsername = couchdbUsername;
-	}
-	
-	public void setCouchdbPassword(String couchdbPassword) {
-		this.couchdbPassword = couchdbPassword;
-	}
-
 	/**
 	 * NOTE: Database initialization methods removed from PatchService
 	 * 
@@ -660,8 +614,8 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 		try {
 			// Iterate through all repositories
 			for (String repositoryId : repositoryInfoMap.keys()) {
-				if ("canopy".equals(repositoryId) || repositoryId.endsWith("_closet")) {
-					log.info("Skipping initial folders for repository: " + repositoryId);
+				if (repositoryInfoMap.isArchiveRepository(repositoryId)) {
+					log.info("Skipping initial folders for archive repository: " + repositoryId);
 					continue;
 				}
 
@@ -817,8 +771,8 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 
 		try {
 			for (String repositoryId : repositoryInfoMap.keys()) {
-				if (repositoryId.endsWith("_closet")) {
-					log.debug("Skipping closet repository: " + repositoryId);
+				if (repositoryInfoMap.isArchiveRepository(repositoryId)) {
+					log.debug("Skipping archive repository: " + repositoryId);
 					continue;
 				}
 

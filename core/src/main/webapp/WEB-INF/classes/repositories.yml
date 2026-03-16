@@ -3,6 +3,7 @@ repositories:
     name: canopy
     archive: canopy_closet
     root: ddd70e3ed8b847c2a364be81117c57ae
+    uiSelectable: false
   - id: bedroom
     name: bedroom
     archive: bedroom_closet

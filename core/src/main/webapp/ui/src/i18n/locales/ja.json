@@ -26,6 +26,7 @@
     "optional": "任意",
     "enabled": "有効",
     "disabled": "無効",
+    "configured": "設定済み",
     "single": "単一",
     "multi": "複数",
     "direct": "直接",
@@ -49,6 +50,7 @@
     "items": "{{count}}個",
     "moreResults": "さらに結果があります",
     "unknownError": "不明なエラー",
+    "beta": "Beta",
     "showSettings": "設定を表示",
     "hideSettings": "設定を非表示",
     "validation": {
@@ -1386,8 +1388,8 @@
       "coldMoveMode": "コールドストレージ移動モード",
       "copyMode": "コピーモード (ローカルコピー保持)",
       "moveMode": "移動モード (ローカルコピー削除)",
-      "localArchiveAfterDays": "ローカルアーカイブ日数 (フォールバック)",
-      "localArchiveCron": "ローカルアーカイブスケジュール (Cron式)"
+      "localArchiveCron": "ローカルアーカイブスケジュール (Cron式)",
+      "localArchiveAfterDays": "未更新ドキュメント自動アーカイブ"
     },
     "migrationLogs": {
       "startedAt": "実行日時",
@@ -2256,12 +2258,18 @@
       "probe": "リポジトリ確認",
       "auth": "認証設定",
       "admin": "管理者設定",
-      "vector": "ベクトル検索",
+      "vector": "ベクトル検索 (Beta)",
       "confirm": "確認・適用"
     },
     "nav": {
       "previous": "前へ",
       "next": "次へ"
+    },
+    "hydration": {
+      "loading": "既存の設定を読み込んでいます...",
+      "errorTitle": "設定の読み込みに失敗しました",
+      "errorDescription": "既存の認証・ベクトル検索設定を取得できませんでした。リトライするか、サーバーの状態を確認してください。",
+      "retry": "リトライ"
     },
     "couchdb": {
       "url": "CouchDB URL",
@@ -2294,6 +2302,21 @@
       "oidcUnreachable": "到達不可",
       "clientIdValid": "クライアントID有効",
       "clientIdInvalid": "クライアントIDが見つかりません",
+      "microsoftClientIdAcknowledge": "このクライアントIDが正しいことを確認しました（Microsoftは事前検証できません）",
+      "keycloakOidc": "Keycloak OIDC",
+      "saml": "SAML",
+      "issuerUrl": "Issuer URL",
+      "keycloakClientId": "クライアントID",
+      "keycloakDefaults": "Docker標準環境のデフォルト値を使用",
+      "samlNote": "SAML認証にはIdPの設定が必要です。SSO URL と署名証明書を入力してください。",
+      "samlIdpSsoUrl": "IdP SSO URL",
+      "samlSpEntityId": "SP Entity ID",
+      "samlIdpCertificate": "IdP署名証明書 (PEM)",
+      "samlSloUrl": "Single Logout URL (任意)",
+      "samlAttributeMapping": "ユーザー名属性 (任意)",
+      "testSamlCertificate": "証明書を検証",
+      "samlCertValid": "有効 ({{subject}})",
+      "samlCertInvalid": "無効な証明書",
       "lockoutWarning": "少なくとも1つの認証方式を有効にしてください"
     },
     "admin": {

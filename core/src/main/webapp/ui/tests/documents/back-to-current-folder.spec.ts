@@ -44,7 +44,7 @@ test.describe('Back to Current Folder Navigation', () => {
     rootFolderId = await fetchRootFolderId(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
   });
 
   test.afterEach(async ({ page }) => {

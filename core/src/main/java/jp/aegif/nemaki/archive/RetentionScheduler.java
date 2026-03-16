@@ -32,10 +32,12 @@ import jp.aegif.nemaki.util.lock.ThreadLockService;
 /**
  * Scheduler for retention lifecycle management.
  *
- * Three jobs:
- * - Job A (Live→Archive): Archives documents whose cmis:rm_expirationDate has passed,
- *   with fallback to retention.archive.local.after.days for documents without expiration date.
- * - Job B (Archive→Cold): Moves ARCHIVED_LOCAL archives to cold storage after retention.archive.cold.after.days
+ * Two jobs:
+ * - Job A (Live→Archive): Archives documents in two phases:
+ *   1. Expiration-based: documents whose cmis:rm_expirationDate has passed.
+ *   2. Inactivity-based: documents without cmis:rm_expirationDate that have not been
+ *      modified for retention.archive.local.after.days days.
+ * - Job B (Archive→Cold): Moves ARCHIVED_LOCAL archives to cold storage after retention.archive.cold.after.days.
  *
  * Follows the DirectorySyncScheduler pattern for Spring cron scheduling.
  */
@@ -140,60 +142,47 @@ public class RetentionScheduler {
                 GregorianCalendar jobStartedAt = new GregorianCalendar();
 
                 try {
+                    // Safety check: refuse to run if archive creation is disabled.
+                    // Without archive creation, deleteDocument permanently destroys data.
+                    boolean archiveEnabled = propertyManager.readBoolean(
+                            repositoryId, PropertyKey.ARCHIVE_CREATE_ENABLED);
+                    if (!archiveEnabled) {
+                        log.error("Retention local-archive job ABORTED for repository " + repositoryId
+                                + ": archive.create.enabled=false — expired documents would be permanently deleted"
+                                + " without an archive copy. Enable archive creation or disable retention scheduling.");
+                        continue;
+                    }
+
                     // Phase 1: Expiration-based archiving (cmis:rm_expirationDate)
                     GregorianCalendar now = new GregorianCalendar();
                     List<String> expiredIds = contentService.getExpiredDocumentIds(repositoryId, now);
                     log.info("Expiration-based archive candidates for repository " + repositoryId + ": " + expiredIds.size());
 
                     for (String documentId : expiredIds) {
-                        result.incrementProcessed();
-                        Lock lock = threadLockService.getWriteLock(repositoryId, documentId);
-                        boolean acquired = false;
-                        try {
-                            acquired = lock.tryLock(5, TimeUnit.SECONDS);
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                            log.warn("Interrupted while acquiring lock for expired document: " + documentId);
-                            result.incrementSkipped();
-                            result.addSkippedDocumentId(documentId);
-                            continue;
-                        }
-                        if (!acquired) {
-                            log.warn("Skipping expired document (lock not acquired): " + documentId);
-                            result.incrementSkipped();
-                            result.addSkippedDocumentId(documentId);
-                            continue;
-                        }
-                        try {
-                            CallContext systemContext = new SystemCallContext(repositoryId);
-                            // Use deleteDocument to properly handle attachments, renditions, and version series
-                            contentService.deleteDocument(systemContext, repositoryId, documentId, true, false);
-                            nemakiCachePool.get(repositoryId).removeCmisCache(documentId);
-                            result.incrementSucceeded();
-                            log.info("Archived expired document: " + documentId);
-                        } catch (Exception e) {
-                            log.error("Failed to archive expired document " + documentId + ": " + e.getMessage(), e);
-                            result.incrementFailed();
-                        } finally {
-                            lock.unlock();
-                        }
+                        archiveDocument(repositoryId, documentId, "expired", result);
                     }
 
-                    // Phase 2: Fallback - lastModificationDate-based archiving
-                    // For documents without cmis:rm_expirationDate
-                    String localAfterDaysStr = propertyManager.readValue(PropertyKey.RETENTION_ARCHIVE_LOCAL_AFTER_DAYS);
+                    // Phase 2: Inactivity-based archiving (retention.archive.local.after.days)
+                    String localAfterDaysStr = propertyManager.readValue(
+                            repositoryId, PropertyKey.RETENTION_ARCHIVE_LOCAL_AFTER_DAYS);
                     if (localAfterDaysStr != null && !localAfterDaysStr.trim().isEmpty()) {
-                        int localAfterDays;
                         try {
-                            localAfterDays = Integer.parseInt(localAfterDaysStr.trim());
-                        } catch (NumberFormatException e) {
-                            log.warn("Invalid retention.archive.local.after.days value: " + localAfterDaysStr);
-                            localAfterDays = -1;
-                        }
+                            int localAfterDays = Integer.parseInt(localAfterDaysStr.trim());
+                            if (localAfterDays > 0) {
+                                GregorianCalendar cutoff = new GregorianCalendar();
+                                cutoff.add(Calendar.DAY_OF_YEAR, -localAfterDays);
 
-                        if (localAfterDays > 0) {
-                            log.info("Fallback lastModificationDate-based archiving with days=" + localAfterDays
-                                    + " is configured but not automatically executed (requires explicit trigger)");
+                                List<String> staleIds = contentService.getStaleDocumentIds(repositoryId, cutoff);
+                                log.info("Inactivity-based archive candidates for repository " + repositoryId
+                                        + " (>" + localAfterDays + " days): " + staleIds.size());
+
+                                for (String documentId : staleIds) {
+                                    archiveDocument(repositoryId, documentId, "stale", result);
+                                }
+                            }
+                        } catch (NumberFormatException e) {
+                            log.warn("Invalid retention.archive.local.after.days value for repository "
+                                    + repositoryId + ": " + localAfterDaysStr);
                         }
                     }
 
@@ -327,71 +316,119 @@ public class RetentionScheduler {
         }
     }
 
+    /**
+     * Archive a single document with lock acquisition, error handling, and result tracking.
+     */
+    private void archiveDocument(String repositoryId, String documentId, String reason, RetentionJobResult result) {
+        result.incrementProcessed();
+        Lock lock = threadLockService.getWriteLock(repositoryId, documentId);
+        boolean acquired = false;
+        try {
+            acquired = lock.tryLock(5, TimeUnit.SECONDS);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            log.warn("Interrupted while acquiring lock for " + reason + " document: " + documentId);
+            result.incrementSkipped();
+            result.addSkippedDocumentId(documentId);
+            return;
+        }
+        if (!acquired) {
+            log.warn("Skipping " + reason + " document (lock not acquired): " + documentId);
+            result.incrementSkipped();
+            result.addSkippedDocumentId(documentId);
+            return;
+        }
+        try {
+            CallContext systemContext = new SystemCallContext(repositoryId);
+            contentService.deleteDocument(systemContext, repositoryId, documentId, true, false);
+            nemakiCachePool.get(repositoryId).removeCmisCache(documentId);
+            result.incrementSucceeded();
+            log.info("Archived " + reason + " document: " + documentId);
+        } catch (Exception e) {
+            log.error("Failed to archive " + reason + " document " + documentId + ": " + e.getMessage(), e);
+            result.incrementFailed();
+        } finally {
+            lock.unlock();
+        }
+    }
+
     private boolean moveToCold(String repositoryId, Archive archive, LongTermStorageAdapter adapter) {
         String archiveId = archive.getId();
+        String originalId = archive.getOriginalId();
+        boolean coldPutSucceeded = false;
+        String storageRef = null;
 
         // Set transitional state
         contentService.updateArchiveState(repositoryId, archiveId,
                 Archive.STATE_COLD_MOVING, null, null);
 
         try {
-            // Get content stream via ContentService (delegates to DAO which reads from closet DB)
             InputStream contentStream = contentService.getArchiveContentStream(repositoryId, archiveId);
 
             if (contentStream == null) {
                 log.warn("No content stream available for archive: " + archiveId + " - skipping cold move");
-                // Revert to ARCHIVED_LOCAL since we cannot move without content
                 contentService.updateArchiveState(repositoryId, archiveId,
                         Archive.STATE_ARCHIVED_LOCAL, null, null);
                 return false;
             }
 
             try {
-                // Build metadata
                 Map<String, String> metadata = new HashMap<>();
                 metadata.put("name", archive.getName() != null ? archive.getName() : "");
                 metadata.put("mimeType", archive.getMimeType() != null ? archive.getMimeType() : "");
-                metadata.put("originalId", archive.getOriginalId() != null ? archive.getOriginalId() : "");
+                metadata.put("originalId", originalId != null ? originalId : "");
 
-                // Store in cold storage
-                String storageRef = adapter.put(repositoryId, archive.getOriginalId(), contentStream, metadata);
-                adapter.enforceImmutability(repositoryId, archive.getOriginalId());
+                storageRef = adapter.put(repositoryId, originalId, contentStream, metadata);
+                coldPutSucceeded = true;
+                adapter.enforceImmutability(repositoryId, originalId);
 
-                // Build contentRef
                 Map<String, String> contentRef = new HashMap<>();
                 if (storageRef != null) {
                     contentRef.put("ref", storageRef);
                 }
                 contentRef.put("type", propertyManager.readValue(PropertyKey.LONGTERM_STORAGE_TYPE));
 
-                // Determine cold move mode (COPY or MOVE)
                 boolean keepLocalCopy = propertyManager.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY);
                 String coldMoveMode = keepLocalCopy ? "COPY" : "MOVE";
                 GregorianCalendar now = new GregorianCalendar();
 
                 if (keepLocalCopy) {
-                    // COPY mode: S3 has independent copy, local content remains.
-                    // State stays ARCHIVED_LOCAL but coldArchivedAt and contentRef are recorded.
                     contentService.updateArchiveState(repositoryId, archiveId,
                             Archive.STATE_ARCHIVED_LOCAL, contentRef, now);
                 } else {
-                    // MOVE mode: Content is transferred to S3, local content will be deleted.
-                    // State becomes ARCHIVED_COLD (metadata-only record in NemakiWare).
                     contentService.updateArchiveState(repositoryId, archiveId,
                             Archive.STATE_ARCHIVED_COLD, contentRef, now);
                 }
 
-                // Record cold move mode
                 contentService.updateArchiveColdMoveMode(repositoryId, archiveId, coldMoveMode);
 
                 // Delete local content only in MOVE mode
                 if (!keepLocalCopy) {
                     boolean deleted = contentService.deleteArchiveContent(repositoryId, archiveId);
-                    if (deleted) {
-                        log.info("Move mode: deleted local archive content after cold storage write: " + archiveId);
-                    } else {
-                        log.warn("Move mode: failed to delete local archive content: " + archiveId);
+                    if (!deleted) {
+                        // Local blob still exists — clean up the cold storage object
+                        // to prevent orphaned/duplicate versions on retry.
+                        // removeProtection and delete are in separate try blocks so that
+                        // delete is always attempted even if removeProtection fails
+                        // (e.g. when Legal Hold was never applied due to misconfiguration).
+                        log.error("MOVE mode: failed to delete local archive content for " + archiveId
+                                + " — cleaning up cold storage and resetting for retry");
+                        try {
+                            adapter.removeProtection(repositoryId, originalId);
+                        } catch (Exception rpEx) {
+                            log.warn("removeProtection failed during cleanup (will still attempt delete): "
+                                    + rpEx.getMessage());
+                        }
+                        try {
+                            adapter.delete(repositoryId, originalId, storageRef);
+                        } catch (Exception delEx) {
+                            log.error("Failed to delete cold object after local delete failure: "
+                                    + delEx.getMessage());
+                        }
+                        contentService.resetColdMoveMetadata(repositoryId, archiveId);
+                        return false;
                     }
+                    log.info("Move mode: deleted local archive content after cold storage write: " + archiveId);
                 }
 
                 log.info("Successfully moved archive to cold storage: " + archiveId
@@ -402,12 +439,33 @@ public class RetentionScheduler {
             }
 
         } catch (Exception e) {
-            // Revert to ARCHIVED_LOCAL on failure
+            // Clean up orphaned cold storage blob.
+            // removeProtection and delete are in separate try blocks so that
+            // delete is always attempted even if removeProtection fails
+            // (e.g. when enforceImmutability failed because Legal Hold is not configured).
+            if (coldPutSucceeded && originalId != null) {
+                try {
+                    adapter.removeProtection(repositoryId, originalId);
+                } catch (Exception rpEx) {
+                    log.warn("removeProtection failed during cleanup (will still attempt delete): "
+                            + rpEx.getMessage());
+                }
+                try {
+                    adapter.delete(repositoryId, originalId, storageRef);
+                    log.info("Cleaned up orphaned cold storage blob: originalId=" + originalId
+                            + ", storageRef=" + storageRef);
+                } catch (Exception delEx) {
+                    log.error("Failed to clean up orphaned cold storage blob originalId=" + originalId
+                            + ", storageRef=" + storageRef + " — manual cleanup may be required: "
+                            + delEx.getMessage());
+                }
+            }
+
+            // Reset all cold-move metadata so the archive is eligible for retry
             try {
-                contentService.updateArchiveState(repositoryId, archiveId,
-                        Archive.STATE_ARCHIVED_LOCAL, null, null);
+                contentService.resetColdMoveMetadata(repositoryId, archiveId);
             } catch (Exception revertEx) {
-                log.error("Failed to revert archive state after cold-move failure: " + revertEx.getMessage());
+                log.error("Failed to reset cold-move metadata after failure: " + revertEx.getMessage());
             }
             throw new RuntimeException("Cold move failed for archive: " + archiveId, e);
         }

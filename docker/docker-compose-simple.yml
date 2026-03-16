@@ -16,8 +16,55 @@ services:
       retries: 20
       start_period: 30s
 
-  # Database initialization is now handled automatically by the Core module's PatchService
-  # No external initializer containers required
+  # OpenLDAP Server (for LDAP sync & Keycloak federation tests)
+  openldap:
+    image: osixia/openldap:1.5.0
+    ports:
+      - "389:389"
+    environment:
+      LDAP_ORGANISATION: "NemakiWare Test"
+      LDAP_DOMAIN: "nemakiware.example.com"
+      LDAP_BASE_DN: "dc=nemakiware,dc=example,dc=com"
+      LDAP_ADMIN_PASSWORD: "adminpassword"
+      LDAP_TLS: "false"
+      LDAP_SEED_INTERNAL_LDIF_PATH: "/ldif-seed"
+    volumes:
+      - ./ldap/bootstrap:/ldif-seed:ro
+      - ldap_data:/var/lib/ldap
+      - ldap_config:/etc/ldap/slapd.d
+    healthcheck:
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost", "-b", "dc=nemakiware,dc=example,dc=com", "-D", "cn=admin,dc=nemakiware,dc=example,dc=com", "-w", "adminpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # Keycloak Identity Provider (OIDC/SAML + LDAP federation)
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_URL: "http://localhost:8088"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8088:8080"
+    volumes:
+      - ./keycloak/realm-ldap-integration.json:/opt/keycloak/data/import/realm.json
+    depends_on:
+      openldap:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
 
   # Solr Search Engine
   solr:
@@ -48,9 +95,11 @@ services:
         condition: service_healthy
       solr:
         condition: service_healthy
+      keycloak:
+        condition: service_healthy
     environment:
       - JAVA_OPTS=-Dorg.ektorp.support.AutoUpdateViewOnChange=false -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false -Dorg.ektorp.support.DesignDocument.UPDATE_ON_DIFF=false -Dorg.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE=true -Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
-      - CATALINA_OPTS=-Xms1g -Xmx3g -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:-admin} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:-password} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http -Dcloud.auth.google.enabled=${CLOUD_AUTH_GOOGLE_ENABLED:-false} -Dcloud.auth.google.clientId=${CLOUD_AUTH_GOOGLE_CLIENT_ID:-} -Dcloud.auth.microsoft.enabled=${CLOUD_AUTH_MICROSOFT_ENABLED:-false} -Dcloud.auth.microsoft.clientId=${CLOUD_AUTH_MICROSOFT_CLIENT_ID:-} -Dcloud.auth.microsoft.tenantId=${CLOUD_AUTH_MICROSOFT_TENANT_ID:-} -Dcloud.drive.google.enabled=${CLOUD_DRIVE_GOOGLE_ENABLED:-false} -Dcloud.drive.microsoft.enabled=${CLOUD_DRIVE_MICROSOFT_ENABLED:-false}
+      - CATALINA_OPTS=-Xms1g -Xmx3g -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:-admin} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:-password} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http -Dcloud.auth.google.enabled=${CLOUD_AUTH_GOOGLE_ENABLED:-false} -Dcloud.auth.google.clientId=${CLOUD_AUTH_GOOGLE_CLIENT_ID:-} -Dcloud.auth.microsoft.enabled=${CLOUD_AUTH_MICROSOFT_ENABLED:-false} -Dcloud.auth.microsoft.clientId=${CLOUD_AUTH_MICROSOFT_CLIENT_ID:-} -Dcloud.auth.microsoft.tenantId=${CLOUD_AUTH_MICROSOFT_TENANT_ID:-} -Dcloud.drive.google.enabled=${CLOUD_DRIVE_GOOGLE_ENABLED:-false} -Dcloud.drive.microsoft.enabled=${CLOUD_DRIVE_MICROSOFT_ENABLED:-false} -Dsso.oidc.enabled=true -Dsso.saml.enabled=true -Doidc.enabled=true -Doidc.issuer=http://keycloak:8080/realms/nemakiware -Doidc.clientId=nemakiware-ui -Ddirectory.sync.enabled=true -Ddirectory.sync.ldap.url=ldap://openldap:389 -Ddirectory.sync.ldap.base.dn=dc=nemakiware,dc=example,dc=com -Ddirectory.sync.ldap.bind.dn=cn=admin,dc=nemakiware,dc=example,dc=com -Ddirectory.sync.ldap.bind.password=adminpassword
     env_file:
       - path: ./secrets/microsoft-entra.env
         required: false
@@ -119,6 +168,8 @@ services:
 volumes:
   couchdb_data:
   solr_data:
+  ldap_data:
+  ldap_config:
   tei_cache:  # RAG: TEI model cache
 
 networks:

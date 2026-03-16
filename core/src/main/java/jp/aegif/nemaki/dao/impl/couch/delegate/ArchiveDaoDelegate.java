@@ -866,6 +866,12 @@ public class ArchiveDaoDelegate {
 			List<Archive> localArchives = getArchivesByState(repositoryId, Archive.STATE_ARCHIVED_LOCAL);
 			List<Archive> candidates = new ArrayList<Archive>();
 			for (Archive a : localArchives) {
+				// Only document archives have content streams that can be migrated.
+				// Folder and attachment archives would be skipped by moveToCold() anyway,
+				// so filter them here to avoid wasted processing on every scheduler run.
+				if (!Boolean.TRUE.equals(a.isDocument())) {
+					continue;
+				}
 				// Skip archives that have already been copied/moved to cold storage
 				if (a.getColdArchivedAt() != null) {
 					continue;
@@ -902,6 +908,29 @@ public class ArchiveDaoDelegate {
 		} catch (Exception e) {
 			log.error("Error updating archive state for " + archiveId + ": " + e.getMessage(), e);
 			throw new RuntimeException("Failed to update archive state", e);
+		}
+	}
+
+	/**
+	 * Resets cold-move metadata on an archive, clearing contentRef, coldArchivedAt, and coldMoveMode.
+	 * Used when a cold move fails and the archive should be eligible for retry.
+	 */
+	public void resetColdMoveMetadata(String repositoryId, String archiveId) {
+		try {
+			String archiveRepoId = repositoryInfoMap.getArchiveId(repositoryId);
+			CouchArchive ca = connectorPool.get(archiveRepoId).get(CouchArchive.class, archiveId);
+			if (ca == null) {
+				log.warn("Archive not found for cold-move reset: " + archiveId);
+				return;
+			}
+			ca.setArchiveState(Archive.STATE_ARCHIVED_LOCAL);
+			ca.setContentRef(null);
+			ca.setColdArchivedAt(null);
+			ca.setColdMoveMode(null);
+			connectorPool.get(archiveRepoId).update(ca);
+			log.info("Reset cold-move metadata for archive: " + archiveId + " -> ARCHIVED_LOCAL (retry eligible)");
+		} catch (Exception e) {
+			log.error("Error resetting cold-move metadata for " + archiveId + ": " + e.getMessage(), e);
 		}
 	}
 
@@ -999,6 +1028,38 @@ public class ArchiveDaoDelegate {
 			return ids;
 		} catch (Exception e) {
 			log.warn("Error querying documentsByExpirationDate view (may not exist yet): " + e.getMessage());
+			return new ArrayList<String>();
+		}
+	}
+
+	/**
+	 * Query the documentsByLastModification view to find latestVersion documents
+	 * whose lastModificationDate is before the given cutoff and that do NOT have
+	 * cmis:rm_expirationDate set.
+	 * Used by the "archive after N days of inactivity" retention feature.
+	 */
+	public List<String> getStaleDocumentIds(String repositoryId, GregorianCalendar beforeDate) {
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			long endKey = beforeDate.getTimeInMillis();
+
+			Map<String, Object> params = new HashMap<String, Object>();
+			params.put("endkey", endKey);
+
+			com.ibm.cloud.cloudant.v1.model.ViewResult viewResult =
+					client.queryView("_repo", "documentsByLastModification", params);
+
+			List<String> ids = new ArrayList<String>();
+			if (viewResult != null && viewResult.getRows() != null) {
+				for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : viewResult.getRows()) {
+					if (row.getValue() != null) {
+						ids.add(row.getValue().toString().replace("\"", ""));
+					}
+				}
+			}
+			return ids;
+		} catch (Exception e) {
+			log.warn("Error querying documentsByLastModification view (may not exist yet): " + e.getMessage());
 			return new ArrayList<String>();
 		}
 	}

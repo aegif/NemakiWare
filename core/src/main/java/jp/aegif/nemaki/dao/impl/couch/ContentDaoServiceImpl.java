@@ -1553,20 +1553,92 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Configuration getConfiguration(String repositoryId) {
-		// CRITICAL: Minimal fallback implementation for Spring initialization
-		// ViewQuery functionality temporarily disabled during Cloudant migration
-		
-		// Return a basic Configuration object to allow Spring initialization
 		Configuration config = new Configuration();
-		config.setId("default_config");
+		config.setId("config_" + repositoryId);
 		config.setType("configuration");
-		
-		// Set basic timestamps
 		config.setCreated(new GregorianCalendar());
 		config.setModified(new GregorianCalendar());
 		config.setCreator("system");
 		config.setModifier("system");
-		
+
+		try {
+			// All configuration documents are stored in nemaki_conf DB
+			CloudantClientWrapper confClient = connectorPool.getClient(jp.aegif.nemaki.util.constant.SystemConst.NEMAKI_CONF_DB);
+			if (confClient == null) {
+				if (log.isDebugEnabled()) {
+					log.debug("nemaki_conf client not available for getConfiguration(" + repositoryId + ")");
+				}
+				return config;
+			}
+
+			// Query for type=configuration documents using Mango (_find) with bookmark pagination
+			Map<String, Object> selector = new HashMap<>();
+			selector.put("type", "configuration");
+
+			boolean isConfDb = jp.aegif.nemaki.util.constant.SystemConst.NEMAKI_CONF_DB.equals(repositoryId);
+
+			Map<String, Object> configMap = new HashMap<>();
+			String bookmark = null;
+			boolean hasMore = true;
+
+			while (hasMore) {
+				com.ibm.cloud.cloudant.v1.model.PostFindOptions.Builder builder =
+					new com.ibm.cloud.cloudant.v1.model.PostFindOptions.Builder()
+						.db(confClient.getDatabaseName())
+						.selector(selector)
+						.limit(200);
+				if (bookmark != null) {
+					builder.bookmark(bookmark);
+				}
+
+				com.ibm.cloud.cloudant.v1.model.FindResult result =
+					confClient.getClient().postFind(builder.build()).execute().getResult();
+
+				List<com.ibm.cloud.cloudant.v1.model.Document> docs = result.getDocs();
+				if (docs == null || docs.isEmpty()) {
+					break;
+				}
+
+				for (com.ibm.cloud.cloudant.v1.model.Document doc : docs) {
+					Map<String, Object> props = doc.getProperties();
+					if (props == null) continue;
+
+					String key = props.get("key") != null ? props.get("key").toString() : null;
+					Object value = props.get("value");
+					if (key == null) continue;
+
+					String docRepoId = props.get("repositoryId") != null ? props.get("repositoryId").toString() : null;
+
+					if (isConfDb) {
+						// Global config: include docs without repositoryId
+						if (docRepoId == null) {
+							configMap.put(key, value);
+						}
+					} else {
+						// Repo-specific config: include docs with matching repositoryId
+						if (repositoryId.equals(docRepoId)) {
+							configMap.put(key, value);
+						}
+					}
+				}
+
+				bookmark = result.getBookmark();
+				hasMore = (docs.size() == 200 && bookmark != null);
+			}
+
+			config.setConfiguration(configMap);
+
+			if (log.isDebugEnabled()) {
+				log.debug("getConfiguration(" + repositoryId + ") loaded " + configMap.size() + " entries: " + configMap.keySet());
+			}
+
+		} catch (Exception e) {
+			// During startup, nemaki_conf may not be available yet — return empty config
+			if (log.isDebugEnabled()) {
+				log.debug("getConfiguration(" + repositoryId + ") failed (normal during startup): " + e.getMessage());
+			}
+		}
+
 		return config;
 	}
 
@@ -2415,6 +2487,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public void resetColdMoveMetadata(String repositoryId, String archiveId) {
+		archiveDao.resetColdMoveMetadata(repositoryId, archiveId);
+	}
+
+	@Override
 	public java.io.InputStream getArchiveContentStream(String repositoryId, Archive archive) {
 		return archiveDao.getArchiveContentStream(repositoryId, archive);
 	}
@@ -2427,6 +2504,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<String> getExpiredDocumentIds(String repositoryId, GregorianCalendar beforeDate) {
 		return archiveDao.getExpiredDocumentIds(repositoryId, beforeDate);
+	}
+
+	@Override
+	public List<String> getStaleDocumentIds(String repositoryId, GregorianCalendar beforeDate) {
+		return archiveDao.getStaleDocumentIds(repositoryId, beforeDate);
 	}
 
 	@Override

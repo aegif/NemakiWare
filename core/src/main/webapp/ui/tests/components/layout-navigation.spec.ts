@@ -46,14 +46,14 @@ test.describe('Layout Navigation', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // MOBILE FIX: Close sidebar on mobile browsers to prevent overlay issues
     const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
-      const menuToggle = page.locator('button').filter({ has: page.locator('[data-icon="menu-fold"], [data-icon="menu-unfold"]') });
+      const menuToggle = page.locator('button').filter({ has: page.locator('.anticon-menu-fold, [aria-label="menu-fold"], .anticon-menu-unfold, [aria-label="menu-unfold"]') });
       if (await menuToggle.count() > 0) {
         const icon = await menuToggle.locator('[data-icon]').first().getAttribute('data-icon');
         // Only click if sidebar is expanded (menu-fold icon visible)
@@ -70,7 +70,7 @@ test.describe('Layout Navigation', () => {
 
     // On mobile, we need to expand the sidebar first
     if (isMobile) {
-      const menuToggle = page.locator('button').filter({ has: page.locator('[data-icon="menu-unfold"]') });
+      const menuToggle = page.locator('button').filter({ has: page.locator('.anticon-menu-unfold, [aria-label="menu-unfold"]') });
       if (await menuToggle.count() > 0) {
         await menuToggle.first().click({ force: true });
         await page.waitForTimeout(500);
@@ -95,7 +95,7 @@ test.describe('Layout Navigation', () => {
 
     // Find the toggle button
     const menuToggle = page.locator('button').filter({
-      has: page.locator('[data-icon="menu-fold"], [data-icon="menu-unfold"]')
+      has: page.locator('.anticon-menu-fold, [aria-label="menu-fold"], .anticon-menu-unfold, [aria-label="menu-unfold"]')
     }).first();
 
     await expect(menuToggle).toBeVisible({ timeout: 10000 });
@@ -417,7 +417,7 @@ test.describe('Layout Sidebar Collapse', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     await testHelper.waitForAntdLoad();
   });
 
@@ -426,7 +426,7 @@ test.describe('Layout Sidebar Collapse', () => {
 
     // Find the toggle button
     const menuToggle = page.locator('button').filter({
-      has: page.locator('[data-icon="menu-fold"]')
+      has: page.locator('.anticon-menu-fold, [aria-label="menu-fold"]')
     }).first();
 
     if (await menuToggle.count() > 0) {
@@ -454,7 +454,7 @@ test.describe('Layout Sidebar Collapse', () => {
 
     // Find the toggle button
     const menuToggle = page.locator('button').filter({
-      has: page.locator('[data-icon="menu-fold"]')
+      has: page.locator('.anticon-menu-fold, [aria-label="menu-fold"]')
     }).first();
 
     if (await menuToggle.count() > 0) {
@@ -482,7 +482,7 @@ test.describe('Layout Sidebar Collapse', () => {
 
     // Collapse the sidebar first
     const menuToggle = page.locator('button').filter({
-      has: page.locator('[data-icon="menu-fold"]')
+      has: page.locator('.anticon-menu-fold, [aria-label="menu-fold"]')
     }).first();
 
     if (await menuToggle.count() > 0) {

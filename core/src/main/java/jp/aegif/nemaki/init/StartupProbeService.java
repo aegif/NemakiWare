@@ -379,7 +379,10 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
      *   <li>Parse {@code repositories.yml} (path from {@code -Drepositories.yml}
      *       system property, or {@code PropertyManager} key {@code repository.definition})
      *       → extract {@code id} (main DB) and {@code archive} (archive DB) per repository</li>
-     *   <li>Fallback: fixed default list ({@code bedroom, bedroom_closet, canopy, canopy_closet, nemaki_conf})</li>
+     *   <li>If repositories.yml cannot be loaded and
+     *       {@code -Dnemaki.startup.require-repositories-yml=false},
+     *       fall back to the legacy default list</li>
+     *   <li>Otherwise throw IllegalStateException</li>
      * </ol>
      *
      * <p>{@code nemaki_conf} is always included.
@@ -388,18 +391,32 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
      * (retained for API compatibility with existing callers).
      *
      * @return ordered list of database names (main repos first, then their archives, then nemaki_conf)
+     * @throws IllegalStateException if repositories.yml cannot be loaded and fail-fast is enabled
      */
     public List<String> discoverNemakiDatabases(String url, String user, String pass) {
-        // 1. Try repositories.yml
+        // Try repositories.yml (authoritative source)
         List<String> fromYaml = loadDbNamesFromRepositoriesYaml();
         if (fromYaml != null && !fromYaml.isEmpty()) {
             log.info("discoverNemakiDatabases: loaded from repositories.yml: " + fromYaml);
             return fromYaml;
         }
 
-        // 2. Fallback to fixed list
-        log.info("discoverNemakiDatabases: falling back to default database list");
-        return Arrays.asList("bedroom", "bedroom_closet", "canopy", "canopy_closet", "nemaki_conf");
+        // Feature flag: allow legacy fallback during migration period
+        // Set -Dnemaki.startup.require-repositories-yml=false to use legacy default list
+        String requireYaml = System.getProperty("nemaki.startup.require-repositories-yml", "true");
+        if ("false".equalsIgnoreCase(requireYaml)) {
+            log.warn("discoverNemakiDatabases: repositories.yml not found — using legacy default list " +
+                    "(nemaki.startup.require-repositories-yml=false)");
+            return Arrays.asList("bedroom", "bedroom_closet", "canopy", "canopy_closet", "nemaki_conf");
+        }
+
+        // repositories.yml is required — fail explicitly
+        String yamlPath = resolveRepositoriesYamlPath();
+        String msg = "repositories.yml could not be loaded (resolved path: " + yamlPath + "). " +
+                "This file is required for NemakiWare to determine which databases to manage. " +
+                "Set -Dnemaki.startup.require-repositories-yml=false to use legacy defaults during migration.";
+        log.error(msg);
+        throw new IllegalStateException(msg);
     }
 
     /**

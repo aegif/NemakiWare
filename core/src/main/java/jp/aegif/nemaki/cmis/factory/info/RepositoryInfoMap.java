@@ -1,5 +1,6 @@
 package jp.aegif.nemaki.cmis.factory.info;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -73,6 +74,48 @@ public class RepositoryInfoMap {
 		return map.get(repositoryId).getArchiveId();
 	}
 
+	/**
+	 * Check if the given repositoryId is an archive repository.
+	 */
+	public boolean isArchiveRepository(String repositoryId) {
+		for (RepositoryInfo info : map.values()) {
+			if (repositoryId.equals(info.getArchiveId())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Returns repository IDs where uiSelectable=true and not an archive repository.
+	 * Used for Login dropdown.
+	 */
+	public List<String> getUiSelectableKeys() {
+		List<String> result = new ArrayList<>();
+		for (Map.Entry<String, RepositoryInfo> entry : map.entrySet()) {
+			String repoId = entry.getKey();
+			RepositoryInfo info = entry.getValue();
+			if (info.isUiSelectable() && !isArchiveRepository(repoId)) {
+				result.add(repoId);
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Returns all non-archive repository IDs.
+	 * Used for administration purposes.
+	 */
+	public List<String> getMainRepositoryKeys() {
+		List<String> result = new ArrayList<>();
+		for (String repoId : map.keySet()) {
+			if (!isArchiveRepository(repoId)) {
+				result.add(repoId);
+			}
+		}
+		return result;
+	}
+
 	public RepositoryInfo getSuperUsers(){
 		return map.get(this.superUsersId);
 	}
@@ -92,10 +135,9 @@ public class RepositoryInfoMap {
 		if (firstRepositoryId != null) {
 			return firstRepositoryId;
 		}
-		// Fallback: LinkedHashMap preserves insertion order, so this is also deterministic
-		Set<String> repositoryIds = keys();
-		if (repositoryIds != null && !repositoryIds.isEmpty()) {
-			return repositoryIds.iterator().next();
+		// Fallback: use map.keySet() directly (NOT keys()) to avoid mutual recursion
+		if (!map.isEmpty()) {
+			return map.keySet().iterator().next();
 		}
 		return null;
 	}
@@ -228,6 +270,8 @@ public class RepositoryInfoMap {
 				info.setNameSpace(val);
 			}else if(key.equals("archive")){
 				info.setArchiveId(val);
+			}else if(key.equals("uiSelectable")){
+				info.setUiSelectable(Boolean.parseBoolean(val));
 			}
 		}
 	}

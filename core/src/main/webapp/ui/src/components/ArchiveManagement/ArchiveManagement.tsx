@@ -479,11 +479,13 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
                     {retentionSettings.keepLocalCopy ? t('archiveManagement.settings.copyMode') : t('archiveManagement.settings.moveMode')}
                   </Tag>
                 </Descriptions.Item>
-                <Descriptions.Item label={t('archiveManagement.settings.localArchiveAfterDays')}>
-                  {retentionSettings.localArchiveAfterDays || '-'} {retentionSettings.localArchiveAfterDays ? t('archiveManagement.settings.days') : ''}
-                </Descriptions.Item>
                 <Descriptions.Item label={t('archiveManagement.settings.localArchiveCron')}>
                   <code>{retentionSettings.localArchiveCron || '-'}</code>
+                </Descriptions.Item>
+                <Descriptions.Item label={t('archiveManagement.settings.localArchiveAfterDays')}>
+                  {retentionSettings.localArchiveAfterDays
+                    ? `${retentionSettings.localArchiveAfterDays} ${t('archiveManagement.settings.days')}`
+                    : '-'}
                 </Descriptions.Item>
               </Descriptions>
             )}

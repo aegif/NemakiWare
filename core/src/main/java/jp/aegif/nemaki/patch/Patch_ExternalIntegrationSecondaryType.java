@@ -58,16 +58,6 @@ public class Patch_ExternalIntegrationSecondaryType extends AbstractNemakiPatch 
 	protected void applyPerRepositoryPatch(String repositoryId) {
 		log.info("=== EXTERNAL INTEGRATION SECONDARY TYPE PATCH STARTED for repository: " + repositoryId + " ===");
 
-		if ("canopy".equals(repositoryId)) {
-			log.info("Skipping externalIntegration type for canopy - information management area");
-			return;
-		}
-
-		if ("bedroom_closet".equals(repositoryId) || "canopy_closet".equals(repositoryId)) {
-			log.info("Skipping externalIntegration type for archive repositories");
-			return;
-		}
-
 		try {
 			TypeService typeService = patchUtil.getTypeService();
 			if (typeService == null) {

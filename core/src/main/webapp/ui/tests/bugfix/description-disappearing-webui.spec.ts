@@ -119,7 +119,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     }
 
     await testHelper.closeMobileSidebar(browserName);

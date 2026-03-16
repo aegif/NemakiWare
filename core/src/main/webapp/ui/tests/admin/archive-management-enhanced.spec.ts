@@ -34,7 +34,7 @@ test.describe('Archive Management Enhanced', () => {
     apiHelper = new ApiHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     await testHelper.closeMobileSidebar(browserName);
     await testHelper.waitForAntdLoad();
   });
@@ -830,7 +830,7 @@ test.describe('Archive Management - Restore Edge Cases', () => {
     const localApiHelper = new ApiHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     await testHelper.closeMobileSidebar(browserName);
     await testHelper.waitForAntdLoad();
 

@@ -205,7 +205,7 @@
  * - Network timeout: No specific handling, relies on service layer error propagation
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Form, Input, Button, Card, Alert, Select, Divider } from 'antd';
 import { UserOutlined, LockOutlined, DatabaseOutlined, LoginOutlined, GoogleOutlined, WindowsOutlined, KeyOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -214,8 +214,9 @@ import { CMISService } from '../../services/cmis';
 import { OIDCService } from '../../services/oidc';
 import { getOIDCConfig, isOIDCEnabled } from '../../config/oidc';
 import { SAMLService } from '../../services/saml';
-import { getSAMLConfig, isSAMLEnabled } from '../../config/saml';
+import { loadSAMLConfig, isSAMLEnabled } from '../../config/saml';
 import { DEFAULT_REPOSITORY_ID } from '../../config/app';
+import { fetchAuthConfig } from '../../services/authConfig';
 import { CloudAuthConfig, fetchCloudAuthConfig, signInWithGoogle, signInWithMicrosoft } from '../../services/cloud-auth';
 import { WebAuthnService } from '../../services/webauthn';
 
@@ -229,6 +230,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [repositories, setRepositories] = useState<string[]>([]);
+  const [defaultRepoId, setDefaultRepoId] = useState<string>(DEFAULT_REPOSITORY_ID);
   const [form] = Form.useForm();
   const [coreBuildInfo, setCoreBuildInfo] = useState<{ version: string; buildTime: string } | null>(null);
 
@@ -251,6 +253,9 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const webauthnService = new WebAuthnService();
   const webauthnSupported = webauthnService.isSupported();
 
+  // Race condition guard for refreshAuthConfigForRepo (P3: stale response prevention)
+  const authConfigRequestIdRef = useRef(0);
+
   // Load SSO configuration from backend
   useEffect(() => {
     const loadSsoConfig = async () => {
@@ -270,7 +275,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           setOidcService(new OIDCService(getOIDCConfig()));
         }
         if (samlResult) {
-          setSamlService(new SAMLService(getSAMLConfig()));
+          const samlConfig = await loadSAMLConfig();
+          setSamlService(new SAMLService(samlConfig));
         }
       } catch (error) {
         console.warn('Failed to load SSO configuration:', error);
@@ -333,16 +339,70 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     }
   }, [oidcService, samlService]);
 
+  // Re-fetch SSO/Cloud auth config for a specific repository
+  const refreshAuthConfigForRepo = async (repoId: string) => {
+    const requestId = ++authConfigRequestIdRef.current;
+    try {
+      const [authCfg, cloudCfg] = await Promise.all([
+        fetchAuthConfig(repoId),
+        fetchCloudAuthConfig(repoId)
+      ]);
+      // Discard stale response if a newer request was issued
+      if (requestId !== authConfigRequestIdRef.current) return;
+
+      setOidcEnabled(authCfg.oidcEnabled);
+      setSamlEnabled(authCfg.samlEnabled);
+      setCloudAuthConfig(cloudCfg);
+
+      if (authCfg.oidcEnabled) {
+        setOidcService(new OIDCService(getOIDCConfig()));
+      } else {
+        setOidcService(null);
+      }
+      if (authCfg.samlEnabled) {
+        const samlConfig = await loadSAMLConfig(repoId);
+        setSamlService(new SAMLService(samlConfig));
+      } else {
+        setSamlService(null);
+      }
+    } catch {
+      // Keep current config on error
+    }
+  };
+
   const loadRepositories = async () => {
     try {
-      const repos = await cmisService.getRepositories();
-      setRepositories(repos);
-      if (repos.length === 1) {
-        form.setFieldsValue({ repositoryId: repos[0] });
+      const result = await cmisService.getRepositories();
+      const repos = result.repositories;
+      const serverDefault = result.defaultRepositoryId || DEFAULT_REPOSITORY_ID;
+
+      if (repos.length > 0) {
+        setRepositories(repos);
+        if (repos.length === 1) {
+          // P3: sync defaultRepoId with the actual selected repo
+          setDefaultRepoId(repos[0]);
+          form.setFieldsValue({ repositoryId: repos[0] });
+          refreshAuthConfigForRepo(repos[0]);
+        } else {
+          // Multiple repos — pre-select with defaultRepositoryId only if it exists in the list
+          const selected = repos.includes(serverDefault) ? serverDefault : repos[0];
+          // P3: sync defaultRepoId with the actual selected repo (not serverDefault)
+          setDefaultRepoId(selected);
+          form.setFieldsValue({ repositoryId: selected });
+          refreshAuthConfigForRepo(selected);
+        }
+      } else {
+        // Server returned empty list — fallback to default repository
+        setDefaultRepoId(serverDefault);
+        setRepositories([serverDefault]);
+        form.setFieldsValue({ repositoryId: serverDefault });
+        refreshAuthConfigForRepo(serverDefault);
       }
     } catch (error) {
       // Fallback to configured default repository when discovery fails
       setRepositories([DEFAULT_REPOSITORY_ID]);
+      form.setFieldsValue({ repositoryId: DEFAULT_REPOSITORY_ID });
+      refreshAuthConfigForRepo(DEFAULT_REPOSITORY_ID);
     }
   };
 
@@ -402,11 +462,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     try {
       if (window.location.pathname.includes('oidc-callback')) {
-        // Process OIDC callback - recover repositoryId from OIDC state
+        // Process OIDC callback - recover repositoryId from OIDC state,
+        // with localStorage fallback for when state is lost after redirect
         const oidcUser = await oidcService.signinRedirectCallback();
         const stateRepoId = (oidcUser as any).state?.repositoryId as string | undefined;
+        const pendingRepo = localStorage.getItem('nemakiware-oidc-pending-repo');
         const repositoryId = stateRepoId
-          || (repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID);
+          || pendingRepo
+          || defaultRepoId;
+        localStorage.removeItem('nemakiware-oidc-pending-repo');
         const auth = await oidcService.convertOIDCToken(oidcUser, repositoryId);
 
         // Save auth to localStorage before redirect
@@ -426,8 +490,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         window.location.href = '/core/ui/';
       } else {
         // Initiate OIDC redirect - pass selected repositoryId via OIDC state
+        // Also save to localStorage as fallback (OIDC state may be lost after redirect)
         const repositoryId = form.getFieldValue('repositoryId')
-          || (repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID);
+          || defaultRepoId;
+        localStorage.setItem('nemakiware-oidc-pending-repo', repositoryId);
         await oidcService.signinRedirect({ repositoryId });
       }
     } catch (error) {
@@ -452,7 +518,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     try {
       const repositoryId = form.getFieldValue('repositoryId')
-        || (repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID);
+        || defaultRepoId;
       samlService.initiateLogin(repositoryId);
     } catch (error) {
       // SAML login failed - log actual error for debugging
@@ -470,9 +536,16 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError(null);
 
     try {
+      // Check sessionStorage first (set by SamlAcsServlet for POST binding),
+      // then fall back to URL params (for HTTP-Redirect binding).
+      const storedResponse = sessionStorage.getItem('nemakiware_saml_response');
+      const storedRelayState = sessionStorage.getItem('nemakiware_saml_relay_state');
+      sessionStorage.removeItem('nemakiware_saml_response');
+      sessionStorage.removeItem('nemakiware_saml_relay_state');
+
       const urlParams = new URLSearchParams(window.location.search);
-      const samlResponse = urlParams.get('SAMLResponse');
-      const relayState = urlParams.get('RelayState');
+      const samlResponse = storedResponse || urlParams.get('SAMLResponse');
+      const relayState = storedRelayState || urlParams.get('RelayState');
 
       if (samlResponse) {
         const auth = await samlService.handleSAMLResponse(samlResponse, relayState || undefined);
@@ -511,7 +584,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError(null);
 
     try {
-      const repositoryId = form.getFieldValue('repositoryId') || (repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID);
+      const repositoryId = form.getFieldValue('repositoryId') || defaultRepoId;
       const auth = await signInWithGoogle(cloudAuthConfig.googleClientId, repositoryId);
       authService.saveAuth(auth);
       performCleanup();
@@ -533,7 +606,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError(null);
 
     try {
-      const repositoryId = form.getFieldValue('repositoryId') || (repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID);
+      const repositoryId = form.getFieldValue('repositoryId') || defaultRepoId;
       const auth = await signInWithMicrosoft(
         cloudAuthConfig.microsoftClientId,
         cloudAuthConfig.microsoftTenantId || 'common',
@@ -557,7 +630,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError(null);
 
     try {
-      const repositoryId = form.getFieldValue('repositoryId') || (repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID);
+      const repositoryId = form.getFieldValue('repositoryId') || defaultRepoId;
 
       // Step 1: Get authentication options from server
       const options = await webauthnService.authenticateBegin(repositoryId);
@@ -651,6 +724,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
               prefix={<DatabaseOutlined />}
               placeholder={t('login.selectRepository')}
               options={repositories.map(repo => ({ label: repo, value: repo }))}
+              onChange={(repoId: string) => {
+                // P3: keep defaultRepoId in sync with user's selection
+                // so OIDC/SAML fallback always uses the last selected repo
+                setDefaultRepoId(repoId);
+                refreshAuthConfigForRepo(repoId);
+              }}
             />
           </Form.Item>
 

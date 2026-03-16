@@ -48,7 +48,7 @@ test.describe('FolderTree Navigation', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
     }
   });
 
@@ -113,7 +113,7 @@ test.describe('FolderTree Navigation', () => {
     expect(nodeCount).toBeGreaterThan(0);
 
     // Verify tree shows folder icons
-    const folderIcons = folderTree.locator('[data-icon="folder"], [data-icon="folder-open"]');
+    const folderIcons = folderTree.locator('.anticon-folder, [aria-label="folder"], .anticon-folder-open, [aria-label="folder-open"]');
     const iconCount = await folderIcons.count();
     expect(iconCount).toBeGreaterThan(0);
 

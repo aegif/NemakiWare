@@ -207,6 +207,12 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- CouchDB view for querying documents by lastModificationDate (localArchiveAfterDays) -->
+				<bean class="jp.aegif.nemaki.patch.Patch_RetentionLastModificationView">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
@@ -365,6 +371,12 @@
 	</bean>
 
 	<bean id="patch_WebAuthnCredentialViews" class="jp.aegif.nemaki.patch.Patch_WebAuthnCredentialViews">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_RetentionLastModificationView" class="jp.aegif.nemaki.patch.Patch_RetentionLastModificationView">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

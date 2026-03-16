@@ -52,9 +52,12 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 @Component
@@ -64,6 +67,11 @@ import java.util.logging.Logger;
 public class AuthResource {
     
     private static final Logger logger = Logger.getLogger(AuthResource.class.getName());
+
+    /** Cache for OIDC Discovery results: issuerUrl → set of allowed endpoint URLs */
+    private static final ConcurrentHashMap<String, Set<String>> oidcDiscoveryCache = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Long> oidcDiscoveryCacheTime = new ConcurrentHashMap<>();
+    private static final long OIDC_DISCOVERY_CACHE_TTL_MS = 300_000; // 5 minutes
     
     @Autowired
     private ContentService contentService;
@@ -412,7 +420,7 @@ public class AuthResource {
             // Determine UserInfo endpoint: from request or via OIDC Discovery
             String userinfoEndpoint = (String) request.get("userinfo_endpoint");
             if (StringUtils.isBlank(userinfoEndpoint)) {
-                userinfoEndpoint = discoverUserInfoEndpoint();
+                userinfoEndpoint = discoverUserInfoEndpoint(repositoryId);
             }
             if (StringUtils.isBlank(userinfoEndpoint)) {
                 throw ApiException.invalidArgument(
@@ -420,7 +428,7 @@ public class AuthResource {
             }
 
             // SSRF prevention: validate endpoint URL
-            if (!isAllowedUserInfoEndpoint(userinfoEndpoint)) {
+            if (!isAllowedUserInfoEndpoint(userinfoEndpoint, repositoryId)) {
                 logger.warning("OIDC UserInfo endpoint not allowed: " + userinfoEndpoint);
                 throw ApiException.invalidArgument("UserInfo endpoint not allowed: " + userinfoEndpoint);
             }
@@ -600,8 +608,10 @@ public class AuthResource {
     /**
      * Validate a UserInfo endpoint URL against the allowlist using URI parsing.
      * Also dynamically allows the configured OIDC issuer host.
+     *
+     * @param repositoryId the repository ID for repo-specific OIDC issuer lookup (may be null for global)
      */
-    private boolean isAllowedUserInfoEndpoint(String url) {
+    private boolean isAllowedUserInfoEndpoint(String url, String repositoryId) {
         if (url == null || url.isEmpty()) return false;
         try {
             java.net.URI uri = new java.net.URI(url).normalize();
@@ -638,11 +648,14 @@ public class AuthResource {
                 }
             }
 
-            // Check dynamic allowlist: configured OIDC issuer host
+            // Check dynamic allowlist: configured OIDC issuer host (repo-aware)
             try {
                 jp.aegif.nemaki.util.PropertyManager pm = getPropertyManager();
                 if (pm != null) {
-                    String issuerUrl = pm.readValue(jp.aegif.nemaki.util.constant.PropertyKey.OIDC_ISSUER);
+                    // Read repo-specific issuer first, fall back to global
+                    String issuerUrl = (repositoryId != null)
+                            ? pm.readValue(repositoryId, jp.aegif.nemaki.util.constant.PropertyKey.OIDC_ISSUER)
+                            : pm.readValue(jp.aegif.nemaki.util.constant.PropertyKey.OIDC_ISSUER);
                     if (issuerUrl != null && !issuerUrl.isEmpty()) {
                         java.net.URI issuerUri = new java.net.URI(issuerUrl.trim());
                         String issuerHost = issuerUri.getHost();
@@ -654,15 +667,22 @@ public class AuthResource {
                             int eff = port == -1 ? ("https".equals(scheme) ? 443 : 80) : port;
                             int effIssuer = issuerPort == -1 ? ("https".equals(issuerScheme) ? 443 : 80) : issuerPort;
                             if (host.equals(issuerHost) && scheme.equals(issuerScheme) && eff == effIssuer) {
-                                String issuerPath = issuerUri.getPath();
-                                if (issuerPath == null) issuerPath = "";
-                                if (issuerPath.endsWith("/")) issuerPath = issuerPath.substring(0, issuerPath.length() - 1);
-                                List<String> suffixes = List.of(
-                                        "/protocol/openid-connect/userinfo",
-                                        "/protocol/openid-connect/token",
-                                        "/.well-known/openid-configuration");
-                                for (String suffix : suffixes) {
-                                    if (path.equals(issuerPath + suffix)) return true;
+                                // Use OIDC Discovery to get exact allowed endpoints
+                                String normalizedIssuer = issuerUrl.trim();
+                                if (normalizedIssuer.endsWith("/")) {
+                                    normalizedIssuer = normalizedIssuer.substring(0, normalizedIssuer.length() - 1);
+                                }
+                                Set<String> allowedEndpoints = getDiscoveredEndpoints(normalizedIssuer);
+                                String normalizedEndpoint = uri.toString();
+                                if (normalizedEndpoint.endsWith("/")) {
+                                    normalizedEndpoint = normalizedEndpoint.substring(0, normalizedEndpoint.length() - 1);
+                                }
+                                if (allowedEndpoints.contains(normalizedEndpoint)) {
+                                    return true;
+                                }
+                                // Also allow the Discovery endpoint itself
+                                if (normalizedEndpoint.equals(normalizedIssuer + "/.well-known/openid-configuration")) {
+                                    return true;
                                 }
                             }
                         }
@@ -720,47 +740,139 @@ public class AuthResource {
     }
 
     /**
-     * Discover the UserInfo endpoint from the configured OIDC issuer via OpenID Connect Discovery.
+     * Discover the UserInfo endpoint from the configured OIDC issuer.
+     * Uses standard OIDC Discovery (RFC 8414) via .well-known/openid-configuration.
+     * Falls back to Keycloak-specific URL pattern if Discovery fails.
+     *
+     * @param repositoryId the repository ID for repo-specific OIDC issuer lookup (may be null for global)
      */
-    private String discoverUserInfoEndpoint() {
+    private String discoverUserInfoEndpoint(String repositoryId) {
         try {
             jp.aegif.nemaki.util.PropertyManager pm = getPropertyManager();
             if (pm == null) return null;
-            String issuerUrl = pm.readValue(jp.aegif.nemaki.util.constant.PropertyKey.OIDC_ISSUER);
+            // Read repo-specific issuer first, fall back to global
+            String issuerUrl = (repositoryId != null)
+                    ? pm.readValue(repositoryId, jp.aegif.nemaki.util.constant.PropertyKey.OIDC_ISSUER)
+                    : pm.readValue(jp.aegif.nemaki.util.constant.PropertyKey.OIDC_ISSUER);
             if (issuerUrl == null || issuerUrl.trim().isEmpty()) return null;
 
             String normalized = issuerUrl.trim();
             if (normalized.endsWith("/")) normalized = normalized.substring(0, normalized.length() - 1);
+
+            // Primary: OIDC Discovery via .well-known/openid-configuration (RFC 8414)
             String discoveryUrl = normalized + "/.well-known/openid-configuration";
+            try {
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection)
+                        java.net.URI.create(discoveryUrl).toURL().openConnection();
+                conn.setInstanceFollowRedirects(false);
+                conn.setRequestMethod("GET");
+                conn.setRequestProperty("Accept", "application/json");
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
 
-            if (!isAllowedUserInfoEndpoint(discoveryUrl)) return null;
-
-            java.net.URI uri = java.net.URI.create(discoveryUrl);
-            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) uri.toURL().openConnection();
-            conn.setInstanceFollowRedirects(false);  // SSRF: prevent redirect to internal/metadata IPs
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("Accept", "application/json");
-            conn.setConnectTimeout(10000);
-            conn.setReadTimeout(10000);
-
-            if (conn.getResponseCode() != 200) return null;
-
-            try (java.io.InputStream is = conn.getInputStream();
-                 java.io.InputStreamReader reader = new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8)) {
-                StringBuilder sb = new StringBuilder();
-                char[] buf = new char[1024];
-                int n;
-                while ((n = reader.read(buf)) != -1) sb.append(buf, 0, n);
-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                @SuppressWarnings("unchecked")
-                Map<String, Object> config = mapper.readValue(sb.toString(), Map.class);
-                String endpoint = (String) config.get("userinfo_endpoint");
-                return (endpoint != null && !endpoint.trim().isEmpty()) ? endpoint.trim() : null;
+                int responseCode = conn.getResponseCode();
+                if (responseCode == 200) {
+                    try (java.io.InputStream is = conn.getInputStream();
+                         java.io.InputStreamReader reader = new java.io.InputStreamReader(
+                                 is, java.nio.charset.StandardCharsets.UTF_8)) {
+                        com.fasterxml.jackson.databind.ObjectMapper mapper =
+                                new com.fasterxml.jackson.databind.ObjectMapper();
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> config = mapper.readValue(reader, Map.class);
+                        String userinfoEndpoint = (String) config.get("userinfo_endpoint");
+                        if (userinfoEndpoint != null && !userinfoEndpoint.trim().isEmpty()) {
+                            logger.info("Discovered userinfo_endpoint via OIDC Discovery: " + userinfoEndpoint);
+                            return userinfoEndpoint;
+                        }
+                    }
+                } else {
+                    logger.warning("OIDC Discovery returned HTTP " + responseCode + " for " + discoveryUrl);
+                }
+            } catch (Exception e) {
+                logger.warning("OIDC Discovery failed for " + discoveryUrl + ": " + e.getMessage());
             }
+
+            // Fallback: Keycloak-specific URL pattern
+            String fallback = normalized + "/protocol/openid-connect/userinfo";
+            logger.info("Falling back to Keycloak-specific userinfo_endpoint: " + fallback);
+            return fallback;
         } catch (Exception e) {
-            logger.warning("OIDC Discovery failed: " + e.getMessage());
+            logger.warning("Failed to discover UserInfo endpoint: " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Fetch and cache allowed OIDC endpoints from the Discovery document.
+     * Returns a set of normalized endpoint URLs (userinfo_endpoint, token_endpoint, etc.).
+     */
+    private Set<String> getDiscoveredEndpoints(String issuerUrl) {
+        Long cachedTime = oidcDiscoveryCacheTime.get(issuerUrl);
+        if (cachedTime != null && (System.currentTimeMillis() - cachedTime) < OIDC_DISCOVERY_CACHE_TTL_MS) {
+            Set<String> cached = oidcDiscoveryCache.get(issuerUrl);
+            if (cached != null) return cached;
+        }
+
+        Set<String> endpoints = new HashSet<>();
+        try {
+            String discoveryUrl = issuerUrl + "/.well-known/openid-configuration";
+            java.net.URI discoveryUri = java.net.URI.create(discoveryUrl);
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) discoveryUri.toURL().openConnection();
+            conn.setInstanceFollowRedirects(false);
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+
+            if (conn.getResponseCode() == 200) {
+                try (java.io.InputStream is = conn.getInputStream();
+                     java.io.InputStreamReader reader = new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8)) {
+                    StringBuilder sb = new StringBuilder();
+                    char[] buf = new char[4096];
+                    int n;
+                    while ((n = reader.read(buf)) != -1) sb.append(buf, 0, n);
+
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> discovery = mapper.readValue(sb.toString(), Map.class);
+
+                    // Extract standard OIDC endpoints
+                    for (String key : new String[]{"userinfo_endpoint", "token_endpoint", "authorization_endpoint",
+                            "jwks_uri", "revocation_endpoint", "introspection_endpoint", "end_session_endpoint"}) {
+                        Object val = discovery.get(key);
+                        if (val instanceof String) {
+                            String ep = ((String) val).trim();
+                            if (ep.endsWith("/")) ep = ep.substring(0, ep.length() - 1);
+                            endpoints.add(ep);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warning("Failed to fetch OIDC Discovery for " + issuerUrl + ": " + e.getMessage());
+        }
+
+        // Fallback: if Discovery failed, allow common OIDC paths under the issuer
+        if (endpoints.isEmpty()) {
+            String issuerPath = java.net.URI.create(issuerUrl).getPath();
+            if (issuerPath == null) issuerPath = "";
+            if (issuerPath.endsWith("/")) issuerPath = issuerPath.substring(0, issuerPath.length() - 1);
+
+            String base = issuerUrl.substring(0, issuerUrl.length() - (issuerPath.isEmpty() ? 0 : issuerPath.length()));
+            // Keycloak
+            endpoints.add(base + issuerPath + "/protocol/openid-connect/userinfo");
+            endpoints.add(base + issuerPath + "/protocol/openid-connect/token");
+            // Standard OIDC (Okta, Auth0, etc.)
+            endpoints.add(base + "/userinfo");
+            endpoints.add(base + "/oauth/token");
+            endpoints.add(base + "/oauth2/v1/userinfo");
+            endpoints.add(base + "/oauth2/v1/token");
+            logger.info("OIDC Discovery unavailable for " + issuerUrl + ", using fallback endpoint list");
+        }
+
+        oidcDiscoveryCache.put(issuerUrl, endpoints);
+        oidcDiscoveryCacheTime.put(issuerUrl, System.currentTimeMillis());
+        return endpoints;
     }
 
     /**
@@ -829,15 +941,16 @@ public class AuthResource {
         Folder systemFolder = contentService.getSystemFolder(repositoryId);
         
         if (systemFolder == null) {
+            // Fallback: search for .system folder by path
             try {
-                jp.aegif.nemaki.model.Content content = contentService.getContent(repositoryId, "34169aaa-5d6f-4685-a1d0-66bb31948877");
+                jp.aegif.nemaki.model.Content content = contentService.getContentByPath(repositoryId, "/.system");
                 if (content instanceof Folder) {
                     systemFolder = (Folder) content;
                 }
             } catch (Exception e) {
-                logger.severe("Failed to find .system folder via fallback: " + e.getMessage());
+                logger.severe("Failed to find .system folder via path fallback: " + e.getMessage());
             }
-            
+
             if (systemFolder == null) {
                 return null;
             }

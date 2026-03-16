@@ -39,7 +39,7 @@ public class RepositoriesResource {
 
     /**
      * Get filtered list of CMIS repositories
-     * Excludes "canopy" as it's an information management area, not a CMIS repository
+     * Returns only uiSelectable repositories (excludes non-selectable and archive repos)
      * Requires authentication (CallContext must be present).
      *
      * @return JSON array of repository information
@@ -69,11 +69,7 @@ public class RepositoriesResource {
 
             List<RepositoryInfo> allRepositories = new ArrayList<>();
 
-            for (String repositoryId : repositoryInfoMap.keys()) {
-                if ("canopy".equals(repositoryId)) {
-                    continue;
-                }
-
+            for (String repositoryId : repositoryInfoMap.getUiSelectableKeys()) {
                 RepositoryInfo repoInfo = repositoryInfoMap.get(repositoryId);
                 if (repoInfo != null) {
                     allRepositories.add(repoInfo);

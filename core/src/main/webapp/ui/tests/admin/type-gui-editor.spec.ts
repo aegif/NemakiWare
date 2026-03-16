@@ -49,25 +49,10 @@ test.describe('Type GUI Editor', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForTimeout(2000);
 
-    // MOBILE FIX: Close sidebar
-    await testHelper.closeMobileSidebar(browserName);
-
-    await testHelper.waitForAntdLoad();
-
-    // Navigate to type management
-    const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
-    if (await adminMenu.count() > 0) {
-      await adminMenu.click();
-      await page.waitForTimeout(1000);
-    }
-
-    const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
-    if (await typeManagementItem.count() > 0) {
-      await typeManagementItem.click();
-      await page.waitForTimeout(2000);
-    }
+    // Navigate directly to type management page via URL
+    await page.goto('http://localhost:8080/core/ui/index.html#/types');
+    await page.waitForLoadState('networkidle');
   });
 
   test('should display GUI create button', async ({ page }) => {

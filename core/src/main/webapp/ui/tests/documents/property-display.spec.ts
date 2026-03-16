@@ -124,7 +124,7 @@ test.describe('Property Display Tests', () => {
 
     // Login as admin
     await authHelper.login();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
 
     // Wait for Ant Design components to load
     await testHelper.waitForAntdLoad();

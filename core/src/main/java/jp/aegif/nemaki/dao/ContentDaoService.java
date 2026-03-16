@@ -944,6 +944,12 @@ public interface ContentDaoService {
 			String newState, java.util.Map<String, String> contentRef, GregorianCalendar coldArchivedAt);
 
 	/**
+	 * Reset cold-move metadata (contentRef, coldArchivedAt, coldMoveMode) and revert state to ARCHIVED_LOCAL.
+	 * Makes the archive eligible for cold-move retry.
+	 */
+	void resetColdMoveMetadata(String repositoryId, String archiveId);
+
+	/**
 	 * Get the binary content stream for an archived document.
 	 * Retrieves the CouchDB attachment from the attachment archive in the closet DB.
 	 *
@@ -973,6 +979,17 @@ public interface ContentDaoService {
 	 * @return list of document IDs whose retention has expired
 	 */
 	List<String> getExpiredDocumentIds(String repositoryId, GregorianCalendar beforeDate);
+
+	/**
+	 * Query documents whose lastModificationDate is before the cutoff date
+	 * and that do NOT have cmis:rm_expirationDate set.
+	 * Used by the "archive after N days of inactivity" retention feature.
+	 *
+	 * @param repositoryId the repository ID (main DB, not closet)
+	 * @param beforeDate documents modified before this date are returned
+	 * @return list of document IDs that are stale (no recent modification, no explicit expiration)
+	 */
+	List<String> getStaleDocumentIds(String repositoryId, GregorianCalendar beforeDate);
 
 	/**
 	 * Update the coldMoveMode field on an archive document.

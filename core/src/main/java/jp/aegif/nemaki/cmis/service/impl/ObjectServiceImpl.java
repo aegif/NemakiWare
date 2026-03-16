@@ -1248,6 +1248,14 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_DELETE_TREE_FOLDER, folder);
 		exceptionService.constraintDeleteRootFolder(repositoryId, folderId);
 
+		// Reject deletion of the .system folder itself
+		if (isSystemProtected(folder)) {
+			log.warn("[deleteTree] Rejected: attempt to delete system-protected folder: id=" + folder.getId()
+				+ ", name=" + folder.getName());
+			exceptionService.constraint(folderId,
+				"Cannot delete the system folder '" + folder.getName() + "' — it contains essential system objects (users, groups)");
+		}
+
 		// //////////////////
 		// Body of the method
 		// //////////////////
@@ -1284,6 +1292,10 @@ public class ObjectServiceImpl implements ObjectService {
 	 *
 	 * Within each folder, non-folder children are deleted in parallel using the
 	 * shared executor (BTL-006), while sub-folders are processed recursively first.
+	 *
+	 * System-protected objects are never deleted:
+	 * - The ".system" folder (and all its descendants: users, groups, user/group items)
+	 * - Objects of type "nemaki:user" or "nemaki:group" (safety net)
 	 */
 	private void deleteTreeDFS(CallContext callContext, String repositoryId,
 			Content node, Boolean allVersions, List<String> failedIds) {
@@ -1294,6 +1306,12 @@ public class ObjectServiceImpl implements ObjectService {
 				List<Content> subFolders = new ArrayList<>();
 				List<Content> nonFolders = new ArrayList<>();
 				for (Content child : children) {
+					if (isSystemProtected(child)) {
+						log.info("[deleteTree] Skipping system-protected object: id=" + child.getId()
+							+ ", name=" + child.getName() + ", objectType=" + child.getObjectType());
+						failedIds.add(child.getId());
+						continue;
+					}
 					if (child.isFolder()) {
 						subFolders.add(child);
 					} else {
@@ -1341,6 +1359,31 @@ public class ObjectServiceImpl implements ObjectService {
 		} catch (Exception e) {
 			failedIds.add(node.getId());
 		}
+	}
+
+	/**
+	 * Returns true if the given content object is a system-protected object
+	 * that must never be deleted by deleteTree.
+	 *
+	 * Protected objects:
+	 * - The ".system" folder (prevents recursion into users/groups)
+	 * - Items of type "nemaki:user" or "nemaki:group" (safety net)
+	 */
+	private boolean isSystemProtected(Content content) {
+		if (content == null) return false;
+
+		// Skip the ".system" folder — prevents entire system subtree deletion
+		if (".system".equals(content.getName()) && content.isFolder()) {
+			return true;
+		}
+
+		// Safety net: never delete user or group items via deleteTree
+		String objectType = content.getObjectType();
+		if ("nemaki:user".equals(objectType) || "nemaki:group".equals(objectType)) {
+			return true;
+		}
+
+		return false;
 	}
 
 	public void setObjectServiceInternal(ObjectServiceInternal objectServiceInternal) {

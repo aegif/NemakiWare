@@ -208,30 +208,7 @@ test.describe('Cloud Drive Import', () => {
 });
 
 /**
- * Tests that require actual cloud authentication
- * These are marked as skipped by default and can be enabled for manual testing
- * when cloud credentials are available.
+ * Cloud Import with Real Credentials tests are not included in the automated test suite.
+ * They require active Google/Microsoft OAuth sessions which cannot be automated.
+ * For manual testing with cloud credentials, see docs/CLOUD_INTEGRATION.md.
  */
-test.describe.skip('Cloud Import with Real Credentials', () => {
-	test('should list files from Google Drive', async ({ page }) => {
-		// This test requires:
-		// 1. Google OAuth credentials configured in cloud-auth config
-		// 2. User logged in via Google OAuth
-		// Manual test: Login with Google, verify cloud import button appears
-		test.skip(true, 'Requires Google OAuth credentials');
-	});
-
-	test('should list files from OneDrive', async ({ page }) => {
-		// This test requires:
-		// 1. Microsoft OAuth credentials configured in cloud-auth config
-		// 2. User logged in via Microsoft OAuth
-		// Manual test: Login with Microsoft, verify cloud import button appears
-		test.skip(true, 'Requires Microsoft OAuth credentials');
-	});
-
-	test('should import file from cloud and save to NemakiWare', async ({ page }) => {
-		// Full integration test for cloud import
-		// Requires active cloud session with file access
-		test.skip(true, 'Requires cloud session with file access');
-	});
-});

@@ -184,6 +184,10 @@ SimpleQueryTest.*
 !core/src/test/java/jp/aegif/nemaki/api/v1/*Test.java
 !core/src/test/java/jp/aegif/nemaki/util/spring/*Test.java
 
+# Exception: Keep configuration and DAO test files
+!core/src/test/java/jp/aegif/nemaki/dao/impl/couch/*ConfigTest.java
+!core/src/test/java/jp/aegif/nemaki/util/PropertyManagerConfigTest.java
+
 # Exception: Keep RAG unit test files
 !core/src/test/java/jp/aegif/nemaki/rag/**/*Test.java
 

@@ -130,7 +130,7 @@ mvn -version   # Should be 3.x
 # Error: 404 on CMIS endpoints
 # Solution: Check database initialization
 curl -u admin:password http://localhost:5984/_all_dbs
-# Should show: ["bedroom","bedroom_closet","canopy","canopy_closet"]
+# Should show: ["bedroom","bedroom_closet","canopy","canopy_closet","nemaki_conf"]
 ```
 
 ### Container Health Issues

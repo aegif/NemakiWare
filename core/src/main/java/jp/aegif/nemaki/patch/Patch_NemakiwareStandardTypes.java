@@ -56,16 +56,6 @@ public class Patch_NemakiwareStandardTypes extends AbstractNemakiPatch {
     protected void applyPerRepositoryPatch(String repositoryId) {
         log.error("=== NEMAKIWARE STANDARD TYPES PATCH STARTED for repository: " + repositoryId + " ===");
 
-        if ("canopy".equals(repositoryId)) {
-            log.info("Skipping NemakiWare Standard Types for canopy - information management area");
-            return;
-        }
-
-        if ("bedroom_closet".equals(repositoryId) || "canopy_closet".equals(repositoryId)) {
-            log.info("Skipping NemakiWare Standard Types for archive repositories");
-            return;
-        }
-
         try {
             TypeService typeService = patchUtil.getTypeService();
             if (typeService == null) {

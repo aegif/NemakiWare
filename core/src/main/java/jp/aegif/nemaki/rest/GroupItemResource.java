@@ -344,22 +344,19 @@ public class GroupItemResource extends ResourceBase{
 		log.debug("getContentService().getSystemFolder returned: " + (systemFolder != null ? "NOT NULL (ID=" + systemFolder.getId() + ")" : "NULL"));
 	}
 
-	// CRITICAL FIX (2025-11-09): Fallback solution when PropertyManager fails to read system.folder configuration
-	// Use direct folder lookup by known system folder ID from CouchDB
+	// Fallback: search for .system folder by path
 	if (systemFolder == null) {
-		log.warn("systemFolder is null - .system folder not found via PropertyManager, attempting fallback with direct ID lookup");
+		log.warn("systemFolder is null - .system folder not found via PropertyManager, searching by path");
 		try {
-			// Known .system folder ID: 34169aaa-5d6f-4685-a1d0-66bb31948877
-			Content content = getContentService().getContent(repositoryId, "34169aaa-5d6f-4685-a1d0-66bb31948877");
+			Content content = getContentService().getContentByPath(repositoryId, "/.system");
 			if (content instanceof Folder) {
 				systemFolder = (Folder) content;
-				log.info("Found .system folder via fallback ID lookup: ID=" + systemFolder.getId());
+				log.info("Found .system folder via path fallback: ID=" + systemFolder.getId());
 			}
 		} catch (Exception e) {
-			log.error("Failed to find .system folder via fallback ID lookup", e);
+			log.error("Failed to find .system folder via path fallback", e);
 		}
 
-		// If still null after fallback, throw exception
 		if (systemFolder == null) {
 			throw new RuntimeException(".system folder not accessible - check system folder configuration and security settings");
 		}

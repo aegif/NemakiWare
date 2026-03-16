@@ -3,8 +3,11 @@ package jp.aegif.nemaki.rag.config;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+
+import jp.aegif.nemaki.util.PropertyManager;
 
 /**
  * Configuration class for RAG (Retrieval-Augmented Generation) features.
@@ -16,6 +19,41 @@ import org.springframework.stereotype.Component;
 public class RAGConfig {
 
     private static final Logger log = LoggerFactory.getLogger(RAGConfig.class);
+
+    /**
+     * PropertyManager provides runtime reads from System properties, environment
+     * variables, CouchDB (nemaki_conf), and nemakiware.properties in priority order.
+     * This allows the Setup Wizard's dynamic writes to be picked up without restart.
+     * Optional to avoid circular dependency during early initialization.
+     */
+    @Autowired(required = false)
+    private PropertyManager propertyManager;
+
+    /**
+     * Read a value at runtime via PropertyManager (System props > env > CouchDB > file),
+     * falling back to the @Value-injected default if PropertyManager is not available.
+     */
+    private String readDynamic(String key, String startupDefault) {
+        if (propertyManager != null) {
+            String val = propertyManager.readValue(key);
+            if (val != null) {
+                return val;
+            }
+        }
+        return startupDefault;
+    }
+
+    private int readDynamicInt(String key, int startupDefault) {
+        String val = readDynamic(key, null);
+        if (val != null) {
+            try {
+                return Integer.parseInt(val.trim());
+            } catch (NumberFormatException e) {
+                // fall through
+            }
+        }
+        return startupDefault;
+    }
 
     @PostConstruct
     public void init() {
@@ -107,6 +145,21 @@ public class RAGConfig {
 
     @Value("${rag.bedrock.vector.dimension:1024}")
     private int bedrockVectorDimension;
+
+    /**
+     * Explicit AWS access key for Bedrock (optional).
+     * If not set, falls back to the default AWS credential chain
+     * (environment variables, instance profile, etc.).
+     */
+    @Value("${rag.bedrock.access.key.id:}")
+    private String bedrockAccessKeyId;
+
+    /**
+     * Explicit AWS secret key for Bedrock (optional).
+     * If not set, falls back to the default AWS credential chain.
+     */
+    @Value("${rag.bedrock.secret.access.key:}")
+    private String bedrockSecretAccessKey;
 
     // ========================================
     // TEI (Text Embeddings Inference) Settings
@@ -300,15 +353,19 @@ public class RAGConfig {
     // ========================================
 
     public boolean isEnabled() {
+        String val = readDynamic("rag.enabled", null);
+        if (val != null) {
+            return "true".equalsIgnoreCase(val.trim());
+        }
         return enabled;
     }
 
     public String getEmbeddingProvider() {
-        return embeddingProvider;
+        return readDynamic("rag.embedding.provider", embeddingProvider);
     }
 
     public String getTeiUrl() {
-        return teiUrl;
+        return readDynamic("rag.tei.url", teiUrl);
     }
 
     public int getTeiConnectTimeout() {
@@ -332,27 +389,35 @@ public class RAGConfig {
     }
 
     public String getBedrockRegion() {
-        return bedrockRegion;
+        return readDynamic("rag.bedrock.region", bedrockRegion);
     }
 
     public String getBedrockModelId() {
-        return bedrockModelId;
+        return readDynamic("rag.bedrock.model.id", bedrockModelId);
     }
 
     public int getBedrockBatchSize() {
-        return bedrockBatchSize;
+        return readDynamicInt("rag.bedrock.batch.size", bedrockBatchSize);
     }
 
     public int getBedrockMaxInputChars() {
-        return bedrockMaxInputChars;
+        return readDynamicInt("rag.bedrock.max.input.chars", bedrockMaxInputChars);
     }
 
     public int getBedrockTimeoutMs() {
-        return bedrockTimeoutMs;
+        return readDynamicInt("rag.bedrock.timeout.ms", bedrockTimeoutMs);
     }
 
     public int getBedrockVectorDimension() {
-        return bedrockVectorDimension;
+        return readDynamicInt("rag.bedrock.vector.dimension", bedrockVectorDimension);
+    }
+
+    public String getBedrockAccessKeyId() {
+        return readDynamic("rag.bedrock.access.key.id", bedrockAccessKeyId);
+    }
+
+    public String getBedrockSecretAccessKey() {
+        return readDynamic("rag.bedrock.secret.access.key", bedrockSecretAccessKey);
     }
 
     public int getChunkingMaxTokens() {

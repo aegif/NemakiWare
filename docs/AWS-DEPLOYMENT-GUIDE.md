@@ -835,8 +835,13 @@ S3 に格納されたコンテンツは **NemakiWare の管理スコープ外** 
 - **Disposition（廃棄）**: S3 Lifecycle Policy で自動削除を設定
 - **Object Lock**: S3 側で保持期間と削除保護を管理
 
-NemakiWare は S3 へのコンテンツの書き込み（put）と Object Lock の設定（enforceImmutability）のみを行い、
-書き込み後のコンテンツ管理には関与しません。
+NemakiWare は以下の S3 操作を行います:
+- **書き込み**: コールド移行時にコンテンツをアップロード（`PutObject`）
+- **Legal Hold 適用/解除**: アップロード後に Legal Hold ON（`PutObjectLegalHold`）、障害復旧時に OFF
+- **削除**: MOVE モードの障害復旧時にアップロード済みオブジェクトをクリーンアップ（`DeleteObject` / `DeleteObjectVersion`）
+
+正常にコールド移行が完了したオブジェクトに対して、NemakiWare が削除や Legal Hold 解除を行うことはありません。
+Disposition（廃棄）は S3 Lifecycle Policy に委ねてください。
 
 ### 12-2. S3 バケット作成
 
@@ -853,18 +858,19 @@ aws s3api put-bucket-versioning \
   --bucket nemakiware-cold-storage \
   --versioning-configuration Status=Enabled
 
-# デフォルト Object Lock 設定（オプション）
-aws s3api put-object-lock-configuration \
-  --bucket nemakiware-cold-storage \
-  --object-lock-configuration '{
-    "ObjectLockEnabled": "Enabled",
-    "Rule": {
-      "DefaultRetention": {
-        "Mode": "GOVERNANCE",
-        "Days": 365
-      }
-    }
-  }'
+# デフォルト Object Lock リテンション設定（オプション — NemakiWare は Legal Hold のみ使用）
+# バケットレベルのリテンションポリシーを追加で設定する場合のみ実行
+# aws s3api put-object-lock-configuration \
+#   --bucket nemakiware-cold-storage \
+#   --object-lock-configuration '{
+#     "ObjectLockEnabled": "Enabled",
+#     "Rule": {
+#       "DefaultRetention": {
+#         "Mode": "GOVERNANCE",
+#         "Days": 365
+#       }
+#     }
+#   }'
 ```
 
 ### 12-3. IAM ポリシー
@@ -879,9 +885,11 @@ EC2 インスタンスロールに以下のポリシーをアタッチします:
             "Effect": "Allow",
             "Action": [
                 "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:DeleteObjectVersion",
                 "s3:HeadObject",
-                "s3:PutObjectRetention",
-                "s3:GetObjectRetention",
+                "s3:PutObjectLegalHold",
+                "s3:GetObjectLegalHold",
                 "s3:GetBucketVersioning"
             ],
             "Resource": [
@@ -906,27 +914,33 @@ longterm.storage.type=s3
 ### S3 Settings
 longterm.s3.bucket=nemakiware-cold-storage
 longterm.s3.region=ap-northeast-1
-longterm.s3.prefix=archives/
+# longterm.s3.endpoint=          # S3互換ストレージ使用時のみ指定（MinIO等）
+# longterm.s3.accessKey=         # AWS認証情報（IAMロール使用時は不要）
+# longterm.s3.secretKey=         # AWS認証情報（IAMロール使用時は不要）
 
 ### Retention Settings
 # リテンション期間（日数）- アーカイブからコールド移行までの待機日数
-retention.cold.move.after.days=30
+retention.archive.cold.after.days=30
 # ローカルコピーを保持するか（true=COPY, false=MOVE）
 retention.cold.keep.local.copy=false
-# Object Lock モード: COMPLIANCE（管理者でも削除不可） or GOVERNANCE（特権で削除可）
-retention.s3.object.lock.mode=GOVERNANCE
-# Object Lock リテンション期間（日数）
-retention.s3.object.lock.days=365
+# S3 Legal Hold: コールドアーカイブ後に Legal Hold を適用する（true/false）
+longterm.s3.legalHold=true
 ```
 
-### 12-5. Object Lock モード
+### 12-5. S3 Legal Hold
 
-| モード | 特徴 | 推奨用途 |
-|--------|------|----------|
-| **GOVERNANCE** | `s3:BypassGovernanceRetention` 権限で削除可能 | テスト環境、一般的な保存要件 |
-| **COMPLIANCE** | リテンション期間中は誰も削除不可 | 法令遵守、監査要件 |
+`longterm.s3.legalHold=true` を設定すると、コールドアーカイブ後にオブジェクトに **S3 Legal Hold** が適用されます。
 
-> **注意**: COMPLIANCE モードでは、設定した期間中はオブジェクトの削除やリテンションの短縮ができません。本番環境で設定する前に、GOVERNANCE モードでテストすることを推奨します。
+| 状態 | 動作 |
+|------|------|
+| Legal Hold **ON** | `s3:PutObjectLegalHold` 権限がなければ削除不可。Lifecycle Policy による期限切れ削除もブロックされる |
+| Legal Hold **OFF** | 通常の S3 オブジェクトとして削除可能 |
+
+NemakiWare は MOVE モードの失敗復旧時のみ Legal Hold を解除してオブジェクトを削除します（`removeProtection()` → `delete()`）。
+正常にコールド移行が完了したオブジェクトの Legal Hold は解除しません。
+
+> **注意**: Legal Hold は S3 Object Lock 機能の一部です。バケット作成時に `--object-lock-enabled-for-bucket` が必要です。
+> バケットレベルのデフォルト GOVERNANCE/COMPLIANCE リテンションを追加で設定する場合は、S3 ドキュメントを参照してください。NemakiWare はリテンション期間の管理は行いません。
 
 ### 12-6. S3 Lifecycle Policy による廃棄（Disposition）
 
@@ -935,13 +949,14 @@ NemakiWare は廃棄処理を実装しません。
 
 ```bash
 # Lifecycle Policy の設定例: 7年後に自動削除
+# NemakiWare はオブジェクトを {repositoryId}/{objectId}/content のパスで格納します
 aws s3api put-bucket-lifecycle-configuration \
   --bucket nemakiware-cold-storage \
   --lifecycle-configuration '{
     "Rules": [
       {
-        "ID": "archive-disposition",
-        "Prefix": "archives/",
+        "ID": "archive-disposition-bedroom",
+        "Prefix": "bedroom/",
         "Status": "Enabled",
         "Expiration": {
           "Days": 2555
@@ -951,8 +966,8 @@ aws s3api put-bucket-lifecycle-configuration \
   }'
 ```
 
-> **注意**: Object Lock が COMPLIANCE モードの場合、Lifecycle Policy による削除は
-> リテンション期間が満了するまで実行されません。
+> **注意**: リポジトリごとに Prefix を分けて Lifecycle Rule を設定してください（例: `bedroom/`, `canopy/`）。
+> Object Lock が COMPLIANCE モードの場合、Lifecycle Policy による削除はリテンション期間が満了するまで実行されません。
 
 ### 12-7. 動作確認
 
@@ -966,17 +981,18 @@ curl -u admin:admin -X POST \
 # 2. アーカイブ一覧を確認
 curl -u admin:admin "http://localhost:8080/core/rest/repo/bedroom/archive/index"
 
-# 3. コールド移行は retention.cold.move.after.days 経過後に自動実行
+# 3. コールド移行は retention.archive.cold.after.days 経過後に自動実行
 # 手動確認: S3 バケット内のオブジェクトを確認
-aws s3 ls s3://nemakiware-cold-storage/archives/ --recursive
+# NemakiWare のオブジェクトパス: {repositoryId}/{objectId}/content
+aws s3 ls s3://nemakiware-cold-storage/bedroom/ --recursive
 
-# 4. Object Lock リテンション確認
-aws s3api get-object-retention \
+# 4. Legal Hold 確認（NemakiWare は Legal Hold で保護します）
+aws s3api get-object-legal-hold \
   --bucket nemakiware-cold-storage \
-  --key archives/ARCHIVE_ID
+  --key bedroom/OBJECT_ID/content
 
 # 5. コンテンツを S3 から直接ダウンロード（NemakiWare 経由不可）
-aws s3 cp s3://nemakiware-cold-storage/archives/ARCHIVE_ID ./downloaded-file
+aws s3 cp s3://nemakiware-cold-storage/bedroom/OBJECT_ID/content ./downloaded-file
 ```
 
 ---

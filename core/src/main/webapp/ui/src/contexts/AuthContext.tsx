@@ -466,7 +466,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else if (authMethod === 'saml' && await isSAMLEnabled()) {
       try {
         const samlService = new SAMLService(getSAMLConfig());
-        samlService.initiateLogout();
+        samlService.initiateLogout(currentAuth?.username);
         // initiateLogout will redirect to IdP logout if configured, so no further action needed
         return;
       } catch (error) {

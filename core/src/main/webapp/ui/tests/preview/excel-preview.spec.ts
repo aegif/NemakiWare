@@ -60,27 +60,17 @@ test.describe('Excel Preview Tests', () => {
   });
 
   test('should display Excel file preview as PDF', async ({ page }) => {
-    // Navigate to test folder
-    await page.goto(`http://localhost:8080/core/ui/#/documents?folderId=${testContext.folderId}`);
-    await page.waitForTimeout(2000);
+    // Navigate directly to DocumentViewer for the Excel file
+    const xlsxId = testContext.files.xlsx;
+    expect(xlsxId).toBeTruthy();
 
-    // Find and click Excel file - skip if not found
-    const xlsxRow = page.locator('tr:has-text("Excelサンプル.xlsx")');
-    const rowVisible = await xlsxRow.isVisible().catch(() => false);
-    if (!rowVisible) {
-      test.skip('Excel sample file not found in test folder');
-      return;
-    }
-    await expect(xlsxRow).toBeVisible({ timeout: 10000 });
+    await page.goto(`http://localhost:8080/core/ui/index.html#/documents/${xlsxId}`);
 
-    // Click the detail view button
-    const viewButton = xlsxRow.locator('button').filter({ has: page.locator('.anticon-eye') });
-    await expect(viewButton).toBeVisible({ timeout: 5000 });
-    await viewButton.click();
-    await page.waitForTimeout(2000);
+    // Wait for DocumentViewer tabs to load
+    await page.waitForSelector('.ant-tabs-tab', { timeout: 20000 });
 
     // Click Preview tab
-    const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プレビュー' });
+    const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: /プレビュー|Preview/ });
     await expect(previewTab).toBeVisible({ timeout: 10000 });
     await previewTab.click();
 
@@ -123,12 +113,17 @@ test.describe('Excel Preview Tests', () => {
     console.log(success ? '✅ Excel PDF preview rendered!' : '❌ Excel PDF preview not rendered');
 
     if (!success) {
-      // Skip gracefully if preview rendering is slow or rendition not available
-      // Preview functionality works in manual testing; this is a timing issue
-      test.skip('Excel PDF preview not rendered - timing or rendition issue');
-      return;
+      // Retry: wait longer for LibreOffice PDF rendition generation
+      console.log('Retrying after additional wait for rendition generation...');
+      await page.waitForTimeout(15000);
+
+      const hasCanvasRetry = await pdfCanvas.isVisible();
+      const hasDocumentRetry = await pdfDocument.isVisible();
+      const hasToolbarRetry = await toolbarButtons.first().isVisible().catch(() => false);
+      const successRetry = hasCanvasRetry || hasDocumentRetry || hasToolbarRetry;
+      console.log(successRetry ? '✅ Excel PDF preview rendered on retry!' : '❌ Excel PDF preview still not rendered');
+      expect(successRetry).toBe(true);
     }
-    expect(success).toBe(true);
   });
 
   test('should have rendition generated for Excel file', async ({ page }) => {
