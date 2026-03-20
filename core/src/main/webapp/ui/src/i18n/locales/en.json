@@ -98,9 +98,132 @@
       "apiDocs": "API Docs",
       "filesystemImportExport": "Filesystem Import/Export",
       "configViewer": "Config Viewer",
+      "purview": "Purview",
       "rssManagement": "RSS Token Management",
       "accountSettings": "Account Settings"
     },
+  "purviewManagement": {
+    "title": "Purview Management",
+    "actions": {
+      "testConnection": "Test Connection",
+      "applyTypeDefinitions": "Apply Type Definitions",
+      "fullSync": "Full Sync",
+      "incrementalSync": "Incremental Sync",
+      "reconcileTypes": "Reconcile Types",
+      "reconcileArchives": "Reconcile Archives",
+      "reconcileCloudMetadata": "Reconcile Cloud Metadata",
+      "reconcileContainment": "Reconcile Containment",
+      "resolveDeletes": "Resolve Deletes",
+      "retryFailed": "Retry Failed"
+    },
+    "alerts": {
+      "loadFailed": "Failed to load Purview state",
+      "connectionFailed": "Purview connection failed",
+      "featureDisabled": "Purview feature is disabled",
+      "applyRequired": "Purview schema apply is required",
+      "applyRequiredDescription": "Apply type definitions before running repository sync jobs.",
+      "deadLettersPresent": "Dead letters are present",
+      "deadLettersPresentDescription": "{{count}} retry candidates are waiting."
+    },
+    "latestAction": {
+      "title": "Latest Action"
+    },
+    "stats": {
+      "jobs": "Jobs",
+      "cursors": "Cursors",
+      "deadLetters": "Dead Letters",
+      "tombstones": "Tombstones"
+    },
+    "summary": {
+      "repositoryId": "Repository",
+      "collection": "Collection",
+      "connection": "Connection",
+      "connectionHealthy": "Connected",
+      "connectionUnavailable": "Unavailable",
+      "applyRequired": "Schema Apply",
+      "endpoint": "Endpoint",
+      "atlasBasePath": "Atlas Base Path",
+      "schemaVersion": "Schema Version",
+      "schemaHash": "Schema Hash",
+      "lastAppliedAt": "Last Applied At",
+      "lastAppliedBy": "Last Applied By"
+    },
+    "sections": {
+      "schema": "Schema Diff",
+      "actions": "Operations",
+      "state": "State Details"
+    },
+    "schema": {
+      "current": "Current Schema",
+      "desired": "Desired Schema",
+      "customTypes": "Custom Types",
+      "relationshipTypes": "Relationship Types",
+      "businessMetadata": "Business Metadata"
+    },
+    "actionGroups": {
+      "bootstrap": "Bootstrap",
+      "sync": "Sync",
+      "reconciliation": "Reconciliation / Recovery"
+    },
+    "tabs": {
+      "jobs": "Jobs",
+      "cursors": "Cursors",
+      "deadLetters": "Dead Letters",
+      "tombstones": "Tombstones",
+      "locks": "Locks"
+    },
+    "tables": {
+      "jobs": {
+        "jobId": "Job ID",
+        "jobKind": "Job Kind",
+        "repositoryId": "Repository",
+        "status": "Status",
+        "processedCount": "Processed",
+        "failedCount": "Failed",
+        "startedAt": "Started",
+        "errorSummary": "Error Summary"
+      },
+      "cursors": {
+        "streamKind": "Stream",
+        "cursor": "Cursor",
+        "lastSuccessAt": "Last Success",
+        "lastErrorAt": "Last Error",
+        "deadLetterCount": "Dead Letters",
+        "lastErrorMessage": "Last Error Message"
+      },
+      "locks": {
+        "jobKind": "Job Kind",
+        "locked": "Locked",
+        "ownerJobId": "Owner Job",
+        "lockedAt": "Locked At"
+      },
+      "tombstones": {
+        "objectId": "Object ID",
+        "typeName": "Type",
+        "status": "Status",
+        "dueAt": "Due At",
+        "qualifiedName": "Qualified Name"
+      },
+      "deadLetters": {
+        "streamKind": "Stream",
+        "entryKey": "Entry Key",
+        "failureCount": "Failures",
+        "lastFailedAt": "Last Failed",
+        "errorSummary": "Error Summary"
+      }
+    },
+    "messages": {
+      "schemaApplied": "Applied Purview schema",
+      "fullSyncStarted": "Started Purview full sync",
+      "incrementalSyncStarted": "Started Purview incremental sync",
+      "typeReconciliationStarted": "Started type reconciliation",
+      "archiveReconciliationStarted": "Started archive reconciliation",
+      "cloudMetadataReconciliationStarted": "Started cloud metadata reconciliation",
+      "containmentReconciliationStarted": "Started containment reconciliation",
+      "deleteResolutionStarted": "Started delete resolution",
+      "retryFailedStarted": "Started dead-letter retry"
+    }
+  },
   "configViewer": {
     "title": "Configuration Properties",
     "columns": {

@@ -46,10 +46,14 @@
 - object 単位 `content-change-log` dead-letter
 - repository 単位 `archive-snapshot` / `cloud-metadata-snapshot` / `archive-lineage` / `cloud-sync-lineage` dead-letter
 - `GET /v1/admin/purview/dead-letters` / `POST /v1/admin/purview/retry-failed/{repositoryId}`
+- React 管理 UI `/core/ui/#/purview`
+- 管理 UI からの `test-connection` / `type-definitions/apply` / full sync / incremental sync / reconcile / retry 実行
+- 管理 UI での schema diff / jobs / cursors / locks / tombstones / dead letters 可視化
 
 未実装:
 
-- 管理 UI
+- glossary / classification / labels 拡張
+- Purview 実 tenant を前提にした運用パラメータ調整
 
 現時点の実装は「repository / folder / document / type definition / archive metadata を Purview に載せる最初の縦スライス」に加え、stable key を持つ archive / cloud sync / managed filesystem import-export の代表的 lineage を成立させることを優先している。設計上の初期スコープ全体はまだ完了していない。
 
@@ -173,7 +177,6 @@ Purview 側では、組み込みスキャン対象に存在しないソースを
 - 初期段階での双方向同期
 - 初期段階での glossary / classification / labels の本格同期
 - 初期段階での Kafka endpoint 利用
-- 初期段階での管理 UI 必須化
 
 ## 7. 既存 NemakiWare 機能の活用ポイント
 
@@ -1055,6 +1058,12 @@ dead-letter 方針:
 - webhook assist
 - 双方向同期の検討
 
+2026-03-20 状態:
+
+- 進行中
+- 完了済み: React 管理 UI `/core/ui/#/purview`, `test-connection`, schema diff / state overview 表示, `type-definitions/apply`, full sync, incremental sync, type / archive / cloud metadata / containment reconciliation, delete resolution, dead-letter retry の実行
+- 未完了: glossary / classification / labels 拡張, webhook assist, 双方向同期の検討
+
 ## 24. 受け入れ条件
 
 - Purview 接続情報を安全に保存できる
@@ -1088,6 +1097,7 @@ dead-letter 方針:
 5. type / archive reconciliation
 6. lineage
 7. UI
+8. glossary / classification / labels
 
 ## 27. 参考情報
 
