@@ -130,48 +130,56 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                 ChangeProcessingResult changeProcessingResult = processChanges(repositoryId, changes, now);
                 PurviewArchiveSyncResult archiveSyncResult = archivePublishService
                         .syncRepositoryArchivesIfChanged(repositoryId, currentArchiveCursorState.getCursor());
-                PurviewCloudMetadataSyncResult cloudMetadataSyncResult = cloudMetadataPublishService
-                        .syncRepositoryCloudMetadataIfChanged(repositoryId, currentCloudMetadataCursorState.getCursor());
+                StreamSyncResult cloudMetadataResult = syncCloudMetadataStream(
+                        repositoryId,
+                        currentCloudMetadataCursorState,
+                        now);
                 PurviewTypeDefinitionSyncResult typeDefinitionSyncResult = typeDefinitionPublishService
                         .syncRepositoryTypeDefinitionsIfChanged(repositoryId, currentTypeDefinitionCursorState.getCursor());
                 String nextCursor = resolveNextCursor(currentCursorState.getCursor(), changes);
-                int deadLetterCount = deadLetterStateService.countDeadLetterStates(repositoryId, STREAM_KIND);
+                int changeDeadLetterCount = deadLetterStateService.countDeadLetterStates(repositoryId, STREAM_KIND);
+                int cloudDeadLetterCount = deadLetterStateService.countDeadLetterStates(repositoryId, CLOUD_METADATA_STREAM_KIND);
 
                 cursorStateService.saveCursorState(buildSuccessCursorState(
                         currentCursorState,
                         nextCursor,
                         now,
-                        deadLetterCount));
+                        changeDeadLetterCount));
                 cursorStateService.saveCursorState(buildSuccessCursorState(
                         currentArchiveCursorState,
                         archiveSyncResult.getSnapshot(),
                         now,
                         currentArchiveCursorState.getDeadLetterCount()));
-                cursorStateService.saveCursorState(buildSuccessCursorState(
+                cursorStateService.saveCursorState(buildStreamCursorState(
                         currentCloudMetadataCursorState,
-                        cloudMetadataSyncResult.getSnapshot(),
+                        cloudMetadataResult,
                         now,
-                        currentCloudMetadataCursorState.getDeadLetterCount()));
+                        cloudDeadLetterCount));
                 cursorStateService.saveCursorState(buildSuccessCursorState(
                         currentTypeDefinitionCursorState,
                         typeDefinitionSyncResult.getSnapshot(),
                         now,
                         currentTypeDefinitionCursorState.getDeadLetterCount()));
 
+                List<String> failures = new ArrayList<>(changeProcessingResult.failures());
+                if (cloudMetadataResult.failed()) {
+                    failures.add(CLOUD_METADATA_STREAM_KIND + ": " + cloudMetadataResult.errorSummary());
+                }
+                int failedCount = changeProcessingResult.failedCount() + (cloudMetadataResult.failed() ? 1 : 0);
                 PurviewJobState completedJob = new PurviewJobState(
                         jobId,
                         JOB_KIND,
                         repositoryId,
-                        changeProcessingResult.failedCount() == 0 ? "COMPLETED" : "COMPLETED_WITH_ERRORS",
+                        failedCount == 0 ? "COMPLETED" : "COMPLETED_WITH_ERRORS",
                         now,
                         now,
                         changes.size()
                                 + archiveSyncResult.getProcessedCount()
-                                + cloudMetadataSyncResult.getProcessedCount()
+                                + cloudMetadataResult.processedCount()
                                 + typeDefinitionSyncResult.getProcessedCount(),
-                        changeProcessingResult.failedCount(),
+                        failedCount,
                         nextCursor,
-                        summarizeFailures(changeProcessingResult.failures()));
+                        summarizeFailures(failures));
                 return jobStateService.saveJobState(completedJob);
             } catch (RuntimeException e) {
                 String errorSummary = buildErrorSummary(e);
@@ -366,6 +374,14 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
             PurviewCursorState currentCursorState,
             String now,
             String errorSummary) {
+        return buildFailureCursorState(currentCursorState, now, errorSummary, currentCursorState.getDeadLetterCount());
+    }
+
+    private PurviewCursorState buildFailureCursorState(
+            PurviewCursorState currentCursorState,
+            String now,
+            String errorSummary,
+            int deadLetterCount) {
         return new PurviewCursorState(
                 currentCursorState.getRepositoryId(),
                 currentCursorState.getStreamKind(),
@@ -376,7 +392,26 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                 now,
                 errorSummary,
                 currentCursorState.getConsecutiveFailureCount() + 1,
-                currentCursorState.getDeadLetterCount());
+                deadLetterCount);
+    }
+
+    private PurviewCursorState buildStreamCursorState(
+            PurviewCursorState currentCursorState,
+            StreamSyncResult streamSyncResult,
+            String now,
+            int deadLetterCount) {
+        if (streamSyncResult.failed()) {
+            return buildFailureCursorState(
+                    currentCursorState,
+                    now,
+                    streamSyncResult.errorSummary(),
+                    deadLetterCount);
+        }
+        return buildSuccessCursorState(
+                currentCursorState,
+                streamSyncResult.snapshot(),
+                now,
+                deadLetterCount);
     }
 
     private String resolveCursorKind(PurviewCursorState currentCursorState) {
@@ -442,6 +477,54 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                 errorSummary);
     }
 
+    private StreamSyncResult syncCloudMetadataStream(
+            String repositoryId,
+            PurviewCursorState currentCursorState,
+            String now) {
+        try {
+            PurviewCloudMetadataSyncResult syncResult = cloudMetadataPublishService
+                    .syncRepositoryCloudMetadataIfChanged(repositoryId, currentCursorState.getCursor());
+            deadLetterStateService.deleteDeadLetterState(repositoryId, CLOUD_METADATA_STREAM_KIND, repositoryId);
+            return StreamSyncResult.success(syncResult.getSnapshot(), syncResult.getProcessedCount());
+        } catch (RuntimeException e) {
+            String errorSummary = buildErrorSummary(e);
+            deadLetterStateService.saveDeadLetterState(buildRepositoryStreamDeadLetterState(
+                    repositoryId,
+                    CLOUD_METADATA_STREAM_KIND,
+                    repositoryId,
+                    currentCursorState.getCursor(),
+                    now,
+                    errorSummary));
+            return StreamSyncResult.failure(currentCursorState.getCursor(), errorSummary);
+        }
+    }
+
+    private PurviewDeadLetterState buildRepositoryStreamDeadLetterState(
+            String repositoryId,
+            String streamKind,
+            String entryKey,
+            String checkpoint,
+            String now,
+            String errorSummary) {
+        PurviewDeadLetterState existingState = deadLetterStateService.getDeadLetterState(repositoryId, streamKind, entryKey);
+        String firstFailedAt = existingState == null || existingState.getFirstFailedAt() == null
+                || existingState.getFirstFailedAt().isBlank()
+                        ? now
+                        : existingState.getFirstFailedAt();
+        int failureCount = existingState == null ? 1 : Math.max(0, existingState.getFailureCount()) + 1;
+        return new PurviewDeadLetterState(
+                repositoryId,
+                streamKind,
+                entryKey,
+                streamKind,
+                "nemaki://" + repositoryId + "/purview/" + streamKind,
+                firstFailedAt,
+                now,
+                failureCount,
+                checkpoint == null ? "" : checkpoint,
+                errorSummary);
+    }
+
     private String summarizeFailures(List<String> failures) {
         if (failures == null || failures.isEmpty()) {
             return "";
@@ -453,5 +536,21 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
     }
 
     private record ChangeProcessingResult(int failedCount, List<String> failures) {
+    }
+
+    private record StreamSyncResult(
+            String snapshot,
+            int processedCount,
+            boolean failed,
+            String errorSummary) {
+
+        private static StreamSyncResult success(String snapshot, int processedCount) {
+            return new StreamSyncResult(snapshot == null ? "" : snapshot, processedCount, false, "");
+        }
+
+        private static StreamSyncResult failure(String snapshot, String errorSummary) {
+            return new StreamSyncResult(snapshot == null ? "" : snapshot, 0, true, errorSummary);
+        }
+
     }
 }

@@ -300,24 +300,37 @@ public class PurviewIncrementalSyncServiceImplTest {
     }
 
     @Test
-    public void testStartIncrementalSyncStoresCloudCursorFailureStateWhenCloudSyncFails() {
+    public void testStartIncrementalSyncMovesCloudMetadataFailureToDeadLetterAndContinues() {
         when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
                 "NemakiWare", "1", "current-hash", "1", "current-hash", false,
                 java.util.List.of(), java.util.List.of(), java.util.List.of()));
         when(cursorStateService.getCursorState("bedroom", "cloud-metadata-snapshot")).thenReturn(new PurviewCursorState(
                 "bedroom", "cloud-metadata-snapshot", "cloud-1", "snapshot",
                 "2026-03-20T01:00:00Z", "2026-03-20T00:55:00Z", "", "", 0, 0));
+        when(deadLetterStateService.getDeadLetterState("bedroom", "cloud-metadata-snapshot", "bedroom"))
+                .thenReturn(new PurviewDeadLetterState("bedroom", "cloud-metadata-snapshot", "bedroom",
+                        "", "", "", "", 0, "", ""));
+        when(deadLetterStateService.countDeadLetterStates("bedroom", "cloud-metadata-snapshot")).thenReturn(1);
         when(cloudMetadataPublishService.syncRepositoryCloudMetadataIfChanged("bedroom", "cloud-1"))
                 .thenThrow(new IllegalStateException("cloud sync unavailable"));
 
         PurviewJobState result = service.startIncrementalSync("bedroom", "admin");
 
-        assertEquals("FAILED", result.getStatus());
+        assertEquals("COMPLETED_WITH_ERRORS", result.getStatus());
+        assertEquals(1, result.getFailedCount());
         verify(cursorStateService).saveCursorState(argThat(state ->
                 "cloud-metadata-snapshot".equals(state.getStreamKind())
                         && "cloud-1".equals(state.getCursor())
                         && state.getLastErrorMessage().contains("cloud sync unavailable")
-                        && state.getConsecutiveFailureCount() == 1));
+                        && state.getConsecutiveFailureCount() == 1
+                        && state.getDeadLetterCount() == 1));
+        verify(deadLetterStateService).saveDeadLetterState(argThat(state ->
+                "bedroom".equals(state.getRepositoryId())
+                        && "cloud-metadata-snapshot".equals(state.getStreamKind())
+                        && "bedroom".equals(state.getEntryKey())
+                        && "cloud-1".equals(state.getCheckpoint())
+                        && state.getFailureCount() == 1
+                        && state.getErrorSummary().contains("cloud sync unavailable")));
     }
 
     @Test

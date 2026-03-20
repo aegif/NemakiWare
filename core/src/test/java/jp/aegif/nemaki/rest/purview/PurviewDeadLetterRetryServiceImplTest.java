@@ -23,6 +23,7 @@ public class PurviewDeadLetterRetryServiceImplTest {
     private PurviewCursorStateService cursorStateService;
     private PurviewDeadLetterStateService deadLetterStateService;
     private PurviewDocumentPublishService documentPublishService;
+    private PurviewCloudMetadataPublishService cloudMetadataPublishService;
     private ContentDaoService contentDaoService;
     private Document document;
     private PurviewDeadLetterRetryServiceImpl service;
@@ -35,6 +36,7 @@ public class PurviewDeadLetterRetryServiceImplTest {
         cursorStateService = mock(PurviewCursorStateService.class);
         deadLetterStateService = mock(PurviewDeadLetterStateService.class);
         documentPublishService = mock(PurviewDocumentPublishService.class);
+        cloudMetadataPublishService = mock(PurviewCloudMetadataPublishService.class);
         contentDaoService = mock(ContentDaoService.class);
 
         when(jobStateService.saveJobState(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -72,6 +74,7 @@ public class PurviewDeadLetterRetryServiceImplTest {
                 cursorStateService,
                 deadLetterStateService,
                 documentPublishService,
+                cloudMetadataPublishService,
                 contentDaoService);
     }
 
@@ -88,5 +91,37 @@ public class PurviewDeadLetterRetryServiceImplTest {
                 "content-change-log".equals(state.getStreamKind())
                         && state.getDeadLetterCount() == 0
                         && "token-101".equals(state.getCursor())));
+    }
+
+    @Test
+    public void testStartRetryFailedRetriesCloudMetadataDeadLetterAndUpdatesSnapshotCursor() {
+        when(deadLetterStateService.listDeadLetterStates("bedroom")).thenReturn(List.of(new PurviewDeadLetterState(
+                "bedroom",
+                "cloud-metadata-snapshot",
+                "bedroom",
+                "cloud-metadata-snapshot",
+                "nemaki://bedroom/purview/cloud-metadata-snapshot",
+                "2026-03-20T10:00:00Z",
+                "2026-03-20T10:01:00Z",
+                1,
+                "cloud-old",
+                "publish failed")));
+        when(cursorStateService.getCursorState("bedroom", "cloud-metadata-snapshot")).thenReturn(new PurviewCursorState(
+                "bedroom", "cloud-metadata-snapshot", "cloud-old", "snapshot",
+                "2026-03-20T10:00:00Z", "2026-03-20T09:59:00Z", "", "", 0, 1));
+        when(deadLetterStateService.countDeadLetterStates("bedroom", "cloud-metadata-snapshot")).thenReturn(0);
+        when(cloudMetadataPublishService.syncRepositoryCloudMetadataIfChanged("bedroom", "cloud-old"))
+                .thenReturn(new PurviewCloudMetadataSyncResult("cloud-new", true, 2, 1));
+
+        PurviewJobState result = service.startRetryFailed("bedroom", "admin");
+
+        assertEquals("COMPLETED", result.getStatus());
+        assertEquals(1, result.getProcessedCount());
+        verify(cloudMetadataPublishService).syncRepositoryCloudMetadataIfChanged("bedroom", "cloud-old");
+        verify(deadLetterStateService).deleteDeadLetterState("bedroom", "cloud-metadata-snapshot", "bedroom");
+        verify(cursorStateService).saveCursorState(argThat(state ->
+                "cloud-metadata-snapshot".equals(state.getStreamKind())
+                        && "cloud-new".equals(state.getCursor())
+                        && state.getDeadLetterCount() == 0));
     }
 }

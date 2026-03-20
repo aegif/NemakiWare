@@ -17,6 +17,8 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
     private static final String JOB_KIND = "RETRY_FAILED";
     private static final String STREAM_KIND = "content-change-log";
     private static final String CURSOR_KIND = "changeToken";
+    private static final String CLOUD_METADATA_STREAM_KIND = "cloud-metadata-snapshot";
+    private static final String CLOUD_METADATA_CURSOR_KIND = "snapshot";
 
     private final PurviewSchemaPlannerService schemaPlannerService;
     private final PurviewLockStateService lockStateService;
@@ -24,6 +26,7 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
     private final PurviewCursorStateService cursorStateService;
     private final PurviewDeadLetterStateService deadLetterStateService;
     private final PurviewDocumentPublishService documentPublishService;
+    private final PurviewCloudMetadataPublishService cloudMetadataPublishService;
     private final ContentDaoService contentDaoService;
 
     public PurviewDeadLetterRetryServiceImpl(
@@ -33,6 +36,7 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
             PurviewCursorStateService cursorStateService,
             PurviewDeadLetterStateService deadLetterStateService,
             PurviewDocumentPublishService documentPublishService,
+            PurviewCloudMetadataPublishService cloudMetadataPublishService,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService) {
         this.schemaPlannerService = schemaPlannerService;
         this.lockStateService = lockStateService;
@@ -40,6 +44,7 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
         this.cursorStateService = cursorStateService;
         this.deadLetterStateService = deadLetterStateService;
         this.documentPublishService = documentPublishService;
+        this.cloudMetadataPublishService = cloudMetadataPublishService;
         this.contentDaoService = contentDaoService;
     }
 
@@ -77,22 +82,14 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
                         "Purview schema bootstrap is required before retry-failed"));
             }
 
-            PurviewCursorState currentCursorState = cursorStateService.getCursorState(repositoryId, STREAM_KIND);
-            if (currentCursorState == null) {
-                currentCursorState = new PurviewCursorState(repositoryId, STREAM_KIND, "", CURSOR_KIND, "", "", "", "", 0, 0);
-            }
-
             List<PurviewDeadLetterState> deadLetters = deadLetterStateService.listDeadLetterStates(repositoryId);
             int processedCount = 0;
             int failedCount = 0;
             List<String> failures = new ArrayList<>();
 
             for (PurviewDeadLetterState deadLetterState : deadLetters) {
-                if (!STREAM_KIND.equals(deadLetterState.getStreamKind())) {
-                    continue;
-                }
                 try {
-                    retryDeadLetter(repositoryId, deadLetterState);
+                    retryDeadLetter(repositoryId, deadLetterState, now);
                     processedCount++;
                 } catch (RuntimeException e) {
                     failedCount++;
@@ -108,22 +105,11 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
                             deadLetterState.getFailureCount() + 1,
                             deadLetterState.getCheckpoint(),
                             buildErrorSummary(e)));
+                    saveFailureCursorState(repositoryId, deadLetterState.getStreamKind(), now, buildErrorSummary(e));
                 }
             }
 
-            int deadLetterCount = deadLetterStateService.countDeadLetterStates(repositoryId, STREAM_KIND);
-            cursorStateService.saveCursorState(new PurviewCursorState(
-                    currentCursorState.getRepositoryId(),
-                    currentCursorState.getStreamKind(),
-                    currentCursorState.getCursor(),
-                    resolveCursorKind(currentCursorState),
-                    now,
-                    failedCount == 0 ? now : currentCursorState.getLastSuccessAt(),
-                    failedCount == 0 ? "" : now,
-                    failedCount == 0 ? "" : summarizeFailures(failures),
-                    failedCount == 0 ? 0 : currentCursorState.getConsecutiveFailureCount() + 1,
-                    deadLetterCount));
-
+            PurviewCursorState contentCursorState = getCursorStateOrDefault(repositoryId, STREAM_KIND, CURSOR_KIND);
             return jobStateService.saveJobState(new PurviewJobState(
                     jobId,
                     JOB_KIND,
@@ -133,14 +119,26 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
                     Instant.now().toString(),
                     processedCount,
                     failedCount,
-                    currentCursorState.getCursor(),
+                    contentCursorState.getCursor(),
                     summarizeFailures(failures)));
         } finally {
             lockStateService.releaseRepositoryLock(repositoryId, JOB_KIND, jobId);
         }
     }
 
-    private void retryDeadLetter(String repositoryId, PurviewDeadLetterState deadLetterState) {
+    private void retryDeadLetter(String repositoryId, PurviewDeadLetterState deadLetterState, String now) {
+        if (STREAM_KIND.equals(deadLetterState.getStreamKind())) {
+            retryContentDeadLetter(repositoryId, deadLetterState, now);
+            return;
+        }
+        if (CLOUD_METADATA_STREAM_KIND.equals(deadLetterState.getStreamKind())) {
+            retryCloudMetadataDeadLetter(repositoryId, deadLetterState, now);
+            return;
+        }
+        throw new IllegalStateException("Unsupported dead-letter stream kind " + deadLetterState.getStreamKind());
+    }
+
+    private void retryContentDeadLetter(String repositoryId, PurviewDeadLetterState deadLetterState, String now) {
         Content content = contentDaoService.getContent(repositoryId, deadLetterState.getEntryKey());
         if (content == null || (!content.isDocument() && !content.isFolder())) {
             throw new IllegalStateException("Content not found for dead-letter entry " + deadLetterState.getEntryKey());
@@ -148,6 +146,15 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
 
         documentPublishService.upsertContents(repositoryId, List.of(content));
         deadLetterStateService.deleteDeadLetterState(repositoryId, deadLetterState.getStreamKind(), deadLetterState.getEntryKey());
+        saveSuccessCursorState(repositoryId, deadLetterState.getStreamKind(), now, null);
+    }
+
+    private void retryCloudMetadataDeadLetter(String repositoryId, PurviewDeadLetterState deadLetterState, String now) {
+        PurviewCursorState currentCursorState = getCursorStateOrDefault(repositoryId, CLOUD_METADATA_STREAM_KIND, CLOUD_METADATA_CURSOR_KIND);
+        PurviewCloudMetadataSyncResult syncResult = cloudMetadataPublishService
+                .syncRepositoryCloudMetadataIfChanged(repositoryId, currentCursorState.getCursor());
+        deadLetterStateService.deleteDeadLetterState(repositoryId, deadLetterState.getStreamKind(), deadLetterState.getEntryKey());
+        saveSuccessCursorState(repositoryId, deadLetterState.getStreamKind(), now, syncResult.getSnapshot());
     }
 
     private String buildErrorSummary(RuntimeException e) {
@@ -159,9 +166,58 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
 
     private String resolveCursorKind(PurviewCursorState currentCursorState) {
         if (currentCursorState.getCursorKind() == null || currentCursorState.getCursorKind().isBlank()) {
+            if (CLOUD_METADATA_STREAM_KIND.equals(currentCursorState.getStreamKind())) {
+                return CLOUD_METADATA_CURSOR_KIND;
+            }
             return CURSOR_KIND;
         }
         return currentCursorState.getCursorKind();
+    }
+
+    private PurviewCursorState getCursorStateOrDefault(String repositoryId, String streamKind, String cursorKind) {
+        PurviewCursorState currentCursorState = cursorStateService.getCursorState(repositoryId, streamKind);
+        if (currentCursorState != null) {
+            return currentCursorState;
+        }
+        return new PurviewCursorState(repositoryId, streamKind, "", cursorKind, "", "", "", "", 0, 0);
+    }
+
+    private void saveSuccessCursorState(String repositoryId, String streamKind, String now, String nextCursor) {
+        PurviewCursorState currentCursorState = getCursorStateOrDefault(
+                repositoryId,
+                streamKind,
+                STREAM_KIND.equals(streamKind) ? CURSOR_KIND : CLOUD_METADATA_CURSOR_KIND);
+        int deadLetterCount = deadLetterStateService.countDeadLetterStates(repositoryId, streamKind);
+        cursorStateService.saveCursorState(new PurviewCursorState(
+                currentCursorState.getRepositoryId(),
+                currentCursorState.getStreamKind(),
+                nextCursor == null ? currentCursorState.getCursor() : nextCursor,
+                resolveCursorKind(currentCursorState),
+                now,
+                now,
+                "",
+                "",
+                0,
+                deadLetterCount));
+    }
+
+    private void saveFailureCursorState(String repositoryId, String streamKind, String now, String errorSummary) {
+        PurviewCursorState currentCursorState = getCursorStateOrDefault(
+                repositoryId,
+                streamKind,
+                STREAM_KIND.equals(streamKind) ? CURSOR_KIND : CLOUD_METADATA_CURSOR_KIND);
+        int deadLetterCount = deadLetterStateService.countDeadLetterStates(repositoryId, streamKind);
+        cursorStateService.saveCursorState(new PurviewCursorState(
+                currentCursorState.getRepositoryId(),
+                currentCursorState.getStreamKind(),
+                currentCursorState.getCursor(),
+                resolveCursorKind(currentCursorState),
+                now,
+                currentCursorState.getLastSuccessAt(),
+                now,
+                errorSummary,
+                currentCursorState.getConsecutiveFailureCount() + 1,
+                deadLetterCount));
     }
 
     private String summarizeFailures(List<String> failures) {
