@@ -19,6 +19,7 @@ import jp.aegif.nemaki.rest.purview.PurviewConnectionService;
 import jp.aegif.nemaki.rest.purview.PurviewConnectionStatus;
 import jp.aegif.nemaki.rest.purview.PurviewCursorState;
 import jp.aegif.nemaki.rest.purview.PurviewCursorStateService;
+import jp.aegif.nemaki.rest.purview.PurviewArchiveReconciliationService;
 import jp.aegif.nemaki.rest.purview.PurviewDeleteResolutionService;
 import jp.aegif.nemaki.rest.purview.PurviewFullSyncService;
 import jp.aegif.nemaki.rest.purview.PurviewIncrementalSyncService;
@@ -46,6 +47,7 @@ public class PurviewAdminController {
     private final PurviewSchemaBootstrapService purviewSchemaBootstrapService;
     private final PurviewFullSyncService purviewFullSyncService;
     private final PurviewIncrementalSyncService purviewIncrementalSyncService;
+    private final PurviewArchiveReconciliationService purviewArchiveReconciliationService;
     private final PurviewDeleteResolutionService purviewDeleteResolutionService;
     private final PurviewJobStateService purviewJobStateService;
     private final PurviewCursorStateService purviewCursorStateService;
@@ -60,6 +62,7 @@ public class PurviewAdminController {
             PurviewSchemaBootstrapService purviewSchemaBootstrapService,
             PurviewFullSyncService purviewFullSyncService,
             PurviewIncrementalSyncService purviewIncrementalSyncService,
+            PurviewArchiveReconciliationService purviewArchiveReconciliationService,
             PurviewDeleteResolutionService purviewDeleteResolutionService,
             PurviewJobStateService purviewJobStateService,
             PurviewCursorStateService purviewCursorStateService,
@@ -69,6 +72,7 @@ public class PurviewAdminController {
         this.purviewSchemaBootstrapService = purviewSchemaBootstrapService;
         this.purviewFullSyncService = purviewFullSyncService;
         this.purviewIncrementalSyncService = purviewIncrementalSyncService;
+        this.purviewArchiveReconciliationService = purviewArchiveReconciliationService;
         this.purviewDeleteResolutionService = purviewDeleteResolutionService;
         this.purviewJobStateService = purviewJobStateService;
         this.purviewCursorStateService = purviewCursorStateService;
@@ -176,6 +180,18 @@ public class PurviewAdminController {
         }
 
         PurviewJobState jobState = purviewIncrementalSyncService.startIncrementalSync(
+                repositoryId, getAuthenticatedUsername());
+        return ResponseEntity.ok(buildJobResponse(jobState));
+    }
+
+    @PostMapping("/reconcile/archives/{repositoryId}")
+    public ResponseEntity<Map<String, Object>> startArchiveReconciliation(
+            @PathVariable("repositoryId") String repositoryId) {
+        if (!isAdmin()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
+        }
+
+        PurviewJobState jobState = purviewArchiveReconciliationService.startArchiveReconciliation(
                 repositoryId, getAuthenticatedUsername());
         return ResponseEntity.ok(buildJobResponse(jobState));
     }

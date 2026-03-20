@@ -36,7 +36,11 @@ public class PurviewSchemaPayloadFactory {
                 attribute("typeId", "string", true),
                 attribute("versionSeriesId", "string", true),
                 attribute("versionLabel", "string", true),
-                attribute("isLatestVersion", "boolean", true)));
+                attribute("isLatestVersion", "boolean", true),
+                attribute("lifecycleState", "string", true),
+                attribute("archiveState", "string", true),
+                attribute("archiveId", "string", true),
+                attribute("archivedAt", "long", true)));
         return entityDef;
     }
 
@@ -58,7 +62,11 @@ public class PurviewSchemaPayloadFactory {
         entityDef.put("attributeDefs", List.of(
                 attribute("originalObjectId", "string", false),
                 attribute("archiveRepositoryId", "string", false),
-                attribute("lifecycleState", "string", false)));
+                attribute("lifecycleState", "string", false),
+                attribute("archiveState", "string", true),
+                attribute("archivedAt", "long", true),
+                attribute("versionSeriesId", "string", true),
+                attribute("versionLabel", "string", true)));
         return entityDef;
     }
 

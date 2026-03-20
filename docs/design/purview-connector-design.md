@@ -22,6 +22,8 @@
 - live / archive / purge 判定に応じた tombstone 解決
 - Purview entity delete-by-unique-attribute 呼び出し
 - state overview での tombstone 可視化
+- repository 単位 `ARCHIVE_RECONCILIATION` job
+- `ARCHIVED` tombstone から archived document / `nemaki_archive` の upsert
 
 未実装:
 
@@ -616,6 +618,20 @@ change log では完全でない対象のために補助ジョブを持つ。
 - cloud metadata 再同期
 - relationship 再同期
 
+次の実装 slice:
+
+- `ARCHIVED` tombstone を入力として `nemaki_document` の lifecycle を `ARCHIVED` に更新する
+- `nemaki_archive` entity を upsert する
+- 成功した tombstone を削除する
+- `nemaki_document_has_archive` relationship は後続 slice に分離する
+
+2026-03-20 実装状況:
+
+- `ARCHIVE_RECONCILIATION` job を追加済み
+- `ARCHIVED` tombstone から archived document と `nemaki_archive` を bulk upsert するところまで実装済み
+- live object が戻っていた場合は tombstone を削除して処理を打ち切る
+- relationship 作成と archive cursor 管理は未実装
+
 ### 14.4 optional webhook assist
 
 将来、低レイテンシが必要な場合は webhook イベントを Purview sync queue のヒントとして使う。ただし source of truth は change log と補助リコンシリエーションであり、webhook だけで整合を保証しない。
@@ -924,8 +940,12 @@ dead-letter 方針:
 2026-03-20 状態:
 
 - 進行中
-- 完了済み: change log polling, change token 保存, CREATED / UPDATED / SECURITY の document upsert, tombstone stage, `DELETE_RESOLUTION`, archive / purge 判定, delete API 呼び出し
-- 未完了: dead-letter 基盤, archive / type / cloud metadata の補助 reconciliation
+- 完了済み: change log polling, change token 保存, CREATED / UPDATED / SECURITY の document upsert, tombstone stage, `DELETE_RESOLUTION`, archive / purge 判定, delete API 呼び出し, `ARCHIVE_RECONCILIATION` による archived document / archive upsert
+- 未完了: dead-letter 基盤, relationship 作成, archive / type / cloud metadata の補助 reconciliation の残り
+
+直近の次作業:
+
+- `ARCHIVE_RECONCILIATION` job を追加し、`ARCHIVED` tombstone を実資産へ反映する
 
 ### Phase 4: supplemental reconciliation
 

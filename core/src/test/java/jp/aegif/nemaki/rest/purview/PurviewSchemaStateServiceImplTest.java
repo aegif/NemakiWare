@@ -1,0 +1,90 @@
+package jp.aegif.nemaki.rest.purview;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.HashMap;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import jp.aegif.nemaki.model.Configuration;
+import jp.aegif.nemaki.util.StubContentDaoServiceBase;
+import jp.aegif.nemaki.util.constant.SystemConst;
+
+public class PurviewSchemaStateServiceImplTest {
+
+    private StubContentDaoService contentDaoService;
+    private PurviewSchemaStateServiceImpl service;
+
+    @BeforeEach
+    public void setUp() {
+        contentDaoService = new StubContentDaoService();
+        service = new PurviewSchemaStateServiceImpl(new PurviewStateStoreImpl(contentDaoService));
+    }
+
+    @Test
+    public void testGetSchemaStateReturnsEmptyStateWhenNothingIsPersisted() {
+        PurviewSchemaState state = service.getSchemaState("NemakiWare");
+
+        assertEquals("NemakiWare", state.getCollection());
+        assertEquals("", state.getSchemaVersion());
+        assertEquals("", state.getSchemaHash());
+        assertEquals("", state.getLastAppliedBy());
+    }
+
+    @Test
+    public void testSaveSchemaStatePersistsValuesIntoSystemConfiguration() {
+        PurviewSchemaState state = new PurviewSchemaState(
+                "NemakiWare",
+                "1",
+                "abc123hash",
+                "2026-03-20T00:00:00Z",
+                "admin",
+                "initial bootstrap");
+
+        service.saveSchemaState(state);
+        PurviewSchemaState loaded = service.getSchemaState("NemakiWare");
+
+        assertEquals("1", loaded.getSchemaVersion());
+        assertEquals("abc123hash", loaded.getSchemaHash());
+        assertEquals("2026-03-20T00:00:00Z", loaded.getLastAppliedAt());
+        assertEquals("admin", loaded.getLastAppliedBy());
+        assertEquals("initial bootstrap", loaded.getLastDiffSummary());
+        assertTrue(contentDaoService.updated || contentDaoService.created);
+    }
+
+    private static class StubContentDaoService extends StubContentDaoServiceBase {
+        private Configuration systemConfiguration = createConfig();
+        private boolean created;
+        private boolean updated;
+
+        @Override
+        public Configuration getConfiguration(String repositoryId) {
+            if (SystemConst.NEMAKI_CONF_DB.equals(repositoryId)) {
+                return systemConfiguration;
+            }
+            return new Configuration();
+        }
+
+        @Override
+        public Configuration update(String repositoryId, Configuration configuration) {
+            updated = true;
+            systemConfiguration = configuration;
+            return configuration;
+        }
+
+        @Override
+        public Configuration create(String repositoryId, Configuration configuration) {
+            created = true;
+            systemConfiguration = configuration;
+            return configuration;
+        }
+
+        private static Configuration createConfig() {
+            Configuration configuration = new Configuration();
+            configuration.setId("config_" + SystemConst.NEMAKI_CONF_DB);
+            configuration.setConfiguration(new HashMap<>());
+            return configuration;
+        }
+    }
+}

@@ -6,11 +6,17 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
+import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 
 @Component
 public class PurviewEntityPayloadFactory {
+
+    private static final String DOCUMENT_TYPE_NAME = "nemaki_document";
+    private static final String ARCHIVE_TYPE_NAME = "nemaki_archive";
+    private static final String LIFECYCLE_ACTIVE = "ACTIVE";
+    private static final String LIFECYCLE_ARCHIVED = "ARCHIVED";
 
     public Map<String, Object> buildBulkPayload(List<Map<String, Object>> entities) {
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -41,9 +47,13 @@ public class PurviewEntityPayloadFactory {
             attributes.put("versionLabel", null);
             attributes.put("isLatestVersion", null);
         }
+        attributes.put("lifecycleState", LIFECYCLE_ACTIVE);
+        attributes.put("archiveState", null);
+        attributes.put("archiveId", null);
+        attributes.put("archivedAt", null);
 
         Map<String, Object> entity = new LinkedHashMap<>();
-        entity.put("typeName", "nemaki_document");
+        entity.put("typeName", DOCUMENT_TYPE_NAME);
         entity.put("attributes", attributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(content.getCreator(), "system"));
@@ -52,12 +62,94 @@ public class PurviewEntityPayloadFactory {
         return entity;
     }
 
+    public Map<String, Object> buildArchivedDocumentEntity(String repositoryId, Archive archive) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildObjectQualifiedName(repositoryId, archive.getOriginalId()));
+        attributes.put("name", firstNonBlank(archive.getName(), archive.getOriginalId(), archive.getId()));
+        attributes.put("description", null);
+        attributes.put("owner", firstNonBlank(archive.getArchivedBy(), archive.getCreator(), "system"));
+        attributes.put("createTime", toEpochMillis(archive.getCreated()));
+        attributes.put("modifiedTime", firstNonZero(
+                toEpochMillis(archive.getArchivedAt()),
+                toEpochMillis(archive.getModified()),
+                toEpochMillis(archive.getCreated())));
+        attributes.put("repositoryId", repositoryId);
+        attributes.put("objectId", archive.getOriginalId());
+        attributes.put("parentId", nullIfBlank(archive.getParentId()));
+        attributes.put("typeId", nullIfBlank(archive.getType()));
+        attributes.put("versionSeriesId", nullIfBlank(archive.getVersionSeriesId()));
+        attributes.put("versionLabel", nullIfBlank(archive.getVersionLabel()));
+        attributes.put("isLatestVersion", archive.isLatestVersion());
+        attributes.put("lifecycleState", LIFECYCLE_ARCHIVED);
+        attributes.put("archiveState", archive.getEffectiveArchiveState());
+        attributes.put("archiveId", nullIfBlank(archive.getId()));
+        attributes.put("archivedAt", zeroToNull(toEpochMillis(archive.getArchivedAt())));
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", DOCUMENT_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(archive.getCreator(), "system"));
+        entity.put("updatedBy", firstNonBlank(archive.getArchivedBy(), archive.getModifier(), archive.getCreator(), "system"));
+        entity.put("version", 0);
+        return entity;
+    }
+
+    public Map<String, Object> buildArchiveEntity(String repositoryId, Archive archive) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildArchiveQualifiedName(repositoryId, archive.getId()));
+        attributes.put("name", firstNonBlank(archive.getName(), archive.getId(), archive.getOriginalId()));
+        attributes.put("description", null);
+        attributes.put("owner", firstNonBlank(archive.getArchivedBy(), archive.getCreator(), "system"));
+        attributes.put("createTime", firstNonZero(
+                toEpochMillis(archive.getArchivedAt()),
+                toEpochMillis(archive.getCreated())));
+        attributes.put("modifiedTime", firstNonZero(
+                toEpochMillis(archive.getColdArchivedAt()),
+                toEpochMillis(archive.getArchivedAt()),
+                toEpochMillis(archive.getModified()),
+                toEpochMillis(archive.getCreated())));
+        attributes.put("originalObjectId", nullIfBlank(archive.getOriginalId()));
+        attributes.put("archiveRepositoryId", repositoryId);
+        attributes.put("lifecycleState", LIFECYCLE_ARCHIVED);
+        attributes.put("archiveState", archive.getEffectiveArchiveState());
+        attributes.put("archivedAt", zeroToNull(toEpochMillis(archive.getArchivedAt())));
+        attributes.put("versionSeriesId", nullIfBlank(archive.getVersionSeriesId()));
+        attributes.put("versionLabel", nullIfBlank(archive.getVersionLabel()));
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", ARCHIVE_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(archive.getCreator(), "system"));
+        entity.put("updatedBy", firstNonBlank(archive.getArchivedBy(), archive.getModifier(), archive.getCreator(), "system"));
+        entity.put("version", 0);
+        return entity;
+    }
+
     private String buildObjectQualifiedName(String repositoryId, String objectId) {
         return "nemaki://" + repositoryId + "/objects/" + objectId;
     }
 
+    private String buildArchiveQualifiedName(String repositoryId, String archiveId) {
+        return "nemaki://" + repositoryId + "/archives/" + archiveId;
+    }
+
     private long toEpochMillis(java.util.GregorianCalendar value) {
         return value == null ? 0L : value.getTimeInMillis();
+    }
+
+    private Long zeroToNull(long value) {
+        return value == 0L ? null : value;
+    }
+
+    private long firstNonZero(long... values) {
+        for (long value : values) {
+            if (value > 0L) {
+                return value;
+            }
+        }
+        return 0L;
     }
 
     private String firstNonBlank(String... values) {
