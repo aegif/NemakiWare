@@ -17,12 +17,14 @@ public class PurviewSchemaPayloadFactory {
                 buildRepositoryEntityDef(),
                 buildFolderEntityDef(),
                 buildDocumentEntityDef(),
+                buildTypeDefinitionEntityDef(),
                 buildExternalAssetEntityDef(),
                 buildArchiveEntityDef()));
         payload.put("relationshipDefs", List.of(
                 buildRepositoryContainsFolderRelationshipDef(),
                 buildFolderContainsFolderRelationshipDef(),
                 buildFolderContainsDocumentRelationshipDef(),
+                buildDocumentHasTypeDefinitionRelationshipDef(),
                 buildDocumentHasArchiveRelationshipDef()));
         payload.put("businessMetadataDefs", List.of(buildGovernanceBusinessMetadataDef()));
         payload.put("classificationDefs", List.of());
@@ -69,6 +71,22 @@ public class PurviewSchemaPayloadFactory {
                 attribute("archiveState", "string", true),
                 attribute("archiveId", "string", true),
                 attribute("archivedAt", "long", true)));
+        return entityDef;
+    }
+
+    private Map<String, Object> buildTypeDefinitionEntityDef() {
+        Map<String, Object> entityDef = baseTypeDef("nemaki_type_definition",
+                "Type definition synchronized from NemakiWare");
+        entityDef.put("attributeDefs", List.of(
+                attribute("repositoryId", "string", false),
+                attribute("typeId", "string", false),
+                attribute("queryName", "string", true),
+                attribute("baseTypeId", "string", false),
+                attribute("parentTypeId", "string", true),
+                attribute("propertyCount", "long", false),
+                attribute("versionable", "boolean", true),
+                attribute("contentStreamAllowed", "string", true),
+                attribute("lifecycleState", "string", true)));
         return entityDef;
     }
 
@@ -138,6 +156,17 @@ public class PurviewSchemaPayloadFactory {
         relationshipDef.put("relationshipCategory", "ASSOCIATION");
         relationshipDef.put("endDef1", relationshipEnd("DataSet", "document"));
         relationshipDef.put("endDef2", relationshipEnd("nemaki_archive", "archive"));
+        relationshipDef.put("propagateTags", "NONE");
+        return relationshipDef;
+    }
+
+    private Map<String, Object> buildDocumentHasTypeDefinitionRelationshipDef() {
+        Map<String, Object> relationshipDef = baseTypeDef("nemaki_document_has_type_definition",
+                "Links NemakiWare documents to synchronized custom type definitions");
+        relationshipDef.put("category", "RELATIONSHIP");
+        relationshipDef.put("relationshipCategory", "ASSOCIATION");
+        relationshipDef.put("endDef1", relationshipEnd("nemaki_document", "document"));
+        relationshipDef.put("endDef2", relationshipEnd("nemaki_type_definition", "typeDefinition"));
         relationshipDef.put("propagateTags", "NONE");
         return relationshipDef;
     }

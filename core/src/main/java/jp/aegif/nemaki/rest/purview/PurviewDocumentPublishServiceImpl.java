@@ -25,18 +25,24 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
     private final ContentDaoService contentDaoService;
     private final PurviewEntityPayloadFactory entityPayloadFactory;
     private final PurviewEntityRegistryClient entityRegistryClient;
+    private final PurviewContainmentRelationshipService containmentRelationshipService;
+    private final PurviewDocumentTypeRelationshipService documentTypeRelationshipService;
 
     public PurviewDocumentPublishServiceImpl(
             PurviewConfig purviewConfig,
             RepositoryInfoMap repositoryInfoMap,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService,
             PurviewEntityPayloadFactory entityPayloadFactory,
-            PurviewEntityRegistryClient entityRegistryClient) {
+            PurviewEntityRegistryClient entityRegistryClient,
+            PurviewContainmentRelationshipService containmentRelationshipService,
+            PurviewDocumentTypeRelationshipService documentTypeRelationshipService) {
         this.purviewConfig = purviewConfig;
         this.repositoryInfoMap = repositoryInfoMap;
         this.contentDaoService = contentDaoService;
         this.entityPayloadFactory = entityPayloadFactory;
         this.entityRegistryClient = entityRegistryClient;
+        this.containmentRelationshipService = containmentRelationshipService;
+        this.documentTypeRelationshipService = documentTypeRelationshipService;
     }
 
     @Override
@@ -46,6 +52,8 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         Deque<String> folderQueue = new ArrayDeque<>();
         folderQueue.add(rootFolderId);
         List<Map<String, Object>> entityBatch = new ArrayList<>();
+        List<Content> containmentCandidates = new ArrayList<>();
+        List<Content> relationshipCandidates = new ArrayList<>();
         int processedCount = 0;
 
         entityBatch.add(entityPayloadFactory.buildRepositoryEntity(repositoryInfo));
@@ -56,6 +64,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
             throw new IllegalStateException("Root folder content is not available for repository " + repositoryId);
         }
         entityBatch.add(entityPayloadFactory.buildFolderEntity(repositoryId, rootFolder));
+        containmentCandidates.add(rootFolder);
         processedCount += flushIfNeeded(entityBatch);
 
         while (!folderQueue.isEmpty()) {
@@ -78,6 +87,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
 
                     if (child.isFolder()) {
                         entityBatch.add(entityPayloadFactory.buildFolderEntity(repositoryId, child));
+                        containmentCandidates.add(child);
                         processedCount += flushIfNeeded(entityBatch);
                         folderQueue.addLast(child.getId());
                         continue;
@@ -87,12 +97,17 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
                     }
 
                     entityBatch.add(entityPayloadFactory.buildDocumentEntity(repositoryId, child));
+                    containmentCandidates.add(child);
+                    relationshipCandidates.add(child);
                     processedCount += flushIfNeeded(entityBatch);
                 }
             }
         }
 
-        return processedCount + flushEntities(entityBatch);
+        return processedCount
+                + flushEntities(entityBatch)
+                + containmentRelationshipService.upsertContainmentRelationships(repositoryId, containmentCandidates)
+                + documentTypeRelationshipService.upsertDocumentTypeRelationships(repositoryId, relationshipCandidates);
     }
 
     @Override
@@ -107,6 +122,8 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         }
 
         List<Map<String, Object>> pending = new ArrayList<>();
+        List<Content> containmentCandidates = new ArrayList<>();
+        List<Content> relationshipCandidates = new ArrayList<>();
         int processedCount = 0;
         for (Content content : contents) {
             Map<String, Object> entity = buildContentEntity(repositoryId, content);
@@ -114,9 +131,16 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
                 continue;
             }
             pending.add(entity);
+            containmentCandidates.add(content);
+            if (content != null && content.isDocument()) {
+                relationshipCandidates.add(content);
+            }
             processedCount += flushIfNeeded(pending);
         }
-        return processedCount + flushEntities(pending);
+        return processedCount
+                + flushEntities(pending)
+                + containmentRelationshipService.upsertContainmentRelationships(repositoryId, containmentCandidates)
+                + documentTypeRelationshipService.upsertDocumentTypeRelationships(repositoryId, relationshipCandidates);
     }
 
     @Override

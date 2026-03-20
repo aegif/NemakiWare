@@ -28,6 +28,8 @@ public class PurviewDocumentPublishServiceImplTest {
     private RepositoryInfoMap repositoryInfoMap;
     private ContentDaoService contentDaoService;
     private PurviewEntityRegistryClient entityRegistryClient;
+    private PurviewContainmentRelationshipService containmentRelationshipService;
+    private PurviewDocumentTypeRelationshipService documentTypeRelationshipService;
     private PurviewDocumentPublishServiceImpl service;
 
     @BeforeEach
@@ -36,6 +38,8 @@ public class PurviewDocumentPublishServiceImplTest {
         repositoryInfoMap = mock(RepositoryInfoMap.class);
         contentDaoService = mock(ContentDaoService.class);
         entityRegistryClient = mock(PurviewEntityRegistryClient.class);
+        containmentRelationshipService = mock(PurviewContainmentRelationshipService.class);
+        documentTypeRelationshipService = mock(PurviewDocumentTypeRelationshipService.class);
 
         when(config.getEndpoint()).thenReturn("https://example-account.purview.azure.com");
         when(config.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
@@ -46,13 +50,17 @@ public class PurviewDocumentPublishServiceImplTest {
         when(config.getReadTimeoutMs()).thenReturn(30000);
         when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
                 .thenReturn(PurviewEntityPublishResult.success(2, "published"));
+        when(containmentRelationshipService.upsertContainmentRelationships(any(), any())).thenReturn(0);
+        when(documentTypeRelationshipService.upsertDocumentTypeRelationships(any(), any())).thenReturn(0);
 
         service = new PurviewDocumentPublishServiceImpl(
                 config,
                 repositoryInfoMap,
                 contentDaoService,
                 new PurviewEntityPayloadFactory(),
-                entityRegistryClient);
+                entityRegistryClient,
+                containmentRelationshipService,
+                documentTypeRelationshipService);
     }
 
     @Test
@@ -142,6 +150,40 @@ public class PurviewDocumentPublishServiceImplTest {
         List<Map<String, Object>> entities = (List<Map<String, Object>>) payloadCaptor.getValue().get("entities");
         assertEquals(List.of("nemaki_document", "nemaki_folder"),
                 entities.stream().map(entity -> entity.get("typeName").toString()).sorted().toList());
+    }
+
+    @Test
+    public void testUpsertContentsDelegatesDocumentTypeRelationshipsForCustomDocuments() {
+        Document customDocument = new Document();
+        customDocument.setId("doc-custom-001");
+        customDocument.setName("doc-custom-001");
+        customDocument.setParentId("folder-001");
+        customDocument.setObjectType("D:custom:report");
+        customDocument.setCreator("alice");
+        customDocument.setModifier("bob");
+        when(documentTypeRelationshipService.upsertDocumentTypeRelationships(any(), any())).thenReturn(1);
+
+        int processedCount = service.upsertContents("bedroom", List.of(customDocument));
+
+        assertEquals(2, processedCount);
+        verify(documentTypeRelationshipService).upsertDocumentTypeRelationships(
+                eq("bedroom"),
+                eq(List.of(customDocument)));
+    }
+
+    @Test
+    public void testUpsertContentsDelegatesContainmentRelationshipsForFoldersAndDocuments() {
+        Folder folder = folder("folder-001");
+        folder.setParentId("root-001");
+        Content document = document("doc-001", "folder-001");
+        when(containmentRelationshipService.upsertContainmentRelationships(any(), any())).thenReturn(2);
+
+        int processedCount = service.upsertContents("bedroom", List.of(folder, document));
+
+        assertEquals(4, processedCount);
+        verify(containmentRelationshipService).upsertContainmentRelationships(
+                eq("bedroom"),
+                eq(List.of(folder, document)));
     }
 
     private Folder folder(String id) {

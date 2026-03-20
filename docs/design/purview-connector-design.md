@@ -14,9 +14,14 @@
 - collection スコープ `TYPE_BOOTSTRAP` job
 - `job state` / `lock state` / `stream cursor state`
 - `GET /v1/admin/purview/state` による state overview
-- `nemaki_repository` / `nemaki_folder` / `nemaki_document` を含む schema manifest / payload
-- full sync の repository / folder / document / archive page traversal と bulk upsert
+- `nemaki_repository` / `nemaki_folder` / `nemaki_document` / `nemaki_type_definition` を含む schema manifest / payload
+- full sync の repository / folder / document / type definition / archive page traversal と bulk upsert
 - incremental sync の `CREATED` / `UPDATED` / `SECURITY` 系 folder / document upsert
+- `nemaki_document_has_type_definition` relationship schema と custom document からの relationship create
+- `nemaki_document_has_archive` relationship を archive full sync / archive reconciliation から作成
+- repository / folder / document の containment relationship create
+- type definition snapshot cursor と incremental からの type definition upsert / delete
+- archive snapshot cursor と incremental からの archive upsert / restore-destroy 再整合
 - `DELETED` change の tombstone stage
 - repository 単位 `DELETE_RESOLUTION` job
 - live / archive / purge 判定に応じた tombstone 解決
@@ -24,15 +29,17 @@
 - state overview での tombstone 可視化
 - repository 単位 `ARCHIVE_RECONCILIATION` job
 - `ARCHIVED` tombstone から archived document / `nemaki_archive` の upsert
+- repository 単位 `TYPE_RECONCILIATION` job
+- `POST /v1/admin/purview/reconcile/types/{repositoryId}`
 
 未実装:
 
-- type definition asset の実体同期
-- archive / cloud metadata / type reconciliation
+- cloud metadata の補助 reconciliation
+- containment relationship の専用 reconciliation
 - lineage 実体生成
 - 管理 UI
 
-現時点の実装は「repository / folder / document metadata を Purview に載せる最初の縦スライス」を成立させることを優先している。設計上の初期スコープ全体はまだ完了していない。
+現時点の実装は「repository / folder / document / type definition / archive metadata を Purview に載せる最初の縦スライス」を成立させることを優先している。設計上の初期スコープ全体はまだ完了していない。
 
 ## 1. 目的
 
@@ -271,9 +278,9 @@ Purview では built-in type の方が UI や lineage 表示との相性が良�
 
 ### 9.2 serviceType
 
-- `NemakiWare`
+- `NemakiWare-Custom-Types`
 
-すべての custom type は `NemakiWare` serviceType に紐づける。
+すべての custom type は `NemakiWare-Custom-Types` serviceType に紐づける。
 
 ### 9.3 entity type
 
@@ -588,8 +595,13 @@ schema bootstrap の扱い:
 
 - repository entity を `nemaki_repository` として upsert するところまで実装済み
 - root folder を含む folder tree を page traversal し、`nemaki_folder` / `nemaki_document` を bulk upsert するところまで実装済み
+- repository / root folder / child folder / child document の containment relationship を作成するところまで実装済み
+- custom document type については `nemaki_document_has_type_definition` relationship を作成するところまで実装済み
+- type definition 一覧から `nemaki_type_definition` を bulk upsert するところまで実装済み
+- full sync 完了時に `type-definition-snapshot` cursor を seed するところまで実装済み
 - archive 一覧から archived document / `nemaki_archive` を bulk upsert するところまで実装済み
-- type definition の full sync は未着手
+- full sync 完了時に `archive-snapshot` cursor を seed するところまで実装済み
+- archive full sync では `nemaki_document_has_archive` relationship も作成するところまで実装済み
 
 ### 14.2 incremental sync
 
@@ -607,6 +619,10 @@ schema bootstrap の扱い:
 2026-03-20 実装状況:
 
 - `CREATED` / `UPDATED` / `SECURITY` 相当の change は objectId から最新 folder / document を再取得して upsert するところまで実装済み
+- folder / document upsert 時に containment relationship も更新するところまで実装済み
+- custom document type については `nemaki_document_has_type_definition` relationship も更新するところまで実装済み
+- type definition は `type-definition-snapshot` cursor を持ち、snapshot 変化時のみ `nemaki_type_definition` の upsert と欠損 type definition の delete を行うところまで実装済み
+- archive は `archive-snapshot` cursor を持ち、snapshot 変化時のみ archived document / `nemaki_archive` の upsert と restore-destroy に伴う再整合を行うところまで実装済み
 - `DELETED` は tombstone として stage され、grace period 後は `DELETE_RESOLUTION` job で解決する
 - `DELETE_RESOLUTION` は live object 復活時は tombstone を削除し、document では archive 検出時に `ARCHIVED` へ遷移させ、live/archive 不在時は Purview delete API を呼ぶ
 - dead-letter 専用 queue は未実装
@@ -620,19 +636,17 @@ change log では完全でない対象のために補助ジョブを持つ。
 - cloud metadata 再同期
 - relationship 再同期
 
-次の実装 slice:
-
-- `ARCHIVED` tombstone を入力として `nemaki_document` の lifecycle を `ARCHIVED` に更新する
-- `nemaki_archive` entity を upsert する
-- 成功した tombstone を削除する
-- `nemaki_document_has_archive` relationship は後続 slice に分離する
-
 2026-03-20 実装状況:
 
+- `TYPE_RECONCILIATION` job を追加済み
+- repository 単位で type definition 一覧を再同期し、`nemaki_type_definition` を bulk upsert するところまで実装済み
+- full sync / `TYPE_RECONCILIATION` 完了時は type definition snapshot cursor を seed するところまで実装済み
 - `ARCHIVE_RECONCILIATION` job を追加済み
 - `ARCHIVED` tombstone から archived document と `nemaki_archive` を bulk upsert するところまで実装済み
+- `ARCHIVED` tombstone から `nemaki_document_has_archive` relationship も再作成するところまで実装済み
+- full sync / `ARCHIVE_RECONCILIATION` 完了時は archive snapshot cursor を seed するところまで実装済み
 - live object が戻っていた場合は tombstone を削除して処理を打ち切る
-- relationship 作成と archive cursor 管理は未実装
+- cloud metadata / containment relationship 専用 reconciliation / cloud metadata 専用 cursor 管理は未実装
 
 ### 14.4 optional webhook assist
 
@@ -927,9 +941,8 @@ dead-letter 方針:
 
 2026-03-20 状態:
 
-- 一部完了
-- 完了済み: type bootstrap, `nemaki_repository` / `nemaki_folder` / `nemaki_document` を含む schema 適用, repository / folder / document / archive full sync, state overview
-- 未完了: type definition 同期
+- 完了
+- 完了済み: type bootstrap, `nemaki_repository` / `nemaki_folder` / `nemaki_document` / `nemaki_type_definition` を含む schema 適用, repository / folder / document / type definition / archive full sync, state overview
 
 ### Phase 3: incremental sync
 
@@ -942,12 +955,13 @@ dead-letter 方針:
 2026-03-20 状態:
 
 - 進行中
-- 完了済み: change log polling, change token 保存, CREATED / UPDATED / SECURITY の document upsert, tombstone stage, `DELETE_RESOLUTION`, archive / purge 判定, delete API 呼び出し, `ARCHIVE_RECONCILIATION` による archived document / archive upsert
-- 未完了: dead-letter 基盤, relationship 作成, archive / type / cloud metadata の補助 reconciliation の残り
+- 完了済み: change log polling, change token 保存, CREATED / UPDATED / SECURITY の document upsert, containment relationship 更新, `nemaki_document_has_type_definition` relationship 更新, type definition snapshot cursor, snapshot 変化時の `nemaki_type_definition` upsert / delete, archive snapshot cursor, snapshot 変化時の archived document / `nemaki_archive` upsert / restore-destroy 再整合, tombstone stage, `DELETE_RESOLUTION`, archive / purge 判定, delete API 呼び出し, `ARCHIVE_RECONCILIATION` による archived document / archive upsert
+- 未完了: dead-letter 基盤, cloud metadata の補助 reconciliation
 
 直近の次作業:
 
-- `ARCHIVE_RECONCILIATION` job を追加し、`ARCHIVED` tombstone を実資産へ反映する
+- cloud metadata の cursor / qualifiedName / reconciliation 設計
+- containment relationship 専用 reconciliation の要否整理
 
 ### Phase 4: supplemental reconciliation
 

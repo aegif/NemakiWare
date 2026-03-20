@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -24,6 +25,7 @@ public class PurviewFullSyncServiceImplTest {
     private PurviewCursorStateService cursorStateService;
     private PurviewDocumentPublishService documentPublishService;
     private PurviewArchivePublishService archivePublishService;
+    private PurviewTypeDefinitionPublishService typeDefinitionPublishService;
     private ContentDaoService contentDaoService;
     private PurviewFullSyncServiceImpl service;
 
@@ -35,12 +37,16 @@ public class PurviewFullSyncServiceImplTest {
         cursorStateService = mock(PurviewCursorStateService.class);
         documentPublishService = mock(PurviewDocumentPublishService.class);
         archivePublishService = mock(PurviewArchivePublishService.class);
+        typeDefinitionPublishService = mock(PurviewTypeDefinitionPublishService.class);
         contentDaoService = mock(ContentDaoService.class);
         when(jobStateService.saveJobState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(cursorStateService.saveCursorState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(lockStateService.tryAcquireRepositoryLock(any(), any(), any(), any())).thenReturn(true);
         when(documentPublishService.publishRepositoryHierarchy(any())).thenReturn(0);
         when(archivePublishService.publishRepositoryArchives(any())).thenReturn(0);
+        when(archivePublishService.buildRepositoryArchiveSnapshot(any())).thenReturn("");
+        when(typeDefinitionPublishService.publishRepositoryTypeDefinitions(any())).thenReturn(0);
+        when(typeDefinitionPublishService.buildRepositoryTypeDefinitionSnapshot(any())).thenReturn("");
         service = new PurviewFullSyncServiceImpl(
                 schemaPlannerService,
                 jobStateService,
@@ -48,6 +54,7 @@ public class PurviewFullSyncServiceImplTest {
                 cursorStateService,
                 documentPublishService,
                 archivePublishService,
+                typeDefinitionPublishService,
                 contentDaoService);
     }
 
@@ -84,6 +91,9 @@ public class PurviewFullSyncServiceImplTest {
                 java.util.List.of(), java.util.List.of(), java.util.List.of()));
         when(documentPublishService.publishRepositoryHierarchy("bedroom")).thenReturn(5);
         when(archivePublishService.publishRepositoryArchives("bedroom")).thenReturn(2);
+        when(archivePublishService.buildRepositoryArchiveSnapshot("bedroom")).thenReturn("archive-snapshot-1");
+        when(typeDefinitionPublishService.publishRepositoryTypeDefinitions("bedroom")).thenReturn(3);
+        when(typeDefinitionPublishService.buildRepositoryTypeDefinitionSnapshot("bedroom")).thenReturn("snapshot-1");
         when(contentDaoService.getLatestChange("bedroom")).thenReturn(createChange("120"));
 
         PurviewJobState result = service.startFullSync("bedroom", "admin");
@@ -92,12 +102,15 @@ public class PurviewFullSyncServiceImplTest {
         assertEquals("COMPLETED", result.getStatus());
         assertEquals("FULL_SYNC", result.getJobKind());
         assertEquals("bedroom", result.getRepositoryId());
-        assertEquals(7, result.getProcessedCount());
+        assertEquals(10, result.getProcessedCount());
         assertEquals("120", result.getCheckpoint());
         verify(documentPublishService).publishRepositoryHierarchy("bedroom");
         verify(archivePublishService).publishRepositoryArchives("bedroom");
+        verify(archivePublishService).buildRepositoryArchiveSnapshot("bedroom");
+        verify(typeDefinitionPublishService).publishRepositoryTypeDefinitions("bedroom");
+        verify(typeDefinitionPublishService).buildRepositoryTypeDefinitionSnapshot("bedroom");
         verify(jobStateService).saveJobState(any());
-        verify(cursorStateService).saveCursorState(any());
+        verify(cursorStateService, times(3)).saveCursorState(any());
         verify(lockStateService).releaseRepositoryLock("bedroom", "FULL_SYNC", result.getJobId());
     }
 
@@ -112,7 +125,7 @@ public class PurviewFullSyncServiceImplTest {
 
         assertEquals("COMPLETED", result.getStatus());
         assertEquals("", result.getCheckpoint());
-        verify(cursorStateService).saveCursorState(any());
+        verify(cursorStateService, times(3)).saveCursorState(any());
     }
 
     @Test

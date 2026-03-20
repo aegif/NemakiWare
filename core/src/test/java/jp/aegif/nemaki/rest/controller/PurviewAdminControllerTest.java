@@ -38,6 +38,7 @@ import jp.aegif.nemaki.rest.purview.PurviewSchemaState;
 import jp.aegif.nemaki.rest.purview.PurviewStateOverview;
 import jp.aegif.nemaki.rest.purview.PurviewStateOverviewService;
 import jp.aegif.nemaki.rest.purview.PurviewTombstoneState;
+import jp.aegif.nemaki.rest.purview.PurviewTypeReconciliationService;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 
 public class PurviewAdminControllerTest {
@@ -48,6 +49,7 @@ public class PurviewAdminControllerTest {
     private PurviewFullSyncService fullSyncService;
     private PurviewIncrementalSyncService incrementalSyncService;
     private PurviewArchiveReconciliationService archiveReconciliationService;
+    private PurviewTypeReconciliationService typeReconciliationService;
     private PurviewDeleteResolutionService deleteResolutionService;
     private PurviewJobStateService jobStateService;
     private PurviewCursorStateService cursorStateService;
@@ -62,13 +64,15 @@ public class PurviewAdminControllerTest {
         fullSyncService = mock(PurviewFullSyncService.class);
         incrementalSyncService = mock(PurviewIncrementalSyncService.class);
         archiveReconciliationService = mock(PurviewArchiveReconciliationService.class);
+        typeReconciliationService = mock(PurviewTypeReconciliationService.class);
         deleteResolutionService = mock(PurviewDeleteResolutionService.class);
         jobStateService = mock(PurviewJobStateService.class);
         cursorStateService = mock(PurviewCursorStateService.class);
         stateOverviewService = mock(PurviewStateOverviewService.class);
         controller = new PurviewAdminController(
                 connectionService, schemaPlannerService, schemaBootstrapService, fullSyncService,
-                incrementalSyncService, archiveReconciliationService, deleteResolutionService, jobStateService,
+                incrementalSyncService, archiveReconciliationService, typeReconciliationService,
+                deleteResolutionService, jobStateService,
                 cursorStateService, stateOverviewService);
     }
 
@@ -273,6 +277,28 @@ public class PurviewAdminControllerTest {
         assertEquals("job-002a", response.getBody().get("jobId"));
         assertEquals("ARCHIVE_RECONCILIATION", response.getBody().get("jobKind"));
         verify(archiveReconciliationService).startArchiveReconciliation("bedroom", "admin");
+    }
+
+    @Test
+    public void testStartTypeReconciliationReturnsJobStateForAdmin() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(callContext.getUsername()).thenReturn("admin");
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        PurviewJobState jobState = new PurviewJobState(
+                "job-002b", "TYPE_RECONCILIATION", "bedroom", "COMPLETED",
+                "2026-03-20T03:06:00Z", "2026-03-20T03:06:01Z", 4, 0, "", "");
+        when(typeReconciliationService.startTypeReconciliation("bedroom", "admin")).thenReturn(jobState);
+
+        ResponseEntity<Map<String, Object>> response = controller.startTypeReconciliation("bedroom");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("job-002b", response.getBody().get("jobId"));
+        assertEquals("TYPE_RECONCILIATION", response.getBody().get("jobKind"));
+        verify(typeReconciliationService).startTypeReconciliation("bedroom", "admin");
     }
 
     @Test

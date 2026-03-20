@@ -23,6 +23,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
     private static final String TOKEN_URL_TEMPLATE = "https://login.microsoftonline.com/%s/oauth2/v2.0/token";
     private static final String ENTITY_BULK_PATH = "entity/bulk";
     private static final String ENTITY_UNIQUE_ATTRIBUTE_PATH = "entity/uniqueAttribute/type";
+    private static final String RELATIONSHIP_PATH = "relationship";
     private static final String DATAMAP_API_VERSION = "2023-09-01";
     private static final int MAX_BODY_EXCERPT_LENGTH = 200;
 
@@ -89,6 +90,42 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
 
         return PurviewEntityPublishResult.failure(
                 "Purview entity delete returned HTTP " + response.statusCode() + formatBodyExcerpt(response.body()));
+    }
+
+    @Override
+    public PurviewEntityPublishResult createRelationship(
+            PurviewConnectionRequest request,
+            Map<String, Object> payload) throws PurviewClientException {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(request.getConnectTimeoutMs()))
+                .build();
+
+        String accessToken = fetchAccessToken(httpClient, request);
+        String requestBody;
+        try {
+            requestBody = objectMapper.writeValueAsString(payload);
+        } catch (IOException e) {
+            throw new PurviewClientException("Failed to serialize Purview relationship payload", e);
+        }
+
+        HttpRequest relationshipRequest = HttpRequest.newBuilder(buildRelationshipUri(request))
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofMillis(request.getReadTimeoutMs()))
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                .build();
+
+        HttpResponse<String> response = send(httpClient, relationshipRequest);
+        if (response.statusCode() == 409) {
+            return PurviewEntityPublishResult.success(1, "relationship already exists");
+        }
+        if (response.statusCode() >= 200 && response.statusCode() < 300) {
+            return PurviewEntityPublishResult.success(1, "relationship created");
+        }
+
+        return PurviewEntityPublishResult.failure(
+                "Purview relationship create returned HTTP " + response.statusCode() + formatBodyExcerpt(response.body()));
     }
 
     private int countEntities(Map<String, Object> payload) {
@@ -165,6 +202,15 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
                 + "?attr:" + attributeName + "=" + urlEncode(attributeValue);
         if (trimSlashes(request.getAtlasBasePath()).startsWith("datamap/")) {
             uri = uri + "&api-version=" + DATAMAP_API_VERSION;
+        }
+        return URI.create(uri);
+    }
+
+    private URI buildRelationshipUri(PurviewConnectionRequest request) {
+        String uri = trimTrailingSlash(request.getEndpoint()) + "/"
+                + trimSlashes(request.getAtlasBasePath()) + "/" + RELATIONSHIP_PATH;
+        if (trimSlashes(request.getAtlasBasePath()).startsWith("datamap/")) {
+            uri = uri + "?api-version=" + DATAMAP_API_VERSION;
         }
         return URI.create(uri);
     }

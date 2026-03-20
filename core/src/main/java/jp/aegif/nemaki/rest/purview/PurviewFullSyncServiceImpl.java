@@ -15,6 +15,10 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
     private static final String JOB_KIND = "FULL_SYNC";
     private static final String STREAM_KIND = "content-change-log";
     private static final String CURSOR_KIND = "changeToken";
+    private static final String ARCHIVE_STREAM_KIND = "archive-snapshot";
+    private static final String ARCHIVE_CURSOR_KIND = "snapshot";
+    private static final String TYPE_DEFINITION_STREAM_KIND = "type-definition-snapshot";
+    private static final String TYPE_DEFINITION_CURSOR_KIND = "snapshot";
 
     private final PurviewSchemaPlannerService schemaPlannerService;
     private final PurviewJobStateService jobStateService;
@@ -22,6 +26,7 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
     private final PurviewCursorStateService cursorStateService;
     private final PurviewDocumentPublishService documentPublishService;
     private final PurviewArchivePublishService archivePublishService;
+    private final PurviewTypeDefinitionPublishService typeDefinitionPublishService;
     private final ContentDaoService contentDaoService;
 
     public PurviewFullSyncServiceImpl(
@@ -31,6 +36,7 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
             PurviewCursorStateService cursorStateService,
             PurviewDocumentPublishService documentPublishService,
             PurviewArchivePublishService archivePublishService,
+            PurviewTypeDefinitionPublishService typeDefinitionPublishService,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService) {
         this.schemaPlannerService = schemaPlannerService;
         this.jobStateService = jobStateService;
@@ -38,6 +44,7 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
         this.cursorStateService = cursorStateService;
         this.documentPublishService = documentPublishService;
         this.archivePublishService = archivePublishService;
+        this.typeDefinitionPublishService = typeDefinitionPublishService;
         this.contentDaoService = contentDaoService;
     }
 
@@ -78,8 +85,11 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
             }
 
             try {
-                int processedCount = documentPublishService.publishRepositoryHierarchy(repositoryId)
+                int processedCount = typeDefinitionPublishService.publishRepositoryTypeDefinitions(repositoryId)
+                        + documentPublishService.publishRepositoryHierarchy(repositoryId)
                         + archivePublishService.publishRepositoryArchives(repositoryId);
+                seedTypeDefinitionCursor(repositoryId, now);
+                seedArchiveCursor(repositoryId, now);
                 String checkpoint = seedCursorFromLatestChange(repositoryId, now);
                 PurviewJobState completedJob = new PurviewJobState(
                         jobId,
@@ -131,6 +141,64 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
                 0,
                 currentCursorState.getDeadLetterCount()));
         return checkpoint;
+    }
+
+    private void seedTypeDefinitionCursor(String repositoryId, String now) {
+        String snapshot = typeDefinitionPublishService.buildRepositoryTypeDefinitionSnapshot(repositoryId);
+        PurviewCursorState currentCursorState = cursorStateService.getCursorState(repositoryId, TYPE_DEFINITION_STREAM_KIND);
+        if (currentCursorState == null) {
+            currentCursorState = new PurviewCursorState(
+                    repositoryId,
+                    TYPE_DEFINITION_STREAM_KIND,
+                    "",
+                    TYPE_DEFINITION_CURSOR_KIND,
+                    "",
+                    "",
+                    "",
+                    "",
+                    0,
+                    0);
+        }
+        cursorStateService.saveCursorState(new PurviewCursorState(
+                repositoryId,
+                TYPE_DEFINITION_STREAM_KIND,
+                snapshot,
+                TYPE_DEFINITION_CURSOR_KIND,
+                now,
+                now,
+                "",
+                "",
+                0,
+                currentCursorState.getDeadLetterCount()));
+    }
+
+    private void seedArchiveCursor(String repositoryId, String now) {
+        String snapshot = archivePublishService.buildRepositoryArchiveSnapshot(repositoryId);
+        PurviewCursorState currentCursorState = cursorStateService.getCursorState(repositoryId, ARCHIVE_STREAM_KIND);
+        if (currentCursorState == null) {
+            currentCursorState = new PurviewCursorState(
+                    repositoryId,
+                    ARCHIVE_STREAM_KIND,
+                    "",
+                    ARCHIVE_CURSOR_KIND,
+                    "",
+                    "",
+                    "",
+                    "",
+                    0,
+                    0);
+        }
+        cursorStateService.saveCursorState(new PurviewCursorState(
+                repositoryId,
+                ARCHIVE_STREAM_KIND,
+                snapshot,
+                ARCHIVE_CURSOR_KIND,
+                now,
+                now,
+                "",
+                "",
+                0,
+                currentCursorState.getDeadLetterCount()));
     }
 
     private String resolveChangeToken(Change latestChange) {

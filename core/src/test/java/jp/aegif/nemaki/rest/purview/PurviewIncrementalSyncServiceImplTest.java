@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,6 +35,8 @@ public class PurviewIncrementalSyncServiceImplTest {
     private PurviewCursorStateService cursorStateService;
     private PurviewTombstoneStateService tombstoneStateService;
     private PurviewDocumentPublishService documentPublishService;
+    private PurviewArchivePublishService archivePublishService;
+    private PurviewTypeDefinitionPublishService typeDefinitionPublishService;
     private PurviewConfig purviewConfig;
     private ContentDaoService contentDaoService;
     private PurviewIncrementalSyncServiceImpl service;
@@ -46,6 +49,8 @@ public class PurviewIncrementalSyncServiceImplTest {
         cursorStateService = mock(PurviewCursorStateService.class);
         tombstoneStateService = mock(PurviewTombstoneStateService.class);
         documentPublishService = mock(PurviewDocumentPublishService.class);
+        archivePublishService = mock(PurviewArchivePublishService.class);
+        typeDefinitionPublishService = mock(PurviewTypeDefinitionPublishService.class);
         purviewConfig = mock(PurviewConfig.class);
         contentDaoService = mock(ContentDaoService.class);
 
@@ -54,9 +59,17 @@ public class PurviewIncrementalSyncServiceImplTest {
         when(tombstoneStateService.saveTombstoneState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(lockStateService.tryAcquireRepositoryLock(any(), any(), any(), any())).thenReturn(true);
         when(documentPublishService.upsertContents(any(), anyList())).thenAnswer(invocation -> invocation.getArgument(1, List.class).size());
+        when(archivePublishService.syncRepositoryArchivesIfChanged(any(), any()))
+                .thenReturn(new PurviewArchiveSyncResult("", false, 0, 0));
+        when(typeDefinitionPublishService.syncRepositoryTypeDefinitionsIfChanged(any(), any()))
+                .thenReturn(new PurviewTypeDefinitionSyncResult("", false, 0, 0));
         when(purviewConfig.getDeleteResolutionDelayMs()).thenReturn(5000L);
         when(cursorStateService.getCursorState("bedroom", "content-change-log")).thenReturn(new PurviewCursorState(
                 "bedroom", "content-change-log", "", "changeToken", "", "", "", "", 0, 0));
+        when(cursorStateService.getCursorState("bedroom", "archive-snapshot")).thenReturn(new PurviewCursorState(
+                "bedroom", "archive-snapshot", "", "snapshot", "", "", "", "", 0, 0));
+        when(cursorStateService.getCursorState("bedroom", "type-definition-snapshot")).thenReturn(new PurviewCursorState(
+                "bedroom", "type-definition-snapshot", "", "snapshot", "", "", "", "", 0, 0));
 
         service = new PurviewIncrementalSyncServiceImpl(
                 purviewConfig,
@@ -66,6 +79,8 @@ public class PurviewIncrementalSyncServiceImplTest {
                 cursorStateService,
                 tombstoneStateService,
                 documentPublishService,
+                archivePublishService,
+                typeDefinitionPublishService,
                 contentDaoService);
     }
 
@@ -120,17 +135,65 @@ public class PurviewIncrementalSyncServiceImplTest {
         assertEquals(3, result.getProcessedCount());
         assertEquals("103", result.getCheckpoint());
         verify(contentDaoService).getLatestChanges("bedroom", "100", 101);
-        verify(cursorStateService).saveCursorState(cursorCaptor.capture());
-        assertEquals("103", cursorCaptor.getValue().getCursor());
-        assertEquals("", cursorCaptor.getValue().getLastErrorAt());
-        assertEquals("", cursorCaptor.getValue().getLastErrorMessage());
-        assertEquals(0, cursorCaptor.getValue().getConsecutiveFailureCount());
+        verify(cursorStateService, times(3)).saveCursorState(cursorCaptor.capture());
+        PurviewCursorState contentCursorState = cursorCaptor.getAllValues().stream()
+                .filter(state -> "content-change-log".equals(state.getStreamKind()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("103", contentCursorState.getCursor());
+        assertEquals("", contentCursorState.getLastErrorAt());
+        assertEquals("", contentCursorState.getLastErrorMessage());
+        assertEquals(0, contentCursorState.getConsecutiveFailureCount());
         verify(documentPublishService).upsertContents(eq("bedroom"), argThat(contents ->
                 contents.size() == 3
                         && "object-101-folder".equals(contents.get(0).getId())
                         && "object-102".equals(contents.get(1).getId())
                         && "object-103".equals(contents.get(2).getId())));
         verify(lockStateService).releaseRepositoryLock("bedroom", "INCREMENTAL_SYNC", result.getJobId());
+    }
+
+    @Test
+    public void testStartIncrementalSyncSyncsTypeDefinitionsWhenSnapshotChanges() {
+        when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
+                "NemakiWare", "1", "current-hash", "1", "current-hash", false,
+                java.util.List.of(), java.util.List.of(), java.util.List.of()));
+        when(typeDefinitionPublishService.syncRepositoryTypeDefinitionsIfChanged("bedroom", "old-snapshot"))
+                .thenReturn(new PurviewTypeDefinitionSyncResult("new-snapshot", true, 2, 1));
+        when(cursorStateService.getCursorState("bedroom", "type-definition-snapshot")).thenReturn(new PurviewCursorState(
+                "bedroom", "type-definition-snapshot", "old-snapshot", "snapshot",
+                "2026-03-20T01:00:00Z", "2026-03-20T01:00:00Z", "", "", 0, 0));
+
+        PurviewJobState result = service.startIncrementalSync("bedroom", "admin");
+
+        assertEquals("COMPLETED", result.getStatus());
+        assertEquals(3, result.getProcessedCount());
+        verify(typeDefinitionPublishService).syncRepositoryTypeDefinitionsIfChanged("bedroom", "old-snapshot");
+        verify(cursorStateService).saveCursorState(argThat(state ->
+                "type-definition-snapshot".equals(state.getStreamKind())
+                        && "new-snapshot".equals(state.getCursor())
+                        && "snapshot".equals(state.getCursorKind())));
+    }
+
+    @Test
+    public void testStartIncrementalSyncSyncsArchivesWhenSnapshotChanges() {
+        when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
+                "NemakiWare", "1", "current-hash", "1", "current-hash", false,
+                java.util.List.of(), java.util.List.of(), java.util.List.of()));
+        when(archivePublishService.syncRepositoryArchivesIfChanged("bedroom", "archive-old"))
+                .thenReturn(new PurviewArchiveSyncResult("archive-new", true, 2, 1));
+        when(cursorStateService.getCursorState("bedroom", "archive-snapshot")).thenReturn(new PurviewCursorState(
+                "bedroom", "archive-snapshot", "archive-old", "snapshot",
+                "2026-03-20T01:00:00Z", "2026-03-20T01:00:00Z", "", "", 0, 0));
+
+        PurviewJobState result = service.startIncrementalSync("bedroom", "admin");
+
+        assertEquals("COMPLETED", result.getStatus());
+        assertEquals(3, result.getProcessedCount());
+        verify(archivePublishService).syncRepositoryArchivesIfChanged("bedroom", "archive-old");
+        verify(cursorStateService).saveCursorState(argThat(state ->
+                "archive-snapshot".equals(state.getStreamKind())
+                        && "archive-new".equals(state.getCursor())
+                        && "snapshot".equals(state.getCursorKind())));
     }
 
     @Test
@@ -151,13 +214,59 @@ public class PurviewIncrementalSyncServiceImplTest {
         assertTrue(result.getErrorSummary().contains("change log unavailable"));
         assertEquals("100", result.getCheckpoint());
         assertEquals(1, result.getFailedCount());
-        verify(cursorStateService).saveCursorState(cursorCaptor.capture());
-        assertEquals("100", cursorCaptor.getValue().getCursor());
-        assertEquals("2026-03-20T00:55:00Z", cursorCaptor.getValue().getLastSuccessAt());
-        assertTrue(cursorCaptor.getValue().getLastErrorMessage().contains("change log unavailable"));
-        assertEquals(1, cursorCaptor.getValue().getConsecutiveFailureCount());
-        assertEquals(1, cursorCaptor.getValue().getDeadLetterCount());
+        verify(cursorStateService, times(3)).saveCursorState(cursorCaptor.capture());
+        PurviewCursorState contentCursorState = cursorCaptor.getAllValues().stream()
+                .filter(state -> "content-change-log".equals(state.getStreamKind()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("100", contentCursorState.getCursor());
+        assertEquals("2026-03-20T00:55:00Z", contentCursorState.getLastSuccessAt());
+        assertTrue(contentCursorState.getLastErrorMessage().contains("change log unavailable"));
+        assertEquals(1, contentCursorState.getConsecutiveFailureCount());
+        assertEquals(1, contentCursorState.getDeadLetterCount());
         verify(lockStateService).releaseRepositoryLock("bedroom", "INCREMENTAL_SYNC", result.getJobId());
+    }
+
+    @Test
+    public void testStartIncrementalSyncStoresTypeCursorFailureStateWhenTypeSyncFails() {
+        when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
+                "NemakiWare", "1", "current-hash", "1", "current-hash", false,
+                java.util.List.of(), java.util.List.of(), java.util.List.of()));
+        when(cursorStateService.getCursorState("bedroom", "type-definition-snapshot")).thenReturn(new PurviewCursorState(
+                "bedroom", "type-definition-snapshot", "snapshot-1", "snapshot",
+                "2026-03-20T01:00:00Z", "2026-03-20T00:55:00Z", "", "", 0, 0));
+        when(typeDefinitionPublishService.syncRepositoryTypeDefinitionsIfChanged("bedroom", "snapshot-1"))
+                .thenThrow(new IllegalStateException("type sync unavailable"));
+
+        PurviewJobState result = service.startIncrementalSync("bedroom", "admin");
+
+        assertEquals("FAILED", result.getStatus());
+        verify(cursorStateService).saveCursorState(argThat(state ->
+                "type-definition-snapshot".equals(state.getStreamKind())
+                        && "snapshot-1".equals(state.getCursor())
+                        && state.getLastErrorMessage().contains("type sync unavailable")
+                        && state.getConsecutiveFailureCount() == 1));
+    }
+
+    @Test
+    public void testStartIncrementalSyncStoresArchiveCursorFailureStateWhenArchiveSyncFails() {
+        when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
+                "NemakiWare", "1", "current-hash", "1", "current-hash", false,
+                java.util.List.of(), java.util.List.of(), java.util.List.of()));
+        when(cursorStateService.getCursorState("bedroom", "archive-snapshot")).thenReturn(new PurviewCursorState(
+                "bedroom", "archive-snapshot", "archive-1", "snapshot",
+                "2026-03-20T01:00:00Z", "2026-03-20T00:55:00Z", "", "", 0, 0));
+        when(archivePublishService.syncRepositoryArchivesIfChanged("bedroom", "archive-1"))
+                .thenThrow(new IllegalStateException("archive sync unavailable"));
+
+        PurviewJobState result = service.startIncrementalSync("bedroom", "admin");
+
+        assertEquals("FAILED", result.getStatus());
+        verify(cursorStateService).saveCursorState(argThat(state ->
+                "archive-snapshot".equals(state.getStreamKind())
+                        && "archive-1".equals(state.getCursor())
+                        && state.getLastErrorMessage().contains("archive sync unavailable")
+                        && state.getConsecutiveFailureCount() == 1));
     }
 
     @Test

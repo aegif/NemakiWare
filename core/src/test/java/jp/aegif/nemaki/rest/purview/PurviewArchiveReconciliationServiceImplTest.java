@@ -28,9 +28,12 @@ public class PurviewArchiveReconciliationServiceImplTest {
     private PurviewSchemaPlannerService schemaPlannerService;
     private PurviewLockStateService lockStateService;
     private PurviewJobStateService jobStateService;
+    private PurviewCursorStateService cursorStateService;
     private PurviewTombstoneStateService tombstoneStateService;
+    private PurviewArchivePublishService archivePublishService;
     private PurviewEntityPayloadFactory entityPayloadFactory;
     private PurviewEntityRegistryClient entityRegistryClient;
+    private PurviewDocumentArchiveRelationshipService documentArchiveRelationshipService;
     private ContentDaoService contentDaoService;
     private PurviewArchiveReconciliationServiceImpl service;
 
@@ -40,14 +43,19 @@ public class PurviewArchiveReconciliationServiceImplTest {
         schemaPlannerService = mock(PurviewSchemaPlannerService.class);
         lockStateService = mock(PurviewLockStateService.class);
         jobStateService = mock(PurviewJobStateService.class);
+        cursorStateService = mock(PurviewCursorStateService.class);
         tombstoneStateService = mock(PurviewTombstoneStateService.class);
+        archivePublishService = mock(PurviewArchivePublishService.class);
         entityPayloadFactory = new PurviewEntityPayloadFactory();
         entityRegistryClient = mock(PurviewEntityRegistryClient.class);
+        documentArchiveRelationshipService = mock(PurviewDocumentArchiveRelationshipService.class);
         contentDaoService = mock(ContentDaoService.class);
 
         when(jobStateService.saveJobState(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(cursorStateService.saveCursorState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(lockStateService.tryAcquireRepositoryLock(any(), any(), any(), any())).thenReturn(true);
         when(tombstoneStateService.saveTombstoneState(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(archivePublishService.buildRepositoryArchiveSnapshot(any())).thenReturn("");
         when(purviewConfig.getEndpoint()).thenReturn("https://example.purview.azure.com");
         when(purviewConfig.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
         when(purviewConfig.getTenantId()).thenReturn("tenant-id");
@@ -55,16 +63,20 @@ public class PurviewArchiveReconciliationServiceImplTest {
         when(purviewConfig.getClientSecret()).thenReturn("client-secret");
         when(purviewConfig.getConnectTimeoutMs()).thenReturn(5000);
         when(purviewConfig.getReadTimeoutMs()).thenReturn(30000);
+        when(documentArchiveRelationshipService.upsertDocumentArchiveRelationships(any(), any())).thenReturn(0);
 
         service = new PurviewArchiveReconciliationServiceImpl(
                 purviewConfig,
                 schemaPlannerService,
                 lockStateService,
                 jobStateService,
+                cursorStateService,
                 tombstoneStateService,
+                archivePublishService,
                 entityPayloadFactory,
                 entityRegistryClient,
-                contentDaoService);
+                contentDaoService,
+                documentArchiveRelationshipService);
     }
 
     @Test
@@ -114,6 +126,9 @@ public class PurviewArchiveReconciliationServiceImplTest {
                     && entities.stream().anyMatch(entity -> "nemaki_document".equals(entity.get("typeName")))
                     && entities.stream().anyMatch(entity -> "nemaki_archive".equals(entity.get("typeName")));
         }));
+        verify(documentArchiveRelationshipService).upsertDocumentArchiveRelationships("bedroom", List.of(archive));
+        verify(archivePublishService).buildRepositoryArchiveSnapshot("bedroom");
+        verify(cursorStateService).saveCursorState(any());
         verify(tombstoneStateService).deleteTombstoneState("bedroom", "doc-001");
     }
 

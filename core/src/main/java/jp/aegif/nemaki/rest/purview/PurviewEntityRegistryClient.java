@@ -12,4 +12,8 @@ public interface PurviewEntityRegistryClient {
             String typeName,
             String attributeName,
             String attributeValue) throws PurviewClientException;
+
+    PurviewEntityPublishResult createRelationship(
+            PurviewConnectionRequest request,
+            java.util.Map<String, Object> payload) throws PurviewClientException;
 }

@@ -9,11 +9,14 @@ import java.util.Map;
 import java.util.TimeZone;
 
 import org.junit.jupiter.api.Test;
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
+import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.NemakiTypeDefinition;
 
 public class PurviewEntityPayloadFactoryTest {
 
@@ -99,6 +102,146 @@ public class PurviewEntityPayloadFactoryTest {
         assertEquals("ACTIVE", attributes.get("lifecycleState"));
         assertTrue(((Number) attributes.get("createTime")).longValue() > 0);
         assertTrue(((Number) attributes.get("modifiedTime")).longValue() > 0);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildTypeDefinitionEntityMapsQualifiedNameAndTypeAttributes() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        NemakiTypeDefinition typeDefinition = new NemakiTypeDefinition();
+        typeDefinition.setId("typedef-001");
+        typeDefinition.setTypeId("D:custom:report");
+        typeDefinition.setDisplayName("Report");
+        typeDefinition.setDescription("Custom report type");
+        typeDefinition.setQueryName("custom_report");
+        typeDefinition.setBaseId(BaseTypeId.CMIS_DOCUMENT);
+        typeDefinition.setParentId("cmis:document");
+        typeDefinition.setProperties(List.of("prop-1", "prop-2"));
+        typeDefinition.setVersionable(Boolean.TRUE);
+        typeDefinition.setContentStreamAllowed(ContentStreamAllowed.ALLOWED);
+        typeDefinition.setCreator("alice");
+        typeDefinition.setModifier("bob");
+        typeDefinition.setCreated(calendar("2026-03-20T01:00:00Z"));
+        typeDefinition.setModified(calendar("2026-03-20T02:00:00Z"));
+
+        Map<String, Object> entity = factory.buildTypeDefinitionEntity("bedroom", typeDefinition);
+
+        assertEquals("nemaki_type_definition", entity.get("typeName"));
+        Map<String, Object> attributes = (Map<String, Object>) entity.get("attributes");
+        assertEquals("nemaki://bedroom/types/D:custom:report", attributes.get("qualifiedName"));
+        assertEquals("bedroom", attributes.get("repositoryId"));
+        assertEquals("D:custom:report", attributes.get("typeId"));
+        assertEquals("custom_report", attributes.get("queryName"));
+        assertEquals("cmis:document", attributes.get("baseTypeId"));
+        assertEquals("cmis:document", attributes.get("parentTypeId"));
+        assertEquals(2L, ((Number) attributes.get("propertyCount")).longValue());
+        assertEquals(Boolean.TRUE, attributes.get("versionable"));
+        assertEquals("allowed", attributes.get("contentStreamAllowed"));
+        assertEquals("ACTIVE", attributes.get("lifecycleState"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildDocumentTypeRelationshipMapsQualifiedNames() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setObjectType("D:custom:report");
+
+        Map<String, Object> relationship = factory.buildDocumentTypeRelationship("bedroom", document);
+
+        assertEquals("nemaki_document_has_type_definition", relationship.get("typeName"));
+        Map<String, Object> end1 = (Map<String, Object>) relationship.get("end1");
+        Map<String, Object> end2 = (Map<String, Object>) relationship.get("end2");
+        assertEquals("nemaki_document", end1.get("typeName"));
+        assertEquals("nemaki_type_definition", end2.get("typeName"));
+        assertEquals("nemaki://bedroom/objects/doc-001",
+                ((Map<String, Object>) end1.get("uniqueAttributes")).get("qualifiedName"));
+        assertEquals("nemaki://bedroom/types/D:custom:report",
+                ((Map<String, Object>) end2.get("uniqueAttributes")).get("qualifiedName"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildDocumentArchiveRelationshipMapsQualifiedNames() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        Archive archive = new Archive();
+        archive.setId("archive-001");
+        archive.setOriginalId("doc-001");
+
+        Map<String, Object> relationship = factory.buildDocumentArchiveRelationship("bedroom", archive);
+
+        assertEquals("nemaki_document_has_archive", relationship.get("typeName"));
+        Map<String, Object> end1 = (Map<String, Object>) relationship.get("end1");
+        Map<String, Object> end2 = (Map<String, Object>) relationship.get("end2");
+        assertEquals("DataSet", end1.get("typeName"));
+        assertEquals("nemaki_archive", end2.get("typeName"));
+        assertEquals("nemaki://bedroom/objects/doc-001",
+                ((Map<String, Object>) end1.get("uniqueAttributes")).get("qualifiedName"));
+        assertEquals("nemaki://bedroom/archives/archive-001",
+                ((Map<String, Object>) end2.get("uniqueAttributes")).get("qualifiedName"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildRepositoryFolderRelationshipMapsQualifiedNames() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        Folder folder = new Folder();
+        folder.setId("root-001");
+
+        Map<String, Object> relationship = factory.buildRepositoryFolderRelationship("bedroom", folder);
+
+        assertEquals("nemaki_repository_contains_folder", relationship.get("typeName"));
+        Map<String, Object> end1 = (Map<String, Object>) relationship.get("end1");
+        Map<String, Object> end2 = (Map<String, Object>) relationship.get("end2");
+        assertEquals("nemaki_repository", end1.get("typeName"));
+        assertEquals("nemaki_folder", end2.get("typeName"));
+        assertEquals("nemaki://bedroom",
+                ((Map<String, Object>) end1.get("uniqueAttributes")).get("qualifiedName"));
+        assertEquals("nemaki://bedroom/objects/root-001",
+                ((Map<String, Object>) end2.get("uniqueAttributes")).get("qualifiedName"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildFolderFolderRelationshipMapsQualifiedNames() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        Folder folder = new Folder();
+        folder.setId("child-folder-001");
+        folder.setParentId("parent-folder-001");
+
+        Map<String, Object> relationship = factory.buildFolderFolderRelationship("bedroom", folder);
+
+        assertEquals("nemaki_folder_contains_folder", relationship.get("typeName"));
+        Map<String, Object> end1 = (Map<String, Object>) relationship.get("end1");
+        Map<String, Object> end2 = (Map<String, Object>) relationship.get("end2");
+        assertEquals("nemaki_folder", end1.get("typeName"));
+        assertEquals("nemaki_folder", end2.get("typeName"));
+        assertEquals("nemaki://bedroom/objects/parent-folder-001",
+                ((Map<String, Object>) end1.get("uniqueAttributes")).get("qualifiedName"));
+        assertEquals("nemaki://bedroom/objects/child-folder-001",
+                ((Map<String, Object>) end2.get("uniqueAttributes")).get("qualifiedName"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildFolderDocumentRelationshipMapsQualifiedNames() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setParentId("folder-001");
+
+        Map<String, Object> relationship = factory.buildFolderDocumentRelationship("bedroom", document);
+
+        assertEquals("nemaki_folder_contains_document", relationship.get("typeName"));
+        Map<String, Object> end1 = (Map<String, Object>) relationship.get("end1");
+        Map<String, Object> end2 = (Map<String, Object>) relationship.get("end2");
+        assertEquals("nemaki_folder", end1.get("typeName"));
+        assertEquals("nemaki_document", end2.get("typeName"));
+        assertEquals("nemaki://bedroom/objects/folder-001",
+                ((Map<String, Object>) end1.get("uniqueAttributes")).get("qualifiedName"));
+        assertEquals("nemaki://bedroom/objects/doc-001",
+                ((Map<String, Object>) end2.get("uniqueAttributes")).get("qualifiedName"));
     }
 
     @Test

@@ -22,6 +22,10 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
     private static final String JOB_KIND = "INCREMENTAL_SYNC";
     private static final String STREAM_KIND = "content-change-log";
     private static final String CURSOR_KIND = "changeToken";
+    private static final String ARCHIVE_STREAM_KIND = "archive-snapshot";
+    private static final String ARCHIVE_CURSOR_KIND = "snapshot";
+    private static final String TYPE_DEFINITION_STREAM_KIND = "type-definition-snapshot";
+    private static final String TYPE_DEFINITION_CURSOR_KIND = "snapshot";
     private static final int CHANGE_LOG_PAGE_SIZE = 100;
     private static final String TOMBSTONE_STATUS_PENDING = "PENDING";
     private static final String PURVIEW_DOCUMENT_TYPE_NAME = "nemaki_document";
@@ -34,6 +38,8 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
     private final PurviewCursorStateService cursorStateService;
     private final PurviewTombstoneStateService tombstoneStateService;
     private final PurviewDocumentPublishService documentPublishService;
+    private final PurviewArchivePublishService archivePublishService;
+    private final PurviewTypeDefinitionPublishService typeDefinitionPublishService;
     private final ContentDaoService contentDaoService;
 
     public PurviewIncrementalSyncServiceImpl(
@@ -44,6 +50,8 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
             PurviewCursorStateService cursorStateService,
             PurviewTombstoneStateService tombstoneStateService,
             PurviewDocumentPublishService documentPublishService,
+            PurviewArchivePublishService archivePublishService,
+            PurviewTypeDefinitionPublishService typeDefinitionPublishService,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService) {
         this.purviewConfig = purviewConfig;
         this.schemaPlannerService = schemaPlannerService;
@@ -52,6 +60,8 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
         this.cursorStateService = cursorStateService;
         this.tombstoneStateService = tombstoneStateService;
         this.documentPublishService = documentPublishService;
+        this.archivePublishService = archivePublishService;
+        this.typeDefinitionPublishService = typeDefinitionPublishService;
         this.contentDaoService = contentDaoService;
     }
 
@@ -91,13 +101,36 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                 return jobStateService.saveJobState(failedJob);
             }
 
-            PurviewCursorState currentCursorState = cursorStateService.getCursorState(repositoryId, STREAM_KIND);
+            PurviewCursorState currentCursorState = getCursorStateOrDefault(
+                    repositoryId,
+                    STREAM_KIND,
+                    CURSOR_KIND);
+            PurviewCursorState currentTypeDefinitionCursorState = getCursorStateOrDefault(
+                    repositoryId,
+                    TYPE_DEFINITION_STREAM_KIND,
+                    TYPE_DEFINITION_CURSOR_KIND);
+            PurviewCursorState currentArchiveCursorState = getCursorStateOrDefault(
+                    repositoryId,
+                    ARCHIVE_STREAM_KIND,
+                    ARCHIVE_CURSOR_KIND);
             try {
                 List<Change> changes = loadChanges(repositoryId, currentCursorState);
                 processChanges(repositoryId, changes);
+                PurviewArchiveSyncResult archiveSyncResult = archivePublishService
+                        .syncRepositoryArchivesIfChanged(repositoryId, currentArchiveCursorState.getCursor());
+                PurviewTypeDefinitionSyncResult typeDefinitionSyncResult = typeDefinitionPublishService
+                        .syncRepositoryTypeDefinitionsIfChanged(repositoryId, currentTypeDefinitionCursorState.getCursor());
                 String nextCursor = resolveNextCursor(currentCursorState.getCursor(), changes);
 
-                cursorStateService.saveCursorState(buildSuccessCursorState(repositoryId, currentCursorState, nextCursor, now));
+                cursorStateService.saveCursorState(buildSuccessCursorState(currentCursorState, nextCursor, now));
+                cursorStateService.saveCursorState(buildSuccessCursorState(
+                        currentArchiveCursorState,
+                        archiveSyncResult.getSnapshot(),
+                        now));
+                cursorStateService.saveCursorState(buildSuccessCursorState(
+                        currentTypeDefinitionCursorState,
+                        typeDefinitionSyncResult.getSnapshot(),
+                        now));
 
                 PurviewJobState completedJob = new PurviewJobState(
                         jobId,
@@ -106,7 +139,7 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                         "COMPLETED",
                         now,
                         now,
-                        changes.size(),
+                        changes.size() + archiveSyncResult.getProcessedCount() + typeDefinitionSyncResult.getProcessedCount(),
                         0,
                         nextCursor,
                         "");
@@ -114,9 +147,13 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
             } catch (RuntimeException e) {
                 String errorSummary = buildErrorSummary(e);
                 String checkpoint = currentCursorState.getCursor();
+                cursorStateService.saveCursorState(buildFailureCursorState(currentCursorState, now, errorSummary));
                 cursorStateService.saveCursorState(buildFailureCursorState(
-                        repositoryId,
-                        currentCursorState,
+                        currentArchiveCursorState,
+                        now,
+                        errorSummary));
+                cursorStateService.saveCursorState(buildFailureCursorState(
+                        currentTypeDefinitionCursorState,
                         now,
                         errorSummary));
 
@@ -249,14 +286,21 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
         return currentCursor == null ? "" : currentCursor;
     }
 
+    private PurviewCursorState getCursorStateOrDefault(String repositoryId, String streamKind, String cursorKind) {
+        PurviewCursorState currentCursorState = cursorStateService.getCursorState(repositoryId, streamKind);
+        if (currentCursorState != null) {
+            return currentCursorState;
+        }
+        return new PurviewCursorState(repositoryId, streamKind, "", cursorKind, "", "", "", "", 0, 0);
+    }
+
     private PurviewCursorState buildSuccessCursorState(
-            String repositoryId,
             PurviewCursorState currentCursorState,
             String nextCursor,
             String now) {
         return new PurviewCursorState(
-                repositoryId,
-                STREAM_KIND,
+                currentCursorState.getRepositoryId(),
+                currentCursorState.getStreamKind(),
                 nextCursor,
                 resolveCursorKind(currentCursorState),
                 now,
@@ -268,13 +312,12 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
     }
 
     private PurviewCursorState buildFailureCursorState(
-            String repositoryId,
             PurviewCursorState currentCursorState,
             String now,
             String errorSummary) {
         return new PurviewCursorState(
-                repositoryId,
-                STREAM_KIND,
+                currentCursorState.getRepositoryId(),
+                currentCursorState.getStreamKind(),
                 currentCursorState.getCursor(),
                 resolveCursorKind(currentCursorState),
                 now,
@@ -287,6 +330,12 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
 
     private String resolveCursorKind(PurviewCursorState currentCursorState) {
         if (currentCursorState.getCursorKind() == null || currentCursorState.getCursorKind().isBlank()) {
+            if (ARCHIVE_STREAM_KIND.equals(currentCursorState.getStreamKind())) {
+                return ARCHIVE_CURSOR_KIND;
+            }
+            if (TYPE_DEFINITION_STREAM_KIND.equals(currentCursorState.getStreamKind())) {
+                return TYPE_DEFINITION_CURSOR_KIND;
+            }
             return CURSOR_KIND;
         }
         return currentCursorState.getCursorKind();

@@ -10,6 +10,7 @@ import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.NemakiTypeDefinition;
 
 @Component
 public class PurviewEntityPayloadFactory {
@@ -17,7 +18,9 @@ public class PurviewEntityPayloadFactory {
     private static final String REPOSITORY_TYPE_NAME = "nemaki_repository";
     private static final String FOLDER_TYPE_NAME = "nemaki_folder";
     private static final String DOCUMENT_TYPE_NAME = "nemaki_document";
+    private static final String TYPE_DEFINITION_TYPE_NAME = "nemaki_type_definition";
     private static final String ARCHIVE_TYPE_NAME = "nemaki_archive";
+    private static final String DOCUMENT_HAS_TYPE_DEFINITION_RELATIONSHIP = "nemaki_document_has_type_definition";
     private static final String LIFECYCLE_ACTIVE = "ACTIVE";
     private static final String LIFECYCLE_ARCHIVED = "ARCHIVED";
 
@@ -112,6 +115,100 @@ public class PurviewEntityPayloadFactory {
         return entity;
     }
 
+    public Map<String, Object> buildTypeDefinitionEntity(String repositoryId, NemakiTypeDefinition typeDefinition) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildTypeDefinitionQualifiedName(repositoryId, typeDefinition.getTypeId()));
+        attributes.put("name", firstNonBlank(typeDefinition.getDisplayName(), typeDefinition.getTypeId()));
+        attributes.put("description", nullIfBlank(typeDefinition.getDescription()));
+        attributes.put("owner", firstNonBlank(typeDefinition.getCreator(), typeDefinition.getModifier(), "system"));
+        attributes.put("createTime", toEpochMillis(typeDefinition.getCreated()));
+        attributes.put("modifiedTime", toEpochMillis(typeDefinition.getModified()));
+        attributes.put("repositoryId", repositoryId);
+        attributes.put("typeId", nullIfBlank(typeDefinition.getTypeId()));
+        attributes.put("queryName", nullIfBlank(typeDefinition.getQueryName()));
+        attributes.put("baseTypeId", typeDefinition.getBaseId() == null ? null : typeDefinition.getBaseId().value());
+        attributes.put("parentTypeId", nullIfBlank(typeDefinition.getParentId()));
+        attributes.put("propertyCount", typeDefinition.getProperties() == null ? 0L : (long) typeDefinition.getProperties().size());
+        attributes.put("versionable", typeDefinition.isVersionable());
+        attributes.put("contentStreamAllowed",
+                typeDefinition.getContentStreamAllowed() == null ? null : typeDefinition.getContentStreamAllowed().value());
+        attributes.put("lifecycleState", LIFECYCLE_ACTIVE);
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", TYPE_DEFINITION_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(typeDefinition.getCreator(), "system"));
+        entity.put("updatedBy", firstNonBlank(typeDefinition.getModifier(), typeDefinition.getCreator(), "system"));
+        entity.put("version", 0);
+        return entity;
+    }
+
+    public Map<String, Object> buildDocumentTypeRelationship(String repositoryId, Content content) {
+        Map<String, Object> relationship = new LinkedHashMap<>();
+        relationship.put("typeName", DOCUMENT_HAS_TYPE_DEFINITION_RELATIONSHIP);
+        relationship.put("end1", relationshipEnd(
+                DOCUMENT_TYPE_NAME,
+                buildObjectQualifiedName(repositoryId, content.getId())));
+        relationship.put("end2", relationshipEnd(
+                TYPE_DEFINITION_TYPE_NAME,
+                buildTypeDefinitionQualifiedName(repositoryId, content.getObjectType())));
+        relationship.put("attributes", Map.of());
+        return relationship;
+    }
+
+    public Map<String, Object> buildDocumentArchiveRelationship(String repositoryId, Archive archive) {
+        Map<String, Object> relationship = new LinkedHashMap<>();
+        relationship.put("typeName", "nemaki_document_has_archive");
+        relationship.put("end1", relationshipEnd(
+                "DataSet",
+                buildObjectQualifiedName(repositoryId, archive.getOriginalId())));
+        relationship.put("end2", relationshipEnd(
+                ARCHIVE_TYPE_NAME,
+                buildArchiveQualifiedName(repositoryId, archive.getId())));
+        relationship.put("attributes", Map.of());
+        return relationship;
+    }
+
+    public Map<String, Object> buildRepositoryFolderRelationship(String repositoryId, Content folder) {
+        Map<String, Object> relationship = new LinkedHashMap<>();
+        relationship.put("typeName", "nemaki_repository_contains_folder");
+        relationship.put("end1", relationshipEnd(
+                REPOSITORY_TYPE_NAME,
+                buildRepositoryQualifiedName(repositoryId)));
+        relationship.put("end2", relationshipEnd(
+                FOLDER_TYPE_NAME,
+                buildObjectQualifiedName(repositoryId, folder.getId())));
+        relationship.put("attributes", Map.of());
+        return relationship;
+    }
+
+    public Map<String, Object> buildFolderFolderRelationship(String repositoryId, Content folder) {
+        Map<String, Object> relationship = new LinkedHashMap<>();
+        relationship.put("typeName", "nemaki_folder_contains_folder");
+        relationship.put("end1", relationshipEnd(
+                FOLDER_TYPE_NAME,
+                buildObjectQualifiedName(repositoryId, folder.getParentId())));
+        relationship.put("end2", relationshipEnd(
+                FOLDER_TYPE_NAME,
+                buildObjectQualifiedName(repositoryId, folder.getId())));
+        relationship.put("attributes", Map.of());
+        return relationship;
+    }
+
+    public Map<String, Object> buildFolderDocumentRelationship(String repositoryId, Content document) {
+        Map<String, Object> relationship = new LinkedHashMap<>();
+        relationship.put("typeName", "nemaki_folder_contains_document");
+        relationship.put("end1", relationshipEnd(
+                FOLDER_TYPE_NAME,
+                buildObjectQualifiedName(repositoryId, document.getParentId())));
+        relationship.put("end2", relationshipEnd(
+                DOCUMENT_TYPE_NAME,
+                buildObjectQualifiedName(repositoryId, document.getId())));
+        relationship.put("attributes", Map.of());
+        return relationship;
+    }
+
     public Map<String, Object> buildArchivedDocumentEntity(String repositoryId, Archive archive) {
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("qualifiedName", buildObjectQualifiedName(repositoryId, archive.getOriginalId()));
@@ -185,8 +282,19 @@ public class PurviewEntityPayloadFactory {
         return "nemaki://" + repositoryId + "/objects/" + objectId;
     }
 
+    private String buildTypeDefinitionQualifiedName(String repositoryId, String typeId) {
+        return "nemaki://" + repositoryId + "/types/" + typeId;
+    }
+
     private String buildArchiveQualifiedName(String repositoryId, String archiveId) {
         return "nemaki://" + repositoryId + "/archives/" + archiveId;
+    }
+
+    private Map<String, Object> relationshipEnd(String typeName, String qualifiedName) {
+        Map<String, Object> end = new LinkedHashMap<>();
+        end.put("typeName", typeName);
+        end.put("uniqueAttributes", Map.of("qualifiedName", qualifiedName));
+        return end;
     }
 
     private long toEpochMillis(java.util.GregorianCalendar value) {

@@ -1,10 +1,13 @@
 package jp.aegif.nemaki.rest.purview;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -25,6 +28,8 @@ public class PurviewArchivePublishServiceImplTest {
     private PurviewConfig config;
     private ContentDaoService contentDaoService;
     private PurviewEntityRegistryClient entityRegistryClient;
+    private PurviewDocumentArchiveRelationshipService documentArchiveRelationshipService;
+    private PurviewDocumentPublishService documentPublishService;
     private PurviewArchivePublishServiceImpl service;
 
     @BeforeEach
@@ -32,6 +37,8 @@ public class PurviewArchivePublishServiceImplTest {
         config = mock(PurviewConfig.class);
         contentDaoService = mock(ContentDaoService.class);
         entityRegistryClient = mock(PurviewEntityRegistryClient.class);
+        documentArchiveRelationshipService = mock(PurviewDocumentArchiveRelationshipService.class);
+        documentPublishService = mock(PurviewDocumentPublishService.class);
 
         when(config.getEndpoint()).thenReturn("https://example-account.purview.azure.com");
         when(config.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
@@ -42,12 +49,18 @@ public class PurviewArchivePublishServiceImplTest {
         when(config.getReadTimeoutMs()).thenReturn(30000);
         when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
                 .thenReturn(PurviewEntityPublishResult.success(4, "published"));
+        when(entityRegistryClient.deleteByUniqueAttribute(any(), any(), any(), any()))
+                .thenReturn(PurviewEntityPublishResult.success(1, "deleted"));
+        when(documentArchiveRelationshipService.upsertDocumentArchiveRelationships(any(), any())).thenReturn(0);
+        when(documentPublishService.upsertContents(any(), any())).thenReturn(1);
 
         service = new PurviewArchivePublishServiceImpl(
                 config,
                 new PurviewEntityPayloadFactory(),
                 entityRegistryClient,
-                contentDaoService);
+                contentDaoService,
+                documentArchiveRelationshipService,
+                documentPublishService);
     }
 
     @Test
@@ -77,6 +90,74 @@ public class PurviewArchivePublishServiceImplTest {
                 () -> service.publishRepositoryArchives("bedroom"));
 
         assertEquals("rate limited", error.getMessage());
+    }
+
+    @Test
+    public void testPublishRepositoryArchivesDelegatesDocumentArchiveRelationships() {
+        Archive archive = archive("archive-001", "doc-001");
+        when(contentDaoService.getArchives("bedroom", 0, 100, Boolean.FALSE))
+                .thenReturn(List.of(archive));
+        when(documentArchiveRelationshipService.upsertDocumentArchiveRelationships(any(), any())).thenReturn(1);
+
+        int processedCount = service.publishRepositoryArchives("bedroom");
+
+        assertEquals(3, processedCount);
+        verify(documentArchiveRelationshipService).upsertDocumentArchiveRelationships(
+                eq("bedroom"),
+                eq(List.of(archive)));
+    }
+
+    @Test
+    public void testSyncRepositoryArchivesIfChangedRepublishesArchivesAndDeletesMissingArchiveEntities() throws Exception {
+        Archive currentArchive = archive("archive-001", "doc-001");
+        when(contentDaoService.getArchives("bedroom", 0, 100, Boolean.FALSE))
+                .thenReturn(List.of(currentArchive));
+
+        PurviewArchiveSyncResult result = service.syncRepositoryArchivesIfChanged(
+                "bedroom",
+                "archive-001|doc-001|ARCHIVED_LOCAL|0|0\narchive-legacy|doc-legacy|ARCHIVED_LOCAL|0|0");
+
+        assertTrue(result.isChanged());
+        assertEquals(2, result.getPublishedCount());
+        assertEquals(2, result.getReconciledCount());
+        verify(entityRegistryClient).deleteByUniqueAttribute(any(), eq("nemaki_archive"), any(), eq("nemaki://bedroom/archives/archive-legacy"));
+        verify(entityRegistryClient).deleteByUniqueAttribute(any(), eq("nemaki_document"), any(), eq("nemaki://bedroom/objects/doc-legacy"));
+    }
+
+    @Test
+    public void testSyncRepositoryArchivesIfChangedRepublishesRestoredDocumentWhenArchiveDisappears() throws Exception {
+        Archive currentArchive = archive("archive-001", "doc-001");
+        jp.aegif.nemaki.model.Document liveDocument = new jp.aegif.nemaki.model.Document();
+        liveDocument.setId("doc-legacy");
+        liveDocument.setType("cmis:document");
+        when(contentDaoService.getArchives("bedroom", 0, 100, Boolean.FALSE))
+                .thenReturn(List.of(currentArchive));
+        when(contentDaoService.getContentFresh("bedroom", "doc-legacy")).thenReturn(liveDocument);
+
+        PurviewArchiveSyncResult result = service.syncRepositoryArchivesIfChanged(
+                "bedroom",
+                "archive-001|doc-001|ARCHIVED_LOCAL|0|0\narchive-legacy|doc-legacy|ARCHIVED_LOCAL|0|0");
+
+        assertEquals(2, result.getPublishedCount());
+        assertEquals(2, result.getReconciledCount());
+        verify(documentPublishService).upsertContents("bedroom", List.of(liveDocument));
+        verify(entityRegistryClient, never()).deleteByUniqueAttribute(any(), eq("nemaki_document"), any(), eq("nemaki://bedroom/objects/doc-legacy"));
+    }
+
+    @Test
+    public void testSyncRepositoryArchivesIfChangedSkipsPurviewCallsWhenSnapshotIsUnchanged() throws Exception {
+        Archive currentArchive = archive("archive-001", "doc-001");
+        when(contentDaoService.getArchives("bedroom", 0, 100, Boolean.FALSE))
+                .thenReturn(List.of(currentArchive));
+
+        PurviewArchiveSyncResult result = service.syncRepositoryArchivesIfChanged(
+                "bedroom",
+                service.buildRepositoryArchiveSnapshot("bedroom"));
+
+        assertFalse(result.isChanged());
+        assertEquals(0, result.getProcessedCount());
+        verify(entityRegistryClient, never()).bulkCreateOrUpdateEntities(any(), any());
+        verify(entityRegistryClient, never()).deleteByUniqueAttribute(any(), any(), any(), any());
     }
 
     private Archive archive(String archiveId, String originalId) {

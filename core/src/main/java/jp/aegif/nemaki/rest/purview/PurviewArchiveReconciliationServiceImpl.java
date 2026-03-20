@@ -16,6 +16,8 @@ import jp.aegif.nemaki.model.Content;
 public class PurviewArchiveReconciliationServiceImpl implements PurviewArchiveReconciliationService {
 
     private static final String JOB_KIND = "ARCHIVE_RECONCILIATION";
+    private static final String STREAM_KIND = "archive-snapshot";
+    private static final String CURSOR_KIND = "snapshot";
     private static final String TOMBSTONE_STATUS_ARCHIVED = "ARCHIVED";
     private static final String TOMBSTONE_STATUS_ERROR = "ERROR";
 
@@ -23,28 +25,37 @@ public class PurviewArchiveReconciliationServiceImpl implements PurviewArchiveRe
     private final PurviewSchemaPlannerService schemaPlannerService;
     private final PurviewLockStateService lockStateService;
     private final PurviewJobStateService jobStateService;
+    private final PurviewCursorStateService cursorStateService;
     private final PurviewTombstoneStateService tombstoneStateService;
+    private final PurviewArchivePublishService archivePublishService;
     private final PurviewEntityPayloadFactory entityPayloadFactory;
     private final PurviewEntityRegistryClient entityRegistryClient;
     private final ContentDaoService contentDaoService;
+    private final PurviewDocumentArchiveRelationshipService documentArchiveRelationshipService;
 
     public PurviewArchiveReconciliationServiceImpl(
             PurviewConfig purviewConfig,
             PurviewSchemaPlannerService schemaPlannerService,
             PurviewLockStateService lockStateService,
             PurviewJobStateService jobStateService,
+            PurviewCursorStateService cursorStateService,
             PurviewTombstoneStateService tombstoneStateService,
+            PurviewArchivePublishService archivePublishService,
             PurviewEntityPayloadFactory entityPayloadFactory,
             PurviewEntityRegistryClient entityRegistryClient,
-            @Qualifier("ContentDaoService") ContentDaoService contentDaoService) {
+            @Qualifier("ContentDaoService") ContentDaoService contentDaoService,
+            PurviewDocumentArchiveRelationshipService documentArchiveRelationshipService) {
         this.purviewConfig = purviewConfig;
         this.schemaPlannerService = schemaPlannerService;
         this.lockStateService = lockStateService;
         this.jobStateService = jobStateService;
+        this.cursorStateService = cursorStateService;
         this.tombstoneStateService = tombstoneStateService;
+        this.archivePublishService = archivePublishService;
         this.entityPayloadFactory = entityPayloadFactory;
         this.entityRegistryClient = entityRegistryClient;
         this.contentDaoService = contentDaoService;
+        this.documentArchiveRelationshipService = documentArchiveRelationshipService;
     }
 
     @Override
@@ -95,6 +106,8 @@ public class PurviewArchiveReconciliationServiceImpl implements PurviewArchiveRe
                 }
             }
 
+            seedArchiveCursor(repositoryId, now);
+
             return jobStateService.saveJobState(new PurviewJobState(
                     jobId,
                     JOB_KIND,
@@ -137,6 +150,7 @@ public class PurviewArchiveReconciliationServiceImpl implements PurviewArchiveRe
             throw new IllegalStateException(result.getMessage());
         }
 
+        documentArchiveRelationshipService.upsertDocumentArchiveRelationships(repositoryId, List.of(archive));
         tombstoneStateService.deleteTombstoneState(repositoryId, tombstoneState.getObjectId());
     }
 
@@ -188,5 +202,24 @@ public class PurviewArchiveReconciliationServiceImpl implements PurviewArchiveRe
             return failures.get(0);
         }
         return failures.size() + " archive reconciliations failed: " + failures.get(0);
+    }
+
+    private void seedArchiveCursor(String repositoryId, String now) {
+        String snapshot = archivePublishService.buildRepositoryArchiveSnapshot(repositoryId);
+        PurviewCursorState currentCursorState = cursorStateService.getCursorState(repositoryId, STREAM_KIND);
+        if (currentCursorState == null) {
+            currentCursorState = new PurviewCursorState(repositoryId, STREAM_KIND, "", CURSOR_KIND, "", "", "", "", 0, 0);
+        }
+        cursorStateService.saveCursorState(new PurviewCursorState(
+                repositoryId,
+                STREAM_KIND,
+                snapshot,
+                CURSOR_KIND,
+                now,
+                now,
+                "",
+                "",
+                0,
+                currentCursorState.getDeadLetterCount()));
     }
 }
