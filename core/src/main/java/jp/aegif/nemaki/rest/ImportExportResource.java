@@ -27,7 +27,7 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
-import jp.aegif.nemaki.rest.purview.PurviewImportExportLineageService;
+import jp.aegif.nemaki.rest.purview.lineage.PurviewImportExportLineageService;
 import jp.aegif.nemaki.rest.importexport.FilesystemExporter;
 import jp.aegif.nemaki.rest.importexport.FilesystemImporter;
 import jp.aegif.nemaki.rest.importexport.ImportExportUtils;

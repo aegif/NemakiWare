@@ -2,7 +2,7 @@ package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.rest.importexport.ImportExportUtils;
 import jp.aegif.nemaki.rest.importexport.ZipImporter;
-import jp.aegif.nemaki.rest.purview.PurviewImportExportLineageService;
+import jp.aegif.nemaki.rest.purview.lineage.PurviewImportExportLineageService;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;

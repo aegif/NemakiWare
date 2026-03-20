@@ -19,9 +19,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
-import jp.aegif.nemaki.rest.purview.PurviewGovernanceBulkItemView;
-import jp.aegif.nemaki.rest.purview.PurviewGovernanceService;
-import jp.aegif.nemaki.rest.purview.PurviewGovernanceView;
+import jp.aegif.nemaki.rest.purview.governance.PurviewGovernanceBulkItemView;
+import jp.aegif.nemaki.rest.purview.governance.PurviewGovernanceService;
+import jp.aegif.nemaki.rest.purview.governance.PurviewGovernanceView;
 
 @RestController
 @RequestMapping("/v1/repo/{repositoryId}/purview/governance")

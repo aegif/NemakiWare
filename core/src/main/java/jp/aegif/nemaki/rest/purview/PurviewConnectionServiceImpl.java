@@ -1,5 +1,9 @@
 package jp.aegif.nemaki.rest.purview;
 
+import jp.aegif.nemaki.rest.purview.client.PurviewApiClient;
+import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
+import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
+import jp.aegif.nemaki.rest.purview.client.PurviewProbeResult;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -11,7 +15,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class PurviewConnectionServiceImpl implements PurviewConnectionService {
 
-    static final String ALTERNATE_ATLAS_BASE_PATH = "catalog/api/atlas/v2";
+    public static final String ALTERNATE_ATLAS_BASE_PATH = "catalog/api/atlas/v2";
 
     private final PurviewConfig purviewConfig;
     private final PurviewApiClient purviewApiClient;

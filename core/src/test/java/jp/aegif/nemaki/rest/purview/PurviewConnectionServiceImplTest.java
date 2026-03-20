@@ -1,5 +1,7 @@
 package jp.aegif.nemaki.rest.purview;
 
+import jp.aegif.nemaki.rest.purview.client.PurviewApiClient;
+import jp.aegif.nemaki.rest.purview.client.PurviewProbeResult;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;

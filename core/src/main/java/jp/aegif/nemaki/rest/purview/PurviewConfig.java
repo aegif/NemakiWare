@@ -1,13 +1,18 @@
 package jp.aegif.nemaki.rest.purview;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.PostConstruct;
 import jp.aegif.nemaki.util.PropertyManager;
 
 @Component
 public class PurviewConfig {
+
+    private static final Logger logger = LoggerFactory.getLogger(PurviewConfig.class);
 
     public static final String DEFAULT_ATLAS_BASE_PATH = "datamap/api/atlas/v2";
 
@@ -46,6 +51,29 @@ public class PurviewConfig {
 
     @Value("${purview.delete-resolution.delay.ms:5000}")
     private long deleteResolutionDelayMs;
+
+    @PostConstruct
+    void warnIfPlaintextSecret() {
+        if (!enabled) {
+            return;
+        }
+        String secret = trimToEmpty(clientSecret);
+        if (!secret.isEmpty() && looksLikePlaintext(secret)) {
+            logger.warn("purview.client.secret appears to be a plaintext value. "
+                    + "Consider using an encrypted or externalized secret (e.g., environment variable, vault).");
+        }
+    }
+
+    static boolean looksLikePlaintext(String value) {
+        if (value == null || value.isEmpty()) {
+            return false;
+        }
+        // Encrypted values and env-var references typically start with specific prefixes
+        if (value.startsWith("${") || value.startsWith("ENC(") || value.startsWith("vault:")) {
+            return false;
+        }
+        return true;
+    }
 
     public boolean isEnabled() {
         return readDynamicBoolean("purview.enabled", enabled);

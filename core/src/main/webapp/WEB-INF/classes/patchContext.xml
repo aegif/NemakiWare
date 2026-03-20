@@ -60,6 +60,12 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Purview state views in nemaki_conf for dead-letter/state queries -->
+				<bean class="jp.aegif.nemaki.patch.Patch_PurviewStateViews">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- NOTE: Patch_CloudDriveMetadataSecondaryType is registered in cmisPostInitializer's cmisPatchList -->
 				<!-- DO NOT add it here to avoid duplicate execution -->
 			</list>
@@ -382,4 +388,11 @@
 		</property>
 	</bean>
 
+	<bean id="patch_PurviewStateViews" class="jp.aegif.nemaki.patch.Patch_PurviewStateViews">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
 </beans>
+

@@ -6,7 +6,7 @@ import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Property;
 
-final class PurviewCloudMetadataSupport {
+public final class PurviewCloudMetadataSupport {
 
     private static final String CLOUD_METADATA_ASPECT = "nemaki:cloudDriveMetadata";
     private static final String CLOUD_PROVIDER = "nemaki:cloudProvider";
@@ -17,26 +17,26 @@ final class PurviewCloudMetadataSupport {
     private PurviewCloudMetadataSupport() {
     }
 
-    static boolean hasCloudMetadata(Content content) {
+    public static boolean hasCloudMetadata(Content content) {
         return !isBlank(getCloudProvider(content))
                 || !isBlank(getExternalFileId(content))
                 || !isBlank(getCloudFileUrl(content))
                 || !isBlank(getCloudLastSyncedAt(content));
     }
 
-    static String getCloudProvider(Content content) {
+    public static String getCloudProvider(Content content) {
         return nullIfBlank(readProperty(content, CLOUD_PROVIDER));
     }
 
-    static String getExternalFileId(Content content) {
+    public static String getExternalFileId(Content content) {
         return nullIfBlank(readProperty(content, CLOUD_FILE_ID));
     }
 
-    static String getCloudFileUrl(Content content) {
+    public static String getCloudFileUrl(Content content) {
         return nullIfBlank(readProperty(content, CLOUD_FILE_URL));
     }
 
-    static String getCloudLastSyncedAt(Content content) {
+    public static String getCloudLastSyncedAt(Content content) {
         return nullIfBlank(readProperty(content, CLOUD_LAST_SYNCED_AT));
     }
 

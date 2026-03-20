@@ -17,30 +17,30 @@ import org.springframework.web.bind.annotation.RestController;
 import jakarta.servlet.http.HttpServletRequest;
 import jp.aegif.nemaki.rest.purview.PurviewConnectionService;
 import jp.aegif.nemaki.rest.purview.PurviewConnectionStatus;
-import jp.aegif.nemaki.rest.purview.PurviewCursorState;
-import jp.aegif.nemaki.rest.purview.PurviewCursorStateService;
-import jp.aegif.nemaki.rest.purview.PurviewDeadLetterRetryService;
-import jp.aegif.nemaki.rest.purview.PurviewDeadLetterState;
-import jp.aegif.nemaki.rest.purview.PurviewDeadLetterStateService;
-import jp.aegif.nemaki.rest.purview.PurviewArchiveReconciliationService;
-import jp.aegif.nemaki.rest.purview.PurviewCloudMetadataReconciliationService;
-import jp.aegif.nemaki.rest.purview.PurviewContainmentReconciliationService;
-import jp.aegif.nemaki.rest.purview.PurviewDeleteResolutionService;
-import jp.aegif.nemaki.rest.purview.PurviewFullSyncService;
-import jp.aegif.nemaki.rest.purview.PurviewIncrementalSyncService;
-import jp.aegif.nemaki.rest.purview.PurviewJobState;
-import jp.aegif.nemaki.rest.purview.PurviewJobStateService;
-import jp.aegif.nemaki.rest.purview.PurviewLockState;
-import jp.aegif.nemaki.rest.purview.PurviewSchemaApplyResult;
-import jp.aegif.nemaki.rest.purview.PurviewSchemaBootstrapResult;
-import jp.aegif.nemaki.rest.purview.PurviewSchemaBootstrapService;
-import jp.aegif.nemaki.rest.purview.PurviewSchemaDiff;
-import jp.aegif.nemaki.rest.purview.PurviewSchemaPlannerService;
-import jp.aegif.nemaki.rest.purview.PurviewSchemaState;
-import jp.aegif.nemaki.rest.purview.PurviewStateOverview;
-import jp.aegif.nemaki.rest.purview.PurviewStateOverviewService;
-import jp.aegif.nemaki.rest.purview.PurviewTombstoneState;
-import jp.aegif.nemaki.rest.purview.PurviewTypeReconciliationService;
+import jp.aegif.nemaki.rest.purview.state.PurviewCursorState;
+import jp.aegif.nemaki.rest.purview.state.PurviewCursorStateService;
+import jp.aegif.nemaki.rest.purview.sync.PurviewDeadLetterRetryService;
+import jp.aegif.nemaki.rest.purview.state.PurviewDeadLetterState;
+import jp.aegif.nemaki.rest.purview.state.PurviewDeadLetterStateService;
+import jp.aegif.nemaki.rest.purview.sync.PurviewArchiveReconciliationService;
+import jp.aegif.nemaki.rest.purview.sync.PurviewCloudMetadataReconciliationService;
+import jp.aegif.nemaki.rest.purview.sync.PurviewContainmentReconciliationService;
+import jp.aegif.nemaki.rest.purview.sync.PurviewDeleteResolutionService;
+import jp.aegif.nemaki.rest.purview.sync.PurviewFullSyncService;
+import jp.aegif.nemaki.rest.purview.sync.PurviewIncrementalSyncService;
+import jp.aegif.nemaki.rest.purview.state.PurviewJobState;
+import jp.aegif.nemaki.rest.purview.state.PurviewJobStateService;
+import jp.aegif.nemaki.rest.purview.state.PurviewLockState;
+import jp.aegif.nemaki.rest.purview.schema.PurviewSchemaApplyResult;
+import jp.aegif.nemaki.rest.purview.schema.PurviewSchemaBootstrapResult;
+import jp.aegif.nemaki.rest.purview.schema.PurviewSchemaBootstrapService;
+import jp.aegif.nemaki.rest.purview.schema.PurviewSchemaDiff;
+import jp.aegif.nemaki.rest.purview.schema.PurviewSchemaPlannerService;
+import jp.aegif.nemaki.rest.purview.state.PurviewSchemaState;
+import jp.aegif.nemaki.rest.purview.state.PurviewStateOverview;
+import jp.aegif.nemaki.rest.purview.state.PurviewStateOverviewService;
+import jp.aegif.nemaki.rest.purview.state.PurviewTombstoneState;
+import jp.aegif.nemaki.rest.purview.sync.PurviewTypeReconciliationService;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 
 @RestController
@@ -105,11 +105,17 @@ public class PurviewAdminController {
         this.httpRequest = httpRequest;
     }
 
-    @PostMapping("/test-connection")
-    public ResponseEntity<Map<String, Object>> testConnection() {
+    private ResponseEntity<Map<String, Object>> requireAdminOrForbidden() {
         if (!isAdmin()) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
         }
+        return null;
+    }
+
+    @PostMapping("/test-connection")
+    public ResponseEntity<Map<String, Object>> testConnection() {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         PurviewConnectionStatus status = purviewConnectionService.testConnection();
         Map<String, Object> response = new LinkedHashMap<>();
@@ -124,9 +130,8 @@ public class PurviewAdminController {
 
     @GetMapping("/schema-state")
     public ResponseEntity<Map<String, Object>> getSchemaState() {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         PurviewSchemaState schemaState = purviewSchemaPlannerService.getCurrentSchemaState();
         Map<String, Object> response = new LinkedHashMap<>();
@@ -141,9 +146,8 @@ public class PurviewAdminController {
 
     @GetMapping("/type-definitions/diff")
     public ResponseEntity<Map<String, Object>> getTypeDefinitionDiff() {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         PurviewSchemaDiff schemaDiff = purviewSchemaPlannerService.getSchemaDiff();
         Map<String, Object> response = new LinkedHashMap<>();
@@ -161,9 +165,8 @@ public class PurviewAdminController {
 
     @PostMapping("/type-definitions/apply")
     public ResponseEntity<Map<String, Object>> applyTypeDefinitions() {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         PurviewSchemaBootstrapResult bootstrapResult = purviewSchemaBootstrapService.startTypeBootstrap(
                 getAuthenticatedUsername());
@@ -185,9 +188,8 @@ public class PurviewAdminController {
     @PostMapping("/full-sync/{repositoryId}")
     public ResponseEntity<Map<String, Object>> startFullSync(
             @PathVariable("repositoryId") String repositoryId) {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         PurviewJobState jobState = purviewFullSyncService.startFullSync(repositoryId, getAuthenticatedUsername());
         return ResponseEntity.ok(buildJobResponse(jobState));
@@ -196,9 +198,8 @@ public class PurviewAdminController {
     @PostMapping("/incremental-sync/{repositoryId}")
     public ResponseEntity<Map<String, Object>> startIncrementalSync(
             @PathVariable("repositoryId") String repositoryId) {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         PurviewJobState jobState = purviewIncrementalSyncService.startIncrementalSync(
                 repositoryId, getAuthenticatedUsername());
@@ -208,9 +209,8 @@ public class PurviewAdminController {
     @PostMapping("/reconcile/archives/{repositoryId}")
     public ResponseEntity<Map<String, Object>> startArchiveReconciliation(
             @PathVariable("repositoryId") String repositoryId) {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         PurviewJobState jobState = purviewArchiveReconciliationService.startArchiveReconciliation(
                 repositoryId, getAuthenticatedUsername());
@@ -220,9 +220,8 @@ public class PurviewAdminController {
     @PostMapping("/reconcile/cloud-metadata/{repositoryId}")
     public ResponseEntity<Map<String, Object>> startCloudMetadataReconciliation(
             @PathVariable("repositoryId") String repositoryId) {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         PurviewJobState jobState = purviewCloudMetadataReconciliationService.startCloudMetadataReconciliation(
                 repositoryId, getAuthenticatedUsername());
@@ -232,9 +231,8 @@ public class PurviewAdminController {
     @PostMapping("/reconcile/containment/{repositoryId}")
     public ResponseEntity<Map<String, Object>> startContainmentReconciliation(
             @PathVariable("repositoryId") String repositoryId) {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         PurviewJobState jobState = purviewContainmentReconciliationService.startContainmentReconciliation(
                 repositoryId, getAuthenticatedUsername());
@@ -244,9 +242,8 @@ public class PurviewAdminController {
     @PostMapping("/reconcile/types/{repositoryId}")
     public ResponseEntity<Map<String, Object>> startTypeReconciliation(
             @PathVariable("repositoryId") String repositoryId) {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         PurviewJobState jobState = purviewTypeReconciliationService.startTypeReconciliation(
                 repositoryId, getAuthenticatedUsername());
@@ -256,9 +253,8 @@ public class PurviewAdminController {
     @PostMapping("/delete-resolution/{repositoryId}")
     public ResponseEntity<Map<String, Object>> startDeleteResolution(
             @PathVariable("repositoryId") String repositoryId) {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         PurviewJobState jobState = purviewDeleteResolutionService.startDeleteResolution(
                 repositoryId, getAuthenticatedUsername());
@@ -267,9 +263,8 @@ public class PurviewAdminController {
 
     @GetMapping("/dead-letters")
     public ResponseEntity<Map<String, Object>> getDeadLetters() {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("deadLetters", purviewDeadLetterStateService.listDeadLetterStates().stream()
@@ -281,9 +276,8 @@ public class PurviewAdminController {
     @PostMapping("/retry-failed/{repositoryId}")
     public ResponseEntity<Map<String, Object>> startRetryFailed(
             @PathVariable("repositoryId") String repositoryId) {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         PurviewJobState jobState = purviewDeadLetterRetryService.startRetryFailed(
                 repositoryId,
@@ -294,9 +288,8 @@ public class PurviewAdminController {
     @GetMapping("/jobs/{jobId}")
     public ResponseEntity<Map<String, Object>> getJob(
             @PathVariable("jobId") String jobId) {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         return ResponseEntity.ok(buildJobResponse(purviewJobStateService.getJobState(jobId)));
     }
@@ -305,9 +298,8 @@ public class PurviewAdminController {
     public ResponseEntity<Map<String, Object>> getCursorState(
             @PathVariable("repositoryId") String repositoryId,
             @PathVariable("streamKind") String streamKind) {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         PurviewCursorState cursorState = purviewCursorStateService.getCursorState(repositoryId, streamKind);
         Map<String, Object> response = new LinkedHashMap<>();
@@ -326,9 +318,8 @@ public class PurviewAdminController {
 
     @GetMapping("/state")
     public ResponseEntity<Map<String, Object>> getState() {
-        if (!isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
-        }
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
 
         String collection = purviewSchemaPlannerService.getCurrentSchemaState().getCollection();
         PurviewStateOverview overview = purviewStateOverviewService.getStateOverview(collection);

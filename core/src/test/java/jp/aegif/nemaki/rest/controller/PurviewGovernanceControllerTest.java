@@ -17,8 +17,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import jakarta.servlet.http.HttpServletRequest;
-import jp.aegif.nemaki.rest.purview.PurviewGovernanceService;
-import jp.aegif.nemaki.rest.purview.PurviewGovernanceView;
+import jp.aegif.nemaki.rest.purview.governance.PurviewGovernanceService;
+import jp.aegif.nemaki.rest.purview.governance.PurviewGovernanceView;
 
 public class PurviewGovernanceControllerTest {
 
@@ -112,7 +112,7 @@ public class PurviewGovernanceControllerTest {
 
         when(governanceService.getGovernanceBulk("bedroom", List.of("doc-001", "missing-001"), callContext))
                 .thenReturn(List.of(
-                        new jp.aegif.nemaki.rest.purview.PurviewGovernanceBulkItemView(
+                        new jp.aegif.nemaki.rest.purview.governance.PurviewGovernanceBulkItemView(
                                 "doc-001",
                                 "OK",
                                 "loaded",
@@ -132,7 +132,7 @@ public class PurviewGovernanceControllerTest {
                                         List.of(),
                                         List.of(),
                                         Map.of())),
-                        new jp.aegif.nemaki.rest.purview.PurviewGovernanceBulkItemView(
+                        new jp.aegif.nemaki.rest.purview.governance.PurviewGovernanceBulkItemView(
                                 "missing-001",
                                 "NOT_FOUND",
                                 "Object not found",

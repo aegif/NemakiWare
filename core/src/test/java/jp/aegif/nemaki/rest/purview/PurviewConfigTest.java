@@ -71,6 +71,59 @@ public class PurviewConfigTest {
         assertFalse(config.isEnabled());
     }
 
+    @Test
+    public void testPlaintextSecretIsDetected() {
+        assertTrue(PurviewConfig.looksLikePlaintext("my-secret-value"));
+        assertTrue(PurviewConfig.looksLikePlaintext("abc123"));
+    }
+
+    @Test
+    public void testEncryptedSecretIsNotFlagged() {
+        assertFalse(PurviewConfig.looksLikePlaintext("ENC(abc123==)"));
+        assertFalse(PurviewConfig.looksLikePlaintext("${PURVIEW_SECRET}"));
+        assertFalse(PurviewConfig.looksLikePlaintext("vault:secret/data/purview"));
+    }
+
+    @Test
+    public void testEmptySecretIsNotFlagged() {
+        assertFalse(PurviewConfig.looksLikePlaintext(""));
+        assertFalse(PurviewConfig.looksLikePlaintext(null));
+    }
+
+    @Test
+    public void testWarnIfPlaintextSecretDoesNotThrowWhenDisabled() throws Exception {
+        PurviewConfig config = new PurviewConfig();
+        setField(config, "enabled", false);
+        setField(config, "clientSecret", "plaintext-secret");
+        setField(config, "accountName", "");
+        setField(config, "endpoint", "");
+        setField(config, "atlasBasePath", "");
+        setField(config, "tenantId", "");
+        setField(config, "clientId", "");
+        setField(config, "connectTimeoutMs", 5000);
+        setField(config, "readTimeoutMs", 30000);
+        setField(config, "deleteResolutionDelayMs", 5000L);
+        // Should not throw — disabled means no warning
+        config.warnIfPlaintextSecret();
+    }
+
+    @Test
+    public void testWarnIfPlaintextSecretRunsWhenEnabled() throws Exception {
+        PurviewConfig config = new PurviewConfig();
+        setField(config, "enabled", true);
+        setField(config, "clientSecret", "plaintext-secret");
+        setField(config, "accountName", "");
+        setField(config, "endpoint", "");
+        setField(config, "atlasBasePath", "");
+        setField(config, "tenantId", "");
+        setField(config, "clientId", "");
+        setField(config, "connectTimeoutMs", 5000);
+        setField(config, "readTimeoutMs", 30000);
+        setField(config, "deleteResolutionDelayMs", 5000L);
+        // Should log WARN but not throw
+        config.warnIfPlaintextSecret();
+    }
+
     private static void setField(Object target, String fieldName, Object value) throws Exception {
         Field field = target.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);

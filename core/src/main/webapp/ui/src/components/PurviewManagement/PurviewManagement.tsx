@@ -1,116 +1,27 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Alert,
-  Button,
-  Card,
-  Col,
-  Descriptions,
-  Empty,
-  Input,
-  Row,
-  Space,
-  Statistic,
-  Table,
-  Tabs,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
-import {
-  CheckCircleOutlined,
-  DatabaseOutlined,
-  DisconnectOutlined,
-  ReloadOutlined,
-  SafetyCertificateOutlined,
-  SyncOutlined,
-  WarningOutlined,
-} from '@ant-design/icons';
+import { Space, message } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   PurviewAdminService,
   PurviewConnectionStatus,
-  PurviewCursorState,
-  PurviewDeadLetterState,
   PurviewJobState,
-  PurviewLockState,
   PurviewSchemaApplyJobResult,
   PurviewSchemaDiff,
   PurviewStateOverview,
-  PurviewTombstoneState,
 } from '../../services/purviewAdmin';
 import type { PurviewGovernanceBulkItemView } from '../../services/purviewGovernance';
-
-const { Text } = Typography;
+import type { ActionResult } from './purviewUtils';
+import { isCollectionScope } from './purviewUtils';
+import { ConnectionCard } from './ConnectionCard';
+import { SchemaCard } from './SchemaCard';
+import { SyncActionsCard } from './SyncActionsCard';
+import { GovernanceLookupCard } from './GovernanceLookupCard';
+import { StateTablesCard } from './StateTablesCard';
 
 interface PurviewManagementProps {
   repositoryId: string;
 }
-
-interface ActionResult {
-  kind: string;
-  message: string;
-  job?: PurviewJobState;
-}
-
-const statusColorMap: Record<string, string> = {
-  COMPLETED: 'success',
-  COMPLETED_WITH_ERRORS: 'warning',
-  FAILED: 'error',
-  REJECTED: 'warning',
-  RUNNING: 'processing',
-  PENDING: 'processing',
-  ARCHIVED: 'blue',
-  PURGED: 'default',
-  ACTIVE: 'success',
-};
-
-const formatTimestamp = (value?: string): string => {
-  if (!value) {
-    return '-';
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString();
-};
-
-const isCollectionScope = (repositoryId?: string): boolean =>
-  !!repositoryId && repositoryId.startsWith('collection:');
-
-const renderStatusTag = (status?: string): React.ReactNode => {
-  if (!status) {
-    return <Tag>-</Tag>;
-  }
-  return <Tag color={statusColorMap[status] || 'default'}>{status}</Tag>;
-};
-
-const renderTagList = (values: string[]): React.ReactNode => {
-  if (!values || values.length === 0) {
-    return <Text type="secondary">-</Text>;
-  }
-
-  return (
-    <Space size={[4, 8]} wrap>
-      {values.map((value) => (
-        <Tag key={value}>{value}</Tag>
-      ))}
-    </Space>
-  );
-};
-
-const parseGovernanceLookupObjectIds = (value: string): string[] => {
-  const uniqueObjectIds = new Set<string>();
-  for (const candidate of value.split(/[\n,]+/)) {
-    const objectId = candidate.trim();
-    if (objectId) {
-      uniqueObjectIds.add(objectId);
-    }
-  }
-  return Array.from(uniqueObjectIds);
-};
 
 export const PurviewManagement: React.FC<PurviewManagementProps> = ({ repositoryId }) => {
   const { t } = useTranslation();
@@ -127,16 +38,7 @@ export const PurviewManagement: React.FC<PurviewManagementProps> = ({ repository
   const [loadError, setLoadError] = useState<string | null>(null);
   const [runningAction, setRunningAction] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<ActionResult | null>(null);
-  const [governanceLookupInput, setGovernanceLookupInput] = useState('');
-  const [governanceLookupResults, setGovernanceLookupResults] = useState<PurviewGovernanceBulkItemView[]>([]);
-  const [selectedGovernanceObjectId, setSelectedGovernanceObjectId] = useState<string | null>(null);
-  const [governanceLookupError, setGovernanceLookupError] = useState<string | null>(null);
   const initialLoadRef = useRef(true);
-
-  const governanceLookupObjectIds = useMemo(
-    () => parseGovernanceLookupObjectIds(governanceLookupInput),
-    [governanceLookupInput]
-  );
 
   const loadAll = useCallback(async () => {
     setRefreshing(true);
@@ -225,17 +127,6 @@ export const PurviewManagement: React.FC<PurviewManagementProps> = ({ repository
   );
 
   const hasRunningJobs = jobs.some((job) => job.status === 'RUNNING');
-  const selectedGovernanceLookupResult = useMemo(
-    () =>
-      governanceLookupResults.find((item) => item.objectId === selectedGovernanceObjectId)
-      || governanceLookupResults[0]
-      || null,
-    [governanceLookupResults, selectedGovernanceObjectId]
-  );
-  const governanceLookupSuccessCount = useMemo(
-    () => governanceLookupResults.filter((item) => item.status === 'OK').length,
-    [governanceLookupResults]
-  );
 
   useEffect(() => {
     if (!hasRunningJobs) {
@@ -276,26 +167,19 @@ export const PurviewManagement: React.FC<PurviewManagementProps> = ({ repository
     }
   };
 
-  const handleGovernanceLookup = async () => {
-    if (governanceLookupObjectIds.length === 0) {
-      return;
-    }
-
+  const handleGovernanceLookup = async (
+    repoId: string,
+    objectIds: string[]
+  ): Promise<PurviewGovernanceBulkItemView[]> => {
     setRunningAction('lookup-governance');
-    setGovernanceLookupError(null);
     try {
-      const result = await service.lookupGovernanceBulk(repositoryId, governanceLookupObjectIds);
-      setGovernanceLookupResults(result);
-      setSelectedGovernanceObjectId(
-        result.find((item) => item.status === 'OK')?.objectId || result[0]?.objectId || null
-      );
+      const result = await service.lookupGovernanceBulk(repoId, objectIds);
       message.success(t('purviewManagement.messages.governanceLookupCompleted', { count: result.length }));
+      return result;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
-      setGovernanceLookupResults([]);
-      setSelectedGovernanceObjectId(null);
-      setGovernanceLookupError(errorMessage);
       message.error(errorMessage);
+      throw error;
     } finally {
       setRunningAction(null);
     }
@@ -336,754 +220,107 @@ export const PurviewManagement: React.FC<PurviewManagementProps> = ({ repository
     }
   };
 
-  const jobColumns = [
-    {
-      title: t('purviewManagement.tables.jobs.jobId'),
-      dataIndex: 'jobId',
-      key: 'jobId',
-      render: (value: string) => <Text code>{value}</Text>,
-    },
-    {
-      title: t('purviewManagement.tables.jobs.jobKind'),
-      dataIndex: 'jobKind',
-      key: 'jobKind',
-      render: (value: string) => <Tag>{value}</Tag>,
-    },
-    {
-      title: t('purviewManagement.tables.jobs.repositoryId'),
-      dataIndex: 'repositoryId',
-      key: 'repositoryId',
-      render: (value: string) => <Text>{value || '-'}</Text>,
-    },
-    {
-      title: t('purviewManagement.tables.jobs.status'),
-      dataIndex: 'status',
-      key: 'status',
-      render: (value: string) => renderStatusTag(value),
-    },
-    {
-      title: t('purviewManagement.tables.jobs.processedCount'),
-      dataIndex: 'processedCount',
-      key: 'processedCount',
-    },
-    {
-      title: t('purviewManagement.tables.jobs.failedCount'),
-      dataIndex: 'failedCount',
-      key: 'failedCount',
-    },
-    {
-      title: t('purviewManagement.tables.jobs.startedAt'),
-      dataIndex: 'startedAt',
-      key: 'startedAt',
-      render: (value: string) => formatTimestamp(value),
-    },
-    {
-      title: t('purviewManagement.tables.jobs.errorSummary'),
-      dataIndex: 'errorSummary',
-      key: 'errorSummary',
-      render: (value: string) => value || '-',
-    },
-  ];
-
-  const cursorColumns = [
-    {
-      title: t('purviewManagement.tables.cursors.streamKind'),
-      dataIndex: 'streamKind',
-      key: 'streamKind',
-      render: (value: string) => <Tag>{value}</Tag>,
-    },
-    {
-      title: t('purviewManagement.tables.cursors.cursor'),
-      dataIndex: 'cursor',
-      key: 'cursor',
-      render: (value: string) => <Text code>{value || '-'}</Text>,
-    },
-    {
-      title: t('purviewManagement.tables.cursors.lastSuccessAt'),
-      dataIndex: 'lastSuccessAt',
-      key: 'lastSuccessAt',
-      render: (value: string) => formatTimestamp(value),
-    },
-    {
-      title: t('purviewManagement.tables.cursors.lastErrorAt'),
-      dataIndex: 'lastErrorAt',
-      key: 'lastErrorAt',
-      render: (value: string) => formatTimestamp(value),
-    },
-    {
-      title: t('purviewManagement.tables.cursors.deadLetterCount'),
-      dataIndex: 'deadLetterCount',
-      key: 'deadLetterCount',
-    },
-    {
-      title: t('purviewManagement.tables.cursors.lastErrorMessage'),
-      dataIndex: 'lastErrorMessage',
-      key: 'lastErrorMessage',
-      render: (value: string) => value || '-',
-    },
-  ];
-
-  const lockColumns = [
-    {
-      title: t('purviewManagement.tables.locks.jobKind'),
-      dataIndex: 'jobKind',
-      key: 'jobKind',
-      render: (value: string) => <Tag>{value}</Tag>,
-    },
-    {
-      title: t('purviewManagement.tables.locks.locked'),
-      dataIndex: 'locked',
-      key: 'locked',
-      render: (value: boolean) =>
-        value ? <Tag color="warning">{t('common.enabled')}</Tag> : <Tag color="success">{t('common.disabled')}</Tag>,
-    },
-    {
-      title: t('purviewManagement.tables.locks.ownerJobId'),
-      dataIndex: 'ownerJobId',
-      key: 'ownerJobId',
-      render: (value: string) => <Text code>{value || '-'}</Text>,
-    },
-    {
-      title: t('purviewManagement.tables.locks.lockedAt'),
-      dataIndex: 'lockedAt',
-      key: 'lockedAt',
-      render: (value: string) => formatTimestamp(value),
-    },
-  ];
-
-  const tombstoneColumns = [
-    {
-      title: t('purviewManagement.tables.tombstones.objectId'),
-      dataIndex: 'objectId',
-      key: 'objectId',
-      render: (value: string) => <Text code>{value}</Text>,
-    },
-    {
-      title: t('purviewManagement.tables.tombstones.typeName'),
-      dataIndex: 'typeName',
-      key: 'typeName',
-      render: (value: string) => <Tag>{value}</Tag>,
-    },
-    {
-      title: t('purviewManagement.tables.tombstones.status'),
-      dataIndex: 'status',
-      key: 'status',
-      render: (value: string) => renderStatusTag(value),
-    },
-    {
-      title: t('purviewManagement.tables.tombstones.dueAt'),
-      dataIndex: 'dueAt',
-      key: 'dueAt',
-      render: (value: string) => formatTimestamp(value),
-    },
-    {
-      title: t('purviewManagement.tables.tombstones.qualifiedName'),
-      dataIndex: 'qualifiedName',
-      key: 'qualifiedName',
-      render: (value: string) => <Text code>{value}</Text>,
-    },
-  ];
-
-  const deadLetterColumns = [
-    {
-      title: t('purviewManagement.tables.deadLetters.streamKind'),
-      dataIndex: 'streamKind',
-      key: 'streamKind',
-      render: (value: string) => <Tag>{value}</Tag>,
-    },
-    {
-      title: t('purviewManagement.tables.deadLetters.entryKey'),
-      dataIndex: 'entryKey',
-      key: 'entryKey',
-      render: (value: string) => <Text code>{value}</Text>,
-    },
-    {
-      title: t('purviewManagement.tables.deadLetters.failureCount'),
-      dataIndex: 'failureCount',
-      key: 'failureCount',
-    },
-    {
-      title: t('purviewManagement.tables.deadLetters.lastFailedAt'),
-      dataIndex: 'lastFailedAt',
-      key: 'lastFailedAt',
-      render: (value: string) => formatTimestamp(value),
-    },
-    {
-      title: t('purviewManagement.tables.deadLetters.errorSummary'),
-      dataIndex: 'errorSummary',
-      key: 'errorSummary',
-      render: (value: string) => value || '-',
-    },
-  ];
-
-  const tableLocale = {
-    emptyText: <Empty description={t('common.noData')} image={Empty.PRESENTED_IMAGE_SIMPLE} />,
-  };
-
-  const governanceLookupColumns = [
-    {
-      title: t('purviewManagement.governanceLookup.objectId'),
-      dataIndex: 'objectId',
-      key: 'objectId',
-      render: (value: string) => <Text code>{value}</Text>,
-    },
-    {
-      title: t('purviewManagement.governanceLookup.status'),
-      dataIndex: 'status',
-      key: 'status',
-      render: (value: string) => renderStatusTag(value),
-    },
-    {
-      title: t('purviewManagement.governanceLookup.entityType'),
-      dataIndex: 'entityTypeName',
-      key: 'entityTypeName',
-      render: (value?: string) => value || '-',
-    },
-    {
-      title: t('purviewManagement.governanceLookup.message'),
-      dataIndex: 'message',
-      key: 'message',
-      render: (value?: string) => value || '-',
-    },
-  ];
-
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Card
-        title={
-          <Space>
-            <DatabaseOutlined />
-            {t('purviewManagement.title')}
-          </Space>
+      <ConnectionCard
+        repositoryId={repositoryId}
+        overview={overview}
+        schemaDiff={schemaDiff}
+        connectionStatus={connectionStatus}
+        loadError={loadError}
+        refreshing={refreshing}
+        runningAction={runningAction}
+        actionResult={actionResult}
+        jobCount={jobs.length}
+        cursorCount={cursors.length}
+        deadLetterCount={deadLetters.length}
+        tombstoneCount={tombstones.length}
+        onRefresh={handleRefresh}
+        onConnectionProbe={handleConnectionProbe}
+      />
+
+      <SchemaCard schemaDiff={schemaDiff} />
+
+      <SyncActionsCard
+        runningAction={runningAction}
+        onApplySchema={() =>
+          runJobAction(
+            'apply-schema',
+            () => service.applyTypeDefinitions(),
+            'purviewManagement.messages.schemaApplied'
+          )
         }
-        extra={
-          <Space wrap>
-            <Button
-              icon={<ReloadOutlined />}
-              onClick={handleRefresh}
-              loading={refreshing}
-            >
-              {t('common.reload')}
-            </Button>
-            <Button
-              icon={<SafetyCertificateOutlined />}
-              onClick={handleConnectionProbe}
-              loading={runningAction === 'test-connection'}
-            >
-              {t('purviewManagement.actions.testConnection')}
-            </Button>
-          </Space>
+        onFullSync={() =>
+          runJobAction(
+            'full-sync',
+            () => service.startFullSync(repositoryId),
+            'purviewManagement.messages.fullSyncStarted'
+          )
         }
-      >
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          {loadError && (
-            <Alert
-              type="error"
-              message={t('purviewManagement.alerts.loadFailed')}
-              description={loadError}
-              showIcon
-            />
-          )}
+        onIncrementalSync={() =>
+          runJobAction(
+            'incremental-sync',
+            () => service.startIncrementalSync(repositoryId),
+            'purviewManagement.messages.incrementalSyncStarted'
+          )
+        }
+        onReconcileTypes={() =>
+          runJobAction(
+            'reconcile-types',
+            () => service.reconcileTypes(repositoryId),
+            'purviewManagement.messages.typeReconciliationStarted'
+          )
+        }
+        onReconcileArchives={() =>
+          runJobAction(
+            'reconcile-archives',
+            () => service.reconcileArchives(repositoryId),
+            'purviewManagement.messages.archiveReconciliationStarted'
+          )
+        }
+        onReconcileCloudMetadata={() =>
+          runJobAction(
+            'reconcile-cloud',
+            () => service.reconcileCloudMetadata(repositoryId),
+            'purviewManagement.messages.cloudMetadataReconciliationStarted'
+          )
+        }
+        onReconcileContainment={() =>
+          runJobAction(
+            'reconcile-containment',
+            () => service.reconcileContainment(repositoryId),
+            'purviewManagement.messages.containmentReconciliationStarted'
+          )
+        }
+        onResolveDeletes={() =>
+          runJobAction(
+            'resolve-deletes',
+            () => service.resolveDeletes(repositoryId),
+            'purviewManagement.messages.deleteResolutionStarted'
+          )
+        }
+        onRetryFailed={() =>
+          runJobAction(
+            'retry-failed',
+            () => service.retryFailed(repositoryId),
+            'purviewManagement.messages.retryFailedStarted'
+          )
+        }
+      />
 
-          {connectionStatus && !connectionStatus.connected && (
-            <Alert
-              type="error"
-              message={t('purviewManagement.alerts.connectionFailed')}
-              description={connectionStatus.message}
-              icon={<DisconnectOutlined />}
-              showIcon
-            />
-          )}
+      <GovernanceLookupCard
+        repositoryId={repositoryId}
+        runningAction={runningAction}
+        onLookup={handleGovernanceLookup}
+      />
 
-          {connectionStatus && connectionStatus.connected && !connectionStatus.featureEnabled && (
-            <Alert
-              type="warning"
-              message={t('purviewManagement.alerts.featureDisabled')}
-              description={connectionStatus.message}
-              showIcon
-            />
-          )}
-
-          {schemaDiff?.applyRequired && (
-            <Alert
-              type="warning"
-              message={t('purviewManagement.alerts.applyRequired')}
-              description={t('purviewManagement.alerts.applyRequiredDescription')}
-              icon={<WarningOutlined />}
-              showIcon
-            />
-          )}
-
-          {deadLetters.length > 0 && (
-            <Alert
-              type="warning"
-              message={t('purviewManagement.alerts.deadLettersPresent')}
-              description={t('purviewManagement.alerts.deadLettersPresentDescription', { count: deadLetters.length })}
-              showIcon
-            />
-          )}
-
-          {actionResult && (
-            <Alert
-              type={actionResult.kind === 'FAILED' ? 'error' : actionResult.kind === 'COMPLETED_WITH_ERRORS' || actionResult.kind === 'REJECTED' ? 'warning' : 'success'}
-              message={t('purviewManagement.latestAction.title')}
-              description={
-                <Space direction="vertical" size={4}>
-                  {actionResult.job && (
-                    <Space wrap>
-                      <Text code>{actionResult.job.jobId}</Text>
-                      <Tag>{actionResult.job.jobKind}</Tag>
-                      {renderStatusTag(actionResult.job.status)}
-                    </Space>
-                  )}
-                  <Text>{actionResult.message}</Text>
-                </Space>
-              }
-              showIcon
-            />
-          )}
-
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={12} lg={6}>
-              <Card size="small">
-                <Statistic
-                  title={t('purviewManagement.stats.jobs')}
-                  value={jobs.length}
-                  valueStyle={{ fontSize: 24 }}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} sm={12} lg={6}>
-              <Card size="small">
-                <Statistic
-                  title={t('purviewManagement.stats.cursors')}
-                  value={cursors.length}
-                  valueStyle={{ fontSize: 24 }}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} sm={12} lg={6}>
-              <Card size="small">
-                <Statistic
-                  title={t('purviewManagement.stats.deadLetters')}
-                  value={deadLetters.length}
-                  valueStyle={{ fontSize: 24 }}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} sm={12} lg={6}>
-              <Card size="small">
-                <Statistic
-                  title={t('purviewManagement.stats.tombstones')}
-                  value={tombstones.length}
-                  valueStyle={{ fontSize: 24 }}
-                />
-              </Card>
-            </Col>
-          </Row>
-
-          <Descriptions bordered size="small" column={{ xs: 1, lg: 2 }}>
-            <Descriptions.Item label={t('purviewManagement.summary.repositoryId')}>
-              <Text code>{repositoryId}</Text>
-            </Descriptions.Item>
-            <Descriptions.Item label={t('purviewManagement.summary.collection')}>
-              {overview?.collection || schemaDiff?.collection || '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label={t('purviewManagement.summary.connection')}>
-              {connectionStatus?.connected ? (
-                <Space>
-                  <CheckCircleOutlined style={{ color: '#389e0d' }} />
-                  {t('purviewManagement.summary.connectionHealthy')}
-                </Space>
-              ) : (
-                <Space>
-                  <DisconnectOutlined style={{ color: '#cf1322' }} />
-                  {t('purviewManagement.summary.connectionUnavailable')}
-                </Space>
-              )}
-            </Descriptions.Item>
-            <Descriptions.Item label={t('purviewManagement.summary.applyRequired')}>
-              {schemaDiff?.applyRequired ? renderStatusTag('PENDING') : renderStatusTag('COMPLETED')}
-            </Descriptions.Item>
-            <Descriptions.Item label={t('purviewManagement.summary.endpoint')}>
-              <Text code>{connectionStatus?.endpoint || '-'}</Text>
-            </Descriptions.Item>
-            <Descriptions.Item label={t('purviewManagement.summary.atlasBasePath')}>
-              <Text code>{connectionStatus?.atlasBasePath || '-'}</Text>
-            </Descriptions.Item>
-            <Descriptions.Item label={t('purviewManagement.summary.schemaVersion')}>
-              {overview?.schemaState?.schemaVersion || '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label={t('purviewManagement.summary.schemaHash')}>
-              <Text code>{overview?.schemaState?.schemaHash || '-'}</Text>
-            </Descriptions.Item>
-            <Descriptions.Item label={t('purviewManagement.summary.lastAppliedAt')}>
-              {formatTimestamp(overview?.schemaState?.lastAppliedAt)}
-            </Descriptions.Item>
-            <Descriptions.Item label={t('purviewManagement.summary.lastAppliedBy')}>
-              {overview?.schemaState?.lastAppliedBy || '-'}
-            </Descriptions.Item>
-          </Descriptions>
-        </Space>
-      </Card>
-
-      <Card
-        title={t('purviewManagement.sections.schema')}
-        extra={schemaDiff?.applyRequired ? renderStatusTag('PENDING') : renderStatusTag('COMPLETED')}
-      >
-        <Descriptions bordered size="small" column={1}>
-          <Descriptions.Item label={t('purviewManagement.schema.current')}>
-            <Space wrap>
-              <Text>{schemaDiff?.currentSchemaVersion || '-'}</Text>
-              <Text code>{schemaDiff?.currentSchemaHash || '-'}</Text>
-            </Space>
-          </Descriptions.Item>
-          <Descriptions.Item label={t('purviewManagement.schema.desired')}>
-            <Space wrap>
-              <Text>{schemaDiff?.desiredSchemaVersion || '-'}</Text>
-              <Text code>{schemaDiff?.desiredSchemaHash || '-'}</Text>
-            </Space>
-          </Descriptions.Item>
-          <Descriptions.Item label={t('purviewManagement.schema.customTypes')}>
-            {renderTagList(schemaDiff?.customTypeNames || [])}
-          </Descriptions.Item>
-          <Descriptions.Item label={t('purviewManagement.schema.relationshipTypes')}>
-            {renderTagList(schemaDiff?.relationshipTypeNames || [])}
-          </Descriptions.Item>
-          <Descriptions.Item label={t('purviewManagement.schema.businessMetadata')}>
-            {renderTagList(schemaDiff?.businessMetadataNames || [])}
-          </Descriptions.Item>
-        </Descriptions>
-      </Card>
-
-      <Card title={t('purviewManagement.sections.actions')}>
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <div>
-            <Text strong>{t('purviewManagement.actionGroups.bootstrap')}</Text>
-            <div style={{ marginTop: 8 }}>
-              <Space wrap>
-                <Button
-                  type="primary"
-                  onClick={() =>
-                    runJobAction(
-                      'apply-schema',
-                      () => service.applyTypeDefinitions(),
-                      'purviewManagement.messages.schemaApplied'
-                    )
-                  }
-                  loading={runningAction === 'apply-schema'}
-                >
-                  {t('purviewManagement.actions.applyTypeDefinitions')}
-                </Button>
-              </Space>
-            </div>
-          </div>
-
-          <div>
-            <Text strong>{t('purviewManagement.actionGroups.sync')}</Text>
-            <div style={{ marginTop: 8 }}>
-              <Space wrap>
-                <Button
-                  type="primary"
-                  icon={<SyncOutlined />}
-                  onClick={() =>
-                    runJobAction(
-                      'full-sync',
-                      () => service.startFullSync(repositoryId),
-                      'purviewManagement.messages.fullSyncStarted'
-                    )
-                  }
-                  loading={runningAction === 'full-sync'}
-                >
-                  {t('purviewManagement.actions.fullSync')}
-                </Button>
-                <Button
-                  onClick={() =>
-                    runJobAction(
-                      'incremental-sync',
-                      () => service.startIncrementalSync(repositoryId),
-                      'purviewManagement.messages.incrementalSyncStarted'
-                    )
-                  }
-                  loading={runningAction === 'incremental-sync'}
-                >
-                  {t('purviewManagement.actions.incrementalSync')}
-                </Button>
-              </Space>
-            </div>
-          </div>
-
-          <div>
-            <Text strong>{t('purviewManagement.actionGroups.reconciliation')}</Text>
-            <div style={{ marginTop: 8 }}>
-              <Space wrap>
-                <Button
-                  onClick={() =>
-                    runJobAction(
-                      'reconcile-types',
-                      () => service.reconcileTypes(repositoryId),
-                      'purviewManagement.messages.typeReconciliationStarted'
-                    )
-                  }
-                  loading={runningAction === 'reconcile-types'}
-                >
-                  {t('purviewManagement.actions.reconcileTypes')}
-                </Button>
-                <Button
-                  onClick={() =>
-                    runJobAction(
-                      'reconcile-archives',
-                      () => service.reconcileArchives(repositoryId),
-                      'purviewManagement.messages.archiveReconciliationStarted'
-                    )
-                  }
-                  loading={runningAction === 'reconcile-archives'}
-                >
-                  {t('purviewManagement.actions.reconcileArchives')}
-                </Button>
-                <Button
-                  onClick={() =>
-                    runJobAction(
-                      'reconcile-cloud',
-                      () => service.reconcileCloudMetadata(repositoryId),
-                      'purviewManagement.messages.cloudMetadataReconciliationStarted'
-                    )
-                  }
-                  loading={runningAction === 'reconcile-cloud'}
-                >
-                  {t('purviewManagement.actions.reconcileCloudMetadata')}
-                </Button>
-                <Button
-                  onClick={() =>
-                    runJobAction(
-                      'reconcile-containment',
-                      () => service.reconcileContainment(repositoryId),
-                      'purviewManagement.messages.containmentReconciliationStarted'
-                    )
-                  }
-                  loading={runningAction === 'reconcile-containment'}
-                >
-                  {t('purviewManagement.actions.reconcileContainment')}
-                </Button>
-                <Button
-                  onClick={() =>
-                    runJobAction(
-                      'resolve-deletes',
-                      () => service.resolveDeletes(repositoryId),
-                      'purviewManagement.messages.deleteResolutionStarted'
-                    )
-                  }
-                  loading={runningAction === 'resolve-deletes'}
-                >
-                  {t('purviewManagement.actions.resolveDeletes')}
-                </Button>
-                <Button
-                  onClick={() =>
-                    runJobAction(
-                      'retry-failed',
-                      () => service.retryFailed(repositoryId),
-                      'purviewManagement.messages.retryFailedStarted'
-                    )
-                  }
-                  loading={runningAction === 'retry-failed'}
-                >
-                  {t('purviewManagement.actions.retryFailed')}
-                </Button>
-              </Space>
-            </div>
-          </div>
-        </Space>
-      </Card>
-
-      <Card title={t('purviewManagement.sections.governanceLookup')}>
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Space wrap style={{ width: '100%' }}>
-            <Input.TextArea
-              value={governanceLookupInput}
-              onChange={(event) => setGovernanceLookupInput(event.target.value)}
-              placeholder={t('purviewManagement.governanceLookup.objectIdPlaceholder')}
-              autoSize={{ minRows: 2, maxRows: 5 }}
-              style={{ minWidth: 320 }}
-            />
-            <Button
-              type="primary"
-              onClick={() => void handleGovernanceLookup()}
-              loading={runningAction === 'lookup-governance'}
-              disabled={governanceLookupObjectIds.length === 0}
-            >
-              {t('purviewManagement.actions.lookupGovernance')}
-            </Button>
-          </Space>
-
-          {governanceLookupError && (
-            <Alert
-              type="error"
-              message={t('purviewManagement.governanceLookup.failed')}
-              description={governanceLookupError}
-              showIcon
-            />
-          )}
-
-          {governanceLookupResults.length > 0 && (
-            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-              <Alert
-                type={governanceLookupSuccessCount === governanceLookupResults.length ? 'success' : 'info'}
-                message={t('purviewManagement.governanceLookup.resultSummary', {
-                  count: governanceLookupResults.length,
-                  successCount: governanceLookupSuccessCount,
-                })}
-                showIcon
-              />
-
-              <Table<PurviewGovernanceBulkItemView>
-                columns={governanceLookupColumns}
-                dataSource={governanceLookupResults}
-                rowKey={(record) => record.objectId}
-                size="small"
-                pagination={false}
-                locale={tableLocale}
-                rowSelection={{
-                  type: 'radio',
-                  selectedRowKeys: selectedGovernanceObjectId ? [selectedGovernanceObjectId] : [],
-                  onChange: (selectedRowKeys) =>
-                    setSelectedGovernanceObjectId(selectedRowKeys[0] ? String(selectedRowKeys[0]) : null),
-                }}
-              />
-
-              {selectedGovernanceLookupResult && (
-                <Descriptions bordered size="small" column={1}>
-                  <Descriptions.Item label={t('purviewManagement.governanceLookup.objectId')}>
-                    <Text code>{selectedGovernanceLookupResult.objectId}</Text>
-                  </Descriptions.Item>
-                  <Descriptions.Item label={t('purviewManagement.governanceLookup.qualifiedName')}>
-                    <Text code>{selectedGovernanceLookupResult.qualifiedName || '-'}</Text>
-                  </Descriptions.Item>
-                  <Descriptions.Item label={t('purviewManagement.governanceLookup.entityType')}>
-                    {selectedGovernanceLookupResult.entityTypeName || '-'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label={t('purviewManagement.governanceLookup.message')}>
-                    {selectedGovernanceLookupResult.message || '-'}
-                  </Descriptions.Item>
-                </Descriptions>
-              )}
-
-              {selectedGovernanceLookupResult?.status === 'OK' && (
-                <Descriptions bordered size="small" column={1}>
-                  <Descriptions.Item label={t('purviewManagement.governanceLookup.classifications')}>
-                    {renderTagList(
-                      (selectedGovernanceLookupResult.classifications ?? []).map(
-                        (classification) => classification.typeName
-                      )
-                    )}
-                  </Descriptions.Item>
-                  <Descriptions.Item label={t('purviewManagement.governanceLookup.glossaryTerms')}>
-                    {renderTagList(
-                      (selectedGovernanceLookupResult.glossaryTerms ?? []).map((term) => term.displayText)
-                    )}
-                  </Descriptions.Item>
-                  <Descriptions.Item label={t('purviewManagement.governanceLookup.labels')}>
-                    {renderTagList(selectedGovernanceLookupResult.labels ?? [])}
-                  </Descriptions.Item>
-                </Descriptions>
-              )}
-
-              {selectedGovernanceLookupResult?.status === 'OK'
-                && Object.keys(selectedGovernanceLookupResult.businessMetadata || {}).length > 0 && (
-                <Descriptions bordered size="small" column={1}>
-                  {Object.entries(selectedGovernanceLookupResult.businessMetadata || {}).map(([name, attributes]) => (
-                    <Descriptions.Item key={name} label={name}>
-                      <Space direction="vertical" size={4}>
-                        {Object.entries(attributes).map(([attributeName, value]) => (
-                          <Text key={`${name}-${attributeName}`}>
-                            {attributeName}: {String(value)}
-                          </Text>
-                        ))}
-                      </Space>
-                    </Descriptions.Item>
-                  ))}
-                </Descriptions>
-              )}
-            </Space>
-          )}
-        </Space>
-      </Card>
-
-      <Card title={t('purviewManagement.sections.state')}>
-        <Tabs
-          items={[
-            {
-              key: 'jobs',
-              label: t('purviewManagement.tabs.jobs'),
-              children: (
-                <Table<PurviewJobState>
-                  columns={jobColumns}
-                  dataSource={jobs}
-                  rowKey={(record) => record.jobId}
-                  size="small"
-                  pagination={{ pageSize: 10 }}
-                  locale={tableLocale}
-                />
-              ),
-            },
-            {
-              key: 'cursors',
-              label: t('purviewManagement.tabs.cursors'),
-              children: (
-                <Table<PurviewCursorState>
-                  columns={cursorColumns}
-                  dataSource={cursors}
-                  rowKey={(record) => `${record.repositoryId}-${record.streamKind}`}
-                  size="small"
-                  pagination={{ pageSize: 10 }}
-                  locale={tableLocale}
-                />
-              ),
-            },
-            {
-              key: 'deadLetters',
-              label: t('purviewManagement.tabs.deadLetters'),
-              children: (
-                <Table<PurviewDeadLetterState>
-                  columns={deadLetterColumns}
-                  dataSource={deadLetters}
-                  rowKey={(record) => `${record.streamKind}-${record.entryKey}`}
-                  size="small"
-                  pagination={{ pageSize: 10 }}
-                  locale={tableLocale}
-                />
-              ),
-            },
-            {
-              key: 'tombstones',
-              label: t('purviewManagement.tabs.tombstones'),
-              children: (
-                <Table<PurviewTombstoneState>
-                  columns={tombstoneColumns}
-                  dataSource={tombstones}
-                  rowKey={(record) => `${record.objectId}-${record.changeToken}`}
-                  size="small"
-                  pagination={{ pageSize: 10 }}
-                  locale={tableLocale}
-                />
-              ),
-            },
-            {
-              key: 'locks',
-              label: t('purviewManagement.tabs.locks'),
-              children: (
-                <Table<PurviewLockState>
-                  columns={lockColumns}
-                  dataSource={locks}
-                  rowKey={(record) => `${record.repositoryId}-${record.jobKind}`}
-                  size="small"
-                  pagination={{ pageSize: 10 }}
-                  locale={tableLocale}
-                />
-              ),
-            },
-          ]}
-        />
-      </Card>
+      <StateTablesCard
+        jobs={jobs}
+        cursors={cursors}
+        deadLetters={deadLetters}
+        tombstones={tombstones}
+        locks={locks}
+      />
     </Space>
   );
 };
