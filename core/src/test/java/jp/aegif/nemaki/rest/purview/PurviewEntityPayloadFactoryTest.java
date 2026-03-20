@@ -303,6 +303,72 @@ public class PurviewEntityPayloadFactoryTest {
         assertEquals(1, ((List<Map<String, Object>>) payload.get("entities")).size());
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildArchiveLineageEntitiesMapExternalTargetAndProcess() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        Archive archive = new Archive();
+        archive.setId("archive-001");
+        archive.setOriginalId("doc-001");
+        archive.setName("Quarterly Report");
+        archive.setArchiveState(Archive.STATE_ARCHIVED_COLD);
+        archive.setArchivedBy("archiver");
+        archive.setArchivedAt(calendar("2026-03-20T03:00:00Z"));
+        archive.setColdArchivedAt(calendar("2026-03-20T04:00:00Z"));
+        archive.setContentRef(Map.of("type", "s3", "ref", "s3://archive-bucket/bedroom/doc-001.bin"));
+
+        Map<String, Object> externalAsset = factory.buildExternalAssetEntity("bedroom", archive);
+        Map<String, Object> archiveProcess = factory.buildArchiveProcessEntity("bedroom", archive);
+
+        Map<String, Object> externalAttributes = (Map<String, Object>) externalAsset.get("attributes");
+        assertEquals("nemaki_external_asset", externalAsset.get("typeName"));
+        assertEquals("s3://archive-bucket/bedroom/doc-001.bin", externalAttributes.get("externalStableKey"));
+        assertEquals("s3", externalAttributes.get("sourceSystem"));
+        assertEquals("s3://archive-bucket/bedroom/doc-001.bin", externalAttributes.get("externalPath"));
+
+        Map<String, Object> processAttributes = (Map<String, Object>) archiveProcess.get("attributes");
+        Map<String, Object> relationshipAttributes = (Map<String, Object>) archiveProcess.get("relationshipAttributes");
+        assertEquals("nemaki_archive_process", archiveProcess.get("typeName"));
+        assertEquals("archive-001", processAttributes.get("archiveId"));
+        assertEquals("s3://archive-bucket/bedroom/doc-001.bin", processAttributes.get("externalStableKey"));
+        assertEquals("s3://archive-bucket/bedroom/doc-001.bin", processAttributes.get("targetDescription"));
+        assertEquals(1, ((List<?>) relationshipAttributes.get("inputs")).size());
+        assertEquals(2, ((List<?>) relationshipAttributes.get("outputs")).size());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildCloudSyncLineageEntitiesMapExternalSourceAndProcess() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setName("Quarterly Report");
+        document.setParentId("folder-001");
+        document.setAspects(List.of(new Aspect("nemaki:cloudDriveMetadata", List.of(
+                new Property("nemaki:cloudProvider", "google"),
+                new Property("nemaki:cloudFileId", "cloud-001"),
+                new Property("nemaki:cloudFileUrl", "https://drive.example/doc-001"),
+                new Property("nemaki:cloudLastSyncedAt", "2026-03-20T03:00:00.000+0000")))));
+
+        Map<String, Object> externalAsset = factory.buildExternalAssetEntity("bedroom", document);
+        Map<String, Object> syncProcess = factory.buildCloudSyncProcessEntity("bedroom", document);
+
+        Map<String, Object> externalAttributes = (Map<String, Object>) externalAsset.get("attributes");
+        assertEquals("nemaki_external_asset", externalAsset.get("typeName"));
+        assertEquals("google:cloud-001", externalAttributes.get("externalStableKey"));
+        assertEquals("google", externalAttributes.get("sourceSystem"));
+        assertEquals("https://drive.example/doc-001", externalAttributes.get("externalPath"));
+
+        Map<String, Object> processAttributes = (Map<String, Object>) syncProcess.get("attributes");
+        Map<String, Object> relationshipAttributes = (Map<String, Object>) syncProcess.get("relationshipAttributes");
+        assertEquals("nemaki_cloud_sync_process", syncProcess.get("typeName"));
+        assertEquals("doc-001", processAttributes.get("objectId"));
+        assertEquals("google", processAttributes.get("cloudProvider"));
+        assertEquals("google:cloud-001", processAttributes.get("externalStableKey"));
+        assertEquals(1, ((List<?>) relationshipAttributes.get("inputs")).size());
+        assertEquals(1, ((List<?>) relationshipAttributes.get("outputs")).size());
+    }
+
     private GregorianCalendar calendar(String isoInstant) {
         GregorianCalendar calendar = GregorianCalendar.from(java.time.ZonedDateTime.parse(isoInstant));
         calendar.setTimeZone(TimeZone.getTimeZone("UTC"));

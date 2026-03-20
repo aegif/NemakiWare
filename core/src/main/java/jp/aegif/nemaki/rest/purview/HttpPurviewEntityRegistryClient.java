@@ -24,6 +24,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
     private static final String ENTITY_BULK_PATH = "entity/bulk";
     private static final String ENTITY_UNIQUE_ATTRIBUTE_PATH = "entity/uniqueAttribute/type";
     private static final String RELATIONSHIP_PATH = "relationship";
+    private static final String RELATIONSHIP_GUID_PATH = "relationship/guid";
     private static final String DATAMAP_API_VERSION = "2023-09-01";
     private static final int MAX_BODY_EXCERPT_LENGTH = 200;
 
@@ -118,14 +119,42 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
 
         HttpResponse<String> response = send(httpClient, relationshipRequest);
         if (response.statusCode() == 409) {
-            return PurviewEntityPublishResult.success(1, "relationship already exists");
+            return PurviewEntityPublishResult.success(1, "relationship already exists", extractRelationshipGuid(response.body()));
         }
         if (response.statusCode() >= 200 && response.statusCode() < 300) {
-            return PurviewEntityPublishResult.success(1, "relationship created");
+            return PurviewEntityPublishResult.success(1, "relationship created", extractRelationshipGuid(response.body()));
         }
 
         return PurviewEntityPublishResult.failure(
                 "Purview relationship create returned HTTP " + response.statusCode() + formatBodyExcerpt(response.body()));
+    }
+
+    @Override
+    public PurviewEntityPublishResult deleteRelationshipByGuid(
+            PurviewConnectionRequest request,
+            String relationshipGuid) throws PurviewClientException {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(request.getConnectTimeoutMs()))
+                .build();
+        String accessToken = fetchAccessToken(httpClient, request);
+
+        HttpRequest deleteRequest = HttpRequest.newBuilder(buildRelationshipGuidUri(request, relationshipGuid))
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Accept", "application/json")
+                .timeout(Duration.ofMillis(request.getReadTimeoutMs()))
+                .DELETE()
+                .build();
+
+        HttpResponse<String> response = send(httpClient, deleteRequest);
+        if (response.statusCode() == 404) {
+            return PurviewEntityPublishResult.success(0, "relationship already absent", relationshipGuid);
+        }
+        if (response.statusCode() >= 200 && response.statusCode() < 300) {
+            return PurviewEntityPublishResult.success(1, "relationship deleted", relationshipGuid);
+        }
+
+        return PurviewEntityPublishResult.failure(
+                "Purview relationship delete returned HTTP " + response.statusCode() + formatBodyExcerpt(response.body()));
     }
 
     private int countEntities(Map<String, Object> payload) {
@@ -213,6 +242,39 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
             uri = uri + "?api-version=" + DATAMAP_API_VERSION;
         }
         return URI.create(uri);
+    }
+
+    private URI buildRelationshipGuidUri(PurviewConnectionRequest request, String relationshipGuid) {
+        String uri = trimTrailingSlash(request.getEndpoint()) + "/"
+                + trimSlashes(request.getAtlasBasePath()) + "/" + RELATIONSHIP_GUID_PATH + "/"
+                + urlEncodePathSegment(relationshipGuid);
+        if (trimSlashes(request.getAtlasBasePath()).startsWith("datamap/")) {
+            uri = uri + "?api-version=" + DATAMAP_API_VERSION;
+        }
+        return URI.create(uri);
+    }
+
+    private String extractRelationshipGuid(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode json = objectMapper.readTree(body);
+            JsonNode directGuid = json.get("guid");
+            if (directGuid != null && !directGuid.asText().isBlank()) {
+                return directGuid.asText();
+            }
+            JsonNode relationship = json.get("relationship");
+            if (relationship != null) {
+                JsonNode nestedGuid = relationship.get("guid");
+                if (nestedGuid != null && !nestedGuid.asText().isBlank()) {
+                    return nestedGuid.asText();
+                }
+            }
+            return null;
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     private String formatBodyExcerpt(String body) {

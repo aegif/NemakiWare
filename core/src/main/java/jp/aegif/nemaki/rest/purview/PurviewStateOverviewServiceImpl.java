@@ -16,6 +16,7 @@ public class PurviewStateOverviewServiceImpl implements PurviewStateOverviewServ
     private static final String CURSOR_PREFIX = "purview.cursor.state.";
     private static final String LOCK_PREFIX = "purview.lock.repository.";
     private static final String TOMBSTONE_PREFIX = "purview.tombstone.state.";
+    private static final String DEAD_LETTER_PREFIX = "purview.dead-letter.state.";
 
     private final PurviewStateStore stateStore;
 
@@ -32,7 +33,8 @@ public class PurviewStateOverviewServiceImpl implements PurviewStateOverviewServ
                 buildJobs(persisted),
                 buildCursors(persisted),
                 buildLocks(persisted),
-                buildTombstones(persisted));
+                buildTombstones(persisted),
+                buildDeadLetters(persisted));
     }
 
     private PurviewSchemaState buildSchemaState(String collection, Map<String, Object> persisted) {
@@ -205,6 +207,42 @@ public class PurviewStateOverviewServiceImpl implements PurviewStateOverviewServ
                 .thenComparing(PurviewTombstoneState::getDueAt)
                 .thenComparing(PurviewTombstoneState::getObjectId));
         return tombstones;
+    }
+
+    private List<PurviewDeadLetterState> buildDeadLetters(Map<String, Object> persisted) {
+        Map<String, Map<String, Object>> grouped = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : persisted.entrySet()) {
+            if (!entry.getKey().startsWith(DEAD_LETTER_PREFIX)) {
+                continue;
+            }
+
+            ParsedEntry parsed = parseScopedEntry(entry.getKey(), DEAD_LETTER_PREFIX);
+            if (parsed == null) {
+                continue;
+            }
+
+            grouped.computeIfAbsent(parsed.scope(), ignored -> new LinkedHashMap<>())
+                    .put(parsed.fieldName(), entry.getValue());
+        }
+
+        List<PurviewDeadLetterState> deadLetters = new ArrayList<>();
+        for (Map<String, Object> fields : grouped.values()) {
+            deadLetters.add(new PurviewDeadLetterState(
+                    stringValue(fields.get("repositoryId")),
+                    stringValue(fields.get("streamKind")),
+                    stringValue(fields.get("entryKey")),
+                    stringValue(fields.get("typeName")),
+                    stringValue(fields.get("qualifiedName")),
+                    stringValue(fields.get("firstFailedAt")),
+                    stringValue(fields.get("lastFailedAt")),
+                    intValue(fields.get("failureCount")),
+                    stringValue(fields.get("checkpoint")),
+                    stringValue(fields.get("errorSummary"))));
+        }
+        deadLetters.sort(Comparator.comparing(PurviewDeadLetterState::getRepositoryId)
+                .thenComparing(PurviewDeadLetterState::getStreamKind)
+                .thenComparing(PurviewDeadLetterState::getEntryKey));
+        return deadLetters;
     }
 
     private ParsedEntry parseScopedEntry(String key, String keyPrefix) {

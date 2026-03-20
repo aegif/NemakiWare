@@ -26,19 +26,31 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
     private final RepositoryInfoMap repositoryInfoMap;
     private final ContentDaoService contentDaoService;
     private final PurviewDocumentPublishService documentPublishService;
+    private final PurviewCloudSyncLineageService cloudSyncLineageService;
 
     public PurviewCloudMetadataPublishServiceImpl(
             RepositoryInfoMap repositoryInfoMap,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService,
-            PurviewDocumentPublishService documentPublishService) {
+            PurviewDocumentPublishService documentPublishService,
+            PurviewCloudSyncLineageService cloudSyncLineageService) {
         this.repositoryInfoMap = repositoryInfoMap;
         this.contentDaoService = contentDaoService;
         this.documentPublishService = documentPublishService;
+        this.cloudSyncLineageService = cloudSyncLineageService;
     }
 
     @Override
     public String buildRepositoryCloudMetadataSnapshot(String repositoryId) {
         return buildSnapshot(loadCloudMetadataDocuments(repositoryId));
+    }
+
+    @Override
+    public int publishRepositoryCloudSyncLineage(String repositoryId) {
+        List<Content> cloudMetadataDocuments = loadCloudMetadataDocuments(repositoryId);
+        if (cloudMetadataDocuments.isEmpty()) {
+            return 0;
+        }
+        return cloudSyncLineageService.upsertCloudSyncLineage(repositoryId, cloudMetadataDocuments);
     }
 
     @Override
@@ -53,18 +65,33 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
         Map<String, String> previousByObjectId = parseSnapshot(normalizedPreviousSnapshot);
         Map<String, String> currentByObjectId = new LinkedHashMap<>();
         List<Content> changedDocuments = new ArrayList<>();
+        Map<String, String> obsoleteSnapshotEntries = new LinkedHashMap<>();
         for (Content content : cloudMetadataDocuments) {
             String snapshotEntry = buildSnapshotEntry(content);
+            String previousSnapshotEntry = previousByObjectId.remove(content.getId());
             currentByObjectId.put(content.getId(), snapshotEntry);
-            if (!Objects.equals(snapshotEntry, previousByObjectId.remove(content.getId()))) {
+            if (!Objects.equals(snapshotEntry, previousSnapshotEntry)) {
                 changedDocuments.add(content);
+                if (previousSnapshotEntry != null && !previousSnapshotEntry.isBlank()) {
+                    obsoleteSnapshotEntries.put(content.getId(), previousSnapshotEntry);
+                }
             }
         }
 
+        obsoleteSnapshotEntries.putAll(previousByObjectId);
+
         List<Content> clearedDocuments = loadClearedDocuments(repositoryId, previousByObjectId.keySet());
         int publishedCount = changedDocuments.isEmpty() ? 0 : documentPublishService.upsertContents(repositoryId, changedDocuments);
+        int lineagePublishedCount = changedDocuments.isEmpty() ? 0 : cloudSyncLineageService.upsertCloudSyncLineage(repositoryId, changedDocuments);
         int reconciledCount = clearedDocuments.isEmpty() ? 0 : documentPublishService.upsertContents(repositoryId, clearedDocuments);
-        return new PurviewCloudMetadataSyncResult(currentSnapshot, true, publishedCount, reconciledCount);
+        int lineageReconciledCount = obsoleteSnapshotEntries.isEmpty()
+                ? 0
+                : cloudSyncLineageService.reconcileRemovedCloudSyncLineage(repositoryId, obsoleteSnapshotEntries);
+        return new PurviewCloudMetadataSyncResult(
+                currentSnapshot,
+                true,
+                publishedCount + lineagePublishedCount,
+                reconciledCount + lineageReconciledCount);
     }
 
     private List<Content> loadCloudMetadataDocuments(String repositoryId) {

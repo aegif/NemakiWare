@@ -30,6 +30,7 @@ public class PurviewArchivePublishServiceImplTest {
     private PurviewEntityRegistryClient entityRegistryClient;
     private PurviewDocumentArchiveRelationshipService documentArchiveRelationshipService;
     private PurviewDocumentPublishService documentPublishService;
+    private PurviewArchiveLineageService archiveLineageService;
     private PurviewArchivePublishServiceImpl service;
 
     @BeforeEach
@@ -39,6 +40,7 @@ public class PurviewArchivePublishServiceImplTest {
         entityRegistryClient = mock(PurviewEntityRegistryClient.class);
         documentArchiveRelationshipService = mock(PurviewDocumentArchiveRelationshipService.class);
         documentPublishService = mock(PurviewDocumentPublishService.class);
+        archiveLineageService = mock(PurviewArchiveLineageService.class);
 
         when(config.getEndpoint()).thenReturn("https://example-account.purview.azure.com");
         when(config.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
@@ -60,7 +62,8 @@ public class PurviewArchivePublishServiceImplTest {
                 entityRegistryClient,
                 contentDaoService,
                 documentArchiveRelationshipService,
-                documentPublishService);
+                documentPublishService,
+                archiveLineageService);
     }
 
     @Test
@@ -105,6 +108,19 @@ public class PurviewArchivePublishServiceImplTest {
         verify(documentArchiveRelationshipService).upsertDocumentArchiveRelationships(
                 eq("bedroom"),
                 eq(List.of(archive)));
+    }
+
+    @Test
+    public void testPublishRepositoryArchivesDelegatesArchiveLineage() throws Exception {
+        Archive archive = archive("archive-001", "doc-001");
+        archive.setArchiveState(Archive.STATE_ARCHIVED_COLD);
+        archive.setContentRef(Map.of("type", "s3", "ref", "s3://archive-bucket/bedroom/doc-001.bin"));
+        when(contentDaoService.getArchives("bedroom", 0, 100, Boolean.FALSE))
+                .thenReturn(List.of(archive));
+
+        service.publishRepositoryArchives("bedroom");
+
+        verify(archiveLineageService).upsertArchiveLineage("bedroom", List.of(archive));
     }
 
     @Test

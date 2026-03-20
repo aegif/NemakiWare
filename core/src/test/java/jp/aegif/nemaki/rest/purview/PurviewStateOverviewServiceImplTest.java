@@ -24,7 +24,7 @@ public class PurviewStateOverviewServiceImplTest {
     }
 
     @Test
-    public void testGetStateOverviewAggregatesSchemaJobsCursorsLocksAndTombstones() {
+    public void testGetStateOverviewAggregatesSchemaJobsCursorsLocksTombstonesAndDeadLetters() {
         Map<String, Object> persisted = new LinkedHashMap<>();
         persisted.put("purview.schema.state.NemakiWare.schemaVersion", "1");
         persisted.put("purview.schema.state.NemakiWare.schemaHash", "schema-hash");
@@ -65,6 +65,20 @@ public class PurviewStateOverviewServiceImplTest {
         persisted.put("purview.tombstone.state.bedroom.doc-001.firstSeenAt", "2026-03-20T05:00:00Z");
         persisted.put("purview.tombstone.state.bedroom.doc-001.dueAt", "2026-03-20T05:00:05Z");
         persisted.put("purview.tombstone.state.bedroom.doc-001.status", "PENDING");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.b2JqZWN0LTEwMg.repositoryId", "bedroom");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.b2JqZWN0LTEwMg.streamKind", "content-change-log");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.b2JqZWN0LTEwMg.entryKey", "object-102");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.b2JqZWN0LTEwMg.typeName", "nemaki_document");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.b2JqZWN0LTEwMg.qualifiedName",
+                "nemaki://bedroom/objects/object-102");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.b2JqZWN0LTEwMg.firstFailedAt",
+                "2026-03-20T05:10:00Z");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.b2JqZWN0LTEwMg.lastFailedAt",
+                "2026-03-20T05:11:00Z");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.b2JqZWN0LTEwMg.failureCount", 2);
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.b2JqZWN0LTEwMg.checkpoint", "token-102");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.b2JqZWN0LTEwMg.errorSummary",
+                "publish failed");
 
         when(stateStore.getAll()).thenReturn(persisted);
 
@@ -78,6 +92,8 @@ public class PurviewStateOverviewServiceImplTest {
         assertEquals("bedroom", overview.getLocks().get(0).getRepositoryId());
         assertTrue(overview.getLocks().get(0).isLocked());
         assertEquals("doc-001", overview.getTombstones().get(0).getObjectId());
+        assertEquals("object-102", overview.getDeadLetters().get(0).getEntryKey());
+        assertEquals("content-change-log", overview.getDeadLetters().get(0).getStreamKind());
     }
 
     @Test
@@ -92,5 +108,6 @@ public class PurviewStateOverviewServiceImplTest {
         assertTrue(overview.getCursors().isEmpty());
         assertTrue(overview.getLocks().isEmpty());
         assertTrue(overview.getTombstones().isEmpty());
+        assertTrue(overview.getDeadLetters().isEmpty());
     }
 }

@@ -35,14 +35,19 @@
 - cloud metadata snapshot cursor と incremental からの cloud metadata upsert / clear 再整合
 - repository 単位 `CLOUD_METADATA_RECONCILIATION` job
 - `POST /v1/admin/purview/reconcile/cloud-metadata/{repositoryId}`
+- archive lineage の `nemaki_external_asset` / `nemaki_archive_process`
+- cloud sync lineage の `nemaki_external_asset` / `nemaki_cloud_sync_process`
+- containment relationship snapshot cursor と stale relationship delete
+- repository 単位 `CONTAINMENT_RECONCILIATION` job
+- `POST /v1/admin/purview/reconcile/containment/{repositoryId}`
 
 未実装:
 
-- containment relationship の専用 reconciliation
-- lineage 実体生成
+- import / export lineage
+- archive / cloud metadata / lineage 側 dead-letter 拡張
 - 管理 UI
 
-現時点の実装は「repository / folder / document / type definition / archive metadata を Purview に載せる最初の縦スライス」を成立させることを優先している。設計上の初期スコープ全体はまだ完了していない。
+現時点の実装は「repository / folder / document / type definition / archive metadata を Purview に載せる最初の縦スライス」に加え、stable key を持つ archive / cloud sync の代表的 lineage を成立させることを優先している。設計上の初期スコープ全体はまだ完了していない。
 
 ## 1. 目的
 
@@ -563,10 +568,24 @@ NemakiWare で archive destroy まで完了した場合:
 
 - `nemaki_document` -> `nemaki_archive` -> cold storage target
 
+2026-03-20 実装状況:
+
+- `ARCHIVED_COLD` または stable `contentRef.ref` を持つ archive に限り、`nemaki_external_asset` と `nemaki_archive_process` を upsert するところまで実装済み
+- `nemaki_archive_process` は `inputs=[nemaki_document]`, `outputs=[nemaki_archive, nemaki_external_asset]` を持つ
+- stable cold target を持たない local archive は lineage 対象外のまま
+
 ### 13.4 cloud sync lineage
 
 - external file -> `nemaki_document`
 - `nemaki_document` -> external file
+
+2026-03-20 実装状況:
+
+- `provider + externalFileId` を stable key とみなせる cloud-linked document に限り、`nemaki_external_asset` と `nemaki_cloud_sync_process` を upsert するところまで実装済み
+- `nemaki_cloud_sync_process` は `inputs=[nemaki_external_asset]`, `outputs=[nemaki_document]` を持つ
+- full sync 初回投入時にも cloud-linked document から cloud sync lineage を backfill するところまで実装済み
+- incremental sync / `CLOUD_METADATA_RECONCILIATION` では snapshot 変化時だけ cloud sync lineage を再 upsert し、provider / externalFileId が変わった場合や cloud metadata が外れた場合は古い process / external asset を delete するところまで実装済み
+- stable key を作れない cloud metadata は lineage 対象外のまま
 
 ### 13.5 後続フェーズ
 
@@ -607,6 +626,10 @@ schema bootstrap の扱い:
 - archive 一覧から archived document / `nemaki_archive` を bulk upsert するところまで実装済み
 - full sync 完了時に `archive-snapshot` cursor を seed するところまで実装済み
 - archive full sync では `nemaki_document_has_archive` relationship も作成するところまで実装済み
+- archive full sync では stable cold target を持つ archive に限り `nemaki_external_asset` / `nemaki_archive_process` を upsert するところまで実装済み
+- full sync では cloud-linked document に対する `nemaki_external_asset` / `nemaki_cloud_sync_process` の backfill も行うところまで実装済み
+- full sync 完了時に `cloud-metadata-snapshot` cursor を seed するところまで実装済み
+- full sync 完了時に `containment-snapshot` cursor を seed するところまで実装済み
 
 ### 14.2 incremental sync
 
@@ -628,10 +651,14 @@ schema bootstrap の扱い:
 - custom document type については `nemaki_document_has_type_definition` relationship も更新するところまで実装済み
 - type definition は `type-definition-snapshot` cursor を持ち、snapshot 変化時のみ `nemaki_type_definition` の upsert と欠損 type definition の delete を行うところまで実装済み
 - archive は `archive-snapshot` cursor を持ち、snapshot 変化時のみ archived document / `nemaki_archive` の upsert と restore-destroy に伴う再整合を行うところまで実装済み
+- archive snapshot 変化時は stable cold target を持つ archive に限り `nemaki_external_asset` / `nemaki_archive_process` lineage も再 upsert するところまで実装済み
 - cloud metadata は `cloud-metadata-snapshot` cursor を持ち、snapshot 変化時のみ live document の cloud metadata upsert / clear 再整合を行うところまで実装済み
+- cloud metadata snapshot 変化時は stable key を持つ cloud-linked document に限り `nemaki_external_asset` / `nemaki_cloud_sync_process` lineage も再 upsert し、obsolete target の process / external asset は delete するところまで実装済み
 - `DELETED` は tombstone として stage され、grace period 後は `DELETE_RESOLUTION` job で解決する
 - `DELETE_RESOLUTION` は live object 復活時は tombstone を削除し、document では archive 検出時に `ARCHIVED` へ遷移させ、live/archive 不在時は Purview delete API を呼ぶ
-- dead-letter 専用 queue は未実装
+- `content-change-log` に限り object 単位 dead-letter state を持ち、publish 失敗 object だけを隔離して incremental sync 全体は継続するところまで実装済み
+- `GET /api/v1/admin/purview/dead-letters` と `POST /api/v1/admin/purview/retry-failed/{repositoryId}` で一覧確認と手動再試行ができるところまで実装済み
+- `content-change-log` cursor の `deadLetterCount` は dead-letter state 件数を反映するところまで実装済み
 
 ### 14.3 supplemental reconciliation
 
@@ -654,8 +681,12 @@ change log では完全でない対象のために補助ジョブを持つ。
 - live object が戻っていた場合は tombstone を削除して処理を打ち切る
 - `CLOUD_METADATA_RECONCILIATION` job を追加済み
 - repository 単位で cloud metadata snapshot を比較し、追加/更新された cloud-linked document の再 upsert と cloud metadata が外れた live document の clear 再整合を行うところまで実装済み
+- `CLOUD_METADATA_RECONCILIATION` では stable key を持つ cloud-linked document の `nemaki_external_asset` / `nemaki_cloud_sync_process` lineage 再同期と obsolete target cleanup も行うところまで実装済み
 - full sync / incremental sync / `CLOUD_METADATA_RECONCILIATION` 完了時は `cloud-metadata-snapshot` cursor を seed するところまで実装済み
-- containment relationship 専用 reconciliation は未実装
+- `CONTAINMENT_RECONCILIATION` job を追加済み
+- repository 単位で containment snapshot を比較し、新規 edge の relationship create と stale edge の relationship delete を行うところまで実装済み
+- stale containment relationship の delete には relationship create 時に保持した Purview relationship GUID を用いる
+- full sync / `CONTAINMENT_RECONCILIATION` 完了時は `containment-snapshot` cursor を seed するところまで実装済み
 
 ### 14.4 optional webhook assist
 
@@ -837,7 +868,7 @@ repository と stream 種別ごとに持つ。
 
 - `GET /api/v1/admin/purview/logs`
 - `GET /api/v1/admin/purview/dead-letters`
-- `POST /api/v1/admin/purview/retry-failed`
+- `POST /api/v1/admin/purview/retry-failed/{repositoryId}`
 
 権限は管理者限定とする。
 
@@ -889,6 +920,13 @@ dead-letter 方針:
 
 - 同一オブジェクトが規定回数以上失敗した場合は dead-letter へ退避
 - incremental sync 全体は止めず、失敗オブジェクトのみ再試行対象に分離する
+
+2026-03-20 実装状況:
+
+- 初期実装では `content-change-log` の folder / document publish failure を object 単位で dead-letter 化する
+- dead-letter は `repositoryId + streamKind + entryKey` を key に `nemaki_conf` へ保存する
+- retry は `RETRY_FAILED` job として repository 単位で再実行し、成功時は dead-letter を削除する
+- archive / cloud metadata / lineage への dead-letter 拡張は未実装
 
 ## 22. テスト計画
 
@@ -964,13 +1002,13 @@ dead-letter 方針:
 2026-03-20 状態:
 
 - 進行中
-- 完了済み: change log polling, change token 保存, CREATED / UPDATED / SECURITY の document upsert, containment relationship 更新, `nemaki_document_has_type_definition` relationship 更新, type definition snapshot cursor, snapshot 変化時の `nemaki_type_definition` upsert / delete, archive snapshot cursor, snapshot 変化時の archived document / `nemaki_archive` upsert / restore-destroy 再整合, cloud metadata snapshot cursor, snapshot 変化時の cloud metadata upsert / clear 再整合, tombstone stage, `DELETE_RESOLUTION`, archive / purge 判定, delete API 呼び出し, `ARCHIVE_RECONCILIATION` による archived document / archive upsert, `CLOUD_METADATA_RECONCILIATION` による live document の cloud metadata 再整合
-- 未完了: dead-letter 基盤, containment relationship の専用 reconciliation
+- 完了済み: change log polling, change token 保存, CREATED / UPDATED / SECURITY の document upsert, containment relationship 更新, `nemaki_document_has_type_definition` relationship 更新, type definition snapshot cursor, snapshot 変化時の `nemaki_type_definition` upsert / delete, archive snapshot cursor, snapshot 変化時の archived document / `nemaki_archive` upsert / restore-destroy 再整合, archive lineage (`nemaki_external_asset` / `nemaki_archive_process`), cloud metadata snapshot cursor, snapshot 変化時の cloud metadata upsert / clear 再整合, cloud sync lineage (`nemaki_external_asset` / `nemaki_cloud_sync_process`), tombstone stage, `DELETE_RESOLUTION`, archive / purge 判定, delete API 呼び出し, `ARCHIVE_RECONCILIATION` による archived document / archive upsert, `CLOUD_METADATA_RECONCILIATION` による live document の cloud metadata 再整合, `CONTAINMENT_RECONCILIATION` による stale containment relationship の delete, object 単位 dead-letter state, `GET /dead-letters`, `RETRY_FAILED` job
+- 未完了: archive / cloud metadata / lineage 側 dead-letter 拡張, import/export lineage
 
 直近の次作業:
 
-- containment relationship 専用 reconciliation
-- lineage 実体生成
+- dead-letter の適用範囲拡張
+- import/export lineage
 
 ### Phase 4: supplemental reconciliation
 
@@ -983,6 +1021,12 @@ dead-letter 方針:
 
 - stable key を持つ外部対象に限定した lineage 実装
 - process-only metadata fallback 実装
+
+2026-03-20 状態:
+
+- 進行中
+- 完了済み: archive lineage (`nemaki_external_asset` + `nemaki_archive_process`), cloud sync lineage (`nemaki_external_asset` + `nemaki_cloud_sync_process`)
+- 未完了: import lineage, export lineage
 
 ### Phase 6: UI と拡張
 

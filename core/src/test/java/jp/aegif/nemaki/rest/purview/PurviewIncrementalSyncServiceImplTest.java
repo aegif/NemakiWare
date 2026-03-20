@@ -34,6 +34,7 @@ public class PurviewIncrementalSyncServiceImplTest {
     private PurviewJobStateService jobStateService;
     private PurviewCursorStateService cursorStateService;
     private PurviewTombstoneStateService tombstoneStateService;
+    private PurviewDeadLetterStateService deadLetterStateService;
     private PurviewDocumentPublishService documentPublishService;
     private PurviewArchivePublishService archivePublishService;
     private PurviewCloudMetadataPublishService cloudMetadataPublishService;
@@ -49,6 +50,7 @@ public class PurviewIncrementalSyncServiceImplTest {
         jobStateService = mock(PurviewJobStateService.class);
         cursorStateService = mock(PurviewCursorStateService.class);
         tombstoneStateService = mock(PurviewTombstoneStateService.class);
+        deadLetterStateService = mock(PurviewDeadLetterStateService.class);
         documentPublishService = mock(PurviewDocumentPublishService.class);
         archivePublishService = mock(PurviewArchivePublishService.class);
         cloudMetadataPublishService = mock(PurviewCloudMetadataPublishService.class);
@@ -59,6 +61,8 @@ public class PurviewIncrementalSyncServiceImplTest {
         when(jobStateService.saveJobState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(cursorStateService.saveCursorState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(tombstoneStateService.saveTombstoneState(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(deadLetterStateService.saveDeadLetterState(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(deadLetterStateService.countDeadLetterStates("bedroom", "content-change-log")).thenReturn(0);
         when(lockStateService.tryAcquireRepositoryLock(any(), any(), any(), any())).thenReturn(true);
         when(documentPublishService.upsertContents(any(), anyList())).thenAnswer(invocation -> invocation.getArgument(1, List.class).size());
         when(archivePublishService.syncRepositoryArchivesIfChanged(any(), any()))
@@ -84,6 +88,7 @@ public class PurviewIncrementalSyncServiceImplTest {
                 jobStateService,
                 cursorStateService,
                 tombstoneStateService,
+                deadLetterStateService,
                 documentPublishService,
                 archivePublishService,
                 cloudMetadataPublishService,
@@ -151,11 +156,7 @@ public class PurviewIncrementalSyncServiceImplTest {
         assertEquals("", contentCursorState.getLastErrorAt());
         assertEquals("", contentCursorState.getLastErrorMessage());
         assertEquals(0, contentCursorState.getConsecutiveFailureCount());
-        verify(documentPublishService).upsertContents(eq("bedroom"), argThat(contents ->
-                contents.size() == 3
-                        && "object-101-folder".equals(contents.get(0).getId())
-                        && "object-102".equals(contents.get(1).getId())
-                        && "object-103".equals(contents.get(2).getId())));
+        verify(documentPublishService, times(3)).upsertContents(eq("bedroom"), argThat(contents -> contents.size() == 1));
         verify(lockStateService).releaseRepositoryLock("bedroom", "INCREMENTAL_SYNC", result.getJobId());
     }
 
@@ -356,6 +357,53 @@ public class PurviewIncrementalSyncServiceImplTest {
         verify(tombstoneStateService).saveTombstoneState(argThat(state ->
                 "nemaki_folder".equals(state.getTypeName())
                         && "nemaki://bedroom/objects/object-101".equals(state.getQualifiedName())));
+    }
+
+    @Test
+    public void testStartIncrementalSyncMovesFailedObjectToDeadLetterAndContinues() {
+        when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
+                "NemakiWare", "1", "current-hash", "1", "current-hash", false,
+                java.util.List.of(), java.util.List.of(), java.util.List.of()));
+
+        Change change1 = createChange("101");
+        Change change2 = createChange("102");
+        when(contentDaoService.getLatestChanges("bedroom", null, 100)).thenReturn(List.of(change1, change2));
+        when(contentDaoService.getContentsByIds(eq("bedroom"), anyList()))
+                .thenReturn(Map.of(
+                        "object-101", document("object-101"),
+                        "object-102", document("object-102")));
+        when(deadLetterStateService.getDeadLetterState("bedroom", "content-change-log", "object-101"))
+                .thenReturn(new PurviewDeadLetterState("bedroom", "content-change-log", "object-101",
+                        "", "", "", "", 0, "", ""));
+        when(deadLetterStateService.getDeadLetterState("bedroom", "content-change-log", "object-102"))
+                .thenReturn(new PurviewDeadLetterState("bedroom", "content-change-log", "object-102",
+                        "", "", "", "", 0, "", ""));
+        when(deadLetterStateService.countDeadLetterStates("bedroom", "content-change-log")).thenReturn(1);
+        when(documentPublishService.upsertContents(eq("bedroom"), argThat(contents ->
+                contents.size() == 1 && "object-101".equals(contents.get(0).getId()))))
+                        .thenThrow(new IllegalStateException("publish failed"));
+        when(documentPublishService.upsertContents(eq("bedroom"), argThat(contents ->
+                contents.size() == 1 && "object-102".equals(contents.get(0).getId()))))
+                        .thenReturn(1);
+
+        PurviewJobState result = service.startIncrementalSync("bedroom", "admin");
+
+        assertEquals("COMPLETED_WITH_ERRORS", result.getStatus());
+        assertEquals(2, result.getProcessedCount());
+        assertEquals(1, result.getFailedCount());
+        verify(deadLetterStateService).saveDeadLetterState(argThat(state ->
+                "bedroom".equals(state.getRepositoryId())
+                        && "content-change-log".equals(state.getStreamKind())
+                        && "object-101".equals(state.getEntryKey())
+                        && "nemaki_document".equals(state.getTypeName())
+                        && "101".equals(state.getCheckpoint())
+                        && state.getFailureCount() == 1
+                        && state.getErrorSummary().contains("publish failed")));
+        verify(deadLetterStateService).deleteDeadLetterState("bedroom", "content-change-log", "object-102");
+        verify(cursorStateService).saveCursorState(argThat(state ->
+                "content-change-log".equals(state.getStreamKind())
+                        && "102".equals(state.getCursor())
+                        && state.getDeadLetterCount() == 1));
     }
 
     private Change createChange(String token) {

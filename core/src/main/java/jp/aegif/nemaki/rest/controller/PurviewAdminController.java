@@ -19,8 +19,12 @@ import jp.aegif.nemaki.rest.purview.PurviewConnectionService;
 import jp.aegif.nemaki.rest.purview.PurviewConnectionStatus;
 import jp.aegif.nemaki.rest.purview.PurviewCursorState;
 import jp.aegif.nemaki.rest.purview.PurviewCursorStateService;
+import jp.aegif.nemaki.rest.purview.PurviewDeadLetterRetryService;
+import jp.aegif.nemaki.rest.purview.PurviewDeadLetterState;
+import jp.aegif.nemaki.rest.purview.PurviewDeadLetterStateService;
 import jp.aegif.nemaki.rest.purview.PurviewArchiveReconciliationService;
 import jp.aegif.nemaki.rest.purview.PurviewCloudMetadataReconciliationService;
+import jp.aegif.nemaki.rest.purview.PurviewContainmentReconciliationService;
 import jp.aegif.nemaki.rest.purview.PurviewDeleteResolutionService;
 import jp.aegif.nemaki.rest.purview.PurviewFullSyncService;
 import jp.aegif.nemaki.rest.purview.PurviewIncrementalSyncService;
@@ -51,11 +55,14 @@ public class PurviewAdminController {
     private final PurviewIncrementalSyncService purviewIncrementalSyncService;
     private final PurviewArchiveReconciliationService purviewArchiveReconciliationService;
     private final PurviewCloudMetadataReconciliationService purviewCloudMetadataReconciliationService;
+    private final PurviewContainmentReconciliationService purviewContainmentReconciliationService;
     private final PurviewTypeReconciliationService purviewTypeReconciliationService;
     private final PurviewDeleteResolutionService purviewDeleteResolutionService;
     private final PurviewJobStateService purviewJobStateService;
     private final PurviewCursorStateService purviewCursorStateService;
     private final PurviewStateOverviewService purviewStateOverviewService;
+    private final PurviewDeadLetterStateService purviewDeadLetterStateService;
+    private final PurviewDeadLetterRetryService purviewDeadLetterRetryService;
 
     private HttpServletRequest httpRequest;
 
@@ -68,11 +75,14 @@ public class PurviewAdminController {
             PurviewIncrementalSyncService purviewIncrementalSyncService,
             PurviewArchiveReconciliationService purviewArchiveReconciliationService,
             PurviewCloudMetadataReconciliationService purviewCloudMetadataReconciliationService,
+            PurviewContainmentReconciliationService purviewContainmentReconciliationService,
             PurviewTypeReconciliationService purviewTypeReconciliationService,
             PurviewDeleteResolutionService purviewDeleteResolutionService,
             PurviewJobStateService purviewJobStateService,
             PurviewCursorStateService purviewCursorStateService,
-            PurviewStateOverviewService purviewStateOverviewService) {
+            PurviewStateOverviewService purviewStateOverviewService,
+            PurviewDeadLetterStateService purviewDeadLetterStateService,
+            PurviewDeadLetterRetryService purviewDeadLetterRetryService) {
         this.purviewConnectionService = purviewConnectionService;
         this.purviewSchemaPlannerService = purviewSchemaPlannerService;
         this.purviewSchemaBootstrapService = purviewSchemaBootstrapService;
@@ -80,11 +90,14 @@ public class PurviewAdminController {
         this.purviewIncrementalSyncService = purviewIncrementalSyncService;
         this.purviewArchiveReconciliationService = purviewArchiveReconciliationService;
         this.purviewCloudMetadataReconciliationService = purviewCloudMetadataReconciliationService;
+        this.purviewContainmentReconciliationService = purviewContainmentReconciliationService;
         this.purviewTypeReconciliationService = purviewTypeReconciliationService;
         this.purviewDeleteResolutionService = purviewDeleteResolutionService;
         this.purviewJobStateService = purviewJobStateService;
         this.purviewCursorStateService = purviewCursorStateService;
         this.purviewStateOverviewService = purviewStateOverviewService;
+        this.purviewDeadLetterStateService = purviewDeadLetterStateService;
+        this.purviewDeadLetterRetryService = purviewDeadLetterRetryService;
     }
 
     @Autowired
@@ -216,6 +229,18 @@ public class PurviewAdminController {
         return ResponseEntity.ok(buildJobResponse(jobState));
     }
 
+    @PostMapping("/reconcile/containment/{repositoryId}")
+    public ResponseEntity<Map<String, Object>> startContainmentReconciliation(
+            @PathVariable("repositoryId") String repositoryId) {
+        if (!isAdmin()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
+        }
+
+        PurviewJobState jobState = purviewContainmentReconciliationService.startContainmentReconciliation(
+                repositoryId, getAuthenticatedUsername());
+        return ResponseEntity.ok(buildJobResponse(jobState));
+    }
+
     @PostMapping("/reconcile/types/{repositoryId}")
     public ResponseEntity<Map<String, Object>> startTypeReconciliation(
             @PathVariable("repositoryId") String repositoryId) {
@@ -237,6 +262,32 @@ public class PurviewAdminController {
 
         PurviewJobState jobState = purviewDeleteResolutionService.startDeleteResolution(
                 repositoryId, getAuthenticatedUsername());
+        return ResponseEntity.ok(buildJobResponse(jobState));
+    }
+
+    @GetMapping("/dead-letters")
+    public ResponseEntity<Map<String, Object>> getDeadLetters() {
+        if (!isAdmin()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("deadLetters", purviewDeadLetterStateService.listDeadLetterStates().stream()
+                .map(this::buildDeadLetterResponse)
+                .toList());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/retry-failed/{repositoryId}")
+    public ResponseEntity<Map<String, Object>> startRetryFailed(
+            @PathVariable("repositoryId") String repositoryId) {
+        if (!isAdmin()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(buildForbiddenResponse());
+        }
+
+        PurviewJobState jobState = purviewDeadLetterRetryService.startRetryFailed(
+                repositoryId,
+                getAuthenticatedUsername());
         return ResponseEntity.ok(buildJobResponse(jobState));
     }
 
@@ -288,6 +339,7 @@ public class PurviewAdminController {
         response.put("cursors", overview.getCursors().stream().map(this::buildCursorResponse).toList());
         response.put("locks", overview.getLocks().stream().map(this::buildLockResponse).toList());
         response.put("tombstones", overview.getTombstones().stream().map(this::buildTombstoneResponse).toList());
+        response.put("deadLetters", overview.getDeadLetters().stream().map(this::buildDeadLetterResponse).toList());
         return ResponseEntity.ok(response);
     }
 
@@ -386,6 +438,21 @@ public class PurviewAdminController {
         response.put("firstSeenAt", tombstoneState.getFirstSeenAt());
         response.put("dueAt", tombstoneState.getDueAt());
         response.put("status", tombstoneState.getStatus());
+        return response;
+    }
+
+    private Map<String, Object> buildDeadLetterResponse(PurviewDeadLetterState deadLetterState) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("repositoryId", deadLetterState.getRepositoryId());
+        response.put("streamKind", deadLetterState.getStreamKind());
+        response.put("entryKey", deadLetterState.getEntryKey());
+        response.put("typeName", deadLetterState.getTypeName());
+        response.put("qualifiedName", deadLetterState.getQualifiedName());
+        response.put("firstFailedAt", deadLetterState.getFirstFailedAt());
+        response.put("lastFailedAt", deadLetterState.getLastFailedAt());
+        response.put("failureCount", deadLetterState.getFailureCount());
+        response.put("checkpoint", deadLetterState.getCheckpoint());
+        response.put("errorSummary", deadLetterState.getErrorSummary());
         return response;
     }
 }

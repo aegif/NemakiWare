@@ -22,8 +22,12 @@ import jp.aegif.nemaki.rest.purview.PurviewConnectionService;
 import jp.aegif.nemaki.rest.purview.PurviewConnectionStatus;
 import jp.aegif.nemaki.rest.purview.PurviewCursorState;
 import jp.aegif.nemaki.rest.purview.PurviewCursorStateService;
+import jp.aegif.nemaki.rest.purview.PurviewDeadLetterRetryService;
+import jp.aegif.nemaki.rest.purview.PurviewDeadLetterState;
+import jp.aegif.nemaki.rest.purview.PurviewDeadLetterStateService;
 import jp.aegif.nemaki.rest.purview.PurviewArchiveReconciliationService;
 import jp.aegif.nemaki.rest.purview.PurviewCloudMetadataReconciliationService;
+import jp.aegif.nemaki.rest.purview.PurviewContainmentReconciliationService;
 import jp.aegif.nemaki.rest.purview.PurviewDeleteResolutionService;
 import jp.aegif.nemaki.rest.purview.PurviewSchemaApplyResult;
 import jp.aegif.nemaki.rest.purview.PurviewSchemaDiff;
@@ -51,11 +55,14 @@ public class PurviewAdminControllerTest {
     private PurviewIncrementalSyncService incrementalSyncService;
     private PurviewArchiveReconciliationService archiveReconciliationService;
     private PurviewCloudMetadataReconciliationService cloudMetadataReconciliationService;
+    private PurviewContainmentReconciliationService containmentReconciliationService;
     private PurviewTypeReconciliationService typeReconciliationService;
     private PurviewDeleteResolutionService deleteResolutionService;
     private PurviewJobStateService jobStateService;
     private PurviewCursorStateService cursorStateService;
     private PurviewStateOverviewService stateOverviewService;
+    private PurviewDeadLetterStateService deadLetterStateService;
+    private PurviewDeadLetterRetryService deadLetterRetryService;
     private PurviewAdminController controller;
 
     @BeforeEach
@@ -67,16 +74,19 @@ public class PurviewAdminControllerTest {
         incrementalSyncService = mock(PurviewIncrementalSyncService.class);
         archiveReconciliationService = mock(PurviewArchiveReconciliationService.class);
         cloudMetadataReconciliationService = mock(PurviewCloudMetadataReconciliationService.class);
+        containmentReconciliationService = mock(PurviewContainmentReconciliationService.class);
         typeReconciliationService = mock(PurviewTypeReconciliationService.class);
         deleteResolutionService = mock(PurviewDeleteResolutionService.class);
         jobStateService = mock(PurviewJobStateService.class);
         cursorStateService = mock(PurviewCursorStateService.class);
         stateOverviewService = mock(PurviewStateOverviewService.class);
+        deadLetterStateService = mock(PurviewDeadLetterStateService.class);
+        deadLetterRetryService = mock(PurviewDeadLetterRetryService.class);
         controller = new PurviewAdminController(
                 connectionService, schemaPlannerService, schemaBootstrapService, fullSyncService,
-                incrementalSyncService, archiveReconciliationService, cloudMetadataReconciliationService, typeReconciliationService,
+                incrementalSyncService, archiveReconciliationService, cloudMetadataReconciliationService, containmentReconciliationService, typeReconciliationService,
                 deleteResolutionService, jobStateService,
-                cursorStateService, stateOverviewService);
+                cursorStateService, stateOverviewService, deadLetterStateService, deadLetterRetryService);
     }
 
     @Test
@@ -238,6 +248,58 @@ public class PurviewAdminControllerTest {
     }
 
     @Test
+    public void testGetDeadLettersReturnsPersistedEntriesForAdmin() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        when(deadLetterStateService.listDeadLetterStates()).thenReturn(java.util.List.of(new PurviewDeadLetterState(
+                "bedroom",
+                "content-change-log",
+                "object-101",
+                "nemaki_document",
+                "nemaki://bedroom/objects/object-101",
+                "2026-03-20T05:00:00Z",
+                "2026-03-20T05:01:00Z",
+                2,
+                "101",
+                "publish failed")));
+
+        ResponseEntity<Map<String, Object>> response = controller.getDeadLetters();
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(1, ((java.util.List<?>) response.getBody().get("deadLetters")).size());
+        Map<?, ?> deadLetter = (Map<?, ?>) ((java.util.List<?>) response.getBody().get("deadLetters")).get(0);
+        assertEquals("object-101", deadLetter.get("entryKey"));
+        assertEquals("content-change-log", deadLetter.get("streamKind"));
+        verify(deadLetterStateService).listDeadLetterStates();
+    }
+
+    @Test
+    public void testStartRetryFailedReturnsJobStateForAdmin() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(callContext.getUsername()).thenReturn("admin");
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        PurviewJobState jobState = new PurviewJobState(
+                "job-retry-001", "RETRY_FAILED", "bedroom", "COMPLETED",
+                "2026-03-20T02:00:00Z", "2026-03-20T02:01:00Z", 2, 0, "token-2", "");
+        when(deadLetterRetryService.startRetryFailed("bedroom", "admin")).thenReturn(jobState);
+
+        ResponseEntity<Map<String, Object>> response = controller.startRetryFailed("bedroom");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("job-retry-001", response.getBody().get("jobId"));
+        assertEquals("RETRY_FAILED", response.getBody().get("jobKind"));
+        verify(deadLetterRetryService).startRetryFailed("bedroom", "admin");
+    }
+
+    @Test
     public void testStartIncrementalSyncReturnsJobStateForAdmin() {
         HttpServletRequest request = mock(HttpServletRequest.class);
         CallContext callContext = mock(CallContext.class);
@@ -280,6 +342,28 @@ public class PurviewAdminControllerTest {
         assertEquals("job-002b", response.getBody().get("jobId"));
         assertEquals("CLOUD_METADATA_RECONCILIATION", response.getBody().get("jobKind"));
         verify(cloudMetadataReconciliationService).startCloudMetadataReconciliation("bedroom", "admin");
+    }
+
+    @Test
+    public void testStartContainmentReconciliationReturnsJobStateForAdmin() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(callContext.getUsername()).thenReturn("admin");
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        PurviewJobState jobState = new PurviewJobState(
+                "job-002c", "CONTAINMENT_RECONCILIATION", "bedroom", "COMPLETED",
+                "2026-03-20T03:11:00Z", "2026-03-20T03:11:01Z", 2, 0, "", "");
+        when(containmentReconciliationService.startContainmentReconciliation("bedroom", "admin")).thenReturn(jobState);
+
+        ResponseEntity<Map<String, Object>> response = controller.startContainmentReconciliation("bedroom");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("job-002c", response.getBody().get("jobId"));
+        assertEquals("CONTAINMENT_RECONCILIATION", response.getBody().get("jobKind"));
+        verify(containmentReconciliationService).startContainmentReconciliation("bedroom", "admin");
     }
 
     @Test
@@ -423,7 +507,12 @@ public class PurviewAdminControllerTest {
                         new PurviewTombstoneState(
                                 "bedroom", "doc-001", "nemaki_document",
                                 "nemaki://bedroom/objects/doc-001", "token-101",
-                                "2026-03-20T05:00:00Z", "2026-03-20T05:00:05Z", "PENDING")));
+                                "2026-03-20T05:00:00Z", "2026-03-20T05:00:05Z", "PENDING")),
+                java.util.List.of(
+                        new PurviewDeadLetterState(
+                                "bedroom", "content-change-log", "object-101", "nemaki_document",
+                                "nemaki://bedroom/objects/object-101",
+                                "2026-03-20T05:10:00Z", "2026-03-20T05:11:00Z", 2, "token-102", "publish failed")));
         when(schemaPlannerService.getCurrentSchemaState())
                 .thenReturn(new PurviewSchemaState("NemakiWare", "", "", "", "", ""));
         when(stateOverviewService.getStateOverview("NemakiWare")).thenReturn(overview);
@@ -437,6 +526,7 @@ public class PurviewAdminControllerTest {
         assertEquals(1, ((java.util.List<?>) response.getBody().get("cursors")).size());
         assertEquals(1, ((java.util.List<?>) response.getBody().get("locks")).size());
         assertEquals(1, ((java.util.List<?>) response.getBody().get("tombstones")).size());
+        assertEquals(1, ((java.util.List<?>) response.getBody().get("deadLetters")).size());
         verify(stateOverviewService).getStateOverview("NemakiWare");
     }
 }

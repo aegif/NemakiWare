@@ -19,7 +19,9 @@ public class PurviewSchemaPayloadFactory {
                 buildDocumentEntityDef(),
                 buildTypeDefinitionEntityDef(),
                 buildExternalAssetEntityDef(),
-                buildArchiveEntityDef()));
+                buildArchiveEntityDef(),
+                buildArchiveProcessEntityDef(),
+                buildCloudSyncProcessEntityDef()));
         payload.put("relationshipDefs", List.of(
                 buildRepositoryContainsFolderRelationshipDef(),
                 buildFolderContainsFolderRelationshipDef(),
@@ -117,6 +119,32 @@ public class PurviewSchemaPayloadFactory {
                 attribute("archivedAt", "long", true),
                 attribute("versionSeriesId", "string", true),
                 attribute("versionLabel", "string", true)));
+        return entityDef;
+    }
+
+    private Map<String, Object> buildArchiveProcessEntityDef() {
+        Map<String, Object> entityDef = baseTypeDef("nemaki_archive_process",
+                "Process representing NemakiWare archive lineage to cold storage");
+        entityDef.put("superTypes", List.of("Process"));
+        entityDef.put("attributeDefs", List.of(
+                attribute("repositoryId", "string", false),
+                attribute("archiveId", "string", false),
+                attribute("archiveState", "string", true),
+                attribute("externalStableKey", "string", false),
+                attribute("targetDescription", "string", true)));
+        return entityDef;
+    }
+
+    private Map<String, Object> buildCloudSyncProcessEntityDef() {
+        Map<String, Object> entityDef = baseTypeDef("nemaki_cloud_sync_process",
+                "Process representing NemakiWare cloud sync lineage");
+        entityDef.put("superTypes", List.of("Process"));
+        entityDef.put("attributeDefs", List.of(
+                attribute("repositoryId", "string", false),
+                attribute("objectId", "string", false),
+                attribute("cloudProvider", "string", false),
+                attribute("externalStableKey", "string", false),
+                attribute("targetDescription", "string", true)));
         return entityDef;
     }
 

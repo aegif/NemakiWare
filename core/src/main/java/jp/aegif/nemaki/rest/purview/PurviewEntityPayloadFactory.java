@@ -1,5 +1,7 @@
 package jp.aegif.nemaki.rest.purview;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +22,9 @@ public class PurviewEntityPayloadFactory {
     private static final String DOCUMENT_TYPE_NAME = "nemaki_document";
     private static final String TYPE_DEFINITION_TYPE_NAME = "nemaki_type_definition";
     private static final String ARCHIVE_TYPE_NAME = "nemaki_archive";
+    private static final String EXTERNAL_ASSET_TYPE_NAME = "nemaki_external_asset";
+    private static final String ARCHIVE_PROCESS_TYPE_NAME = "nemaki_archive_process";
+    private static final String CLOUD_SYNC_PROCESS_TYPE_NAME = "nemaki_cloud_sync_process";
     private static final String DOCUMENT_HAS_TYPE_DEFINITION_RELATIONSHIP = "nemaki_document_has_type_definition";
     private static final String LIFECYCLE_ACTIVE = "ACTIVE";
     private static final String LIFECYCLE_ARCHIVED = "ARCHIVED";
@@ -278,6 +283,169 @@ public class PurviewEntityPayloadFactory {
         return entity;
     }
 
+    public boolean hasArchiveLineageTarget(Archive archive) {
+        return resolveArchiveExternalStableKey(archive) != null;
+    }
+
+    public String resolveArchiveExternalStableKey(Archive archive) {
+        if (archive == null) {
+            return null;
+        }
+        String contentRef = null;
+        if (archive.getContentRef() != null) {
+            contentRef = nullIfBlank(archive.getContentRef().get("ref"));
+        }
+        if (contentRef != null) {
+            return contentRef;
+        }
+        if (Archive.STATE_ARCHIVED_COLD.equals(archive.getEffectiveArchiveState())
+                || Archive.STATE_COLD_MOVING.equals(archive.getEffectiveArchiveState())) {
+            return nullIfBlank(archive.getPath());
+        }
+        return null;
+    }
+
+    public Map<String, Object> buildExternalAssetEntity(String repositoryId, Archive archive) {
+        String stableKey = requireArchiveExternalStableKey(archive);
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildExternalAssetQualifiedName(repositoryId, stableKey));
+        attributes.put("name", firstNonBlank(archive.getName(), archive.getOriginalId(), archive.getId(), stableKey));
+        attributes.put("description", null);
+        attributes.put("owner", firstNonBlank(archive.getArchivedBy(), archive.getCreator(), "system"));
+        attributes.put("createTime", firstNonZero(
+                toEpochMillis(archive.getColdArchivedAt()),
+                toEpochMillis(archive.getArchivedAt()),
+                toEpochMillis(archive.getCreated())));
+        attributes.put("modifiedTime", firstNonZero(
+                toEpochMillis(archive.getColdArchivedAt()),
+                toEpochMillis(archive.getArchivedAt()),
+                toEpochMillis(archive.getModified()),
+                toEpochMillis(archive.getCreated())));
+        attributes.put("externalStableKey", stableKey);
+        attributes.put("sourceSystem", firstNonBlank(resolveArchiveSourceSystem(archive), "cold-storage"));
+        attributes.put("externalPath", firstNonBlank(stableKey, archive.getPath()));
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", EXTERNAL_ASSET_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(archive.getCreator(), "system"));
+        entity.put("updatedBy", firstNonBlank(archive.getArchivedBy(), archive.getModifier(), archive.getCreator(), "system"));
+        entity.put("version", 0);
+        return entity;
+    }
+
+    public boolean hasCloudSyncLineageTarget(Content content) {
+        return resolveCloudExternalStableKey(content) != null;
+    }
+
+    public String resolveCloudExternalStableKey(Content content) {
+        String provider = PurviewCloudMetadataSupport.getCloudProvider(content);
+        String externalFileId = PurviewCloudMetadataSupport.getExternalFileId(content);
+        if (provider == null || provider.isBlank() || externalFileId == null || externalFileId.isBlank()) {
+            return null;
+        }
+        return provider + ":" + externalFileId;
+    }
+
+    public Map<String, Object> buildExternalAssetEntity(String repositoryId, Content content) {
+        String stableKey = requireCloudExternalStableKey(content);
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildExternalAssetQualifiedName(repositoryId, stableKey));
+        attributes.put("name", firstNonBlank(content.getName(), content.getId(), stableKey));
+        attributes.put("description", nullIfBlank(content.getDescription()));
+        attributes.put("owner", firstNonBlank(content.getCreator(), content.getModifier(), "system"));
+        attributes.put("createTime", toEpochMillis(content.getCreated()));
+        attributes.put("modifiedTime", toEpochMillis(content.getModified()));
+        attributes.put("externalStableKey", stableKey);
+        attributes.put("sourceSystem", PurviewCloudMetadataSupport.getCloudProvider(content));
+        attributes.put("externalPath", firstNonBlank(
+                PurviewCloudMetadataSupport.getCloudFileUrl(content),
+                PurviewCloudMetadataSupport.getExternalFileId(content)));
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", EXTERNAL_ASSET_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(content.getCreator(), "system"));
+        entity.put("updatedBy", firstNonBlank(content.getModifier(), content.getCreator(), "system"));
+        entity.put("version", 0);
+        return entity;
+    }
+
+    public Map<String, Object> buildCloudSyncProcessEntity(String repositoryId, Content content) {
+        String stableKey = requireCloudExternalStableKey(content);
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildCloudSyncProcessQualifiedName(repositoryId, content.getId()));
+        attributes.put("name", "Cloud Sync " + firstNonBlank(content.getName(), content.getId()));
+        attributes.put("description", nullIfBlank(content.getDescription()));
+        attributes.put("owner", firstNonBlank(content.getCreator(), content.getModifier(), "system"));
+        attributes.put("createTime", toEpochMillis(content.getCreated()));
+        attributes.put("modifiedTime", toEpochMillis(content.getModified()));
+        attributes.put("repositoryId", repositoryId);
+        attributes.put("objectId", content.getId());
+        attributes.put("cloudProvider", PurviewCloudMetadataSupport.getCloudProvider(content));
+        attributes.put("externalStableKey", stableKey);
+        attributes.put("targetDescription", firstNonBlank(
+                PurviewCloudMetadataSupport.getCloudFileUrl(content),
+                PurviewCloudMetadataSupport.getExternalFileId(content)));
+
+        Map<String, Object> relationshipAttributes = new LinkedHashMap<>();
+        relationshipAttributes.put("inputs", List.of(
+                relationshipEnd(EXTERNAL_ASSET_TYPE_NAME, buildExternalAssetQualifiedName(repositoryId, stableKey))));
+        relationshipAttributes.put("outputs", List.of(
+                relationshipEnd(DOCUMENT_TYPE_NAME, buildObjectQualifiedName(repositoryId, content.getId()))));
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", CLOUD_SYNC_PROCESS_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("relationshipAttributes", relationshipAttributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(content.getCreator(), "system"));
+        entity.put("updatedBy", firstNonBlank(content.getModifier(), content.getCreator(), "system"));
+        entity.put("version", 0);
+        return entity;
+    }
+
+    public Map<String, Object> buildArchiveProcessEntity(String repositoryId, Archive archive) {
+        String stableKey = requireArchiveExternalStableKey(archive);
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildArchiveProcessQualifiedName(repositoryId, archive.getId()));
+        attributes.put("name", "Archive " + firstNonBlank(archive.getName(), archive.getOriginalId(), archive.getId()));
+        attributes.put("description", null);
+        attributes.put("owner", firstNonBlank(archive.getArchivedBy(), archive.getCreator(), "system"));
+        attributes.put("createTime", firstNonZero(
+                toEpochMillis(archive.getArchivedAt()),
+                toEpochMillis(archive.getCreated())));
+        attributes.put("modifiedTime", firstNonZero(
+                toEpochMillis(archive.getColdArchivedAt()),
+                toEpochMillis(archive.getArchivedAt()),
+                toEpochMillis(archive.getModified()),
+                toEpochMillis(archive.getCreated())));
+        attributes.put("repositoryId", repositoryId);
+        attributes.put("archiveId", archive.getId());
+        attributes.put("archiveState", archive.getEffectiveArchiveState());
+        attributes.put("externalStableKey", stableKey);
+        attributes.put("targetDescription", firstNonBlank(stableKey, archive.getPath()));
+
+        Map<String, Object> relationshipAttributes = new LinkedHashMap<>();
+        relationshipAttributes.put("inputs", List.of(
+                relationshipEnd(DOCUMENT_TYPE_NAME, buildObjectQualifiedName(repositoryId, archive.getOriginalId()))));
+        relationshipAttributes.put("outputs", List.of(
+                relationshipEnd(ARCHIVE_TYPE_NAME, buildArchiveQualifiedName(repositoryId, archive.getId())),
+                relationshipEnd(EXTERNAL_ASSET_TYPE_NAME, buildExternalAssetQualifiedName(repositoryId, stableKey))));
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", ARCHIVE_PROCESS_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("relationshipAttributes", relationshipAttributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(archive.getCreator(), "system"));
+        entity.put("updatedBy", firstNonBlank(archive.getArchivedBy(), archive.getModifier(), archive.getCreator(), "system"));
+        entity.put("version", 0);
+        return entity;
+    }
+
     private String buildRepositoryQualifiedName(String repositoryId) {
         return "nemaki://" + repositoryId;
     }
@@ -292,6 +460,42 @@ public class PurviewEntityPayloadFactory {
 
     private String buildArchiveQualifiedName(String repositoryId, String archiveId) {
         return "nemaki://" + repositoryId + "/archives/" + archiveId;
+    }
+
+    public String buildExternalAssetQualifiedName(String repositoryId, String stableKey) {
+        return "nemaki://" + repositoryId + "/external-assets/"
+                + Base64.getUrlEncoder().withoutPadding().encodeToString(stableKey.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String buildArchiveProcessQualifiedName(String repositoryId, String archiveId) {
+        return "nemaki://" + repositoryId + "/archive-processes/" + archiveId;
+    }
+
+    public String buildCloudSyncProcessQualifiedName(String repositoryId, String objectId) {
+        return "nemaki://" + repositoryId + "/cloud-sync-processes/" + objectId;
+    }
+
+    private String resolveArchiveSourceSystem(Archive archive) {
+        if (archive.getContentRef() == null) {
+            return null;
+        }
+        return nullIfBlank(archive.getContentRef().get("type"));
+    }
+
+    private String requireArchiveExternalStableKey(Archive archive) {
+        String stableKey = resolveArchiveExternalStableKey(archive);
+        if (stableKey == null || stableKey.isBlank()) {
+            throw new IllegalStateException("Archive does not have a stable external target");
+        }
+        return stableKey;
+    }
+
+    private String requireCloudExternalStableKey(Content content) {
+        String stableKey = resolveCloudExternalStableKey(content);
+        if (stableKey == null || stableKey.isBlank()) {
+            throw new IllegalStateException("Content does not have a stable cloud target");
+        }
+        return stableKey;
     }
 
     private Map<String, Object> relationshipEnd(String typeName, String qualifiedName) {

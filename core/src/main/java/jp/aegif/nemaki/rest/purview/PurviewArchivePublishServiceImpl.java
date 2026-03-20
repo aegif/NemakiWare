@@ -32,6 +32,7 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
     private final ContentDaoService contentDaoService;
     private final PurviewDocumentArchiveRelationshipService documentArchiveRelationshipService;
     private final PurviewDocumentPublishService documentPublishService;
+    private final PurviewArchiveLineageService archiveLineageService;
 
     public PurviewArchivePublishServiceImpl(
             PurviewConfig purviewConfig,
@@ -39,13 +40,15 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
             PurviewEntityRegistryClient entityRegistryClient,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService,
             PurviewDocumentArchiveRelationshipService documentArchiveRelationshipService,
-            PurviewDocumentPublishService documentPublishService) {
+            PurviewDocumentPublishService documentPublishService,
+            PurviewArchiveLineageService archiveLineageService) {
         this.purviewConfig = purviewConfig;
         this.entityPayloadFactory = entityPayloadFactory;
         this.entityRegistryClient = entityRegistryClient;
         this.contentDaoService = contentDaoService;
         this.documentArchiveRelationshipService = documentArchiveRelationshipService;
         this.documentPublishService = documentPublishService;
+        this.archiveLineageService = archiveLineageService;
     }
 
     @Override
@@ -109,9 +112,11 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
             processedCount += flushIfNeeded(entityBatch);
         }
 
-        return processedCount
+        int archiveEntityCount = processedCount
                 + flushEntities(entityBatch)
                 + documentArchiveRelationshipService.upsertDocumentArchiveRelationships(repositoryId, relationshipCandidates);
+        archiveLineageService.upsertArchiveLineage(repositoryId, archives);
+        return archiveEntityCount;
     }
 
     private int flushIfNeeded(List<Map<String, Object>> entities) {

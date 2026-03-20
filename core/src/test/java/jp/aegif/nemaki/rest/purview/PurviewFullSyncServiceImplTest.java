@@ -26,6 +26,7 @@ public class PurviewFullSyncServiceImplTest {
     private PurviewDocumentPublishService documentPublishService;
     private PurviewArchivePublishService archivePublishService;
     private PurviewCloudMetadataPublishService cloudMetadataPublishService;
+    private PurviewContainmentRelationshipService containmentRelationshipService;
     private PurviewTypeDefinitionPublishService typeDefinitionPublishService;
     private ContentDaoService contentDaoService;
     private PurviewFullSyncServiceImpl service;
@@ -39,6 +40,7 @@ public class PurviewFullSyncServiceImplTest {
         documentPublishService = mock(PurviewDocumentPublishService.class);
         archivePublishService = mock(PurviewArchivePublishService.class);
         cloudMetadataPublishService = mock(PurviewCloudMetadataPublishService.class);
+        containmentRelationshipService = mock(PurviewContainmentRelationshipService.class);
         typeDefinitionPublishService = mock(PurviewTypeDefinitionPublishService.class);
         contentDaoService = mock(ContentDaoService.class);
         when(jobStateService.saveJobState(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -47,7 +49,9 @@ public class PurviewFullSyncServiceImplTest {
         when(documentPublishService.publishRepositoryHierarchy(any())).thenReturn(0);
         when(archivePublishService.publishRepositoryArchives(any())).thenReturn(0);
         when(archivePublishService.buildRepositoryArchiveSnapshot(any())).thenReturn("");
+        when(cloudMetadataPublishService.publishRepositoryCloudSyncLineage(any())).thenReturn(0);
         when(cloudMetadataPublishService.buildRepositoryCloudMetadataSnapshot(any())).thenReturn("");
+        when(containmentRelationshipService.buildRepositoryContainmentSnapshot(any())).thenReturn("");
         when(typeDefinitionPublishService.publishRepositoryTypeDefinitions(any())).thenReturn(0);
         when(typeDefinitionPublishService.buildRepositoryTypeDefinitionSnapshot(any())).thenReturn("");
         service = new PurviewFullSyncServiceImpl(
@@ -58,6 +62,7 @@ public class PurviewFullSyncServiceImplTest {
                 documentPublishService,
                 archivePublishService,
                 cloudMetadataPublishService,
+                containmentRelationshipService,
                 typeDefinitionPublishService,
                 contentDaoService);
     }
@@ -95,8 +100,10 @@ public class PurviewFullSyncServiceImplTest {
                 java.util.List.of(), java.util.List.of(), java.util.List.of()));
         when(documentPublishService.publishRepositoryHierarchy("bedroom")).thenReturn(5);
         when(archivePublishService.publishRepositoryArchives("bedroom")).thenReturn(2);
+        when(cloudMetadataPublishService.publishRepositoryCloudSyncLineage("bedroom")).thenReturn(4);
         when(archivePublishService.buildRepositoryArchiveSnapshot("bedroom")).thenReturn("archive-snapshot-1");
         when(cloudMetadataPublishService.buildRepositoryCloudMetadataSnapshot("bedroom")).thenReturn("cloud-snapshot-1");
+        when(containmentRelationshipService.buildRepositoryContainmentSnapshot("bedroom")).thenReturn("containment-snapshot-1");
         when(typeDefinitionPublishService.publishRepositoryTypeDefinitions("bedroom")).thenReturn(3);
         when(typeDefinitionPublishService.buildRepositoryTypeDefinitionSnapshot("bedroom")).thenReturn("snapshot-1");
         when(contentDaoService.getLatestChange("bedroom")).thenReturn(createChange("120"));
@@ -107,16 +114,18 @@ public class PurviewFullSyncServiceImplTest {
         assertEquals("COMPLETED", result.getStatus());
         assertEquals("FULL_SYNC", result.getJobKind());
         assertEquals("bedroom", result.getRepositoryId());
-        assertEquals(10, result.getProcessedCount());
+        assertEquals(14, result.getProcessedCount());
         assertEquals("120", result.getCheckpoint());
         verify(documentPublishService).publishRepositoryHierarchy("bedroom");
         verify(archivePublishService).publishRepositoryArchives("bedroom");
+        verify(cloudMetadataPublishService).publishRepositoryCloudSyncLineage("bedroom");
         verify(archivePublishService).buildRepositoryArchiveSnapshot("bedroom");
         verify(cloudMetadataPublishService).buildRepositoryCloudMetadataSnapshot("bedroom");
+        verify(containmentRelationshipService).buildRepositoryContainmentSnapshot("bedroom");
         verify(typeDefinitionPublishService).publishRepositoryTypeDefinitions("bedroom");
         verify(typeDefinitionPublishService).buildRepositoryTypeDefinitionSnapshot("bedroom");
         verify(jobStateService).saveJobState(any());
-        verify(cursorStateService, times(4)).saveCursorState(any());
+        verify(cursorStateService, times(5)).saveCursorState(any());
         verify(lockStateService).releaseRepositoryLock("bedroom", "FULL_SYNC", result.getJobId());
     }
 
@@ -131,7 +140,7 @@ public class PurviewFullSyncServiceImplTest {
 
         assertEquals("COMPLETED", result.getStatus());
         assertEquals("", result.getCheckpoint());
-        verify(cursorStateService, times(4)).saveCursorState(any());
+        verify(cursorStateService, times(5)).saveCursorState(any());
     }
 
     @Test

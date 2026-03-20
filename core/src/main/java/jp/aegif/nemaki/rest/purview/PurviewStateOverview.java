@@ -10,6 +10,7 @@ public class PurviewStateOverview {
     private final List<PurviewCursorState> cursors;
     private final List<PurviewLockState> locks;
     private final List<PurviewTombstoneState> tombstones;
+    private final List<PurviewDeadLetterState> deadLetters;
 
     public PurviewStateOverview(
             String collection,
@@ -17,13 +18,15 @@ public class PurviewStateOverview {
             List<PurviewJobState> jobs,
             List<PurviewCursorState> cursors,
             List<PurviewLockState> locks,
-            List<PurviewTombstoneState> tombstones) {
+            List<PurviewTombstoneState> tombstones,
+            List<PurviewDeadLetterState> deadLetters) {
         this.collection = collection;
         this.schemaState = schemaState;
         this.jobs = jobs;
         this.cursors = cursors;
         this.locks = locks;
         this.tombstones = tombstones;
+        this.deadLetters = deadLetters;
     }
 
     public String getCollection() {
@@ -48,5 +51,9 @@ public class PurviewStateOverview {
 
     public List<PurviewTombstoneState> getTombstones() {
         return tombstones;
+    }
+
+    public List<PurviewDeadLetterState> getDeadLetters() {
+        return deadLetters;
     }
 }

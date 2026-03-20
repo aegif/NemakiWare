@@ -16,4 +16,8 @@ public interface PurviewEntityRegistryClient {
     PurviewEntityPublishResult createRelationship(
             PurviewConnectionRequest request,
             java.util.Map<String, Object> payload) throws PurviewClientException;
+
+    PurviewEntityPublishResult deleteRelationshipByGuid(
+            PurviewConnectionRequest request,
+            String relationshipGuid) throws PurviewClientException;
 }
