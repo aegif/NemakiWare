@@ -23,6 +23,7 @@ public class PurviewFullSyncServiceImplTest {
     private PurviewLockStateService lockStateService;
     private PurviewCursorStateService cursorStateService;
     private PurviewDocumentPublishService documentPublishService;
+    private PurviewArchivePublishService archivePublishService;
     private ContentDaoService contentDaoService;
     private PurviewFullSyncServiceImpl service;
 
@@ -33,17 +34,20 @@ public class PurviewFullSyncServiceImplTest {
         lockStateService = mock(PurviewLockStateService.class);
         cursorStateService = mock(PurviewCursorStateService.class);
         documentPublishService = mock(PurviewDocumentPublishService.class);
+        archivePublishService = mock(PurviewArchivePublishService.class);
         contentDaoService = mock(ContentDaoService.class);
         when(jobStateService.saveJobState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(cursorStateService.saveCursorState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(lockStateService.tryAcquireRepositoryLock(any(), any(), any(), any())).thenReturn(true);
         when(documentPublishService.publishRepositoryHierarchy(any())).thenReturn(0);
+        when(archivePublishService.publishRepositoryArchives(any())).thenReturn(0);
         service = new PurviewFullSyncServiceImpl(
                 schemaPlannerService,
                 jobStateService,
                 lockStateService,
                 cursorStateService,
                 documentPublishService,
+                archivePublishService,
                 contentDaoService);
     }
 
@@ -79,6 +83,7 @@ public class PurviewFullSyncServiceImplTest {
                 "NemakiWare", "1", "current-hash", "1", "current-hash", false,
                 java.util.List.of(), java.util.List.of(), java.util.List.of()));
         when(documentPublishService.publishRepositoryHierarchy("bedroom")).thenReturn(5);
+        when(archivePublishService.publishRepositoryArchives("bedroom")).thenReturn(2);
         when(contentDaoService.getLatestChange("bedroom")).thenReturn(createChange("120"));
 
         PurviewJobState result = service.startFullSync("bedroom", "admin");
@@ -87,9 +92,10 @@ public class PurviewFullSyncServiceImplTest {
         assertEquals("COMPLETED", result.getStatus());
         assertEquals("FULL_SYNC", result.getJobKind());
         assertEquals("bedroom", result.getRepositoryId());
-        assertEquals(5, result.getProcessedCount());
+        assertEquals(7, result.getProcessedCount());
         assertEquals("120", result.getCheckpoint());
         verify(documentPublishService).publishRepositoryHierarchy("bedroom");
+        verify(archivePublishService).publishRepositoryArchives("bedroom");
         verify(jobStateService).saveJobState(any());
         verify(cursorStateService).saveCursorState(any());
         verify(lockStateService).releaseRepositoryLock("bedroom", "FULL_SYNC", result.getJobId());

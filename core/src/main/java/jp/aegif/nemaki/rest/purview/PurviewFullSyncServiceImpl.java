@@ -21,6 +21,7 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
     private final PurviewLockStateService lockStateService;
     private final PurviewCursorStateService cursorStateService;
     private final PurviewDocumentPublishService documentPublishService;
+    private final PurviewArchivePublishService archivePublishService;
     private final ContentDaoService contentDaoService;
 
     public PurviewFullSyncServiceImpl(
@@ -29,12 +30,14 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
             PurviewLockStateService lockStateService,
             PurviewCursorStateService cursorStateService,
             PurviewDocumentPublishService documentPublishService,
+            PurviewArchivePublishService archivePublishService,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService) {
         this.schemaPlannerService = schemaPlannerService;
         this.jobStateService = jobStateService;
         this.lockStateService = lockStateService;
         this.cursorStateService = cursorStateService;
         this.documentPublishService = documentPublishService;
+        this.archivePublishService = archivePublishService;
         this.contentDaoService = contentDaoService;
     }
 
@@ -75,7 +78,8 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
             }
 
             try {
-                int processedCount = documentPublishService.publishRepositoryHierarchy(repositoryId);
+                int processedCount = documentPublishService.publishRepositoryHierarchy(repositoryId)
+                        + archivePublishService.publishRepositoryArchives(repositoryId);
                 String checkpoint = seedCursorFromLatestChange(repositoryId, now);
                 PurviewJobState completedJob = new PurviewJobState(
                         jobId,
