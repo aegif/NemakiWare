@@ -279,24 +279,37 @@ public class PurviewIncrementalSyncServiceImplTest {
     }
 
     @Test
-    public void testStartIncrementalSyncStoresArchiveCursorFailureStateWhenArchiveSyncFails() {
+    public void testStartIncrementalSyncMovesArchiveFailureToDeadLetterAndContinues() {
         when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
                 "NemakiWare", "1", "current-hash", "1", "current-hash", false,
                 java.util.List.of(), java.util.List.of(), java.util.List.of()));
         when(cursorStateService.getCursorState("bedroom", "archive-snapshot")).thenReturn(new PurviewCursorState(
                 "bedroom", "archive-snapshot", "archive-1", "snapshot",
                 "2026-03-20T01:00:00Z", "2026-03-20T00:55:00Z", "", "", 0, 0));
+        when(deadLetterStateService.getDeadLetterState("bedroom", "archive-snapshot", "bedroom"))
+                .thenReturn(new PurviewDeadLetterState("bedroom", "archive-snapshot", "bedroom",
+                        "", "", "", "", 0, "", ""));
+        when(deadLetterStateService.countDeadLetterStates("bedroom", "archive-snapshot")).thenReturn(1);
         when(archivePublishService.syncRepositoryArchivesIfChanged("bedroom", "archive-1"))
                 .thenThrow(new IllegalStateException("archive sync unavailable"));
 
         PurviewJobState result = service.startIncrementalSync("bedroom", "admin");
 
-        assertEquals("FAILED", result.getStatus());
+        assertEquals("COMPLETED_WITH_ERRORS", result.getStatus());
+        assertEquals(1, result.getFailedCount());
         verify(cursorStateService).saveCursorState(argThat(state ->
                 "archive-snapshot".equals(state.getStreamKind())
                         && "archive-1".equals(state.getCursor())
                         && state.getLastErrorMessage().contains("archive sync unavailable")
-                        && state.getConsecutiveFailureCount() == 1));
+                        && state.getConsecutiveFailureCount() == 1
+                        && state.getDeadLetterCount() == 1));
+        verify(deadLetterStateService).saveDeadLetterState(argThat(state ->
+                "bedroom".equals(state.getRepositoryId())
+                        && "archive-snapshot".equals(state.getStreamKind())
+                        && "bedroom".equals(state.getEntryKey())
+                        && "archive-1".equals(state.getCheckpoint())
+                        && state.getFailureCount() == 1
+                        && state.getErrorSummary().contains("archive sync unavailable")));
     }
 
     @Test

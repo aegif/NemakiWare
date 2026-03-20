@@ -33,6 +33,8 @@ public class PurviewSchemaPayloadFactoryTest {
         assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_archive".equals(def.get("name"))));
         assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_archive_process".equals(def.get("name"))));
         assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_cloud_sync_process".equals(def.get("name"))));
+        assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_import_process".equals(def.get("name"))));
+        assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_export_process".equals(def.get("name"))));
         assertTrue(attributeNames(entityDefs, "nemaki_repository").contains("rootFolderId"));
         assertTrue(attributeNames(entityDefs, "nemaki_folder").contains("parentId"));
         assertTrue(attributeNames(entityDefs, "nemaki_document").contains("lifecycleState"));
@@ -49,6 +51,10 @@ public class PurviewSchemaPayloadFactoryTest {
         assertTrue(attributeNames(entityDefs, "nemaki_archive_process").contains("targetDescription"));
         assertTrue(attributeNames(entityDefs, "nemaki_cloud_sync_process").contains("externalStableKey"));
         assertTrue(attributeNames(entityDefs, "nemaki_cloud_sync_process").contains("cloudProvider"));
+        assertTrue(attributeNames(entityDefs, "nemaki_import_process").contains("sourceDescription"));
+        assertTrue(attributeNames(entityDefs, "nemaki_import_process").contains("objectCount"));
+        assertTrue(attributeNames(entityDefs, "nemaki_export_process").contains("targetDescription"));
+        assertTrue(attributeNames(entityDefs, "nemaki_export_process").contains("objectCount"));
         assertEquals(5, relationshipDefs.size());
         assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_repository_contains_folder".equals(def.get("name"))));
         assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_folder_contains_folder".equals(def.get("name"))));

@@ -21,7 +21,9 @@ public class PurviewSchemaPayloadFactory {
                 buildExternalAssetEntityDef(),
                 buildArchiveEntityDef(),
                 buildArchiveProcessEntityDef(),
-                buildCloudSyncProcessEntityDef()));
+                buildCloudSyncProcessEntityDef(),
+                buildImportProcessEntityDef(),
+                buildExportProcessEntityDef()));
         payload.put("relationshipDefs", List.of(
                 buildRepositoryContainsFolderRelationshipDef(),
                 buildFolderContainsFolderRelationshipDef(),
@@ -145,6 +147,34 @@ public class PurviewSchemaPayloadFactory {
                 attribute("cloudProvider", "string", false),
                 attribute("externalStableKey", "string", false),
                 attribute("targetDescription", "string", true)));
+        return entityDef;
+    }
+
+    private Map<String, Object> buildImportProcessEntityDef() {
+        Map<String, Object> entityDef = baseTypeDef("nemaki_import_process",
+                "Process representing NemakiWare managed filesystem import lineage");
+        entityDef.put("superTypes", List.of("Process"));
+        entityDef.put("attributeDefs", List.of(
+                attribute("repositoryId", "string", false),
+                attribute("folderId", "string", false),
+                attribute("importMode", "string", false),
+                attribute("externalStableKey", "string", false),
+                attribute("sourceDescription", "string", true),
+                attribute("objectCount", "long", true)));
+        return entityDef;
+    }
+
+    private Map<String, Object> buildExportProcessEntityDef() {
+        Map<String, Object> entityDef = baseTypeDef("nemaki_export_process",
+                "Process representing NemakiWare managed filesystem export lineage");
+        entityDef.put("superTypes", List.of("Process"));
+        entityDef.put("attributeDefs", List.of(
+                attribute("repositoryId", "string", false),
+                attribute("folderId", "string", false),
+                attribute("exportMode", "string", false),
+                attribute("externalStableKey", "string", false),
+                attribute("targetDescription", "string", true),
+                attribute("objectCount", "long", true)));
         return entityDef;
     }
 

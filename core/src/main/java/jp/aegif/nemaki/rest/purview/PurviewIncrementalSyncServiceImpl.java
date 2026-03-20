@@ -128,8 +128,10 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
             try {
                 List<Change> changes = loadChanges(repositoryId, currentCursorState);
                 ChangeProcessingResult changeProcessingResult = processChanges(repositoryId, changes, now);
-                PurviewArchiveSyncResult archiveSyncResult = archivePublishService
-                        .syncRepositoryArchivesIfChanged(repositoryId, currentArchiveCursorState.getCursor());
+                StreamSyncResult archiveResult = syncArchiveStream(
+                        repositoryId,
+                        currentArchiveCursorState,
+                        now);
                 StreamSyncResult cloudMetadataResult = syncCloudMetadataStream(
                         repositoryId,
                         currentCloudMetadataCursorState,
@@ -138,6 +140,7 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                         .syncRepositoryTypeDefinitionsIfChanged(repositoryId, currentTypeDefinitionCursorState.getCursor());
                 String nextCursor = resolveNextCursor(currentCursorState.getCursor(), changes);
                 int changeDeadLetterCount = deadLetterStateService.countDeadLetterStates(repositoryId, STREAM_KIND);
+                int archiveDeadLetterCount = deadLetterStateService.countDeadLetterStates(repositoryId, ARCHIVE_STREAM_KIND);
                 int cloudDeadLetterCount = deadLetterStateService.countDeadLetterStates(repositoryId, CLOUD_METADATA_STREAM_KIND);
 
                 cursorStateService.saveCursorState(buildSuccessCursorState(
@@ -145,11 +148,11 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                         nextCursor,
                         now,
                         changeDeadLetterCount));
-                cursorStateService.saveCursorState(buildSuccessCursorState(
+                cursorStateService.saveCursorState(buildStreamCursorState(
                         currentArchiveCursorState,
-                        archiveSyncResult.getSnapshot(),
+                        archiveResult,
                         now,
-                        currentArchiveCursorState.getDeadLetterCount()));
+                        archiveDeadLetterCount));
                 cursorStateService.saveCursorState(buildStreamCursorState(
                         currentCloudMetadataCursorState,
                         cloudMetadataResult,
@@ -162,10 +165,15 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                         currentTypeDefinitionCursorState.getDeadLetterCount()));
 
                 List<String> failures = new ArrayList<>(changeProcessingResult.failures());
+                if (archiveResult.failed()) {
+                    failures.add(ARCHIVE_STREAM_KIND + ": " + archiveResult.errorSummary());
+                }
                 if (cloudMetadataResult.failed()) {
                     failures.add(CLOUD_METADATA_STREAM_KIND + ": " + cloudMetadataResult.errorSummary());
                 }
-                int failedCount = changeProcessingResult.failedCount() + (cloudMetadataResult.failed() ? 1 : 0);
+                int failedCount = changeProcessingResult.failedCount()
+                        + (archiveResult.failed() ? 1 : 0)
+                        + (cloudMetadataResult.failed() ? 1 : 0);
                 PurviewJobState completedJob = new PurviewJobState(
                         jobId,
                         JOB_KIND,
@@ -174,7 +182,7 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                         now,
                         now,
                         changes.size()
-                                + archiveSyncResult.getProcessedCount()
+                                + archiveResult.processedCount()
                                 + cloudMetadataResult.processedCount()
                                 + typeDefinitionSyncResult.getProcessedCount(),
                         failedCount,
@@ -499,6 +507,28 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
         }
     }
 
+    private StreamSyncResult syncArchiveStream(
+            String repositoryId,
+            PurviewCursorState currentCursorState,
+            String now) {
+        try {
+            PurviewArchiveSyncResult syncResult = archivePublishService
+                    .syncRepositoryArchivesIfChanged(repositoryId, currentCursorState.getCursor());
+            deadLetterStateService.deleteDeadLetterState(repositoryId, ARCHIVE_STREAM_KIND, repositoryId);
+            return StreamSyncResult.success(syncResult.getSnapshot(), syncResult.getProcessedCount());
+        } catch (RuntimeException e) {
+            String errorSummary = buildErrorSummary(e);
+            deadLetterStateService.saveDeadLetterState(buildRepositoryStreamDeadLetterState(
+                    repositoryId,
+                    ARCHIVE_STREAM_KIND,
+                    repositoryId,
+                    currentCursorState.getCursor(),
+                    now,
+                    errorSummary));
+            return StreamSyncResult.failure(currentCursorState.getCursor(), errorSummary);
+        }
+    }
+
     private PurviewDeadLetterState buildRepositoryStreamDeadLetterState(
             String repositoryId,
             String streamKind,
@@ -532,7 +562,7 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
         if (failures.size() == 1) {
             return failures.get(0);
         }
-        return failures.size() + " object publishes failed: " + failures.get(0);
+        return failures.size() + " incremental sync operations failed: " + failures.get(0);
     }
 
     private record ChangeProcessingResult(int failedCount, List<String> failures) {

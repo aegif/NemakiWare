@@ -369,6 +369,72 @@ public class PurviewEntityPayloadFactoryTest {
         assertEquals(1, ((List<?>) relationshipAttributes.get("outputs")).size());
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildFilesystemImportLineageEntitiesMapExternalSourceAndProcess() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+
+        Map<String, Object> externalAsset = factory.buildFilesystemExternalAssetEntity(
+                "bedroom",
+                "/managed/imports/team-a",
+                "alice",
+                1742439600000L);
+        Map<String, Object> importProcess = factory.buildFilesystemImportProcessEntity(
+                "bedroom",
+                "folder-001",
+                "/managed/imports/team-a",
+                "alice",
+                1742439600000L,
+                5);
+
+        Map<String, Object> externalAttributes = (Map<String, Object>) externalAsset.get("attributes");
+        assertEquals("nemaki_external_asset", externalAsset.get("typeName"));
+        assertEquals("filesystem:/managed/imports/team-a", externalAttributes.get("externalStableKey"));
+        assertEquals("filesystem", externalAttributes.get("sourceSystem"));
+        assertEquals("/managed/imports/team-a", externalAttributes.get("externalPath"));
+
+        Map<String, Object> processAttributes = (Map<String, Object>) importProcess.get("attributes");
+        Map<String, Object> relationshipAttributes = (Map<String, Object>) importProcess.get("relationshipAttributes");
+        assertEquals("nemaki_import_process", importProcess.get("typeName"));
+        assertEquals("folder-001", processAttributes.get("folderId"));
+        assertEquals("filesystem", processAttributes.get("importMode"));
+        assertEquals("filesystem:/managed/imports/team-a", processAttributes.get("externalStableKey"));
+        assertEquals("/managed/imports/team-a", processAttributes.get("sourceDescription"));
+        assertEquals(5L, processAttributes.get("objectCount"));
+        assertEquals(1, ((List<?>) relationshipAttributes.get("inputs")).size());
+        assertEquals(1, ((List<?>) relationshipAttributes.get("outputs")).size());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildFilesystemExportLineageEntitiesMapExternalTargetAndProcess() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+
+        Map<String, Object> externalAsset = factory.buildFilesystemExternalAssetEntity(
+                "bedroom",
+                "/managed/exports/team-a",
+                "alice",
+                1742439600000L);
+        Map<String, Object> exportProcess = factory.buildFilesystemExportProcessEntity(
+                "bedroom",
+                "folder-001",
+                "/managed/exports/team-a",
+                "alice",
+                1742439600000L,
+                7);
+
+        Map<String, Object> processAttributes = (Map<String, Object>) exportProcess.get("attributes");
+        Map<String, Object> relationshipAttributes = (Map<String, Object>) exportProcess.get("relationshipAttributes");
+        assertEquals("nemaki_export_process", exportProcess.get("typeName"));
+        assertEquals("folder-001", processAttributes.get("folderId"));
+        assertEquals("filesystem", processAttributes.get("exportMode"));
+        assertEquals("filesystem:/managed/exports/team-a", processAttributes.get("externalStableKey"));
+        assertEquals("/managed/exports/team-a", processAttributes.get("targetDescription"));
+        assertEquals(7L, processAttributes.get("objectCount"));
+        assertEquals(1, ((List<?>) relationshipAttributes.get("inputs")).size());
+        assertEquals(1, ((List<?>) relationshipAttributes.get("outputs")).size());
+    }
+
     private GregorianCalendar calendar(String isoInstant) {
         GregorianCalendar calendar = GregorianCalendar.from(java.time.ZonedDateTime.parse(isoInstant));
         calendar.setTimeZone(TimeZone.getTimeZone("UTC"));

@@ -27,6 +27,7 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.rest.purview.PurviewImportExportLineageService;
 import jp.aegif.nemaki.rest.importexport.FilesystemExporter;
 import jp.aegif.nemaki.rest.importexport.FilesystemImporter;
 import jp.aegif.nemaki.rest.importexport.ImportExportUtils;
@@ -120,6 +121,61 @@ public class ImportExportResource extends ResourceBase {
                     .getBean("auditLogger", AuditLogger.class);
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    private PurviewImportExportLineageService getPurviewImportExportLineageService() {
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean(PurviewImportExportLineageService.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void publishFilesystemImportLineage(
+            String repositoryId,
+            String folderId,
+            String sourcePath,
+            String requestedBy,
+            ImportResult importResult) {
+        PurviewImportExportLineageService service = getPurviewImportExportLineageService();
+        if (service == null || importResult == null) {
+            return;
+        }
+
+        long objectCount = (long) importResult.documentsCreated + importResult.foldersCreated;
+        if (objectCount <= 0L) {
+            return;
+        }
+
+        try {
+            service.upsertFilesystemImportLineage(repositoryId, folderId, sourcePath, requestedBy, objectCount);
+        } catch (RuntimeException e) {
+            log.warn("Purview filesystem import lineage publish failed: " + e.getMessage(), e);
+        }
+    }
+
+    private void publishFilesystemExportLineage(
+            String repositoryId,
+            String folderId,
+            String targetPath,
+            String requestedBy,
+            ExportResult exportResult) {
+        PurviewImportExportLineageService service = getPurviewImportExportLineageService();
+        if (service == null || exportResult == null) {
+            return;
+        }
+
+        long objectCount = (long) exportResult.documentsExported + exportResult.foldersExported;
+        if (objectCount <= 0L) {
+            return;
+        }
+
+        try {
+            service.upsertFilesystemExportLineage(repositoryId, folderId, targetPath, requestedBy, objectCount);
+        } catch (RuntimeException e) {
+            log.warn("Purview filesystem export lineage publish failed: " + e.getMessage(), e);
         }
     }
 
@@ -603,6 +659,13 @@ public class ImportExportResource extends ResourceBase {
             log.info("Filesystem import completed: " + importResult.documentsCreated + " documents, " +
                     importResult.foldersCreated + " folders created");
 
+            publishFilesystemImportLineage(
+                    repositoryId,
+                    folderId,
+                    sourceDir.toString(),
+                    getCallContextUsername(request),
+                    importResult);
+
             AuditLogger audit = getAuditLogger();
             if (audit != null) {
                 audit.logOperation(AuditOperation.IMPORT_EXECUTE, repositoryId,
@@ -725,6 +788,13 @@ public class ImportExportResource extends ResourceBase {
 
             log.info("Filesystem export completed: " + exportResult.documentsExported + " documents, " +
                     exportResult.foldersExported + " folders exported");
+
+            publishFilesystemExportLineage(
+                    repositoryId,
+                    folderId,
+                    targetDir.toString(),
+                    getCallContextUsername(request),
+                    exportResult);
 
             AuditLogger audit = getAuditLogger();
             if (audit != null) {

@@ -25,9 +25,12 @@ public class PurviewEntityPayloadFactory {
     private static final String EXTERNAL_ASSET_TYPE_NAME = "nemaki_external_asset";
     private static final String ARCHIVE_PROCESS_TYPE_NAME = "nemaki_archive_process";
     private static final String CLOUD_SYNC_PROCESS_TYPE_NAME = "nemaki_cloud_sync_process";
+    private static final String IMPORT_PROCESS_TYPE_NAME = "nemaki_import_process";
+    private static final String EXPORT_PROCESS_TYPE_NAME = "nemaki_export_process";
     private static final String DOCUMENT_HAS_TYPE_DEFINITION_RELATIONSHIP = "nemaki_document_has_type_definition";
     private static final String LIFECYCLE_ACTIVE = "ACTIVE";
     private static final String LIFECYCLE_ARCHIVED = "ARCHIVED";
+    private static final String FILESYSTEM_SOURCE_SYSTEM = "filesystem";
 
     public Map<String, Object> buildBulkPayload(List<Map<String, Object>> entities) {
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -407,6 +410,115 @@ public class PurviewEntityPayloadFactory {
         return entity;
     }
 
+    public String buildFilesystemExternalStableKey(String path) {
+        return "filesystem:" + path;
+    }
+
+    public Map<String, Object> buildFilesystemExternalAssetEntity(
+            String repositoryId,
+            String path,
+            String username,
+            long occurredAtMillis) {
+        String stableKey = buildFilesystemExternalStableKey(path);
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildExternalAssetQualifiedName(repositoryId, stableKey));
+        attributes.put("name", firstNonBlank(path, stableKey));
+        attributes.put("description", null);
+        attributes.put("owner", firstNonBlank(username, "system"));
+        attributes.put("createTime", occurredAtMillis);
+        attributes.put("modifiedTime", occurredAtMillis);
+        attributes.put("externalStableKey", stableKey);
+        attributes.put("sourceSystem", FILESYSTEM_SOURCE_SYSTEM);
+        attributes.put("externalPath", path);
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", EXTERNAL_ASSET_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(username, "system"));
+        entity.put("updatedBy", firstNonBlank(username, "system"));
+        entity.put("version", 0);
+        return entity;
+    }
+
+    public Map<String, Object> buildFilesystemImportProcessEntity(
+            String repositoryId,
+            String folderId,
+            String sourcePath,
+            String username,
+            long occurredAtMillis,
+            long objectCount) {
+        String stableKey = buildFilesystemExternalStableKey(sourcePath);
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildImportProcessQualifiedName(repositoryId, folderId, stableKey));
+        attributes.put("name", "Filesystem Import " + firstNonBlank(folderId, sourcePath));
+        attributes.put("description", null);
+        attributes.put("owner", firstNonBlank(username, "system"));
+        attributes.put("createTime", occurredAtMillis);
+        attributes.put("modifiedTime", occurredAtMillis);
+        attributes.put("repositoryId", repositoryId);
+        attributes.put("folderId", folderId);
+        attributes.put("importMode", FILESYSTEM_SOURCE_SYSTEM);
+        attributes.put("externalStableKey", stableKey);
+        attributes.put("sourceDescription", sourcePath);
+        attributes.put("objectCount", objectCount);
+
+        Map<String, Object> relationshipAttributes = new LinkedHashMap<>();
+        relationshipAttributes.put("inputs", List.of(
+                relationshipEnd(EXTERNAL_ASSET_TYPE_NAME, buildExternalAssetQualifiedName(repositoryId, stableKey))));
+        relationshipAttributes.put("outputs", List.of(
+                relationshipEnd(FOLDER_TYPE_NAME, buildObjectQualifiedName(repositoryId, folderId))));
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", IMPORT_PROCESS_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("relationshipAttributes", relationshipAttributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(username, "system"));
+        entity.put("updatedBy", firstNonBlank(username, "system"));
+        entity.put("version", 0);
+        return entity;
+    }
+
+    public Map<String, Object> buildFilesystemExportProcessEntity(
+            String repositoryId,
+            String folderId,
+            String targetPath,
+            String username,
+            long occurredAtMillis,
+            long objectCount) {
+        String stableKey = buildFilesystemExternalStableKey(targetPath);
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildExportProcessQualifiedName(repositoryId, folderId, stableKey));
+        attributes.put("name", "Filesystem Export " + firstNonBlank(folderId, targetPath));
+        attributes.put("description", null);
+        attributes.put("owner", firstNonBlank(username, "system"));
+        attributes.put("createTime", occurredAtMillis);
+        attributes.put("modifiedTime", occurredAtMillis);
+        attributes.put("repositoryId", repositoryId);
+        attributes.put("folderId", folderId);
+        attributes.put("exportMode", FILESYSTEM_SOURCE_SYSTEM);
+        attributes.put("externalStableKey", stableKey);
+        attributes.put("targetDescription", targetPath);
+        attributes.put("objectCount", objectCount);
+
+        Map<String, Object> relationshipAttributes = new LinkedHashMap<>();
+        relationshipAttributes.put("inputs", List.of(
+                relationshipEnd(FOLDER_TYPE_NAME, buildObjectQualifiedName(repositoryId, folderId))));
+        relationshipAttributes.put("outputs", List.of(
+                relationshipEnd(EXTERNAL_ASSET_TYPE_NAME, buildExternalAssetQualifiedName(repositoryId, stableKey))));
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", EXPORT_PROCESS_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("relationshipAttributes", relationshipAttributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(username, "system"));
+        entity.put("updatedBy", firstNonBlank(username, "system"));
+        entity.put("version", 0);
+        return entity;
+    }
+
     public Map<String, Object> buildArchiveProcessEntity(String repositoryId, Archive archive) {
         String stableKey = requireArchiveExternalStableKey(archive);
         Map<String, Object> attributes = new LinkedHashMap<>();
@@ -473,6 +585,18 @@ public class PurviewEntityPayloadFactory {
 
     public String buildCloudSyncProcessQualifiedName(String repositoryId, String objectId) {
         return "nemaki://" + repositoryId + "/cloud-sync-processes/" + objectId;
+    }
+
+    public String buildImportProcessQualifiedName(String repositoryId, String folderId, String stableKey) {
+        return "nemaki://" + repositoryId + "/import-processes/"
+                + Base64.getUrlEncoder().withoutPadding()
+                        .encodeToString((folderId + "|" + stableKey).getBytes(StandardCharsets.UTF_8));
+    }
+
+    public String buildExportProcessQualifiedName(String repositoryId, String folderId, String stableKey) {
+        return "nemaki://" + repositoryId + "/export-processes/"
+                + Base64.getUrlEncoder().withoutPadding()
+                        .encodeToString((folderId + "|" + stableKey).getBytes(StandardCharsets.UTF_8));
     }
 
     private String resolveArchiveSourceSystem(Archive archive) {

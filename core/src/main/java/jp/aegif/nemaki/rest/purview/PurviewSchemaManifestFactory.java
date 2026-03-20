@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class PurviewSchemaManifestFactory {
 
-    private static final String SCHEMA_VERSION = "8";
+    private static final String SCHEMA_VERSION = "9";
     private static final List<String> CUSTOM_TYPE_NAMES = List.of(
             "nemaki_repository",
             "nemaki_folder",
@@ -20,7 +20,9 @@ public class PurviewSchemaManifestFactory {
             "nemaki_archive",
             "nemaki_external_asset",
             "nemaki_archive_process",
-            "nemaki_cloud_sync_process");
+            "nemaki_cloud_sync_process",
+            "nemaki_import_process",
+            "nemaki_export_process");
     private static final List<String> RELATIONSHIP_TYPE_NAMES = List.of(
             "nemaki_repository_contains_folder",
             "nemaki_folder_contains_folder",
