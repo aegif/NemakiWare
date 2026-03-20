@@ -13,6 +13,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -60,6 +61,44 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
 
         return PurviewEntityPublishResult.failure(
                 "Purview entity publish returned HTTP " + response.statusCode() + formatBodyExcerpt(response.body()));
+    }
+
+    @Override
+    public Map<String, Object> getEntityByUniqueAttribute(
+            PurviewConnectionRequest request,
+            String typeName,
+            String attributeName,
+            String attributeValue) throws PurviewClientException {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(request.getConnectTimeoutMs()))
+                .build();
+        String accessToken = fetchAccessToken(httpClient, request);
+
+        HttpRequest getRequest = HttpRequest.newBuilder(
+                buildEntityUniqueAttributeUri(request, typeName, attributeName, attributeValue))
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Accept", "application/json")
+                .timeout(Duration.ofMillis(request.getReadTimeoutMs()))
+                .GET()
+                .build();
+
+        HttpResponse<String> response = send(httpClient, getRequest);
+        if (response.statusCode() == 404) {
+            return null;
+        }
+        if (response.statusCode() >= 200 && response.statusCode() < 300) {
+            if (response.body() == null || response.body().isBlank()) {
+                return Map.of();
+            }
+            try {
+                return objectMapper.readValue(response.body(), new TypeReference<Map<String, Object>>() {});
+            } catch (IOException e) {
+                throw new PurviewClientException("Failed to parse Purview entity response", e);
+            }
+        }
+
+        throw new PurviewClientException(
+                "Purview entity read returned HTTP " + response.statusCode() + formatBodyExcerpt(response.body()));
     }
 
     @Override

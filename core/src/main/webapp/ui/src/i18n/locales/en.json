@@ -106,6 +106,7 @@
     "title": "Purview Management",
     "actions": {
       "testConnection": "Test Connection",
+      "lookupGovernance": "Lookup Governance",
       "applyTypeDefinitions": "Apply Type Definitions",
       "fullSync": "Full Sync",
       "incrementalSync": "Incremental Sync",
@@ -151,7 +152,21 @@
     "sections": {
       "schema": "Schema Diff",
       "actions": "Operations",
+      "governanceLookup": "Governance Lookup",
       "state": "State Details"
+    },
+    "governanceLookup": {
+      "objectIdPlaceholder": "Enter object IDs separated by commas or new lines",
+      "failed": "Failed to load governance metadata",
+      "resultSummary": "Loaded {{count}} objects ({{successCount}} successful)",
+      "objectId": "Object ID",
+      "status": "Status",
+      "qualifiedName": "Qualified Name",
+      "entityType": "Entity Type",
+      "message": "Message",
+      "classifications": "Classifications",
+      "glossaryTerms": "Glossary Terms",
+      "labels": "Labels"
     },
     "schema": {
       "current": "Current Schema",
@@ -213,6 +228,7 @@
       }
     },
     "messages": {
+      "governanceLookupCompleted": "Loaded governance metadata",
       "schemaApplied": "Applied Purview schema",
       "fullSyncStarted": "Started Purview full sync",
       "incrementalSyncStarted": "Started Purview incremental sync",
@@ -731,6 +747,20 @@
         "email": "Email"
       }
     },
+    "purviewGovernance": {
+      "tab": "Purview",
+      "status": "Purview governance",
+      "qualifiedName": "Qualified Name",
+      "entityType": "Purview entity type",
+      "atlasBasePath": "Atlas base path",
+      "classifications": "Classification",
+      "glossaryTerms": "Glossary term",
+      "labels": "Label",
+      "businessMetadata": "Business metadata",
+      "none": "None",
+      "empty": "No Purview governance metadata available",
+      "loadFailed": "Failed to load Purview governance metadata"
+    },
     "pullFromCloud": "Pull from Cloud",
     "openInCloud": "Open in Cloud",
     "updateInGoogleDrive": "Update Google Drive",
@@ -1137,6 +1167,19 @@
     },
     "messages": {
       "searchFailed": "Search failed"
+    },
+    "purviewGovernance": {
+      "title": "Purview Governance Summary",
+      "loading": "Loading governance metadata",
+      "failed": "Failed to load governance metadata",
+      "scanned": "Scanned {{count}} objects",
+      "synced": "Synced {{count}} objects",
+      "classified": "Classified {{count}} objects",
+      "glossary": "With glossary {{count}} objects",
+      "labeled": "Labeled {{count}} objects",
+      "unresolved": "Unresolved {{count}} objects",
+      "topClassifications": "Top classifications",
+      "topGlossaryTerms": "Top glossary terms"
     }
   },
   "searchResults": {

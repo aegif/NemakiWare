@@ -49,10 +49,14 @@
 - React 管理 UI `/core/ui/#/purview`
 - 管理 UI からの `test-connection` / `type-definitions/apply` / full sync / incremental sync / reconcile / retry 実行
 - 管理 UI での schema diff / jobs / cursors / locks / tombstones / dead letters 可視化
+- 管理 UI からの object 単位 / bulk governance lookup
+- `GET /v1/repo/{repositoryId}/purview/governance/{objectId}` read-only governance API
+- `POST /v1/repo/{repositoryId}/purview/governance/bulk` read-only governance bulk API
+- `DocumentViewer` の Purview タブで classification / glossary term / labels / business metadata を表示
 
 未実装:
 
-- glossary / classification / labels 拡張
+- glossary / classification / labels の同期拡張
 - Purview 実 tenant を前提にした運用パラメータ調整
 
 現時点の実装は「repository / folder / document / type definition / archive metadata を Purview に載せる最初の縦スライス」に加え、stable key を持つ archive / cloud sync / managed filesystem import-export の代表的 lineage を成立させることを優先している。設計上の初期スコープ全体はまだ完了していない。
@@ -80,7 +84,7 @@ NemakiWare を Microsoft Purview に統合し、NemakiWare 内のリポジトリ
 - `DELETED` change event は即 purge 扱いせず tombstone 解決を挟む
 - `ARCHIVED` は保持するが、`PURGED` は既定で Purview から物理削除する
 - schema bootstrap は repository sync から分離し、collection スコープの一回性ジョブとして扱う
-- glossary / classification / labels の本格同期は Phase 6 以降とし、初期段階では拡張ポイントのみに留める
+- glossary / classification / labels は Purview を source of truth とする read-only 参照を先に実装し、本格同期は Phase 6 以降とする
 
 ## 3. 背景
 
@@ -1061,8 +1065,8 @@ dead-letter 方針:
 2026-03-20 状態:
 
 - 進行中
-- 完了済み: React 管理 UI `/core/ui/#/purview`, `test-connection`, schema diff / state overview 表示, `type-definitions/apply`, full sync, incremental sync, type / archive / cloud metadata / containment reconciliation, delete resolution, dead-letter retry の実行
-- 未完了: glossary / classification / labels 拡張, webhook assist, 双方向同期の検討
+- 完了済み: React 管理 UI `/core/ui/#/purview`, `test-connection`, schema diff / state overview 表示, `type-definitions/apply`, full sync, incremental sync, type / archive / cloud metadata / containment reconciliation, delete resolution, dead-letter retry の実行, object 単位 / bulk governance lookup, `GET /v1/repo/{repositoryId}/purview/governance/{objectId}` と `POST /v1/repo/{repositoryId}/purview/governance/bulk` read-only API, `DocumentViewer` の Purview タブで classification / glossary term / labels / business metadata 表示, `SearchResults` の Purview governance summary 表示
+- 未完了: glossary / classification / labels の同期拡張, webhook assist, 双方向同期の検討
 
 ## 24. 受け入れ条件
 
@@ -1073,6 +1077,8 @@ dead-letter 方針:
 - change log に基づく incremental sync が成功する
 - type / archive の補助リコンシリエーションが成功する
 - `DELETED` event が archive と purge を誤判定せず収束できる
+- synced document / folder で Purview governance read API と `DocumentViewer` の Purview タブから classification / glossary term / labels / business metadata を参照できる
+- `SearchResults` で対象 document / folder 群の Purview governance summary を参照できる
 - Purview 障害時も NemakiWare 本体の create / update / delete は継続できる
 - stable key を持つ archive / cloud sync の代表的 lineage を確認できる
 
@@ -1097,7 +1103,7 @@ dead-letter 方針:
 5. type / archive reconciliation
 6. lineage
 7. UI
-8. glossary / classification / labels
+8. glossary / classification / labels の同期拡張
 
 ## 27. 参考情報
 

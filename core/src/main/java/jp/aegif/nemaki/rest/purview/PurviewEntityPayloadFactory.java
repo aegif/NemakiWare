@@ -669,15 +669,15 @@ public class PurviewEntityPayloadFactory {
         return entity;
     }
 
-    private String buildRepositoryQualifiedName(String repositoryId) {
+    public String buildRepositoryQualifiedName(String repositoryId) {
         return "nemaki://" + repositoryId;
     }
 
-    private String buildObjectQualifiedName(String repositoryId, String objectId) {
+    public String buildObjectQualifiedName(String repositoryId, String objectId) {
         return "nemaki://" + repositoryId + "/objects/" + objectId;
     }
 
-    private String buildTypeDefinitionQualifiedName(String repositoryId, String typeId) {
+    public String buildTypeDefinitionQualifiedName(String repositoryId, String typeId) {
         return "nemaki://" + repositoryId + "/types/" + typeId;
     }
 

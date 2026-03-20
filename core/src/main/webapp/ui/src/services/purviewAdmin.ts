@@ -1,5 +1,6 @@
 import { AuthService } from './auth';
 import { CmisHttpClient } from './http/CmisHttpClient';
+import type { PurviewGovernanceBulkItemView, PurviewGovernanceView } from './purviewGovernance';
 
 export interface PurviewConnectionStatus {
   status: string;
@@ -111,6 +112,10 @@ export interface PurviewStateOverview {
 
 interface DeadLettersResponse {
   deadLetters: PurviewDeadLetterState[];
+}
+
+interface PurviewGovernanceBulkResponse {
+  items: PurviewGovernanceBulkItemView[];
 }
 
 export class PurviewAdminService {
@@ -230,5 +235,21 @@ export class PurviewAdminService {
 
   async retryFailed(repositoryId: string): Promise<PurviewJobState> {
     return this.post<PurviewJobState>(`/retry-failed/${encodeURIComponent(repositoryId)}`);
+  }
+
+  async lookupGovernance(repositoryId: string, objectId: string): Promise<PurviewGovernanceView> {
+    const response = await this.httpClient.getJson(
+      `/core/v1/repo/${encodeURIComponent(repositoryId)}/purview/governance/${encodeURIComponent(objectId)}`
+    );
+    return this.handleResponse<PurviewGovernanceView>(response);
+  }
+
+  async lookupGovernanceBulk(repositoryId: string, objectIds: string[]): Promise<PurviewGovernanceBulkItemView[]> {
+    const response = await this.httpClient.postJson(
+      `/core/v1/repo/${encodeURIComponent(repositoryId)}/purview/governance/bulk`,
+      { objectIds }
+    );
+    const payload = await this.handleResponse<PurviewGovernanceBulkResponse>(response);
+    return payload.items ?? [];
   }
 }

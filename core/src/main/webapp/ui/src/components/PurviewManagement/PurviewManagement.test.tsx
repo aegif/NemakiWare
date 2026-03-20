@@ -6,6 +6,7 @@ const mockService = {
   getStateOverview: vi.fn(),
   getSchemaDiff: vi.fn(),
   testConnection: vi.fn(),
+  lookupGovernanceBulk: vi.fn(),
   applyTypeDefinitions: vi.fn(),
   startFullSync: vi.fn(),
   startIncrementalSync: vi.fn(),
@@ -170,6 +171,35 @@ describe('PurviewManagement', () => {
     mockService.getStateOverview.mockResolvedValue(baseStateOverview);
     mockService.getSchemaDiff.mockResolvedValue(baseSchemaDiff);
     mockService.testConnection.mockResolvedValue(baseConnectionStatus);
+    mockService.lookupGovernanceBulk.mockResolvedValue([
+      {
+        status: 'OK',
+        featureEnabled: true,
+        available: true,
+        supportedObjectType: true,
+        entityFound: true,
+        repositoryId: 'bedroom',
+        objectId: 'doc-lookup-001',
+        objectBaseType: 'cmis:document',
+        entityTypeName: 'nemaki_document',
+        qualifiedName: 'nemaki://bedroom/objects/doc-lookup-001',
+        atlasBasePath: 'datamap/api/atlas/v2',
+        message: 'Purview governance metadata loaded',
+        classifications: [{ typeName: 'HighlyConfidential', entityStatus: 'ACTIVE' }],
+        glossaryTerms: [{ displayText: 'Quarterly Report' }],
+        labels: ['finance'],
+        businessMetadata: {
+          nemakiGovernance: {
+            ownerDepartment: 'Finance',
+          },
+        },
+      },
+      {
+        objectId: 'missing-001',
+        status: 'NOT_FOUND',
+        message: 'Object not found',
+      },
+    ]);
     mockService.applyTypeDefinitions.mockResolvedValue({
       applied: true,
       message: 'schema applied',
@@ -324,5 +354,27 @@ describe('PurviewManagement', () => {
 
     expect(screen.getByText('job-full-sync-002')).toBeInTheDocument();
     expect(screen.getAllByText('FULL_SYNC').length).toBeGreaterThan(0);
+  });
+
+  it('looks up governance for repository objects in bulk', async () => {
+    render(<PurviewManagement repositoryId="bedroom" />);
+
+    await waitFor(() => {
+      expect(mockService.getStateOverview).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('purviewManagement.governanceLookup.objectIdPlaceholder'), {
+      target: { value: 'doc-lookup-001,\nmissing-001' },
+    });
+    fireEvent.click(screen.getByText('purviewManagement.actions.lookupGovernance'));
+
+    await waitFor(() => {
+      expect(mockService.lookupGovernanceBulk).toHaveBeenCalledWith('bedroom', ['doc-lookup-001', 'missing-001']);
+    });
+
+    expect(screen.getByText('HighlyConfidential')).toBeInTheDocument();
+    expect(screen.getByText('Quarterly Report')).toBeInTheDocument();
+    expect(screen.getByText('ownerDepartment: Finance')).toBeInTheDocument();
+    expect(screen.getByText('Object not found')).toBeInTheDocument();
   });
 });

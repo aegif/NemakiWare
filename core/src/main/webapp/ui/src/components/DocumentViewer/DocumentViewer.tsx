@@ -281,6 +281,7 @@ import { SecondaryTypeSelector } from '../SecondaryTypeSelector/SecondaryTypeSel
 import { TypeMigrationModal } from '../TypeMigrationModal/TypeMigrationModal';
 import { ExternalContextTab } from './ExternalContextTab';
 import { WebhookConfigTab } from './WebhookConfigTab';
+import { PurviewGovernancePanel } from '../PurviewGovernance/PurviewGovernancePanel';
 import { canPreview } from '../../utils/previewUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchCloudAuthConfig, CloudAuthConfig } from '../../services/cloud-auth';
@@ -1260,6 +1261,13 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         </Space>
       ),
     },
+    ...((object.baseType === 'cmis:document' || object.baseType === 'cmis:folder') ? [{
+      key: 'purviewGovernance',
+      label: t('documentViewer.purviewGovernance.tab'),
+      children: (
+        <PurviewGovernancePanel repositoryId={repositoryId} objectId={object.id} />
+      ),
+    }] : []),
     // External Context Tab (only shown when nemaki:externalIntegration secondary type is present) (2026-02-04)
     ...(externalContext ? [{
       key: 'externalContext',

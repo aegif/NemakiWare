@@ -7,6 +7,12 @@ public interface PurviewEntityRegistryClient {
     PurviewEntityPublishResult bulkCreateOrUpdateEntities(PurviewConnectionRequest request, Map<String, Object> payload)
             throws PurviewClientException;
 
+    Map<String, Object> getEntityByUniqueAttribute(
+            PurviewConnectionRequest request,
+            String typeName,
+            String attributeName,
+            String attributeValue) throws PurviewClientException;
+
     PurviewEntityPublishResult deleteByUniqueAttribute(
             PurviewConnectionRequest request,
             String typeName,

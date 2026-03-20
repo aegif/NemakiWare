@@ -106,6 +106,7 @@
     "title": "Purview 管理",
     "actions": {
       "testConnection": "接続確認",
+      "lookupGovernance": "Governance 参照",
       "applyTypeDefinitions": "型定義を適用",
       "fullSync": "フル同期",
       "incrementalSync": "増分同期",
@@ -151,7 +152,21 @@
     "sections": {
       "schema": "Schema 差分",
       "actions": "運用アクション",
+      "governanceLookup": "Governance 参照",
       "state": "状態詳細"
+    },
+    "governanceLookup": {
+      "objectIdPlaceholder": "オブジェクトIDを改行またはカンマ区切りで入力",
+      "failed": "Governance 情報の取得に失敗しました",
+      "resultSummary": "{{count}} 件の対象を参照しました（成功 {{successCount}} 件）",
+      "objectId": "Object ID",
+      "status": "Status",
+      "qualifiedName": "Qualified Name",
+      "entityType": "Entity Type",
+      "message": "メッセージ",
+      "classifications": "Classification",
+      "glossaryTerms": "Glossary Term",
+      "labels": "Labels"
     },
     "schema": {
       "current": "現在の schema",
@@ -213,6 +228,7 @@
       }
     },
     "messages": {
+      "governanceLookupCompleted": "Governance 情報を取得しました",
       "schemaApplied": "Purview schema を適用しました",
       "fullSyncStarted": "Purview フル同期を開始しました",
       "incrementalSyncStarted": "Purview 増分同期を開始しました",
@@ -731,6 +747,20 @@
         "email": "メール"
       }
     },
+    "purviewGovernance": {
+      "tab": "Purview",
+      "status": "Purview ガバナンス情報",
+      "qualifiedName": "Qualified Name",
+      "entityType": "Purview エンティティタイプ",
+      "atlasBasePath": "Atlas Base Path",
+      "classifications": "Classification",
+      "glossaryTerms": "Glossary Term",
+      "labels": "Label",
+      "businessMetadata": "Business Metadata",
+      "none": "設定なし",
+      "empty": "Purview ガバナンス情報はありません",
+      "loadFailed": "Purview ガバナンス情報の読み込みに失敗しました"
+    },
     "pullFromCloud": "クラウドから取得",
     "openInCloud": "クラウドで開く",
     "updateInGoogleDrive": "Google Driveを更新",
@@ -1137,6 +1167,19 @@
     },
     "messages": {
       "searchFailed": "検索に失敗しました"
+    },
+    "purviewGovernance": {
+      "title": "Purview ガバナンス概要",
+      "loading": "Governance 情報を読み込み中です",
+      "failed": "Governance 情報の取得に失敗しました",
+      "scanned": "参照対象 {{count}} 件",
+      "synced": "同期済み {{count}} 件",
+      "classified": "Classification あり {{count}} 件",
+      "glossary": "Glossary あり {{count}} 件",
+      "labeled": "Label あり {{count}} 件",
+      "unresolved": "未解決 {{count}} 件",
+      "topClassifications": "上位 Classification",
+      "topGlossaryTerms": "上位 Glossary Term"
     }
   },
   "searchResults": {

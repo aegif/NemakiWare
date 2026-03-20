@@ -261,6 +261,7 @@ import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { CMISObject, SearchResult, TypeDefinition, PropertyDefinition } from '../../types/cmis';
 import { SemanticSearch } from '../SemanticSearch/SemanticSearch';
+import { PurviewGovernanceSearchSummary } from '../PurviewGovernance/PurviewGovernanceSearchSummary';
 import { InputNumber } from 'antd';
 
 interface SearchResultsProps {
@@ -1045,6 +1046,10 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
                   title={t('searchResults.results', { count: searchResult.numItems })}
                   extra={searchResult.hasMoreItems && <span style={{ color: '#999' }}>{t('common.moreResults')}</span>}
                 >
+                  <PurviewGovernanceSearchSummary
+                    repositoryId={repositoryId}
+                    objects={searchResult.objects}
+                  />
                   <Table
                     columns={columns}
                     dataSource={searchResult.objects}
