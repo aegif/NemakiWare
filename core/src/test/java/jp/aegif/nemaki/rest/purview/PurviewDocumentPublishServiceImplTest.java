@@ -60,8 +60,10 @@ public class PurviewDocumentPublishServiceImplTest {
     public void testPublishRepositoryDocumentsTraversesFoldersAndPublishesDocumentBatch() throws Exception {
         RepositoryInfo repositoryInfo = new RepositoryInfo();
         repositoryInfo.setId("bedroom");
+        repositoryInfo.setName("Bedroom Repository");
         repositoryInfo.setRootFolder("root-001");
         when(repositoryInfoMap.get("bedroom")).thenReturn(repositoryInfo);
+        when(contentDaoService.getContent("bedroom", "root-001")).thenReturn(folder("root-001"));
         when(contentDaoService.getChildrenCount("bedroom", "root-001")).thenReturn(2L);
         when(contentDaoService.getChildrenCount("bedroom", "folder-001")).thenReturn(1L);
         when(contentDaoService.getChildrenPaged("bedroom", "root-001", 0, 100))
@@ -69,16 +71,31 @@ public class PurviewDocumentPublishServiceImplTest {
         when(contentDaoService.getChildrenPaged("bedroom", "folder-001", 0, 100))
                 .thenReturn(List.of(document("doc-002", "folder-001")));
 
-        int processedCount = service.publishRepositoryDocuments("bedroom");
+        int processedCount = service.publishRepositoryHierarchy("bedroom");
 
-        assertEquals(2, processedCount);
+        assertEquals(5, processedCount);
         ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
         verify(entityRegistryClient).bulkCreateOrUpdateEntities(any(), payloadCaptor.capture());
         List<Map<String, Object>> entities = (List<Map<String, Object>>) payloadCaptor.getValue().get("entities");
-        assertEquals(2, entities.size());
-        assertEquals(List.of("nemaki://bedroom/objects/doc-001", "nemaki://bedroom/objects/doc-002"),
+        assertEquals(5, entities.size());
+        assertEquals(List.of(
+                "nemaki://bedroom",
+                "nemaki://bedroom/objects/doc-001",
+                "nemaki://bedroom/objects/doc-002",
+                "nemaki://bedroom/objects/folder-001",
+                "nemaki://bedroom/objects/root-001"),
                 entities.stream()
                         .map(entity -> ((Map<String, Object>) entity.get("attributes")).get("qualifiedName").toString())
+                        .sorted()
+                        .toList());
+        assertEquals(List.of(
+                "nemaki_document",
+                "nemaki_document",
+                "nemaki_folder",
+                "nemaki_folder",
+                "nemaki_repository"),
+                entities.stream()
+                        .map(entity -> entity.get("typeName").toString())
                         .sorted()
                         .toList());
         verify(contentDaoService).getChildrenPaged("bedroom", "root-001", 0, 100);
@@ -90,7 +107,7 @@ public class PurviewDocumentPublishServiceImplTest {
         when(repositoryInfoMap.get("bedroom")).thenReturn(null);
 
         IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> service.publishRepositoryDocuments("bedroom"));
+                () -> service.publishRepositoryHierarchy("bedroom"));
 
         assertEquals("Root folder ID is not configured for repository bedroom", error.getMessage());
     }
@@ -101,6 +118,7 @@ public class PurviewDocumentPublishServiceImplTest {
         repositoryInfo.setId("bedroom");
         repositoryInfo.setRootFolder("root-001");
         when(repositoryInfoMap.get("bedroom")).thenReturn(repositoryInfo);
+        when(contentDaoService.getContent("bedroom", "root-001")).thenReturn(folder("root-001"));
         when(contentDaoService.getChildrenCount("bedroom", "root-001")).thenReturn(1L);
         when(contentDaoService.getChildrenPaged(eq("bedroom"), eq("root-001"), eq(0), eq(100)))
                 .thenReturn(List.of(document("doc-001", "root-001")));
@@ -108,9 +126,22 @@ public class PurviewDocumentPublishServiceImplTest {
                 .thenReturn(PurviewEntityPublishResult.failure("rate limited"));
 
         IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> service.publishRepositoryDocuments("bedroom"));
+                () -> service.publishRepositoryHierarchy("bedroom"));
 
         assertEquals("rate limited", error.getMessage());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testUpsertContentsPublishesFoldersAndDocumentsTogether() throws Exception {
+        int processedCount = service.upsertContents("bedroom", List.of(folder("folder-001"), document("doc-001", "folder-001")));
+
+        assertEquals(2, processedCount);
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(entityRegistryClient).bulkCreateOrUpdateEntities(any(), payloadCaptor.capture());
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) payloadCaptor.getValue().get("entities");
+        assertEquals(List.of("nemaki_document", "nemaki_folder"),
+                entities.stream().map(entity -> entity.get("typeName").toString()).sorted().toList());
     }
 
     private Folder folder(String id) {

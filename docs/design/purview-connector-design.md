@@ -14,9 +14,9 @@
 - collection スコープ `TYPE_BOOTSTRAP` job
 - `job state` / `lock state` / `stream cursor state`
 - `GET /v1/admin/purview/state` による state overview
-- `nemaki_document` を含む schema manifest / payload
-- full sync の document page traversal と bulk upsert
-- incremental sync の `CREATED` / `UPDATED` / `SECURITY` 系 document upsert
+- `nemaki_repository` / `nemaki_folder` / `nemaki_document` を含む schema manifest / payload
+- full sync の repository / folder / document page traversal と bulk upsert
+- incremental sync の `CREATED` / `UPDATED` / `SECURITY` 系 folder / document upsert
 - `DELETED` change の tombstone stage
 - repository 単位 `DELETE_RESOLUTION` job
 - live / archive / purge 判定に応じた tombstone 解決
@@ -27,12 +27,12 @@
 
 未実装:
 
-- folder / repository / type definition asset の実体同期
+- type definition asset の実体同期
 - archive / cloud metadata / type reconciliation
 - lineage 実体生成
 - 管理 UI
 
-現時点の実装は「document metadata を Purview に載せる最初の縦スライス」を成立させることを優先している。設計上の初期スコープ全体はまだ完了していない。
+現時点の実装は「repository / folder / document metadata を Purview に載せる最初の縦スライス」を成立させることを優先している。設計上の初期スコープ全体はまだ完了していない。
 
 ## 1. 目的
 
@@ -586,8 +586,9 @@ schema bootstrap の扱い:
 
 2026-03-20 実装状況:
 
-- document については root folder から folder tree を page traversal し、`nemaki_document` として bulk upsert するところまで実装済み
-- repository / folder / type definition / archive の full sync は未着手
+- repository entity を `nemaki_repository` として upsert するところまで実装済み
+- root folder を含む folder tree を page traversal し、`nemaki_folder` / `nemaki_document` を bulk upsert するところまで実装済み
+- type definition / archive の full sync は未着手
 
 ### 14.2 incremental sync
 
@@ -604,9 +605,9 @@ schema bootstrap の扱い:
 
 2026-03-20 実装状況:
 
-- `CREATED` / `UPDATED` / `SECURITY` 相当の change は objectId から最新 document を再取得して upsert するところまで実装済み
+- `CREATED` / `UPDATED` / `SECURITY` 相当の change は objectId から最新 folder / document を再取得して upsert するところまで実装済み
 - `DELETED` は tombstone として stage され、grace period 後は `DELETE_RESOLUTION` job で解決する
-- `DELETE_RESOLUTION` は live object 復活時は tombstone を削除し、archive 検出時は `ARCHIVED` へ遷移させ、live/archive 不在時は Purview delete API を呼ぶ
+- `DELETE_RESOLUTION` は live object 復活時は tombstone を削除し、document では archive 検出時に `ARCHIVED` へ遷移させ、live/archive 不在時は Purview delete API を呼ぶ
 - dead-letter 専用 queue は未実装
 
 ### 14.3 supplemental reconciliation
@@ -926,8 +927,8 @@ dead-letter 方針:
 2026-03-20 状態:
 
 - 一部完了
-- 完了済み: type bootstrap, `nemaki_document` を含む schema 適用, document full sync, state overview
-- 未完了: repository / folder / type definition / archive 同期
+- 完了済み: type bootstrap, `nemaki_repository` / `nemaki_folder` / `nemaki_document` を含む schema 適用, repository / folder / document full sync, state overview
+- 未完了: type definition / archive 同期
 
 ### Phase 3: incremental sync
 

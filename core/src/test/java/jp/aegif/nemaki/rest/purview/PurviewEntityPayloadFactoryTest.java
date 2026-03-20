@@ -10,10 +10,60 @@ import java.util.TimeZone;
 
 import org.junit.jupiter.api.Test;
 
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.Folder;
 
 public class PurviewEntityPayloadFactoryTest {
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildRepositoryEntityMapsQualifiedNameAndRootFolder() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        RepositoryInfo repositoryInfo = new RepositoryInfo();
+        repositoryInfo.setId("bedroom");
+        repositoryInfo.setName("Bedroom Repository");
+        repositoryInfo.setDescription("Primary test repository");
+        repositoryInfo.setRootFolder("root-001");
+
+        Map<String, Object> entity = factory.buildRepositoryEntity(repositoryInfo);
+
+        assertEquals("nemaki_repository", entity.get("typeName"));
+        Map<String, Object> attributes = (Map<String, Object>) entity.get("attributes");
+        assertEquals("nemaki://bedroom", attributes.get("qualifiedName"));
+        assertEquals("Bedroom Repository", attributes.get("name"));
+        assertEquals("bedroom", attributes.get("repositoryId"));
+        assertEquals("root-001", attributes.get("rootFolderId"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildFolderEntityMapsQualifiedNameAndParentAttributes() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        Folder folder = new Folder();
+        folder.setId("folder-001");
+        folder.setName("Contracts");
+        folder.setDescription("Customer contracts");
+        folder.setParentId("root-001");
+        folder.setObjectType("cmis:folder");
+        folder.setCreator("alice");
+        folder.setModifier("bob");
+        folder.setCreated(calendar("2026-03-20T01:00:00Z"));
+        folder.setModified(calendar("2026-03-20T02:00:00Z"));
+
+        Map<String, Object> entity = factory.buildFolderEntity("bedroom", folder);
+
+        assertEquals("nemaki_folder", entity.get("typeName"));
+        Map<String, Object> attributes = (Map<String, Object>) entity.get("attributes");
+        assertEquals("nemaki://bedroom/objects/folder-001", attributes.get("qualifiedName"));
+        assertEquals("Contracts", attributes.get("name"));
+        assertEquals("bedroom", attributes.get("repositoryId"));
+        assertEquals("folder-001", attributes.get("objectId"));
+        assertEquals("root-001", attributes.get("parentId"));
+        assertEquals("cmis:folder", attributes.get("typeId"));
+        assertEquals("ACTIVE", attributes.get("lifecycleState"));
+    }
 
     @Test
     @SuppressWarnings("unchecked")

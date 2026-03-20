@@ -121,10 +121,12 @@ public class PurviewDeleteResolutionServiceImpl implements PurviewDeleteResoluti
             return;
         }
 
-        Archive archive = contentDaoService.getArchiveByOriginalId(repositoryId, objectId);
-        if (archive != null) {
-            tombstoneStateService.saveTombstoneState(copyWithStatus(tombstoneState, TOMBSTONE_STATUS_ARCHIVED));
-            return;
+        if (isDocumentTombstone(tombstoneState)) {
+            Archive archive = contentDaoService.getArchiveByOriginalId(repositoryId, objectId);
+            if (archive != null) {
+                tombstoneStateService.saveTombstoneState(copyWithStatus(tombstoneState, TOMBSTONE_STATUS_ARCHIVED));
+                return;
+            }
         }
 
         PurviewEntityPublishResult result = deletePurviewEntity(tombstoneState);
@@ -187,5 +189,9 @@ public class PurviewDeleteResolutionServiceImpl implements PurviewDeleteResoluti
             return failures.get(0);
         }
         return failures.size() + " tombstones failed: " + failures.get(0);
+    }
+
+    private boolean isDocumentTombstone(PurviewTombstoneState tombstoneState) {
+        return "nemaki_document".equals(tombstoneState.getTypeName());
     }
 }

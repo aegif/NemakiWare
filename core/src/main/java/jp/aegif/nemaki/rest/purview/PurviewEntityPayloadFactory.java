@@ -6,6 +6,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
@@ -13,6 +14,8 @@ import jp.aegif.nemaki.model.Document;
 @Component
 public class PurviewEntityPayloadFactory {
 
+    private static final String REPOSITORY_TYPE_NAME = "nemaki_repository";
+    private static final String FOLDER_TYPE_NAME = "nemaki_folder";
     private static final String DOCUMENT_TYPE_NAME = "nemaki_document";
     private static final String ARCHIVE_TYPE_NAME = "nemaki_archive";
     private static final String LIFECYCLE_ACTIVE = "ACTIVE";
@@ -21,8 +24,55 @@ public class PurviewEntityPayloadFactory {
     public Map<String, Object> buildBulkPayload(List<Map<String, Object>> entities) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("referredEntities", Map.of());
-        payload.put("entities", entities);
+        payload.put("entities", List.copyOf(entities));
         return payload;
+    }
+
+    public Map<String, Object> buildRepositoryEntity(RepositoryInfo repositoryInfo) {
+        String repositoryId = repositoryInfo.getId();
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildRepositoryQualifiedName(repositoryId));
+        attributes.put("name", firstNonBlank(repositoryInfo.getName(), repositoryId));
+        attributes.put("description", nullIfBlank(repositoryInfo.getDescription()));
+        attributes.put("owner", "system");
+        attributes.put("createTime", null);
+        attributes.put("modifiedTime", null);
+        attributes.put("repositoryId", repositoryId);
+        attributes.put("rootFolderId", nullIfBlank(repositoryInfo.getRootFolderId()));
+        attributes.put("lifecycleState", LIFECYCLE_ACTIVE);
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", REPOSITORY_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", "system");
+        entity.put("updatedBy", "system");
+        entity.put("version", 0);
+        return entity;
+    }
+
+    public Map<String, Object> buildFolderEntity(String repositoryId, Content content) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildObjectQualifiedName(repositoryId, content.getId()));
+        attributes.put("name", firstNonBlank(content.getName(), content.getId()));
+        attributes.put("description", nullIfBlank(content.getDescription()));
+        attributes.put("owner", firstNonBlank(content.getCreator(), content.getModifier(), "system"));
+        attributes.put("createTime", toEpochMillis(content.getCreated()));
+        attributes.put("modifiedTime", toEpochMillis(content.getModified()));
+        attributes.put("repositoryId", repositoryId);
+        attributes.put("objectId", content.getId());
+        attributes.put("parentId", nullIfBlank(content.getParentId()));
+        attributes.put("typeId", nullIfBlank(content.getObjectType()));
+        attributes.put("lifecycleState", LIFECYCLE_ACTIVE);
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", FOLDER_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(content.getCreator(), "system"));
+        entity.put("updatedBy", firstNonBlank(content.getModifier(), content.getCreator(), "system"));
+        entity.put("version", 0);
+        return entity;
     }
 
     public Map<String, Object> buildDocumentEntity(String repositoryId, Content content) {
@@ -125,6 +175,10 @@ public class PurviewEntityPayloadFactory {
         entity.put("updatedBy", firstNonBlank(archive.getArchivedBy(), archive.getModifier(), archive.getCreator(), "system"));
         entity.put("version", 0);
         return entity;
+    }
+
+    private String buildRepositoryQualifiedName(String repositoryId) {
+        return "nemaki://" + repositoryId;
     }
 
     private String buildObjectQualifiedName(String repositoryId, String objectId) {

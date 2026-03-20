@@ -25,15 +25,22 @@ public class PurviewSchemaPayloadFactoryTest {
         List<Map<String, Object>> businessMetadataDefs = (List<Map<String, Object>>) payload.get("businessMetadataDefs");
 
         assertFalse(entityDefs.isEmpty());
+        assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_repository".equals(def.get("name"))));
+        assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_folder".equals(def.get("name"))));
         assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_document".equals(def.get("name"))));
         assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_external_asset".equals(def.get("name"))));
         assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_archive".equals(def.get("name"))));
+        assertTrue(attributeNames(entityDefs, "nemaki_repository").contains("rootFolderId"));
+        assertTrue(attributeNames(entityDefs, "nemaki_folder").contains("parentId"));
         assertTrue(attributeNames(entityDefs, "nemaki_document").contains("lifecycleState"));
         assertTrue(attributeNames(entityDefs, "nemaki_document").contains("archiveId"));
         assertTrue(attributeNames(entityDefs, "nemaki_archive").contains("archiveState"));
         assertTrue(attributeNames(entityDefs, "nemaki_archive").contains("archivedAt"));
-        assertEquals(1, relationshipDefs.size());
-        assertEquals("nemaki_document_has_archive", relationshipDefs.get(0).get("name"));
+        assertEquals(4, relationshipDefs.size());
+        assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_repository_contains_folder".equals(def.get("name"))));
+        assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_folder_contains_folder".equals(def.get("name"))));
+        assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_folder_contains_document".equals(def.get("name"))));
+        assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_document_has_archive".equals(def.get("name"))));
         assertEquals(1, businessMetadataDefs.size());
         assertEquals("nemakiGovernance", businessMetadataDefs.get(0).get("name"));
     }

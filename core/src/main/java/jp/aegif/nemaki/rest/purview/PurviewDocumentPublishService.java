@@ -6,7 +6,15 @@ import jp.aegif.nemaki.model.Content;
 
 public interface PurviewDocumentPublishService {
 
-    int publishRepositoryDocuments(String repositoryId);
+    int publishRepositoryHierarchy(String repositoryId);
 
-    int upsertDocuments(String repositoryId, List<Content> documents);
+    int upsertContents(String repositoryId, List<Content> contents);
+
+    default int publishRepositoryDocuments(String repositoryId) {
+        return publishRepositoryHierarchy(repositoryId);
+    }
+
+    default int upsertDocuments(String repositoryId, List<Content> documents) {
+        return upsertContents(repositoryId, documents);
+    }
 }

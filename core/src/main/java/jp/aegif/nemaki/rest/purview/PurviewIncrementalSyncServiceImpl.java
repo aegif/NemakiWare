@@ -24,6 +24,8 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
     private static final String CURSOR_KIND = "changeToken";
     private static final int CHANGE_LOG_PAGE_SIZE = 100;
     private static final String TOMBSTONE_STATUS_PENDING = "PENDING";
+    private static final String PURVIEW_DOCUMENT_TYPE_NAME = "nemaki_document";
+    private static final String PURVIEW_FOLDER_TYPE_NAME = "nemaki_folder";
 
     private final PurviewConfig purviewConfig;
     private final PurviewSchemaPlannerService schemaPlannerService;
@@ -176,16 +178,16 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
             return;
         }
 
-        List<Content> documents = objectIds.stream()
+        List<Content> contentsToPublish = objectIds.stream()
                 .map(contents::get)
                 .filter(Objects::nonNull)
-                .filter(Content::isDocument)
+                .filter(content -> content.isDocument() || content.isFolder())
                 .toList();
-        if (documents.isEmpty()) {
+        if (contentsToPublish.isEmpty()) {
             return;
         }
 
-        documentPublishService.upsertDocuments(repositoryId, documents);
+        documentPublishService.upsertContents(repositoryId, contentsToPublish);
     }
 
     private void stageDeleteTombstones(String repositoryId, List<Change> changes) {
@@ -202,7 +204,7 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
             tombstoneStateService.saveTombstoneState(new PurviewTombstoneState(
                     repositoryId,
                     change.getObjectId(),
-                    "nemaki_document",
+                    resolvePurviewTypeName(change),
                     "nemaki://" + repositoryId + "/objects/" + change.getObjectId(),
                     change.getToken() == null ? "" : change.getToken(),
                     firstSeenAt,
@@ -223,6 +225,13 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
             objectIds.add(change.getObjectId());
         }
         return new ArrayList<>(objectIds);
+    }
+
+    private String resolvePurviewTypeName(Change change) {
+        if (change != null && "cmis:folder".equals(change.getBaseType())) {
+            return PURVIEW_FOLDER_TYPE_NAME;
+        }
+        return PURVIEW_DOCUMENT_TYPE_NAME;
     }
 
     private String resolveNextCursor(String currentCursor, List<Change> changes) {

@@ -14,15 +14,43 @@ public class PurviewSchemaPayloadFactory {
     public Map<String, Object> buildTypeDefinitionsPayload(PurviewSchemaManifest manifest) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("entityDefs", List.of(
+                buildRepositoryEntityDef(),
+                buildFolderEntityDef(),
                 buildDocumentEntityDef(),
                 buildExternalAssetEntityDef(),
                 buildArchiveEntityDef()));
-        payload.put("relationshipDefs", List.of(buildDocumentHasArchiveRelationshipDef()));
+        payload.put("relationshipDefs", List.of(
+                buildRepositoryContainsFolderRelationshipDef(),
+                buildFolderContainsFolderRelationshipDef(),
+                buildFolderContainsDocumentRelationshipDef(),
+                buildDocumentHasArchiveRelationshipDef()));
         payload.put("businessMetadataDefs", List.of(buildGovernanceBusinessMetadataDef()));
         payload.put("classificationDefs", List.of());
         payload.put("enumDefs", List.of());
         payload.put("structDefs", List.of());
         return payload;
+    }
+
+    private Map<String, Object> buildRepositoryEntityDef() {
+        Map<String, Object> entityDef = baseTypeDef("nemaki_repository",
+                "Repository synchronized from NemakiWare");
+        entityDef.put("attributeDefs", List.of(
+                attribute("repositoryId", "string", false),
+                attribute("rootFolderId", "string", false),
+                attribute("lifecycleState", "string", true)));
+        return entityDef;
+    }
+
+    private Map<String, Object> buildFolderEntityDef() {
+        Map<String, Object> entityDef = baseTypeDef("nemaki_folder",
+                "Folder synchronized from NemakiWare");
+        entityDef.put("attributeDefs", List.of(
+                attribute("repositoryId", "string", false),
+                attribute("objectId", "string", false),
+                attribute("parentId", "string", true),
+                attribute("typeId", "string", true),
+                attribute("lifecycleState", "string", true)));
+        return entityDef;
     }
 
     private Map<String, Object> buildDocumentEntityDef() {
@@ -68,6 +96,39 @@ public class PurviewSchemaPayloadFactory {
                 attribute("versionSeriesId", "string", true),
                 attribute("versionLabel", "string", true)));
         return entityDef;
+    }
+
+    private Map<String, Object> buildRepositoryContainsFolderRelationshipDef() {
+        Map<String, Object> relationshipDef = baseTypeDef("nemaki_repository_contains_folder",
+                "Links NemakiWare repositories to root folders");
+        relationshipDef.put("category", "RELATIONSHIP");
+        relationshipDef.put("relationshipCategory", "ASSOCIATION");
+        relationshipDef.put("endDef1", relationshipEnd("nemaki_repository", "repository"));
+        relationshipDef.put("endDef2", relationshipEnd("nemaki_folder", "folder"));
+        relationshipDef.put("propagateTags", "NONE");
+        return relationshipDef;
+    }
+
+    private Map<String, Object> buildFolderContainsFolderRelationshipDef() {
+        Map<String, Object> relationshipDef = baseTypeDef("nemaki_folder_contains_folder",
+                "Links NemakiWare folders to child folders");
+        relationshipDef.put("category", "RELATIONSHIP");
+        relationshipDef.put("relationshipCategory", "ASSOCIATION");
+        relationshipDef.put("endDef1", relationshipEnd("nemaki_folder", "parentFolder"));
+        relationshipDef.put("endDef2", relationshipEnd("nemaki_folder", "childFolder"));
+        relationshipDef.put("propagateTags", "NONE");
+        return relationshipDef;
+    }
+
+    private Map<String, Object> buildFolderContainsDocumentRelationshipDef() {
+        Map<String, Object> relationshipDef = baseTypeDef("nemaki_folder_contains_document",
+                "Links NemakiWare folders to child documents");
+        relationshipDef.put("category", "RELATIONSHIP");
+        relationshipDef.put("relationshipCategory", "ASSOCIATION");
+        relationshipDef.put("endDef1", relationshipEnd("nemaki_folder", "folder"));
+        relationshipDef.put("endDef2", relationshipEnd("nemaki_document", "document"));
+        relationshipDef.put("propagateTags", "NONE");
+        return relationshipDef;
     }
 
     private Map<String, Object> buildDocumentHasArchiveRelationshipDef() {

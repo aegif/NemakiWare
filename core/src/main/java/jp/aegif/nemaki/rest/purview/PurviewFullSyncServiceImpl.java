@@ -75,7 +75,7 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
             }
 
             try {
-                int processedCount = documentPublishService.publishRepositoryDocuments(repositoryId);
+                int processedCount = documentPublishService.publishRepositoryHierarchy(repositoryId);
                 String checkpoint = seedCursorFromLatestChange(repositoryId, now);
                 PurviewJobState completedJob = new PurviewJobState(
                         jobId,

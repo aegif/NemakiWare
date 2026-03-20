@@ -37,7 +37,7 @@ public class PurviewFullSyncServiceImplTest {
         when(jobStateService.saveJobState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(cursorStateService.saveCursorState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(lockStateService.tryAcquireRepositoryLock(any(), any(), any(), any())).thenReturn(true);
-        when(documentPublishService.publishRepositoryDocuments(any())).thenReturn(0);
+        when(documentPublishService.publishRepositoryHierarchy(any())).thenReturn(0);
         service = new PurviewFullSyncServiceImpl(
                 schemaPlannerService,
                 jobStateService,
@@ -78,7 +78,7 @@ public class PurviewFullSyncServiceImplTest {
         when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
                 "NemakiWare", "1", "current-hash", "1", "current-hash", false,
                 java.util.List.of(), java.util.List.of(), java.util.List.of()));
-        when(documentPublishService.publishRepositoryDocuments("bedroom")).thenReturn(2);
+        when(documentPublishService.publishRepositoryHierarchy("bedroom")).thenReturn(5);
         when(contentDaoService.getLatestChange("bedroom")).thenReturn(createChange("120"));
 
         PurviewJobState result = service.startFullSync("bedroom", "admin");
@@ -87,9 +87,9 @@ public class PurviewFullSyncServiceImplTest {
         assertEquals("COMPLETED", result.getStatus());
         assertEquals("FULL_SYNC", result.getJobKind());
         assertEquals("bedroom", result.getRepositoryId());
-        assertEquals(2, result.getProcessedCount());
+        assertEquals(5, result.getProcessedCount());
         assertEquals("120", result.getCheckpoint());
-        verify(documentPublishService).publishRepositoryDocuments("bedroom");
+        verify(documentPublishService).publishRepositoryHierarchy("bedroom");
         verify(jobStateService).saveJobState(any());
         verify(cursorStateService).saveCursorState(any());
         verify(lockStateService).releaseRepositoryLock("bedroom", "FULL_SYNC", result.getJobId());
@@ -128,7 +128,7 @@ public class PurviewFullSyncServiceImplTest {
         when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
                 "NemakiWare", "1", "current-hash", "1", "current-hash", false,
                 java.util.List.of(), java.util.List.of(), java.util.List.of()));
-        when(documentPublishService.publishRepositoryDocuments("bedroom"))
+        when(documentPublishService.publishRepositoryHierarchy("bedroom"))
                 .thenThrow(new IllegalStateException("purview unavailable"));
 
         PurviewJobState result = service.startFullSync("bedroom", "admin");

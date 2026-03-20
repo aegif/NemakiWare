@@ -106,6 +106,26 @@ public class PurviewDeleteResolutionServiceImplTest {
     }
 
     @Test
+    public void testStartDeleteResolutionDeletesFolderTombstoneWithoutArchiveLookup() throws Exception {
+        PurviewTombstoneState tombstone = tombstone("folder-001", "nemaki_folder");
+        when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
+                "NemakiWare", "2", "current-hash", "2", "current-hash", false,
+                java.util.List.of(), java.util.List.of(), java.util.List.of()));
+        when(tombstoneStateService.listDueTombstoneStates(eq("bedroom"), any(Instant.class))).thenReturn(List.of(tombstone));
+        when(entityRegistryClient.deleteByUniqueAttribute(any(), eq("nemaki_folder"), eq("qualifiedName"),
+                eq("nemaki://bedroom/objects/folder-001")))
+                .thenReturn(PurviewEntityPublishResult.success(1, "entity deleted"));
+
+        PurviewJobState result = service.startDeleteResolution("bedroom", "admin");
+
+        assertEquals("COMPLETED", result.getStatus());
+        verify(entityRegistryClient).deleteByUniqueAttribute(any(), eq("nemaki_folder"), eq("qualifiedName"),
+                eq("nemaki://bedroom/objects/folder-001"));
+        verify(contentDaoService, never()).getArchiveByOriginalId("bedroom", "folder-001");
+        verify(tombstoneStateService).deleteTombstoneState("bedroom", "folder-001");
+    }
+
+    @Test
     public void testStartDeleteResolutionMarksArchivedTombstoneWhenArchiveExists() throws Exception {
         PurviewTombstoneState tombstone = tombstone("doc-002");
         Archive archive = new Archive();
@@ -165,10 +185,14 @@ public class PurviewDeleteResolutionServiceImplTest {
     }
 
     private PurviewTombstoneState tombstone(String objectId) {
+        return tombstone(objectId, "nemaki_document");
+    }
+
+    private PurviewTombstoneState tombstone(String objectId, String typeName) {
         return new PurviewTombstoneState(
                 "bedroom",
                 objectId,
-                "nemaki_document",
+                typeName,
                 "nemaki://bedroom/objects/" + objectId,
                 "token-" + objectId,
                 "2026-03-20T05:00:00Z",

@@ -40,12 +40,23 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
     }
 
     @Override
-    public int publishRepositoryDocuments(String repositoryId) {
+    public int publishRepositoryHierarchy(String repositoryId) {
+        RepositoryInfo repositoryInfo = resolveRepositoryInfo(repositoryId);
         String rootFolderId = resolveRootFolderId(repositoryId);
         Deque<String> folderQueue = new ArrayDeque<>();
         folderQueue.add(rootFolderId);
-        List<Content> documentBatch = new ArrayList<>();
+        List<Map<String, Object>> entityBatch = new ArrayList<>();
         int processedCount = 0;
+
+        entityBatch.add(entityPayloadFactory.buildRepositoryEntity(repositoryInfo));
+        processedCount += flushIfNeeded(entityBatch);
+
+        Content rootFolder = contentDaoService.getContent(repositoryId, rootFolderId);
+        if (rootFolder == null || !rootFolder.isFolder()) {
+            throw new IllegalStateException("Root folder content is not available for repository " + repositoryId);
+        }
+        entityBatch.add(entityPayloadFactory.buildFolderEntity(repositoryId, rootFolder));
+        processedCount += flushIfNeeded(entityBatch);
 
         while (!folderQueue.isEmpty()) {
             String folderId = folderQueue.removeFirst();
@@ -66,6 +77,8 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
                     }
 
                     if (child.isFolder()) {
+                        entityBatch.add(entityPayloadFactory.buildFolderEntity(repositoryId, child));
+                        processedCount += flushIfNeeded(entityBatch);
                         folderQueue.addLast(child.getId());
                         continue;
                     }
@@ -73,49 +86,70 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
                         continue;
                     }
 
-                    documentBatch.add(child);
-                    processedCount += flushIfNeeded(repositoryId, documentBatch);
+                    entityBatch.add(entityPayloadFactory.buildDocumentEntity(repositoryId, child));
+                    processedCount += flushIfNeeded(entityBatch);
                 }
             }
         }
 
-        return processedCount + flushDocuments(repositoryId, documentBatch);
+        return processedCount + flushEntities(entityBatch);
+    }
+
+    @Override
+    public int publishRepositoryDocuments(String repositoryId) {
+        return publishRepositoryHierarchy(repositoryId);
+    }
+
+    @Override
+    public int upsertContents(String repositoryId, List<Content> contents) {
+        if (contents == null || contents.isEmpty()) {
+            return 0;
+        }
+
+        List<Map<String, Object>> pending = new ArrayList<>();
+        int processedCount = 0;
+        for (Content content : contents) {
+            Map<String, Object> entity = buildContentEntity(repositoryId, content);
+            if (entity == null) {
+                continue;
+            }
+            pending.add(entity);
+            processedCount += flushIfNeeded(pending);
+        }
+        return processedCount + flushEntities(pending);
     }
 
     @Override
     public int upsertDocuments(String repositoryId, List<Content> documents) {
-        if (documents == null || documents.isEmpty()) {
-            return 0;
-        }
-
-        List<Content> pending = new ArrayList<>();
-        int processedCount = 0;
-        for (Content document : documents) {
-            if (document == null || !document.isDocument()) {
-                continue;
-            }
-            pending.add(document);
-            processedCount += flushIfNeeded(repositoryId, pending);
-        }
-        return processedCount + flushDocuments(repositoryId, pending);
+        return upsertContents(repositoryId, documents);
     }
 
-    private int flushIfNeeded(String repositoryId, List<Content> documents) {
-        if (documents.size() < ENTITY_BATCH_SIZE) {
-            return 0;
+    private Map<String, Object> buildContentEntity(String repositoryId, Content content) {
+        if (content == null) {
+            return null;
         }
-        return flushDocuments(repositoryId, documents);
+        if (content.isFolder()) {
+            return entityPayloadFactory.buildFolderEntity(repositoryId, content);
+        }
+        if (content.isDocument()) {
+            return entityPayloadFactory.buildDocumentEntity(repositoryId, content);
+        }
+        return null;
     }
 
-    private int flushDocuments(String repositoryId, List<Content> documents) {
-        if (documents.isEmpty()) {
+    private int flushIfNeeded(List<Map<String, Object>> entities) {
+        if (entities.size() < ENTITY_BATCH_SIZE) {
+            return 0;
+        }
+        return flushEntities(entities);
+    }
+
+    private int flushEntities(List<Map<String, Object>> entities) {
+        if (entities.isEmpty()) {
             return 0;
         }
 
         PurviewConnectionRequest request = buildConnectionRequest();
-        List<Map<String, Object>> entities = documents.stream()
-                .map(document -> entityPayloadFactory.buildDocumentEntity(repositoryId, document))
-                .toList();
         try {
             PurviewEntityPublishResult result = entityRegistryClient.bulkCreateOrUpdateEntities(
                     request,
@@ -124,7 +158,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
                 throw new IllegalStateException(result.getMessage());
             }
             int publishedCount = entities.size();
-            documents.clear();
+            entities.clear();
             return publishedCount;
         } catch (PurviewClientException e) {
             throw new IllegalStateException(e.getMessage(), e);
@@ -143,10 +177,14 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
     }
 
     private String resolveRootFolderId(String repositoryId) {
-        RepositoryInfo repositoryInfo = repositoryInfoMap.get(repositoryId);
+        RepositoryInfo repositoryInfo = resolveRepositoryInfo(repositoryId);
         if (repositoryInfo == null || repositoryInfo.getRootFolderId() == null || repositoryInfo.getRootFolderId().isBlank()) {
             throw new IllegalStateException("Root folder ID is not configured for repository " + repositoryId);
         }
         return repositoryInfo.getRootFolderId();
+    }
+
+    private RepositoryInfo resolveRepositoryInfo(String repositoryId) {
+        return repositoryInfoMap.get(repositoryId);
     }
 }

@@ -24,6 +24,7 @@ import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.Folder;
 
 public class PurviewIncrementalSyncServiceImplTest {
 
@@ -52,7 +53,7 @@ public class PurviewIncrementalSyncServiceImplTest {
         when(cursorStateService.saveCursorState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(tombstoneStateService.saveTombstoneState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(lockStateService.tryAcquireRepositoryLock(any(), any(), any(), any())).thenReturn(true);
-        when(documentPublishService.upsertDocuments(any(), anyList())).thenAnswer(invocation -> invocation.getArgument(1, List.class).size());
+        when(documentPublishService.upsertContents(any(), anyList())).thenAnswer(invocation -> invocation.getArgument(1, List.class).size());
         when(purviewConfig.getDeleteResolutionDelayMs()).thenReturn(5000L);
         when(cursorStateService.getCursorState("bedroom", "content-change-log")).thenReturn(new PurviewCursorState(
                 "bedroom", "content-change-log", "", "changeToken", "", "", "", "", 0, 0));
@@ -102,30 +103,33 @@ public class PurviewIncrementalSyncServiceImplTest {
                 "2026-03-20T01:00:00Z", "2026-03-20T01:00:00Z", "2026-03-20T00:50:00Z", "previous error", 2, 0));
 
         Change change1 = createChange("100");
-        Change change2 = createChange("101");
+        Change change2 = createFolderChange("101");
         Change change3 = createChange("102");
-        when(contentDaoService.getLatestChanges("bedroom", "100", 101)).thenReturn(List.of(change1, change2, change3));
+        Change change4 = createChange("103");
+        when(contentDaoService.getLatestChanges("bedroom", "100", 101)).thenReturn(List.of(change1, change2, change3, change4));
         when(contentDaoService.getContentsByIds(eq("bedroom"), anyList()))
                 .thenReturn(Map.of(
-                        "object-101", document("object-101"),
-                        "object-102", document("object-102")));
+                        "object-101-folder", folder("object-101-folder"),
+                        "object-102", document("object-102"),
+                        "object-103", document("object-103")));
 
         PurviewJobState result = service.startIncrementalSync("bedroom", "admin");
         ArgumentCaptor<PurviewCursorState> cursorCaptor = ArgumentCaptor.forClass(PurviewCursorState.class);
 
         assertEquals("COMPLETED", result.getStatus());
-        assertEquals(2, result.getProcessedCount());
-        assertEquals("102", result.getCheckpoint());
+        assertEquals(3, result.getProcessedCount());
+        assertEquals("103", result.getCheckpoint());
         verify(contentDaoService).getLatestChanges("bedroom", "100", 101);
         verify(cursorStateService).saveCursorState(cursorCaptor.capture());
-        assertEquals("102", cursorCaptor.getValue().getCursor());
+        assertEquals("103", cursorCaptor.getValue().getCursor());
         assertEquals("", cursorCaptor.getValue().getLastErrorAt());
         assertEquals("", cursorCaptor.getValue().getLastErrorMessage());
         assertEquals(0, cursorCaptor.getValue().getConsecutiveFailureCount());
-        verify(documentPublishService).upsertDocuments(eq("bedroom"), argThat(documents ->
-                documents.size() == 2
-                        && "object-101".equals(documents.get(0).getId())
-                        && "object-102".equals(documents.get(1).getId())));
+        verify(documentPublishService).upsertContents(eq("bedroom"), argThat(contents ->
+                contents.size() == 3
+                        && "object-101-folder".equals(contents.get(0).getId())
+                        && "object-102".equals(contents.get(1).getId())
+                        && "object-103".equals(contents.get(2).getId())));
         verify(lockStateService).releaseRepositoryLock("bedroom", "INCREMENTAL_SYNC", result.getJobId());
     }
 
@@ -171,11 +175,28 @@ public class PurviewIncrementalSyncServiceImplTest {
         verify(tombstoneStateService).saveTombstoneState(argThat(state ->
                 "bedroom".equals(state.getRepositoryId())
                         && "object-101".equals(state.getObjectId())
+                        && "nemaki_document".equals(state.getTypeName())
                         && "101".equals(state.getChangeToken())
                         && "PENDING".equals(state.getStatus())
                         && Instant.parse(state.getDueAt()).equals(Instant.parse(state.getFirstSeenAt()).plusMillis(5000L))));
-        verify(documentPublishService, never()).upsertDocuments(eq("bedroom"), anyList());
+        verify(documentPublishService, never()).upsertContents(eq("bedroom"), anyList());
         verify(contentDaoService, never()).getContentsByIds(eq("bedroom"), anyList());
+    }
+
+    @Test
+    public void testStartIncrementalSyncStagesFolderTombstoneUsingFolderTypeName() {
+        when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
+                "NemakiWare", "2", "current-hash", "2", "current-hash", false,
+                java.util.List.of(), java.util.List.of(), java.util.List.of()));
+        Change deletedChange = createDeletedFolderChange("101");
+        when(contentDaoService.getLatestChanges("bedroom", null, 100)).thenReturn(List.of(deletedChange));
+
+        PurviewJobState result = service.startIncrementalSync("bedroom", "admin");
+
+        assertEquals("COMPLETED", result.getStatus());
+        verify(tombstoneStateService).saveTombstoneState(argThat(state ->
+                "nemaki_folder".equals(state.getTypeName())
+                        && "nemaki://bedroom/objects/object-101".equals(state.getQualifiedName())));
     }
 
     private Change createChange(String token) {
@@ -183,6 +204,7 @@ public class PurviewIncrementalSyncServiceImplTest {
         change.setToken(token);
         change.setObjectId("object-" + token);
         change.setChangeType(ChangeType.UPDATED);
+        change.setBaseType("cmis:document");
         return change;
     }
 
@@ -191,6 +213,25 @@ public class PurviewIncrementalSyncServiceImplTest {
         change.setToken(token);
         change.setObjectId("object-" + token);
         change.setChangeType(ChangeType.DELETED);
+        change.setBaseType("cmis:document");
+        return change;
+    }
+
+    private Change createFolderChange(String token) {
+        Change change = new Change();
+        change.setToken(token);
+        change.setObjectId("object-" + token + "-folder");
+        change.setChangeType(ChangeType.UPDATED);
+        change.setBaseType("cmis:folder");
+        return change;
+    }
+
+    private Change createDeletedFolderChange(String token) {
+        Change change = new Change();
+        change.setToken(token);
+        change.setObjectId("object-" + token);
+        change.setChangeType(ChangeType.DELETED);
+        change.setBaseType("cmis:folder");
         return change;
     }
 
@@ -199,5 +240,12 @@ public class PurviewIncrementalSyncServiceImplTest {
         document.setId(objectId);
         document.setName(objectId);
         return document;
+    }
+
+    private Content folder(String objectId) {
+        Folder folder = new Folder();
+        folder.setId(objectId);
+        folder.setName(objectId);
+        return folder;
     }
 }
