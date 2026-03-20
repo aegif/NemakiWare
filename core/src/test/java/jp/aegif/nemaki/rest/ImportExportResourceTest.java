@@ -2,16 +2,25 @@ package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.rest.importexport.ImportExportUtils;
 import jp.aegif.nemaki.rest.importexport.ZipImporter;
+import jp.aegif.nemaki.rest.purview.PurviewImportExportLineageService;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
+
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.Folder;
 
 /**
  * Unit tests for Import/Export functionality.
@@ -361,6 +370,102 @@ public class ImportExportResourceTest {
             // Should fail with limit of 512 bytes (entry size is known as 1024)
             byte[] result = zipImporter.readZipEntryWithLimit(zf, "kilobyte.txt", 512);
             assertNull(result, "Should return null when known size exceeds limit");
+        }
+    }
+
+    @Test
+    public void testPublishZipFolderExportLineageDelegatesToPurviewService() {
+        TestableImportExportResource resource = new TestableImportExportResource();
+        PurviewImportExportLineageService lineageService = mock(PurviewImportExportLineageService.class);
+        resource.setPurviewImportExportLineageService(lineageService);
+
+        resource.publishZipFolderExportLineageForTest("bedroom", "folder-001", "Contracts", "alice", 4);
+
+        verify(lineageService).upsertZipFolderExportLineage("bedroom", "folder-001", "Contracts", "alice", 4);
+    }
+
+    @Test
+    public void testPublishUploadedImportLineageDelegatesToPurviewService() {
+        TestableImportExportResource resource = new TestableImportExportResource();
+        PurviewImportExportLineageService lineageService = mock(PurviewImportExportLineageService.class);
+        resource.setPurviewImportExportLineageService(lineageService);
+
+        resource.publishUploadedImportLineageForTest("bedroom", "folder-001", "zip-upload", "alice", 5);
+
+        verify(lineageService).upsertUploadedImportLineage("bedroom", "folder-001", "zip-upload", "alice", 5);
+    }
+
+    @Test
+    public void testPublishSelectedObjectsExportLineageDelegatesToPurviewService() {
+        TestableImportExportResource resource = new TestableImportExportResource();
+        PurviewImportExportLineageService lineageService = mock(PurviewImportExportLineageService.class);
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setName("Quarterly Report");
+        document.setObjectType("cmis:document");
+        Folder folder = new Folder();
+        folder.setId("folder-001");
+        folder.setName("Contracts");
+        folder.setObjectType("cmis:folder");
+        resource.setPurviewImportExportLineageService(lineageService);
+
+        resource.publishSelectedObjectsExportLineageForTest("bedroom", List.of(document, folder), "alice", 7);
+
+        verify(lineageService).upsertSelectedObjectsExportLineage("bedroom", List.of(document, folder), "alice", 7);
+    }
+
+    @Test
+    public void testPublishSelectedObjectsExportLineageSkipsWhenObjectCountIsZero() {
+        TestableImportExportResource resource = new TestableImportExportResource();
+        PurviewImportExportLineageService lineageService = mock(PurviewImportExportLineageService.class);
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setName("Quarterly Report");
+        document.setObjectType("cmis:document");
+        resource.setPurviewImportExportLineageService(lineageService);
+
+        resource.publishSelectedObjectsExportLineageForTest("bedroom", List.of(document), "alice", 0);
+
+        verify(lineageService, never()).upsertSelectedObjectsExportLineage("bedroom", List.of(document), "alice", 0);
+    }
+
+    @Test
+    public void testPublishUploadedImportLineageSkipsWhenObjectCountIsZero() {
+        TestableImportExportResource resource = new TestableImportExportResource();
+        PurviewImportExportLineageService lineageService = mock(PurviewImportExportLineageService.class);
+        resource.setPurviewImportExportLineageService(lineageService);
+
+        resource.publishUploadedImportLineageForTest("bedroom", "folder-001", "zip-upload", "alice", 0);
+
+        verify(lineageService, never()).upsertUploadedImportLineage("bedroom", "folder-001", "zip-upload", "alice", 0);
+    }
+
+    private static class TestableImportExportResource extends ImportExportResource {
+
+        void publishZipFolderExportLineageForTest(
+                String repositoryId,
+                String folderId,
+                String folderName,
+                String requestedBy,
+                long objectCount) {
+            publishZipFolderExportLineage(repositoryId, folderId, folderName, requestedBy, objectCount);
+        }
+
+        void publishSelectedObjectsExportLineageForTest(
+                String repositoryId,
+                List<Content> contents,
+                String requestedBy,
+                long objectCount) {
+            publishSelectedObjectsExportLineage(repositoryId, contents, requestedBy, objectCount);
+        }
+
+        void publishUploadedImportLineageForTest(
+                String repositoryId,
+                String folderId,
+                String importMode,
+                String requestedBy,
+                long objectCount) {
+            publishUploadedImportLineage(repositoryId, folderId, importMode, requestedBy, objectCount);
         }
     }
 }

@@ -407,6 +407,31 @@ public class PurviewEntityPayloadFactoryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    public void testBuildUploadedImportProcessEntityUsesFolderOutputOnly() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+
+        Map<String, Object> importProcess = factory.buildUploadedImportProcessEntity(
+                "bedroom",
+                "folder-001",
+                "zip-upload",
+                "alice",
+                1742439600000L,
+                5);
+
+        Map<String, Object> processAttributes = (Map<String, Object>) importProcess.get("attributes");
+        Map<String, Object> relationshipAttributes = (Map<String, Object>) importProcess.get("relationshipAttributes");
+        assertEquals("nemaki_import_process", importProcess.get("typeName"));
+        assertEquals("folder-001", processAttributes.get("folderId"));
+        assertEquals("zip-upload", processAttributes.get("importMode"));
+        assertEquals("upload:zip-upload", processAttributes.get("sourceDescription"));
+        assertEquals(5L, processAttributes.get("objectCount"));
+        assertTrue(!processAttributes.containsKey("externalStableKey") || processAttributes.get("externalStableKey") == null);
+        assertEquals(0, ((List<?>) relationshipAttributes.get("inputs")).size());
+        assertEquals(1, ((List<?>) relationshipAttributes.get("outputs")).size());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     public void testBuildFilesystemExportLineageEntitiesMapExternalTargetAndProcess() {
         PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
 
@@ -433,6 +458,63 @@ public class PurviewEntityPayloadFactoryTest {
         assertEquals(7L, processAttributes.get("objectCount"));
         assertEquals(1, ((List<?>) relationshipAttributes.get("inputs")).size());
         assertEquals(1, ((List<?>) relationshipAttributes.get("outputs")).size());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildZipFolderExportProcessEntityOmitsExternalAssetAndKeepsFolderInput() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+
+        Map<String, Object> exportProcess = factory.buildZipFolderExportProcessEntity(
+                "bedroom",
+                "folder-001",
+                "Contracts",
+                "alice",
+                1742439600000L,
+                4);
+
+        Map<String, Object> processAttributes = (Map<String, Object>) exportProcess.get("attributes");
+        Map<String, Object> relationshipAttributes = (Map<String, Object>) exportProcess.get("relationshipAttributes");
+        assertEquals("nemaki_export_process", exportProcess.get("typeName"));
+        assertEquals("folder-001", processAttributes.get("folderId"));
+        assertEquals("zip-folder", processAttributes.get("exportMode"));
+        assertEquals("zip-download:folder:folder-001", processAttributes.get("targetDescription"));
+        assertEquals(4L, processAttributes.get("objectCount"));
+        assertTrue(!processAttributes.containsKey("externalStableKey") || processAttributes.get("externalStableKey") == null);
+        assertEquals(1, ((List<?>) relationshipAttributes.get("inputs")).size());
+        assertEquals(0, ((List<?>) relationshipAttributes.get("outputs")).size());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildSelectedObjectsExportProcessEntityUsesSelectedRootsAsInputs() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setName("Quarterly Report");
+        document.setObjectType("cmis:document");
+        Folder folder = new Folder();
+        folder.setId("folder-001");
+        folder.setName("Contracts");
+        folder.setObjectType("cmis:folder");
+
+        Map<String, Object> exportProcess = factory.buildSelectedObjectsExportProcessEntity(
+                "bedroom",
+                List.of(document, folder),
+                "alice",
+                1742439600000L,
+                7);
+
+        Map<String, Object> processAttributes = (Map<String, Object>) exportProcess.get("attributes");
+        Map<String, Object> relationshipAttributes = (Map<String, Object>) exportProcess.get("relationshipAttributes");
+        assertEquals("nemaki_export_process", exportProcess.get("typeName"));
+        assertEquals("zip-selection", processAttributes.get("exportMode"));
+        assertEquals("zip-download:selected:doc-001,folder-001", processAttributes.get("targetDescription"));
+        assertEquals(7L, processAttributes.get("objectCount"));
+        assertTrue(!processAttributes.containsKey("folderId") || processAttributes.get("folderId") == null);
+        assertTrue(!processAttributes.containsKey("externalStableKey") || processAttributes.get("externalStableKey") == null);
+        assertEquals(2, ((List<?>) relationshipAttributes.get("inputs")).size());
+        assertEquals(0, ((List<?>) relationshipAttributes.get("outputs")).size());
     }
 
     private GregorianCalendar calendar(String isoInstant) {

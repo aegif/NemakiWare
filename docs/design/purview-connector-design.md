@@ -38,6 +38,8 @@
 - archive lineage の `nemaki_external_asset` / `nemaki_archive_process`
 - cloud sync lineage の `nemaki_external_asset` / `nemaki_cloud_sync_process`
 - managed filesystem import/export lineage の `nemaki_import_process` / `nemaki_export_process`
+- uploaded ZIP / ACP import の process-only `nemaki_import_process`
+- ZIP folder export / selected objects export の process-only `nemaki_export_process`
 - containment relationship snapshot cursor と stale relationship delete
 - repository 単位 `CONTAINMENT_RECONCILIATION` job
 - `POST /v1/admin/purview/reconcile/containment/{repositoryId}`
@@ -47,8 +49,6 @@
 
 未実装:
 
-- ZIP / ACP import lineage
-- ZIP / selected objects export lineage
 - 管理 UI
 
 現時点の実装は「repository / folder / document / type definition / archive metadata を Purview に載せる最初の縦スライス」に加え、stable key を持つ archive / cloud sync / managed filesystem import-export の代表的 lineage を成立させることを優先している。設計上の初期スコープ全体はまだ完了していない。
@@ -567,7 +567,7 @@ NemakiWare で archive destroy まで完了した場合:
 
 - admin API の managed filesystem import に限り、`filesystem:{absolutePath}` を stable key として `nemaki_external_asset` と `nemaki_import_process` を upsert するところまで実装済み
 - `nemaki_import_process` は `inputs=[nemaki_external_asset]`, `outputs=[nemaki_folder]` を持ち、source path と object count を属性に持つ
-- ZIP / ACP import はまだ process metadata fallback も未実装
+- uploaded ZIP / ACP import は process-only fallback として `nemaki_import_process` を upsert し、`inputs=[]`, `outputs=[nemaki_folder]`, `importMode=zip-upload|acp-upload`, `sourceDescription=upload:{mode}` を持つところまで実装済み
 
 ### 13.2 export lineage
 
@@ -578,7 +578,8 @@ NemakiWare で archive destroy まで完了した場合:
 
 - admin API の managed filesystem export に限り、`filesystem:{absolutePath}` を stable key として `nemaki_external_asset` と `nemaki_export_process` を upsert するところまで実装済み
 - `nemaki_export_process` は `inputs=[nemaki_folder]`, `outputs=[nemaki_external_asset]` を持ち、target path と object count を属性に持つ
-- ZIP export と selected objects export はまだ process metadata fallback も未実装
+- folder ZIP export は process-only fallback として `nemaki_export_process` を upsert し、`inputs=[nemaki_folder]`, `outputs=[]`, `exportMode=zip-folder`, `targetDescription=zip-download:folder:{folderId}` を持つところまで実装済み
+- selected objects export は process-only fallback として `nemaki_export_process` を upsert し、selected root objects を `inputs` に持ち、`outputs=[]`, `exportMode=zip-selection`, `targetDescription=zip-download:selected:{sortedObjectIds}` を持つところまで実装済み
 
 ### 13.3 archive lineage
 
@@ -1023,11 +1024,11 @@ dead-letter 方針:
 
 - 進行中
 - 完了済み: change log polling, change token 保存, CREATED / UPDATED / SECURITY の document upsert, containment relationship 更新, `nemaki_document_has_type_definition` relationship 更新, type definition snapshot cursor, snapshot 変化時の `nemaki_type_definition` upsert / delete, archive snapshot cursor, snapshot 変化時の archived document / `nemaki_archive` upsert / restore-destroy 再整合, archive lineage (`nemaki_external_asset` / `nemaki_archive_process`), cloud metadata snapshot cursor, snapshot 変化時の cloud metadata upsert / clear 再整合, cloud sync lineage (`nemaki_external_asset` / `nemaki_cloud_sync_process`), tombstone stage, `DELETE_RESOLUTION`, archive / purge 判定, delete API 呼び出し, `ARCHIVE_RECONCILIATION` による archived document / archive upsert, `CLOUD_METADATA_RECONCILIATION` による live document の cloud metadata 再整合, `CONTAINMENT_RECONCILIATION` による stale containment relationship の delete, object 単位 dead-letter state, `archive-snapshot` / `cloud-metadata-snapshot` / `archive-lineage` / `cloud-sync-lineage` repository 単位 dead-letter state, `GET /dead-letters`, `RETRY_FAILED` job
-- 未完了: ZIP / ACP / selected objects 向け import/export lineage
+- 未完了: なし
 
 直近の次作業:
 
-- import/export lineage
+- glossary / classification / labels 拡張
 
 ### Phase 4: supplemental reconciliation
 
@@ -1044,8 +1045,8 @@ dead-letter 方針:
 2026-03-20 状態:
 
 - 進行中
-- 完了済み: archive lineage (`nemaki_external_asset` + `nemaki_archive_process`), cloud sync lineage (`nemaki_external_asset` + `nemaki_cloud_sync_process`), managed filesystem import/export lineage (`nemaki_import_process` / `nemaki_export_process`)
-- 未完了: ZIP / ACP import lineage, ZIP / selected objects export lineage
+- 完了済み: archive lineage (`nemaki_external_asset` + `nemaki_archive_process`), cloud sync lineage (`nemaki_external_asset` + `nemaki_cloud_sync_process`), managed filesystem import/export lineage (`nemaki_import_process` / `nemaki_export_process`), uploaded ZIP / ACP import の process-only `nemaki_import_process`, ZIP folder export / selected objects export の process-only `nemaki_export_process`
+- 未完了: なし
 
 ### Phase 6: UI と拡張
 

@@ -6,6 +6,8 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
+import jp.aegif.nemaki.model.Content;
+
 @Service
 public class PurviewImportExportLineageServiceImpl implements PurviewImportExportLineageService {
 
@@ -52,6 +54,31 @@ public class PurviewImportExportLineageServiceImpl implements PurviewImportExpor
     }
 
     @Override
+    public int upsertUploadedImportLineage(
+            String repositoryId,
+            String folderId,
+            String importMode,
+            String requestedBy,
+            long objectCount) {
+        if (!purviewConfig.isEnabled()
+                || isBlank(repositoryId)
+                || isBlank(folderId)
+                || isBlank(importMode)
+                || objectCount <= 0L) {
+            return 0;
+        }
+        long occurredAtMillis = Instant.now().toEpochMilli();
+        return publish(List.of(
+                entityPayloadFactory.buildUploadedImportProcessEntity(
+                        repositoryId,
+                        folderId,
+                        importMode,
+                        requestedBy,
+                        occurredAtMillis,
+                        objectCount)));
+    }
+
+    @Override
     public int upsertFilesystemExportLineage(
             String repositoryId,
             String folderId,
@@ -75,6 +102,53 @@ public class PurviewImportExportLineageServiceImpl implements PurviewImportExpor
                         repositoryId,
                         folderId,
                         targetPath,
+                        requestedBy,
+                        occurredAtMillis,
+                        objectCount)));
+    }
+
+    @Override
+    public int upsertZipFolderExportLineage(
+            String repositoryId,
+            String folderId,
+            String folderName,
+            String requestedBy,
+            long objectCount) {
+        if (!purviewConfig.isEnabled()
+                || isBlank(repositoryId)
+                || isBlank(folderId)
+                || objectCount <= 0L) {
+            return 0;
+        }
+        long occurredAtMillis = Instant.now().toEpochMilli();
+        return publish(List.of(
+                entityPayloadFactory.buildZipFolderExportProcessEntity(
+                        repositoryId,
+                        folderId,
+                        folderName,
+                        requestedBy,
+                        occurredAtMillis,
+                        objectCount)));
+    }
+
+    @Override
+    public int upsertSelectedObjectsExportLineage(
+            String repositoryId,
+            List<? extends Content> contents,
+            String requestedBy,
+            long objectCount) {
+        if (!purviewConfig.isEnabled()
+                || isBlank(repositoryId)
+                || contents == null
+                || contents.isEmpty()
+                || objectCount <= 0L) {
+            return 0;
+        }
+        long occurredAtMillis = Instant.now().toEpochMilli();
+        return publish(List.of(
+                entityPayloadFactory.buildSelectedObjectsExportProcessEntity(
+                        repositoryId,
+                        contents,
                         requestedBy,
                         occurredAtMillis,
                         objectCount)));

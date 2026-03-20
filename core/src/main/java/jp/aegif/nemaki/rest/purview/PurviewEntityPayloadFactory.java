@@ -31,6 +31,8 @@ public class PurviewEntityPayloadFactory {
     private static final String LIFECYCLE_ACTIVE = "ACTIVE";
     private static final String LIFECYCLE_ARCHIVED = "ARCHIVED";
     private static final String FILESYSTEM_SOURCE_SYSTEM = "filesystem";
+    private static final String ZIP_FOLDER_EXPORT_MODE = "zip-folder";
+    private static final String ZIP_SELECTION_EXPORT_MODE = "zip-selection";
 
     public Map<String, Object> buildBulkPayload(List<Map<String, Object>> entities) {
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -480,6 +482,42 @@ public class PurviewEntityPayloadFactory {
         return entity;
     }
 
+    public Map<String, Object> buildUploadedImportProcessEntity(
+            String repositoryId,
+            String folderId,
+            String importMode,
+            String username,
+            long occurredAtMillis,
+            long objectCount) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildImportProcessQualifiedName(repositoryId, folderId, importMode));
+        attributes.put("name", "Import " + firstNonBlank(folderId, importMode));
+        attributes.put("description", null);
+        attributes.put("owner", firstNonBlank(username, "system"));
+        attributes.put("createTime", occurredAtMillis);
+        attributes.put("modifiedTime", occurredAtMillis);
+        attributes.put("repositoryId", repositoryId);
+        attributes.put("folderId", folderId);
+        attributes.put("importMode", importMode);
+        attributes.put("sourceDescription", "upload:" + importMode);
+        attributes.put("objectCount", objectCount);
+
+        Map<String, Object> relationshipAttributes = new LinkedHashMap<>();
+        relationshipAttributes.put("inputs", List.of());
+        relationshipAttributes.put("outputs", List.of(
+                relationshipEnd(FOLDER_TYPE_NAME, buildObjectQualifiedName(repositoryId, folderId))));
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", IMPORT_PROCESS_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("relationshipAttributes", relationshipAttributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(username, "system"));
+        entity.put("updatedBy", firstNonBlank(username, "system"));
+        entity.put("version", 0);
+        return entity;
+    }
+
     public Map<String, Object> buildFilesystemExportProcessEntity(
             String repositoryId,
             String folderId,
@@ -507,6 +545,79 @@ public class PurviewEntityPayloadFactory {
                 relationshipEnd(FOLDER_TYPE_NAME, buildObjectQualifiedName(repositoryId, folderId))));
         relationshipAttributes.put("outputs", List.of(
                 relationshipEnd(EXTERNAL_ASSET_TYPE_NAME, buildExternalAssetQualifiedName(repositoryId, stableKey))));
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", EXPORT_PROCESS_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("relationshipAttributes", relationshipAttributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(username, "system"));
+        entity.put("updatedBy", firstNonBlank(username, "system"));
+        entity.put("version", 0);
+        return entity;
+    }
+
+    public Map<String, Object> buildZipFolderExportProcessEntity(
+            String repositoryId,
+            String folderId,
+            String folderName,
+            String username,
+            long occurredAtMillis,
+            long objectCount) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildExportProcessQualifiedName(repositoryId, folderId, ZIP_FOLDER_EXPORT_MODE));
+        attributes.put("name", "ZIP Export " + firstNonBlank(folderName, folderId));
+        attributes.put("description", null);
+        attributes.put("owner", firstNonBlank(username, "system"));
+        attributes.put("createTime", occurredAtMillis);
+        attributes.put("modifiedTime", occurredAtMillis);
+        attributes.put("repositoryId", repositoryId);
+        attributes.put("folderId", folderId);
+        attributes.put("exportMode", ZIP_FOLDER_EXPORT_MODE);
+        attributes.put("targetDescription", "zip-download:folder:" + folderId);
+        attributes.put("objectCount", objectCount);
+
+        Map<String, Object> relationshipAttributes = new LinkedHashMap<>();
+        relationshipAttributes.put("inputs", List.of(
+                relationshipEnd(FOLDER_TYPE_NAME, buildObjectQualifiedName(repositoryId, folderId))));
+        relationshipAttributes.put("outputs", List.of());
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", EXPORT_PROCESS_TYPE_NAME);
+        entity.put("attributes", attributes);
+        entity.put("relationshipAttributes", relationshipAttributes);
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(username, "system"));
+        entity.put("updatedBy", firstNonBlank(username, "system"));
+        entity.put("version", 0);
+        return entity;
+    }
+
+    public Map<String, Object> buildSelectedObjectsExportProcessEntity(
+            String repositoryId,
+            List<? extends Content> contents,
+            String username,
+            long occurredAtMillis,
+            long objectCount) {
+        String selectionDescription = buildSelectionDescription(contents);
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", buildExportProcessQualifiedName(
+                repositoryId,
+                "selection",
+                ZIP_SELECTION_EXPORT_MODE + ":" + selectionDescription));
+        attributes.put("name", "Selected Objects Export " + selectionDescription);
+        attributes.put("description", null);
+        attributes.put("owner", firstNonBlank(username, "system"));
+        attributes.put("createTime", occurredAtMillis);
+        attributes.put("modifiedTime", occurredAtMillis);
+        attributes.put("repositoryId", repositoryId);
+        attributes.put("exportMode", ZIP_SELECTION_EXPORT_MODE);
+        attributes.put("targetDescription", "zip-download:selected:" + selectionDescription);
+        attributes.put("objectCount", objectCount);
+
+        Map<String, Object> relationshipAttributes = new LinkedHashMap<>();
+        relationshipAttributes.put("inputs", buildProcessInputs(repositoryId, contents));
+        relationshipAttributes.put("outputs", List.of());
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXPORT_PROCESS_TYPE_NAME);
@@ -597,6 +708,30 @@ public class PurviewEntityPayloadFactory {
         return "nemaki://" + repositoryId + "/export-processes/"
                 + Base64.getUrlEncoder().withoutPadding()
                         .encodeToString((folderId + "|" + stableKey).getBytes(StandardCharsets.UTF_8));
+    }
+
+    private List<Map<String, Object>> buildProcessInputs(String repositoryId, List<? extends Content> contents) {
+        if (contents == null || contents.isEmpty()) {
+            return List.of();
+        }
+        return contents.stream()
+                .filter(content -> content != null && content.getId() != null && !content.getId().isBlank())
+                .sorted(java.util.Comparator.comparing(Content::getId))
+                .map(content -> relationshipEnd(
+                        content.isFolder() ? FOLDER_TYPE_NAME : DOCUMENT_TYPE_NAME,
+                        buildObjectQualifiedName(repositoryId, content.getId())))
+                .toList();
+    }
+
+    private String buildSelectionDescription(List<? extends Content> contents) {
+        if (contents == null || contents.isEmpty()) {
+            return "empty";
+        }
+        return contents.stream()
+                .filter(content -> content != null && content.getId() != null && !content.getId().isBlank())
+                .map(Content::getId)
+                .sorted()
+                .collect(java.util.stream.Collectors.joining(","));
     }
 
     private String resolveArchiveSourceSystem(Archive archive) {

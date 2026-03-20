@@ -158,7 +158,7 @@ public class PurviewSchemaPayloadFactory {
                 attribute("repositoryId", "string", false),
                 attribute("folderId", "string", false),
                 attribute("importMode", "string", false),
-                attribute("externalStableKey", "string", false),
+                attribute("externalStableKey", "string", true),
                 attribute("sourceDescription", "string", true),
                 attribute("objectCount", "long", true)));
         return entityDef;
@@ -170,9 +170,9 @@ public class PurviewSchemaPayloadFactory {
         entityDef.put("superTypes", List.of("Process"));
         entityDef.put("attributeDefs", List.of(
                 attribute("repositoryId", "string", false),
-                attribute("folderId", "string", false),
+                attribute("folderId", "string", true),
                 attribute("exportMode", "string", false),
-                attribute("externalStableKey", "string", false),
+                attribute("externalStableKey", "string", true),
                 attribute("targetDescription", "string", true),
                 attribute("objectCount", "long", true)));
         return entityDef;

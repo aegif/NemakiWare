@@ -103,9 +103,14 @@ public class ImportExportResource extends ResourceBase {
     private final ZipExporter zipExporter = new ZipExporter();
     private final FilesystemImporter filesystemImporter = new FilesystemImporter();
     private final FilesystemExporter filesystemExporter = new FilesystemExporter();
+    private PurviewImportExportLineageService purviewImportExportLineageService;
 
     public void setContentService(ContentService contentService) {
         this.contentService = contentService;
+    }
+
+    public void setPurviewImportExportLineageService(PurviewImportExportLineageService purviewImportExportLineageService) {
+        this.purviewImportExportLineageService = purviewImportExportLineageService;
     }
 
     private ContentService getContentService() {
@@ -124,7 +129,10 @@ public class ImportExportResource extends ResourceBase {
         }
     }
 
-    private PurviewImportExportLineageService getPurviewImportExportLineageService() {
+    protected PurviewImportExportLineageService getPurviewImportExportLineageService() {
+        if (purviewImportExportLineageService != null) {
+            return purviewImportExportLineageService;
+        }
         try {
             return SpringContext.getApplicationContext()
                     .getBean(PurviewImportExportLineageService.class);
@@ -176,6 +184,59 @@ public class ImportExportResource extends ResourceBase {
             service.upsertFilesystemExportLineage(repositoryId, folderId, targetPath, requestedBy, objectCount);
         } catch (RuntimeException e) {
             log.warn("Purview filesystem export lineage publish failed: " + e.getMessage(), e);
+        }
+    }
+
+    protected void publishZipFolderExportLineage(
+            String repositoryId,
+            String folderId,
+            String folderName,
+            String requestedBy,
+            long objectCount) {
+        PurviewImportExportLineageService service = getPurviewImportExportLineageService();
+        if (service == null || objectCount <= 0L) {
+            return;
+        }
+
+        try {
+            service.upsertZipFolderExportLineage(repositoryId, folderId, folderName, requestedBy, objectCount);
+        } catch (RuntimeException e) {
+            log.warn("Purview ZIP folder export lineage publish failed: " + e.getMessage(), e);
+        }
+    }
+
+    protected void publishUploadedImportLineage(
+            String repositoryId,
+            String folderId,
+            String importMode,
+            String requestedBy,
+            long objectCount) {
+        PurviewImportExportLineageService service = getPurviewImportExportLineageService();
+        if (service == null || objectCount <= 0L) {
+            return;
+        }
+
+        try {
+            service.upsertUploadedImportLineage(repositoryId, folderId, importMode, requestedBy, objectCount);
+        } catch (RuntimeException e) {
+            log.warn("Purview uploaded import lineage publish failed: " + e.getMessage(), e);
+        }
+    }
+
+    protected void publishSelectedObjectsExportLineage(
+            String repositoryId,
+            List<? extends Content> contents,
+            String requestedBy,
+            long objectCount) {
+        PurviewImportExportLineageService service = getPurviewImportExportLineageService();
+        if (service == null || contents == null || contents.isEmpty() || objectCount <= 0L) {
+            return;
+        }
+
+        try {
+            service.upsertSelectedObjectsExportLineage(repositoryId, contents, requestedBy, objectCount);
+        } catch (RuntimeException e) {
+            log.warn("Purview selected objects export lineage publish failed: " + e.getMessage(), e);
         }
     }
 
@@ -273,6 +334,13 @@ public class ImportExportResource extends ResourceBase {
                         .entity(result.toJSONString()).build();
             }
 
+            publishUploadedImportLineage(
+                    repositoryId,
+                    folderId,
+                    format == ImportFormat.ACP ? "acp-upload" : "zip-upload",
+                    getCallContextUsername(request),
+                    (long) importedFolders + importedDocuments);
+
             String status = "success";
             if (!errors.isEmpty()) {
                 status = "partial";
@@ -365,6 +433,7 @@ public class ImportExportResource extends ResourceBase {
 
             // Capture username before response is committed (request may not be available in StreamingOutput)
             final String exportUsername = getCallContextUsername(request);
+            final String exportFolderName = folder.getName();
 
             StreamingOutput streamingOutput = new StreamingOutput() {
                 @Override
@@ -394,6 +463,13 @@ public class ImportExportResource extends ResourceBase {
                         } catch (Exception e) {
                             log.warn("Failed to export type definitions: " + e.getMessage(), e);
                         }
+
+                        publishZipFolderExportLineage(
+                                repositoryId,
+                                folderId,
+                                exportFolderName,
+                                exportUsername,
+                                exportedObjectIds.size());
 
                         // Audit after streaming completes successfully
                         AuditLogger audit = getAuditLogger();
@@ -491,6 +567,7 @@ public class ImportExportResource extends ResourceBase {
                         .build();
             }
 
+            final String exportUsername = getCallContextUsername(request);
             StreamingOutput streamingOutput = new StreamingOutput() {
                 @Override
                 public void write(OutputStream output) throws IOException {
@@ -541,6 +618,12 @@ public class ImportExportResource extends ResourceBase {
                         } catch (Exception e) {
                             log.warn("Failed to export type definitions: " + e.getMessage(), e);
                         }
+
+                        publishSelectedObjectsExportLineage(
+                                repositoryId,
+                                contents,
+                                exportUsername,
+                                exportedObjectIds.size());
                     } catch (Exception e) {
                         log.error("Export streaming failed: " + e.getMessage(), e);
                         throw new IOException("Export failed: " + e.getMessage(), e);
