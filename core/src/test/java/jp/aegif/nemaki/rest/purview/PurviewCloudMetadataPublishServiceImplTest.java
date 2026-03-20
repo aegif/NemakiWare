@@ -31,6 +31,7 @@ public class PurviewCloudMetadataPublishServiceImplTest {
     private ContentDaoService contentDaoService;
     private PurviewDocumentPublishService documentPublishService;
     private PurviewCloudSyncLineageService cloudSyncLineageService;
+    private PurviewDeadLetterStateService deadLetterStateService;
     private PurviewCloudMetadataPublishServiceImpl service;
 
     @BeforeEach
@@ -39,14 +40,17 @@ public class PurviewCloudMetadataPublishServiceImplTest {
         contentDaoService = mock(ContentDaoService.class);
         documentPublishService = mock(PurviewDocumentPublishService.class);
         cloudSyncLineageService = mock(PurviewCloudSyncLineageService.class);
+        deadLetterStateService = mock(PurviewDeadLetterStateService.class);
         when(documentPublishService.upsertContents(any(), any())).thenAnswer(invocation -> invocation.getArgument(1, List.class).size());
         when(cloudSyncLineageService.upsertCloudSyncLineage(any(), any())).thenAnswer(invocation -> invocation.getArgument(1, List.class).size());
+        when(deadLetterStateService.saveDeadLetterState(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service = new PurviewCloudMetadataPublishServiceImpl(
                 repositoryInfoMap,
                 contentDaoService,
                 documentPublishService,
-                cloudSyncLineageService);
+                cloudSyncLineageService,
+                deadLetterStateService);
     }
 
     @Test
@@ -89,6 +93,32 @@ public class PurviewCloudMetadataPublishServiceImplTest {
     }
 
     @Test
+    public void testPublishRepositoryCloudSyncLineageMovesLineageFailureToDeadLetterAndContinues() {
+        RepositoryInfo repositoryInfo = new RepositoryInfo();
+        repositoryInfo.setId("bedroom");
+        repositoryInfo.setRootFolder("root-001");
+        Document currentDocument = documentWithCloud("doc-001", "root-001", "google", "cloud-001",
+                "https://drive.example/doc-001", "2026-03-20T03:00:00.000+0000");
+        when(repositoryInfoMap.get("bedroom")).thenReturn(repositoryInfo);
+        when(contentDaoService.getContent("bedroom", "root-001")).thenReturn(folder("root-001"));
+        when(contentDaoService.getChildrenCount("bedroom", "root-001")).thenReturn(1L);
+        when(contentDaoService.getChildrenPaged("bedroom", "root-001", 0, 100))
+                .thenReturn(List.of(currentDocument));
+        when(cloudSyncLineageService.upsertCloudSyncLineage("bedroom", List.of(currentDocument)))
+                .thenThrow(new IllegalStateException("cloud lineage unavailable"));
+
+        int publishedCount = service.publishRepositoryCloudSyncLineage("bedroom");
+
+        assertEquals(0, publishedCount);
+        verify(deadLetterStateService).saveDeadLetterState(argThat(state ->
+                "bedroom".equals(state.getRepositoryId())
+                        && "cloud-sync-lineage".equals(state.getStreamKind())
+                        && "bedroom".equals(state.getEntryKey())
+                        && "".equals(state.getCheckpoint())
+                        && state.getErrorSummary().contains("cloud lineage unavailable")));
+    }
+
+    @Test
     public void testSyncRepositoryCloudMetadataIfChangedRepublishesChangedDocumentsAndClearsRemovedMetadata() {
         RepositoryInfo repositoryInfo = new RepositoryInfo();
         repositoryInfo.setId("bedroom");
@@ -119,6 +149,36 @@ public class PurviewCloudMetadataPublishServiceImplTest {
                                 .equals(entries.get("doc-001"))
                         && "doc-legacy|microsoft|cloud-legacy|https://onedrive.example/doc-legacy|2026-03-19T01:00:00.000+0000"
                                 .equals(entries.get("doc-legacy"))));
+    }
+
+    @Test
+    public void testSyncRepositoryCloudMetadataIfChangedMovesLineageFailureToDeadLetterAndContinues() {
+        RepositoryInfo repositoryInfo = new RepositoryInfo();
+        repositoryInfo.setId("bedroom");
+        repositoryInfo.setRootFolder("root-001");
+        when(repositoryInfoMap.get("bedroom")).thenReturn(repositoryInfo);
+        when(contentDaoService.getContent("bedroom", "root-001")).thenReturn(folder("root-001"));
+        when(contentDaoService.getChildrenCount("bedroom", "root-001")).thenReturn(1L);
+        Document currentDocument = documentWithCloud("doc-001", "root-001", "google", "cloud-001",
+                "https://drive.example/doc-001", "2026-03-20T03:00:00.000+0000");
+        when(contentDaoService.getChildrenPaged("bedroom", "root-001", 0, 100)).thenReturn(List.of(currentDocument));
+        when(cloudSyncLineageService.upsertCloudSyncLineage("bedroom", List.of(currentDocument)))
+                .thenThrow(new IllegalStateException("cloud lineage unavailable"));
+
+        PurviewCloudMetadataSyncResult result = service.syncRepositoryCloudMetadataIfChanged(
+                "bedroom",
+                "doc-001|google|cloud-old|https://drive.example/doc-001|2026-03-19T03:00:00.000+0000");
+
+        assertTrue(result.isChanged());
+        assertEquals(1, result.getPublishedCount());
+        assertEquals(0, result.getReconciledCount());
+        verify(documentPublishService).upsertContents("bedroom", List.of(currentDocument));
+        verify(deadLetterStateService).saveDeadLetterState(argThat(state ->
+                "bedroom".equals(state.getRepositoryId())
+                        && "cloud-sync-lineage".equals(state.getStreamKind())
+                        && "bedroom".equals(state.getEntryKey())
+                        && state.getCheckpoint().contains("cloud-old")
+                        && state.getErrorSummary().contains("cloud lineage unavailable")));
     }
 
     @Test

@@ -24,6 +24,8 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
     private static final int ENTITY_BATCH_SIZE = 100;
     private static final String ARCHIVE_TYPE_NAME = "nemaki_archive";
     private static final String DOCUMENT_TYPE_NAME = "nemaki_document";
+    private static final String ARCHIVE_LINEAGE_STREAM_KIND = "archive-lineage";
+    private static final String ARCHIVE_LINEAGE_TYPE_NAME = "nemaki_archive_process";
     private static final String UNIQUE_ATTRIBUTE_NAME = "qualifiedName";
 
     private final PurviewConfig purviewConfig;
@@ -33,6 +35,7 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
     private final PurviewDocumentArchiveRelationshipService documentArchiveRelationshipService;
     private final PurviewDocumentPublishService documentPublishService;
     private final PurviewArchiveLineageService archiveLineageService;
+    private final PurviewDeadLetterStateService deadLetterStateService;
 
     public PurviewArchivePublishServiceImpl(
             PurviewConfig purviewConfig,
@@ -41,7 +44,8 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService,
             PurviewDocumentArchiveRelationshipService documentArchiveRelationshipService,
             PurviewDocumentPublishService documentPublishService,
-            PurviewArchiveLineageService archiveLineageService) {
+            PurviewArchiveLineageService archiveLineageService,
+            PurviewDeadLetterStateService deadLetterStateService) {
         this.purviewConfig = purviewConfig;
         this.entityPayloadFactory = entityPayloadFactory;
         this.entityRegistryClient = entityRegistryClient;
@@ -49,11 +53,17 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
         this.documentArchiveRelationshipService = documentArchiveRelationshipService;
         this.documentPublishService = documentPublishService;
         this.archiveLineageService = archiveLineageService;
+        this.deadLetterStateService = deadLetterStateService;
     }
 
     @Override
     public int publishRepositoryArchives(String repositoryId) {
-        return publishArchives(repositoryId, loadValidArchives(repositoryId));
+        return publishArchives(repositoryId, loadValidArchives(repositoryId), "");
+    }
+
+    @Override
+    public int retryRepositoryArchiveLineage(String repositoryId, String previousSnapshot) {
+        return publishArchiveLineage(repositoryId, loadValidArchives(repositoryId));
     }
 
     @Override
@@ -70,7 +80,7 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
             return new PurviewArchiveSyncResult(currentSnapshot, false, 0, 0);
         }
 
-        int publishedCount = publishArchives(repositoryId, archives);
+        int publishedCount = publishArchives(repositoryId, archives, normalizedPreviousSnapshot);
         int reconciledCount = reconcileMissingArchives(repositoryId, normalizedPreviousSnapshot, archives);
         return new PurviewArchiveSyncResult(currentSnapshot, true, publishedCount, reconciledCount);
     }
@@ -99,7 +109,7 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
                 .toList();
     }
 
-    private int publishArchives(String repositoryId, List<Archive> archives) {
+    private int publishArchives(String repositoryId, List<Archive> archives, String lineageCheckpoint) {
         List<Map<String, Object>> entityBatch = new ArrayList<>();
         List<Archive> relationshipCandidates = new ArrayList<>();
         int processedCount = 0;
@@ -115,8 +125,29 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
         int archiveEntityCount = processedCount
                 + flushEntities(entityBatch)
                 + documentArchiveRelationshipService.upsertDocumentArchiveRelationships(repositoryId, relationshipCandidates);
-        archiveLineageService.upsertArchiveLineage(repositoryId, archives);
+        publishArchiveLineageBestEffort(repositoryId, archives, lineageCheckpoint);
         return archiveEntityCount;
+    }
+
+    private int publishArchiveLineage(String repositoryId, List<Archive> archives) {
+        if (archives == null || archives.isEmpty()) {
+            return 0;
+        }
+        return archiveLineageService.upsertArchiveLineage(repositoryId, archives);
+    }
+
+    private void publishArchiveLineageBestEffort(String repositoryId, List<Archive> archives, String checkpoint) {
+        try {
+            publishArchiveLineage(repositoryId, archives);
+            deadLetterStateService.deleteDeadLetterState(repositoryId, ARCHIVE_LINEAGE_STREAM_KIND, repositoryId);
+        } catch (RuntimeException e) {
+            deadLetterStateService.saveDeadLetterState(buildRepositoryDeadLetterState(
+                    repositoryId,
+                    ARCHIVE_LINEAGE_STREAM_KIND,
+                    ARCHIVE_LINEAGE_TYPE_NAME,
+                    checkpoint,
+                    e.getMessage() == null || e.getMessage().isBlank() ? e.getClass().getSimpleName() : e.getMessage()));
+        }
     }
 
     private int flushIfNeeded(List<Map<String, Object>> entities) {
@@ -251,6 +282,32 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
 
     private String nullToEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private PurviewDeadLetterState buildRepositoryDeadLetterState(
+            String repositoryId,
+            String streamKind,
+            String typeName,
+            String checkpoint,
+            String errorSummary) {
+        String now = java.time.Instant.now().toString();
+        PurviewDeadLetterState existingState = deadLetterStateService.getDeadLetterState(repositoryId, streamKind, repositoryId);
+        String firstFailedAt = existingState == null || existingState.getFirstFailedAt() == null
+                || existingState.getFirstFailedAt().isBlank()
+                        ? now
+                        : existingState.getFirstFailedAt();
+        int failureCount = existingState == null ? 1 : Math.max(0, existingState.getFailureCount()) + 1;
+        return new PurviewDeadLetterState(
+                repositoryId,
+                streamKind,
+                repositoryId,
+                typeName,
+                "nemaki://" + repositoryId + "/purview/" + streamKind,
+                firstFailedAt,
+                now,
+                failureCount,
+                checkpoint == null ? "" : checkpoint,
+                errorSummary);
     }
 
     private PurviewConnectionRequest buildConnectionRequest() {

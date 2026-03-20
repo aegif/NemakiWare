@@ -22,21 +22,26 @@ import jp.aegif.nemaki.model.Content;
 public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetadataPublishService {
 
     private static final int CHILD_FETCH_PAGE_SIZE = 100;
+    private static final String CLOUD_LINEAGE_STREAM_KIND = "cloud-sync-lineage";
+    private static final String CLOUD_LINEAGE_TYPE_NAME = "nemaki_cloud_sync_process";
 
     private final RepositoryInfoMap repositoryInfoMap;
     private final ContentDaoService contentDaoService;
     private final PurviewDocumentPublishService documentPublishService;
     private final PurviewCloudSyncLineageService cloudSyncLineageService;
+    private final PurviewDeadLetterStateService deadLetterStateService;
 
     public PurviewCloudMetadataPublishServiceImpl(
             RepositoryInfoMap repositoryInfoMap,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService,
             PurviewDocumentPublishService documentPublishService,
-            PurviewCloudSyncLineageService cloudSyncLineageService) {
+            PurviewCloudSyncLineageService cloudSyncLineageService,
+            PurviewDeadLetterStateService deadLetterStateService) {
         this.repositoryInfoMap = repositoryInfoMap;
         this.contentDaoService = contentDaoService;
         this.documentPublishService = documentPublishService;
         this.cloudSyncLineageService = cloudSyncLineageService;
+        this.deadLetterStateService = deadLetterStateService;
     }
 
     @Override
@@ -50,7 +55,43 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
         if (cloudMetadataDocuments.isEmpty()) {
             return 0;
         }
-        return cloudSyncLineageService.upsertCloudSyncLineage(repositoryId, cloudMetadataDocuments);
+        try {
+            int publishedCount = cloudSyncLineageService.upsertCloudSyncLineage(repositoryId, cloudMetadataDocuments);
+            deadLetterStateService.deleteDeadLetterState(repositoryId, CLOUD_LINEAGE_STREAM_KIND, repositoryId);
+            return publishedCount;
+        } catch (RuntimeException e) {
+            deadLetterStateService.saveDeadLetterState(buildRepositoryDeadLetterState(
+                    repositoryId,
+                    "",
+                    buildErrorSummary(e)));
+            return 0;
+        }
+    }
+
+    @Override
+    public int retryRepositoryCloudSyncLineage(String repositoryId, String previousSnapshot) {
+        List<Content> cloudMetadataDocuments = loadCloudMetadataDocuments(repositoryId);
+        String normalizedPreviousSnapshot = normalizeSnapshot(previousSnapshot);
+        Map<String, String> previousByObjectId = parseSnapshot(normalizedPreviousSnapshot);
+        List<Content> changedDocuments = new ArrayList<>();
+        Map<String, String> obsoleteSnapshotEntries = new LinkedHashMap<>();
+        for (Content content : cloudMetadataDocuments) {
+            String snapshotEntry = buildSnapshotEntry(content);
+            String previousSnapshotEntry = previousByObjectId.remove(content.getId());
+            if (!Objects.equals(snapshotEntry, previousSnapshotEntry)) {
+                changedDocuments.add(content);
+                if (previousSnapshotEntry != null && !previousSnapshotEntry.isBlank()) {
+                    obsoleteSnapshotEntries.put(content.getId(), previousSnapshotEntry);
+                }
+            }
+        }
+        obsoleteSnapshotEntries.putAll(previousByObjectId);
+
+        int lineagePublishedCount = changedDocuments.isEmpty() ? 0 : cloudSyncLineageService.upsertCloudSyncLineage(repositoryId, changedDocuments);
+        int lineageReconciledCount = obsoleteSnapshotEntries.isEmpty()
+                ? 0
+                : cloudSyncLineageService.reconcileRemovedCloudSyncLineage(repositoryId, obsoleteSnapshotEntries);
+        return lineagePublishedCount + lineageReconciledCount;
     }
 
     @Override
@@ -82,11 +123,21 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
 
         List<Content> clearedDocuments = loadClearedDocuments(repositoryId, previousByObjectId.keySet());
         int publishedCount = changedDocuments.isEmpty() ? 0 : documentPublishService.upsertContents(repositoryId, changedDocuments);
-        int lineagePublishedCount = changedDocuments.isEmpty() ? 0 : cloudSyncLineageService.upsertCloudSyncLineage(repositoryId, changedDocuments);
         int reconciledCount = clearedDocuments.isEmpty() ? 0 : documentPublishService.upsertContents(repositoryId, clearedDocuments);
-        int lineageReconciledCount = obsoleteSnapshotEntries.isEmpty()
-                ? 0
-                : cloudSyncLineageService.reconcileRemovedCloudSyncLineage(repositoryId, obsoleteSnapshotEntries);
+        int lineagePublishedCount = 0;
+        int lineageReconciledCount = 0;
+        try {
+            lineagePublishedCount = changedDocuments.isEmpty() ? 0 : cloudSyncLineageService.upsertCloudSyncLineage(repositoryId, changedDocuments);
+            lineageReconciledCount = obsoleteSnapshotEntries.isEmpty()
+                    ? 0
+                    : cloudSyncLineageService.reconcileRemovedCloudSyncLineage(repositoryId, obsoleteSnapshotEntries);
+            deadLetterStateService.deleteDeadLetterState(repositoryId, CLOUD_LINEAGE_STREAM_KIND, repositoryId);
+        } catch (RuntimeException e) {
+            deadLetterStateService.saveDeadLetterState(buildRepositoryDeadLetterState(
+                    repositoryId,
+                    normalizedPreviousSnapshot,
+                    buildErrorSummary(e)));
+        }
         return new PurviewCloudMetadataSyncResult(
                 currentSnapshot,
                 true,
@@ -200,5 +251,36 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
 
     private String nullToEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private PurviewDeadLetterState buildRepositoryDeadLetterState(
+            String repositoryId,
+            String checkpoint,
+            String errorSummary) {
+        String now = java.time.Instant.now().toString();
+        PurviewDeadLetterState existingState = deadLetterStateService.getDeadLetterState(repositoryId, CLOUD_LINEAGE_STREAM_KIND, repositoryId);
+        String firstFailedAt = existingState == null || existingState.getFirstFailedAt() == null
+                || existingState.getFirstFailedAt().isBlank()
+                        ? now
+                        : existingState.getFirstFailedAt();
+        int failureCount = existingState == null ? 1 : Math.max(0, existingState.getFailureCount()) + 1;
+        return new PurviewDeadLetterState(
+                repositoryId,
+                CLOUD_LINEAGE_STREAM_KIND,
+                repositoryId,
+                CLOUD_LINEAGE_TYPE_NAME,
+                "nemaki://" + repositoryId + "/purview/" + CLOUD_LINEAGE_STREAM_KIND,
+                firstFailedAt,
+                now,
+                failureCount,
+                checkpoint == null ? "" : checkpoint,
+                errorSummary);
+    }
+
+    private String buildErrorSummary(RuntimeException e) {
+        if (e.getMessage() == null || e.getMessage().isBlank()) {
+            return e.getClass().getSimpleName();
+        }
+        return e.getMessage();
     }
 }

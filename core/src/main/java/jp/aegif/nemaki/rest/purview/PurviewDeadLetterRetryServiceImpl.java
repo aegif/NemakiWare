@@ -19,8 +19,10 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
     private static final String CURSOR_KIND = "changeToken";
     private static final String ARCHIVE_STREAM_KIND = "archive-snapshot";
     private static final String ARCHIVE_CURSOR_KIND = "snapshot";
+    private static final String ARCHIVE_LINEAGE_STREAM_KIND = "archive-lineage";
     private static final String CLOUD_METADATA_STREAM_KIND = "cloud-metadata-snapshot";
     private static final String CLOUD_METADATA_CURSOR_KIND = "snapshot";
+    private static final String CLOUD_LINEAGE_STREAM_KIND = "cloud-sync-lineage";
 
     private final PurviewSchemaPlannerService schemaPlannerService;
     private final PurviewLockStateService lockStateService;
@@ -108,9 +110,11 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
                             deadLetterState.getFirstFailedAt(),
                             Instant.now().toString(),
                             deadLetterState.getFailureCount() + 1,
-                            deadLetterState.getCheckpoint(),
-                            buildErrorSummary(e)));
-                    saveFailureCursorState(repositoryId, deadLetterState.getStreamKind(), now, buildErrorSummary(e));
+                    deadLetterState.getCheckpoint(),
+                    buildErrorSummary(e)));
+                    if (isCursorManagedStream(deadLetterState.getStreamKind())) {
+                        saveFailureCursorState(repositoryId, deadLetterState.getStreamKind(), now, buildErrorSummary(e));
+                    }
                 }
             }
 
@@ -140,8 +144,16 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
             retryArchiveDeadLetter(repositoryId, deadLetterState, now);
             return;
         }
+        if (ARCHIVE_LINEAGE_STREAM_KIND.equals(deadLetterState.getStreamKind())) {
+            retryArchiveLineageDeadLetter(repositoryId, deadLetterState);
+            return;
+        }
         if (CLOUD_METADATA_STREAM_KIND.equals(deadLetterState.getStreamKind())) {
             retryCloudMetadataDeadLetter(repositoryId, deadLetterState, now);
+            return;
+        }
+        if (CLOUD_LINEAGE_STREAM_KIND.equals(deadLetterState.getStreamKind())) {
+            retryCloudLineageDeadLetter(repositoryId, deadLetterState);
             return;
         }
         throw new IllegalStateException("Unsupported dead-letter stream kind " + deadLetterState.getStreamKind());
@@ -166,12 +178,22 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
         saveSuccessCursorState(repositoryId, deadLetterState.getStreamKind(), now, syncResult.getSnapshot());
     }
 
+    private void retryCloudLineageDeadLetter(String repositoryId, PurviewDeadLetterState deadLetterState) {
+        cloudMetadataPublishService.retryRepositoryCloudSyncLineage(repositoryId, deadLetterState.getCheckpoint());
+        deadLetterStateService.deleteDeadLetterState(repositoryId, deadLetterState.getStreamKind(), deadLetterState.getEntryKey());
+    }
+
     private void retryArchiveDeadLetter(String repositoryId, PurviewDeadLetterState deadLetterState, String now) {
         PurviewCursorState currentCursorState = getCursorStateOrDefault(repositoryId, ARCHIVE_STREAM_KIND, ARCHIVE_CURSOR_KIND);
         PurviewArchiveSyncResult syncResult = archivePublishService
                 .syncRepositoryArchivesIfChanged(repositoryId, currentCursorState.getCursor());
         deadLetterStateService.deleteDeadLetterState(repositoryId, deadLetterState.getStreamKind(), deadLetterState.getEntryKey());
         saveSuccessCursorState(repositoryId, deadLetterState.getStreamKind(), now, syncResult.getSnapshot());
+    }
+
+    private void retryArchiveLineageDeadLetter(String repositoryId, PurviewDeadLetterState deadLetterState) {
+        archivePublishService.retryRepositoryArchiveLineage(repositoryId, deadLetterState.getCheckpoint());
+        deadLetterStateService.deleteDeadLetterState(repositoryId, deadLetterState.getStreamKind(), deadLetterState.getEntryKey());
     }
 
     private String buildErrorSummary(RuntimeException e) {
@@ -248,6 +270,12 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
             return CLOUD_METADATA_CURSOR_KIND;
         }
         return CURSOR_KIND;
+    }
+
+    private boolean isCursorManagedStream(String streamKind) {
+        return STREAM_KIND.equals(streamKind)
+                || ARCHIVE_STREAM_KIND.equals(streamKind)
+                || CLOUD_METADATA_STREAM_KIND.equals(streamKind);
     }
 
     private String summarizeFailures(List<String> failures) {

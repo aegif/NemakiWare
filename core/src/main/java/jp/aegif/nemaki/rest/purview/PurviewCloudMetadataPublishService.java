@@ -6,5 +6,7 @@ public interface PurviewCloudMetadataPublishService {
 
     int publishRepositoryCloudSyncLineage(String repositoryId);
 
+    int retryRepositoryCloudSyncLineage(String repositoryId, String previousSnapshot);
+
     PurviewCloudMetadataSyncResult syncRepositoryCloudMetadataIfChanged(String repositoryId, String previousSnapshot);
 }

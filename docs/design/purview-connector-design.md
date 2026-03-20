@@ -42,14 +42,13 @@
 - repository 単位 `CONTAINMENT_RECONCILIATION` job
 - `POST /v1/admin/purview/reconcile/containment/{repositoryId}`
 - object 単位 `content-change-log` dead-letter
-- repository 単位 `archive-snapshot` / `cloud-metadata-snapshot` dead-letter
+- repository 単位 `archive-snapshot` / `cloud-metadata-snapshot` / `archive-lineage` / `cloud-sync-lineage` dead-letter
 - `GET /v1/admin/purview/dead-letters` / `POST /v1/admin/purview/retry-failed/{repositoryId}`
 
 未実装:
 
 - ZIP / ACP import lineage
 - ZIP / selected objects export lineage
-- archive / cloud lineage failure の dead-letter 拡張
 - 管理 UI
 
 現時点の実装は「repository / folder / document / type definition / archive metadata を Purview に載せる最初の縦スライス」に加え、stable key を持つ archive / cloud sync / managed filesystem import-export の代表的 lineage を成立させることを優先している。設計上の初期スコープ全体はまだ完了していない。
@@ -674,7 +673,8 @@ schema bootstrap の扱い:
 - `DELETED` は tombstone として stage され、grace period 後は `DELETE_RESOLUTION` job で解決する
 - `DELETE_RESOLUTION` は live object 復活時は tombstone を削除し、document では archive 検出時に `ARCHIVED` へ遷移させ、live/archive 不在時は Purview delete API を呼ぶ
 - `content-change-log` に限り object 単位 dead-letter state を持ち、publish 失敗 object だけを隔離して incremental sync 全体は継続するところまで実装済み
-- `archive-snapshot` については repository 単位 dead-letter を持ち、補助 stream failure を incremental sync 全体失敗ではなく再試行対象へ分離するところまで実装済み
+- `archive-snapshot` / `archive-lineage` については repository 単位 dead-letter を持ち、補助 stream failure を incremental sync 全体失敗ではなく再試行対象へ分離するところまで実装済み
+- `cloud-metadata-snapshot` / `cloud-sync-lineage` については repository 単位 dead-letter を持ち、補助 stream failure を incremental sync 全体失敗ではなく再試行対象へ分離するところまで実装済み
 - `GET /api/v1/admin/purview/dead-letters` と `POST /api/v1/admin/purview/retry-failed/{repositoryId}` で一覧確認と手動再試行ができるところまで実装済み
 - `content-change-log` cursor の `deadLetterCount` は dead-letter state 件数を反映するところまで実装済み
 
@@ -944,9 +944,9 @@ dead-letter 方針:
 - 初期実装では `content-change-log` の folder / document publish failure を object 単位で dead-letter 化する
 - `archive-snapshot` については repository 単位 dead-letter を持ち、補助 stream failure を incremental sync 全体失敗ではなく再試行対象へ分離するところまで実装済み
 - `cloud-metadata-snapshot` については repository 単位 dead-letter を持ち、補助 stream failure を incremental sync 全体失敗ではなく再試行対象へ分離するところまで実装済み
+- `archive-lineage` / `cloud-sync-lineage` についても repository 単位 dead-letter を持ち、metadata 本体の upsert 成功とは分離して lineage だけを再試行できるところまで実装済み
 - dead-letter は `repositoryId + streamKind + entryKey` を key に `nemaki_conf` へ保存する
 - retry は `RETRY_FAILED` job として repository 単位で再実行し、成功時は dead-letter を削除する
-- archive / cloud lineage への dead-letter 拡張は未実装
 
 ## 22. テスト計画
 
@@ -1022,12 +1022,11 @@ dead-letter 方針:
 2026-03-20 状態:
 
 - 進行中
-- 完了済み: change log polling, change token 保存, CREATED / UPDATED / SECURITY の document upsert, containment relationship 更新, `nemaki_document_has_type_definition` relationship 更新, type definition snapshot cursor, snapshot 変化時の `nemaki_type_definition` upsert / delete, archive snapshot cursor, snapshot 変化時の archived document / `nemaki_archive` upsert / restore-destroy 再整合, archive lineage (`nemaki_external_asset` / `nemaki_archive_process`), cloud metadata snapshot cursor, snapshot 変化時の cloud metadata upsert / clear 再整合, cloud sync lineage (`nemaki_external_asset` / `nemaki_cloud_sync_process`), tombstone stage, `DELETE_RESOLUTION`, archive / purge 判定, delete API 呼び出し, `ARCHIVE_RECONCILIATION` による archived document / archive upsert, `CLOUD_METADATA_RECONCILIATION` による live document の cloud metadata 再整合, `CONTAINMENT_RECONCILIATION` による stale containment relationship の delete, object 単位 dead-letter state, `archive-snapshot` / `cloud-metadata-snapshot` repository 単位 dead-letter state, `GET /dead-letters`, `RETRY_FAILED` job
-- 未完了: archive / cloud lineage failure の dead-letter 拡張, ZIP / ACP / selected objects 向け import/export lineage
+- 完了済み: change log polling, change token 保存, CREATED / UPDATED / SECURITY の document upsert, containment relationship 更新, `nemaki_document_has_type_definition` relationship 更新, type definition snapshot cursor, snapshot 変化時の `nemaki_type_definition` upsert / delete, archive snapshot cursor, snapshot 変化時の archived document / `nemaki_archive` upsert / restore-destroy 再整合, archive lineage (`nemaki_external_asset` / `nemaki_archive_process`), cloud metadata snapshot cursor, snapshot 変化時の cloud metadata upsert / clear 再整合, cloud sync lineage (`nemaki_external_asset` / `nemaki_cloud_sync_process`), tombstone stage, `DELETE_RESOLUTION`, archive / purge 判定, delete API 呼び出し, `ARCHIVE_RECONCILIATION` による archived document / archive upsert, `CLOUD_METADATA_RECONCILIATION` による live document の cloud metadata 再整合, `CONTAINMENT_RECONCILIATION` による stale containment relationship の delete, object 単位 dead-letter state, `archive-snapshot` / `cloud-metadata-snapshot` / `archive-lineage` / `cloud-sync-lineage` repository 単位 dead-letter state, `GET /dead-letters`, `RETRY_FAILED` job
+- 未完了: ZIP / ACP / selected objects 向け import/export lineage
 
 直近の次作業:
 
-- dead-letter の適用範囲拡張
 - import/export lineage
 
 ### Phase 4: supplemental reconciliation

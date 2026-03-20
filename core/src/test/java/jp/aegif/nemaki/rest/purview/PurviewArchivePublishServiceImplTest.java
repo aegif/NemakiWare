@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -31,6 +32,7 @@ public class PurviewArchivePublishServiceImplTest {
     private PurviewDocumentArchiveRelationshipService documentArchiveRelationshipService;
     private PurviewDocumentPublishService documentPublishService;
     private PurviewArchiveLineageService archiveLineageService;
+    private PurviewDeadLetterStateService deadLetterStateService;
     private PurviewArchivePublishServiceImpl service;
 
     @BeforeEach
@@ -41,6 +43,7 @@ public class PurviewArchivePublishServiceImplTest {
         documentArchiveRelationshipService = mock(PurviewDocumentArchiveRelationshipService.class);
         documentPublishService = mock(PurviewDocumentPublishService.class);
         archiveLineageService = mock(PurviewArchiveLineageService.class);
+        deadLetterStateService = mock(PurviewDeadLetterStateService.class);
 
         when(config.getEndpoint()).thenReturn("https://example-account.purview.azure.com");
         when(config.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
@@ -55,6 +58,7 @@ public class PurviewArchivePublishServiceImplTest {
                 .thenReturn(PurviewEntityPublishResult.success(1, "deleted"));
         when(documentArchiveRelationshipService.upsertDocumentArchiveRelationships(any(), any())).thenReturn(0);
         when(documentPublishService.upsertContents(any(), any())).thenReturn(1);
+        when(deadLetterStateService.saveDeadLetterState(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service = new PurviewArchivePublishServiceImpl(
                 config,
@@ -63,7 +67,8 @@ public class PurviewArchivePublishServiceImplTest {
                 contentDaoService,
                 documentArchiveRelationshipService,
                 documentPublishService,
-                archiveLineageService);
+                archiveLineageService,
+                deadLetterStateService);
     }
 
     @Test
@@ -121,6 +126,40 @@ public class PurviewArchivePublishServiceImplTest {
         service.publishRepositoryArchives("bedroom");
 
         verify(archiveLineageService).upsertArchiveLineage("bedroom", List.of(archive));
+    }
+
+    @Test
+    public void testPublishRepositoryArchivesMovesArchiveLineageFailureToDeadLetterAndContinues() throws Exception {
+        Archive archive = archive("archive-001", "doc-001");
+        archive.setArchiveState(Archive.STATE_ARCHIVED_COLD);
+        archive.setContentRef(Map.of("type", "s3", "ref", "s3://archive-bucket/bedroom/doc-001.bin"));
+        when(contentDaoService.getArchives("bedroom", 0, 100, Boolean.FALSE))
+                .thenReturn(List.of(archive));
+        when(archiveLineageService.upsertArchiveLineage("bedroom", List.of(archive)))
+                .thenThrow(new IllegalStateException("archive lineage unavailable"));
+
+        int processedCount = service.publishRepositoryArchives("bedroom");
+
+        assertEquals(2, processedCount);
+        verify(deadLetterStateService).saveDeadLetterState(argThat(state ->
+                "bedroom".equals(state.getRepositoryId())
+                        && "archive-lineage".equals(state.getStreamKind())
+                        && "bedroom".equals(state.getEntryKey())
+                        && "".equals(state.getCheckpoint())
+                        && state.getErrorSummary().contains("archive lineage unavailable")));
+    }
+
+    @Test
+    public void testPublishRepositoryArchivesClearsArchiveLineageDeadLetterOnSuccess() throws Exception {
+        Archive archive = archive("archive-001", "doc-001");
+        archive.setArchiveState(Archive.STATE_ARCHIVED_COLD);
+        archive.setContentRef(Map.of("type", "s3", "ref", "s3://archive-bucket/bedroom/doc-001.bin"));
+        when(contentDaoService.getArchives("bedroom", 0, 100, Boolean.FALSE))
+                .thenReturn(List.of(archive));
+
+        service.publishRepositoryArchives("bedroom");
+
+        verify(deadLetterStateService).deleteDeadLetterState("bedroom", "archive-lineage", "bedroom");
     }
 
     @Test

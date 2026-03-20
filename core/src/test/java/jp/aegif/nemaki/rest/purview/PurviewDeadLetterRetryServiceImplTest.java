@@ -159,4 +159,50 @@ public class PurviewDeadLetterRetryServiceImplTest {
                         && "archive-new".equals(state.getCursor())
                         && state.getDeadLetterCount() == 0));
     }
+
+    @Test
+    public void testStartRetryFailedRetriesArchiveLineageDeadLetter() {
+        when(deadLetterStateService.listDeadLetterStates("bedroom")).thenReturn(List.of(new PurviewDeadLetterState(
+                "bedroom",
+                "archive-lineage",
+                "bedroom",
+                "nemaki_archive_process",
+                "nemaki://bedroom/purview/archive-lineage",
+                "2026-03-20T10:00:00Z",
+                "2026-03-20T10:01:00Z",
+                1,
+                "archive-old",
+                "publish failed")));
+        when(archivePublishService.retryRepositoryArchiveLineage("bedroom", "archive-old")).thenReturn(1);
+
+        PurviewJobState result = service.startRetryFailed("bedroom", "admin");
+
+        assertEquals("COMPLETED", result.getStatus());
+        assertEquals(1, result.getProcessedCount());
+        verify(archivePublishService).retryRepositoryArchiveLineage("bedroom", "archive-old");
+        verify(deadLetterStateService).deleteDeadLetterState("bedroom", "archive-lineage", "bedroom");
+    }
+
+    @Test
+    public void testStartRetryFailedRetriesCloudLineageDeadLetter() {
+        when(deadLetterStateService.listDeadLetterStates("bedroom")).thenReturn(List.of(new PurviewDeadLetterState(
+                "bedroom",
+                "cloud-sync-lineage",
+                "bedroom",
+                "nemaki_cloud_sync_process",
+                "nemaki://bedroom/purview/cloud-sync-lineage",
+                "2026-03-20T10:00:00Z",
+                "2026-03-20T10:01:00Z",
+                1,
+                "cloud-old",
+                "publish failed")));
+        when(cloudMetadataPublishService.retryRepositoryCloudSyncLineage("bedroom", "cloud-old")).thenReturn(1);
+
+        PurviewJobState result = service.startRetryFailed("bedroom", "admin");
+
+        assertEquals("COMPLETED", result.getStatus());
+        assertEquals(1, result.getProcessedCount());
+        verify(cloudMetadataPublishService).retryRepositoryCloudSyncLineage("bedroom", "cloud-old");
+        verify(deadLetterStateService).deleteDeadLetterState("bedroom", "cloud-sync-lineage", "bedroom");
+    }
 }
