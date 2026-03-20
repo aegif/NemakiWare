@@ -37,6 +37,10 @@ public class PurviewSchemaPayloadFactoryTest {
         assertTrue(attributeNames(entityDefs, "nemaki_type_definition").contains("baseTypeId"));
         assertTrue(attributeNames(entityDefs, "nemaki_type_definition").contains("propertyCount"));
         assertTrue(attributeNames(entityDefs, "nemaki_document").contains("archiveId"));
+        assertTrue(attributeNames(entityDefs, "nemaki_document").contains("cloudProvider"));
+        assertTrue(attributeNames(entityDefs, "nemaki_document").contains("externalFileId"));
+        assertTrue(attributeNames(entityDefs, "nemaki_document").contains("cloudFileUrl"));
+        assertTrue(attributeNames(entityDefs, "nemaki_document").contains("cloudLastSyncedAt"));
         assertTrue(attributeNames(entityDefs, "nemaki_archive").contains("archiveState"));
         assertTrue(attributeNames(entityDefs, "nemaki_archive").contains("archivedAt"));
         assertEquals(5, relationshipDefs.size());

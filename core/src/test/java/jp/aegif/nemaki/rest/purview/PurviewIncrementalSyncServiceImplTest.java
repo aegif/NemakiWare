@@ -36,6 +36,7 @@ public class PurviewIncrementalSyncServiceImplTest {
     private PurviewTombstoneStateService tombstoneStateService;
     private PurviewDocumentPublishService documentPublishService;
     private PurviewArchivePublishService archivePublishService;
+    private PurviewCloudMetadataPublishService cloudMetadataPublishService;
     private PurviewTypeDefinitionPublishService typeDefinitionPublishService;
     private PurviewConfig purviewConfig;
     private ContentDaoService contentDaoService;
@@ -50,6 +51,7 @@ public class PurviewIncrementalSyncServiceImplTest {
         tombstoneStateService = mock(PurviewTombstoneStateService.class);
         documentPublishService = mock(PurviewDocumentPublishService.class);
         archivePublishService = mock(PurviewArchivePublishService.class);
+        cloudMetadataPublishService = mock(PurviewCloudMetadataPublishService.class);
         typeDefinitionPublishService = mock(PurviewTypeDefinitionPublishService.class);
         purviewConfig = mock(PurviewConfig.class);
         contentDaoService = mock(ContentDaoService.class);
@@ -61,6 +63,8 @@ public class PurviewIncrementalSyncServiceImplTest {
         when(documentPublishService.upsertContents(any(), anyList())).thenAnswer(invocation -> invocation.getArgument(1, List.class).size());
         when(archivePublishService.syncRepositoryArchivesIfChanged(any(), any()))
                 .thenReturn(new PurviewArchiveSyncResult("", false, 0, 0));
+        when(cloudMetadataPublishService.syncRepositoryCloudMetadataIfChanged(any(), any()))
+                .thenReturn(new PurviewCloudMetadataSyncResult("", false, 0, 0));
         when(typeDefinitionPublishService.syncRepositoryTypeDefinitionsIfChanged(any(), any()))
                 .thenReturn(new PurviewTypeDefinitionSyncResult("", false, 0, 0));
         when(purviewConfig.getDeleteResolutionDelayMs()).thenReturn(5000L);
@@ -68,6 +72,8 @@ public class PurviewIncrementalSyncServiceImplTest {
                 "bedroom", "content-change-log", "", "changeToken", "", "", "", "", 0, 0));
         when(cursorStateService.getCursorState("bedroom", "archive-snapshot")).thenReturn(new PurviewCursorState(
                 "bedroom", "archive-snapshot", "", "snapshot", "", "", "", "", 0, 0));
+        when(cursorStateService.getCursorState("bedroom", "cloud-metadata-snapshot")).thenReturn(new PurviewCursorState(
+                "bedroom", "cloud-metadata-snapshot", "", "snapshot", "", "", "", "", 0, 0));
         when(cursorStateService.getCursorState("bedroom", "type-definition-snapshot")).thenReturn(new PurviewCursorState(
                 "bedroom", "type-definition-snapshot", "", "snapshot", "", "", "", "", 0, 0));
 
@@ -80,6 +86,7 @@ public class PurviewIncrementalSyncServiceImplTest {
                 tombstoneStateService,
                 documentPublishService,
                 archivePublishService,
+                cloudMetadataPublishService,
                 typeDefinitionPublishService,
                 contentDaoService);
     }
@@ -135,7 +142,7 @@ public class PurviewIncrementalSyncServiceImplTest {
         assertEquals(3, result.getProcessedCount());
         assertEquals("103", result.getCheckpoint());
         verify(contentDaoService).getLatestChanges("bedroom", "100", 101);
-        verify(cursorStateService, times(3)).saveCursorState(cursorCaptor.capture());
+        verify(cursorStateService, times(4)).saveCursorState(cursorCaptor.capture());
         PurviewCursorState contentCursorState = cursorCaptor.getAllValues().stream()
                 .filter(state -> "content-change-log".equals(state.getStreamKind()))
                 .findFirst()
@@ -197,6 +204,28 @@ public class PurviewIncrementalSyncServiceImplTest {
     }
 
     @Test
+    public void testStartIncrementalSyncSyncsCloudMetadataWhenSnapshotChanges() {
+        when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
+                "NemakiWare", "1", "current-hash", "1", "current-hash", false,
+                java.util.List.of(), java.util.List.of(), java.util.List.of()));
+        when(cloudMetadataPublishService.syncRepositoryCloudMetadataIfChanged("bedroom", "cloud-old"))
+                .thenReturn(new PurviewCloudMetadataSyncResult("cloud-new", true, 2, 1));
+        when(cursorStateService.getCursorState("bedroom", "cloud-metadata-snapshot")).thenReturn(new PurviewCursorState(
+                "bedroom", "cloud-metadata-snapshot", "cloud-old", "snapshot",
+                "2026-03-20T01:00:00Z", "2026-03-20T01:00:00Z", "", "", 0, 0));
+
+        PurviewJobState result = service.startIncrementalSync("bedroom", "admin");
+
+        assertEquals("COMPLETED", result.getStatus());
+        assertEquals(3, result.getProcessedCount());
+        verify(cloudMetadataPublishService).syncRepositoryCloudMetadataIfChanged("bedroom", "cloud-old");
+        verify(cursorStateService).saveCursorState(argThat(state ->
+                "cloud-metadata-snapshot".equals(state.getStreamKind())
+                        && "cloud-new".equals(state.getCursor())
+                        && "snapshot".equals(state.getCursorKind())));
+    }
+
+    @Test
     public void testStartIncrementalSyncStoresCursorFailureStateWhenChangeLogFetchFails() {
         when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
                 "NemakiWare", "1", "current-hash", "1", "current-hash", false,
@@ -214,7 +243,7 @@ public class PurviewIncrementalSyncServiceImplTest {
         assertTrue(result.getErrorSummary().contains("change log unavailable"));
         assertEquals("100", result.getCheckpoint());
         assertEquals(1, result.getFailedCount());
-        verify(cursorStateService, times(3)).saveCursorState(cursorCaptor.capture());
+        verify(cursorStateService, times(4)).saveCursorState(cursorCaptor.capture());
         PurviewCursorState contentCursorState = cursorCaptor.getAllValues().stream()
                 .filter(state -> "content-change-log".equals(state.getStreamKind()))
                 .findFirst()
@@ -266,6 +295,27 @@ public class PurviewIncrementalSyncServiceImplTest {
                 "archive-snapshot".equals(state.getStreamKind())
                         && "archive-1".equals(state.getCursor())
                         && state.getLastErrorMessage().contains("archive sync unavailable")
+                        && state.getConsecutiveFailureCount() == 1));
+    }
+
+    @Test
+    public void testStartIncrementalSyncStoresCloudCursorFailureStateWhenCloudSyncFails() {
+        when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
+                "NemakiWare", "1", "current-hash", "1", "current-hash", false,
+                java.util.List.of(), java.util.List.of(), java.util.List.of()));
+        when(cursorStateService.getCursorState("bedroom", "cloud-metadata-snapshot")).thenReturn(new PurviewCursorState(
+                "bedroom", "cloud-metadata-snapshot", "cloud-1", "snapshot",
+                "2026-03-20T01:00:00Z", "2026-03-20T00:55:00Z", "", "", 0, 0));
+        when(cloudMetadataPublishService.syncRepositoryCloudMetadataIfChanged("bedroom", "cloud-1"))
+                .thenThrow(new IllegalStateException("cloud sync unavailable"));
+
+        PurviewJobState result = service.startIncrementalSync("bedroom", "admin");
+
+        assertEquals("FAILED", result.getStatus());
+        verify(cursorStateService).saveCursorState(argThat(state ->
+                "cloud-metadata-snapshot".equals(state.getStreamKind())
+                        && "cloud-1".equals(state.getCursor())
+                        && state.getLastErrorMessage().contains("cloud sync unavailable")
                         && state.getConsecutiveFailureCount() == 1));
     }
 

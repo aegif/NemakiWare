@@ -24,6 +24,8 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
     private static final String CURSOR_KIND = "changeToken";
     private static final String ARCHIVE_STREAM_KIND = "archive-snapshot";
     private static final String ARCHIVE_CURSOR_KIND = "snapshot";
+    private static final String CLOUD_METADATA_STREAM_KIND = "cloud-metadata-snapshot";
+    private static final String CLOUD_METADATA_CURSOR_KIND = "snapshot";
     private static final String TYPE_DEFINITION_STREAM_KIND = "type-definition-snapshot";
     private static final String TYPE_DEFINITION_CURSOR_KIND = "snapshot";
     private static final int CHANGE_LOG_PAGE_SIZE = 100;
@@ -39,6 +41,7 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
     private final PurviewTombstoneStateService tombstoneStateService;
     private final PurviewDocumentPublishService documentPublishService;
     private final PurviewArchivePublishService archivePublishService;
+    private final PurviewCloudMetadataPublishService cloudMetadataPublishService;
     private final PurviewTypeDefinitionPublishService typeDefinitionPublishService;
     private final ContentDaoService contentDaoService;
 
@@ -51,6 +54,7 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
             PurviewTombstoneStateService tombstoneStateService,
             PurviewDocumentPublishService documentPublishService,
             PurviewArchivePublishService archivePublishService,
+            PurviewCloudMetadataPublishService cloudMetadataPublishService,
             PurviewTypeDefinitionPublishService typeDefinitionPublishService,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService) {
         this.purviewConfig = purviewConfig;
@@ -61,6 +65,7 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
         this.tombstoneStateService = tombstoneStateService;
         this.documentPublishService = documentPublishService;
         this.archivePublishService = archivePublishService;
+        this.cloudMetadataPublishService = cloudMetadataPublishService;
         this.typeDefinitionPublishService = typeDefinitionPublishService;
         this.contentDaoService = contentDaoService;
     }
@@ -113,11 +118,17 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                     repositoryId,
                     ARCHIVE_STREAM_KIND,
                     ARCHIVE_CURSOR_KIND);
+            PurviewCursorState currentCloudMetadataCursorState = getCursorStateOrDefault(
+                    repositoryId,
+                    CLOUD_METADATA_STREAM_KIND,
+                    CLOUD_METADATA_CURSOR_KIND);
             try {
                 List<Change> changes = loadChanges(repositoryId, currentCursorState);
                 processChanges(repositoryId, changes);
                 PurviewArchiveSyncResult archiveSyncResult = archivePublishService
                         .syncRepositoryArchivesIfChanged(repositoryId, currentArchiveCursorState.getCursor());
+                PurviewCloudMetadataSyncResult cloudMetadataSyncResult = cloudMetadataPublishService
+                        .syncRepositoryCloudMetadataIfChanged(repositoryId, currentCloudMetadataCursorState.getCursor());
                 PurviewTypeDefinitionSyncResult typeDefinitionSyncResult = typeDefinitionPublishService
                         .syncRepositoryTypeDefinitionsIfChanged(repositoryId, currentTypeDefinitionCursorState.getCursor());
                 String nextCursor = resolveNextCursor(currentCursorState.getCursor(), changes);
@@ -126,6 +137,10 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                 cursorStateService.saveCursorState(buildSuccessCursorState(
                         currentArchiveCursorState,
                         archiveSyncResult.getSnapshot(),
+                        now));
+                cursorStateService.saveCursorState(buildSuccessCursorState(
+                        currentCloudMetadataCursorState,
+                        cloudMetadataSyncResult.getSnapshot(),
                         now));
                 cursorStateService.saveCursorState(buildSuccessCursorState(
                         currentTypeDefinitionCursorState,
@@ -139,7 +154,10 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                         "COMPLETED",
                         now,
                         now,
-                        changes.size() + archiveSyncResult.getProcessedCount() + typeDefinitionSyncResult.getProcessedCount(),
+                        changes.size()
+                                + archiveSyncResult.getProcessedCount()
+                                + cloudMetadataSyncResult.getProcessedCount()
+                                + typeDefinitionSyncResult.getProcessedCount(),
                         0,
                         nextCursor,
                         "");
@@ -150,6 +168,10 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                 cursorStateService.saveCursorState(buildFailureCursorState(currentCursorState, now, errorSummary));
                 cursorStateService.saveCursorState(buildFailureCursorState(
                         currentArchiveCursorState,
+                        now,
+                        errorSummary));
+                cursorStateService.saveCursorState(buildFailureCursorState(
+                        currentCloudMetadataCursorState,
                         now,
                         errorSummary));
                 cursorStateService.saveCursorState(buildFailureCursorState(
@@ -332,6 +354,9 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
         if (currentCursorState.getCursorKind() == null || currentCursorState.getCursorKind().isBlank()) {
             if (ARCHIVE_STREAM_KIND.equals(currentCursorState.getStreamKind())) {
                 return ARCHIVE_CURSOR_KIND;
+            }
+            if (CLOUD_METADATA_STREAM_KIND.equals(currentCursorState.getStreamKind())) {
+                return CLOUD_METADATA_CURSOR_KIND;
             }
             if (TYPE_DEFINITION_STREAM_KIND.equals(currentCursorState.getStreamKind())) {
                 return TYPE_DEFINITION_CURSOR_KIND;

@@ -104,6 +104,10 @@ public class PurviewEntityPayloadFactory {
         attributes.put("archiveState", null);
         attributes.put("archiveId", null);
         attributes.put("archivedAt", null);
+        attributes.put("cloudProvider", PurviewCloudMetadataSupport.getCloudProvider(content));
+        attributes.put("externalFileId", PurviewCloudMetadataSupport.getExternalFileId(content));
+        attributes.put("cloudFileUrl", PurviewCloudMetadataSupport.getCloudFileUrl(content));
+        attributes.put("cloudLastSyncedAt", PurviewCloudMetadataSupport.getCloudLastSyncedAt(content));
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", DOCUMENT_TYPE_NAME);

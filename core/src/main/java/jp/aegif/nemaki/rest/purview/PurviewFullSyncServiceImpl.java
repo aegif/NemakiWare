@@ -17,6 +17,8 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
     private static final String CURSOR_KIND = "changeToken";
     private static final String ARCHIVE_STREAM_KIND = "archive-snapshot";
     private static final String ARCHIVE_CURSOR_KIND = "snapshot";
+    private static final String CLOUD_METADATA_STREAM_KIND = "cloud-metadata-snapshot";
+    private static final String CLOUD_METADATA_CURSOR_KIND = "snapshot";
     private static final String TYPE_DEFINITION_STREAM_KIND = "type-definition-snapshot";
     private static final String TYPE_DEFINITION_CURSOR_KIND = "snapshot";
 
@@ -26,6 +28,7 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
     private final PurviewCursorStateService cursorStateService;
     private final PurviewDocumentPublishService documentPublishService;
     private final PurviewArchivePublishService archivePublishService;
+    private final PurviewCloudMetadataPublishService cloudMetadataPublishService;
     private final PurviewTypeDefinitionPublishService typeDefinitionPublishService;
     private final ContentDaoService contentDaoService;
 
@@ -36,6 +39,7 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
             PurviewCursorStateService cursorStateService,
             PurviewDocumentPublishService documentPublishService,
             PurviewArchivePublishService archivePublishService,
+            PurviewCloudMetadataPublishService cloudMetadataPublishService,
             PurviewTypeDefinitionPublishService typeDefinitionPublishService,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService) {
         this.schemaPlannerService = schemaPlannerService;
@@ -44,6 +48,7 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
         this.cursorStateService = cursorStateService;
         this.documentPublishService = documentPublishService;
         this.archivePublishService = archivePublishService;
+        this.cloudMetadataPublishService = cloudMetadataPublishService;
         this.typeDefinitionPublishService = typeDefinitionPublishService;
         this.contentDaoService = contentDaoService;
     }
@@ -90,6 +95,7 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
                         + archivePublishService.publishRepositoryArchives(repositoryId);
                 seedTypeDefinitionCursor(repositoryId, now);
                 seedArchiveCursor(repositoryId, now);
+                seedCloudMetadataCursor(repositoryId, now);
                 String checkpoint = seedCursorFromLatestChange(repositoryId, now);
                 PurviewJobState completedJob = new PurviewJobState(
                         jobId,
@@ -193,6 +199,35 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
                 ARCHIVE_STREAM_KIND,
                 snapshot,
                 ARCHIVE_CURSOR_KIND,
+                now,
+                now,
+                "",
+                "",
+                0,
+                currentCursorState.getDeadLetterCount()));
+    }
+
+    private void seedCloudMetadataCursor(String repositoryId, String now) {
+        String snapshot = cloudMetadataPublishService.buildRepositoryCloudMetadataSnapshot(repositoryId);
+        PurviewCursorState currentCursorState = cursorStateService.getCursorState(repositoryId, CLOUD_METADATA_STREAM_KIND);
+        if (currentCursorState == null) {
+            currentCursorState = new PurviewCursorState(
+                    repositoryId,
+                    CLOUD_METADATA_STREAM_KIND,
+                    "",
+                    CLOUD_METADATA_CURSOR_KIND,
+                    "",
+                    "",
+                    "",
+                    "",
+                    0,
+                    0);
+        }
+        cursorStateService.saveCursorState(new PurviewCursorState(
+                repositoryId,
+                CLOUD_METADATA_STREAM_KIND,
+                snapshot,
+                CLOUD_METADATA_CURSOR_KIND,
                 now,
                 now,
                 "",

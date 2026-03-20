@@ -25,6 +25,7 @@ public class PurviewFullSyncServiceImplTest {
     private PurviewCursorStateService cursorStateService;
     private PurviewDocumentPublishService documentPublishService;
     private PurviewArchivePublishService archivePublishService;
+    private PurviewCloudMetadataPublishService cloudMetadataPublishService;
     private PurviewTypeDefinitionPublishService typeDefinitionPublishService;
     private ContentDaoService contentDaoService;
     private PurviewFullSyncServiceImpl service;
@@ -37,6 +38,7 @@ public class PurviewFullSyncServiceImplTest {
         cursorStateService = mock(PurviewCursorStateService.class);
         documentPublishService = mock(PurviewDocumentPublishService.class);
         archivePublishService = mock(PurviewArchivePublishService.class);
+        cloudMetadataPublishService = mock(PurviewCloudMetadataPublishService.class);
         typeDefinitionPublishService = mock(PurviewTypeDefinitionPublishService.class);
         contentDaoService = mock(ContentDaoService.class);
         when(jobStateService.saveJobState(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -45,6 +47,7 @@ public class PurviewFullSyncServiceImplTest {
         when(documentPublishService.publishRepositoryHierarchy(any())).thenReturn(0);
         when(archivePublishService.publishRepositoryArchives(any())).thenReturn(0);
         when(archivePublishService.buildRepositoryArchiveSnapshot(any())).thenReturn("");
+        when(cloudMetadataPublishService.buildRepositoryCloudMetadataSnapshot(any())).thenReturn("");
         when(typeDefinitionPublishService.publishRepositoryTypeDefinitions(any())).thenReturn(0);
         when(typeDefinitionPublishService.buildRepositoryTypeDefinitionSnapshot(any())).thenReturn("");
         service = new PurviewFullSyncServiceImpl(
@@ -54,6 +57,7 @@ public class PurviewFullSyncServiceImplTest {
                 cursorStateService,
                 documentPublishService,
                 archivePublishService,
+                cloudMetadataPublishService,
                 typeDefinitionPublishService,
                 contentDaoService);
     }
@@ -92,6 +96,7 @@ public class PurviewFullSyncServiceImplTest {
         when(documentPublishService.publishRepositoryHierarchy("bedroom")).thenReturn(5);
         when(archivePublishService.publishRepositoryArchives("bedroom")).thenReturn(2);
         when(archivePublishService.buildRepositoryArchiveSnapshot("bedroom")).thenReturn("archive-snapshot-1");
+        when(cloudMetadataPublishService.buildRepositoryCloudMetadataSnapshot("bedroom")).thenReturn("cloud-snapshot-1");
         when(typeDefinitionPublishService.publishRepositoryTypeDefinitions("bedroom")).thenReturn(3);
         when(typeDefinitionPublishService.buildRepositoryTypeDefinitionSnapshot("bedroom")).thenReturn("snapshot-1");
         when(contentDaoService.getLatestChange("bedroom")).thenReturn(createChange("120"));
@@ -107,10 +112,11 @@ public class PurviewFullSyncServiceImplTest {
         verify(documentPublishService).publishRepositoryHierarchy("bedroom");
         verify(archivePublishService).publishRepositoryArchives("bedroom");
         verify(archivePublishService).buildRepositoryArchiveSnapshot("bedroom");
+        verify(cloudMetadataPublishService).buildRepositoryCloudMetadataSnapshot("bedroom");
         verify(typeDefinitionPublishService).publishRepositoryTypeDefinitions("bedroom");
         verify(typeDefinitionPublishService).buildRepositoryTypeDefinitionSnapshot("bedroom");
         verify(jobStateService).saveJobState(any());
-        verify(cursorStateService, times(3)).saveCursorState(any());
+        verify(cursorStateService, times(4)).saveCursorState(any());
         verify(lockStateService).releaseRepositoryLock("bedroom", "FULL_SYNC", result.getJobId());
     }
 
@@ -125,7 +131,7 @@ public class PurviewFullSyncServiceImplTest {
 
         assertEquals("COMPLETED", result.getStatus());
         assertEquals("", result.getCheckpoint());
-        verify(cursorStateService, times(3)).saveCursorState(any());
+        verify(cursorStateService, times(4)).saveCursorState(any());
     }
 
     @Test

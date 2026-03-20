@@ -31,10 +31,13 @@
 - `ARCHIVED` tombstone から archived document / `nemaki_archive` の upsert
 - repository 単位 `TYPE_RECONCILIATION` job
 - `POST /v1/admin/purview/reconcile/types/{repositoryId}`
+- `nemaki_document` への cloud metadata 属性同期
+- cloud metadata snapshot cursor と incremental からの cloud metadata upsert / clear 再整合
+- repository 単位 `CLOUD_METADATA_RECONCILIATION` job
+- `POST /v1/admin/purview/reconcile/cloud-metadata/{repositoryId}`
 
 未実装:
 
-- cloud metadata の補助 reconciliation
 - containment relationship の専用 reconciliation
 - lineage 実体生成
 - 管理 UI
@@ -335,6 +338,8 @@ Purview では built-in type の方が UI や lineage 表示との相性が良�
 - `coldMoveMode`
 - `cloudProvider`
 - `externalFileId`
+- `cloudFileUrl`
+- `cloudLastSyncedAt`
 - `aclSummary`
 - `nemakiLifecycleState`
 
@@ -623,6 +628,7 @@ schema bootstrap の扱い:
 - custom document type については `nemaki_document_has_type_definition` relationship も更新するところまで実装済み
 - type definition は `type-definition-snapshot` cursor を持ち、snapshot 変化時のみ `nemaki_type_definition` の upsert と欠損 type definition の delete を行うところまで実装済み
 - archive は `archive-snapshot` cursor を持ち、snapshot 変化時のみ archived document / `nemaki_archive` の upsert と restore-destroy に伴う再整合を行うところまで実装済み
+- cloud metadata は `cloud-metadata-snapshot` cursor を持ち、snapshot 変化時のみ live document の cloud metadata upsert / clear 再整合を行うところまで実装済み
 - `DELETED` は tombstone として stage され、grace period 後は `DELETE_RESOLUTION` job で解決する
 - `DELETE_RESOLUTION` は live object 復活時は tombstone を削除し、document では archive 検出時に `ARCHIVED` へ遷移させ、live/archive 不在時は Purview delete API を呼ぶ
 - dead-letter 専用 queue は未実装
@@ -646,7 +652,10 @@ change log では完全でない対象のために補助ジョブを持つ。
 - `ARCHIVED` tombstone から `nemaki_document_has_archive` relationship も再作成するところまで実装済み
 - full sync / `ARCHIVE_RECONCILIATION` 完了時は archive snapshot cursor を seed するところまで実装済み
 - live object が戻っていた場合は tombstone を削除して処理を打ち切る
-- cloud metadata / containment relationship 専用 reconciliation / cloud metadata 専用 cursor 管理は未実装
+- `CLOUD_METADATA_RECONCILIATION` job を追加済み
+- repository 単位で cloud metadata snapshot を比較し、追加/更新された cloud-linked document の再 upsert と cloud metadata が外れた live document の clear 再整合を行うところまで実装済み
+- full sync / incremental sync / `CLOUD_METADATA_RECONCILIATION` 完了時は `cloud-metadata-snapshot` cursor を seed するところまで実装済み
+- containment relationship 専用 reconciliation は未実装
 
 ### 14.4 optional webhook assist
 
@@ -955,13 +964,13 @@ dead-letter 方針:
 2026-03-20 状態:
 
 - 進行中
-- 完了済み: change log polling, change token 保存, CREATED / UPDATED / SECURITY の document upsert, containment relationship 更新, `nemaki_document_has_type_definition` relationship 更新, type definition snapshot cursor, snapshot 変化時の `nemaki_type_definition` upsert / delete, archive snapshot cursor, snapshot 変化時の archived document / `nemaki_archive` upsert / restore-destroy 再整合, tombstone stage, `DELETE_RESOLUTION`, archive / purge 判定, delete API 呼び出し, `ARCHIVE_RECONCILIATION` による archived document / archive upsert
-- 未完了: dead-letter 基盤, cloud metadata の補助 reconciliation
+- 完了済み: change log polling, change token 保存, CREATED / UPDATED / SECURITY の document upsert, containment relationship 更新, `nemaki_document_has_type_definition` relationship 更新, type definition snapshot cursor, snapshot 変化時の `nemaki_type_definition` upsert / delete, archive snapshot cursor, snapshot 変化時の archived document / `nemaki_archive` upsert / restore-destroy 再整合, cloud metadata snapshot cursor, snapshot 変化時の cloud metadata upsert / clear 再整合, tombstone stage, `DELETE_RESOLUTION`, archive / purge 判定, delete API 呼び出し, `ARCHIVE_RECONCILIATION` による archived document / archive upsert, `CLOUD_METADATA_RECONCILIATION` による live document の cloud metadata 再整合
+- 未完了: dead-letter 基盤, containment relationship の専用 reconciliation
 
 直近の次作業:
 
-- cloud metadata の cursor / qualifiedName / reconciliation 設計
-- containment relationship 専用 reconciliation の要否整理
+- containment relationship 専用 reconciliation
+- lineage 実体生成
 
 ### Phase 4: supplemental reconciliation
 

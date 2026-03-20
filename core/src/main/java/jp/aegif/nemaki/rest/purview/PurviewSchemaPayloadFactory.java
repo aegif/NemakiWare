@@ -70,7 +70,11 @@ public class PurviewSchemaPayloadFactory {
                 attribute("lifecycleState", "string", true),
                 attribute("archiveState", "string", true),
                 attribute("archiveId", "string", true),
-                attribute("archivedAt", "long", true)));
+                attribute("archivedAt", "long", true),
+                attribute("cloudProvider", "string", true),
+                attribute("externalFileId", "string", true),
+                attribute("cloudFileUrl", "string", true),
+                attribute("cloudLastSyncedAt", "string", true)));
         return entityDef;
     }
 

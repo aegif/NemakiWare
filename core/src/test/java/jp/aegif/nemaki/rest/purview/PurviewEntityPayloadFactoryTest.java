@@ -12,11 +12,13 @@ import org.junit.jupiter.api.Test;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 
+import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
+import jp.aegif.nemaki.model.Property;
 
 public class PurviewEntityPayloadFactoryTest {
 
@@ -85,6 +87,11 @@ public class PurviewEntityPayloadFactoryTest {
         document.setLatestVersion(Boolean.TRUE);
         document.setCreated(calendar("2026-03-20T01:00:00Z"));
         document.setModified(calendar("2026-03-20T02:00:00Z"));
+        document.setAspects(List.of(new Aspect("nemaki:cloudDriveMetadata", List.of(
+                new Property("nemaki:cloudProvider", "google"),
+                new Property("nemaki:cloudFileId", "cloud-001"),
+                new Property("nemaki:cloudFileUrl", "https://drive.example/doc-001"),
+                new Property("nemaki:cloudLastSyncedAt", "2026-03-20T03:00:00.000+0000")))));
 
         Map<String, Object> entity = factory.buildDocumentEntity("bedroom", document);
 
@@ -100,6 +107,10 @@ public class PurviewEntityPayloadFactoryTest {
         assertEquals("1.2", attributes.get("versionLabel"));
         assertEquals(Boolean.TRUE, attributes.get("isLatestVersion"));
         assertEquals("ACTIVE", attributes.get("lifecycleState"));
+        assertEquals("google", attributes.get("cloudProvider"));
+        assertEquals("cloud-001", attributes.get("externalFileId"));
+        assertEquals("https://drive.example/doc-001", attributes.get("cloudFileUrl"));
+        assertEquals("2026-03-20T03:00:00.000+0000", attributes.get("cloudLastSyncedAt"));
         assertTrue(((Number) attributes.get("createTime")).longValue() > 0);
         assertTrue(((Number) attributes.get("modifiedTime")).longValue() > 0);
     }
