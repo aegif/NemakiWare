@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Form, Input, Alert, Space, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { getPasswordPolicy } from '../../../services/passwordPolicy';
 
 const { Paragraph } = Typography;
 
@@ -13,10 +14,20 @@ interface AdminStepProps {
   value: AdminConfig;
   onChange: (config: AdminConfig) => void;
   onValidChange: (valid: boolean) => void;
+  repositoryId?: string;
 }
 
-export function AdminStep({ value, onChange, onValidChange }: AdminStepProps) {
+export function AdminStep({ value, onChange, onValidChange, repositoryId }: AdminStepProps) {
   const { t } = useTranslation();
+  const [minLength, setMinLength] = useState(0);
+
+  useEffect(() => {
+    if (repositoryId) {
+      getPasswordPolicy(repositoryId)
+        .then(policy => setMinLength(policy.minLength))
+        .catch(() => setMinLength(0));
+    }
+  }, [repositoryId]);
 
   // Report initial validity on mount (both empty → skip → valid)
   useEffect(() => {
@@ -26,10 +37,14 @@ export function AdminStep({ value, onChange, onValidChange }: AdminStepProps) {
   const handleChange = (field: keyof AdminConfig, val: string) => {
     const updated = { ...value, [field]: val };
     onChange(updated);
-    // Valid if both empty (skip) or both filled and match with min 8 chars
+    // Valid if both empty (skip) or both filled and match with min length
     if (!updated.newPassword && !updated.confirmPassword) {
       onValidChange(true); // Skip password change
-    } else if (updated.newPassword.length >= 8 && updated.newPassword === updated.confirmPassword) {
+    } else if (
+      (minLength <= 0 || updated.newPassword.length >= minLength) &&
+      updated.newPassword.length > 0 &&
+      updated.newPassword === updated.confirmPassword
+    ) {
       onValidChange(true);
     } else {
       onValidChange(false);
@@ -37,7 +52,7 @@ export function AdminStep({ value, onChange, onValidChange }: AdminStepProps) {
   };
 
   const passwordMismatch = value.newPassword && value.confirmPassword && value.newPassword !== value.confirmPassword;
-  const tooShort = value.newPassword && value.newPassword.length > 0 && value.newPassword.length < 8;
+  const tooShort = minLength > 0 && value.newPassword && value.newPassword.length > 0 && value.newPassword.length < minLength;
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -51,7 +66,7 @@ export function AdminStep({ value, onChange, onValidChange }: AdminStepProps) {
         <Form.Item
           label={t('setup.admin.newPassword')}
           validateStatus={tooShort ? 'error' : undefined}
-          help={tooShort ? t('setup.admin.passwordTooShort') : undefined}
+          help={tooShort ? t('setup.admin.passwordTooShort', { min: minLength }) : undefined}
         >
           <Input.Password
             value={value.newPassword}

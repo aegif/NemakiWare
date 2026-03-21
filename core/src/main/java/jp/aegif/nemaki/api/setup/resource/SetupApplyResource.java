@@ -32,6 +32,7 @@ import jp.aegif.nemaki.init.CouchDbConnectionResult;
 import jp.aegif.nemaki.init.DatabasePreInitializer;
 import jp.aegif.nemaki.init.StartupProbeService;
 import jp.aegif.nemaki.patch.PatchService;
+import jp.aegif.nemaki.util.PasswordPolicyService;
 
 /**
  * POST /apply -- one-shot setup: validate settings, run DB init, persist config, clear setupRequired.
@@ -56,6 +57,9 @@ public class SetupApplyResource {
 
     @Autowired(required = false)
     private PatchService patchService;
+
+    @Autowired(required = false)
+    private PasswordPolicyService passwordPolicyService;
 
     /**
      * POST /apply/mark-complete -- explicitly mark setup as complete.
@@ -365,8 +369,12 @@ public class SetupApplyResource {
         // 7. Change admin password if requested
         if (req.getAdminPassword() != null && !req.getAdminPassword().trim().isEmpty()) {
             String adminPass = req.getAdminPassword().trim();
-            if (adminPass.length() < 8) {
-                return error(400, "Admin password must be at least 8 characters");
+            if (passwordPolicyService != null) {
+                PasswordPolicyService.PasswordPolicyResult policyResult =
+                        passwordPolicyService.validate(adminPass, null);
+                if (!policyResult.isOk()) {
+                    return error(400, policyResult.getErrorMessage());
+                }
             }
             try {
                 changeAdminPassword(couchUrl, authHeader, adminPass);

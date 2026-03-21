@@ -59,6 +59,7 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.AuthenticationUtil;
 import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.PasswordPolicyService;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -98,6 +99,8 @@ public class UserItemResource extends ResourceBase {
 	private ThreadLockService threadLockService;
 
 	private UserGroupSearchService userGroupSearchService;
+
+	private PasswordPolicyService passwordPolicyService;
 
 	public UserItemResource() {
 		super();
@@ -967,10 +970,12 @@ private ContentService getContentServiceSafe() {
 			return result.toJSONString();
 		}
 
-		// Password minimum length validation (8 characters)
-		if (newPassword == null || newPassword.length() < 8) {
+		// Password policy validation
+		PasswordPolicyService.PasswordPolicyResult policyResult =
+				passwordPolicyService.validate(newPassword, repositoryId);
+		if (!policyResult.isOk()) {
 			status = false;
-			addErrMsg(errMsg, ITEM_USER, "Password must be at least 8 characters");
+			addErrMsg(errMsg, ITEM_USER, policyResult.getErrorMessage());
 			makeResult(status, result, errMsg);
 			return result.toJSONString();
 		}
@@ -1263,6 +1268,13 @@ private ContentService getContentServiceSafe() {
 		if (StringUtils.isBlank(password)) {
 			status = false;
 			addErrMsg(errMsg, ITEM_PASSWORD, ErrorCode.ERR_MANDATORY);
+		} else {
+			PasswordPolicyService.PasswordPolicyResult policyResult =
+					passwordPolicyService.validate(password, repositoryId);
+			if (!policyResult.isOk()) {
+				status = false;
+				addErrMsg(errMsg, ITEM_PASSWORD, policyResult.getErrorMessage());
+			}
 		}
 		return status;
 	}
@@ -1522,6 +1534,10 @@ private ContentService getContentServiceSafe() {
 
 	public void setUserGroupSearchService(UserGroupSearchService userGroupSearchService) {
 		this.userGroupSearchService = userGroupSearchService;
+	}
+
+	public void setPasswordPolicyService(PasswordPolicyService passwordPolicyService) {
+		this.passwordPolicyService = passwordPolicyService;
 	}
 
 	/**

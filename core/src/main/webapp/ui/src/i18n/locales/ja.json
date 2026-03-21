@@ -721,8 +721,8 @@
       "userIdRequired": "ユーザーIDを入力してください",
       "userNameRequired": "ユーザー名を入力してください",
       "passwordRequired": "パスワードを入力してください",
-      "passwordMinLength": "パスワードは6文字以上で入力してください",
-      "passwordMinLength8": "パスワードは8文字以上で入力してください",
+      "passwordMinLength": "パスワードは{{min}}文字以上で入力してください",
+      "passwordMinLength8": "パスワードは{{min}}文字以上で入力してください",
       "confirmPasswordRequired": "パスワードの確認を入力してください"
     },
     "messages": {
@@ -2047,7 +2047,7 @@
     "currentPasswordRequired": "現在のパスワードを入力してください",
     "newPasswordRequired": "新しいパスワードを入力してください",
     "confirmPasswordRequired": "パスワードの確認を入力してください",
-    "passwordMinLength": "パスワードは8文字以上で入力してください",
+    "passwordMinLength": "パスワードは{{min}}文字以上で入力してください",
     "passwordMismatch": "パスワードが一致しません",
     "passwordChanged": "パスワードを変更しました",
     "passwordChangeError": "パスワードの変更に失敗しました",
@@ -2323,9 +2323,9 @@
       "info": "管理者パスワードを変更できます。空欄の場合は変更されません。",
       "newPassword": "新しいパスワード",
       "confirmPassword": "パスワード確認",
-      "passwordPlaceholder": "8文字以上",
+      "passwordPlaceholder": "パスワードを入力",
       "confirmPlaceholder": "パスワードを再入力",
-      "passwordTooShort": "パスワードは8文字以上必要です",
+      "passwordTooShort": "パスワードは{{min}}文字以上必要です",
       "passwordMismatch": "パスワードが一致しません",
       "noChange": "変更なし",
       "passkeyNote": "パスキー（WebAuthn）の登録はセットアップ完了後にログイン画面から行えます。"
@@ -2361,5 +2361,16 @@
       "applyFailed": "セットアップの適用に失敗しました",
       "persistenceNote": "CouchDB接続設定はランタイムに適用されました。再起動後も有効にするには docker-compose.yml の環境変数を設定してください。ベクトル検索設定は再起動後に反映されます。"
     }
+  },
+  "passwordPolicy": {
+    "title": "パスワードポリシー",
+    "minLength": "パスワード最小文字数",
+    "noConstraint": "制約なし (0)",
+    "currentSetting": "現在の設定: {{min}}文字以上",
+    "currentSettingNone": "現在の設定: 制約なし",
+    "updateSuccess": "パスワードポリシーを更新しました",
+    "updateError": "パスワードポリシーの更新に失敗しました",
+    "passwordTooShort": "パスワードは{{min}}文字以上必要です",
+    "description": "パスワードの最小文字数を設定します。0で制約なしになります。"
   }
 }

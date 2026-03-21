@@ -783,10 +783,16 @@
         </property>
     </bean>
 
+    <!-- Password Policy Service -->
+    <bean id="passwordPolicyService" class="jp.aegif.nemaki.util.PasswordPolicyService">
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
     <!-- REST API Resource Beans with explicit Spring DI -->
     <bean id="userItemResource" class="jp.aegif.nemaki.rest.UserItemResource">
         <property name="contentService" ref="ContentService" />
         <property name="propertyManager" ref="propertyManager" />
+        <property name="passwordPolicyService" ref="passwordPolicyService" />
         <property name="userGroupSearchService" ref="UserGroupSearchService" />
     </bean>
 

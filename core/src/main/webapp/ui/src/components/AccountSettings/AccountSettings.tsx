@@ -4,6 +4,7 @@ import { UserOutlined, LockOutlined, SafetyOutlined, CloudOutlined, ApiOutlined 
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { CMISService } from '../../services/cmis';
+import { getPasswordPolicy } from '../../services/passwordPolicy';
 import PasskeyManagement from '../PasskeyManagement/PasskeyManagement';
 import { ApiKeyManagement } from '../ApiKeyManagement/ApiKeyManagement';
 
@@ -45,6 +46,13 @@ export const AccountSettings: React.FC<AccountSettingsProps> = ({ repositoryId }
 
   const [meInfo, setMeInfo] = useState<MeInfo | null>(null);
   const [meLoading, setMeLoading] = useState(true);
+  const [minPasswordLength, setMinPasswordLength] = useState(0);
+
+  useEffect(() => {
+    getPasswordPolicy(repositoryId)
+      .then(policy => setMinPasswordLength(policy.minLength))
+      .catch(() => setMinPasswordLength(0));
+  }, [repositoryId]);
 
   useEffect(() => {
     const fetchMe = async () => {
@@ -178,7 +186,7 @@ export const AccountSettings: React.FC<AccountSettingsProps> = ({ repositoryId }
         label={t('accountSettings.newPassword')}
         rules={[
           { required: true, message: t('accountSettings.newPasswordRequired') },
-          { min: 8, message: t('accountSettings.passwordMinLength') }
+          ...(minPasswordLength > 0 ? [{ min: minPasswordLength, message: t('accountSettings.passwordMinLength', { min: minPasswordLength }) }] : [])
         ]}
       >
         <Input.Password

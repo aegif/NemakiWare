@@ -721,8 +721,8 @@
       "userIdRequired": "Please enter a user ID",
       "userNameRequired": "Please enter a user name",
       "passwordRequired": "Please enter a password",
-      "passwordMinLength": "Password must be at least 6 characters",
-      "passwordMinLength8": "Password must be at least 8 characters",
+      "passwordMinLength": "Password must be at least {{min}} characters",
+      "passwordMinLength8": "Password must be at least {{min}} characters",
       "confirmPasswordRequired": "Please confirm the password"
     },
     "messages": {
@@ -2047,7 +2047,7 @@
     "currentPasswordRequired": "Please enter your current password",
     "newPasswordRequired": "Please enter a new password",
     "confirmPasswordRequired": "Please confirm your new password",
-    "passwordMinLength": "Password must be at least 8 characters",
+    "passwordMinLength": "Password must be at least {{min}} characters",
     "passwordMismatch": "Passwords do not match",
     "passwordChanged": "Password changed successfully",
     "passwordChangeError": "Failed to change password",
@@ -2323,9 +2323,9 @@
       "info": "You can change the admin password. Leave blank to keep the current password.",
       "newPassword": "New Password",
       "confirmPassword": "Confirm Password",
-      "passwordPlaceholder": "8 characters minimum",
+      "passwordPlaceholder": "Enter password",
       "confirmPlaceholder": "Re-enter password",
-      "passwordTooShort": "Password must be at least 8 characters",
+      "passwordTooShort": "Password must be at least {{min}} characters",
       "passwordMismatch": "Passwords do not match",
       "noChange": "No change",
       "passkeyNote": "Passkey (WebAuthn) registration can be done from the login screen after setup is complete."
@@ -2361,5 +2361,16 @@
       "applyFailed": "Setup apply failed",
       "persistenceNote": "CouchDB connection settings have been applied at runtime. To persist across restarts, configure the environment variables in docker-compose.yml. Vector search settings will take effect after restart."
     }
+  },
+  "passwordPolicy": {
+    "title": "Password Policy",
+    "minLength": "Minimum password length",
+    "noConstraint": "No constraint (0)",
+    "currentSetting": "Current setting: {{min}} characters",
+    "currentSettingNone": "Current setting: No constraint",
+    "updateSuccess": "Password policy updated",
+    "updateError": "Failed to update password policy",
+    "passwordTooShort": "Password must be at least {{min}} characters",
+    "description": "Set the minimum password length. Set to 0 for no constraint."
   }
 }

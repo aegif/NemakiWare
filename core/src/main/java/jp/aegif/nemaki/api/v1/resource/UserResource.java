@@ -41,6 +41,7 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.AuthenticationUtil;
 import jp.aegif.nemaki.util.DateUtil;
+import jp.aegif.nemaki.util.PasswordPolicyService;
 
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
@@ -71,6 +72,9 @@ public class UserResource {
     
     @Autowired
     private ContentService contentService;
+
+    @Autowired
+    private PasswordPolicyService passwordPolicyService;
     
     @Context
     private UriInfo uriInfo;
@@ -549,7 +553,13 @@ public class UserResource {
                     if (request.getOldPassword() == null || request.getNewPassword() == null) {
                 throw ApiException.invalidArgument("Both oldPassword and newPassword are required");
             }
-            
+
+            PasswordPolicyService.PasswordPolicyResult policyResult =
+                    passwordPolicyService.validate(request.getNewPassword(), repositoryId);
+            if (!policyResult.isOk()) {
+                throw ApiException.invalidArgument(policyResult.getErrorMessage());
+            }
+
             UserItem user = contentService.getUserItemById(repositoryId, userId);
             if (user == null) {
                 throw ApiException.userNotFound(userId, repositoryId);
@@ -585,6 +595,11 @@ public class UserResource {
         }
         if (StringUtils.isBlank(request.getPassword())) {
             throw ApiException.invalidArgument("password is required");
+        }
+        PasswordPolicyService.PasswordPolicyResult policyResult =
+                passwordPolicyService.validate(request.getPassword(), repositoryId);
+        if (!policyResult.isOk()) {
+            throw ApiException.invalidArgument(policyResult.getErrorMessage());
         }
     }
     

@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.api.setup.resource;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.lang.reflect.Field;
@@ -24,6 +25,7 @@ import jp.aegif.nemaki.init.CouchDbConnectionResult;
 import jp.aegif.nemaki.init.DatabasePreInitializer;
 import jp.aegif.nemaki.init.StartupProbeService;
 import jp.aegif.nemaki.patch.PatchService;
+import jp.aegif.nemaki.util.PasswordPolicyService;
 
 /**
  * Tests for SetupApplyResource.
@@ -36,6 +38,7 @@ public class SetupApplyResourceTest {
     private StartupProbeService probeService;
     private CMISPostInitializer cmisPostInitializer;
     private PatchService patchService;
+    private PasswordPolicyService passwordPolicyService;
 
     @BeforeEach
     public void setUp() throws Exception {
@@ -43,14 +46,20 @@ public class SetupApplyResourceTest {
         probeService = mock(StartupProbeService.class);
         cmisPostInitializer = mock(CMISPostInitializer.class);
         patchService = mock(PatchService.class);
+        passwordPolicyService = mock(PasswordPolicyService.class);
 
         setField("startupProbeService", probeService);
         setField("cmisPostInitializer", cmisPostInitializer);
         setField("patchService", patchService);
+        setField("passwordPolicyService", passwordPolicyService);
 
         // Default: deferred init succeeds
         when(cmisPostInitializer.executePatches()).thenReturn(true);
         when(patchService.executePatchService()).thenReturn(true);
+
+        // Default: password policy allows all non-empty passwords
+        when(passwordPolicyService.validate(anyString(), any()))
+                .thenReturn(PasswordPolicyService.PasswordPolicyResult.ok());
     }
 
     private void setField(String name, Object value) throws Exception {
@@ -248,12 +257,17 @@ public class SetupApplyResourceTest {
     }
 
     /**
-     * Admin password shorter than 8 characters returns 400.
+     * Admin password rejected by policy returns 400.
      */
     @Test
     public void testApplyAdminPasswordTooShort() {
         SetupApplyRequest req = validRequest();
         req.setAdminPassword("short");
+
+        // Configure policy to require minimum 8 characters
+        when(passwordPolicyService.validate(eq("short"), any()))
+                .thenReturn(PasswordPolicyService.PasswordPolicyResult.error(
+                        "Password must be at least 8 characters"));
 
         Response resp = resource.apply(req);
         assertEquals(400, resp.getStatus());

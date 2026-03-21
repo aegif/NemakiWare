@@ -266,6 +266,7 @@ import {
   CrownOutlined
 } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
+import { getPasswordPolicy } from '../../services/passwordPolicy';
 import { User, Group } from '../../types/cmis';
 import { useTranslation } from 'react-i18next';
 
@@ -289,6 +290,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
   const [form] = Form.useForm();
   const { t } = useTranslation();
+  const [minPasswordLength, setMinPasswordLength] = useState(0);
 
   const { handleAuthError, authToken } = useAuth();
   const cmisService = new CMISService(handleAuthError);
@@ -297,6 +299,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
   useEffect(() => {
     loadUsers(1, '');
     loadGroups();
+    getPasswordPolicy(repositoryId)
+      .then(policy => setMinPasswordLength(policy.minLength))
+      .catch(() => setMinPasswordLength(0));
   }, [repositoryId]);
 
   const loadUsers = async (page?: number, query?: string) => {
@@ -680,7 +685,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
               label={t('userManagement.password')}
               rules={[
                 { required: true, message: t('userManagement.validation.passwordRequired') },
-                { min: 6, message: t('userManagement.validation.passwordMinLength') }
+                ...(minPasswordLength > 0 ? [{ min: minPasswordLength, message: t('userManagement.validation.passwordMinLength', { min: minPasswordLength }) }] : [])
               ]}
             >
               <Input.Password placeholder={t('userManagement.placeholders.password')} />
@@ -764,7 +769,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
                   label={t('userManagement.newPassword')}
                   rules={[
                     { required: true, message: t('userManagement.validation.passwordRequired') },
-                    { min: 8, message: t('userManagement.validation.passwordMinLength8') }
+                    ...(minPasswordLength > 0 ? [{ min: minPasswordLength, message: t('userManagement.validation.passwordMinLength8', { min: minPasswordLength }) }] : [])
                   ]}
                 >
                   <Input.Password placeholder={t('userManagement.placeholders.newPassword')} />
