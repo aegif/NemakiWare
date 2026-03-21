@@ -28,6 +28,9 @@
 		<context:exclude-filter type="regex" expression="jp\.aegif\.nemaki\.rest\.controller\..*"/>
 		<!-- Exclude provider classes that need ObjectMapper bean -->
 		<context:exclude-filter type="regex" expression="jp\.aegif\.nemaki\.rest\.provider\..*"/>
+		<!-- Exclude ALL Purview classes: they are scanned in serviceContext.xml after refresh -->
+		<!-- (applicationContext.xml beans are replaced by NemakiApplicationContextLoader.refresh()) -->
+		<context:exclude-filter type="regex" expression="jp\.aegif\.nemaki\.rest\.purview\..*"/>
 	</context:component-scan>
 
 	<!-- AuthenticationFilter will be defined in serviceContext.xml as restAuthenticationFilter -->

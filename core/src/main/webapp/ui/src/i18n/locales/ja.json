@@ -98,9 +98,148 @@
       "apiDocs": "API仕様",
       "filesystemImportExport": "ファイルシステム インポート/エクスポート",
       "configViewer": "設定ビューア",
+      "purview": "Purview連携",
       "rssManagement": "RSSトークン管理",
       "accountSettings": "アカウント設定"
     },
+  "purviewManagement": {
+    "title": "Purview 管理",
+    "actions": {
+      "testConnection": "接続確認",
+      "lookupGovernance": "Governance 参照",
+      "applyTypeDefinitions": "型定義を適用",
+      "fullSync": "フル同期",
+      "incrementalSync": "増分同期",
+      "reconcileTypes": "タイプ再整合",
+      "reconcileArchives": "アーカイブ再整合",
+      "reconcileCloudMetadata": "クラウドメタデータ再整合",
+      "reconcileContainment": "包含関係再整合",
+      "resolveDeletes": "削除解決",
+      "retryFailed": "失敗を再試行"
+    },
+    "alerts": {
+      "loadFailed": "Purview 状態の読み込みに失敗しました",
+      "connectionFailed": "Purview 接続に失敗しました",
+      "featureDisabled": "Purview 機能が無効です",
+      "applyRequired": "Purview schema の適用が必要です",
+      "applyRequiredDescription": "type definitions を apply してから同期ジョブを流す構成です。",
+      "deadLettersPresent": "dead-letter が残っています",
+      "deadLettersPresentDescription": "{{count}} 件の再試行対象があります。"
+    },
+    "latestAction": {
+      "title": "直近の操作結果"
+    },
+    "stats": {
+      "jobs": "ジョブ",
+      "cursors": "カーソル",
+      "deadLetters": "Dead Letter",
+      "tombstones": "Tombstone"
+    },
+    "summary": {
+      "repositoryId": "リポジトリ",
+      "collection": "Collection",
+      "connection": "接続状態",
+      "connectionHealthy": "接続済み",
+      "connectionUnavailable": "未接続",
+      "applyRequired": "Schema適用状態",
+      "endpoint": "Endpoint",
+      "atlasBasePath": "Atlas Base Path",
+      "schemaVersion": "Schema Version",
+      "schemaHash": "Schema Hash",
+      "lastAppliedAt": "最終適用日時",
+      "lastAppliedBy": "最終適用者"
+    },
+    "sections": {
+      "schema": "Schema 差分",
+      "actions": "運用アクション",
+      "governanceLookup": "Governance 参照",
+      "state": "状態詳細"
+    },
+    "governanceLookup": {
+      "objectIdPlaceholder": "オブジェクトIDを改行またはカンマ区切りで入力",
+      "failed": "Governance 情報の取得に失敗しました",
+      "resultSummary": "{{count}} 件の対象を参照しました（成功 {{successCount}} 件）",
+      "objectId": "Object ID",
+      "status": "Status",
+      "qualifiedName": "Qualified Name",
+      "entityType": "Entity Type",
+      "message": "メッセージ",
+      "classifications": "Classification",
+      "glossaryTerms": "Glossary Term",
+      "labels": "Labels"
+    },
+    "schema": {
+      "current": "現在の schema",
+      "desired": "期待する schema",
+      "customTypes": "Custom Types",
+      "relationshipTypes": "Relationship Types",
+      "businessMetadata": "Business Metadata"
+    },
+    "actionGroups": {
+      "bootstrap": "Bootstrap",
+      "sync": "Sync",
+      "reconciliation": "Reconciliation / Recovery"
+    },
+    "tabs": {
+      "jobs": "Jobs",
+      "cursors": "Cursors",
+      "deadLetters": "Dead Letters",
+      "tombstones": "Tombstones",
+      "locks": "Locks"
+    },
+    "tables": {
+      "jobs": {
+        "jobId": "Job ID",
+        "jobKind": "Job Kind",
+        "repositoryId": "Repository",
+        "status": "Status",
+        "processedCount": "Processed",
+        "failedCount": "Failed",
+        "startedAt": "Started",
+        "errorSummary": "Error Summary"
+      },
+      "cursors": {
+        "streamKind": "Stream",
+        "cursor": "Cursor",
+        "lastSuccessAt": "Last Success",
+        "lastErrorAt": "Last Error",
+        "deadLetterCount": "Dead Letters",
+        "lastErrorMessage": "Last Error Message"
+      },
+      "locks": {
+        "jobKind": "Job Kind",
+        "locked": "Locked",
+        "ownerJobId": "Owner Job",
+        "lockedAt": "Locked At"
+      },
+      "tombstones": {
+        "objectId": "Object ID",
+        "typeName": "Type",
+        "status": "Status",
+        "dueAt": "Due At",
+        "qualifiedName": "Qualified Name"
+      },
+      "deadLetters": {
+        "streamKind": "Stream",
+        "entryKey": "Entry Key",
+        "failureCount": "Failures",
+        "lastFailedAt": "Last Failed",
+        "errorSummary": "Error Summary"
+      }
+    },
+    "messages": {
+      "governanceLookupCompleted": "Governance 情報を取得しました",
+      "schemaApplied": "Purview schema を適用しました",
+      "fullSyncStarted": "Purview フル同期を開始しました",
+      "incrementalSyncStarted": "Purview 増分同期を開始しました",
+      "typeReconciliationStarted": "タイプ再整合を開始しました",
+      "archiveReconciliationStarted": "アーカイブ再整合を開始しました",
+      "cloudMetadataReconciliationStarted": "クラウドメタデータ再整合を開始しました",
+      "containmentReconciliationStarted": "包含関係再整合を開始しました",
+      "deleteResolutionStarted": "削除解決を開始しました",
+      "retryFailedStarted": "dead-letter 再試行を開始しました"
+    }
+  },
   "configViewer": {
     "title": "設定プロパティ一覧",
     "columns": {
@@ -608,6 +747,20 @@
         "email": "メール"
       }
     },
+    "purviewGovernance": {
+      "tab": "Purview",
+      "status": "Purview ガバナンス情報",
+      "qualifiedName": "Qualified Name",
+      "entityType": "Purview エンティティタイプ",
+      "atlasBasePath": "Atlas Base Path",
+      "classifications": "Classification",
+      "glossaryTerms": "Glossary Term",
+      "labels": "Label",
+      "businessMetadata": "Business Metadata",
+      "none": "設定なし",
+      "empty": "Purview ガバナンス情報はありません",
+      "loadFailed": "Purview ガバナンス情報の読み込みに失敗しました"
+    },
     "pullFromCloud": "クラウドから取得",
     "openInCloud": "クラウドで開く",
     "updateInGoogleDrive": "Google Driveを更新",
@@ -1014,6 +1167,19 @@
     },
     "messages": {
       "searchFailed": "検索に失敗しました"
+    },
+    "purviewGovernance": {
+      "title": "Purview ガバナンス概要",
+      "loading": "Governance 情報を読み込み中です",
+      "failed": "Governance 情報の取得に失敗しました",
+      "scanned": "参照対象 {{count}} 件",
+      "synced": "同期済み {{count}} 件",
+      "classified": "Classification あり {{count}} 件",
+      "glossary": "Glossary あり {{count}} 件",
+      "labeled": "Label あり {{count}} 件",
+      "unresolved": "未解決 {{count}} 件",
+      "topClassifications": "上位 Classification",
+      "topGlossaryTerms": "上位 Glossary Term"
     }
   },
   "searchResults": {

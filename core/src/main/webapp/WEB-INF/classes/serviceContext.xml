@@ -985,4 +985,8 @@
     <context:component-scan base-package="jp.aegif.nemaki.api.v1.filter" />
     <context:component-scan base-package="jp.aegif.nemaki.api.v1.resource" />
 
+    <!-- Purview component scanning: must be in serviceContext.xml (post-refresh) -->
+    <!-- so that ContentDaoService, ContentService, and CloudantClientPool are available -->
+    <context:component-scan base-package="jp.aegif.nemaki.rest.purview" />
+
 </beans>

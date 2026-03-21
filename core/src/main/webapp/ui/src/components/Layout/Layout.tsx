@@ -221,6 +221,7 @@ import {
   MenuUnfoldOutlined,
   InfoCircleOutlined,
   DatabaseOutlined,
+  DeploymentUnitOutlined,
   ApiOutlined,
   BarChartOutlined,
   SwapOutlined,
@@ -426,6 +427,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           key: '/config-viewer',
           icon: <ControlOutlined />,
           label: t('navigation.configViewer'),
+        },
+        {
+          key: '/purview',
+          icon: <DeploymentUnitOutlined />,
+          label: t('navigation.purview'),
         },
         ...(featureToggles['rss.enabled'] ? [{
           key: '/rss-tokens',

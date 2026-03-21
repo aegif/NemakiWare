@@ -168,7 +168,7 @@ docker/initializer/*.jar
 **/*.pid
 
 # Test artifacts created during development
-*Test.java
+# Source test files should be tracked; only compiled/runtime artifacts stay ignored.
 *Test.class
 DirectQueryTest.*
 ComprehensiveQueryTest.*

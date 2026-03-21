@@ -219,6 +219,7 @@ import { FilesystemImportExport } from './components/FilesystemImportExport/File
 import { WebhookManagement } from './components/WebhookManagement/WebhookManagement';
 import { CloudDirectorySync } from './components/CloudDirectorySync/CloudDirectorySync';
 import { ConfigViewer } from './components/ConfigViewer/ConfigViewer';
+import { PurviewManagement } from './components/PurviewManagement/PurviewManagement';
 import { RssTokenManagement } from './components/RssTokenManagement/RssTokenManagement';
 import { AccountSettings } from './components/AccountSettings/AccountSettings';
 import { McpCloudLogin } from './components/McpCloudLogin/McpCloudLogin';
@@ -469,6 +470,13 @@ function AppRoutes() {
             <ProtectedRoute>
               <AdminRoute>
                 <ConfigViewer repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/purview" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <PurviewManagement repositoryId={authToken.repositoryId} />
               </AdminRoute>
             </ProtectedRoute>
           } />
