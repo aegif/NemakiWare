@@ -17,8 +17,11 @@ services:
       start_period: 30s
 
   # OpenLDAP Server (for LDAP sync & Keycloak federation tests)
+  # Enable with: docker compose --profile idp up -d
   openldap:
     image: osixia/openldap:1.5.0
+    profiles:
+      - idp
     ports:
       - "389:389"
     environment:
@@ -40,8 +43,11 @@ services:
       start_period: 30s
 
   # Keycloak Identity Provider (OIDC/SAML + LDAP federation)
+  # Enable with: docker compose --profile idp up -d
   keycloak:
     image: quay.io/keycloak/keycloak:24.0
+    profiles:
+      - idp
     command: start-dev --import-realm
     environment:
       KEYCLOAK_ADMIN: admin
@@ -95,11 +101,9 @@ services:
         condition: service_healthy
       solr:
         condition: service_healthy
-      keycloak:
-        condition: service_healthy
     environment:
       - JAVA_OPTS=-Dorg.ektorp.support.AutoUpdateViewOnChange=false -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false -Dorg.ektorp.support.DesignDocument.UPDATE_ON_DIFF=false -Dorg.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE=true -Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
-      - CATALINA_OPTS=-Xms1g -Xmx3g -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:-admin} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:-password} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http -Dcloud.auth.google.enabled=${CLOUD_AUTH_GOOGLE_ENABLED:-false} -Dcloud.auth.google.clientId=${CLOUD_AUTH_GOOGLE_CLIENT_ID:-} -Dcloud.auth.microsoft.enabled=${CLOUD_AUTH_MICROSOFT_ENABLED:-false} -Dcloud.auth.microsoft.clientId=${CLOUD_AUTH_MICROSOFT_CLIENT_ID:-} -Dcloud.auth.microsoft.tenantId=${CLOUD_AUTH_MICROSOFT_TENANT_ID:-} -Dcloud.drive.google.enabled=${CLOUD_DRIVE_GOOGLE_ENABLED:-false} -Dcloud.drive.microsoft.enabled=${CLOUD_DRIVE_MICROSOFT_ENABLED:-false} -Dsso.oidc.enabled=true -Dsso.saml.enabled=true -Doidc.enabled=true -Doidc.issuer=http://keycloak:8080/realms/nemakiware -Doidc.clientId=nemakiware-ui -Ddirectory.sync.enabled=true -Ddirectory.sync.ldap.url=ldap://openldap:389 -Ddirectory.sync.ldap.base.dn=dc=nemakiware,dc=example,dc=com -Ddirectory.sync.ldap.bind.dn=cn=admin,dc=nemakiware,dc=example,dc=com -Ddirectory.sync.ldap.bind.password=adminpassword
+      - CATALINA_OPTS=-Xms1g -Xmx3g -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:-admin} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:-password} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http -Dcloud.auth.google.enabled=${CLOUD_AUTH_GOOGLE_ENABLED:-false} -Dcloud.auth.google.clientId=${CLOUD_AUTH_GOOGLE_CLIENT_ID:-} -Dcloud.auth.microsoft.enabled=${CLOUD_AUTH_MICROSOFT_ENABLED:-false} -Dcloud.auth.microsoft.clientId=${CLOUD_AUTH_MICROSOFT_CLIENT_ID:-} -Dcloud.auth.microsoft.tenantId=${CLOUD_AUTH_MICROSOFT_TENANT_ID:-} -Dcloud.drive.google.enabled=${CLOUD_DRIVE_GOOGLE_ENABLED:-false} -Dcloud.drive.microsoft.enabled=${CLOUD_DRIVE_MICROSOFT_ENABLED:-false} -Dsso.oidc.enabled=${SSO_OIDC_ENABLED:-false} -Dsso.saml.enabled=${SSO_SAML_ENABLED:-false} -Doidc.enabled=${OIDC_ENABLED:-false} -Doidc.issuer=${OIDC_ISSUER:-http://keycloak:8080/realms/nemakiware} -Doidc.clientId=${OIDC_CLIENT_ID:-nemakiware-ui} -Ddirectory.sync.enabled=${DIRECTORY_SYNC_ENABLED:-false} -Ddirectory.sync.ldap.url=${LDAP_URL:-ldap://openldap:389} -Ddirectory.sync.ldap.base.dn=${LDAP_BASE_DN:-dc=nemakiware,dc=example,dc=com} -Ddirectory.sync.ldap.bind.dn=${LDAP_BIND_DN:-cn=admin,dc=nemakiware,dc=example,dc=com} -Ddirectory.sync.ldap.bind.password=${LDAP_BIND_PASSWORD:-adminpassword}
     env_file:
       - path: ./secrets/microsoft-entra.env
         required: false
@@ -112,20 +116,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 120s
-
-  # UI Web Interface - DISABLED for Core + CouchDB + Solr testing
-  # Note: UI requires Java 8 which conflicts with Core Java 11+ requirements
-  # ui:
-  #   build:
-  #     context: ./ui
-  #     dockerfile: Dockerfile.simple
-  #   ports:
-  #     - "9000:8080"
-  #   depends_on:
-  #     core:
-  #       condition: service_healthy
-  #   environment:
-  #     - CATALINA_OPTS=-Xms512m -Xmx1024m -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties
 
   # ========================================
   # RAG (Retrieval-Augmented Generation) Components

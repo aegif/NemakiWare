@@ -176,32 +176,10 @@ MinimalTckTest.*
 QueryTckRunnerNoPolicyHang.*
 SimpleQueryTest.*
 
-# Exception: Keep important unit test files
-!core/src/test/java/jp/aegif/nemaki/businesslogic/impl/SolrIndexMaintenanceServiceImpl*Test.java
-!core/src/test/java/jp/aegif/nemaki/archive/*Test.java
-!core/src/test/java/jp/aegif/nemaki/rest/*Test.java
-# Exception: Keep API v1 integration test support files and SpringPropertiesUtil test
-!core/src/test/java/jp/aegif/nemaki/api/v1/*Test.java
-!core/src/test/java/jp/aegif/nemaki/util/spring/*Test.java
-
-# Exception: Keep configuration, DAO, and util test files
-!core/src/test/java/jp/aegif/nemaki/dao/impl/couch/*ConfigTest.java
-!core/src/test/java/jp/aegif/nemaki/util/PropertyManagerConfigTest.java
-!core/src/test/java/jp/aegif/nemaki/util/PasswordPolicyServiceTest.java
-
-# Exception: Keep RAG unit test files
-!core/src/test/java/jp/aegif/nemaki/rag/**/*Test.java
-
-# Exception: Keep cloud integration test files
-!core/src/test/java/jp/aegif/nemaki/sync/service/Cloud*Test.java
-!core/src/test/java/jp/aegif/nemaki/businesslogic/impl/CloudDriveServiceImplTest.java
-!core/src/test/java/jp/aegif/nemaki/rest/Cloud*IT.java
-# Exception: Keep archive unit test files
-!core/src/test/java/jp/aegif/nemaki/archive/*Test.java
-# Exception: Keep CMIS behavior-fixing integration test
-!core/src/test/java/jp/aegif/nemaki/cmis/tck/tests/VersioningBehaviorTest.java
-# Exception: Keep CompileService unit tests
-!core/src/test/java/jp/aegif/nemaki/cmis/aspect/impl/*Test.java
+# Exception: Keep ALL unit/integration test files under core/src/test/
+!core/src/test/**/*Test.java
+!core/src/test/**/*IT.java
+!core/src/test/**/*Test.class
 
 # Runtime logs and configuration
 jetty-*.log
@@ -242,7 +220,7 @@ node/
 # Legacy modules and directories (removed from git to eliminate Dependabot alerts)
 suspended-modules/
 extracted/
-setup/
+/setup/
 docker/initializer/
 docker/docker-compose-containerized.yml
 docker/docker-compose-jakarta-*.yml
