@@ -18,8 +18,6 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 import jp.aegif.nemaki.api.v1.exception.ApiException;
-import jp.aegif.nemaki.dao.ContentDaoService;
-import jp.aegif.nemaki.model.Configuration;
 import jp.aegif.nemaki.util.PasswordPolicyService;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -37,13 +35,8 @@ import java.util.logging.Logger;
 public class PasswordPolicyResource {
 
     private static final Logger logger = Logger.getLogger(PasswordPolicyResource.class.getName());
-    private static final String KEY_MIN_LENGTH = "password.policy.minLength";
-
     @Autowired
     private PasswordPolicyService passwordPolicyService;
-
-    @Autowired
-    private ContentDaoService contentDaoService;
 
     @Context
     private HttpServletRequest httpRequest;
@@ -93,11 +86,7 @@ public class PasswordPolicyResource {
         }
 
         try {
-            Configuration conf = contentDaoService.getConfiguration(repositoryId);
-            Map<String, Object> map = conf.getConfiguration();
-            map.put(KEY_MIN_LENGTH, String.valueOf(minLength));
-            conf.setConfiguration(map);
-            contentDaoService.update(repositoryId, conf);
+            passwordPolicyService.setMinLength(repositoryId, minLength);
         } catch (Exception e) {
             logger.severe("Failed to update password policy: " + e.getMessage());
             throw ApiException.internalError("Failed to update password policy: " + e.getMessage(), e);

@@ -786,6 +786,8 @@
     <!-- Password Policy Service -->
     <bean id="passwordPolicyService" class="jp.aegif.nemaki.util.PasswordPolicyService">
         <property name="propertyManager" ref="propertyManager" />
+        <property name="connectorPool" ref="connectorPool" />
+        <property name="nemakiCachePool" ref="nemakiCachePool" />
     </bean>
 
     <!-- REST API Resource Beans with explicit Spring DI -->

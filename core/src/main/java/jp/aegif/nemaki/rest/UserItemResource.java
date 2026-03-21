@@ -106,6 +106,22 @@ public class UserItemResource extends ResourceBase {
 		super();
 	}
 
+	private PasswordPolicyService getPasswordPolicyService() {
+		if (passwordPolicyService != null) {
+			return passwordPolicyService;
+		}
+		try {
+			PasswordPolicyService service = SpringContext.getApplicationContext()
+					.getBean("passwordPolicyService", PasswordPolicyService.class);
+			if (service != null) {
+				return service;
+			}
+		} catch (Exception e) {
+			log.debug("PasswordPolicyService not available from SpringContext: " + e.getMessage());
+		}
+		return null;
+	}
+
 	private ContentService getContentService() {
 		if (contentService != null) {
 			return contentService;
@@ -971,13 +987,16 @@ private ContentService getContentServiceSafe() {
 		}
 
 		// Password policy validation
-		PasswordPolicyService.PasswordPolicyResult policyResult =
-				passwordPolicyService.validate(newPassword, repositoryId);
-		if (!policyResult.isOk()) {
-			status = false;
-			addErrMsg(errMsg, ITEM_USER, policyResult.getErrorMessage());
-			makeResult(status, result, errMsg);
-			return result.toJSONString();
+		PasswordPolicyService pps = getPasswordPolicyService();
+		if (pps != null) {
+			PasswordPolicyService.PasswordPolicyResult policyResult =
+					pps.validate(newPassword, repositoryId);
+			if (!policyResult.isOk()) {
+				status = false;
+				addErrMsg(errMsg, ITEM_USER, policyResult.getErrorMessage());
+				makeResult(status, result, errMsg);
+				return result.toJSONString();
+			}
 		}
 
 		// Determine if caller is admin changing another user's password
@@ -1269,11 +1288,14 @@ private ContentService getContentServiceSafe() {
 			status = false;
 			addErrMsg(errMsg, ITEM_PASSWORD, ErrorCode.ERR_MANDATORY);
 		} else {
-			PasswordPolicyService.PasswordPolicyResult policyResult =
-					passwordPolicyService.validate(password, repositoryId);
-			if (!policyResult.isOk()) {
-				status = false;
-				addErrMsg(errMsg, ITEM_PASSWORD, policyResult.getErrorMessage());
+			PasswordPolicyService ppsCreate = getPasswordPolicyService();
+			if (ppsCreate != null) {
+				PasswordPolicyService.PasswordPolicyResult policyResult =
+						ppsCreate.validate(password, repositoryId);
+				if (!policyResult.isOk()) {
+					status = false;
+					addErrMsg(errMsg, ITEM_PASSWORD, policyResult.getErrorMessage());
+				}
 			}
 		}
 		return status;

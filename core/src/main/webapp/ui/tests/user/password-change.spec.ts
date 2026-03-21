@@ -230,24 +230,48 @@ test.describe('Password Change', () => {
   });
 
   test('minimum password length validation', async ({ request }) => {
-    const testAuth = 'Basic ' + Buffer.from(`${TEST_USER_ID}:${currentTestUserPassword}`).toString('base64');
-
-    const formData = new URLSearchParams();
-    formData.append('oldPassword', currentTestUserPassword);
-    formData.append('newPassword', 'short'); // Less than 8 characters
-
-    const response = await request.fetch(`${REST_BASE}/user/changePassword/${TEST_USER_ID}`, {
+    // Set password policy to require minimum 8 characters
+    const policyApiBase = `${BASE_URL}/core/api/v1/cmis/repositories/bedroom/config/password-policy`;
+    const setPolicyRes = await request.fetch(policyApiBase, {
       method: 'PUT',
       headers: {
-        'Authorization': testAuth,
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': ADMIN_AUTH,
+        'Content-Type': 'application/json',
       },
-      data: formData.toString(),
+      data: JSON.stringify({ minLength: 8 }),
     });
+    expect(setPolicyRes.ok()).toBeTruthy();
 
-    expect(response.status()).toBe(200);
-    const data = await response.json();
-    expect(data.status).toBe('failure');
+    try {
+      const testAuth = 'Basic ' + Buffer.from(`${TEST_USER_ID}:${currentTestUserPassword}`).toString('base64');
+
+      const formData = new URLSearchParams();
+      formData.append('oldPassword', currentTestUserPassword);
+      formData.append('newPassword', 'short'); // Less than 8 characters
+
+      const response = await request.fetch(`${REST_BASE}/user/changePassword/${TEST_USER_ID}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': testAuth,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        data: formData.toString(),
+      });
+
+      expect(response.status()).toBe(200);
+      const data = await response.json();
+      expect(data.status).toBe('failure');
+    } finally {
+      // Reset policy to no constraint
+      await request.fetch(policyApiBase, {
+        method: 'PUT',
+        headers: {
+          'Authorization': ADMIN_AUTH,
+          'Content-Type': 'application/json',
+        },
+        data: JSON.stringify({ minLength: 0 }),
+      });
+    }
   });
 
   test('changed password works for login', async ({ page }) => {
