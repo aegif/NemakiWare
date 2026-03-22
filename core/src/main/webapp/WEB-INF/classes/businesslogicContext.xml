@@ -207,6 +207,12 @@
 		</property>
 	</bean>
 	<bean id="textExtractionService" class="jp.aegif.nemaki.businesslogic.impl.TextExtractionServiceImpl">
+		<property name="cadRenditionManager">
+			<ref bean="cadRenditionManager" />
+		</property>
+		<property name="diagramRenditionManager">
+			<ref bean="diagramRenditionManager" />
+		</property>
 	</bean>
 
 	<!-- Rendition builder -->
@@ -214,15 +220,35 @@
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.businesslogic.rendition.RenditionManager</value>
+				<value>jp.aegif.nemaki.businesslogic.rendition.ExtendedRenditionManager</value>
 			</list>
 		</property>
 		<property name="target">
-			<ref bean="jodRenditionManager" />
+			<ref bean="compositeRenditionManager" />
 		</property>
 	</bean>
+
+	<!-- CAD rendition manager (DXF/DWG/JWW/SFC/P21 → SVG) -->
+	<bean id="cadRenditionManager" class="jp.aegif.nemaki.businesslogic.rendition.impl.CadRenditionManagerImpl" />
+
+	<!-- Diagram rendition manager (PlantUML/DOT → SVG) -->
+	<bean id="diagramRenditionManager" class="jp.aegif.nemaki.businesslogic.rendition.impl.DiagramRenditionManagerImpl" />
+
+	<!-- LibreOffice rendition manager (Office → PDF) -->
 	<bean id="jodRenditionManager" class="jp.aegif.nemaki.businesslogic.rendition.impl.JodRenditionManagerImpl">
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
+	</bean>
+
+	<!-- Composite rendition manager: chains CAD → Diagram → JOD -->
+	<bean id="compositeRenditionManager" class="jp.aegif.nemaki.businesslogic.rendition.impl.CompositeRenditionManagerImpl">
+		<property name="delegates">
+			<list>
+				<ref bean="cadRenditionManager" />
+				<ref bean="diagramRenditionManager" />
+				<ref bean="jodRenditionManager" />
+			</list>
+		</property>
 	</bean>
 </beans>

@@ -193,6 +193,7 @@ import { Spin, Alert } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { useAuth } from '../../contexts/AuthContext';
+import { extractIdsFromUrl } from '../../utils/previewUtils';
 
 interface ImagePreviewProps {
   url: string;
@@ -230,16 +231,6 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({ url, fileName, repos
   // Use ref to track current blob URL for proper cleanup (fixes memory leak)
   const blobUrlRef = useRef<string | null>(null);
 
-  // Extract repositoryId and objectId from URL if not provided as props
-  const extractFromUrl = (urlString: string): { repoId: string | null; objId: string | null } => {
-    // URL format: /core/browser/{repositoryId}/node/{objectId}/content
-    const match = urlString.match(/\/core\/browser\/([^/]+)\/node\/([^/]+)/);
-    if (match) {
-      return { repoId: match[1], objId: match[2] };
-    }
-    return { repoId: null, objId: null };
-  };
-
   useEffect(() => {
     const fetchImageContent = async () => {
       setIsLoading(true);
@@ -252,7 +243,7 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({ url, fileName, repos
       }
 
       try {
-        const { repoId, objId } = extractFromUrl(url);
+        const { repoId, objId } = extractIdsFromUrl(url);
         const effectiveRepoId = repositoryId || repoId;
         const effectiveObjId = objectId || objId;
 

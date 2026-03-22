@@ -1,6 +1,47 @@
 import { CMISObject } from '../types/cmis';
 
-export const getFileType = (mimeType: string): 'image' | 'video' | 'pdf' | 'text' | 'office' | 'unsupported' => {
+/** CAD MIME types */
+const CAD_MIME_TYPES = new Set([
+  'image/vnd.dxf',
+  'application/x-dwg',
+  'application/x-jww',
+  'application/x-sfc',
+  'application/x-p21',
+]);
+
+/** Diagram MIME types */
+const DIAGRAM_MIME_TYPES = new Set([
+  'text/x-plantuml',
+  'text/vnd.graphviz',
+]);
+
+/** Extension → file type mapping for octet-stream fallback */
+const EXTENSION_FILE_TYPE_MAP: Record<string, FileType> = {
+  dxf: 'cad',
+  dwg: 'cad',
+  jww: 'cad',
+  sfc: 'cad',
+  p21: 'cad',
+  puml: 'diagram',
+  plantuml: 'diagram',
+  dot: 'diagram',
+  gv: 'diagram',
+  md: 'markdown',
+};
+
+export type FileType = 'image' | 'video' | 'pdf' | 'text' | 'office' | 'cad' | 'markdown' | 'diagram' | 'unsupported';
+
+/**
+ * Determine the file type from MIME type (and optionally file name for extension fallback).
+ */
+export const getFileType = (mimeType: string, fileName?: string): FileType => {
+  // CAD formats
+  if (CAD_MIME_TYPES.has(mimeType)) return 'cad';
+  // Diagram formats
+  if (DIAGRAM_MIME_TYPES.has(mimeType)) return 'diagram';
+  // Markdown (specific check before generic text/* to avoid falling into 'text')
+  if (mimeType === 'text/markdown') return 'markdown';
+
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('video/')) return 'video';
   if (mimeType === 'application/pdf') return 'pdf';
@@ -13,6 +54,15 @@ export const getFileType = (mimeType: string): 'image' | 'video' | 'pdf' | 'text
       mimeType === 'application/msword' ||
       mimeType === 'application/vnd.ms-excel' ||
       mimeType === 'application/vnd.ms-powerpoint') return 'office';
+
+  // Extension-based fallback for application/octet-stream
+  if (mimeType === 'application/octet-stream' && fileName) {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    if (ext && ext in EXTENSION_FILE_TYPE_MAP) {
+      return EXTENSION_FILE_TYPE_MAP[ext];
+    }
+  }
+
   return 'unsupported';
 };
 
@@ -35,7 +85,17 @@ export const canPreview = (object: CMISObject): boolean => {
   return object.baseType === 'cmis:document' &&
          !!object.contentStreamMimeType &&
          canGetContent &&
-         getFileType(object.contentStreamMimeType) !== 'unsupported';
+         getFileType(object.contentStreamMimeType, object.name) !== 'unsupported';
+};
+
+/**
+ * Extract repositoryId and objectId from a CMIS content URL.
+ * URL format: /core/browser/{repositoryId}/node/{objectId}/content
+ */
+export const extractIdsFromUrl = (url: string): { repoId: string | null; objId: string | null } => {
+  const match = url.match(/\/core\/browser\/([^/]+)\/node\/([^/]+)/);
+  if (match) return { repoId: match[1], objId: match[2] };
+  return { repoId: null, objId: null };
 };
 
 export const getSupportedMimeTypes = (): string[] => {
@@ -59,6 +119,10 @@ export const getSupportedMimeTypes = (): string[] => {
     'application/vnd.ms-powerpoint',
     // RTF
     'application/rtf',
-    'text/rtf'
+    'text/rtf',
+    // CAD formats
+    ...CAD_MIME_TYPES,
+    // Diagram formats
+    ...DIAGRAM_MIME_TYPES,
   ];
 };

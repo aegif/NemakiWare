@@ -16,6 +16,7 @@ import { DownloadOutlined, FileTextOutlined, ReloadOutlined } from '@ant-design/
 import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { useAuth } from '../../contexts/AuthContext';
+import { extractIdsFromUrl } from '../../utils/previewUtils';
 import { PDFPreview } from './PDFPreview';
 
 interface OfficePreviewProps {
@@ -86,18 +87,8 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
     return t('preview.office.fileTypes.office');
   };
 
-  // Extract repositoryId and objectId from URL if not provided
-  const extractFromUrl = (url: string): { repoId: string | null; objId: string | null } => {
-    // URL format: /core/browser/{repositoryId}/node/{objectId}/content
-    const match = url.match(/\/core\/browser\/([^/]+)\/node\/([^/]+)/);
-    if (match) {
-      return { repoId: match[1], objId: match[2] };
-    }
-    return { repoId: null, objId: null };
-  };
-
   const fetchRenditions = async () => {
-    const { repoId, objId } = extractFromUrl(url);
+    const { repoId, objId } = extractIdsFromUrl(url);
     const effectiveRepoId = repositoryId || repoId;
     const effectiveObjId = objectId || objId;
 
@@ -217,7 +208,7 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
   };
 
   const handleForceRegenerate = async () => {
-    const { repoId, objId } = extractFromUrl(url);
+    const { repoId, objId } = extractIdsFromUrl(url);
     const effectiveRepoId = repositoryId || repoId;
     const effectiveObjId = objectId || objId;
 

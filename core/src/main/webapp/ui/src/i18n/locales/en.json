@@ -97,6 +97,7 @@
       "auditDashboard": "Audit Log",
       "apiDocs": "API Docs",
       "filesystemImportExport": "Filesystem Import/Export",
+      "integrationSettings": "Integration Settings",
       "configViewer": "Config Viewer",
       "purview": "Purview",
       "rssManagement": "RSS Token Management",
@@ -1085,6 +1086,43 @@
         "powerpointLegacy": "PowerPoint Document (Legacy)",
         "default": "Office Document"
       }
+    },
+    "cad": {
+      "title": "CAD Drawing Preview",
+      "loadingPreview": "Loading CAD drawing...",
+      "generating": "Generating SVG rendition...",
+      "generationComplete": "SVG rendition generated successfully",
+      "generationTakingLong": "SVG rendition generation is taking longer than expected. Please wait and try again.",
+      "generationFailed": "SVG rendition generation failed: {{error}}",
+      "svgContentError": "Failed to fetch SVG content",
+      "missingInfo": "Missing information required for preview",
+      "renditionFetchError": "Failed to fetch renditions",
+      "resetZoom": "Reset",
+      "regenerate": "Regenerate"
+    },
+    "markdown": {
+      "title": "Markdown Preview",
+      "loading": "Loading Markdown...",
+      "fetchError": "Failed to fetch Markdown content",
+      "noContent": "No content available",
+      "previewMode": "Preview",
+      "sourceMode": "Source"
+    },
+    "diagram": {
+      "title": "Diagram Preview",
+      "loadingPreview": "Loading diagram...",
+      "generating": "Generating SVG rendition...",
+      "generationComplete": "SVG rendition generated successfully",
+      "generationTakingLong": "SVG rendition generation is taking longer than expected. Please wait and try again.",
+      "generationFailed": "SVG rendition generation failed: {{error}}",
+      "svgContentError": "Failed to fetch SVG content",
+      "missingInfo": "Missing information required for preview",
+      "renditionFetchError": "Failed to fetch renditions",
+      "noSvg": "SVG rendition is not available",
+      "diagramMode": "Diagram",
+      "sourceMode": "Source",
+      "sourceNotAvailable": "Source code could not be retrieved",
+      "regenerate": "Regenerate"
     }
   },
   "login": {
@@ -2538,5 +2576,59 @@
     "updateError": "Failed to update password policy",
     "passwordTooShort": "Password must be at least {{min}} characters",
     "description": "Set the minimum password length. Set to 0 for no constraint."
+  },
+  "integrationSettings": {
+    "title": "Integration Settings",
+    "tabs": {
+      "oidc": "OIDC (Keycloak)",
+      "google": "Google Auth",
+      "microsoft": "Microsoft Auth",
+      "saml": "SAML",
+      "purview": "Purview"
+    },
+    "save": "Save",
+    "testConnection": "Test Connection",
+    "saveSuccess": "Settings saved successfully",
+    "saveError": "Failed to save settings",
+    "connectionSuccess": "Connection successful",
+    "connectionFailure": "Connection failed",
+    "overriddenWarning": "This setting is overridden by {{source}} and cannot be changed from the admin UI",
+    "source": {
+      "system_property": "System Property",
+      "environment": "Environment Variable",
+      "couchdb": "CouchDB",
+      "properties_file": "Properties File",
+      "none": "Not Set"
+    },
+    "oidc": {
+      "enabled": "Enable OIDC Authentication",
+      "issuer": "Issuer URL",
+      "clientId": "Client ID"
+    },
+    "google": {
+      "enabled": "Enable Google Authentication",
+      "clientId": "Client ID"
+    },
+    "microsoft": {
+      "enabled": "Enable Microsoft Authentication",
+      "clientId": "Client ID",
+      "tenantId": "Tenant ID"
+    },
+    "saml": {
+      "enabled": "Enable SAML Authentication",
+      "idpSsoUrl": "IdP SSO URL",
+      "spEntityId": "SP Entity ID",
+      "idpCertificate": "IdP Certificate (PEM)",
+      "sloUrl": "SLO URL",
+      "attributeMapping": "Attribute Mapping (JSON)"
+    },
+    "purview": {
+      "enabled": "Enable Purview Integration",
+      "endpoint": "Endpoint URL",
+      "tenantId": "Tenant ID",
+      "clientId": "Client ID",
+      "clientSecret": "Client Secret",
+      "collection": "Collection Name"
+    }
   }
 }

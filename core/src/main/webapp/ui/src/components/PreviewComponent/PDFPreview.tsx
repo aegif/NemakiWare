@@ -109,6 +109,7 @@ import { ReloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { useAuth } from '../../contexts/AuthContext';
+import { extractIdsFromUrl } from '../../utils/previewUtils';
 
 // Required CSS for react-pdf text and annotation layers
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -141,16 +142,6 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
   // Use ref to track current blob URL for proper cleanup (fixes memory leak)
   const blobUrlRef = useRef<string | null>(null);
 
-  // Extract repositoryId and objectId from URL if not provided as props
-  const extractFromUrl = (urlString: string): { repoId: string | null; objId: string | null } => {
-    // URL format: /core/browser/{repositoryId}/node/{objectId}/content
-    const match = urlString.match(/\/core\/browser\/([^/]+)\/node\/([^/]+)/);
-    if (match) {
-      return { repoId: match[1], objId: match[2] };
-    }
-    return { repoId: null, objId: null };
-  };
-
   // Fetch PDF content with authentication and convert to Blob URL
   useEffect(() => {
     const fetchPdfContent = async () => {
@@ -173,7 +164,7 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
       }
 
       try {
-        const { repoId, objId } = extractFromUrl(url);
+        const { repoId, objId } = extractIdsFromUrl(url);
         const effectiveRepoId = repositoryId || repoId;
         const effectiveObjId = objectId || objId;
 

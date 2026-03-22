@@ -46,6 +46,7 @@ import org.springframework.web.bind.annotation.RestController;
 import jakarta.servlet.http.HttpServletRequest;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.rendition.ExtendedRenditionManager;
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
@@ -105,7 +106,16 @@ public class RenditionController {
         "text/plain",
         "text/csv",
         "text/rtf",
-        "application/rtf"
+        "application/rtf",
+        // CAD formats (SVG rendition)
+        "image/vnd.dxf",
+        "application/x-dwg",
+        "application/x-jww",
+        "application/x-sfc",
+        "application/x-p21",
+        // Diagram formats (SVG rendition)
+        "text/x-plantuml",
+        "text/vnd.graphviz"
     );
 
     private ContentService getContentService() {
@@ -281,7 +291,14 @@ public class RenditionController {
             String mimeType = attachment.getMimeType();
             RenditionManager renditionManager = getRenditionManager();
 
-            if (!renditionManager.checkConvertible(mimeType)) {
+            // Check SVG convertibility first (CAD/diagram formats), then PDF
+            boolean isSvgConvertible = false;
+            if (renditionManager instanceof ExtendedRenditionManager) {
+                isSvgConvertible = ((ExtendedRenditionManager) renditionManager)
+                        .checkSvgConvertible(mimeType, document.getName());
+            }
+
+            if (!isSvgConvertible && !renditionManager.checkConvertible(mimeType)) {
                 response.put("status", "error");
                 response.put("message", "MIME type not supported for conversion: " + mimeType);
                 response.put("supportedTypes", SUPPORTED_MIME_TYPES);
@@ -296,22 +313,35 @@ public class RenditionController {
                 attachment.getInputStream()
             );
 
-            // Convert to PDF
-            log.info("[RenditionController] Converting " + mimeType + " to PDF for document: " + document.getName());
-            ContentStream pdfStream = renditionManager.convertToPdf(contentStream, document.getName());
+            // Convert to SVG or PDF depending on format
+            ContentStream renditionStream;
+            String renditionMimeType;
+            String renditionTitle;
 
-            if (pdfStream == null) {
+            if (isSvgConvertible) {
+                log.info("[RenditionController] Converting " + mimeType + " to SVG for document: " + document.getName());
+                renditionStream = ((ExtendedRenditionManager) renditionManager).convertToSvg(contentStream, document.getName());
+                renditionMimeType = "image/svg+xml";
+                renditionTitle = "SVG Preview";
+            } else {
+                log.info("[RenditionController] Converting " + mimeType + " to PDF for document: " + document.getName());
+                renditionStream = renditionManager.convertToPdf(contentStream, document.getName());
+                renditionMimeType = "application/pdf";
+                renditionTitle = "PDF Preview";
+            }
+
+            if (renditionStream == null) {
                 response.put("status", "error");
-                response.put("message", "PDF conversion failed");
+                response.put("message", (isSvgConvertible ? "SVG" : "PDF") + " conversion failed");
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
             }
 
             // Create rendition object
             Rendition rendition = new Rendition();
-            rendition.setTitle("PDF Preview");
+            rendition.setTitle(renditionTitle);
             rendition.setKind(RenditionKind.CMIS_PREVIEW.value());
-            rendition.setMimetype("application/pdf");
-            rendition.setLength(pdfStream.getLength());
+            rendition.setMimetype(renditionMimeType);
+            rendition.setLength(renditionStream.getLength());
 
             // Set signature
             SystemCallContext callContext = new SystemCallContext(repositoryId);
@@ -322,7 +352,7 @@ public class RenditionController {
             rendition.setModified(now);
 
             // Save rendition to database
-            String renditionId = getContentDaoService().createRendition(repositoryId, rendition, pdfStream);
+            String renditionId = getContentDaoService().createRendition(repositoryId, rendition, renditionStream);
 
             // Update document with rendition reference
             List<String> renditionIds = document.getRenditionIds();
@@ -335,12 +365,12 @@ public class RenditionController {
             // Update document
             getContentService().update(callContext, repositoryId, document);
 
-            log.info("[RenditionController] Successfully created PDF rendition: " + renditionId);
+            log.info("[RenditionController] Successfully created " + renditionMimeType + " rendition: " + renditionId);
 
             response.put("status", "success");
             response.put("message", "Rendition generated successfully");
             response.put("renditionId", renditionId);
-            response.put("mimeType", "application/pdf");
+            response.put("mimeType", renditionMimeType);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
 

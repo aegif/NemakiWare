@@ -48,6 +48,7 @@ import org.apache.tika.sax.BodyContentHandler;
 import org.apache.tika.sax.WriteOutContentHandler;
 
 import jp.aegif.nemaki.businesslogic.TextExtractionService;
+import jp.aegif.nemaki.businesslogic.rendition.ExtendedRenditionManager;
 
 /**
  * Apache Tika-based implementation of TextExtractionService.
@@ -82,6 +83,18 @@ public class TextExtractionServiceImpl implements TextExtractionService {
 
     /** Set of supported MIME types */
     private final Set<String> supportedMimeTypes;
+
+    /** Injected rendition managers for CAD/diagram text extraction */
+    private ExtendedRenditionManager cadRenditionManager;
+    private ExtendedRenditionManager diagramRenditionManager;
+
+    public void setCadRenditionManager(ExtendedRenditionManager cadRenditionManager) {
+        this.cadRenditionManager = cadRenditionManager;
+    }
+
+    public void setDiagramRenditionManager(ExtendedRenditionManager diagramRenditionManager) {
+        this.diagramRenditionManager = diagramRenditionManager;
+    }
 
     /**
      * Constructor initializes Tika components.
@@ -139,6 +152,20 @@ public class TextExtractionServiceImpl implements TextExtractionService {
         types.add("application/x-tar");
         types.add("application/gzip");
 
+        // CAD formats (text entity extraction via mathacad)
+        types.add("image/vnd.dxf");
+        types.add("application/x-dwg");
+        types.add("application/x-jww");
+        types.add("application/x-sfc");
+        types.add("application/x-p21");
+
+        // Diagram formats (label/node extraction)
+        types.add("text/x-plantuml");
+        types.add("text/vnd.graphviz");
+
+        // Markdown
+        types.add("text/markdown");
+
         return types;
     }
 
@@ -154,6 +181,47 @@ public class TextExtractionServiceImpl implements TextExtractionService {
         if (inputStream == null) {
             log.warn("[TEXT EXTRACTION] Cannot extract text: input stream is null");
             return null;
+        }
+
+        // CAD format: delegate to injected CadRenditionManager for text entity extraction
+        if (cadRenditionManager != null && cadRenditionManager.checkSvgConvertible(mimeType, fileName)) {
+            log.info("[TEXT EXTRACTION] CAD format detected, delegating to mathacad text extraction");
+            try {
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl cs =
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl();
+                cs.setStream(inputStream);
+                cs.setMimeType(mimeType);
+                cs.setFileName(fileName);
+                String cadText = cadRenditionManager.extractText(cs, fileName);
+                if (cadText != null && !cadText.trim().isEmpty()) {
+                    return cleanupAndReturn(cadText, mimeType, fileName, false);
+                }
+                log.info("[TEXT EXTRACTION] CAD text extraction returned empty, no fallback available");
+                return null;
+            } catch (Exception e) {
+                log.warn("[TEXT EXTRACTION] CAD text extraction failed: " + e.getMessage());
+                return null;
+            }
+        }
+
+        // Diagram format (PlantUML/DOT): delegate to injected DiagramRenditionManager for label extraction
+        if (diagramRenditionManager != null && diagramRenditionManager.checkSvgConvertible(mimeType, fileName)) {
+            log.info("[TEXT EXTRACTION] Diagram format detected, delegating to diagram text extraction");
+            try {
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl cs =
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl();
+                cs.setStream(inputStream);
+                cs.setMimeType(mimeType);
+                cs.setFileName(fileName);
+                String diagramText = diagramRenditionManager.extractText(cs, fileName);
+                if (diagramText != null && !diagramText.trim().isEmpty()) {
+                    return cleanupAndReturn(diagramText, mimeType, fileName, false);
+                }
+                log.info("[TEXT EXTRACTION] Diagram text extraction returned empty, falling back to Tika");
+            } catch (Exception e) {
+                log.warn("[TEXT EXTRACTION] Diagram text extraction failed, falling back to Tika: " + e.getMessage());
+            }
+            // Fall through to Tika for text-based diagrams
         }
 
         // Use WriteOutContentHandler to get partial text even when limit is reached
@@ -376,4 +444,5 @@ public class TextExtractionServiceImpl implements TextExtractionService {
     public Set<String> getSupportedMimeTypes() {
         return new HashSet<>(supportedMimeTypes);
     }
+
 }

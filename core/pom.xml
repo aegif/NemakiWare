@@ -685,6 +685,29 @@
 			<version>4.0.0-RELEASE</version>
 		</dependency>
 
+		<!-- CAD drawing library (DXF/DWG/JWW/SFC/P21 → SVG/PDF) -->
+		<dependency>
+			<groupId>io.github.yumioka</groupId>
+			<artifactId>mathacad-core</artifactId>
+			<version>0.1.0</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/../lib/built-jars/mathacad-core-0.1.0.jar</systemPath>
+		</dependency>
+
+		<!-- CommonMark Markdown → HTML (text extraction for search) -->
+		<dependency>
+			<groupId>org.commonmark</groupId>
+			<artifactId>commonmark</artifactId>
+			<version>0.24.0</version>
+		</dependency>
+
+		<!-- PlantUML MIT (Smetana pure-Java engine, also covers Graphviz DOT) -->
+		<dependency>
+			<groupId>net.sourceforge.plantuml</groupId>
+			<artifactId>plantuml-mit</artifactId>
+			<version>1.2026.1</version>
+		</dependency>
+
 		<dependency>
 			<groupId>uk.com.robust-it</groupId>
 			<artifactId>cloning</artifactId>

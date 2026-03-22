@@ -223,6 +223,9 @@ import { VideoPreview } from './VideoPreview';
 import { PDFPreview } from './PDFPreview';
 import { TextPreview } from './TextPreview';
 import { OfficePreview } from './OfficePreview';
+import { CadPreview } from './CadPreview';
+import { MarkdownPreview } from './MarkdownPreview';
+import { DiagramPreview } from './DiagramPreview';
 
 interface PreviewComponentProps {
   repositoryId: string;
@@ -243,7 +246,7 @@ export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId
 
   // Use PWC ID for content/renditions when document is checked out
   const effectiveObjectId = pwcObjectId || object.id;
-  const fileType = getFileType(object.contentStreamMimeType);
+  const fileType = getFileType(object.contentStreamMimeType, object.name);
   // Append lastModificationDate as cache-buster to force browser to fetch fresh content
   // after cloud pull or content update (otherwise browser HTTP cache serves stale content)
   const cacheBuster = object.lastModificationDate ? `?t=${encodeURIComponent(object.lastModificationDate)}` : '';
@@ -262,6 +265,12 @@ export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId
           return <TextPreview url={contentUrl} fileName={object.name} repositoryId={repositoryId} objectId={effectiveObjectId} />;
         case 'office':
           return <OfficePreview url={contentUrl} fileName={object.name} mimeType={object.contentStreamMimeType!} repositoryId={repositoryId} objectId={effectiveObjectId} lastModified={object.lastModificationDate} />;
+        case 'cad':
+          return <CadPreview url={contentUrl} fileName={object.name} mimeType={object.contentStreamMimeType!} repositoryId={repositoryId} objectId={effectiveObjectId} lastModified={object.lastModificationDate} />;
+        case 'markdown':
+          return <MarkdownPreview url={contentUrl} fileName={object.name} repositoryId={repositoryId} objectId={effectiveObjectId} />;
+        case 'diagram':
+          return <DiagramPreview url={contentUrl} fileName={object.name} mimeType={object.contentStreamMimeType!} repositoryId={repositoryId} objectId={effectiveObjectId} lastModified={object.lastModificationDate} />;
         default:
           return <Alert message={t('preview.cannotPreview')} description={t('preview.unsupportedType', { mimeType: object.contentStreamMimeType })} type="warning" />;
       }

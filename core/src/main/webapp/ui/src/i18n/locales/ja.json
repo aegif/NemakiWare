@@ -97,6 +97,7 @@
       "auditDashboard": "監査ログ",
       "apiDocs": "API仕様",
       "filesystemImportExport": "ファイルシステム インポート/エクスポート",
+      "integrationSettings": "連携設定",
       "configViewer": "設定ビューア",
       "purview": "Purview連携",
       "rssManagement": "RSSトークン管理",
@@ -1085,6 +1086,43 @@
         "powerpointLegacy": "PowerPoint文書 (旧形式)",
         "default": "オフィス文書"
       }
+    },
+    "cad": {
+      "title": "CAD図面プレビュー",
+      "loadingPreview": "CAD図面を読み込み中...",
+      "generating": "SVGレンディションを生成中...",
+      "generationComplete": "SVGレンディションの生成が完了しました",
+      "generationTakingLong": "SVGレンディションの生成に時間がかかっています。しばらく待ってから再試行してください。",
+      "generationFailed": "SVGレンディションの生成に失敗しました: {{error}}",
+      "svgContentError": "SVGコンテンツの取得に失敗しました",
+      "missingInfo": "プレビュー表示に必要な情報が不足しています",
+      "renditionFetchError": "レンディションの取得に失敗しました",
+      "resetZoom": "リセット",
+      "regenerate": "再生成"
+    },
+    "markdown": {
+      "title": "Markdownプレビュー",
+      "loading": "Markdownを読み込み中...",
+      "fetchError": "Markdownコンテンツの取得に失敗しました",
+      "noContent": "コンテンツがありません",
+      "previewMode": "プレビュー",
+      "sourceMode": "ソース"
+    },
+    "diagram": {
+      "title": "ダイアグラムプレビュー",
+      "loadingPreview": "ダイアグラムを読み込み中...",
+      "generating": "SVGレンディションを生成中...",
+      "generationComplete": "SVGレンディションの生成が完了しました",
+      "generationTakingLong": "SVGレンディションの生成に時間がかかっています。しばらく待ってから再試行してください。",
+      "generationFailed": "SVGレンディションの生成に失敗しました: {{error}}",
+      "svgContentError": "SVGコンテンツの取得に失敗しました",
+      "missingInfo": "プレビュー表示に必要な情報が不足しています",
+      "renditionFetchError": "レンディションの取得に失敗しました",
+      "noSvg": "SVGレンディションが利用できません",
+      "diagramMode": "ダイアグラム",
+      "sourceMode": "ソース",
+      "sourceNotAvailable": "ソースコードを取得できませんでした",
+      "regenerate": "再生成"
     }
   },
   "login": {
@@ -2538,5 +2576,59 @@
     "updateError": "パスワードポリシーの更新に失敗しました",
     "passwordTooShort": "パスワードは{{min}}文字以上必要です",
     "description": "パスワードの最小文字数を設定します。0で制約なしになります。"
+  },
+  "integrationSettings": {
+    "title": "連携設定",
+    "tabs": {
+      "oidc": "OIDC (Keycloak)",
+      "google": "Google認証",
+      "microsoft": "Microsoft認証",
+      "saml": "SAML",
+      "purview": "Purview"
+    },
+    "save": "保存",
+    "testConnection": "接続テスト",
+    "saveSuccess": "設定を保存しました",
+    "saveError": "設定の保存に失敗しました",
+    "connectionSuccess": "接続に成功しました",
+    "connectionFailure": "接続に失敗しました",
+    "overriddenWarning": "この設定は {{source}} で上書きされているため、管理画面からは変更できません",
+    "source": {
+      "system_property": "システムプロパティ",
+      "environment": "環境変数",
+      "couchdb": "CouchDB",
+      "properties_file": "設定ファイル",
+      "none": "未設定"
+    },
+    "oidc": {
+      "enabled": "OIDC認証を有効化",
+      "issuer": "Issuer URL",
+      "clientId": "Client ID"
+    },
+    "google": {
+      "enabled": "Google認証を有効化",
+      "clientId": "Client ID"
+    },
+    "microsoft": {
+      "enabled": "Microsoft認証を有効化",
+      "clientId": "Client ID",
+      "tenantId": "Tenant ID"
+    },
+    "saml": {
+      "enabled": "SAML認証を有効化",
+      "idpSsoUrl": "IdP SSO URL",
+      "spEntityId": "SP Entity ID",
+      "idpCertificate": "IdP Certificate (PEM)",
+      "sloUrl": "SLO URL",
+      "attributeMapping": "Attribute Mapping (JSON)"
+    },
+    "purview": {
+      "enabled": "Purview連携を有効化",
+      "endpoint": "エンドポイントURL",
+      "tenantId": "テナントID",
+      "clientId": "クライアントID",
+      "clientSecret": "クライアントシークレット",
+      "collection": "コレクション名"
+    }
   }
 }
