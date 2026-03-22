@@ -81,14 +81,14 @@ export class PurviewGovernanceService {
 
   async getGovernance(repositoryId: string, objectId: string): Promise<PurviewGovernanceView> {
     const response = await this.httpClient.getJson(
-      `/core/v1/repo/${encodeURIComponent(repositoryId)}/purview/governance/${encodeURIComponent(objectId)}`
+      `/core/api/v1/repo/${encodeURIComponent(repositoryId)}/purview/governance/${encodeURIComponent(objectId)}`
     );
     return this.handleResponse<PurviewGovernanceView>(response);
   }
 
   async getGovernanceBulk(repositoryId: string, objectIds: string[]): Promise<PurviewGovernanceBulkItemView[]> {
     const response = await this.httpClient.postJson(
-      `/core/v1/repo/${encodeURIComponent(repositoryId)}/purview/governance/bulk`,
+      `/core/api/v1/repo/${encodeURIComponent(repositoryId)}/purview/governance/bulk`,
       { objectIds }
     );
     const payload = await this.handleResponse<PurviewGovernanceBulkResponse>(response);

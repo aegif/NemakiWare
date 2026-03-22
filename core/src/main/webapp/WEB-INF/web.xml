@@ -141,15 +141,11 @@
 	</filter-mapping>
 	<filter-mapping>
 		<filter-name>corsFilter</filter-name>
-		<url-pattern>/api/v1/cmis/*</url-pattern>
+		<url-pattern>/api/*</url-pattern>
 	</filter-mapping>
 	<filter-mapping>
 		<filter-name>corsFilter</filter-name>
 		<url-pattern>/odata/*</url-pattern>
-	</filter-mapping>
-	<filter-mapping>
-		<filter-name>corsFilter</filter-name>
-		<url-pattern>/api/v1/setup/*</url-pattern>
 	</filter-mapping>
 	<filter-mapping>
 		<filter-name>corsFilter</filter-name>

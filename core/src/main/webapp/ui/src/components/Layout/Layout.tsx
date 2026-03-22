@@ -228,7 +228,8 @@ import {
   SendOutlined,
   SyncOutlined,
   ControlOutlined,
-  WifiOutlined
+  WifiOutlined,
+  LinkOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -422,6 +423,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           key: '/cloud-directory-sync',
           icon: <SyncOutlined />,
           label: t('cloudSync.title'),
+        },
+        {
+          key: '/integration-settings',
+          icon: <LinkOutlined />,
+          label: t('navigation.integrationSettings'),
         },
         {
           key: '/config-viewer',

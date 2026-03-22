@@ -1,0 +1,91 @@
+import { AuthService } from './auth';
+
+const BASE_URL = '/core/api/v1/admin/integration-settings';
+
+export type SettingSource = 'system_property' | 'environment' | 'couchdb' | 'properties_file' | 'none';
+
+export interface IntegrationSettingsResponse {
+  settings: Record<string, string>;
+  sources: Record<string, SettingSource>;
+}
+
+export interface UpdateResult {
+  status: string;
+  message: string;
+  updatedKeys?: string[];
+}
+
+export interface ConnectionTestResult {
+  status: 'success' | 'failure';
+  message: string;
+  connected?: boolean;
+  featureEnabled?: boolean;
+  endpoint?: string;
+  wellKnownUrl?: string;
+}
+
+async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const authService = AuthService.getInstance();
+  const headers = authService.getAuthHeaders();
+  return fetch(url, {
+    ...options,
+    headers: {
+      'Accept': 'application/json',
+      ...headers,
+      ...options.headers,
+    },
+  });
+}
+
+async function getSettings(group: string): Promise<IntegrationSettingsResponse> {
+  const response = await fetchWithAuth(`${BASE_URL}/${group}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${group} settings: ${response.status}`);
+  }
+  return response.json();
+}
+
+async function updateSettings(group: string, settings: Record<string, string>): Promise<UpdateResult> {
+  const response = await fetchWithAuth(`${BASE_URL}/${group}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `Failed to update ${group} settings: ${response.status}`);
+  }
+  return response.json();
+}
+
+async function testConnection(group: string): Promise<ConnectionTestResult> {
+  const response = await fetchWithAuth(`${BASE_URL}/${group}/test-connection`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error(`Connection test failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+// OIDC
+export const getOidcSettings = () => getSettings('oidc');
+export const updateOidcSettings = (settings: Record<string, string>) => updateSettings('oidc', settings);
+export const testOidcConnection = () => testConnection('oidc');
+
+// Google Auth
+export const getGoogleAuthSettings = () => getSettings('google-auth');
+export const updateGoogleAuthSettings = (settings: Record<string, string>) => updateSettings('google-auth', settings);
+
+// Microsoft Auth
+export const getMicrosoftAuthSettings = () => getSettings('microsoft-auth');
+export const updateMicrosoftAuthSettings = (settings: Record<string, string>) => updateSettings('microsoft-auth', settings);
+
+// SAML
+export const getSamlSettings = () => getSettings('saml');
+export const updateSamlSettings = (settings: Record<string, string>) => updateSettings('saml', settings);
+
+// Purview
+export const getPurviewSettings = () => getSettings('purview');
+export const updatePurviewSettings = (settings: Record<string, string>) => updateSettings('purview', settings);
+export const testPurviewConnection = () => testConnection('purview');

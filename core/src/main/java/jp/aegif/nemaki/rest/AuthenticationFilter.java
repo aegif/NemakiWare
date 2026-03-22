@@ -398,6 +398,12 @@ public class AuthenticationFilter implements Filter {
         			String repositoryId = pathFragments[2];
         			log.debug("=== AUTH: Found repositoryId from API v1 path=" + repositoryId + " ===");
         			return repositoryId;
+        		}else if(pathFragments.length > 1 && "admin".equals(pathFragments[1])){
+        			// Handle global admin endpoints: /v1/admin/purview/...
+        			// These are not tied to a specific repository; use default repository for authentication
+        			String defaultRepo = repositoryInfoMap.getDefaultRepositoryId();
+        			log.debug("=== AUTH: Using default repository for /v1/admin/ path=" + defaultRepo + " ===");
+        			return defaultRepo;
         		}else{
         			log.warn("Could not extract repositoryId from API v1 path: " + java.util.Arrays.toString(pathFragments));
         		}

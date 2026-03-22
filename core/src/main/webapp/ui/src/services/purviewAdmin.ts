@@ -131,7 +131,7 @@ export class PurviewAdminService {
   }
 
   private getBaseUrl(): string {
-    return '/core/v1/admin/purview';
+    return '/core/api/v1/admin/purview';
   }
 
   private async handleResponse<T>(response: { status: number; responseText: string }): Promise<T> {
@@ -239,14 +239,14 @@ export class PurviewAdminService {
 
   async lookupGovernance(repositoryId: string, objectId: string): Promise<PurviewGovernanceView> {
     const response = await this.httpClient.getJson(
-      `/core/v1/repo/${encodeURIComponent(repositoryId)}/purview/governance/${encodeURIComponent(objectId)}`
+      `/core/api/v1/repo/${encodeURIComponent(repositoryId)}/purview/governance/${encodeURIComponent(objectId)}`
     );
     return this.handleResponse<PurviewGovernanceView>(response);
   }
 
   async lookupGovernanceBulk(repositoryId: string, objectIds: string[]): Promise<PurviewGovernanceBulkItemView[]> {
     const response = await this.httpClient.postJson(
-      `/core/v1/repo/${encodeURIComponent(repositoryId)}/purview/governance/bulk`,
+      `/core/api/v1/repo/${encodeURIComponent(repositoryId)}/purview/governance/bulk`,
       { objectIds }
     );
     const payload = await this.handleResponse<PurviewGovernanceBulkResponse>(response);

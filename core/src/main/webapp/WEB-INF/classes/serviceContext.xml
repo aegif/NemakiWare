@@ -783,6 +783,14 @@
         </property>
     </bean>
 
+    <!-- Integration Settings Service -->
+    <bean id="integrationSettingsService" class="jp.aegif.nemaki.rest.controller.IntegrationSettingsService">
+        <property name="propertyManager" ref="propertyManager" />
+        <property name="connectorPool" ref="connectorPool" />
+        <property name="nemakiCachePool" ref="nemakiCachePool" />
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+    </bean>
+
     <!-- Password Policy Service -->
     <bean id="passwordPolicyService" class="jp.aegif.nemaki.util.PasswordPolicyService">
         <property name="propertyManager" ref="propertyManager" />

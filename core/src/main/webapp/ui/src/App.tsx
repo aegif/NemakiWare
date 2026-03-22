@@ -219,6 +219,7 @@ import { FilesystemImportExport } from './components/FilesystemImportExport/File
 import { WebhookManagement } from './components/WebhookManagement/WebhookManagement';
 import { CloudDirectorySync } from './components/CloudDirectorySync/CloudDirectorySync';
 import { ConfigViewer } from './components/ConfigViewer/ConfigViewer';
+import { IntegrationSettings } from './components/IntegrationSettings/IntegrationSettings';
 import { PurviewManagement } from './components/PurviewManagement/PurviewManagement';
 import { RssTokenManagement } from './components/RssTokenManagement/RssTokenManagement';
 import { AccountSettings } from './components/AccountSettings/AccountSettings';
@@ -463,6 +464,13 @@ function AppRoutes() {
             <ProtectedRoute>
               <AdminRoute>
                 <WebhookManagement repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/integration-settings" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <IntegrationSettings repositoryId={authToken.repositoryId} />
               </AdminRoute>
             </ProtectedRoute>
           } />
