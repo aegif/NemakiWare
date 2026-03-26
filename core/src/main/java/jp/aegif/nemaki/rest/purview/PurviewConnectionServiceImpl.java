@@ -7,6 +7,7 @@ import jp.aegif.nemaki.rest.purview.client.PurviewProbeResult;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,31 +29,64 @@ public class PurviewConnectionServiceImpl implements PurviewConnectionService {
 
     @Override
     public PurviewConnectionStatus testConnection() {
-        String endpoint = purviewConfig.getEndpoint();
-        String configuredBasePath = purviewConfig.getAtlasBasePath();
-        boolean featureEnabled = purviewConfig.isEnabled();
+        return doTestConnection(
+                purviewConfig.getEndpoint(),
+                purviewConfig.getAtlasBasePath(),
+                purviewConfig.getAuthType(),
+                purviewConfig.getTenantId(),
+                purviewConfig.getClientId(),
+                purviewConfig.getClientSecret(),
+                purviewConfig.getBasicUsername(),
+                purviewConfig.getBasicPassword(),
+                purviewConfig.isEnabled());
+    }
 
-        boolean basicAuth = purviewConfig.isBasicAuth();
+    @Override
+    public PurviewConnectionStatus testConnection(Map<String, String> formValues) {
+        String endpoint = firstNonBlank(formValues.get("purview.endpoint"), purviewConfig.getEndpoint());
+        String basePath = firstNonBlank(formValues.get("purview.atlas.base-path"), purviewConfig.getAtlasBasePath());
+        String authType = firstNonBlank(formValues.get("purview.auth.type"), purviewConfig.getAuthType());
+        String tenantId = firstNonBlank(formValues.get("purview.tenant.id"), purviewConfig.getTenantId());
+        String clientId = firstNonBlank(formValues.get("purview.client.id"), purviewConfig.getClientId());
+        String clientSecret = formValues.containsKey("purview.client.secret")
+                && !isPlaceholder(formValues.get("purview.client.secret"))
+                ? formValues.get("purview.client.secret") : purviewConfig.getClientSecret();
+        String basicUsername = firstNonBlank(formValues.get("purview.basic.username"), purviewConfig.getBasicUsername());
+        String basicPassword = formValues.containsKey("purview.basic.password")
+                && !isPlaceholder(formValues.get("purview.basic.password"))
+                ? formValues.get("purview.basic.password") : purviewConfig.getBasicPassword();
+        boolean featureEnabled = formValues.containsKey("purview.enabled")
+                ? "true".equals(formValues.get("purview.enabled")) : purviewConfig.isEnabled();
+
+        return doTestConnection(endpoint, basePath, authType, tenantId, clientId, clientSecret,
+                basicUsername, basicPassword, featureEnabled);
+    }
+
+    private PurviewConnectionStatus doTestConnection(
+            String endpoint, String configuredBasePath, String authType,
+            String tenantId, String clientId, String clientSecret,
+            String basicUsername, String basicPassword, boolean featureEnabled) {
+        boolean basicAuth = "basic".equalsIgnoreCase(authType);
 
         List<String> missing = new ArrayList<>();
         if (isBlank(endpoint)) {
             missing.add("endpoint");
         }
         if (basicAuth) {
-            if (isBlank(purviewConfig.getBasicUsername())) {
+            if (isBlank(basicUsername)) {
                 missing.add("basicUsername");
             }
-            if (isBlank(purviewConfig.getBasicPassword())) {
+            if (isBlank(basicPassword)) {
                 missing.add("basicPassword");
             }
         } else {
-            if (isBlank(purviewConfig.getTenantId())) {
+            if (isBlank(tenantId)) {
                 missing.add("tenantId");
             }
-            if (isBlank(purviewConfig.getClientId())) {
+            if (isBlank(clientId)) {
                 missing.add("clientId");
             }
-            if (isBlank(purviewConfig.getClientSecret())) {
+            if (isBlank(clientSecret)) {
                 missing.add("clientSecret");
             }
         }
@@ -77,12 +111,12 @@ public class PurviewConnectionServiceImpl implements PurviewConnectionService {
             PurviewConnectionRequest request = new PurviewConnectionRequest(
                     endpoint,
                     candidateBasePath,
-                    purviewConfig.getAuthType(),
-                    purviewConfig.getTenantId(),
-                    purviewConfig.getClientId(),
-                    purviewConfig.getClientSecret(),
-                    purviewConfig.getBasicUsername(),
-                    purviewConfig.getBasicPassword(),
+                    authType,
+                    tenantId,
+                    clientId,
+                    clientSecret,
+                    basicUsername,
+                    basicPassword,
                     purviewConfig.getConnectTimeoutMs(),
                     purviewConfig.getReadTimeoutMs());
 
@@ -118,5 +152,13 @@ public class PurviewConnectionServiceImpl implements PurviewConnectionService {
 
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    private boolean isPlaceholder(String value) {
+        return value != null && value.startsWith("[") && value.endsWith("]");
+    }
+
+    private String firstNonBlank(String preferred, String fallback) {
+        return !isBlank(preferred) ? preferred : fallback;
     }
 }

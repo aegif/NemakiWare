@@ -4,7 +4,7 @@ import type { IntegrationSettingsResponse, SettingSource, UpdateResult, Connecti
 interface UseSettingsTabOptions {
   fetchSettings: () => Promise<IntegrationSettingsResponse>;
   saveSettings: (settings: Record<string, string>) => Promise<UpdateResult>;
-  testConnection?: () => Promise<ConnectionTestResult>;
+  testConnection?: (formValues?: Record<string, string>) => Promise<ConnectionTestResult>;
 }
 
 export function useSettingsTab({ fetchSettings, saveSettings, testConnection }: UseSettingsTabOptions) {
@@ -55,7 +55,7 @@ export function useSettingsTab({ fetchSettings, saveSettings, testConnection }: 
     setTesting(true);
     setTestResult(null);
     try {
-      const result = await testConnection();
+      const result = await testConnection(formValues);
       setTestResult(result);
     } catch (err) {
       setTestResult({

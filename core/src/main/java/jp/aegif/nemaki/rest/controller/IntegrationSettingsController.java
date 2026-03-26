@@ -222,7 +222,8 @@ public class IntegrationSettingsController {
 	}
 
 	@PostMapping("/purview/test-connection")
-	public ResponseEntity<Map<String, Object>> testPurviewConnection() {
+	public ResponseEntity<Map<String, Object>> testPurviewConnection(
+			@RequestBody(required = false) Map<String, String> body) {
 		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
 		if (forbidden != null) return forbidden;
 
@@ -234,7 +235,9 @@ public class IntegrationSettingsController {
 		}
 
 		try {
-			PurviewConnectionStatus status = purviewConnectionService.testConnection();
+			PurviewConnectionStatus status = (body != null && !body.isEmpty())
+					? purviewConnectionService.testConnection(body)
+					: purviewConnectionService.testConnection();
 			response.put("status", status.isConnected() ? "success" : "failure");
 			response.put("connected", status.isConnected());
 			response.put("featureEnabled", status.isFeatureEnabled());

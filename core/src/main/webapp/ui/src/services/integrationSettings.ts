@@ -58,10 +58,15 @@ async function updateSettings(group: string, settings: Record<string, string>): 
   return response.json();
 }
 
-async function testConnection(group: string): Promise<ConnectionTestResult> {
-  const response = await fetchWithAuth(`${BASE_URL}/${group}/test-connection`, {
+async function testConnection(group: string, body?: Record<string, string>): Promise<ConnectionTestResult> {
+  const options: RequestInit = {
     method: 'POST',
-  });
+  };
+  if (body) {
+    options.headers = { 'Content-Type': 'application/json' };
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetchWithAuth(`${BASE_URL}/${group}/test-connection`, options);
   if (!response.ok) {
     throw new Error(`Connection test failed: ${response.status}`);
   }
@@ -88,4 +93,5 @@ export const updateSamlSettings = (settings: Record<string, string>) => updateSe
 // Purview
 export const getPurviewSettings = () => getSettings('purview');
 export const updatePurviewSettings = (settings: Record<string, string>) => updateSettings('purview', settings);
-export const testPurviewConnection = () => testConnection('purview');
+export const testPurviewConnection = (formValues?: Record<string, string>) =>
+  testConnection('purview', formValues);
