@@ -51,12 +51,35 @@ public class PurviewStateStoreImpl implements PurviewStateStore {
 
     @Override
     public String getString(String key) {
+        if (connectorPool != null) {
+            String value = readFromConfigDocument(key);
+            if (value != null) {
+                return value;
+            }
+        }
         Object value = getConfigurationMap().get(key);
         return value == null ? "" : value.toString();
     }
 
     @Override
     public int getInt(String key) {
+        if (connectorPool != null) {
+            Object rawValue = readRawValueFromConfigDocument(key);
+            if (rawValue != null) {
+                if (rawValue instanceof Number number) {
+                    return number.intValue();
+                }
+                try {
+                    return Integer.parseInt(rawValue.toString());
+                } catch (NumberFormatException e) {
+                    try {
+                        return (int) Double.parseDouble(rawValue.toString());
+                    } catch (NumberFormatException e2) {
+                        return 0;
+                    }
+                }
+            }
+        }
         Object value = getConfigurationMap().get(key);
         if (value == null) {
             return 0;
@@ -67,13 +90,21 @@ public class PurviewStateStoreImpl implements PurviewStateStore {
         try {
             return Integer.parseInt(value.toString());
         } catch (NumberFormatException e) {
-            return 0;
+            try {
+                return (int) Double.parseDouble(value.toString());
+            } catch (NumberFormatException e2) {
+                return 0;
+            }
         }
     }
 
     @Override
     public Map<String, Object> getAll() {
-        return new LinkedHashMap<>(getConfigurationMap());
+        Map<String, Object> result = new LinkedHashMap<>(getConfigurationMap());
+        if (connectorPool != null) {
+            mergeFromPurviewStateDb(result);
+        }
+        return result;
     }
 
     @Override
@@ -110,6 +141,43 @@ public class PurviewStateStoreImpl implements PurviewStateStore {
         for (String key : keys) {
             deleteConfigDocument(key);
         }
+    }
+
+    @Override
+    public void putObject(String key, Map<String, Object> value) {
+        if (connectorPool == null) {
+            // Legacy mode: flatten the map as individual keys (fallback)
+            PurviewStateStore.super.putObject(key, value);
+            return;
+        }
+        CloudantClientWrapper configClient = getConfigClient();
+        upsertConfigDocument(configClient, key, value);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public Map<String, Object> getObject(String key) {
+        if (connectorPool == null) {
+            return PurviewStateStore.super.getObject(key);
+        }
+        CloudantClientWrapper configClient = getConfigClient();
+        String documentId = buildDocumentId(key);
+        Map<String, Object> existing = configClient.get(Map.class, documentId);
+        if (existing == null) {
+            return null;
+        }
+        // Cloudant SDK wraps custom fields under "properties" when converting to Map
+        Object value = existing.get("value");
+        if (value == null) {
+            Object props = existing.get("properties");
+            if (props instanceof Map) {
+                value = ((Map<String, Object>) props).get("value");
+            }
+        }
+        if (value instanceof Map) {
+            return (Map<String, Object>) value;
+        }
+        return null;
     }
 
     private Map<String, Object> queryViewByPrefix(String keyPrefix) {
@@ -170,6 +238,71 @@ public class PurviewStateStoreImpl implements PurviewStateStore {
             return Map.of();
         }
         return configuration.getConfiguration();
+    }
+
+    private String readFromConfigDocument(String key) {
+        Object value = readRawValueFromConfigDocument(key);
+        if (value != null) {
+            return value.toString();
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object readRawValueFromConfigDocument(String key) {
+        try {
+            CloudantClientWrapper configClient = getConfigClient();
+            String documentId = buildDocumentId(key);
+            Map<String, Object> existing = configClient.get(Map.class, documentId);
+            if (existing == null) {
+                return null;
+            }
+            // Cloudant SDK wraps custom fields under "properties" when converting to Map
+            Object value = existing.get("value");
+            if (value != null) {
+                return value;
+            }
+            Object props = existing.get("properties");
+            if (props instanceof Map) {
+                value = ((Map<String, Object>) props).get("value");
+                if (value != null) {
+                    return value;
+                }
+            }
+        } catch (RuntimeException e) {
+            log.debug("Failed to read from purview state DB for key " + key + ": " + e.getMessage());
+        }
+        return null;
+    }
+
+    private void mergeFromPurviewStateDb(Map<String, Object> target) {
+        try {
+            CloudantClientWrapper configClient = getConfigClient();
+            Cloudant client = configClient.getClient();
+            String dbName = configClient.getDatabaseName();
+            com.ibm.cloud.cloudant.v1.model.AllDocsResult allDocs = client.postAllDocs(
+                    new com.ibm.cloud.cloudant.v1.model.PostAllDocsOptions.Builder()
+                            .db(dbName)
+                            .includeDocs(true)
+                            .startKey(DOCUMENT_ID_PREFIX)
+                            .endKey(DOCUMENT_ID_PREFIX + "\ufff0")
+                            .build()
+            ).execute().getResult();
+            for (com.ibm.cloud.cloudant.v1.model.DocsResultRow row : allDocs.getRows()) {
+                if (row.getDoc() != null) {
+                    Map<String, Object> docProps = row.getDoc().getProperties();
+                    if (docProps != null) {
+                        Object docKey = docProps.get("key");
+                        Object docValue = docProps.get("value");
+                        if (docKey != null) {
+                            target.put(docKey.toString(), docValue);
+                        }
+                    }
+                }
+            }
+        } catch (RuntimeException e) {
+            log.debug("Failed to merge from purview state DB: " + e.getMessage());
+        }
     }
 
     private void upsertConfigDocument(CloudantClientWrapper configClient, String key, Object value) {
@@ -256,9 +389,19 @@ public class PurviewStateStoreImpl implements PurviewStateStore {
     }
 
     private CloudantClientWrapper getConfigClient() {
+        // Prefer dedicated Purview state database
+        try {
+            CloudantClientWrapper client = connectorPool.getClient(SystemConst.NEMAKI_PURVIEW_STATE_DB);
+            if (client != null) {
+                return client;
+            }
+        } catch (RuntimeException ignored) {
+            // Fall through to legacy DB
+        }
+        // Fallback: legacy nemaki_conf
         CloudantClientWrapper configClient = connectorPool.getClient(SystemConst.NEMAKI_CONF_DB);
         if (configClient == null) {
-            throw new IllegalStateException("nemaki_conf client is not available");
+            throw new IllegalStateException("No Purview state database available");
         }
         return configClient;
     }

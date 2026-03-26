@@ -1,6 +1,6 @@
 import React from 'react';
-import { Button, Card, Space, Typography } from 'antd';
-import { SyncOutlined } from '@ant-design/icons';
+import { Button, Card, Modal, Space, Typography } from 'antd';
+import { DeleteOutlined, SyncOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
@@ -16,6 +16,7 @@ interface SyncActionsCardProps {
   onReconcileContainment: () => void;
   onResolveDeletes: () => void;
   onRetryFailed: () => void;
+  onPurgeJobHistory: () => void;
 }
 
 export const SyncActionsCard: React.FC<SyncActionsCardProps> = ({
@@ -29,6 +30,7 @@ export const SyncActionsCard: React.FC<SyncActionsCardProps> = ({
   onReconcileContainment,
   onResolveDeletes,
   onRetryFailed,
+  onPurgeJobHistory,
 }) => {
   const { t } = useTranslation();
 
@@ -111,6 +113,30 @@ export const SyncActionsCard: React.FC<SyncActionsCardProps> = ({
                 loading={runningAction === 'retry-failed'}
               >
                 {t('purviewManagement.actions.retryFailed')}
+              </Button>
+            </Space>
+          </div>
+        </div>
+
+        <div>
+          <Text strong>{t('purviewManagement.actionGroups.maintenance')}</Text>
+          <div style={{ marginTop: 8 }}>
+            <Space wrap>
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                onClick={() => {
+                  Modal.confirm({
+                    title: t('purviewManagement.purgeJobHistory.confirmTitle'),
+                    content: t('purviewManagement.purgeJobHistory.confirmContent'),
+                    okText: t('common.ok'),
+                    cancelText: t('common.cancel'),
+                    onOk: onPurgeJobHistory,
+                  });
+                }}
+                loading={runningAction === 'purge-job-history'}
+              >
+                {t('purviewManagement.actions.purgeJobHistory')}
               </Button>
             </Space>
           </div>

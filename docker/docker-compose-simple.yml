@@ -6,6 +6,7 @@ services:
       - "5984:5984"
     volumes:
       - couchdb_data:/opt/couchdb/data
+      - ./couchdb/local.ini:/opt/couchdb/etc/local.d/compaction.ini
     environment:
       - COUCHDB_USER=${COUCHDB_USER:-admin}
       - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}

@@ -29,4 +29,26 @@ public interface PurviewStateStore {
     void putAll(Map<String, Object> values);
 
     void removeAll(Collection<String> keys);
+
+    /**
+     * Saves a composite object as a single CouchDB document.
+     * The value map is stored in the document's "value" field as-is.
+     */
+    @SuppressWarnings("unchecked")
+    default void putObject(String key, Map<String, Object> value) {
+        putAll(Map.of(key, (Object) value));
+    }
+
+    /**
+     * Retrieves a composite object stored as a single CouchDB document.
+     * Returns null if the key does not exist or the value is not a Map.
+     */
+    @SuppressWarnings("unchecked")
+    default Map<String, Object> getObject(String key) {
+        Object val = getAll().get(key);
+        if (val instanceof Map) {
+            return (Map<String, Object>) val;
+        }
+        return null;
+    }
 }

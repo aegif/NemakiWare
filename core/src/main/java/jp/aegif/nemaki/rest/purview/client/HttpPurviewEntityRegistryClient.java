@@ -9,6 +9,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -68,7 +70,6 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
     @Override
     public PurviewEntityPublishResult bulkCreateOrUpdateEntities(PurviewConnectionRequest request, Map<String, Object> payload)
             throws PurviewClientException {
-        String accessToken = fetchAccessToken(request);
         String requestBody;
         try {
             requestBody = objectMapper.writeValueAsString(payload);
@@ -77,7 +78,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
         }
 
         HttpRequest entityRequest = HttpRequest.newBuilder(buildEntityBulkUri(request))
-                .header("Authorization", "Bearer " + accessToken)
+                .header("Authorization", buildAuthorizationHeader(request))
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json")
                 .timeout(Duration.ofMillis(request.getReadTimeoutMs()))
@@ -99,11 +100,9 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
             String typeName,
             String attributeName,
             String attributeValue) throws PurviewClientException {
-        String accessToken = fetchAccessToken(request);
-
         HttpRequest getRequest = HttpRequest.newBuilder(
                 buildEntityUniqueAttributeUri(request, typeName, attributeName, attributeValue))
-                .header("Authorization", "Bearer " + accessToken)
+                .header("Authorization", buildAuthorizationHeader(request))
                 .header("Accept", "application/json")
                 .timeout(Duration.ofMillis(request.getReadTimeoutMs()))
                 .GET()
@@ -134,11 +133,9 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
             String typeName,
             String attributeName,
             String attributeValue) throws PurviewClientException {
-        String accessToken = fetchAccessToken(request);
-
         HttpRequest deleteRequest = HttpRequest.newBuilder(
                 buildEntityUniqueAttributeUri(request, typeName, attributeName, attributeValue))
-                .header("Authorization", "Bearer " + accessToken)
+                .header("Authorization", buildAuthorizationHeader(request))
                 .header("Accept", "application/json")
                 .timeout(Duration.ofMillis(request.getReadTimeoutMs()))
                 .DELETE()
@@ -160,7 +157,6 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
     public PurviewEntityPublishResult createRelationship(
             PurviewConnectionRequest request,
             Map<String, Object> payload) throws PurviewClientException {
-        String accessToken = fetchAccessToken(request);
         String requestBody;
         try {
             requestBody = objectMapper.writeValueAsString(payload);
@@ -169,7 +165,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
         }
 
         HttpRequest relationshipRequest = HttpRequest.newBuilder(buildRelationshipUri(request))
-                .header("Authorization", "Bearer " + accessToken)
+                .header("Authorization", buildAuthorizationHeader(request))
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json")
                 .timeout(Duration.ofMillis(request.getReadTimeoutMs()))
@@ -192,10 +188,8 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
     public PurviewEntityPublishResult deleteRelationshipByGuid(
             PurviewConnectionRequest request,
             String relationshipGuid) throws PurviewClientException {
-        String accessToken = fetchAccessToken(request);
-
         HttpRequest deleteRequest = HttpRequest.newBuilder(buildRelationshipGuidUri(request, relationshipGuid))
-                .header("Authorization", "Bearer " + accessToken)
+                .header("Authorization", buildAuthorizationHeader(request))
                 .header("Accept", "application/json")
                 .timeout(Duration.ofMillis(request.getReadTimeoutMs()))
                 .DELETE()
@@ -246,6 +240,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
             }
 
             int mutatedCount = 0;
+            Map<String, String> entityGuids = new LinkedHashMap<>();
             JsonNode mutatedEntities = json.get("mutatedEntities");
             if (mutatedEntities != null && mutatedEntities.isObject()) {
                 var fields = mutatedEntities.fields();
@@ -253,12 +248,38 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
                     JsonNode arr = fields.next().getValue();
                     if (arr != null && arr.isArray()) {
                         mutatedCount += arr.size();
+                        for (JsonNode entry : arr) {
+                            String guid = extractFieldText(entry, "guid");
+                            if (guid == null) continue;
+
+                            // 1. attributes.qualifiedName (Purview standard)
+                            String qn = null;
+                            JsonNode attrs = entry.get("attributes");
+                            if (attrs != null) {
+                                qn = extractFieldText(attrs, "qualifiedName");
+                            }
+                            // 2. Fallback: top-level qualifiedName (Atlas response format)
+                            if (qn == null) {
+                                qn = extractFieldText(entry, "qualifiedName");
+                            }
+
+                            if (qn != null) {
+                                entityGuids.put(qn, guid);
+                            }
+                        }
                     }
                 }
             }
 
+            int unresolvedCount = mutatedCount - entityGuids.size();
+            if (unresolvedCount > 0) {
+                logger.debug("Purview bulk response: {} of {} mutated entities have no qualifiedName — "
+                        + "GUID tracking unavailable, relationship creation will use uniqueAttributes fallback",
+                        unresolvedCount, mutatedCount);
+            }
+
             if (failedItems.isEmpty()) {
-                return PurviewEntityPublishResult.success(mutatedCount, "entities published");
+                return PurviewEntityPublishResult.success(mutatedCount, "entities published", entityGuids);
             }
 
             int successCount = mutatedCount;
@@ -268,7 +289,8 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
                     successCount,
                     failedItems.size(),
                     failedItems,
-                    "partial failure: " + failedItems.size() + " entities failed");
+                    "partial failure: " + failedItems.size() + " entities failed",
+                    entityGuids);
         } catch (IOException e) {
             logger.warn("Could not parse Purview bulk response for {} requested entities", requestedCount, e);
             return PurviewEntityPublishResult.failure(
@@ -296,6 +318,15 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
             return field.asText();
         }
         return null;
+    }
+
+    String buildAuthorizationHeader(PurviewConnectionRequest request) throws PurviewClientException {
+        if (request.isBasicAuth()) {
+            String credentials = request.getBasicUsername() + ":" + request.getBasicPassword();
+            return "Basic " + Base64.getEncoder().encodeToString(
+                    credentials.getBytes(StandardCharsets.UTF_8));
+        }
+        return "Bearer " + fetchAccessToken(request);
     }
 
     private String fetchAccessToken(PurviewConnectionRequest request) throws PurviewClientException {
@@ -351,7 +382,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
     private URI buildEntityBulkUri(PurviewConnectionRequest request) {
         String uri = trimTrailingSlash(request.getEndpoint()) + "/"
                 + trimSlashes(request.getAtlasBasePath()) + "/" + ENTITY_BULK_PATH;
-        if (trimSlashes(request.getAtlasBasePath()).startsWith("datamap/")) {
+        if (request.isPurviewDataMap()) {
             uri = uri + "?api-version=" + DATAMAP_API_VERSION;
         }
         return URI.create(uri);
@@ -366,7 +397,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
                 + trimSlashes(request.getAtlasBasePath()) + "/" + ENTITY_UNIQUE_ATTRIBUTE_PATH + "/"
                 + urlEncodePathSegment(typeName)
                 + "?attr:" + attributeName + "=" + urlEncode(attributeValue);
-        if (trimSlashes(request.getAtlasBasePath()).startsWith("datamap/")) {
+        if (request.isPurviewDataMap()) {
             uri = uri + "&api-version=" + DATAMAP_API_VERSION;
         }
         return URI.create(uri);
@@ -375,7 +406,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
     private URI buildRelationshipUri(PurviewConnectionRequest request) {
         String uri = trimTrailingSlash(request.getEndpoint()) + "/"
                 + trimSlashes(request.getAtlasBasePath()) + "/" + RELATIONSHIP_PATH;
-        if (trimSlashes(request.getAtlasBasePath()).startsWith("datamap/")) {
+        if (request.isPurviewDataMap()) {
             uri = uri + "?api-version=" + DATAMAP_API_VERSION;
         }
         return URI.create(uri);
@@ -385,7 +416,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
         String uri = trimTrailingSlash(request.getEndpoint()) + "/"
                 + trimSlashes(request.getAtlasBasePath()) + "/" + RELATIONSHIP_GUID_PATH + "/"
                 + urlEncodePathSegment(relationshipGuid);
-        if (trimSlashes(request.getAtlasBasePath()).startsWith("datamap/")) {
+        if (request.isPurviewDataMap()) {
             uri = uri + "?api-version=" + DATAMAP_API_VERSION;
         }
         return URI.create(uri);

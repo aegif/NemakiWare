@@ -99,12 +99,12 @@
       "filesystemImportExport": "Filesystem Import/Export",
       "integrationSettings": "Integration Settings",
       "configViewer": "Config Viewer",
-      "purview": "Purview",
+      "purview": "Purview / Atlas",
       "rssManagement": "RSS Token Management",
       "accountSettings": "Account Settings"
     },
   "purviewManagement": {
-    "title": "Purview Management",
+    "title": "Purview / Atlas Management",
     "actions": {
       "testConnection": "Test Connection",
       "lookupGovernance": "Lookup Governance",
@@ -116,7 +116,8 @@
       "reconcileCloudMetadata": "Reconcile Cloud Metadata",
       "reconcileContainment": "Reconcile Containment",
       "resolveDeletes": "Resolve Deletes",
-      "retryFailed": "Retry Failed"
+      "retryFailed": "Retry Failed",
+      "purgeJobHistory": "Purge Job History"
     },
     "alerts": {
       "loadFailed": "Failed to load Purview state",
@@ -179,7 +180,8 @@
     "actionGroups": {
       "bootstrap": "Bootstrap",
       "sync": "Sync",
-      "reconciliation": "Reconciliation / Recovery"
+      "reconciliation": "Reconciliation / Recovery",
+      "maintenance": "Maintenance"
     },
     "tabs": {
       "jobs": "Jobs",
@@ -238,7 +240,12 @@
       "cloudMetadataReconciliationStarted": "Started cloud metadata reconciliation",
       "containmentReconciliationStarted": "Started containment reconciliation",
       "deleteResolutionStarted": "Started delete resolution",
-      "retryFailedStarted": "Started dead-letter retry"
+      "retryFailedStarted": "Started dead-letter retry",
+      "purgeJobHistoryCompleted": "Purged {{count}} old job states"
+    },
+    "purgeJobHistory": {
+      "confirmTitle": "Purge Job History",
+      "confirmContent": "This will delete old job states, keeping the most recent 50 per job kind. Continue?"
     }
   },
   "configViewer": {
@@ -1218,7 +1225,14 @@
       "unresolved": "Unresolved {{count}} objects",
       "topClassifications": "Top classifications",
       "topGlossaryTerms": "Top glossary terms"
-    }
+    },
+    "objectIdSearch": "ID Search",
+    "objectIdSearchPlaceholder": "Enter object ID",
+    "objectIdSearchDirectMatch": "Target Object",
+    "objectIdSearchChildren": "Child Objects",
+    "objectIdSearchParent": "Parent Folder",
+    "objectIdSearchNotFound": "No object found with the specified ID",
+    "objectIdSearchDescription": "Search objects directly by CouchDB internal ID"
   },
   "searchResults": {
     "title": "Search",
@@ -2584,7 +2598,7 @@
       "google": "Google Auth",
       "microsoft": "Microsoft Auth",
       "saml": "SAML",
-      "purview": "Purview"
+      "purview": "Purview / Atlas"
     },
     "save": "Save",
     "testConnection": "Test Connection",
@@ -2623,12 +2637,22 @@
       "attributeMapping": "Attribute Mapping (JSON)"
     },
     "purview": {
-      "enabled": "Enable Purview Integration",
+      "enabled": "Enable Purview / Atlas Integration",
+      "authType": "Authentication Method",
+      "authTypeOAuth2": "OAuth2 (Microsoft Purview)",
+      "authTypeBasic": "Basic Auth (Apache Atlas)",
       "endpoint": "Endpoint URL",
+      "atlasBasePath": "Atlas API Base Path",
+      "basePathPurview": "datamap/api/atlas/v2 (Purview DataMap)",
+      "basePathCatalog": "catalog/api/atlas/v2 (Purview Catalog)",
+      "basePathAtlas": "api/atlas/v2 (Atlas on-prem)",
       "tenantId": "Tenant ID",
       "clientId": "Client ID",
       "clientSecret": "Client Secret",
-      "collection": "Collection Name"
+      "basicUsername": "Basic Auth Username",
+      "basicPassword": "Basic Auth Password",
+      "collection": "Collection Name",
+      "betaNotice": "This feature is in beta. Behavior may be unstable."
     }
   }
 }

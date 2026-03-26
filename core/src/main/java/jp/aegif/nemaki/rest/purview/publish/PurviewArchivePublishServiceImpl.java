@@ -13,6 +13,7 @@ import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -129,19 +130,20 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
     private int publishArchives(String repositoryId, List<Archive> archives, String lineageCheckpoint) {
         List<Map<String, Object>> entityBatch = new ArrayList<>();
         List<Archive> relationshipCandidates = new ArrayList<>();
+        Map<String, String> guidAccumulator = new HashMap<>();
         int processedCount = 0;
 
         for (Archive archive : archives) {
             entityBatch.add(entityPayloadFactory.buildArchivedDocumentEntity(repositoryId, archive));
-            processedCount += flushIfNeeded(repositoryId, entityBatch);
+            processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator);
             entityBatch.add(entityPayloadFactory.buildArchiveEntity(repositoryId, archive));
             relationshipCandidates.add(archive);
-            processedCount += flushIfNeeded(repositoryId, entityBatch);
+            processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator);
         }
 
         int archiveEntityCount = processedCount
-                + flushEntities(repositoryId, entityBatch)
-                + documentArchiveRelationshipService.upsertDocumentArchiveRelationships(repositoryId, relationshipCandidates);
+                + flushEntities(repositoryId, entityBatch, guidAccumulator)
+                + documentArchiveRelationshipService.upsertDocumentArchiveRelationships(repositoryId, relationshipCandidates, guidAccumulator);
         publishArchiveLineageBestEffort(repositoryId, archives, lineageCheckpoint);
         return archiveEntityCount;
     }
@@ -168,24 +170,28 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
     }
 
     private int flushIfNeeded(List<Map<String, Object>> entities) {
-        return flushIfNeeded(null, entities);
+        return flushIfNeeded(null, entities, null);
     }
 
-    private int flushIfNeeded(String repositoryId, List<Map<String, Object>> entities) {
+    private int flushIfNeeded(String repositoryId, List<Map<String, Object>> entities,
+            Map<String, String> guidAccumulator) {
         if (entities.size() < ENTITY_BATCH_SIZE) {
             return 0;
         }
-        return flushEntities(repositoryId, entities);
+        return flushEntities(repositoryId, entities, guidAccumulator);
     }
 
     private int flushEntities(List<Map<String, Object>> entities) {
-        return flushEntities(null, entities);
+        return flushEntities(null, entities, null);
     }
 
-    private int flushEntities(String repositoryId, List<Map<String, Object>> entities) {
+    private int flushEntities(String repositoryId, List<Map<String, Object>> entities,
+            Map<String, String> guidAccumulator) {
         if (entities.isEmpty()) {
             return 0;
         }
+
+        List<SentEntityRef> sentRefs = extractSentEntityRefs(entities);
 
         try {
             PurviewEntityPublishResult result = entityRegistryClient.bulkCreateOrUpdateEntities(
@@ -205,12 +211,80 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
                             failedItem.getErrorMessage()));
                 }
             }
+            if (guidAccumulator != null && result.getEntityGuids() != null) {
+                guidAccumulator.putAll(result.getEntityGuids());
+            }
+            if (guidAccumulator != null && purviewConfig.isAtlasOnPrem()) {
+                resolveUnmappedGuids(sentRefs, guidAccumulator, result.getEntityGuids());
+            }
             int publishedCount = result.getPublishedCount();
             entities.clear();
             return publishedCount;
         } catch (PurviewClientException e) {
             throw new IllegalStateException(e.getMessage(), e);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void resolveUnmappedGuids(
+            List<SentEntityRef> sentRefs,
+            Map<String, String> guidAccumulator,
+            Map<String, String> responseGuids) {
+        for (SentEntityRef ref : sentRefs) {
+            if (ref.qualifiedName == null || ref.typeName == null) {
+                continue;
+            }
+            if (responseGuids != null && responseGuids.containsKey(ref.qualifiedName)) {
+                continue;
+            }
+            if (guidAccumulator.containsKey(ref.qualifiedName)) {
+                continue;
+            }
+            try {
+                Map<String, Object> entity = entityRegistryClient.getEntityByUniqueAttribute(
+                        buildConnectionRequest(),
+                        ref.typeName,
+                        "qualifiedName",
+                        ref.qualifiedName);
+                if (entity != null) {
+                    Object entityObj = entity.get("entity");
+                    String guid = null;
+                    if (entityObj instanceof Map<?, ?> entityMap) {
+                        Object g = entityMap.get("guid");
+                        if (g != null) guid = String.valueOf(g);
+                    }
+                    if (guid == null) {
+                        Object g = entity.get("guid");
+                        if (g != null) guid = String.valueOf(g);
+                    }
+                    if (guid != null) {
+                        guidAccumulator.put(ref.qualifiedName, guid);
+                        logger.debug("Atlas GUID follow-up resolved: {} → {}", ref.qualifiedName, guid);
+                    }
+                }
+            } catch (PurviewClientException e) {
+                logger.debug("Atlas GUID follow-up lookup failed for {}: {}", ref.qualifiedName, e.getMessage());
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<SentEntityRef> extractSentEntityRefs(List<Map<String, Object>> entities) {
+        List<SentEntityRef> refs = new ArrayList<>();
+        for (Map<String, Object> entity : entities) {
+            String typeName = entity.get("typeName") instanceof String t ? t : null;
+            String qualifiedName = null;
+            Object attrs = entity.get("attributes");
+            if (attrs instanceof Map<?, ?> attrMap) {
+                Object qn = attrMap.get("qualifiedName");
+                if (qn instanceof String s) qualifiedName = s;
+            }
+            refs.add(new SentEntityRef(typeName, qualifiedName));
+        }
+        return refs;
+    }
+
+    private record SentEntityRef(String typeName, String qualifiedName) {
     }
 
     private int reconcileMissingArchives(String repositoryId, String previousSnapshot, List<Archive> currentArchives) {
@@ -377,9 +451,12 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
         return new PurviewConnectionRequest(
                 purviewConfig.getEndpoint(),
                 purviewConfig.getAtlasBasePath(),
+                purviewConfig.getAuthType(),
                 purviewConfig.getTenantId(),
                 purviewConfig.getClientId(),
                 purviewConfig.getClientSecret(),
+                purviewConfig.getBasicUsername(),
+                purviewConfig.getBasicPassword(),
                 purviewConfig.getConnectTimeoutMs(),
                 purviewConfig.getReadTimeoutMs());
     }

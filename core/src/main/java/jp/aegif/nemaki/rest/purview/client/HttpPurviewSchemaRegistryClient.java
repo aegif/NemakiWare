@@ -8,6 +8,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.Map;
 
 import org.springframework.stereotype.Component;
@@ -57,7 +58,6 @@ public class HttpPurviewSchemaRegistryClient implements PurviewSchemaRegistryCli
     @Override
     public PurviewSchemaPublishResult applySchema(PurviewConnectionRequest request, Map<String, Object> payload)
             throws PurviewClientException {
-        String accessToken = fetchAccessToken(request);
         String requestBody;
         try {
             requestBody = objectMapper.writeValueAsString(payload);
@@ -65,21 +65,49 @@ public class HttpPurviewSchemaRegistryClient implements PurviewSchemaRegistryCli
             throw new PurviewClientException("Failed to serialize Purview schema payload", e);
         }
 
-        HttpRequest schemaRequest = HttpRequest.newBuilder(buildSchemaUri(request))
-                .header("Authorization", "Bearer " + accessToken)
+        String authHeader = buildAuthorizationHeader(request);
+        URI schemaUri = buildSchemaUri(request);
+
+        // Try POST (create) first; if types already exist (409), fall back to PUT (update)
+        HttpRequest postRequest = HttpRequest.newBuilder(schemaUri)
+                .header("Authorization", authHeader)
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json")
                 .timeout(Duration.ofMillis(request.getReadTimeoutMs()))
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                 .build();
 
-        HttpResponse<String> response = send(schemaRequest);
+        HttpResponse<String> response = send(postRequest);
         if (response.statusCode() >= 200 && response.statusCode() < 300) {
             return PurviewSchemaPublishResult.success("schema applied");
         }
 
+        if (response.statusCode() == 409) {
+            HttpRequest putRequest = HttpRequest.newBuilder(schemaUri)
+                    .header("Authorization", authHeader)
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofMillis(request.getReadTimeoutMs()))
+                    .PUT(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .build();
+
+            response = send(putRequest);
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                return PurviewSchemaPublishResult.success("schema applied");
+            }
+        }
+
         return PurviewSchemaPublishResult.failure(
                 "Purview schema apply returned HTTP " + response.statusCode() + formatBodyExcerpt(response.body()));
+    }
+
+    String buildAuthorizationHeader(PurviewConnectionRequest request) throws PurviewClientException {
+        if (request.isBasicAuth()) {
+            String credentials = request.getBasicUsername() + ":" + request.getBasicPassword();
+            return "Basic " + Base64.getEncoder().encodeToString(
+                    credentials.getBytes(StandardCharsets.UTF_8));
+        }
+        return "Bearer " + fetchAccessToken(request);
     }
 
     private String fetchAccessToken(PurviewConnectionRequest request) throws PurviewClientException {

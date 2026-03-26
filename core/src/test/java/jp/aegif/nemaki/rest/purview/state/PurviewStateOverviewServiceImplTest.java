@@ -97,6 +97,120 @@ public class PurviewStateOverviewServiceImplTest {
     }
 
     @Test
+    public void testGetStateOverviewReadsConsolidatedDLQEntries() {
+        Map<String, Object> persisted = new LinkedHashMap<>();
+        // Consolidated entry (1 doc = 1 entry, value is a Map)
+        persisted.put("purview.dead-letter.entry.bedroom.content-change-log.ZG9jLTIwMQ",
+                Map.of(
+                    "repositoryId", "bedroom",
+                    "streamKind", "content-change-log",
+                    "entryKey", "doc-201",
+                    "typeName", "nemaki_document",
+                    "qualifiedName", "nemaki://bedroom/objects/doc-201",
+                    "firstFailedAt", "2026-03-20T10:00:00Z",
+                    "lastFailedAt", "2026-03-20T10:00:05Z",
+                    "failureCount", 3,
+                    "checkpoint", "token-201",
+                    "errorSummary", "consolidated error"));
+
+        when(stateStore.getAll()).thenReturn(persisted);
+
+        PurviewStateOverview overview = service.getStateOverview("NemakiWare");
+
+        assertEquals(1, overview.getDeadLetters().size());
+        PurviewDeadLetterState dlq = overview.getDeadLetters().get(0);
+        assertEquals("doc-201", dlq.getEntryKey());
+        assertEquals("bedroom", dlq.getRepositoryId());
+        assertEquals("content-change-log", dlq.getStreamKind());
+        assertEquals("nemaki_document", dlq.getTypeName());
+        assertEquals(3, dlq.getFailureCount());
+        assertEquals("consolidated error", dlq.getErrorSummary());
+    }
+
+    @Test
+    public void testGetStateOverviewDeduplicatesConsolidatedOverLegacy() {
+        Map<String, Object> persisted = new LinkedHashMap<>();
+
+        // Consolidated entry for doc-301
+        persisted.put("purview.dead-letter.entry.bedroom.content-change-log.ZG9jLTMwMQ",
+                Map.of(
+                    "repositoryId", "bedroom",
+                    "streamKind", "content-change-log",
+                    "entryKey", "doc-301",
+                    "typeName", "nemaki_document",
+                    "qualifiedName", "new-qn",
+                    "firstFailedAt", "2026-03-20T12:00:00Z",
+                    "lastFailedAt", "2026-03-20T12:00:05Z",
+                    "failureCount", 5,
+                    "checkpoint", "token-new",
+                    "errorSummary", "new error"));
+
+        // Legacy entry for the SAME doc-301
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLTMwMQ.repositoryId", "bedroom");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLTMwMQ.streamKind", "content-change-log");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLTMwMQ.entryKey", "doc-301");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLTMwMQ.typeName", "nemaki_document");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLTMwMQ.qualifiedName", "old-qn");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLTMwMQ.firstFailedAt", "2026-03-20T10:00:00Z");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLTMwMQ.lastFailedAt", "2026-03-20T10:00:05Z");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLTMwMQ.failureCount", 1);
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLTMwMQ.checkpoint", "token-old");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLTMwMQ.errorSummary", "old error");
+
+        when(stateStore.getAll()).thenReturn(persisted);
+
+        PurviewStateOverview overview = service.getStateOverview("NemakiWare");
+
+        // Should only have 1 entry (consolidated preferred, not 2)
+        assertEquals(1, overview.getDeadLetters().size());
+        PurviewDeadLetterState dlq = overview.getDeadLetters().get(0);
+        assertEquals("doc-301", dlq.getEntryKey());
+        assertEquals("new-qn", dlq.getQualifiedName());
+        assertEquals(5, dlq.getFailureCount());
+        assertEquals("new error", dlq.getErrorSummary());
+    }
+
+    @Test
+    public void testGetStateOverviewMixesConsolidatedAndLegacyWithoutDuplication() {
+        Map<String, Object> persisted = new LinkedHashMap<>();
+
+        // Consolidated entry for doc-A
+        persisted.put("purview.dead-letter.entry.bedroom.content-change-log.ZG9jLUE",
+                Map.of(
+                    "repositoryId", "bedroom",
+                    "streamKind", "content-change-log",
+                    "entryKey", "doc-A",
+                    "typeName", "nemaki_document",
+                    "qualifiedName", "qn-A",
+                    "firstFailedAt", "2026-03-20T10:00:00Z",
+                    "lastFailedAt", "2026-03-20T10:00:05Z",
+                    "failureCount", 1,
+                    "checkpoint", "token-A",
+                    "errorSummary", "error-A"));
+
+        // Legacy entry for different doc-B
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLUI.repositoryId", "bedroom");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLUI.streamKind", "content-change-log");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLUI.entryKey", "doc-B");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLUI.typeName", "nemaki_folder");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLUI.qualifiedName", "qn-B");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLUI.firstFailedAt", "2026-03-20T11:00:00Z");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLUI.lastFailedAt", "2026-03-20T11:00:05Z");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLUI.failureCount", 2);
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLUI.checkpoint", "token-B");
+        persisted.put("purview.dead-letter.state.bedroom.content-change-log.ZG9jLUI.errorSummary", "error-B");
+
+        when(stateStore.getAll()).thenReturn(persisted);
+
+        PurviewStateOverview overview = service.getStateOverview("NemakiWare");
+
+        // Both entries should be present, sorted by entryKey
+        assertEquals(2, overview.getDeadLetters().size());
+        assertEquals("doc-A", overview.getDeadLetters().get(0).getEntryKey());
+        assertEquals("doc-B", overview.getDeadLetters().get(1).getEntryKey());
+    }
+
+    @Test
     public void testGetStateOverviewReturnsEmptyCollectionsWhenNothingIsPersisted() {
         when(stateStore.getAll()).thenReturn(Map.of());
 

@@ -306,6 +306,23 @@ export const PurviewManagement: React.FC<PurviewManagementProps> = ({ repository
             'purviewManagement.messages.retryFailedStarted'
           )
         }
+        onPurgeJobHistory={async () => {
+          setRunningAction('purge-job-history');
+          try {
+            const result = await service.purgeJobHistory(50);
+            message.success(
+              t('purviewManagement.messages.purgeJobHistoryCompleted', {
+                count: result.purgedCount,
+              })
+            );
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
+            message.error(errorMessage);
+          } finally {
+            setRunningAction(null);
+            await loadAll();
+          }
+        }}
       />
 
       <GovernanceLookupCard

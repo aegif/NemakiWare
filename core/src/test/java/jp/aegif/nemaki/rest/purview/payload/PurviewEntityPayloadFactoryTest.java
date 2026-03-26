@@ -1,6 +1,8 @@
 package jp.aegif.nemaki.rest.purview.payload;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.GregorianCalendar;
@@ -67,7 +69,44 @@ public class PurviewEntityPayloadFactoryTest {
         assertEquals("folder-001", attributes.get("objectId"));
         assertEquals("root-001", attributes.get("parentId"));
         assertEquals("cmis:folder", attributes.get("typeId"));
+        assertFalse(attributes.containsKey("folderPath"), "folderPath must be omitted when not provided");
         assertEquals("ACTIVE", attributes.get("lifecycleState"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildFolderEntityWithFolderPathSetsFolderPathAttribute() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        Folder folder = new Folder();
+        folder.setId("folder-001");
+        folder.setName("Contracts");
+        folder.setParentId("root-001");
+        folder.setObjectType("cmis:folder");
+        folder.setCreator("alice");
+
+        Map<String, Object> entity = factory.buildFolderEntity("bedroom", folder, "/Reports/Contracts");
+
+        Map<String, Object> attributes = (Map<String, Object>) entity.get("attributes");
+        assertEquals("/Reports/Contracts", attributes.get("folderPath"));
+        assertEquals("Contracts", attributes.get("name"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildDocumentEntityWithFolderPathSetsFolderPathAttribute() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setName("Report.pdf");
+        document.setParentId("folder-001");
+        document.setObjectType("cmis:document");
+        document.setCreator("alice");
+
+        Map<String, Object> entity = factory.buildDocumentEntity("bedroom", document, "/Reports");
+
+        Map<String, Object> attributes = (Map<String, Object>) entity.get("attributes");
+        assertEquals("/Reports", attributes.get("folderPath"));
+        assertEquals("Report.pdf", attributes.get("name"));
     }
 
     @Test
@@ -515,6 +554,96 @@ public class PurviewEntityPayloadFactoryTest {
         assertTrue(!processAttributes.containsKey("externalStableKey") || processAttributes.get("externalStableKey") == null);
         assertEquals(2, ((List<?>) relationshipAttributes.get("inputs")).size());
         assertEquals(0, ((List<?>) relationshipAttributes.get("outputs")).size());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testRelationshipEndIncludesGuidWhenProvided() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setParentId("folder-001");
+
+        Map<String, String> guidMap = Map.of(
+                "nemaki://bedroom/objects/folder-001", "guid-folder",
+                "nemaki://bedroom/objects/doc-001", "guid-doc");
+
+        Map<String, Object> relationship = factory.buildFolderDocumentRelationship("bedroom", document, guidMap);
+
+        Map<String, Object> end1 = (Map<String, Object>) relationship.get("end1");
+        Map<String, Object> end2 = (Map<String, Object>) relationship.get("end2");
+        assertEquals("guid-folder", end1.get("guid"));
+        assertEquals("guid-doc", end2.get("guid"));
+        assertEquals("nemaki://bedroom/objects/folder-001",
+                ((Map<String, Object>) end1.get("uniqueAttributes")).get("qualifiedName"));
+        assertEquals("nemaki://bedroom/objects/doc-001",
+                ((Map<String, Object>) end2.get("uniqueAttributes")).get("qualifiedName"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testRelationshipEndOmitsGuidWhenNotProvided() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setParentId("folder-001");
+
+        // Empty guid map — matches existing behavior
+        Map<String, Object> relationship = factory.buildFolderDocumentRelationship("bedroom", document, Map.of());
+
+        Map<String, Object> end1 = (Map<String, Object>) relationship.get("end1");
+        Map<String, Object> end2 = (Map<String, Object>) relationship.get("end2");
+        assertTrue(!end1.containsKey("guid"));
+        assertTrue(!end2.containsKey("guid"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testGuidOverloadForAllRelationshipBuilders() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+
+        // buildDocumentTypeRelationship
+        Document doc = new Document();
+        doc.setId("doc-001");
+        doc.setObjectType("cmis:document");
+        Map<String, String> docTypeGuids = Map.of(
+                "nemaki://bedroom/objects/doc-001", "guid-doc",
+                "nemaki://bedroom/types/cmis:document", "guid-type");
+        Map<String, Object> docTypeRel = factory.buildDocumentTypeRelationship("bedroom", doc, docTypeGuids);
+        assertEquals("guid-doc", ((Map<String, Object>) docTypeRel.get("end1")).get("guid"));
+        assertEquals("guid-type", ((Map<String, Object>) docTypeRel.get("end2")).get("guid"));
+
+        // buildDocumentArchiveRelationship
+        Archive archive = new Archive();
+        archive.setId("archive-001");
+        archive.setOriginalId("doc-001");
+        Map<String, String> archiveGuids = Map.of(
+                "nemaki://bedroom/objects/doc-001", "guid-doc",
+                "nemaki://bedroom/archives/archive-001", "guid-archive");
+        Map<String, Object> archiveRel = factory.buildDocumentArchiveRelationship("bedroom", archive, archiveGuids);
+        assertEquals("guid-doc", ((Map<String, Object>) archiveRel.get("end1")).get("guid"));
+        assertEquals("guid-archive", ((Map<String, Object>) archiveRel.get("end2")).get("guid"));
+
+        // buildRepositoryFolderRelationship
+        Folder folder = new Folder();
+        folder.setId("root-001");
+        Map<String, String> repoFolderGuids = Map.of(
+                "nemaki://bedroom", "guid-repo",
+                "nemaki://bedroom/objects/root-001", "guid-folder");
+        Map<String, Object> repoFolderRel = factory.buildRepositoryFolderRelationship("bedroom", folder, repoFolderGuids);
+        assertEquals("guid-repo", ((Map<String, Object>) repoFolderRel.get("end1")).get("guid"));
+        assertEquals("guid-folder", ((Map<String, Object>) repoFolderRel.get("end2")).get("guid"));
+
+        // buildFolderFolderRelationship
+        Folder childFolder = new Folder();
+        childFolder.setId("child-001");
+        childFolder.setParentId("parent-001");
+        Map<String, String> folderFolderGuids = Map.of(
+                "nemaki://bedroom/objects/parent-001", "guid-parent",
+                "nemaki://bedroom/objects/child-001", "guid-child");
+        Map<String, Object> folderFolderRel = factory.buildFolderFolderRelationship("bedroom", childFolder, folderFolderGuids);
+        assertEquals("guid-parent", ((Map<String, Object>) folderFolderRel.get("end1")).get("guid"));
+        assertEquals("guid-child", ((Map<String, Object>) folderFolderRel.get("end2")).get("guid"));
     }
 
     private GregorianCalendar calendar(String isoInstant) {

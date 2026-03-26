@@ -40,6 +40,7 @@ public class PurviewSchemaPayloadFactory {
     private Map<String, Object> buildRepositoryEntityDef() {
         Map<String, Object> entityDef = baseTypeDef("nemaki_repository",
                 "Repository synchronized from NemakiWare");
+        entityDef.put("superTypes", List.of("Referenceable"));
         entityDef.put("attributeDefs", List.of(
                 attribute("repositoryId", "string", false),
                 attribute("rootFolderId", "string", false),
@@ -50,11 +51,13 @@ public class PurviewSchemaPayloadFactory {
     private Map<String, Object> buildFolderEntityDef() {
         Map<String, Object> entityDef = baseTypeDef("nemaki_folder",
                 "Folder synchronized from NemakiWare");
+        entityDef.put("superTypes", List.of("Referenceable"));
         entityDef.put("attributeDefs", List.of(
                 attribute("repositoryId", "string", false),
                 attribute("objectId", "string", false),
                 attribute("parentId", "string", true),
                 attribute("typeId", "string", true),
+                attribute("folderPath", "string", true),
                 attribute("lifecycleState", "string", true)));
         return entityDef;
     }
@@ -68,6 +71,7 @@ public class PurviewSchemaPayloadFactory {
                 attribute("objectId", "string", false),
                 attribute("parentId", "string", true),
                 attribute("typeId", "string", true),
+                attribute("folderPath", "string", true),
                 attribute("versionSeriesId", "string", true),
                 attribute("versionLabel", "string", true),
                 attribute("isLatestVersion", "boolean", true),
@@ -85,6 +89,7 @@ public class PurviewSchemaPayloadFactory {
     private Map<String, Object> buildTypeDefinitionEntityDef() {
         Map<String, Object> entityDef = baseTypeDef("nemaki_type_definition",
                 "Type definition synchronized from NemakiWare");
+        entityDef.put("superTypes", List.of("Referenceable"));
         entityDef.put("attributeDefs", List.of(
                 attribute("repositoryId", "string", false),
                 attribute("typeId", "string", false),
@@ -266,6 +271,9 @@ public class PurviewSchemaPayloadFactory {
         map.put("valuesMaxCount", 1);
         map.put("isUnique", false);
         map.put("isIndexable", true);
+        if ("string".equals(typeName)) {
+            map.put("options", Map.of("maxStrLength", "500"));
+        }
         return map;
     }
 

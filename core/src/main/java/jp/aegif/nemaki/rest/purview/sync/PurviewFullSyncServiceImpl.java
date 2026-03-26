@@ -15,6 +15,8 @@ import jp.aegif.nemaki.rest.purview.publish.PurviewTypeDefinitionPublishService;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
@@ -24,6 +26,7 @@ import jp.aegif.nemaki.model.Change;
 @Service
 public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
 
+    private static final Log log = LogFactory.getLog(PurviewFullSyncServiceImpl.class);
     private static final String JOB_KIND = "FULL_SYNC";
     private static final String STREAM_KIND = "content-change-log";
     private static final String CURSOR_KIND = "changeToken";
@@ -143,6 +146,14 @@ public class PurviewFullSyncServiceImpl implements PurviewFullSyncService {
                 return jobStateService.saveJobState(failedJob);
             }
         } finally {
+            try {
+                int purged = jobStateService.purgeOldJobStates(50);
+                if (purged > 0) {
+                    log.info("Auto-purged " + purged + " old job states");
+                }
+            } catch (Exception e) {
+                log.warn("Auto-purge of old job states failed (non-fatal)", e);
+            }
             lockStateService.releaseRepositoryLock(repositoryId, JOB_KIND, jobId);
         }
     }

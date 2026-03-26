@@ -8,6 +8,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Base64;
 
 import org.springframework.stereotype.Component;
 
@@ -55,9 +56,8 @@ public class HttpPurviewApiClient implements PurviewApiClient {
 
     @Override
     public PurviewProbeResult probeConnection(PurviewConnectionRequest request) throws PurviewClientException {
-        String accessToken = fetchAccessToken(request);
         HttpRequest probeRequest = HttpRequest.newBuilder(buildProbeUri(request))
-                .header("Authorization", "Bearer " + accessToken)
+                .header("Authorization", buildAuthorizationHeader(request))
                 .header("Accept", "application/json")
                 .timeout(Duration.ofMillis(request.getReadTimeoutMs()))
                 .GET()
@@ -72,6 +72,15 @@ public class HttpPurviewApiClient implements PurviewApiClient {
         return PurviewProbeResult.failure(
                 statusCode,
                 "Purview probe returned HTTP " + statusCode + formatBodyExcerpt(response.body()));
+    }
+
+    String buildAuthorizationHeader(PurviewConnectionRequest request) throws PurviewClientException {
+        if (request.isBasicAuth()) {
+            String credentials = request.getBasicUsername() + ":" + request.getBasicPassword();
+            return "Basic " + Base64.getEncoder().encodeToString(
+                    credentials.getBytes(StandardCharsets.UTF_8));
+        }
+        return "Bearer " + fetchAccessToken(request);
     }
 
     private String fetchAccessToken(PurviewConnectionRequest request) throws PurviewClientException {

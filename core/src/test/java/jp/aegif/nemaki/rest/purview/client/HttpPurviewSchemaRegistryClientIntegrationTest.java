@@ -1,5 +1,6 @@
 package jp.aegif.nemaki.rest.purview.client;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -61,16 +62,17 @@ public class HttpPurviewSchemaRegistryClientIntegrationTest {
     @Test
     public void testApplySchemaReturnsFailureOnHttpError() throws Exception {
         seedToken();
+        // 400 Bad Request is not retried via POST→PUT fallback
         apiServer.enqueue(new MockResponse()
-                .setResponseCode(409)
-                .setBody("{\"error\":\"Type already exists\"}"));
+                .setResponseCode(400)
+                .setBody("{\"error\":\"Bad request\"}"));
 
         PurviewSchemaPublishResult result = client.applySchema(
                 buildRequest(),
                 Map.of("entityDefs", List.of()));
 
         assertFalse(result.isSuccess());
-        assertTrue(result.getMessage().contains("409"));
+        assertTrue(result.getMessage().contains("400"));
     }
 
     @Test
@@ -84,6 +86,97 @@ public class HttpPurviewSchemaRegistryClientIntegrationTest {
         assertTrue(apiRequest.getPath().endsWith("/catalog/api/atlas/v2/types/typedefs")
                 || apiRequest.getPath().contains("types/typedefs"),
                 "Expected types/typedefs path, got: " + apiRequest.getPath());
+    }
+
+    @Test
+    public void testApplySchemaRetriesOn429ThenSucceeds() throws Exception {
+        seedToken();
+        apiServer.enqueue(new MockResponse().setResponseCode(429).setBody("Rate limited"));
+        apiServer.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("{}"));
+
+        PurviewSchemaPublishResult result = client.applySchema(
+                buildRequest(),
+                Map.of("entityDefs", List.of(Map.of("name", "nemaki_document"))));
+
+        assertTrue(result.isSuccess());
+    }
+
+    @Test
+    public void testApplySchemaReturnsFailureOnServerError() throws Exception {
+        seedToken();
+        for (int i = 0; i < 4; i++) {
+            apiServer.enqueue(new MockResponse().setResponseCode(500).setBody("Internal Server Error"));
+        }
+
+        PurviewSchemaPublishResult result = client.applySchema(
+                buildRequest(),
+                Map.of("entityDefs", List.of()));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getMessage().contains("500"));
+    }
+
+    @Test
+    public void testApplySchemaReturnsFailureOn403() throws Exception {
+        seedToken();
+        apiServer.enqueue(new MockResponse()
+                .setResponseCode(403)
+                .setBody("{\"error\":\"Access denied\"}"));
+
+        PurviewSchemaPublishResult result = client.applySchema(
+                buildRequest(),
+                Map.of("entityDefs", List.of()));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getMessage().contains("403"));
+    }
+
+    @Test
+    public void testApplySchemaUsesPostMethodWithJsonContentType() throws Exception {
+        seedToken();
+        apiServer.enqueue(new MockResponse().setResponseCode(200).setBody("{}"));
+
+        client.applySchema(buildRequest(), Map.of("entityDefs", List.of(Map.of("name", "nemaki_document"))));
+
+        RecordedRequest apiRequest = apiServer.takeRequest();
+        assertEquals("POST", apiRequest.getMethod());
+        assertEquals("application/json", apiRequest.getHeader("Content-Type"));
+        assertTrue(apiRequest.getBody().readUtf8().contains("nemaki_document"));
+    }
+
+    @Test
+    public void testApplySchemaFallsBackToPutOn409() throws Exception {
+        seedToken();
+        apiServer.enqueue(new MockResponse().setResponseCode(409).setBody("{\"error\":\"Type already exists\"}"));
+        apiServer.enqueue(new MockResponse().setResponseCode(200).setBody("{}"));
+
+        PurviewSchemaPublishResult result = client.applySchema(
+                buildRequest(), Map.of("entityDefs", List.of(Map.of("name", "nemaki_document"))));
+
+        assertTrue(result.isSuccess());
+        RecordedRequest postRequest = apiServer.takeRequest();
+        assertEquals("POST", postRequest.getMethod());
+        RecordedRequest putRequest = apiServer.takeRequest();
+        assertEquals("PUT", putRequest.getMethod());
+    }
+
+    @Test
+    public void testApplySchemaUsesDatamapBasePathCorrectly() throws Exception {
+        seedToken();
+        apiServer.enqueue(new MockResponse().setResponseCode(200).setBody("{}"));
+
+        PurviewConnectionRequest request = new PurviewConnectionRequest(
+                apiServer.url("/").toString(),
+                "datamap/api/atlas/v2",
+                "test-tenant", "test-client-id", "test-client-secret", 5000, 30000);
+        client.applySchema(request, Map.of("entityDefs", List.of()));
+
+        RecordedRequest apiRequest = apiServer.takeRequest();
+        assertTrue(apiRequest.getPath().contains("datamap/api/atlas/v2/types/typedefs"),
+                "Expected datamap basePath in URL, got: " + apiRequest.getPath());
     }
 
     private PurviewConnectionRequest buildRequest() {

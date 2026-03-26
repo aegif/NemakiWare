@@ -529,4 +529,97 @@ public class PurviewAdminControllerTest {
         assertEquals(1, ((java.util.List<?>) response.getBody().get("deadLetters")).size());
         verify(stateOverviewService).getStateOverview("NemakiWare");
     }
+
+    @Test
+    public void testListJobsReturnsJobListForAdmin() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        when(jobStateService.listJobStates()).thenReturn(java.util.List.of(
+                new PurviewJobState(
+                        "job-010", "FULL_SYNC", "bedroom", "COMPLETED",
+                        "2026-03-20T10:00:00Z", "2026-03-20T10:01:00Z", 5, 0, "token-5", ""),
+                new PurviewJobState(
+                        "job-009", "INCREMENTAL_SYNC", "bedroom", "COMPLETED",
+                        "2026-03-20T09:00:00Z", "2026-03-20T09:00:30Z", 2, 1, "token-2", "one error")));
+
+        ResponseEntity<Map<String, Object>> response = controller.listJobs();
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        java.util.List<?> jobs = (java.util.List<?>) response.getBody().get("jobs");
+        assertEquals(2, jobs.size());
+        Map<?, ?> firstJob = (Map<?, ?>) jobs.get(0);
+        assertEquals("job-010", firstJob.get("jobId"));
+        assertEquals("FULL_SYNC", firstJob.get("jobKind"));
+        assertEquals(5, firstJob.get("processedCount"));
+        Map<?, ?> secondJob = (Map<?, ?>) jobs.get(1);
+        assertEquals("job-009", secondJob.get("jobId"));
+        assertEquals(1, secondJob.get("failedCount"));
+        verify(jobStateService).listJobStates();
+    }
+
+    @Test
+    public void testListJobsReturnsForbiddenForNonAdmin() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.FALSE);
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        ResponseEntity<Map<String, Object>> response = controller.listJobs();
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+    }
+
+    @Test
+    public void testPurgeJobHistoryReturnsPurgedCountForAdmin() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        when(jobStateService.purgeOldJobStates(50)).thenReturn(10);
+
+        ResponseEntity<Map<String, Object>> response = controller.purgeJobHistory(50);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(10, response.getBody().get("purgedCount"));
+        assertEquals(50, response.getBody().get("retainCount"));
+        verify(jobStateService).purgeOldJobStates(50);
+    }
+
+    @Test
+    public void testPurgeJobHistoryClampsRetainCountToMinimumOne() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        when(jobStateService.purgeOldJobStates(1)).thenReturn(0);
+
+        ResponseEntity<Map<String, Object>> response = controller.purgeJobHistory(0);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(0, response.getBody().get("purgedCount"));
+        assertEquals(1, response.getBody().get("retainCount"));
+        verify(jobStateService).purgeOldJobStates(1);
+    }
+
+    @Test
+    public void testPurgeJobHistoryReturnsForbiddenForNonAdmin() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.FALSE);
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        ResponseEntity<Map<String, Object>> response = controller.purgeJobHistory(50);
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+    }
 }

@@ -1,16 +1,19 @@
-import { Form, Button, Space, Spin, Alert, App } from 'antd';
+import { useMemo } from 'react';
+import { Form, Button, Space, Spin, Alert, App, Tag } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useSettingsTab } from './useSettingsTab';
 import { SettingsFormFields } from './SettingsFormFields';
 import { getPurviewSettings, updatePurviewSettings, testPurviewConnection } from '../../services/integrationSettings';
 
-const FIELDS = [
-  { key: 'purview.enabled', labelKey: 'integrationSettings.purview.enabled', type: 'boolean' as const },
-  { key: 'purview.endpoint', labelKey: 'integrationSettings.purview.endpoint', type: 'text' as const },
-  { key: 'purview.tenant.id', labelKey: 'integrationSettings.purview.tenantId', type: 'text' as const },
-  { key: 'purview.client.id', labelKey: 'integrationSettings.purview.clientId', type: 'text' as const },
-  { key: 'purview.client.secret', labelKey: 'integrationSettings.purview.clientSecret', type: 'password' as const, sensitive: true },
-  { key: 'purview.collection', labelKey: 'integrationSettings.purview.collection', type: 'text' as const },
+const AUTH_TYPE_OPTIONS = [
+  { value: 'oauth2', labelKey: 'integrationSettings.purview.authTypeOAuth2' },
+  { value: 'basic', labelKey: 'integrationSettings.purview.authTypeBasic' },
+];
+
+const BASE_PATH_OPTIONS = [
+  { value: 'datamap/api/atlas/v2', labelKey: 'integrationSettings.purview.basePathPurview' },
+  { value: 'catalog/api/atlas/v2', labelKey: 'integrationSettings.purview.basePathCatalog' },
+  { value: 'api/atlas/v2', labelKey: 'integrationSettings.purview.basePathAtlas' },
 ];
 
 export function PurviewSettingsTab() {
@@ -34,6 +37,36 @@ export function PurviewSettingsTab() {
     testConnection: testPurviewConnection,
   });
 
+  const authType = formValues['purview.auth.type'] || 'oauth2';
+
+  const fields = useMemo(() => {
+    const common = [
+      { key: 'purview.enabled', labelKey: 'integrationSettings.purview.enabled', type: 'boolean' as const },
+      { key: 'purview.auth.type', labelKey: 'integrationSettings.purview.authType', type: 'select' as const, options: AUTH_TYPE_OPTIONS },
+      { key: 'purview.endpoint', labelKey: 'integrationSettings.purview.endpoint', type: 'text' as const },
+      { key: 'purview.atlas.base-path', labelKey: 'integrationSettings.purview.atlasBasePath', type: 'select' as const, options: BASE_PATH_OPTIONS },
+    ];
+
+    const oauth2Fields = [
+      { key: 'purview.tenant.id', labelKey: 'integrationSettings.purview.tenantId', type: 'text' as const },
+      { key: 'purview.client.id', labelKey: 'integrationSettings.purview.clientId', type: 'text' as const },
+      { key: 'purview.client.secret', labelKey: 'integrationSettings.purview.clientSecret', type: 'password' as const, sensitive: true },
+    ];
+
+    const basicFields = [
+      { key: 'purview.basic.username', labelKey: 'integrationSettings.purview.basicUsername', type: 'text' as const },
+      { key: 'purview.basic.password', labelKey: 'integrationSettings.purview.basicPassword', type: 'password' as const, sensitive: true },
+    ];
+
+    const authFields = authType === 'basic' ? basicFields : oauth2Fields;
+
+    return [
+      ...common,
+      ...authFields,
+      { key: 'purview.collection', labelKey: 'integrationSettings.purview.collection', type: 'text' as const },
+    ];
+  }, [authType]);
+
   const onSave = async () => {
     const success = await handleSave();
     if (success) {
@@ -47,8 +80,20 @@ export function PurviewSettingsTab() {
 
   return (
     <Form layout="vertical" style={{ maxWidth: 600 }}>
+      <Alert
+        message={
+          <Space>
+            <Tag color="blue">Beta</Tag>
+            {t('integrationSettings.purview.betaNotice')}
+          </Space>
+        }
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+      />
+
       <SettingsFormFields
-        fields={FIELDS}
+        fields={fields}
         formValues={formValues}
         sources={sources}
         onFieldChange={updateField}

@@ -67,6 +67,51 @@ public class PurviewLockStateServiceImplTest {
         assertEquals("", lockState.getOwnerJobId());
     }
 
+    @Test
+    public void testGetRepositoryLockReturnsUnlockedStateWhenNoLockExists() {
+        PurviewLockState lockState = service.getRepositoryLock("bedroom", "FULL_SYNC");
+
+        assertFalse(lockState.isLocked());
+        assertEquals("", lockState.getOwnerJobId());
+    }
+
+    @Test
+    public void testReleaseRepositoryLockDoesNotReleaseForDifferentOwner() {
+        service.tryAcquireRepositoryLock("bedroom", "FULL_SYNC", "job-001", "2026-03-20T03:00:00Z");
+
+        service.releaseRepositoryLock("bedroom", "FULL_SYNC", "job-999");
+
+        PurviewLockState lockState = service.getRepositoryLock("bedroom", "FULL_SYNC");
+        assertTrue(lockState.isLocked());
+        assertEquals("job-001", lockState.getOwnerJobId());
+    }
+
+    @Test
+    public void testDifferentLockKindsAreIndependent() {
+        service.tryAcquireRepositoryLock("bedroom", "FULL_SYNC", "job-001", "2026-03-20T03:00:00Z");
+        boolean acquiredIncremental = service.tryAcquireRepositoryLock(
+                "bedroom", "INCREMENTAL_SYNC", "job-002", "2026-03-20T03:01:00Z");
+
+        assertTrue(acquiredIncremental);
+        PurviewLockState fullSync = service.getRepositoryLock("bedroom", "FULL_SYNC");
+        PurviewLockState incrementalSync = service.getRepositoryLock("bedroom", "INCREMENTAL_SYNC");
+        assertEquals("job-001", fullSync.getOwnerJobId());
+        assertEquals("job-002", incrementalSync.getOwnerJobId());
+    }
+
+    @Test
+    public void testSameOwnerCanReAcquireReleasedLock() {
+        service.tryAcquireRepositoryLock("bedroom", "FULL_SYNC", "job-001", "2026-03-20T03:00:00Z");
+        service.releaseRepositoryLock("bedroom", "FULL_SYNC", "job-001");
+
+        boolean reAcquired = service.tryAcquireRepositoryLock(
+                "bedroom", "FULL_SYNC", "job-002", "2026-03-20T04:00:00Z");
+
+        assertTrue(reAcquired);
+        PurviewLockState lockState = service.getRepositoryLock("bedroom", "FULL_SYNC");
+        assertEquals("job-002", lockState.getOwnerJobId());
+    }
+
     private static class StubContentDaoService extends StubContentDaoServiceBase {
         private Configuration systemConfiguration = createConfig();
 

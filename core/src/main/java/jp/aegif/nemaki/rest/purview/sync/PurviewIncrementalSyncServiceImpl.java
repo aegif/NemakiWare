@@ -25,6 +25,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.springframework.stereotype.Service;
@@ -36,6 +38,7 @@ import jp.aegif.nemaki.model.Content;
 @Service
 public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSyncService {
 
+    private static final Log log = LogFactory.getLog(PurviewIncrementalSyncServiceImpl.class);
     private static final String JOB_KIND = "INCREMENTAL_SYNC";
     private static final String STREAM_KIND = "content-change-log";
     private static final String CURSOR_KIND = "changeToken";
@@ -238,6 +241,14 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                 return jobStateService.saveJobState(failedJob);
             }
         } finally {
+            try {
+                int purged = jobStateService.purgeOldJobStates(50);
+                if (purged > 0) {
+                    log.info("Auto-purged " + purged + " old job states");
+                }
+            } catch (Exception e) {
+                log.warn("Auto-purge of old job states failed (non-fatal)", e);
+            }
             lockStateService.releaseRepositoryLock(repositoryId, JOB_KIND, jobId);
         }
     }

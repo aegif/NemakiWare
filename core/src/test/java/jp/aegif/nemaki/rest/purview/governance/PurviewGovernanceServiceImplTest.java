@@ -2,13 +2,16 @@ package jp.aegif.nemaki.rest.purview.governance;
 
 import jp.aegif.nemaki.rest.purview.PurviewConfig;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
+import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -106,6 +109,16 @@ public class PurviewGovernanceServiceImplTest {
         assertEquals(List.of("finance", "quarterly"), view.getLabels());
         assertEquals("Finance", view.getBusinessMetadata().get("nemakiGovernance").get("ownerDepartment"));
         verify(exceptionService).permissionDenied(any(), any(), any(), any());
+        verify(entityRegistryClient).getEntityByUniqueAttribute(
+                argThat(request -> request != null && "catalog/api/atlas/v2".equals(request.getAtlasBasePath())),
+                eq("nemaki_document"),
+                eq("qualifiedName"),
+                eq("nemaki://bedroom/objects/doc-001"));
+        verify(entityRegistryClient).getEntityByUniqueAttribute(
+                argThat(request -> request != null && "datamap/api/atlas/v2".equals(request.getAtlasBasePath())),
+                eq("nemaki_document"),
+                eq("qualifiedName"),
+                eq("nemaki://bedroom/objects/doc-001"));
     }
 
     @Test
@@ -136,6 +149,121 @@ public class PurviewGovernanceServiceImplTest {
         assertTrue(view.isSupportedObjectType());
         assertFalse(view.isEntityFound());
         verifyNoInteractions(entityRegistryClient);
+    }
+
+    @Test
+    public void testGetGovernanceReturnsUnavailableWhenConfigurationIsMissing() {
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setObjectType("cmis:document");
+        when(contentService.getContent("bedroom", "doc-001")).thenReturn(document);
+        when(purviewConfig.getEndpoint()).thenReturn("");
+
+        PurviewGovernanceView view = service.getGovernance("bedroom", "doc-001", mock(CallContext.class));
+
+        assertTrue(view.isFeatureEnabled());
+        assertFalse(view.isAvailable());
+        assertTrue(view.getMessage().contains("endpoint"));
+        verifyNoInteractions(entityRegistryClient);
+    }
+
+    @Test
+    public void testGetGovernanceBasicAuthModeSatisfiedByBasicCredentials() throws Exception {
+        // Basic auth mode: tenantId/clientId/clientSecret are empty but basicUsername/basicPassword are set
+        when(purviewConfig.isBasicAuth()).thenReturn(true);
+        when(purviewConfig.getTenantId()).thenReturn("");
+        when(purviewConfig.getClientId()).thenReturn("");
+        when(purviewConfig.getClientSecret()).thenReturn("");
+        when(purviewConfig.getBasicUsername()).thenReturn("admin");
+        when(purviewConfig.getBasicPassword()).thenReturn("admin");
+        when(purviewConfig.getAuthType()).thenReturn("basic");
+
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setObjectType("cmis:document");
+        when(contentService.getContent("bedroom", "doc-001")).thenReturn(document);
+        when(entityRegistryClient.getEntityByUniqueAttribute(any(), any(), any(), any()))
+                .thenReturn(null);
+
+        PurviewGovernanceView view = service.getGovernance("bedroom", "doc-001", mock(CallContext.class));
+
+        // Should not report missing configuration — should reach the entity lookup path
+        assertFalse(view.getMessage().contains("Missing"));
+        assertTrue(view.isAvailable());
+    }
+
+    @Test
+    public void testGetGovernanceBasicAuthModeReportsMissingBasicCredentials() {
+        when(purviewConfig.isBasicAuth()).thenReturn(true);
+        when(purviewConfig.getTenantId()).thenReturn("");
+        when(purviewConfig.getClientId()).thenReturn("");
+        when(purviewConfig.getClientSecret()).thenReturn("");
+        when(purviewConfig.getBasicUsername()).thenReturn("");
+        when(purviewConfig.getBasicPassword()).thenReturn("");
+
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setObjectType("cmis:document");
+        when(contentService.getContent("bedroom", "doc-001")).thenReturn(document);
+
+        PurviewGovernanceView view = service.getGovernance("bedroom", "doc-001", mock(CallContext.class));
+
+        assertTrue(view.getMessage().contains("basicUsername"));
+        assertTrue(view.getMessage().contains("basicPassword"));
+        assertFalse(view.isAvailable());
+        verifyNoInteractions(entityRegistryClient);
+    }
+
+    @Test
+    public void testGetGovernanceReturnsErrorViewWhenClientExceptionOccurs() throws Exception {
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setObjectType("cmis:document");
+        when(contentService.getContent("bedroom", "doc-001")).thenReturn(document);
+        when(entityRegistryClient.getEntityByUniqueAttribute(any(), any(), any(), any()))
+                .thenThrow(new PurviewClientException("Connection timed out"));
+
+        PurviewGovernanceView view = service.getGovernance("bedroom", "doc-001", mock(CallContext.class));
+
+        assertTrue(view.isFeatureEnabled());
+        assertFalse(view.isAvailable());
+        assertFalse(view.isEntityFound());
+        assertTrue(view.getMessage().contains("Connection timed out"));
+        verify(entityRegistryClient, times(1)).getEntityByUniqueAttribute(any(), any(), any(), any());
+    }
+
+    @Test
+    public void testGetGovernanceReturnsNotSyncedWhenEntityNotFoundOnAnyPath() throws Exception {
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setObjectType("cmis:document");
+        when(contentService.getContent("bedroom", "doc-001")).thenReturn(document);
+        when(entityRegistryClient.getEntityByUniqueAttribute(any(), any(), any(), any()))
+                .thenReturn(null);
+
+        PurviewGovernanceView view = service.getGovernance("bedroom", "doc-001", mock(CallContext.class));
+
+        assertTrue(view.isFeatureEnabled());
+        assertTrue(view.isAvailable());
+        assertFalse(view.isEntityFound());
+        assertTrue(view.getMessage().contains("not synced"));
+        verify(entityRegistryClient, times(2)).getEntityByUniqueAttribute(any(), any(), any(), any());
+    }
+
+    @Test
+    public void testGetGovernanceBulkReturnsEmptyListForNullInput() {
+        List<PurviewGovernanceBulkItemView> items = service.getGovernanceBulk(
+                "bedroom", null, mock(CallContext.class));
+
+        assertTrue(items.isEmpty());
+    }
+
+    @Test
+    public void testGetGovernanceBulkReturnsEmptyListForEmptyInput() {
+        List<PurviewGovernanceBulkItemView> items = service.getGovernanceBulk(
+                "bedroom", List.of(), mock(CallContext.class));
+
+        assertTrue(items.isEmpty());
     }
 
     @Test

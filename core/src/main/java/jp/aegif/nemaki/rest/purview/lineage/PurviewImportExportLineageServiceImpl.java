@@ -178,9 +178,12 @@ public class PurviewImportExportLineageServiceImpl implements PurviewImportExpor
         return new PurviewConnectionRequest(
                 purviewConfig.getEndpoint(),
                 purviewConfig.getAtlasBasePath(),
+                purviewConfig.getAuthType(),
                 purviewConfig.getTenantId(),
                 purviewConfig.getClientId(),
                 purviewConfig.getClientSecret(),
+                purviewConfig.getBasicUsername(),
+                purviewConfig.getBasicPassword(),
                 purviewConfig.getConnectTimeoutMs(),
                 purviewConfig.getReadTimeoutMs());
     }

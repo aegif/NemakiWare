@@ -2,12 +2,16 @@ package jp.aegif.nemaki.rest.purview.relationship;
 
 import jp.aegif.nemaki.rest.purview.PurviewConfig;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
+import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -66,6 +70,8 @@ public class PurviewDocumentArchiveRelationshipServiceImplTest {
                 ((Map<String, Object>) end1.get("uniqueAttributes")).get("qualifiedName"));
         assertEquals("nemaki://bedroom/archives/archive-001",
                 ((Map<String, Object>) end2.get("uniqueAttributes")).get("qualifiedName"));
+        assertEquals("DataSet", end1.get("typeName"));
+        assertEquals("nemaki_archive", end2.get("typeName"));
     }
 
     @Test
@@ -80,5 +86,62 @@ public class PurviewDocumentArchiveRelationshipServiceImplTest {
                 () -> service.upsertDocumentArchiveRelationships("bedroom", List.of(archive)));
 
         assertEquals("relationship rejected", error.getMessage());
+    }
+
+    @Test
+    public void testUpsertDocumentArchiveRelationshipsReturnsZeroForEmptyList() throws Exception {
+        int processedCount = service.upsertDocumentArchiveRelationships("bedroom", List.of());
+
+        assertEquals(0, processedCount);
+        verify(entityRegistryClient, never()).createRelationship(any(), any());
+    }
+
+    @Test
+    public void testUpsertDocumentArchiveRelationshipsReturnsZeroForNullList() throws Exception {
+        int processedCount = service.upsertDocumentArchiveRelationships("bedroom", null);
+
+        assertEquals(0, processedCount);
+        verify(entityRegistryClient, never()).createRelationship(any(), any());
+    }
+
+    @Test
+    public void testUpsertDocumentArchiveRelationshipsSkipsArchiveWithBlankOriginalId() throws Exception {
+        Archive archive = new Archive();
+        archive.setId("archive-001");
+        archive.setOriginalId("");
+
+        int processedCount = service.upsertDocumentArchiveRelationships("bedroom", List.of(archive));
+
+        assertEquals(0, processedCount);
+        verify(entityRegistryClient, never()).createRelationship(any(), any());
+    }
+
+    @Test
+    public void testUpsertDocumentArchiveRelationshipsProcessesMultipleArchives() throws Exception {
+        Archive archive1 = new Archive();
+        archive1.setId("archive-001");
+        archive1.setOriginalId("doc-001");
+        Archive archive2 = new Archive();
+        archive2.setId("archive-002");
+        archive2.setOriginalId("doc-002");
+
+        int processedCount = service.upsertDocumentArchiveRelationships("bedroom", List.of(archive1, archive2));
+
+        assertEquals(2, processedCount);
+        verify(entityRegistryClient, times(2)).createRelationship(any(), any());
+    }
+
+    @Test
+    public void testUpsertDocumentArchiveRelationshipsThrowsOnClientException() throws Exception {
+        Archive archive = new Archive();
+        archive.setId("archive-001");
+        archive.setOriginalId("doc-001");
+        when(entityRegistryClient.createRelationship(any(), any()))
+                .thenThrow(new PurviewClientException("Connection timed out"));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.upsertDocumentArchiveRelationships("bedroom", List.of(archive)));
+
+        assertTrue(error.getMessage().contains("Connection timed out"));
     }
 }

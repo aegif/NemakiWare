@@ -329,9 +329,12 @@ public class PurviewGovernanceServiceImpl implements PurviewGovernanceService {
         return new PurviewConnectionRequest(
                 purviewConfig.getEndpoint(),
                 atlasBasePath,
+                purviewConfig.getAuthType(),
                 purviewConfig.getTenantId(),
                 purviewConfig.getClientId(),
                 purviewConfig.getClientSecret(),
+                purviewConfig.getBasicUsername(),
+                purviewConfig.getBasicPassword(),
                 purviewConfig.getConnectTimeoutMs(),
                 purviewConfig.getReadTimeoutMs());
     }
@@ -349,14 +352,23 @@ public class PurviewGovernanceServiceImpl implements PurviewGovernanceService {
         if (isBlank(purviewConfig.getEndpoint())) {
             missing.add("endpoint");
         }
-        if (isBlank(purviewConfig.getTenantId())) {
-            missing.add("tenantId");
-        }
-        if (isBlank(purviewConfig.getClientId())) {
-            missing.add("clientId");
-        }
-        if (isBlank(purviewConfig.getClientSecret())) {
-            missing.add("clientSecret");
+        if (purviewConfig.isBasicAuth()) {
+            if (isBlank(purviewConfig.getBasicUsername())) {
+                missing.add("basicUsername");
+            }
+            if (isBlank(purviewConfig.getBasicPassword())) {
+                missing.add("basicPassword");
+            }
+        } else {
+            if (isBlank(purviewConfig.getTenantId())) {
+                missing.add("tenantId");
+            }
+            if (isBlank(purviewConfig.getClientId())) {
+                missing.add("clientId");
+            }
+            if (isBlank(purviewConfig.getClientSecret())) {
+                missing.add("clientSecret");
+            }
         }
         return missing;
     }

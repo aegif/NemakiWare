@@ -2,6 +2,7 @@ package jp.aegif.nemaki.rest.purview.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -113,6 +114,56 @@ public class PurviewTombstoneStateServiceImplTest {
         assertIterableEquals(
                 List.of("doc-003", "doc-001", "doc-002"),
                 service.listTombstoneStates("bedroom").stream().map(PurviewTombstoneState::getObjectId).toList());
+    }
+
+    @Test
+    public void testGetTombstoneStateReturnsEmptyFieldsWhenNotSaved() {
+        PurviewTombstoneState loaded = service.getTombstoneState("bedroom", "nonexistent-001");
+
+        assertEquals("bedroom", loaded.getRepositoryId());
+        assertEquals("nonexistent-001", loaded.getObjectId());
+        assertEquals("", loaded.getTypeName());
+        assertEquals("", loaded.getQualifiedName());
+        assertEquals("", loaded.getStatus());
+    }
+
+    @Test
+    public void testSaveTombstoneStateOverwritesPreviousState() {
+        service.saveTombstoneState(new PurviewTombstoneState(
+                "bedroom", "doc-001", "nemaki_document", "nemaki://bedroom/objects/doc-001",
+                "token-101", "2026-03-20T10:00:00Z", "2026-03-20T10:00:05Z", "PENDING"));
+
+        service.saveTombstoneState(new PurviewTombstoneState(
+                "bedroom", "doc-001", "nemaki_document", "nemaki://bedroom/objects/doc-001",
+                "token-102", "2026-03-20T10:00:00Z", "2026-03-20T10:00:05Z", "ARCHIVED"));
+
+        PurviewTombstoneState loaded = service.getTombstoneState("bedroom", "doc-001");
+        assertEquals("token-102", loaded.getChangeToken());
+        assertEquals("ARCHIVED", loaded.getStatus());
+    }
+
+    @Test
+    public void testListDueTombstoneStatesReturnsEmptyForRepositoryWithNoTombstones() {
+        List<PurviewTombstoneState> dueStates = service.listDueTombstoneStates(
+                "bedroom", Instant.parse("2026-03-20T10:00:05Z"));
+
+        assertTrue(dueStates.isEmpty());
+    }
+
+    @Test
+    public void testListDueTombstoneStatesSkipsMalformedDueAt() {
+        service.saveTombstoneState(new PurviewTombstoneState(
+                "bedroom", "doc-bad", "nemaki_document", "nemaki://bedroom/objects/doc-bad",
+                "101", "2026-03-20T10:00:00Z", "not-a-valid-instant", "PENDING"));
+        service.saveTombstoneState(new PurviewTombstoneState(
+                "bedroom", "doc-good", "nemaki_document", "nemaki://bedroom/objects/doc-good",
+                "102", "2026-03-20T10:00:00Z", "2026-03-20T10:00:03Z", "PENDING"));
+
+        List<PurviewTombstoneState> dueStates = service.listDueTombstoneStates(
+                "bedroom", Instant.parse("2026-03-20T10:00:05Z"));
+
+        assertEquals(1, dueStates.size());
+        assertEquals("doc-good", dueStates.get(0).getObjectId());
     }
 
     private static class StubContentDaoService extends StubContentDaoServiceBase {

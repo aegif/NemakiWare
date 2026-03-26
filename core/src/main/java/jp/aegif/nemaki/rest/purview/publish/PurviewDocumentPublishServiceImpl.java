@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -73,21 +74,25 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         List<Map<String, Object>> entityBatch = new ArrayList<>();
         List<Content> containmentCandidates = new ArrayList<>();
         List<Content> relationshipCandidates = new ArrayList<>();
+        Map<String, String> pathMap = new HashMap<>();
+        pathMap.put(rootFolderId, "/");
+        Map<String, String> guidAccumulator = new HashMap<>();
         int processedCount = 0;
 
         entityBatch.add(entityPayloadFactory.buildRepositoryEntity(repositoryInfo));
-        processedCount += flushIfNeeded(repositoryId, entityBatch);
+        processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator);
 
         Content rootFolder = contentDaoService.getContent(repositoryId, rootFolderId);
         if (rootFolder == null || !rootFolder.isFolder()) {
             throw new IllegalStateException("Root folder content is not available for repository " + repositoryId);
         }
-        entityBatch.add(entityPayloadFactory.buildFolderEntity(repositoryId, rootFolder));
+        entityBatch.add(entityPayloadFactory.buildFolderEntity(repositoryId, rootFolder, "/"));
         containmentCandidates.add(rootFolder);
-        processedCount += flushIfNeeded(repositoryId, entityBatch);
+        processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator);
 
         while (!folderQueue.isEmpty()) {
             String folderId = folderQueue.removeFirst();
+            String parentPath = pathMap.getOrDefault(folderId, "/");
             long totalChildren = Math.max(0L, contentDaoService.getChildrenCount(repositoryId, folderId));
             for (int skip = 0; skip < totalChildren; skip += CHILD_FETCH_PAGE_SIZE) {
                 List<Content> children = contentDaoService.getChildrenPaged(
@@ -105,9 +110,14 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
                     }
 
                     if (child.isFolder()) {
-                        entityBatch.add(entityPayloadFactory.buildFolderEntity(repositoryId, child));
+                        String childName = entityPayloadFactory.firstNonBlank(child.getName(), child.getId());
+                        String childPath = "/".equals(parentPath)
+                                ? "/" + childName
+                                : parentPath + "/" + childName;
+                        pathMap.put(child.getId(), childPath);
+                        entityBatch.add(entityPayloadFactory.buildFolderEntity(repositoryId, child, childPath));
                         containmentCandidates.add(child);
-                        processedCount += flushIfNeeded(repositoryId, entityBatch);
+                        processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator);
                         folderQueue.addLast(child.getId());
                         continue;
                     }
@@ -115,18 +125,18 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
                         continue;
                     }
 
-                    entityBatch.add(entityPayloadFactory.buildDocumentEntity(repositoryId, child));
+                    entityBatch.add(entityPayloadFactory.buildDocumentEntity(repositoryId, child, parentPath));
                     containmentCandidates.add(child);
                     relationshipCandidates.add(child);
-                    processedCount += flushIfNeeded(repositoryId, entityBatch);
+                    processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator);
                 }
             }
         }
 
         return processedCount
-                + flushEntities(repositoryId, entityBatch)
-                + containmentRelationshipService.upsertContainmentRelationships(repositoryId, containmentCandidates)
-                + documentTypeRelationshipService.upsertDocumentTypeRelationships(repositoryId, relationshipCandidates);
+                + flushEntities(repositoryId, entityBatch, guidAccumulator)
+                + containmentRelationshipService.upsertContainmentRelationships(repositoryId, containmentCandidates, guidAccumulator)
+                + documentTypeRelationshipService.upsertDocumentTypeRelationships(repositoryId, relationshipCandidates, guidAccumulator);
     }
 
     @Override
@@ -140,12 +150,20 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
             return 0;
         }
 
+        Map<String, String> pathCache = new HashMap<>();
+        String rootFolderId = resolveRootFolderIdQuietly(repositoryId);
+        if (rootFolderId != null) {
+            pathCache.put(rootFolderId, "/");
+        }
+
         List<Map<String, Object>> pending = new ArrayList<>();
         List<Content> containmentCandidates = new ArrayList<>();
         List<Content> relationshipCandidates = new ArrayList<>();
+        Map<String, String> guidAccumulator = new HashMap<>();
         int processedCount = 0;
         for (Content content : contents) {
-            Map<String, Object> entity = buildContentEntity(repositoryId, content);
+            String folderPath = resolveFolderPath(repositoryId, content, pathCache);
+            Map<String, Object> entity = buildContentEntity(repositoryId, content, folderPath);
             if (entity == null) {
                 continue;
             }
@@ -154,12 +172,12 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
             if (content != null && content.isDocument()) {
                 relationshipCandidates.add(content);
             }
-            processedCount += flushIfNeeded(repositoryId, pending);
+            processedCount += flushIfNeeded(repositoryId, pending, guidAccumulator);
         }
         return processedCount
-                + flushEntities(repositoryId, pending)
-                + containmentRelationshipService.upsertContainmentRelationships(repositoryId, containmentCandidates)
-                + documentTypeRelationshipService.upsertDocumentTypeRelationships(repositoryId, relationshipCandidates);
+                + flushEntities(repositoryId, pending, guidAccumulator)
+                + containmentRelationshipService.upsertContainmentRelationships(repositoryId, containmentCandidates, guidAccumulator)
+                + documentTypeRelationshipService.upsertDocumentTypeRelationships(repositoryId, relationshipCandidates, guidAccumulator);
     }
 
     @Override
@@ -167,30 +185,137 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         return upsertContents(repositoryId, documents);
     }
 
-    private Map<String, Object> buildContentEntity(String repositoryId, Content content) {
+    private Map<String, Object> buildContentEntity(String repositoryId, Content content, String folderPath) {
         if (content == null) {
             return null;
         }
         if (content.isFolder()) {
-            return entityPayloadFactory.buildFolderEntity(repositoryId, content);
+            return entityPayloadFactory.buildFolderEntity(repositoryId, content, folderPath);
         }
         if (content.isDocument()) {
-            return entityPayloadFactory.buildDocumentEntity(repositoryId, content);
+            return entityPayloadFactory.buildDocumentEntity(repositoryId, content, folderPath);
         }
         return null;
     }
 
-    private int flushIfNeeded(String repositoryId, List<Map<String, Object>> entities) {
+    /**
+     * Resolves the folder path for a content item by walking up the parent chain.
+     * Results are cached in {@code pathCache} so the same parent is not fetched twice within a batch.
+     * For documents, returns the parent folder's path. For folders, returns the folder's own path.
+     */
+    private String resolveFolderPath(String repositoryId, Content content, Map<String, String> pathCache) {
+        if (content == null || content.getId() == null) {
+            return null;
+        }
+
+        // For documents: resolve the parent folder's path
+        if (content.isDocument()) {
+            String parentId = content.getParentId();
+            if (parentId == null || parentId.isBlank()) {
+                return null;
+            }
+            return resolvePathForFolder(repositoryId, parentId, pathCache);
+        }
+
+        // For folders: resolve this folder's own path (parent path + own name)
+        if (content.isFolder()) {
+            String parentId = content.getParentId();
+            if (parentId == null || parentId.isBlank()) {
+                // This is a root folder
+                pathCache.put(content.getId(), "/");
+                return "/";
+            }
+            String parentPath = resolvePathForFolder(repositoryId, parentId, pathCache);
+            if (parentPath == null) {
+                return null;
+            }
+            String name = entityPayloadFactory.firstNonBlank(content.getName(), content.getId());
+            String folderPath = "/".equals(parentPath) ? "/" + name : parentPath + "/" + name;
+            pathCache.put(content.getId(), folderPath);
+            return folderPath;
+        }
+
+        return null;
+    }
+
+    private static final int MAX_PATH_DEPTH = 100;
+
+    private String resolvePathForFolder(String repositoryId, String folderId, Map<String, String> pathCache) {
+        if (pathCache.containsKey(folderId)) {
+            return pathCache.get(folderId);
+        }
+
+        // Walk up the parent chain, collecting ancestors
+        List<Content> ancestors = new ArrayList<>();
+        String currentId = folderId;
+        for (int depth = 0; depth < MAX_PATH_DEPTH; depth++) {
+            if (pathCache.containsKey(currentId)) {
+                break; // Found a cached ancestor
+            }
+            Content folder = contentDaoService.getContent(repositoryId, currentId);
+            if (folder == null || !folder.isFolder()) {
+                return null; // Cannot resolve
+            }
+            ancestors.add(folder);
+            String parentId = folder.getParentId();
+            if (parentId == null || parentId.isBlank()) {
+                // Reached root
+                pathCache.put(folder.getId(), "/");
+                break;
+            }
+            currentId = parentId;
+        }
+
+        // Build paths from the deepest known ancestor down
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            Content ancestor = ancestors.get(i);
+            String parentId = ancestor.getParentId();
+            if (parentId == null || parentId.isBlank()) {
+                pathCache.put(ancestor.getId(), "/");
+                continue;
+            }
+            String parentPath = pathCache.get(parentId);
+            if (parentPath == null) {
+                continue; // Should not happen if the walk was correct
+            }
+            String name = entityPayloadFactory.firstNonBlank(ancestor.getName(), ancestor.getId());
+            String path = "/".equals(parentPath) ? "/" + name : parentPath + "/" + name;
+            pathCache.put(ancestor.getId(), path);
+        }
+
+        return pathCache.get(folderId);
+    }
+
+    private String resolveRootFolderIdQuietly(String repositoryId) {
+        try {
+            RepositoryInfo repositoryInfo = resolveRepositoryInfo(repositoryId);
+            if (repositoryInfo != null && repositoryInfo.getRootFolderId() != null
+                    && !repositoryInfo.getRootFolderId().isBlank()) {
+                return repositoryInfo.getRootFolderId();
+            }
+        } catch (RuntimeException e) {
+            logger.debug("Could not resolve root folder ID for repository {}: {}", repositoryId, e.getMessage());
+        }
+        return null;
+    }
+
+    private int flushIfNeeded(String repositoryId, List<Map<String, Object>> entities,
+            Map<String, String> guidAccumulator) {
         if (entities.size() < ENTITY_BATCH_SIZE) {
             return 0;
         }
-        return flushEntities(repositoryId, entities);
+        return flushEntities(repositoryId, entities, guidAccumulator);
     }
 
-    private int flushEntities(String repositoryId, List<Map<String, Object>> entities) {
+    private int flushEntities(String repositoryId, List<Map<String, Object>> entities,
+            Map<String, String> guidAccumulator) {
         if (entities.isEmpty()) {
             return 0;
         }
+
+        // Capture sent qualifiedNames and typeNames before the list is cleared,
+        // so we can resolve missing GUIDs via follow-up lookups on Atlas.
+        List<SentEntityRef> sentRefs = extractSentEntityRefs(entities);
 
         try {
             PurviewEntityPublishResult result = entityRegistryClient.bulkCreateOrUpdateEntities(
@@ -210,12 +335,94 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
                             failedItem.getErrorMessage()));
                 }
             }
+            if (guidAccumulator != null && result.getEntityGuids() != null) {
+                guidAccumulator.putAll(result.getEntityGuids());
+            }
+
+            // Atlas on-prem: resolve missing GUIDs via individual lookups
+            if (guidAccumulator != null && purviewConfig.isAtlasOnPrem()) {
+                resolveUnmappedGuids(sentRefs, guidAccumulator, result.getEntityGuids());
+            }
+
             int publishedCount = result.getPublishedCount();
             entities.clear();
             return publishedCount;
         } catch (PurviewClientException e) {
             throw new IllegalStateException(e.getMessage(), e);
         }
+    }
+
+    /**
+     * Atlas 2.3 bulk responses sometimes omit qualifiedName from mutated entries.
+     * For any sent entity whose qualifiedName is missing from the GUID map,
+     * attempt a single lookup to resolve its GUID.
+     */
+    private void resolveUnmappedGuids(
+            List<SentEntityRef> sentRefs,
+            Map<String, String> guidAccumulator,
+            Map<String, String> responseGuids) {
+        for (SentEntityRef ref : sentRefs) {
+            if (ref.qualifiedName == null || ref.typeName == null) {
+                continue;
+            }
+            if (responseGuids != null && responseGuids.containsKey(ref.qualifiedName)) {
+                continue; // already resolved from bulk response
+            }
+            if (guidAccumulator.containsKey(ref.qualifiedName)) {
+                continue; // resolved from a previous batch
+            }
+            try {
+                Map<String, Object> entity = entityRegistryClient.getEntityByUniqueAttribute(
+                        buildConnectionRequest(),
+                        ref.typeName,
+                        "qualifiedName",
+                        ref.qualifiedName);
+                if (entity != null) {
+                    String guid = extractGuidFromEntityResponse(entity);
+                    if (guid != null) {
+                        guidAccumulator.put(ref.qualifiedName, guid);
+                        logger.debug("Atlas GUID follow-up resolved: {} → {}", ref.qualifiedName, guid);
+                    }
+                }
+            } catch (PurviewClientException e) {
+                logger.debug("Atlas GUID follow-up lookup failed for {}: {}", ref.qualifiedName, e.getMessage());
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractGuidFromEntityResponse(Map<String, Object> response) {
+        Object entity = response.get("entity");
+        if (entity instanceof Map<?, ?> entityMap) {
+            Object guid = entityMap.get("guid");
+            if (guid != null) {
+                return String.valueOf(guid);
+            }
+        }
+        // Direct guid field (some Atlas response shapes)
+        Object directGuid = response.get("guid");
+        return directGuid != null ? String.valueOf(directGuid) : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<SentEntityRef> extractSentEntityRefs(List<Map<String, Object>> entities) {
+        List<SentEntityRef> refs = new ArrayList<>();
+        for (Map<String, Object> entity : entities) {
+            String typeName = entity.get("typeName") instanceof String t ? t : null;
+            String qualifiedName = null;
+            Object attrs = entity.get("attributes");
+            if (attrs instanceof Map<?, ?> attrMap) {
+                Object qn = attrMap.get("qualifiedName");
+                if (qn instanceof String s) {
+                    qualifiedName = s;
+                }
+            }
+            refs.add(new SentEntityRef(typeName, qualifiedName));
+        }
+        return refs;
+    }
+
+    private record SentEntityRef(String typeName, String qualifiedName) {
     }
 
     private PurviewDeadLetterState buildEntityDeadLetterState(
@@ -249,9 +456,12 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         return new PurviewConnectionRequest(
                 purviewConfig.getEndpoint(),
                 purviewConfig.getAtlasBasePath(),
+                purviewConfig.getAuthType(),
                 purviewConfig.getTenantId(),
                 purviewConfig.getClientId(),
                 purviewConfig.getClientSecret(),
+                purviewConfig.getBasicUsername(),
+                purviewConfig.getBasicPassword(),
                 purviewConfig.getConnectTimeoutMs(),
                 purviewConfig.getReadTimeoutMs());
     }

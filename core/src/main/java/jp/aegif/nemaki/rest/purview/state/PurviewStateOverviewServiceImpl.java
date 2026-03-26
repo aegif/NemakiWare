@@ -17,6 +17,7 @@ public class PurviewStateOverviewServiceImpl implements PurviewStateOverviewServ
     private static final String LOCK_PREFIX = "purview.lock.repository.";
     private static final String TOMBSTONE_PREFIX = "purview.tombstone.state.";
     private static final String DEAD_LETTER_PREFIX = "purview.dead-letter.state.";
+    private static final String CONSOLIDATED_DLQ_PREFIX = "purview.dead-letter.entry.";
 
     private final PurviewStateStore stateStore;
 
@@ -209,7 +210,35 @@ public class PurviewStateOverviewServiceImpl implements PurviewStateOverviewServ
         return tombstones;
     }
 
+    @SuppressWarnings("unchecked")
     private List<PurviewDeadLetterState> buildDeadLetters(Map<String, Object> persisted) {
+        Map<String, PurviewDeadLetterState> deduped = new LinkedHashMap<>();
+
+        // 1. Read consolidated entries (purview.dead-letter.entry.*)
+        for (Map.Entry<String, Object> entry : persisted.entrySet()) {
+            if (!entry.getKey().startsWith(CONSOLIDATED_DLQ_PREFIX)) {
+                continue;
+            }
+            Object value = entry.getValue();
+            if (value instanceof Map) {
+                Map<String, Object> fields = (Map<String, Object>) value;
+                PurviewDeadLetterState state = new PurviewDeadLetterState(
+                        stringValue(fields.get("repositoryId")),
+                        stringValue(fields.get("streamKind")),
+                        stringValue(fields.get("entryKey")),
+                        stringValue(fields.get("typeName")),
+                        stringValue(fields.get("qualifiedName")),
+                        stringValue(fields.get("firstFailedAt")),
+                        stringValue(fields.get("lastFailedAt")),
+                        intValue(fields.get("failureCount")),
+                        stringValue(fields.get("checkpoint")),
+                        stringValue(fields.get("errorSummary")));
+                String dedupeKey = state.getRepositoryId() + "\0" + state.getStreamKind() + "\0" + state.getEntryKey();
+                deduped.put(dedupeKey, state);
+            }
+        }
+
+        // 2. Read legacy entries (purview.dead-letter.state.*)
         Map<String, Map<String, Object>> grouped = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : persisted.entrySet()) {
             if (!entry.getKey().startsWith(DEAD_LETTER_PREFIX)) {
@@ -225,9 +254,8 @@ public class PurviewStateOverviewServiceImpl implements PurviewStateOverviewServ
                     .put(parsed.fieldName(), entry.getValue());
         }
 
-        List<PurviewDeadLetterState> deadLetters = new ArrayList<>();
         for (Map<String, Object> fields : grouped.values()) {
-            deadLetters.add(new PurviewDeadLetterState(
+            PurviewDeadLetterState state = new PurviewDeadLetterState(
                     stringValue(fields.get("repositoryId")),
                     stringValue(fields.get("streamKind")),
                     stringValue(fields.get("entryKey")),
@@ -237,8 +265,12 @@ public class PurviewStateOverviewServiceImpl implements PurviewStateOverviewServ
                     stringValue(fields.get("lastFailedAt")),
                     intValue(fields.get("failureCount")),
                     stringValue(fields.get("checkpoint")),
-                    stringValue(fields.get("errorSummary"))));
+                    stringValue(fields.get("errorSummary")));
+            String dedupeKey = state.getRepositoryId() + "\0" + state.getStreamKind() + "\0" + state.getEntryKey();
+            deduped.putIfAbsent(dedupeKey, state);
         }
+
+        List<PurviewDeadLetterState> deadLetters = new ArrayList<>(deduped.values());
         deadLetters.sort(Comparator.comparing(PurviewDeadLetterState::getRepositoryId)
                 .thenComparing(PurviewDeadLetterState::getStreamKind)
                 .thenComparing(PurviewDeadLetterState::getEntryKey));

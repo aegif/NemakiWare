@@ -99,12 +99,12 @@
       "filesystemImportExport": "ファイルシステム インポート/エクスポート",
       "integrationSettings": "連携設定",
       "configViewer": "設定ビューア",
-      "purview": "Purview連携",
+      "purview": "Purview / Atlas",
       "rssManagement": "RSSトークン管理",
       "accountSettings": "アカウント設定"
     },
   "purviewManagement": {
-    "title": "Purview 管理",
+    "title": "Purview / Atlas 管理",
     "actions": {
       "testConnection": "接続確認",
       "lookupGovernance": "Governance 参照",
@@ -116,7 +116,8 @@
       "reconcileCloudMetadata": "クラウドメタデータ再整合",
       "reconcileContainment": "包含関係再整合",
       "resolveDeletes": "削除解決",
-      "retryFailed": "失敗を再試行"
+      "retryFailed": "失敗を再試行",
+      "purgeJobHistory": "ジョブ履歴をパージ"
     },
     "alerts": {
       "loadFailed": "Purview 状態の読み込みに失敗しました",
@@ -179,7 +180,8 @@
     "actionGroups": {
       "bootstrap": "Bootstrap",
       "sync": "Sync",
-      "reconciliation": "Reconciliation / Recovery"
+      "reconciliation": "Reconciliation / Recovery",
+      "maintenance": "メンテナンス"
     },
     "tabs": {
       "jobs": "Jobs",
@@ -238,7 +240,12 @@
       "cloudMetadataReconciliationStarted": "クラウドメタデータ再整合を開始しました",
       "containmentReconciliationStarted": "包含関係再整合を開始しました",
       "deleteResolutionStarted": "削除解決を開始しました",
-      "retryFailedStarted": "dead-letter 再試行を開始しました"
+      "retryFailedStarted": "dead-letter 再試行を開始しました",
+      "purgeJobHistoryCompleted": "{{count}} 件の古いジョブ状態を削除しました"
+    },
+    "purgeJobHistory": {
+      "confirmTitle": "ジョブ履歴のパージ",
+      "confirmContent": "ジョブ種別ごとに最新50件を残し、古いジョブ状態を削除します。続行しますか？"
     }
   },
   "configViewer": {
@@ -1218,7 +1225,14 @@
       "unresolved": "未解決 {{count}} 件",
       "topClassifications": "上位 Classification",
       "topGlossaryTerms": "上位 Glossary Term"
-    }
+    },
+    "objectIdSearch": "ID検索",
+    "objectIdSearchPlaceholder": "オブジェクトIDを入力",
+    "objectIdSearchDirectMatch": "対象オブジェクト",
+    "objectIdSearchChildren": "子オブジェクト",
+    "objectIdSearchParent": "親フォルダ",
+    "objectIdSearchNotFound": "指定されたIDのオブジェクトが見つかりません",
+    "objectIdSearchDescription": "CouchDBの内部IDでオブジェクトを直接検索します"
   },
   "searchResults": {
     "title": "検索",
@@ -2584,7 +2598,7 @@
       "google": "Google認証",
       "microsoft": "Microsoft認証",
       "saml": "SAML",
-      "purview": "Purview"
+      "purview": "Purview / Atlas"
     },
     "save": "保存",
     "testConnection": "接続テスト",
@@ -2623,12 +2637,22 @@
       "attributeMapping": "Attribute Mapping (JSON)"
     },
     "purview": {
-      "enabled": "Purview連携を有効化",
+      "enabled": "Purview / Atlas 連携を有効化",
+      "authType": "認証方式",
+      "authTypeOAuth2": "OAuth2 (Microsoft Purview)",
+      "authTypeBasic": "Basic Auth (Apache Atlas)",
       "endpoint": "エンドポイントURL",
+      "atlasBasePath": "Atlas API ベースパス",
+      "basePathPurview": "datamap/api/atlas/v2 (Purview DataMap)",
+      "basePathCatalog": "catalog/api/atlas/v2 (Purview Catalog)",
+      "basePathAtlas": "api/atlas/v2 (Atlas on-prem)",
       "tenantId": "テナントID",
       "clientId": "クライアントID",
       "clientSecret": "クライアントシークレット",
-      "collection": "コレクション名"
+      "basicUsername": "Basic Auth ユーザー名",
+      "basicPassword": "Basic Auth パスワード",
+      "collection": "コレクション名",
+      "betaNotice": "この機能はベータ版です。動作が不安定な場合があります。"
     }
   }
 }

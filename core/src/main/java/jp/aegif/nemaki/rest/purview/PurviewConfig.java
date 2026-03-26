@@ -49,6 +49,15 @@ public class PurviewConfig {
     @Value("${purview.timeout.read.ms:30000}")
     private int readTimeoutMs;
 
+    @Value("${purview.auth.type:oauth2}")
+    private String authType;
+
+    @Value("${purview.basic.username:}")
+    private String basicUsername;
+
+    @Value("${purview.basic.password:}")
+    private String basicPassword;
+
     @Value("${purview.delete-resolution.delay.ms:5000}")
     private long deleteResolutionDelayMs;
 
@@ -125,6 +134,38 @@ public class PurviewConfig {
 
     public int getReadTimeoutMs() {
         return readDynamicInt("purview.timeout.read.ms", readTimeoutMs);
+    }
+
+    public String getAuthType() {
+        return trimToEmpty(readDynamic("purview.auth.type", authType)).isEmpty()
+                ? "oauth2"
+                : trimToEmpty(readDynamic("purview.auth.type", authType));
+    }
+
+    public boolean isBasicAuth() {
+        return "basic".equalsIgnoreCase(getAuthType());
+    }
+
+    public boolean isPurviewDataMap() {
+        return getAtlasBasePath().startsWith("datamap/");
+    }
+
+    /**
+     * Returns true when the configured atlas base path indicates an Apache Atlas
+     * on-prem deployment (i.e. the path does not start with a known Purview cloud
+     * prefix such as {@code datamap/} or {@code catalog/}).
+     */
+    public boolean isAtlasOnPrem() {
+        String path = getAtlasBasePath();
+        return !path.startsWith("datamap/") && !path.startsWith("catalog/");
+    }
+
+    public String getBasicUsername() {
+        return trimToEmpty(readDynamic("purview.basic.username", basicUsername));
+    }
+
+    public String getBasicPassword() {
+        return trimToEmpty(readDynamic("purview.basic.password", basicPassword));
     }
 
     public long getDeleteResolutionDelayMs() {

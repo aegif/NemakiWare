@@ -10,9 +10,11 @@ import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -65,7 +67,7 @@ public class PurviewArchivePublishServiceImplTest {
                 .thenAnswer(this::successWithEntityCount);
         when(entityRegistryClient.deleteByUniqueAttribute(any(), any(), any(), any()))
                 .thenReturn(PurviewEntityPublishResult.success(1, "deleted"));
-        when(documentArchiveRelationshipService.upsertDocumentArchiveRelationships(any(), any())).thenReturn(0);
+        when(documentArchiveRelationshipService.upsertDocumentArchiveRelationships(any(), any(), any())).thenReturn(0);
         when(documentPublishService.upsertContents(any(), any())).thenReturn(1);
         when(deadLetterStateService.saveDeadLetterState(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -114,14 +116,15 @@ public class PurviewArchivePublishServiceImplTest {
         Archive archive = archive("archive-001", "doc-001");
         when(contentDaoService.getArchives("bedroom", 0, 100, Boolean.FALSE))
                 .thenReturn(List.of(archive));
-        when(documentArchiveRelationshipService.upsertDocumentArchiveRelationships(any(), any())).thenReturn(1);
+        when(documentArchiveRelationshipService.upsertDocumentArchiveRelationships(any(), any(), any())).thenReturn(1);
 
         int processedCount = service.publishRepositoryArchives("bedroom");
 
         assertEquals(3, processedCount);
         verify(documentArchiveRelationshipService).upsertDocumentArchiveRelationships(
                 eq("bedroom"),
-                eq(List.of(archive)));
+                eq(List.of(archive)),
+                any());
     }
 
     @Test
@@ -222,6 +225,27 @@ public class PurviewArchivePublishServiceImplTest {
         assertEquals(0, result.getProcessedCount());
         verify(entityRegistryClient, never()).bulkCreateOrUpdateEntities(any(), any());
         verify(entityRegistryClient, never()).deleteByUniqueAttribute(any(), any(), any(), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testPublishRepositoryArchivesArchiveEntityContainsExpectedAttributes() throws Exception {
+        when(contentDaoService.getArchives("bedroom", 0, 100, Boolean.FALSE))
+                .thenReturn(List.of(archive("archive-attr-001", "doc-attr-001")));
+
+        service.publishRepositoryArchives("bedroom");
+
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(entityRegistryClient).bulkCreateOrUpdateEntities(any(), payloadCaptor.capture());
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) payloadCaptor.getValue().get("entities");
+        Map<String, Object> archiveEntity = entities.stream()
+                .filter(e -> "nemaki_archive".equals(e.get("typeName")))
+                .findFirst().orElse(null);
+        assertNotNull(archiveEntity, "Archive entity must be present in payload");
+        Map<String, Object> attrs = (Map<String, Object>) archiveEntity.get("attributes");
+        assertEquals("nemaki://bedroom/archives/archive-attr-001", attrs.get("qualifiedName"));
+        assertEquals("doc-attr-001", attrs.get("name"));
+        assertEquals("doc-attr-001", attrs.get("originalObjectId"));
     }
 
     private Archive archive(String archiveId, String originalId) {

@@ -49,7 +49,7 @@ public class HttpPurviewEntityRegistryClientBulkParseTest {
                 {
                     "mutatedEntities": {
                         "CREATE": [
-                            {"guid": "g1", "typeName": "nemaki_document"}
+                            {"guid": "g1", "typeName": "nemaki_document", "attributes": {"qualifiedName": "nemaki://bedroom/objects/doc-ok"}}
                         ]
                     },
                     "failedEntityOperations": [
@@ -83,6 +83,10 @@ public class HttpPurviewEntityRegistryClientBulkParseTest {
         assertEquals("nemaki://bedroom/objects/doc-bad", second.getQualifiedName());
         assertEquals("nemaki_document", second.getTypeName());
         assertEquals("Duplicate entity", second.getErrorMessage());
+
+        // P2 fix: entityGuids must be preserved even on partial failure
+        assertEquals(1, result.getEntityGuids().size());
+        assertEquals("g1", result.getEntityGuids().get("nemaki://bedroom/objects/doc-ok"));
     }
 
     @Test
@@ -187,5 +191,118 @@ public class HttpPurviewEntityRegistryClientBulkParseTest {
         PurviewEntityPublishResult result = PurviewEntityPublishResult.success(1, "ok");
         org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class,
                 () -> result.getFailedItems().add(new PurviewEntityPublishResult.FailedItem("qn", "t", "e")));
+    }
+
+    @Test
+    public void testParseBulkResponseExtractsEntityGuids() {
+        String body = """
+                {
+                    "mutatedEntities": {
+                        "CREATE": [
+                            {"guid": "g1", "typeName": "nemaki_document", "attributes": {"qualifiedName": "nemaki://bedroom/objects/doc-001"}},
+                            {"guid": "g2", "typeName": "nemaki_folder", "attributes": {"qualifiedName": "nemaki://bedroom/objects/folder-001"}}
+                        ],
+                        "UPDATE": [
+                            {"guid": "g3", "typeName": "nemaki_document", "attributes": {"qualifiedName": "nemaki://bedroom/objects/doc-002"}}
+                        ]
+                    }
+                }
+                """;
+        PurviewEntityPublishResult result = client.parseBulkResponse(body, 3);
+
+        assertTrue(result.isSuccess());
+        assertEquals(3, result.getPublishedCount());
+        assertEquals("g1", result.getEntityGuids().get("nemaki://bedroom/objects/doc-001"));
+        assertEquals("g2", result.getEntityGuids().get("nemaki://bedroom/objects/folder-001"));
+        assertEquals("g3", result.getEntityGuids().get("nemaki://bedroom/objects/doc-002"));
+        assertEquals(3, result.getEntityGuids().size());
+    }
+
+    @Test
+    public void testParseBulkResponseSkipsEntriesWithoutAttributes() {
+        // Atlas sometimes returns entries with only typeName and guid, no attributes
+        String body = """
+                {
+                    "mutatedEntities": {
+                        "CREATE": [
+                            {"guid": "g1", "typeName": "nemaki_document", "attributes": {"qualifiedName": "nemaki://bedroom/objects/doc-001"}},
+                            {"guid": "g2", "typeName": "nemaki_folder"}
+                        ]
+                    }
+                }
+                """;
+        PurviewEntityPublishResult result = client.parseBulkResponse(body, 2);
+
+        assertTrue(result.isSuccess());
+        assertEquals(2, result.getPublishedCount());
+        assertEquals(1, result.getEntityGuids().size());
+        assertEquals("g1", result.getEntityGuids().get("nemaki://bedroom/objects/doc-001"));
+    }
+
+    @Test
+    public void testEntityGuidsEmptyWhenNoMutatedEntities() {
+        String body = """
+                {
+                    "mutatedEntities": {}
+                }
+                """;
+        PurviewEntityPublishResult result = client.parseBulkResponse(body, 0);
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getEntityGuids().isEmpty());
+    }
+
+    @Test
+    public void testParseBulkResponseExtractsGuidFromTopLevelQualifiedName() {
+        // Atlas 2.3 may return qualifiedName at top level instead of inside attributes
+        String body = """
+                {
+                    "mutatedEntities": {
+                        "CREATE": [
+                            {"guid": "g1", "typeName": "nemaki_document", "qualifiedName": "nemaki://bedroom/objects/doc-atlas-001"},
+                            {"guid": "g2", "typeName": "nemaki_folder", "qualifiedName": "nemaki://bedroom/objects/folder-atlas-001"}
+                        ]
+                    }
+                }
+                """;
+        PurviewEntityPublishResult result = client.parseBulkResponse(body, 2);
+
+        assertTrue(result.isSuccess());
+        assertEquals(2, result.getPublishedCount());
+        assertEquals(2, result.getEntityGuids().size());
+        assertEquals("g1", result.getEntityGuids().get("nemaki://bedroom/objects/doc-atlas-001"));
+        assertEquals("g2", result.getEntityGuids().get("nemaki://bedroom/objects/folder-atlas-001"));
+    }
+
+    @Test
+    public void testParseBulkResponseMixedAttributeAndTopLevelQualifiedName() {
+        // Mixed: some entities have attributes.qualifiedName, some have top-level qualifiedName
+        String body = """
+                {
+                    "mutatedEntities": {
+                        "CREATE": [
+                            {"guid": "g1", "typeName": "nemaki_document", "attributes": {"qualifiedName": "nemaki://bedroom/objects/doc-purview"}},
+                            {"guid": "g2", "typeName": "nemaki_folder", "qualifiedName": "nemaki://bedroom/objects/folder-atlas"}
+                        ],
+                        "UPDATE": [
+                            {"guid": "g3", "typeName": "nemaki_document"}
+                        ]
+                    }
+                }
+                """;
+        PurviewEntityPublishResult result = client.parseBulkResponse(body, 3);
+
+        assertTrue(result.isSuccess());
+        assertEquals(3, result.getPublishedCount());
+        assertEquals(2, result.getEntityGuids().size());
+        assertEquals("g1", result.getEntityGuids().get("nemaki://bedroom/objects/doc-purview"));
+        assertEquals("g2", result.getEntityGuids().get("nemaki://bedroom/objects/folder-atlas"));
+    }
+
+    @Test
+    public void testEntityGuidsAreImmutable() {
+        PurviewEntityPublishResult result = PurviewEntityPublishResult.success(1, "ok");
+        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class,
+                () -> result.getEntityGuids().put("qn", "guid"));
     }
 }

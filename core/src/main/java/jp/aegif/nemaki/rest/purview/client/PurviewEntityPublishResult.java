@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.rest.purview.client;
 
 import java.util.List;
+import java.util.Map;
 
 public class PurviewEntityPublishResult {
 
@@ -10,32 +11,45 @@ public class PurviewEntityPublishResult {
     private final List<FailedItem> failedItems;
     private final String message;
     private final String resourceGuid;
+    private final Map<String, String> entityGuids;
 
     private PurviewEntityPublishResult(boolean success, int publishedCount, int failureCount,
-            List<FailedItem> failedItems, String message, String resourceGuid) {
+            List<FailedItem> failedItems, String message, String resourceGuid,
+            Map<String, String> entityGuids) {
         this.success = success;
         this.publishedCount = publishedCount;
         this.failureCount = failureCount;
         this.failedItems = failedItems == null ? List.of() : List.copyOf(failedItems);
         this.message = message;
         this.resourceGuid = resourceGuid;
+        this.entityGuids = entityGuids == null ? Map.of() : Map.copyOf(entityGuids);
     }
 
     public static PurviewEntityPublishResult success(int publishedCount, String message) {
-        return new PurviewEntityPublishResult(true, publishedCount, 0, List.of(), message, null);
+        return new PurviewEntityPublishResult(true, publishedCount, 0, List.of(), message, null, Map.of());
     }
 
     public static PurviewEntityPublishResult success(int publishedCount, String message, String resourceGuid) {
-        return new PurviewEntityPublishResult(true, publishedCount, 0, List.of(), message, resourceGuid);
+        return new PurviewEntityPublishResult(true, publishedCount, 0, List.of(), message, resourceGuid, Map.of());
+    }
+
+    public static PurviewEntityPublishResult success(int publishedCount, String message,
+            Map<String, String> entityGuids) {
+        return new PurviewEntityPublishResult(true, publishedCount, 0, List.of(), message, null, entityGuids);
     }
 
     public static PurviewEntityPublishResult partialSuccess(int publishedCount, int failureCount,
             List<FailedItem> failedItems, String message) {
-        return new PurviewEntityPublishResult(true, publishedCount, failureCount, failedItems, message, null);
+        return new PurviewEntityPublishResult(true, publishedCount, failureCount, failedItems, message, null, Map.of());
+    }
+
+    public static PurviewEntityPublishResult partialSuccess(int publishedCount, int failureCount,
+            List<FailedItem> failedItems, String message, Map<String, String> entityGuids) {
+        return new PurviewEntityPublishResult(true, publishedCount, failureCount, failedItems, message, null, entityGuids);
     }
 
     public static PurviewEntityPublishResult failure(String message) {
-        return new PurviewEntityPublishResult(false, 0, 0, List.of(), message, null);
+        return new PurviewEntityPublishResult(false, 0, 0, List.of(), message, null, Map.of());
     }
 
     public boolean isSuccess() {
@@ -64,6 +78,10 @@ public class PurviewEntityPublishResult {
 
     public String getResourceGuid() {
         return resourceGuid;
+    }
+
+    public Map<String, String> getEntityGuids() {
+        return entityGuids;
     }
 
     public static class FailedItem {

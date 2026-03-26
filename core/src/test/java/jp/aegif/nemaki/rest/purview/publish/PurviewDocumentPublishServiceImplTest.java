@@ -8,10 +8,14 @@ import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
 import jp.aegif.nemaki.rest.purview.state.PurviewDeadLetterStateService;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -60,8 +64,8 @@ public class PurviewDocumentPublishServiceImplTest {
         when(config.getReadTimeoutMs()).thenReturn(30000);
         when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
                 .thenAnswer(this::successWithEntityCount);
-        when(containmentRelationshipService.upsertContainmentRelationships(any(), any())).thenReturn(0);
-        when(documentTypeRelationshipService.upsertDocumentTypeRelationships(any(), any())).thenReturn(0);
+        when(containmentRelationshipService.upsertContainmentRelationships(any(), any(), anyMap())).thenReturn(0);
+        when(documentTypeRelationshipService.upsertDocumentTypeRelationships(any(), any(), anyMap())).thenReturn(0);
 
         service = new PurviewDocumentPublishServiceImpl(
                 config,
@@ -187,14 +191,15 @@ public class PurviewDocumentPublishServiceImplTest {
         customDocument.setObjectType("D:custom:report");
         customDocument.setCreator("alice");
         customDocument.setModifier("bob");
-        when(documentTypeRelationshipService.upsertDocumentTypeRelationships(any(), any())).thenReturn(1);
+        when(documentTypeRelationshipService.upsertDocumentTypeRelationships(any(), any(), anyMap())).thenReturn(1);
 
         int processedCount = service.upsertContents("bedroom", List.of(customDocument));
 
         assertEquals(2, processedCount);
         verify(documentTypeRelationshipService).upsertDocumentTypeRelationships(
                 eq("bedroom"),
-                eq(List.of(customDocument)));
+                eq(List.of(customDocument)),
+                anyMap());
     }
 
     @Test
@@ -202,14 +207,205 @@ public class PurviewDocumentPublishServiceImplTest {
         Folder folder = folder("folder-001");
         folder.setParentId("root-001");
         Content document = document("doc-001", "folder-001");
-        when(containmentRelationshipService.upsertContainmentRelationships(any(), any())).thenReturn(2);
+        when(containmentRelationshipService.upsertContainmentRelationships(any(), any(), anyMap())).thenReturn(2);
 
         int processedCount = service.upsertContents("bedroom", List.of(folder, document));
 
         assertEquals(4, processedCount);
         verify(containmentRelationshipService).upsertContainmentRelationships(
                 eq("bedroom"),
-                eq(List.of(folder, document)));
+                eq(List.of(folder, document)),
+                anyMap());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testUpsertContentsDocumentEntityContainsExpectedAttributes() throws Exception {
+        Document doc = new Document();
+        doc.setId("doc-attr-001");
+        doc.setName("Report Q1");
+        doc.setParentId("folder-001");
+        doc.setObjectType("D:custom:report");
+        doc.setCreator("alice");
+        doc.setModifier("bob");
+
+        service.upsertContents("bedroom", List.of(doc));
+
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(entityRegistryClient).bulkCreateOrUpdateEntities(any(), payloadCaptor.capture());
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) payloadCaptor.getValue().get("entities");
+        Map<String, Object> docEntity = entities.stream()
+                .filter(e -> "nemaki_document".equals(e.get("typeName")))
+                .findFirst().orElse(null);
+        assertNotNull(docEntity, "Document entity must be present in payload");
+        Map<String, Object> attrs = (Map<String, Object>) docEntity.get("attributes");
+        assertEquals("nemaki://bedroom/objects/doc-attr-001", attrs.get("qualifiedName"));
+        assertEquals("Report Q1", attrs.get("name"));
+        assertEquals("D:custom:report", attrs.get("typeId"));
+        assertEquals("alice", attrs.get("owner"));
+        assertEquals("folder-001", attrs.get("parentId"));
+        assertEquals("alice", docEntity.get("createdBy"));
+        assertEquals("bob", docEntity.get("updatedBy"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testUpsertContentsFolderEntityContainsExpectedAttributes() throws Exception {
+        Folder f = new Folder();
+        f.setId("folder-attr-001");
+        f.setName("Projects");
+        f.setParentId("root-001");
+
+        service.upsertContents("bedroom", List.of(f));
+
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(entityRegistryClient).bulkCreateOrUpdateEntities(any(), payloadCaptor.capture());
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) payloadCaptor.getValue().get("entities");
+        Map<String, Object> folderEntity = entities.stream()
+                .filter(e -> "nemaki_folder".equals(e.get("typeName")))
+                .findFirst().orElse(null);
+        assertNotNull(folderEntity, "Folder entity must be present in payload");
+        Map<String, Object> attrs = (Map<String, Object>) folderEntity.get("attributes");
+        assertEquals("nemaki://bedroom/objects/folder-attr-001", attrs.get("qualifiedName"));
+        assertEquals("Projects", attrs.get("name"));
+        assertEquals("root-001", attrs.get("parentId"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testPublishRepositoryHierarchySetsFolderPathAttributes() throws Exception {
+        RepositoryInfo repositoryInfo = new RepositoryInfo();
+        repositoryInfo.setId("bedroom");
+        repositoryInfo.setName("Bedroom Repository");
+        repositoryInfo.setRootFolder("root-001");
+        when(repositoryInfoMap.get("bedroom")).thenReturn(repositoryInfo);
+        Folder rootFolder = folder("root-001");
+        rootFolder.setName("Root");
+        when(contentDaoService.getContent("bedroom", "root-001")).thenReturn(rootFolder);
+
+        Folder subFolder = folder("folder-001");
+        subFolder.setName("Reports");
+        Document doc = new Document();
+        doc.setId("doc-001");
+        doc.setName("Q1.pdf");
+        doc.setParentId("folder-001");
+        doc.setObjectType("cmis:document");
+        doc.setCreator("alice");
+        doc.setModifier("bob");
+
+        when(contentDaoService.getChildrenCount("bedroom", "root-001")).thenReturn(2L);
+        when(contentDaoService.getChildrenPaged("bedroom", "root-001", 0, 100))
+                .thenReturn(List.of(subFolder, doc));
+        when(contentDaoService.getChildrenCount("bedroom", "folder-001")).thenReturn(0L);
+
+        service.publishRepositoryHierarchy("bedroom");
+
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(entityRegistryClient).bulkCreateOrUpdateEntities(any(), payloadCaptor.capture());
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) payloadCaptor.getValue().get("entities");
+
+        // Root folder: folderPath = "/"
+        Map<String, Object> rootEntity = entities.stream()
+                .filter(e -> "nemaki_folder".equals(e.get("typeName")))
+                .filter(e -> "root-001".equals(((Map<String, Object>) e.get("attributes")).get("objectId")))
+                .findFirst().orElse(null);
+        assertNotNull(rootEntity);
+        assertEquals("/", ((Map<String, Object>) rootEntity.get("attributes")).get("folderPath"));
+
+        // Sub folder: folderPath = "/Reports"
+        Map<String, Object> subFolderEntity = entities.stream()
+                .filter(e -> "nemaki_folder".equals(e.get("typeName")))
+                .filter(e -> "folder-001".equals(((Map<String, Object>) e.get("attributes")).get("objectId")))
+                .findFirst().orElse(null);
+        assertNotNull(subFolderEntity);
+        assertEquals("/Reports", ((Map<String, Object>) subFolderEntity.get("attributes")).get("folderPath"));
+
+        // Document: folderPath = "/" (parent = root-001)
+        Map<String, Object> docEntity = entities.stream()
+                .filter(e -> "nemaki_document".equals(e.get("typeName")))
+                .findFirst().orElse(null);
+        assertNotNull(docEntity);
+        assertEquals("/", ((Map<String, Object>) docEntity.get("attributes")).get("folderPath"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testUpsertContentsResolvesFolderPathViaParentChain() throws Exception {
+        RepositoryInfo repositoryInfo = new RepositoryInfo();
+        repositoryInfo.setId("bedroom");
+        repositoryInfo.setRootFolder("root-001");
+        when(repositoryInfoMap.get("bedroom")).thenReturn(repositoryInfo);
+
+        Folder parentFolder = new Folder();
+        parentFolder.setId("folder-001");
+        parentFolder.setName("Reports");
+        parentFolder.setParentId("root-001");
+        when(contentDaoService.getContent("bedroom", "folder-001")).thenReturn(parentFolder);
+
+        Folder rootFolder = new Folder();
+        rootFolder.setId("root-001");
+        rootFolder.setName("Root");
+        when(contentDaoService.getContent("bedroom", "root-001")).thenReturn(rootFolder);
+
+        Document doc = new Document();
+        doc.setId("doc-moved-001");
+        doc.setName("Report.pdf");
+        doc.setParentId("folder-001");
+        doc.setObjectType("cmis:document");
+        doc.setCreator("alice");
+        doc.setModifier("bob");
+
+        service.upsertContents("bedroom", List.of(doc));
+
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(entityRegistryClient).bulkCreateOrUpdateEntities(any(), payloadCaptor.capture());
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) payloadCaptor.getValue().get("entities");
+        Map<String, Object> docEntity = entities.get(0);
+        Map<String, Object> attrs = (Map<String, Object>) docEntity.get("attributes");
+        // folderPath should be resolved to /Reports (the parent folder's path)
+        assertEquals("/Reports", attrs.get("folderPath"));
+    }
+
+    @Test
+    public void testUpsertContentsAtlasModeResolvesUnmappedGuidsViaFollowUpLookup() throws Exception {
+        // Configure Atlas on-prem mode
+        when(config.isAtlasOnPrem()).thenReturn(true);
+        when(config.getAtlasBasePath()).thenReturn("api/atlas/v2");
+
+        // Bulk response returns no qualifiedName for the entities (only guid + typeName)
+        when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
+                .thenReturn(PurviewEntityPublishResult.success(2, "published", Map.of()));
+
+        // Follow-up lookup resolves GUIDs
+        when(entityRegistryClient.getEntityByUniqueAttribute(any(), eq("nemaki_document"), eq("qualifiedName"),
+                eq("nemaki://bedroom/objects/doc-001")))
+                .thenReturn(Map.of("entity", Map.of("guid", "resolved-guid-001")));
+        when(entityRegistryClient.getEntityByUniqueAttribute(any(), eq("nemaki_folder"), eq("qualifiedName"),
+                eq("nemaki://bedroom/objects/folder-001")))
+                .thenReturn(Map.of("entity", Map.of("guid", "resolved-guid-002")));
+
+        service.upsertContents("bedroom", List.of(folder("folder-001"), document("doc-001", "folder-001")));
+
+        // Verify follow-up lookups were made for both entities
+        verify(entityRegistryClient).getEntityByUniqueAttribute(any(), eq("nemaki_document"), eq("qualifiedName"),
+                eq("nemaki://bedroom/objects/doc-001"));
+        verify(entityRegistryClient).getEntityByUniqueAttribute(any(), eq("nemaki_folder"), eq("qualifiedName"),
+                eq("nemaki://bedroom/objects/folder-001"));
+    }
+
+    @Test
+    public void testUpsertContentsPurviewModeSkipsGuidFollowUpLookup() throws Exception {
+        // Purview cloud mode (default setUp)
+        when(config.isAtlasOnPrem()).thenReturn(false);
+
+        // Bulk response returns no qualifiedName for entities
+        when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
+                .thenReturn(PurviewEntityPublishResult.success(1, "published", Map.of()));
+
+        service.upsertContents("bedroom", List.of(document("doc-001", "root")));
+
+        // No follow-up lookups in Purview mode
+        verify(entityRegistryClient, never()).getEntityByUniqueAttribute(any(), any(), any(), any());
     }
 
     private Folder folder(String id) {

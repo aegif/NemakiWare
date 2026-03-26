@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.rest.purview.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -133,6 +134,152 @@ public class PurviewStateStoreImplTest {
         assertEquals("value-1", stateStore.getString("purview.test.string"));
         assertEquals("value-1", stateStore.getAll().get("purview.test.string"));
         assertEquals(7, stateStore.getAll().get("purview.test.int"));
+    }
+
+    // --- putObject / getObject (Cloudant mode) ---
+
+    @Test
+    public void testPutObjectAndGetObjectRoundTrip() {
+        Map<String, Object> obj = new LinkedHashMap<>();
+        obj.put("repositoryId", "bedroom");
+        obj.put("streamKind", "content-change-log");
+        obj.put("entryKey", "doc-001");
+        obj.put("failureCount", 3);
+
+        stateStore.putObject("purview.dead-letter.entry.bedroom.ccl.doc001", obj);
+
+        Map<String, Object> loaded = stateStore.getObject("purview.dead-letter.entry.bedroom.ccl.doc001");
+        assertEquals("bedroom", loaded.get("repositoryId"));
+        assertEquals("content-change-log", loaded.get("streamKind"));
+        assertEquals("doc-001", loaded.get("entryKey"));
+        assertEquals(3, loaded.get("failureCount"));
+    }
+
+    @Test
+    public void testPutObjectStoresMapAsValueField() {
+        Map<String, Object> obj = Map.of("field1", "value1");
+        stateStore.putObject("my.composite.key", obj);
+
+        String docId = "system_config_my_composite_key";
+        assertTrue(documents.containsKey(docId));
+        Map<String, Object> doc = documents.get(docId);
+        assertEquals("configuration", doc.get("type"));
+        assertEquals("my.composite.key", doc.get("key"));
+        assertTrue(doc.get("value") instanceof Map);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> storedValue = (Map<String, Object>) doc.get("value");
+        assertEquals("value1", storedValue.get("field1"));
+    }
+
+    @Test
+    public void testGetObjectReturnsNullForNonExistentKey() {
+        assertNull(stateStore.getObject("nonexistent.key"));
+    }
+
+    @Test
+    public void testGetObjectReturnsNullForScalarValue() {
+        stateStore.putAll(Map.of("scalar.key", "just-a-string"));
+        assertNull(stateStore.getObject("scalar.key"));
+    }
+
+    @Test
+    public void testPutObjectOverwritesPrevious() {
+        stateStore.putObject("key", new LinkedHashMap<>(Map.of("field1", "old")));
+        stateStore.putObject("key", new LinkedHashMap<>(Map.of("field1", "new", "field2", "added")));
+
+        Map<String, Object> loaded = stateStore.getObject("key");
+        assertEquals("new", loaded.get("field1"));
+        assertEquals("added", loaded.get("field2"));
+    }
+
+    @Test
+    public void testPutObjectVisibleInGetAllByPrefix() {
+        stateStore.putObject("purview.dead-letter.entry.bedroom.ccl.abc",
+                new LinkedHashMap<>(Map.of("name", "test")));
+        stateStore.putAll(Map.of("purview.dead-letter.entry.bedroom.ccl.def", "scalar-value"));
+
+        Map<String, Object> all = stateStore.getAll();
+        assertTrue(all.containsKey("purview.dead-letter.entry.bedroom.ccl.abc"));
+        assertTrue(all.containsKey("purview.dead-letter.entry.bedroom.ccl.def"));
+    }
+
+    // --- Edge cases ---
+
+    @Test
+    public void testGetStringReturnsEmptyForNonExistentKey() {
+        assertEquals("", stateStore.getString("nonexistent"));
+    }
+
+    @Test
+    public void testGetIntReturnsZeroForNonExistentKey() {
+        assertEquals(0, stateStore.getInt("nonexistent"));
+    }
+
+    @Test
+    public void testGetIntParsesStringValue() {
+        stateStore.putAll(Map.of("count", "42"));
+        assertEquals(42, stateStore.getInt("count"));
+    }
+
+    @Test
+    public void testGetIntReturnsZeroForNonNumericString() {
+        stateStore.putAll(Map.of("count", "not-a-number"));
+        assertEquals(0, stateStore.getInt("count"));
+    }
+
+    @Test
+    public void testGetIntHandlesLongType() {
+        stateStore.putAll(Map.of("count", 99L));
+        assertEquals(99, stateStore.getInt("count"));
+    }
+
+    @Test
+    public void testGetIntHandlesDoubleType() {
+        stateStore.putAll(Map.of("count", 7.0));
+        assertEquals(7, stateStore.getInt("count"));
+    }
+
+    @Test
+    public void testRemoveAllNonExistentKeysNoError() {
+        stateStore.removeAll(java.util.List.of("nonexistent1", "nonexistent2"));
+        // Should not throw
+    }
+
+    // --- getAllByPrefix ---
+
+    @Test
+    public void testGetAllByPrefixReturnsMatchingEntries() {
+        stateStore.putAll(Map.of(
+                "purview.job.job-001.status", "COMPLETED",
+                "purview.job.job-001.jobKind", "FULL_SYNC",
+                "purview.cursor.state.bedroom.cursor", "token-100",
+                "purview.job.job-002.status", "RUNNING"));
+
+        Map<String, Object> jobEntries = stateStore.getAllByPrefix("purview.job.");
+        assertEquals(3, jobEntries.size());
+        assertTrue(jobEntries.containsKey("purview.job.job-001.status"));
+        assertTrue(jobEntries.containsKey("purview.job.job-001.jobKind"));
+        assertTrue(jobEntries.containsKey("purview.job.job-002.status"));
+    }
+
+    @Test
+    public void testGetAllByPrefixReturnsEmptyForNonMatchingPrefix() {
+        stateStore.putAll(Map.of("purview.job.job-001.status", "COMPLETED"));
+
+        Map<String, Object> result = stateStore.getAllByPrefix("purview.cursor.");
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    public void testGetAllByPrefixIncludesObjectValues() {
+        Map<String, Object> obj = new LinkedHashMap<>(Map.of("field1", "value1"));
+        stateStore.putObject("purview.dead-letter.entry.bedroom.ccl.abc", obj);
+        stateStore.putAll(Map.of("purview.dead-letter.entry.bedroom.ccl.def", "scalar"));
+
+        Map<String, Object> result = stateStore.getAllByPrefix("purview.dead-letter.entry.");
+        assertEquals(2, result.size());
+        assertTrue(result.get("purview.dead-letter.entry.bedroom.ccl.abc") instanceof Map);
+        assertEquals("scalar", result.get("purview.dead-letter.entry.bedroom.ccl.def"));
     }
 
     private Configuration createSystemConfiguration() {

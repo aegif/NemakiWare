@@ -1,5 +1,6 @@
 package jp.aegif.nemaki.rest.purview.client;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -90,6 +91,97 @@ public class HttpPurviewApiClientIntegrationTest {
 
         RecordedRequest apiRequest = apiServer.takeRequest();
         assertTrue(apiRequest.getHeader("Authorization").equals("Bearer mock-access-token"));
+    }
+
+    @Test
+    public void testProbeConnectionRetriesOn429ThenSucceeds() throws Exception {
+        seedToken();
+        apiServer.enqueue(new MockResponse().setResponseCode(429).setBody("Rate limited"));
+        apiServer.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("[]"));
+
+        PurviewProbeResult result = client.probeConnection(buildRequest());
+
+        assertTrue(result.isSuccess());
+    }
+
+    @Test
+    public void testProbeConnectionRetriesOn500ThenSucceeds() throws Exception {
+        seedToken();
+        apiServer.enqueue(new MockResponse().setResponseCode(500).setBody("Error"));
+        apiServer.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody("[]"));
+
+        PurviewProbeResult result = client.probeConnection(buildRequest());
+
+        assertTrue(result.isSuccess());
+    }
+
+    @Test
+    public void testProbeConnectionUsesCorrectEndpointPath() throws Exception {
+        seedToken();
+        apiServer.enqueue(new MockResponse().setResponseCode(200).setBody("[]"));
+
+        client.probeConnection(buildRequest());
+
+        RecordedRequest apiRequest = apiServer.takeRequest();
+        assertEquals("GET", apiRequest.getMethod());
+        assertTrue(apiRequest.getPath().contains("types/typedefs/headers"),
+                "Expected types/typedefs/headers path, got: " + apiRequest.getPath());
+    }
+
+    @Test
+    public void testProbeConnectionReturnsFailureOn401() throws Exception {
+        seedToken();
+        // 401 triggers 1 retry (token invalidation + refetch which fails since cache empty)
+        apiServer.enqueue(new MockResponse().setResponseCode(401).setBody("{\"error\":\"Unauthorized\"}"));
+        apiServer.enqueue(new MockResponse().setResponseCode(401).setBody("{\"error\":\"Unauthorized\"}"));
+
+        PurviewProbeResult result = client.probeConnection(buildRequest());
+
+        assertFalse(result.isSuccess());
+    }
+
+    @Test
+    public void testProbeConnectionSendsBasicAuthHeaderForBasicAuth() throws Exception {
+        apiServer.enqueue(new MockResponse().setResponseCode(200).setBody("[]"));
+
+        PurviewConnectionRequest basicRequest = new PurviewConnectionRequest(
+                apiServer.url("/").toString(),
+                "api/atlas/v2",
+                "basic",
+                "", "", "",
+                "admin", "admin",
+                5000, 30000);
+
+        PurviewProbeResult result = client.probeConnection(basicRequest);
+
+        assertTrue(result.isSuccess());
+        RecordedRequest apiRequest = apiServer.takeRequest();
+        String authHeader = apiRequest.getHeader("Authorization");
+        assertNotNull(authHeader);
+        assertTrue(authHeader.startsWith("Basic "), "Expected Basic auth header, got: " + authHeader);
+    }
+
+    @Test
+    public void testProbeConnectionBasicAuthDoesNotAcquireOAuthToken() throws Exception {
+        apiServer.enqueue(new MockResponse().setResponseCode(200).setBody("[]"));
+
+        PurviewConnectionRequest basicRequest = new PurviewConnectionRequest(
+                apiServer.url("/").toString(),
+                "api/atlas/v2",
+                "basic",
+                "", "", "",
+                "admin", "admin",
+                5000, 30000);
+
+        client.probeConnection(basicRequest);
+
+        // Only 1 request (the probe itself), no token request
+        assertEquals(1, apiServer.getRequestCount());
     }
 
     private PurviewConnectionRequest buildRequest() {

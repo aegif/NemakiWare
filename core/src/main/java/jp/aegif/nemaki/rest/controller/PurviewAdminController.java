@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -283,6 +284,32 @@ public class PurviewAdminController {
                 repositoryId,
                 getAuthenticatedUsername());
         return ResponseEntity.ok(buildJobResponse(jobState));
+    }
+
+    @GetMapping("/jobs")
+    public ResponseEntity<Map<String, Object>> listJobs() {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("jobs", purviewJobStateService.listJobStates().stream()
+                .map(this::buildJobResponse)
+                .toList());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/purge-job-history")
+    public ResponseEntity<Map<String, Object>> purgeJobHistory(
+            @RequestParam(name = "retainCount", defaultValue = "50") int retainCount) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        int effectiveRetainCount = Math.max(1, retainCount);
+        int purgedCount = purviewJobStateService.purgeOldJobStates(effectiveRetainCount);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("purgedCount", purgedCount);
+        response.put("retainCount", effectiveRetainCount);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/jobs/{jobId}")

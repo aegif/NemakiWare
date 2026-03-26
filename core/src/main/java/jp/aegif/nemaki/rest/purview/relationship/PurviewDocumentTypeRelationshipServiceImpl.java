@@ -7,6 +7,7 @@ import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
@@ -29,7 +30,7 @@ public class PurviewDocumentTypeRelationshipServiceImpl implements PurviewDocume
     }
 
     @Override
-    public int upsertDocumentTypeRelationships(String repositoryId, List<Content> contents) {
+    public int upsertDocumentTypeRelationships(String repositoryId, List<Content> contents, Map<String, String> guidByQualifiedName) {
         if (contents == null || contents.isEmpty()) {
             return 0;
         }
@@ -43,7 +44,7 @@ public class PurviewDocumentTypeRelationshipServiceImpl implements PurviewDocume
             try {
                 PurviewEntityPublishResult result = entityRegistryClient.createRelationship(
                         buildConnectionRequest(),
-                        entityPayloadFactory.buildDocumentTypeRelationship(repositoryId, content));
+                        entityPayloadFactory.buildDocumentTypeRelationship(repositoryId, content, guidByQualifiedName));
                 if (!result.isSuccess()) {
                     throw new IllegalStateException(result.getMessage());
                 }
@@ -70,9 +71,12 @@ public class PurviewDocumentTypeRelationshipServiceImpl implements PurviewDocume
         return new PurviewConnectionRequest(
                 purviewConfig.getEndpoint(),
                 purviewConfig.getAtlasBasePath(),
+                purviewConfig.getAuthType(),
                 purviewConfig.getTenantId(),
                 purviewConfig.getClientId(),
                 purviewConfig.getClientSecret(),
+                purviewConfig.getBasicUsername(),
+                purviewConfig.getBasicPassword(),
                 purviewConfig.getConnectTimeoutMs(),
                 purviewConfig.getReadTimeoutMs());
     }

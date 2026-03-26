@@ -247,6 +247,17 @@ public class CloudantClientPool {
 		pool.put("nemaki_conf", nemakiConfWrapper);
 		verifyDatabase(nemakiConfWrapper, "nemaki_conf");
 
+		// Initialize Purview state database
+		log.info("Initializing Purview state database: " + SystemConst.NEMAKI_PURVIEW_STATE_DB);
+		CloudantClientWrapper purviewStateWrapper = new CloudantClientWrapper(cloudantClient, SystemConst.NEMAKI_PURVIEW_STATE_DB, couchdbObjectMapper);
+		if (authEnabled) purviewStateWrapper.setAuthCredentials(authUserName, authPassword);
+		pool.put(SystemConst.NEMAKI_PURVIEW_STATE_DB, purviewStateWrapper);
+		try {
+			verifyDatabase(purviewStateWrapper, SystemConst.NEMAKI_PURVIEW_STATE_DB);
+		} catch (Exception e) {
+			log.info("Purview state database not yet available (will be created on first use): " + e.getMessage());
+		}
+
 		// Initialize CMIS repositories from repositoryInfoMap
 		if (repositoryInfoMap != null) {
 			java.util.Set<String> repositoryIdSet = repositoryInfoMap.keys();

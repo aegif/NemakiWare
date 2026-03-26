@@ -2,6 +2,7 @@ package jp.aegif.nemaki.rest.purview.publish;
 
 import jp.aegif.nemaki.rest.purview.PurviewConfig;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
+import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
 import jp.aegif.nemaki.rest.purview.sync.PurviewTypeDefinitionSyncResult;
@@ -15,6 +16,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -121,6 +124,45 @@ public class PurviewTypeDefinitionPublishServiceImplTest {
         assertEquals(0, result.getProcessedCount());
         verify(entityRegistryClient, never()).bulkCreateOrUpdateEntities(any(), any());
         verify(entityRegistryClient, never()).deleteByUniqueAttribute(any(), any(), any(), any());
+    }
+
+    @Test
+    public void testPublishRepositoryTypeDefinitionsReturnsZeroWhenNoTypeDefinitionsExist() throws Exception {
+        when(contentDaoService.getTypeDefinitions("bedroom"))
+                .thenReturn(List.of());
+
+        int processedCount = service.publishRepositoryTypeDefinitions("bedroom");
+
+        assertEquals(0, processedCount);
+        verify(entityRegistryClient, never()).bulkCreateOrUpdateEntities(any(), any());
+    }
+
+    @Test
+    public void testPublishRepositoryTypeDefinitionsThrowsOnClientException() throws Exception {
+        when(contentDaoService.getTypeDefinitions("bedroom"))
+                .thenReturn(List.of(typeDefinition("D:custom:report")));
+        when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
+                .thenThrow(new PurviewClientException("Connection refused"));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.publishRepositoryTypeDefinitions("bedroom"));
+
+        assertTrue(error.getMessage().contains("Connection refused"));
+    }
+
+    @Test
+    public void testPublishRepositoryTypeDefinitionsFiltersOutNullAndBlankTypeIds() throws Exception {
+        NemakiTypeDefinition validType = typeDefinition("D:custom:report");
+        NemakiTypeDefinition blankType = new NemakiTypeDefinition();
+        blankType.setId("node-blank");
+        blankType.setTypeId("");
+        List<NemakiTypeDefinition> typesWithNull = new ArrayList<>(Arrays.asList(validType, blankType, null));
+        when(contentDaoService.getTypeDefinitions("bedroom"))
+                .thenReturn(typesWithNull);
+
+        int processedCount = service.publishRepositoryTypeDefinitions("bedroom");
+
+        assertEquals(1, processedCount);
     }
 
     private NemakiTypeDefinition typeDefinition(String typeId) {

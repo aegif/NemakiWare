@@ -32,18 +32,29 @@ public class PurviewConnectionServiceImpl implements PurviewConnectionService {
         String configuredBasePath = purviewConfig.getAtlasBasePath();
         boolean featureEnabled = purviewConfig.isEnabled();
 
+        boolean basicAuth = purviewConfig.isBasicAuth();
+
         List<String> missing = new ArrayList<>();
         if (isBlank(endpoint)) {
             missing.add("endpoint");
         }
-        if (isBlank(purviewConfig.getTenantId())) {
-            missing.add("tenantId");
-        }
-        if (isBlank(purviewConfig.getClientId())) {
-            missing.add("clientId");
-        }
-        if (isBlank(purviewConfig.getClientSecret())) {
-            missing.add("clientSecret");
+        if (basicAuth) {
+            if (isBlank(purviewConfig.getBasicUsername())) {
+                missing.add("basicUsername");
+            }
+            if (isBlank(purviewConfig.getBasicPassword())) {
+                missing.add("basicPassword");
+            }
+        } else {
+            if (isBlank(purviewConfig.getTenantId())) {
+                missing.add("tenantId");
+            }
+            if (isBlank(purviewConfig.getClientId())) {
+                missing.add("clientId");
+            }
+            if (isBlank(purviewConfig.getClientSecret())) {
+                missing.add("clientSecret");
+            }
         }
 
         if (!missing.isEmpty()) {
@@ -66,9 +77,12 @@ public class PurviewConnectionServiceImpl implements PurviewConnectionService {
             PurviewConnectionRequest request = new PurviewConnectionRequest(
                     endpoint,
                     candidateBasePath,
+                    purviewConfig.getAuthType(),
                     purviewConfig.getTenantId(),
                     purviewConfig.getClientId(),
                     purviewConfig.getClientSecret(),
+                    purviewConfig.getBasicUsername(),
+                    purviewConfig.getBasicPassword(),
                     purviewConfig.getConnectTimeoutMs(),
                     purviewConfig.getReadTimeoutMs());
 

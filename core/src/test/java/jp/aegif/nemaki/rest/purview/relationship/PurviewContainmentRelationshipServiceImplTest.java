@@ -94,6 +94,24 @@ public class PurviewContainmentRelationshipServiceImplTest {
                 "nemaki_folder_contains_folder",
                 "nemaki_repository_contains_folder"),
                 typeNames);
+        List<String> end1QualifiedNames = payloadCaptor.getAllValues().stream()
+                .map(payload -> ((Map<String, Object>) ((Map<String, Object>) payload.get("end1")).get("uniqueAttributes")).get("qualifiedName").toString())
+                .sorted()
+                .toList();
+        assertEquals(List.of(
+                "nemaki://bedroom",
+                "nemaki://bedroom/objects/folder-001",
+                "nemaki://bedroom/objects/root-001"),
+                end1QualifiedNames);
+        List<String> end2QualifiedNames = payloadCaptor.getAllValues().stream()
+                .map(payload -> ((Map<String, Object>) ((Map<String, Object>) payload.get("end2")).get("uniqueAttributes")).get("qualifiedName").toString())
+                .sorted()
+                .toList();
+        assertEquals(List.of(
+                "nemaki://bedroom/objects/doc-001",
+                "nemaki://bedroom/objects/folder-001",
+                "nemaki://bedroom/objects/root-001"),
+                end2QualifiedNames);
         verify(stateStore, times(3)).putAll(any());
     }
 

@@ -66,6 +66,10 @@ public class PurviewEntityPayloadFactory {
     }
 
     public Map<String, Object> buildFolderEntity(String repositoryId, Content content) {
+        return buildFolderEntity(repositoryId, content, null);
+    }
+
+    public Map<String, Object> buildFolderEntity(String repositoryId, Content content, String folderPath) {
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("qualifiedName", buildObjectQualifiedName(repositoryId, content.getId()));
         attributes.put("name", firstNonBlank(content.getName(), content.getId()));
@@ -77,6 +81,9 @@ public class PurviewEntityPayloadFactory {
         attributes.put("objectId", content.getId());
         attributes.put("parentId", nullIfBlank(content.getParentId()));
         attributes.put("typeId", nullIfBlank(content.getObjectType()));
+        if (folderPath != null && !folderPath.isBlank()) {
+            attributes.put("folderPath", folderPath);
+        }
         attributes.put("lifecycleState", LIFECYCLE_ACTIVE);
 
         Map<String, Object> entity = new LinkedHashMap<>();
@@ -90,6 +97,10 @@ public class PurviewEntityPayloadFactory {
     }
 
     public Map<String, Object> buildDocumentEntity(String repositoryId, Content content) {
+        return buildDocumentEntity(repositoryId, content, null);
+    }
+
+    public Map<String, Object> buildDocumentEntity(String repositoryId, Content content, String folderPath) {
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("qualifiedName", buildObjectQualifiedName(repositoryId, content.getId()));
         attributes.put("name", firstNonBlank(content.getName(), content.getId()));
@@ -101,6 +112,9 @@ public class PurviewEntityPayloadFactory {
         attributes.put("objectId", content.getId());
         attributes.put("parentId", nullIfBlank(content.getParentId()));
         attributes.put("typeId", nullIfBlank(content.getObjectType()));
+        if (folderPath != null && !folderPath.isBlank()) {
+            attributes.put("folderPath", folderPath);
+        }
 
         if (content instanceof Document document) {
             attributes.put("versionSeriesId", nullIfBlank(document.getVersionSeriesId()));
@@ -160,66 +174,81 @@ public class PurviewEntityPayloadFactory {
     }
 
     public Map<String, Object> buildDocumentTypeRelationship(String repositoryId, Content content) {
+        return buildDocumentTypeRelationship(repositoryId, content, Map.of());
+    }
+
+    public Map<String, Object> buildDocumentTypeRelationship(String repositoryId, Content content,
+            Map<String, String> guidByQualifiedName) {
+        String end1Qn = buildObjectQualifiedName(repositoryId, content.getId());
+        String end2Qn = buildTypeDefinitionQualifiedName(repositoryId, content.getObjectType());
         Map<String, Object> relationship = new LinkedHashMap<>();
         relationship.put("typeName", DOCUMENT_HAS_TYPE_DEFINITION_RELATIONSHIP);
-        relationship.put("end1", relationshipEnd(
-                DOCUMENT_TYPE_NAME,
-                buildObjectQualifiedName(repositoryId, content.getId())));
-        relationship.put("end2", relationshipEnd(
-                TYPE_DEFINITION_TYPE_NAME,
-                buildTypeDefinitionQualifiedName(repositoryId, content.getObjectType())));
+        relationship.put("end1", relationshipEnd(DOCUMENT_TYPE_NAME, end1Qn, guidByQualifiedName.get(end1Qn)));
+        relationship.put("end2", relationshipEnd(TYPE_DEFINITION_TYPE_NAME, end2Qn, guidByQualifiedName.get(end2Qn)));
         relationship.put("attributes", Map.of());
         return relationship;
     }
 
     public Map<String, Object> buildDocumentArchiveRelationship(String repositoryId, Archive archive) {
+        return buildDocumentArchiveRelationship(repositoryId, archive, Map.of());
+    }
+
+    public Map<String, Object> buildDocumentArchiveRelationship(String repositoryId, Archive archive,
+            Map<String, String> guidByQualifiedName) {
+        String end1Qn = buildObjectQualifiedName(repositoryId, archive.getOriginalId());
+        String end2Qn = buildArchiveQualifiedName(repositoryId, archive.getId());
         Map<String, Object> relationship = new LinkedHashMap<>();
         relationship.put("typeName", "nemaki_document_has_archive");
-        relationship.put("end1", relationshipEnd(
-                "DataSet",
-                buildObjectQualifiedName(repositoryId, archive.getOriginalId())));
-        relationship.put("end2", relationshipEnd(
-                ARCHIVE_TYPE_NAME,
-                buildArchiveQualifiedName(repositoryId, archive.getId())));
+        relationship.put("end1", relationshipEnd("DataSet", end1Qn, guidByQualifiedName.get(end1Qn)));
+        relationship.put("end2", relationshipEnd(ARCHIVE_TYPE_NAME, end2Qn, guidByQualifiedName.get(end2Qn)));
         relationship.put("attributes", Map.of());
         return relationship;
     }
 
     public Map<String, Object> buildRepositoryFolderRelationship(String repositoryId, Content folder) {
+        return buildRepositoryFolderRelationship(repositoryId, folder, Map.of());
+    }
+
+    public Map<String, Object> buildRepositoryFolderRelationship(String repositoryId, Content folder,
+            Map<String, String> guidByQualifiedName) {
+        String end1Qn = buildRepositoryQualifiedName(repositoryId);
+        String end2Qn = buildObjectQualifiedName(repositoryId, folder.getId());
         Map<String, Object> relationship = new LinkedHashMap<>();
         relationship.put("typeName", "nemaki_repository_contains_folder");
-        relationship.put("end1", relationshipEnd(
-                REPOSITORY_TYPE_NAME,
-                buildRepositoryQualifiedName(repositoryId)));
-        relationship.put("end2", relationshipEnd(
-                FOLDER_TYPE_NAME,
-                buildObjectQualifiedName(repositoryId, folder.getId())));
+        relationship.put("end1", relationshipEnd(REPOSITORY_TYPE_NAME, end1Qn, guidByQualifiedName.get(end1Qn)));
+        relationship.put("end2", relationshipEnd(FOLDER_TYPE_NAME, end2Qn, guidByQualifiedName.get(end2Qn)));
         relationship.put("attributes", Map.of());
         return relationship;
     }
 
     public Map<String, Object> buildFolderFolderRelationship(String repositoryId, Content folder) {
+        return buildFolderFolderRelationship(repositoryId, folder, Map.of());
+    }
+
+    public Map<String, Object> buildFolderFolderRelationship(String repositoryId, Content folder,
+            Map<String, String> guidByQualifiedName) {
+        String end1Qn = buildObjectQualifiedName(repositoryId, folder.getParentId());
+        String end2Qn = buildObjectQualifiedName(repositoryId, folder.getId());
         Map<String, Object> relationship = new LinkedHashMap<>();
         relationship.put("typeName", "nemaki_folder_contains_folder");
-        relationship.put("end1", relationshipEnd(
-                FOLDER_TYPE_NAME,
-                buildObjectQualifiedName(repositoryId, folder.getParentId())));
-        relationship.put("end2", relationshipEnd(
-                FOLDER_TYPE_NAME,
-                buildObjectQualifiedName(repositoryId, folder.getId())));
+        relationship.put("end1", relationshipEnd(FOLDER_TYPE_NAME, end1Qn, guidByQualifiedName.get(end1Qn)));
+        relationship.put("end2", relationshipEnd(FOLDER_TYPE_NAME, end2Qn, guidByQualifiedName.get(end2Qn)));
         relationship.put("attributes", Map.of());
         return relationship;
     }
 
     public Map<String, Object> buildFolderDocumentRelationship(String repositoryId, Content document) {
+        return buildFolderDocumentRelationship(repositoryId, document, Map.of());
+    }
+
+    public Map<String, Object> buildFolderDocumentRelationship(String repositoryId, Content document,
+            Map<String, String> guidByQualifiedName) {
+        String end1Qn = buildObjectQualifiedName(repositoryId, document.getParentId());
+        String end2Qn = buildObjectQualifiedName(repositoryId, document.getId());
         Map<String, Object> relationship = new LinkedHashMap<>();
         relationship.put("typeName", "nemaki_folder_contains_document");
-        relationship.put("end1", relationshipEnd(
-                FOLDER_TYPE_NAME,
-                buildObjectQualifiedName(repositoryId, document.getParentId())));
-        relationship.put("end2", relationshipEnd(
-                DOCUMENT_TYPE_NAME,
-                buildObjectQualifiedName(repositoryId, document.getId())));
+        relationship.put("end1", relationshipEnd(FOLDER_TYPE_NAME, end1Qn, guidByQualifiedName.get(end1Qn)));
+        relationship.put("end2", relationshipEnd(DOCUMENT_TYPE_NAME, end2Qn, guidByQualifiedName.get(end2Qn)));
         relationship.put("attributes", Map.of());
         return relationship;
     }
@@ -759,8 +788,15 @@ public class PurviewEntityPayloadFactory {
     }
 
     private Map<String, Object> relationshipEnd(String typeName, String qualifiedName) {
+        return relationshipEnd(typeName, qualifiedName, null);
+    }
+
+    private Map<String, Object> relationshipEnd(String typeName, String qualifiedName, String guid) {
         Map<String, Object> end = new LinkedHashMap<>();
         end.put("typeName", typeName);
+        if (guid != null) {
+            end.put("guid", guid);
+        }
         end.put("uniqueAttributes", Map.of("qualifiedName", qualifiedName));
         return end;
     }
@@ -782,7 +818,7 @@ public class PurviewEntityPayloadFactory {
         return 0L;
     }
 
-    private String firstNonBlank(String... values) {
+    public String firstNonBlank(String... values) {
         for (String value : values) {
             if (value != null && !value.isBlank()) {
                 return value;

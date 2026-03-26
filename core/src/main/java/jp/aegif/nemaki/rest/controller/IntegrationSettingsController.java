@@ -62,17 +62,22 @@ public class IntegrationSettingsController {
 
 	private static final Set<String> PURVIEW_KEYS = new LinkedHashSet<>(Arrays.asList(
 			"purview.enabled",
+			"purview.auth.type",
 			"purview.endpoint",
+			"purview.atlas.base-path",
 			"purview.tenant.id",
 			"purview.client.id",
 			"purview.client.secret",
+			"purview.basic.username",
+			"purview.basic.password",
 			"purview.collection"
 	));
 
 	// Keys whose values should be masked in GET responses
 	private static final Set<String> SENSITIVE_KEYS = new LinkedHashSet<>(Arrays.asList(
 			"saml.idp.certificate",
-			"purview.client.secret"
+			"purview.client.secret",
+			"purview.basic.password"
 	));
 
 	private final IntegrationSettingsService settingsService;

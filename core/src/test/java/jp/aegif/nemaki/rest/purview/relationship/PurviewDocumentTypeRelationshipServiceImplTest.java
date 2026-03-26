@@ -2,12 +2,16 @@ package jp.aegif.nemaki.rest.purview.relationship;
 
 import jp.aegif.nemaki.rest.purview.PurviewConfig;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
+import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -74,6 +78,8 @@ public class PurviewDocumentTypeRelationshipServiceImplTest {
                 ((Map<String, Object>) end1.get("uniqueAttributes")).get("qualifiedName"));
         assertEquals("nemaki://bedroom/types/D:custom:report",
                 ((Map<String, Object>) end2.get("uniqueAttributes")).get("qualifiedName"));
+        assertEquals("nemaki_document", end1.get("typeName"));
+        assertEquals("nemaki_type_definition", end2.get("typeName"));
     }
 
     @Test
@@ -88,5 +94,62 @@ public class PurviewDocumentTypeRelationshipServiceImplTest {
                 () -> service.upsertDocumentTypeRelationships("bedroom", List.of(customDocument)));
 
         assertEquals("relationship rejected", error.getMessage());
+    }
+
+    @Test
+    public void testUpsertDocumentTypeRelationshipsReturnsZeroForEmptyList() throws Exception {
+        int processedCount = service.upsertDocumentTypeRelationships("bedroom", List.of());
+
+        assertEquals(0, processedCount);
+        verify(entityRegistryClient, never()).createRelationship(any(), any());
+    }
+
+    @Test
+    public void testUpsertDocumentTypeRelationshipsReturnsZeroForNullList() throws Exception {
+        int processedCount = service.upsertDocumentTypeRelationships("bedroom", null);
+
+        assertEquals(0, processedCount);
+        verify(entityRegistryClient, never()).createRelationship(any(), any());
+    }
+
+    @Test
+    public void testUpsertDocumentTypeRelationshipsSkipsBuiltInTypes() throws Exception {
+        Document cmisDocument = new Document();
+        cmisDocument.setId("doc-001");
+        cmisDocument.setObjectType("cmis:document");
+
+        int processedCount = service.upsertDocumentTypeRelationships("bedroom", List.of(cmisDocument));
+
+        assertEquals(0, processedCount);
+        verify(entityRegistryClient, never()).createRelationship(any(), any());
+    }
+
+    @Test
+    public void testUpsertDocumentTypeRelationshipsProcessesMultipleCustomDocuments() throws Exception {
+        Document custom1 = new Document();
+        custom1.setId("doc-custom-001");
+        custom1.setObjectType("D:custom:report");
+        Document custom2 = new Document();
+        custom2.setId("doc-custom-002");
+        custom2.setObjectType("D:custom:invoice");
+
+        int processedCount = service.upsertDocumentTypeRelationships("bedroom", List.of(custom1, custom2));
+
+        assertEquals(2, processedCount);
+        verify(entityRegistryClient, times(2)).createRelationship(any(), any());
+    }
+
+    @Test
+    public void testUpsertDocumentTypeRelationshipsThrowsOnClientException() throws Exception {
+        Document customDocument = new Document();
+        customDocument.setId("doc-custom-001");
+        customDocument.setObjectType("D:custom:report");
+        when(entityRegistryClient.createRelationship(any(), any()))
+                .thenThrow(new PurviewClientException("Connection refused"));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.upsertDocumentTypeRelationships("bedroom", List.of(customDocument)));
+
+        assertTrue(error.getMessage().contains("Connection refused"));
     }
 }

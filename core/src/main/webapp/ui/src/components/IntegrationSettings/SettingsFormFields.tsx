@@ -1,12 +1,18 @@
-import { Form, Input, Switch, Tag, Alert } from 'antd';
+import { Form, Input, Select, Switch, Tag, Alert } from 'antd';
 import { useTranslation } from 'react-i18next';
 import type { SettingSource } from '../../services/integrationSettings';
+
+interface SelectOption {
+  value: string;
+  labelKey: string;
+}
 
 interface FieldDef {
   key: string;
   labelKey: string;
-  type: 'text' | 'password' | 'boolean' | 'textarea';
+  type: 'text' | 'password' | 'boolean' | 'textarea' | 'select';
   sensitive?: boolean;
+  options?: SelectOption[];
 }
 
 interface SettingsFormFieldsProps {
@@ -74,6 +80,18 @@ export function SettingsFormFields({ fields, formValues, sources, onFieldChange 
                   onChange={checked => onFieldChange(field.key, String(checked))}
                   disabled={overridden}
                 />
+              ) : field.type === 'select' && field.options ? (
+                <Select
+                  value={formValues[field.key] || field.options[0]?.value || ''}
+                  onChange={value => onFieldChange(field.key, value)}
+                  disabled={overridden}
+                >
+                  {field.options.map(opt => (
+                    <Select.Option key={opt.value} value={opt.value}>
+                      {t(opt.labelKey)}
+                    </Select.Option>
+                  ))}
+                </Select>
               ) : field.type === 'password' ? (
                 <Input.Password
                   value={formValues[field.key] || ''}

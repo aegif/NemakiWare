@@ -261,6 +261,7 @@ import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { CMISObject, SearchResult, TypeDefinition, PropertyDefinition } from '../../types/cmis';
 import { SemanticSearch } from '../SemanticSearch/SemanticSearch';
+import { ObjectIdSearch } from './ObjectIdSearch';
 import { PurviewGovernanceSearchSummary } from '../PurviewGovernance/PurviewGovernanceSearchSummary';
 import { InputNumber } from 'antd';
 
@@ -1068,6 +1069,16 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
           label: t('search.semantic'),
           children: (
             <SemanticSearch
+              repositoryId={repositoryId}
+              onDocumentClick={handleSemanticDocumentClick}
+            />
+          )
+        },
+        {
+          key: 'objectId',
+          label: t('search.objectIdSearch'),
+          children: (
+            <ObjectIdSearch
               repositoryId={repositoryId}
               onDocumentClick={handleSemanticDocumentClick}
             />

@@ -72,6 +72,7 @@ export const ConnectionCard: React.FC<ConnectionCardProps> = ({
         <Space>
           <DatabaseOutlined />
           {t('purviewManagement.title')}
+          <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Beta</Tag>
         </Space>
       }
       extra={

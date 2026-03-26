@@ -144,6 +144,8 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                     log.debug("OPTIMIZATION: Databases already initialized, skipping dump loading");
                 }
                 log.info("OPTIMIZATION: Databases already initialized, skipping expensive dump processing");
+                // Ensure Purview state database exists even on upgrade (added in 3.1.0)
+                createDatabaseIfNotExists("nemaki_purview_state");
                 if (log.isDebugEnabled()) {
                     log.debug("DATABASE PRE-INITIALIZATION (Phase 1) completed (skipped)");
                 }
@@ -165,7 +167,10 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
             for (String dbName : databases) {
                 createDatabaseIfNotExists(dbName);
             }
-            
+
+            // Create Purview state database (empty, no dump needed)
+            createDatabaseIfNotExists("nemaki_purview_state");
+
             // Load dump files for initial data (pure HTTP operations)
             loadInitialDumpFiles();
             

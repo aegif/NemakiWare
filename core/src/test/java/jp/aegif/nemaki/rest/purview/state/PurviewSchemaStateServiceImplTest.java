@@ -53,6 +53,40 @@ public class PurviewSchemaStateServiceImplTest {
         assertTrue(contentDaoService.updated || contentDaoService.created);
     }
 
+    @Test
+    public void testSaveSchemaStateOverwritesPreviousState() {
+        PurviewSchemaState v1 = new PurviewSchemaState(
+                "NemakiWare", "1", "hash-v1", "2026-03-20T00:00:00Z", "admin", "v1");
+        service.saveSchemaState(v1);
+
+        PurviewSchemaState v2 = new PurviewSchemaState(
+                "NemakiWare", "2", "hash-v2", "2026-03-21T00:00:00Z", "system", "v2");
+        service.saveSchemaState(v2);
+
+        PurviewSchemaState loaded = service.getSchemaState("NemakiWare");
+
+        assertEquals("2", loaded.getSchemaVersion());
+        assertEquals("hash-v2", loaded.getSchemaHash());
+        assertEquals("system", loaded.getLastAppliedBy());
+    }
+
+    @Test
+    public void testDifferentCollectionsAreStoredIndependently() {
+        PurviewSchemaState nemaki = new PurviewSchemaState(
+                "NemakiWare", "1", "hash-nemaki", "2026-03-20T00:00:00Z", "admin", "nemaki");
+        PurviewSchemaState other = new PurviewSchemaState(
+                "OtherCollection", "3", "hash-other", "2026-03-21T00:00:00Z", "system", "other");
+
+        service.saveSchemaState(nemaki);
+        service.saveSchemaState(other);
+
+        PurviewSchemaState loadedNemaki = service.getSchemaState("NemakiWare");
+        PurviewSchemaState loadedOther = service.getSchemaState("OtherCollection");
+
+        assertEquals("hash-nemaki", loadedNemaki.getSchemaHash());
+        assertEquals("hash-other", loadedOther.getSchemaHash());
+    }
+
     private static class StubContentDaoService extends StubContentDaoServiceBase {
         private Configuration systemConfiguration = createConfig();
         private boolean created;

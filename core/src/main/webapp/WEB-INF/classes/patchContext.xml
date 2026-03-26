@@ -66,6 +66,12 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Migrate Purview state from nemaki_conf to dedicated nemaki_purview_state DB -->
+				<bean class="jp.aegif.nemaki.patch.Patch_PurviewStateMigration">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- NOTE: Patch_CloudDriveMetadataSecondaryType is registered in cmisPostInitializer's cmisPatchList -->
 				<!-- DO NOT add it here to avoid duplicate execution -->
 			</list>

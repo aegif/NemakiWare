@@ -4,7 +4,10 @@ import jp.aegif.nemaki.rest.purview.PurviewConfig;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
+import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -65,6 +68,16 @@ public class PurviewCloudSyncLineageServiceImplTest {
         List<Map<String, Object>> entities = (List<Map<String, Object>>) payloadCaptor.getValue().get("entities");
         assertEquals(List.of("nemaki_cloud_sync_process", "nemaki_external_asset"),
                 entities.stream().map(entity -> entity.get("typeName").toString()).sorted().toList());
+        Map<String, Object> externalAsset = entities.stream()
+                .filter(e -> "nemaki_external_asset".equals(e.get("typeName"))).findFirst().orElse(null);
+        Map<String, Object> syncProcess = entities.stream()
+                .filter(e -> "nemaki_cloud_sync_process".equals(e.get("typeName"))).findFirst().orElse(null);
+        Map<String, Object> assetAttrs = (Map<String, Object>) externalAsset.get("attributes");
+        assertEquals("google", assetAttrs.get("sourceSystem"));
+        assertEquals("google:cloud-001", assetAttrs.get("externalStableKey"));
+        Map<String, Object> processAttrs = (Map<String, Object>) syncProcess.get("attributes");
+        assertEquals("google", processAttrs.get("cloudProvider"));
+        assertEquals("google:cloud-001", processAttrs.get("externalStableKey"));
     }
 
     @Test
@@ -85,6 +98,68 @@ public class PurviewCloudSyncLineageServiceImplTest {
 
         assertEquals(0, processedCount);
         verify(entityRegistryClient, never()).bulkCreateOrUpdateEntities(any(), any());
+    }
+
+    @Test
+    public void testUpsertCloudSyncLineageReturnsZeroForNullList() throws Exception {
+        int processedCount = service.upsertCloudSyncLineage("bedroom", null);
+
+        assertEquals(0, processedCount);
+        verify(entityRegistryClient, never()).bulkCreateOrUpdateEntities(any(), any());
+    }
+
+    @Test
+    public void testUpsertCloudSyncLineageReturnsZeroForEmptyList() throws Exception {
+        int processedCount = service.upsertCloudSyncLineage("bedroom", List.of());
+
+        assertEquals(0, processedCount);
+        verify(entityRegistryClient, never()).bulkCreateOrUpdateEntities(any(), any());
+    }
+
+    @Test
+    public void testUpsertCloudSyncLineageThrowsWhenPublishFails() throws Exception {
+        when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
+                .thenReturn(PurviewEntityPublishResult.failure("HTTP 500: Internal Server Error"));
+
+        Document document = documentWithCloud("doc-001", "google", "cloud-001", "https://drive.example/doc-001");
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.upsertCloudSyncLineage("bedroom", List.of(document)));
+
+        assertTrue(error.getMessage().contains("500"));
+    }
+
+    @Test
+    public void testUpsertCloudSyncLineageThrowsWhenClientExceptionOccurs() throws Exception {
+        when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
+                .thenThrow(new PurviewClientException("Connection refused"));
+
+        Document document = documentWithCloud("doc-001", "google", "cloud-001", "https://drive.example/doc-001");
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.upsertCloudSyncLineage("bedroom", List.of(document)));
+
+        assertTrue(error.getMessage().contains("Connection refused"));
+    }
+
+    @Test
+    public void testReconcileRemovedCloudSyncLineageReturnsZeroForEmptyMap() throws Exception {
+        int reconciledCount = service.reconcileRemovedCloudSyncLineage("bedroom", Map.of());
+
+        assertEquals(0, reconciledCount);
+        verify(entityRegistryClient, never()).deleteByUniqueAttribute(any(), any(), any(), any());
+    }
+
+    @Test
+    public void testReconcileRemovedCloudSyncLineageThrowsWhenDeleteFails() throws Exception {
+        when(entityRegistryClient.deleteByUniqueAttribute(any(), any(), any(), any()))
+                .thenReturn(PurviewEntityPublishResult.failure("HTTP 403: Forbidden"));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.reconcileRemovedCloudSyncLineage("bedroom",
+                        Map.of("doc-001", "doc-001|google|cloud-001|https://drive.example/doc-001|2026-03-20T03:00:00.000+0000")));
+
+        assertTrue(error.getMessage().contains("403"));
     }
 
     private Document documentWithCloud(String objectId, String provider, String externalFileId, String cloudFileUrl) {

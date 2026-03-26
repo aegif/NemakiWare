@@ -110,6 +110,15 @@ export interface PurviewStateOverview {
   deadLetters: PurviewDeadLetterState[];
 }
 
+interface JobsResponse {
+  jobs: PurviewJobState[];
+}
+
+interface PurgeJobHistoryResponse {
+  purgedCount: number;
+  retainCount: number;
+}
+
 interface DeadLettersResponse {
   deadLetters: PurviewDeadLetterState[];
 }
@@ -212,6 +221,16 @@ export class PurviewAdminService {
 
   async resolveDeletes(repositoryId: string): Promise<PurviewJobState> {
     return this.post<PurviewJobState>(`/delete-resolution/${encodeURIComponent(repositoryId)}`);
+  }
+
+  async listJobs(): Promise<PurviewJobState[]> {
+    const response = await this.get<JobsResponse>('/jobs');
+    return response.jobs;
+  }
+
+  async purgeJobHistory(retainCount?: number): Promise<PurgeJobHistoryResponse> {
+    const params = retainCount != null ? `?retainCount=${retainCount}` : '';
+    return this.post<PurgeJobHistoryResponse>(`/purge-job-history${params}`);
   }
 
   async getJob(jobId: string): Promise<PurviewJobState> {

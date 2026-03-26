@@ -207,7 +207,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Layout as AntLayout, Menu, Button, Dropdown, Avatar, Space, Tooltip } from 'antd';
+import { Layout as AntLayout, Menu, Button, Dropdown, Avatar, Space, Tag, Tooltip } from 'antd';
 import {
   FileOutlined,
   SearchOutlined,
@@ -437,7 +437,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
         {
           key: '/purview',
           icon: <DeploymentUnitOutlined />,
-          label: t('navigation.purview'),
+          label: <span>{t('navigation.purview')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginLeft: 4 }}>Beta</Tag></span>,
         },
         ...(featureToggles['rss.enabled'] ? [{
           key: '/rss-tokens',

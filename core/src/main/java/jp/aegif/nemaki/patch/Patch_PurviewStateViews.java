@@ -49,21 +49,44 @@ public class Patch_PurviewStateViews extends AbstractNemakiPatch {
             + " }"
             + "}";
 
+    private static final String PURVIEW_CONSOLIDATED_DLQ_MAP =
+            "function(doc) {"
+            + " if (doc.type === 'configuration' && doc.key"
+            + "     && doc.key.indexOf('purview.dead-letter.entry.') === 0) {"
+            + "   var parts = doc.key.substring('purview.dead-letter.entry.'.length).split('.');"
+            + "   if (parts.length >= 3) {"
+            + "     emit([parts[0], parts[1], parts[2]], null);"
+            + "   }"
+            + " }"
+            + "}";
+
     @Override
     protected void applySystemPatch() {
         log.info("[patch=" + PATCH_NAME + "] Adding Purview state views to nemaki_conf");
 
         try {
-            CloudantClientWrapper client = patchUtil.getConnectorPool().getClient(SystemConst.NEMAKI_CONF_DB);
+            // Prefer dedicated Purview state database; fall back to nemaki_conf
+            CloudantClientWrapper client = null;
+            String targetDb = SystemConst.NEMAKI_PURVIEW_STATE_DB;
+            try {
+                client = patchUtil.getConnectorPool().getClient(SystemConst.NEMAKI_PURVIEW_STATE_DB);
+            } catch (Exception ignored) {
+                // Not yet available
+            }
             if (client == null) {
-                log.error("[patch=" + PATCH_NAME + "] Could not get client for nemaki_conf");
+                client = patchUtil.getConnectorPool().getClient(SystemConst.NEMAKI_CONF_DB);
+                targetDb = SystemConst.NEMAKI_CONF_DB;
+            }
+            if (client == null) {
+                log.error("[patch=" + PATCH_NAME + "] Could not get client for Purview state views");
                 return;
             }
 
             client.createOrUpdateView("_repo", "purviewStateByKind", PURVIEW_STATE_BY_KIND_MAP, null);
             client.createOrUpdateView("_repo", "purviewStateByScopeAndKind", PURVIEW_STATE_BY_SCOPE_AND_KIND_MAP, null);
+            client.createOrUpdateView("_repo", "purviewConsolidatedDLQ", PURVIEW_CONSOLIDATED_DLQ_MAP, null);
 
-            log.info("[patch=" + PATCH_NAME + "] Successfully added Purview state views to nemaki_conf");
+            log.info("[patch=" + PATCH_NAME + "] Successfully added Purview state views to " + targetDb);
 
         } catch (Exception e) {
             log.error("[patch=" + PATCH_NAME + "] Failed to add Purview state views", e);

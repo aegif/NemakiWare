@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class PurviewSchemaManifestFactory {
 
-    private static final String SCHEMA_VERSION = "9";
+    private static final String SCHEMA_VERSION = "11";
     private static final List<String> CUSTOM_TYPE_NAMES = List.of(
             "nemaki_repository",
             "nemaki_folder",

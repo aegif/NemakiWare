@@ -7,6 +7,7 @@ import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
@@ -29,7 +30,7 @@ public class PurviewDocumentArchiveRelationshipServiceImpl implements PurviewDoc
     }
 
     @Override
-    public int upsertDocumentArchiveRelationships(String repositoryId, List<Archive> archives) {
+    public int upsertDocumentArchiveRelationships(String repositoryId, List<Archive> archives, Map<String, String> guidByQualifiedName) {
         if (archives == null || archives.isEmpty()) {
             return 0;
         }
@@ -43,7 +44,7 @@ public class PurviewDocumentArchiveRelationshipServiceImpl implements PurviewDoc
             try {
                 PurviewEntityPublishResult result = entityRegistryClient.createRelationship(
                         buildConnectionRequest(),
-                        entityPayloadFactory.buildDocumentArchiveRelationship(repositoryId, archive));
+                        entityPayloadFactory.buildDocumentArchiveRelationship(repositoryId, archive, guidByQualifiedName));
                 if (!result.isSuccess()) {
                     throw new IllegalStateException(result.getMessage());
                 }
@@ -68,9 +69,12 @@ public class PurviewDocumentArchiveRelationshipServiceImpl implements PurviewDoc
         return new PurviewConnectionRequest(
                 purviewConfig.getEndpoint(),
                 purviewConfig.getAtlasBasePath(),
+                purviewConfig.getAuthType(),
                 purviewConfig.getTenantId(),
                 purviewConfig.getClientId(),
                 purviewConfig.getClientSecret(),
+                purviewConfig.getBasicUsername(),
+                purviewConfig.getBasicPassword(),
                 purviewConfig.getConnectTimeoutMs(),
                 purviewConfig.getReadTimeoutMs());
     }

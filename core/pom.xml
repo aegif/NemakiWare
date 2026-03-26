@@ -29,6 +29,7 @@
 		<jersey.version>4.0.0</jersey.version>
 		<org.apache.chemistry.opencmis.version.14>0.14.0</org.apache.chemistry.opencmis.version.14>
 		<aws.sdk.version>2.25.60</aws.sdk.version>
+		<surefire.excludedGroups>atlas-integration</surefire.excludedGroups>
 	</properties>
 
 	<repositories>
@@ -151,6 +152,20 @@
 			<groupId>com.squareup.okhttp3</groupId>
 			<artifactId>mockwebserver</artifactId>
 			<version>4.12.0</version>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- Testcontainers for Atlas integration tests -->
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers</artifactId>
+			<version>1.20.4</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<version>1.20.4</version>
 			<scope>test</scope>
 		</dependency>
 
@@ -1105,6 +1120,9 @@
 				<version>3.5.2</version>
 				<configuration>
 					<redirectTestOutputToFile>true</redirectTestOutputToFile>
+					<!-- Exclude Atlas integration tests by default (require Docker) -->
+					<!-- Run with: mvn test -Dgroups=atlas-integration -Dsurefire.excludedGroups= -->
+					<excludedGroups>${surefire.excludedGroups}</excludedGroups>
 					<!-- Exclude integration tests that require running Docker containers -->
 					<!-- Run with: mvn test -Dit.test=SystemIntegrationTest,BrowserBindingTest,... -->
 					<excludes>
@@ -1134,6 +1152,7 @@
 					<!-- Environment variables for test execution -->
 					<environmentVariables>
 						<NEMAKI_ENCRYPTION_KEY>test-encryption-key-for-unit-tests-32chars!</NEMAKI_ENCRYPTION_KEY>
+						<DOCKER_HOST>unix:///var/run/docker.sock</DOCKER_HOST>
 					</environmentVariables>
 				</configuration>
 			</plugin>

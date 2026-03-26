@@ -1,4 +1,4 @@
-import { Tabs, Typography } from 'antd';
+import { Space, Tabs, Tag, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { OidcSettingsTab } from './OidcSettingsTab';
 import { GoogleAuthSettingsTab } from './GoogleAuthSettingsTab';
@@ -38,7 +38,7 @@ export function IntegrationSettings({ repositoryId: _repositoryId }: Integration
     },
     {
       key: 'purview',
-      label: t('integrationSettings.tabs.purview'),
+      label: <Space size={4}>{t('integrationSettings.tabs.purview')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Beta</Tag></Space>,
       children: <PurviewSettingsTab />,
     },
   ];

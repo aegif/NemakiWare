@@ -2,9 +2,11 @@ package jp.aegif.nemaki.rest.purview.lineage;
 
 import jp.aegif.nemaki.rest.purview.PurviewConfig;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
+import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -70,9 +72,19 @@ public class PurviewArchiveLineageServiceImplTest {
                 .filter(entity -> "nemaki_archive_process".equals(entity.get("typeName")))
                 .findFirst()
                 .orElseThrow();
+        Map<String, Object> processAttrs = (Map<String, Object>) processEntity.get("attributes");
+        assertEquals("s3://archive-bucket/bedroom/doc-001.bin", processAttrs.get("externalStableKey"));
+        assertEquals("s3://archive-bucket/bedroom/doc-001.bin", processAttrs.get("targetDescription"));
         Map<String, Object> relationshipAttributes = (Map<String, Object>) processEntity.get("relationshipAttributes");
         assertEquals(1, ((List<?>) relationshipAttributes.get("inputs")).size());
         assertEquals(2, ((List<?>) relationshipAttributes.get("outputs")).size());
+
+        Map<String, Object> externalEntity = entities.stream()
+                .filter(entity -> "nemaki_external_asset".equals(entity.get("typeName")))
+                .findFirst()
+                .orElseThrow();
+        Map<String, Object> externalAttrs = (Map<String, Object>) externalEntity.get("attributes");
+        assertTrue(externalAttrs.get("qualifiedName").toString().contains("bedroom"));
     }
 
     @Test
@@ -84,6 +96,52 @@ public class PurviewArchiveLineageServiceImplTest {
 
         assertEquals(0, processedCount);
         verify(entityRegistryClient, never()).bulkCreateOrUpdateEntities(any(), any());
+    }
+
+    @Test
+    public void testUpsertArchiveLineageReturnsZeroForEmptyList() throws Exception {
+        int processedCount = service.upsertArchiveLineage("bedroom", List.of());
+
+        assertEquals(0, processedCount);
+        verify(entityRegistryClient, never()).bulkCreateOrUpdateEntities(any(), any());
+    }
+
+    @Test
+    public void testUpsertArchiveLineageReturnsZeroForNullList() throws Exception {
+        int processedCount = service.upsertArchiveLineage("bedroom", null);
+
+        assertEquals(0, processedCount);
+        verify(entityRegistryClient, never()).bulkCreateOrUpdateEntities(any(), any());
+    }
+
+    @Test
+    public void testUpsertArchiveLineageThrowsWhenPublishFails() throws Exception {
+        when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
+                .thenReturn(PurviewEntityPublishResult.failure("HTTP 500: Internal Server Error"));
+
+        Archive archive = archive("archive-001", "doc-001");
+        archive.setArchiveState(Archive.STATE_ARCHIVED_COLD);
+        archive.setContentRef(Map.of("type", "s3", "ref", "s3://bucket/doc-001.bin"));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.upsertArchiveLineage("bedroom", List.of(archive)));
+
+        assertTrue(error.getMessage().contains("500"));
+    }
+
+    @Test
+    public void testUpsertArchiveLineageThrowsWhenPurviewClientExceptionOccurs() throws Exception {
+        when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
+                .thenThrow(new PurviewClientException("Connection refused"));
+
+        Archive archive = archive("archive-001", "doc-001");
+        archive.setArchiveState(Archive.STATE_ARCHIVED_COLD);
+        archive.setContentRef(Map.of("type", "s3", "ref", "s3://bucket/doc-001.bin"));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.upsertArchiveLineage("bedroom", List.of(archive)));
+
+        assertTrue(error.getMessage().contains("Connection refused"));
     }
 
     private Archive archive(String archiveId, String originalId) {

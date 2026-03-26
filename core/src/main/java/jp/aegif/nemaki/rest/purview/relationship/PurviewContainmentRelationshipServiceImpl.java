@@ -58,7 +58,7 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
     }
 
     @Override
-    public int upsertContainmentRelationships(String repositoryId, List<Content> contents) {
+    public int upsertContainmentRelationships(String repositoryId, List<Content> contents, Map<String, String> guidByQualifiedName) {
         if (contents == null || contents.isEmpty()) {
             return 0;
         }
@@ -70,7 +70,7 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
 
         int processedCount = 0;
         for (Content content : contents) {
-            Map<String, Object> relationship = buildRelationshipPayload(repositoryId, repositoryInfo, content);
+            Map<String, Object> relationship = buildRelationshipPayload(repositoryId, repositoryInfo, content, guidByQualifiedName);
             if (relationship == null) {
                 continue;
             }
@@ -121,21 +121,22 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
         return new PurviewContainmentSyncResult(currentSnapshot, true, publishedCount, reconciledCount);
     }
 
-    private Map<String, Object> buildRelationshipPayload(String repositoryId, RepositoryInfo repositoryInfo, Content content) {
+    private Map<String, Object> buildRelationshipPayload(String repositoryId, RepositoryInfo repositoryInfo, Content content,
+            Map<String, String> guidByQualifiedName) {
         if (content == null || content.getId() == null || content.getId().isBlank()) {
             return null;
         }
         if (content.isFolder() && content.getId().equals(repositoryInfo.getRootFolderId())) {
-            return entityPayloadFactory.buildRepositoryFolderRelationship(repositoryId, content);
+            return entityPayloadFactory.buildRepositoryFolderRelationship(repositoryId, content, guidByQualifiedName);
         }
         if (content.getParentId() == null || content.getParentId().isBlank()) {
             return null;
         }
         if (content.isFolder()) {
-            return entityPayloadFactory.buildFolderFolderRelationship(repositoryId, content);
+            return entityPayloadFactory.buildFolderFolderRelationship(repositoryId, content, guidByQualifiedName);
         }
         if (content.isDocument()) {
-            return entityPayloadFactory.buildFolderDocumentRelationship(repositoryId, content);
+            return entityPayloadFactory.buildFolderDocumentRelationship(repositoryId, content, guidByQualifiedName);
         }
         return null;
     }
@@ -153,7 +154,7 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
         }
 
         List<ContainmentEdge> edges = new ArrayList<>();
-        Map<String, Object> rootRelationship = buildRelationshipPayload(repositoryId, repositoryInfo, rootFolder);
+        Map<String, Object> rootRelationship = buildRelationshipPayload(repositoryId, repositoryInfo, rootFolder, Map.of());
         if (rootRelationship != null) {
             edges.add(new ContainmentEdge(buildRelationshipKey(rootRelationship), rootRelationship));
         }
@@ -170,7 +171,7 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
                 }
 
                 for (Content child : children) {
-                    Map<String, Object> relationship = buildRelationshipPayload(repositoryId, repositoryInfo, child);
+                    Map<String, Object> relationship = buildRelationshipPayload(repositoryId, repositoryInfo, child, Map.of());
                     if (relationship != null) {
                         edges.add(new ContainmentEdge(buildRelationshipKey(relationship), relationship));
                     }
@@ -270,9 +271,12 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
         return new PurviewConnectionRequest(
                 purviewConfig.getEndpoint(),
                 purviewConfig.getAtlasBasePath(),
+                purviewConfig.getAuthType(),
                 purviewConfig.getTenantId(),
                 purviewConfig.getClientId(),
                 purviewConfig.getClientSecret(),
+                purviewConfig.getBasicUsername(),
+                purviewConfig.getBasicPassword(),
                 purviewConfig.getConnectTimeoutMs(),
                 purviewConfig.getReadTimeoutMs());
     }
