@@ -1232,7 +1232,9 @@
     "objectIdSearchChildren": "子オブジェクト",
     "objectIdSearchParent": "親フォルダ",
     "objectIdSearchNotFound": "指定されたIDのオブジェクトが見つかりません",
-    "objectIdSearchDescription": "CouchDBの内部IDでオブジェクトを直接検索します"
+    "objectIdSearchDescription": "CouchDBの内部IDでオブジェクトを直接検索します",
+    "fulltext": "全文検索",
+    "semantic": "セマンティック検索"
   },
   "searchResults": {
     "title": "検索",
@@ -1850,10 +1852,6 @@
     "propertyOnly": "プロパティ重視",
     "propertyBoostDescription": "スライダーを右に動かすと、ファイル名や説明文がより重視されます。左に動かすと、本文の内容がより重視されます。",
     "viewDocument": "ドキュメントを表示"
-  },
-  "search": {
-    "fulltext": "全文検索",
-    "semantic": "セマンティック検索"
   },
   "rag": {
     "admin": {

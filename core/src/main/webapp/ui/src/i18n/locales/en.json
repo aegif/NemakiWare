@@ -1232,7 +1232,9 @@
     "objectIdSearchChildren": "Child Objects",
     "objectIdSearchParent": "Parent Folder",
     "objectIdSearchNotFound": "No object found with the specified ID",
-    "objectIdSearchDescription": "Search objects directly by CouchDB internal ID"
+    "objectIdSearchDescription": "Search objects directly by CouchDB internal ID",
+    "fulltext": "Full-text Search",
+    "semantic": "Semantic Search"
   },
   "searchResults": {
     "title": "Search",
@@ -1850,10 +1852,6 @@
     "propertyOnly": "Property Focus",
     "propertyBoostDescription": "Move the slider right to prioritize file names and descriptions. Move left to prioritize body content.",
     "viewDocument": "View Document"
-  },
-  "search": {
-    "fulltext": "Full-text Search",
-    "semantic": "Semantic Search"
   },
   "rag": {
     "admin": {
