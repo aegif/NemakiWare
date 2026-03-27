@@ -24,10 +24,14 @@ package jp.aegif.nemaki.sync.scheduler;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.Enumeration;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -44,120 +48,165 @@ import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 /**
- * Spring-based scheduler for directory synchronization.
- * 
+ * Cron-based scheduler for directory synchronization (LDAP/AD).
+ * Dynamically reads cron configuration every 60 seconds,
+ * so changes made via the admin UI or CouchDB take effect without restart.
+ *
  * Supports IP-based node control for cluster environments:
  * - If directory.sync.schedule.node.ip is configured, only the node with matching IP will execute sync
  * - If not configured, all nodes will execute sync (suitable for single-node deployments)
- * 
- * Uses cron expression from directory.sync.schedule.cron property.
  */
 public class DirectorySyncScheduler {
 
     private static final Log log = LogFactory.getLog(DirectorySyncScheduler.class);
+    private static final long CONFIG_CHECK_INTERVAL_SECONDS = 60;
 
     private DirectorySyncService directorySyncService;
     private PropertyManager propertyManager;
     private RepositoryInfoMap repositoryInfoMap;
 
     private ScheduledExecutorService scheduler;
-    private ScheduledFuture<?> scheduledTask;
-    private volatile boolean initialized = false;
-    private final Object initLock = new Object();
+    private ScheduledFuture<?> syncTask;
+    private volatile String activeCron;
 
     private Set<String> localIpAddresses;
+    private boolean nodeIpMismatch = false;
 
     public void init() {
-        if (initialized) {
+        localIpAddresses = collectLocalIpAddresses();
+        log.info("Local IP addresses: " + localIpAddresses);
+
+        // Node IP check: if this node doesn't match, skip scheduling entirely
+        String configuredNodeIp = propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_SCHEDULE_NODE_IP);
+        if (configuredNodeIp != null && !configuredNodeIp.trim().isEmpty()) {
+            if (!isLocalNode(configuredNodeIp.trim())) {
+                log.info("Directory sync scheduling skipped - configured node IP (" + configuredNodeIp +
+                        ") does not match this node's IPs: " + localIpAddresses);
+                nodeIpMismatch = true;
+                return;
+            }
+            log.info("This node matches configured IP (" + configuredNodeIp + "), will execute scheduled syncs");
+        } else {
+            log.info("No node IP configured, this node will execute scheduled syncs");
+        }
+
+        scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "DirectorySyncScheduler");
+            t.setDaemon(true);
+            return t;
+        });
+
+        reconcileSchedule();
+
+        scheduler.scheduleWithFixedDelay(
+                this::reconcileSchedule,
+                CONFIG_CHECK_INTERVAL_SECONDS,
+                CONFIG_CHECK_INTERVAL_SECONDS,
+                TimeUnit.SECONDS);
+
+        log.info("Directory sync scheduler initialized (activeCron=" + activeCron + ")");
+    }
+
+    void reconcileSchedule() {
+        if (scheduler == null || scheduler.isShutdown()) {
             return;
         }
 
-        synchronized (initLock) {
-            if (initialized) {
-                return;
-            }
+        String currentCron = resolveEffectiveCron();
 
-            localIpAddresses = collectLocalIpAddresses();
-            log.info("Local IP addresses: " + localIpAddresses);
-
-            boolean scheduleEnabled = propertyManager.readBoolean(PropertyKey.DIRECTORY_SYNC_SCHEDULE_ENABLED);
-            if (!scheduleEnabled) {
-                log.info("Directory sync scheduling is disabled");
-                initialized = true;
-                return;
-            }
-
-            String cronExpression = propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_SCHEDULE_CRON);
-            if (cronExpression == null || cronExpression.trim().isEmpty()) {
-                log.warn("Directory sync cron expression is not configured");
-                initialized = true;
-                return;
-            }
-
-            if (!CronExpression.isValidExpression(cronExpression)) {
-                log.error("Invalid cron expression: " + cronExpression);
-                initialized = true;
-                return;
-            }
-
-            String configuredNodeIp = propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_SCHEDULE_NODE_IP);
-            if (configuredNodeIp != null && !configuredNodeIp.trim().isEmpty()) {
-                if (!isLocalNode(configuredNodeIp.trim())) {
-                    log.info("Directory sync scheduling skipped - configured node IP (" + configuredNodeIp + 
-                            ") does not match this node's IPs: " + localIpAddresses);
-                    initialized = true;
-                    return;
-                }
-                log.info("This node matches configured IP (" + configuredNodeIp + "), will execute scheduled syncs");
-            } else {
-                log.info("No node IP configured, this node will execute scheduled syncs");
-            }
-
-            scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "DirectorySyncScheduler");
-                t.setDaemon(true);
-                return t;
-            });
-
-            scheduleNextExecution(cronExpression);
-            initialized = true;
-            log.info("Directory sync scheduler initialized with cron: " + cronExpression);
+        if (Objects.equals(currentCron, activeCron)) {
+            return;
         }
+
+        cancelSyncTask();
+
+        if (currentCron == null) {
+            log.info("Directory sync schedule stopped (was: " + activeCron + ")");
+            activeCron = null;
+            return;
+        }
+
+        log.info("Directory sync schedule updated: " + activeCron + " -> " + currentCron);
+        activeCron = currentCron;
+        scheduleNextSync(currentCron);
     }
 
-    private void scheduleNextExecution(String cronExpression) {
+    private String resolveEffectiveCron() {
+        boolean scheduleEnabled = propertyManager.readBoolean(PropertyKey.DIRECTORY_SYNC_SCHEDULE_ENABLED);
+        if (!scheduleEnabled) {
+            return null;
+        }
+        String cron = propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_SCHEDULE_CRON);
+        if (cron == null || cron.isBlank()) {
+            return null;
+        }
+        cron = cron.trim();
+        if (!CronExpression.isValidExpression(cron)) {
+            log.warn("Invalid directory sync cron expression: " + cron);
+            return null;
+        }
+        return cron;
+    }
+
+    private void scheduleNextSync(String cronExpression) {
+        if (scheduler == null || scheduler.isShutdown()) {
+            return;
+        }
         CronExpression cron = CronExpression.parse(cronExpression);
-        java.time.LocalDateTime now = java.time.LocalDateTime.now();
-        java.time.LocalDateTime next = cron.next(now);
-        
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime next = cron.next(now);
+
         if (next == null) {
             log.warn("Could not determine next execution time for cron: " + cronExpression);
             return;
         }
 
-        long delayMillis = java.time.Duration.between(now, next).toMillis();
-        
-        scheduledTask = scheduler.schedule(() -> {
-            try {
-                executeSync();
-            } finally {
-                scheduleNextExecution(cronExpression);
-            }
-        }, delayMillis, TimeUnit.MILLISECONDS);
+        long delayMillis = Duration.between(now, next).toMillis();
 
-        log.debug("Next directory sync scheduled for: " + next);
+        try {
+            syncTask = scheduler.schedule(() -> {
+                try {
+                    executeSync();
+                } finally {
+                    String effectiveCron = resolveEffectiveCron();
+                    if (effectiveCron != null) {
+                        activeCron = effectiveCron;
+                        scheduleNextSync(effectiveCron);
+                    } else {
+                        activeCron = null;
+                        log.info("Directory sync cron cleared after execution");
+                    }
+                }
+            }, delayMillis, TimeUnit.MILLISECONDS);
+            log.debug("Next directory sync scheduled for: " + next + " (delay: " + delayMillis + "ms)");
+        } catch (RejectedExecutionException e) {
+            log.debug("Directory sync schedule rejected (scheduler shutting down)");
+        }
+    }
+
+    private void cancelSyncTask() {
+        if (syncTask != null) {
+            syncTask.cancel(false);
+            syncTask = null;
+        }
     }
 
     private void executeSync() {
+        boolean scheduleEnabled = propertyManager.readBoolean(PropertyKey.DIRECTORY_SYNC_SCHEDULE_ENABLED);
+        if (!scheduleEnabled) {
+            log.debug("Directory sync skipped: disabled (dynamic check)");
+            return;
+        }
+
         log.info("Starting scheduled directory sync");
 
         try {
             Set<String> repositoryIds = repositoryInfoMap.keys();
-            
+
             for (String repositoryId : repositoryIds) {
                 try {
                     DirectorySyncConfig config = directorySyncService.getConfig(repositoryId);
-                    
+
                     if (!config.isEnabled()) {
                         log.debug("Directory sync disabled for repository: " + repositoryId);
                         continue;
@@ -170,8 +219,8 @@ public class DirectorySyncScheduler {
 
                     log.info("Executing scheduled sync for repository: " + repositoryId);
                     DirectorySyncResult result = directorySyncService.syncGroups(repositoryId, false);
-                    
-                    log.info("Scheduled sync completed for repository " + repositoryId + 
+
+                    log.info("Scheduled sync completed for repository " + repositoryId +
                             ": status=" + result.getStatus() +
                             ", users added=" + result.getUsersAdded() +
                             ", users updated=" + result.getUsersUpdated() +
@@ -195,7 +244,7 @@ public class DirectorySyncScheduler {
 
     private Set<String> collectLocalIpAddresses() {
         Set<String> addresses = new HashSet<>();
-        
+
         addresses.add("127.0.0.1");
         addresses.add("localhost");
 
@@ -203,7 +252,7 @@ public class DirectorySyncScheduler {
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
             while (interfaces != null && interfaces.hasMoreElements()) {
                 NetworkInterface networkInterface = interfaces.nextElement();
-                
+
                 if (networkInterface.isLoopback() || !networkInterface.isUp()) {
                     continue;
                 }
@@ -231,9 +280,7 @@ public class DirectorySyncScheduler {
     }
 
     public void destroy() {
-        if (scheduledTask != null) {
-            scheduledTask.cancel(false);
-        }
+        cancelSyncTask();
         if (scheduler != null) {
             scheduler.shutdown();
             try {
@@ -250,6 +297,10 @@ public class DirectorySyncScheduler {
 
     public boolean isSchedulerActive() {
         return scheduler != null && !scheduler.isShutdown();
+    }
+
+    String getActiveCron() {
+        return activeCron;
     }
 
     public void setDirectorySyncService(DirectorySyncService directorySyncService) {

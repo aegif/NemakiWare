@@ -8,91 +8,137 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.scheduling.support.CronExpression;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.concurrent.*;
 
 /**
- * Spring-based scheduler for cloud directory synchronization.
- * Runs delta sync on a cron schedule.
- * Follows the same pattern as DirectorySyncScheduler.
+ * Cron-based scheduler for cloud directory synchronization.
+ * Dynamically reads cron configuration every 60 seconds,
+ * so changes made via the admin UI or CouchDB take effect without restart.
  */
 public class CloudDirectorySyncScheduler {
 
 	private static final Log log = LogFactory.getLog(CloudDirectorySyncScheduler.class);
+	private static final long CONFIG_CHECK_INTERVAL_SECONDS = 60;
 
 	private CloudDirectorySyncService cloudDirectorySyncService;
 	private PropertyManager propertyManager;
 
 	private ScheduledExecutorService scheduler;
-	private ScheduledFuture<?> scheduledTask;
-	private volatile boolean initialized = false;
-	private final Object initLock = new Object();
+	private ScheduledFuture<?> syncTask;
+	private volatile String activeCron;
 
 	public void init() {
-		if (initialized) {
+		scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+			Thread t = new Thread(r, "CloudDirectorySyncScheduler");
+			t.setDaemon(true);
+			return t;
+		});
+
+		reconcileSchedule();
+
+		scheduler.scheduleWithFixedDelay(
+				this::reconcileSchedule,
+				CONFIG_CHECK_INTERVAL_SECONDS,
+				CONFIG_CHECK_INTERVAL_SECONDS,
+				TimeUnit.SECONDS);
+
+		log.info("Cloud directory sync scheduler initialized (activeCron=" + activeCron + ")");
+	}
+
+	void reconcileSchedule() {
+		if (scheduler == null || scheduler.isShutdown()) {
 			return;
 		}
 
-		synchronized (initLock) {
-			if (initialized) {
-				return;
-			}
+		String currentCron = resolveEffectiveCron();
 
-			String enabled = propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED);
-			if (!"true".equalsIgnoreCase(enabled)) {
-				log.info("Cloud directory sync is disabled");
-				initialized = true;
-				return;
-			}
-
-			String cronExpression = propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_CRON);
-			if (cronExpression == null || cronExpression.trim().isEmpty()) {
-				log.info("Cloud directory sync cron expression is not configured, scheduling disabled");
-				initialized = true;
-				return;
-			}
-
-			if (!CronExpression.isValidExpression(cronExpression)) {
-				log.error("Invalid cloud directory sync cron expression: " + cronExpression);
-				initialized = true;
-				return;
-			}
-
-			scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-				Thread t = new Thread(r, "CloudDirectorySyncScheduler");
-				t.setDaemon(true);
-				return t;
-			});
-
-			scheduleNextExecution(cronExpression);
-			initialized = true;
-			log.info("Cloud directory sync scheduler initialized with cron: " + cronExpression);
+		if (Objects.equals(currentCron, activeCron)) {
+			return;
 		}
+
+		cancelSyncTask();
+
+		if (currentCron == null) {
+			log.info("Cloud directory sync schedule stopped (was: " + activeCron + ")");
+			activeCron = null;
+			return;
+		}
+
+		log.info("Cloud directory sync schedule updated: " + activeCron + " -> " + currentCron);
+		activeCron = currentCron;
+		scheduleNextSync(currentCron);
 	}
 
-	private void scheduleNextExecution(String cronExpression) {
+	private String resolveEffectiveCron() {
+		String enabled = propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED);
+		if (!"true".equalsIgnoreCase(enabled)) {
+			return null;
+		}
+		String cron = propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_CRON);
+		if (cron == null || cron.isBlank()) {
+			return null;
+		}
+		cron = cron.trim();
+		if (!CronExpression.isValidExpression(cron)) {
+			log.warn("Invalid cloud directory sync cron expression: " + cron);
+			return null;
+		}
+		return cron;
+	}
+
+	private void scheduleNextSync(String cronExpression) {
+		if (scheduler == null || scheduler.isShutdown()) {
+			return;
+		}
 		CronExpression cron = CronExpression.parse(cronExpression);
-		java.time.LocalDateTime now = java.time.LocalDateTime.now();
-		java.time.LocalDateTime next = cron.next(now);
+		LocalDateTime now = LocalDateTime.now();
+		LocalDateTime next = cron.next(now);
 
 		if (next == null) {
 			log.warn("Could not determine next execution time for cron: " + cronExpression);
 			return;
 		}
 
-		long delayMillis = java.time.Duration.between(now, next).toMillis();
+		long delayMillis = Duration.between(now, next).toMillis();
 
-		scheduledTask = scheduler.schedule(() -> {
-			try {
-				executeSync();
-			} finally {
-				scheduleNextExecution(cronExpression);
-			}
-		}, delayMillis, TimeUnit.MILLISECONDS);
+		try {
+			syncTask = scheduler.schedule(() -> {
+				try {
+					executeSync();
+				} finally {
+					String effectiveCron = resolveEffectiveCron();
+					if (effectiveCron != null) {
+						activeCron = effectiveCron;
+						scheduleNextSync(effectiveCron);
+					} else {
+						activeCron = null;
+						log.info("Cloud directory sync cron cleared after execution");
+					}
+				}
+			}, delayMillis, TimeUnit.MILLISECONDS);
+			log.debug("Next cloud directory sync scheduled for: " + next + " (delay: " + delayMillis + "ms)");
+		} catch (RejectedExecutionException e) {
+			log.debug("Cloud directory sync schedule rejected (scheduler shutting down)");
+		}
+	}
 
-		log.debug("Next cloud directory sync scheduled for: " + next);
+	private void cancelSyncTask() {
+		if (syncTask != null) {
+			syncTask.cancel(false);
+			syncTask = null;
+		}
 	}
 
 	private void executeSync() {
+		String enabled = propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED);
+		if (!"true".equalsIgnoreCase(enabled)) {
+			log.debug("Cloud directory sync skipped: disabled (dynamic check)");
+			return;
+		}
+
 		log.info("Starting scheduled cloud directory delta sync");
 
 		String providers = propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS);
@@ -101,7 +147,6 @@ public class CloudDirectorySyncScheduler {
 			return;
 		}
 
-		// Run delta sync on the default repository
 		String repositoryId = null;
 		try {
 			jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repoInfoMap =
@@ -132,9 +177,7 @@ public class CloudDirectorySyncScheduler {
 	}
 
 	public void destroy() {
-		if (scheduledTask != null) {
-			scheduledTask.cancel(false);
-		}
+		cancelSyncTask();
 		if (scheduler != null) {
 			scheduler.shutdown();
 			try {
@@ -151,6 +194,10 @@ public class CloudDirectorySyncScheduler {
 
 	public boolean isSchedulerActive() {
 		return scheduler != null && !scheduler.isShutdown();
+	}
+
+	String getActiveCron() {
+		return activeCron;
 	}
 
 	public void setCloudDirectorySyncService(CloudDirectorySyncService cloudDirectorySyncService) {

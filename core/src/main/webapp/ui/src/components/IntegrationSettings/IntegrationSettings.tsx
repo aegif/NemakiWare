@@ -4,6 +4,7 @@ import { OidcSettingsTab } from './OidcSettingsTab';
 import { GoogleAuthSettingsTab } from './GoogleAuthSettingsTab';
 import { MicrosoftAuthSettingsTab } from './MicrosoftAuthSettingsTab';
 import { SamlSettingsTab } from './SamlSettingsTab';
+import { DirectorySyncSettingsTab } from './DirectorySyncSettingsTab';
 import { PurviewSettingsTab } from './PurviewSettingsTab';
 
 const { Title } = Typography;
@@ -35,6 +36,11 @@ export function IntegrationSettings({ repositoryId: _repositoryId }: Integration
       key: 'saml',
       label: t('integrationSettings.tabs.saml'),
       children: <SamlSettingsTab />,
+    },
+    {
+      key: 'directory-sync',
+      label: t('integrationSettings.tabs.directorySync'),
+      children: <DirectorySyncSettingsTab />,
     },
     {
       key: 'purview',

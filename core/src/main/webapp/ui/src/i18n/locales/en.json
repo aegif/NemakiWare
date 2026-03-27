@@ -2609,6 +2609,7 @@
       "google": "Google Auth",
       "microsoft": "Microsoft Auth",
       "saml": "SAML",
+      "directorySync": "Directory Sync",
       "purview": "Purview / Atlas"
     },
     "save": "Save",
@@ -2647,6 +2648,14 @@
       "idpCertificate": "IdP Certificate (PEM)",
       "sloUrl": "SLO URL",
       "attributeMapping": "Attribute Mapping (JSON)"
+    },
+    "directorySync": {
+      "ldapScheduleEnabled": "Enable LDAP/AD Scheduled Sync",
+      "ldapScheduleCron": "LDAP/AD Sync Schedule (cron)",
+      "cloudEnabled": "Enable Cloud Directory Scheduled Sync",
+      "cloudCron": "Cloud Directory Sync Schedule (cron)",
+      "cronHelp": "Spring 6-field cron expression. Examples: 0 0 3 * * ? (daily at 3 AM), 0 */5 * * * ? (every 5 min). Changes take effect within ~60 seconds.",
+      "notice": "Directory sync schedule settings. Changes take effect within ~60 seconds after saving (no restart required)."
     },
     "purview": {
       "enabled": "Enable Purview / Atlas Integration",

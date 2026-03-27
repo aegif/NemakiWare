@@ -2609,6 +2609,7 @@
       "google": "Google認証",
       "microsoft": "Microsoft認証",
       "saml": "SAML",
+      "directorySync": "ディレクトリ同期",
       "purview": "Purview / Atlas"
     },
     "save": "保存",
@@ -2647,6 +2648,14 @@
       "idpCertificate": "IdP Certificate (PEM)",
       "sloUrl": "SLO URL",
       "attributeMapping": "Attribute Mapping (JSON)"
+    },
+    "directorySync": {
+      "ldapScheduleEnabled": "LDAP/AD 定期同期を有効化",
+      "ldapScheduleCron": "LDAP/AD 同期スケジュール (cron式)",
+      "cloudEnabled": "クラウドディレクトリ定期同期を有効化",
+      "cloudCron": "クラウドディレクトリ同期スケジュール (cron式)",
+      "cronHelp": "Spring 6フィールドcron式。例: 0 0 3 * * ? (毎日3時)、0 */5 * * * ? (5分毎)。変更は約60秒以内に反映されます。",
+      "notice": "ディレクトリ同期のスケジュール設定です。変更は保存後、約60秒以内にスケジューラに反映されます（再起動不要）。"
     },
     "purview": {
       "enabled": "Purview / Atlas 連携を有効化",

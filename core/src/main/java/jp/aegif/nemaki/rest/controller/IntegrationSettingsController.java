@@ -60,6 +60,13 @@ public class IntegrationSettingsController {
 			"saml.attribute.mapping"
 	));
 
+	private static final Set<String> DIRECTORY_SYNC_KEYS = new LinkedHashSet<>(Arrays.asList(
+			"directory.sync.schedule.enabled",
+			"directory.sync.schedule.cron",
+			"cloud.directory.sync.enabled",
+			"cloud.directory.sync.cron"
+	));
+
 	private static final Set<String> PURVIEW_KEYS = new LinkedHashSet<>(Arrays.asList(
 			"purview.enabled",
 			"purview.auth.type",
@@ -160,6 +167,22 @@ public class IntegrationSettingsController {
 		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
 		if (forbidden != null) return forbidden;
 		return handleUpdate(SAML_KEYS, body);
+	}
+
+	// ==================== Directory Sync ====================
+
+	@GetMapping("/directory-sync")
+	public ResponseEntity<Map<String, Object>> getDirectorySyncSettings() {
+		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+		if (forbidden != null) return forbidden;
+		return ResponseEntity.ok(buildSettingsResponse(DIRECTORY_SYNC_KEYS));
+	}
+
+	@PutMapping("/directory-sync")
+	public ResponseEntity<Map<String, Object>> updateDirectorySyncSettings(@RequestBody Map<String, String> body) {
+		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+		if (forbidden != null) return forbidden;
+		return handleUpdate(DIRECTORY_SYNC_KEYS, body);
 	}
 
 	// ==================== Purview ====================

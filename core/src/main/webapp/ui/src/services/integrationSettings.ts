@@ -90,6 +90,10 @@ export const updateMicrosoftAuthSettings = (settings: Record<string, string>) =>
 export const getSamlSettings = () => getSettings('saml');
 export const updateSamlSettings = (settings: Record<string, string>) => updateSettings('saml', settings);
 
+// Directory Sync
+export const getDirectorySyncSettings = () => getSettings('directory-sync');
+export const updateDirectorySyncSettings = (settings: Record<string, string>) => updateSettings('directory-sync', settings);
+
 // Purview
 export const getPurviewSettings = () => getSettings('purview');
 export const updatePurviewSettings = (settings: Record<string, string>) => updateSettings('purview', settings);

@@ -7,7 +7,7 @@ interface SelectOption {
   labelKey: string;
 }
 
-interface FieldDef {
+export interface FieldDef {
   key: string;
   labelKey: string;
   type: 'text' | 'password' | 'boolean' | 'textarea' | 'select';
