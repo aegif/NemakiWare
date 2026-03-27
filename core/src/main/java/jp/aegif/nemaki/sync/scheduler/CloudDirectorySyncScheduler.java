@@ -53,28 +53,32 @@ public class CloudDirectorySyncScheduler {
 	}
 
 	void reconcileSchedule() {
-		if (scheduler == null || scheduler.isShutdown()) {
-			return;
+		try {
+			if (scheduler == null || scheduler.isShutdown()) {
+				return;
+			}
+
+			String currentCron = resolveEffectiveCron();
+
+			if (Objects.equals(currentCron, activeCron)) {
+				return;
+			}
+
+			cancelSyncTask();
+			long gen = generation.incrementAndGet();
+
+			if (currentCron == null) {
+				log.info("Cloud directory sync schedule stopped (was: " + activeCron + ")");
+				activeCron = null;
+				return;
+			}
+
+			log.info("Cloud directory sync schedule updated: " + activeCron + " -> " + currentCron);
+			activeCron = currentCron;
+			scheduleNextSync(currentCron, gen);
+		} catch (Exception e) {
+			log.warn("Error during cloud directory sync schedule reconciliation, will retry on next poll: " + e.getMessage());
 		}
-
-		String currentCron = resolveEffectiveCron();
-
-		if (Objects.equals(currentCron, activeCron)) {
-			return;
-		}
-
-		cancelSyncTask();
-		long gen = generation.incrementAndGet();
-
-		if (currentCron == null) {
-			log.info("Cloud directory sync schedule stopped (was: " + activeCron + ")");
-			activeCron = null;
-			return;
-		}
-
-		log.info("Cloud directory sync schedule updated: " + activeCron + " -> " + currentCron);
-		activeCron = currentCron;
-		scheduleNextSync(currentCron, gen);
 	}
 
 	private String resolveEffectiveCron() {
@@ -114,17 +118,21 @@ public class CloudDirectorySyncScheduler {
 				try {
 					executeSync();
 				} finally {
-					if (generation.get() != gen) {
-						log.debug("Cloud directory sync generation changed, not re-arming");
-						return;
-					}
-					String effectiveCron = resolveEffectiveCron();
-					if (effectiveCron != null) {
-						activeCron = effectiveCron;
-						scheduleNextSync(effectiveCron, gen);
-					} else {
-						activeCron = null;
-						log.info("Cloud directory sync cron cleared after execution");
+					try {
+						if (generation.get() != gen) {
+							log.debug("Cloud directory sync generation changed, not re-arming");
+							return;
+						}
+						String effectiveCron = resolveEffectiveCron();
+						if (effectiveCron != null) {
+							activeCron = effectiveCron;
+							scheduleNextSync(effectiveCron, gen);
+						} else {
+							activeCron = null;
+							log.info("Cloud directory sync cron cleared after execution");
+						}
+					} catch (Exception e) {
+						log.warn("Error re-arming cloud directory sync schedule, next poll will recover: " + e.getMessage());
 					}
 				}
 			}, delayMillis, TimeUnit.MILLISECONDS);

@@ -98,30 +98,34 @@ public class DirectorySyncScheduler {
     }
 
     void reconcileSchedule() {
-        if (scheduler == null || scheduler.isShutdown()) {
-            return;
-        }
-
-        String currentCron = resolveEffectiveCron();
-
-        if (Objects.equals(currentCron, activeCron)) {
-            return;
-        }
-
-        cancelSyncTask();
-        long gen = generation.incrementAndGet();
-
-        if (currentCron == null) {
-            if (activeCron != null) {
-                log.info("Directory sync schedule stopped (was: " + activeCron + ")");
+        try {
+            if (scheduler == null || scheduler.isShutdown()) {
+                return;
             }
-            activeCron = null;
-            return;
-        }
 
-        log.info("Directory sync schedule updated: " + activeCron + " -> " + currentCron);
-        activeCron = currentCron;
-        scheduleNextSync(currentCron, gen);
+            String currentCron = resolveEffectiveCron();
+
+            if (Objects.equals(currentCron, activeCron)) {
+                return;
+            }
+
+            cancelSyncTask();
+            long gen = generation.incrementAndGet();
+
+            if (currentCron == null) {
+                if (activeCron != null) {
+                    log.info("Directory sync schedule stopped (was: " + activeCron + ")");
+                }
+                activeCron = null;
+                return;
+            }
+
+            log.info("Directory sync schedule updated: " + activeCron + " -> " + currentCron);
+            activeCron = currentCron;
+            scheduleNextSync(currentCron, gen);
+        } catch (Exception e) {
+            log.warn("Error during directory sync schedule reconciliation, will retry on next poll: " + e.getMessage());
+        }
     }
 
     /**
@@ -175,17 +179,21 @@ public class DirectorySyncScheduler {
                 try {
                     executeSync();
                 } finally {
-                    if (generation.get() != gen) {
-                        log.debug("Directory sync generation changed, not re-arming");
-                        return;
-                    }
-                    String effectiveCron = resolveEffectiveCron();
-                    if (effectiveCron != null) {
-                        activeCron = effectiveCron;
-                        scheduleNextSync(effectiveCron, gen);
-                    } else {
-                        activeCron = null;
-                        log.info("Directory sync cron cleared after execution");
+                    try {
+                        if (generation.get() != gen) {
+                            log.debug("Directory sync generation changed, not re-arming");
+                            return;
+                        }
+                        String effectiveCron = resolveEffectiveCron();
+                        if (effectiveCron != null) {
+                            activeCron = effectiveCron;
+                            scheduleNextSync(effectiveCron, gen);
+                        } else {
+                            activeCron = null;
+                            log.info("Directory sync cron cleared after execution");
+                        }
+                    } catch (Exception e) {
+                        log.warn("Error re-arming directory sync schedule, next poll will recover: " + e.getMessage());
                     }
                 }
             }, delayMillis, TimeUnit.MILLISECONDS);

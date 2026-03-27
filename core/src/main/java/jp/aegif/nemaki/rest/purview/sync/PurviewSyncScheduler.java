@@ -75,28 +75,32 @@ public class PurviewSyncScheduler {
 	}
 
 	void reconcileSchedule() {
-		if (scheduler == null || scheduler.isShutdown()) {
-			return;
+		try {
+			if (scheduler == null || scheduler.isShutdown()) {
+				return;
+			}
+
+			String currentCron = resolveEffectiveCron();
+
+			if (Objects.equals(currentCron, activeCron)) {
+				return;
+			}
+
+			cancelSyncTask();
+			long gen = generation.incrementAndGet();
+
+			if (currentCron == null) {
+				logger.info("Purview sync schedule stopped (was: {})", activeCron);
+				activeCron = null;
+				return;
+			}
+
+			logger.info("Purview sync schedule updated: {} -> {}", activeCron, currentCron);
+			activeCron = currentCron;
+			scheduleNextSync(currentCron, gen);
+		} catch (Exception e) {
+			logger.warn("Error during Purview sync schedule reconciliation, will retry on next poll: {}", e.getMessage());
 		}
-
-		String currentCron = resolveEffectiveCron();
-
-		if (Objects.equals(currentCron, activeCron)) {
-			return;
-		}
-
-		cancelSyncTask();
-		long gen = generation.incrementAndGet();
-
-		if (currentCron == null) {
-			logger.info("Purview sync schedule stopped (was: {})", activeCron);
-			activeCron = null;
-			return;
-		}
-
-		logger.info("Purview sync schedule updated: {} -> {}", activeCron, currentCron);
-		activeCron = currentCron;
-		scheduleNextSync(currentCron, gen);
 	}
 
 	private String resolveEffectiveCron() {
@@ -135,17 +139,21 @@ public class PurviewSyncScheduler {
 				try {
 					executeSync();
 				} finally {
-					if (generation.get() != gen) {
-						logger.debug("Purview sync generation changed, not re-arming");
-						return;
-					}
-					String effectiveCron = resolveEffectiveCron();
-					if (effectiveCron != null) {
-						activeCron = effectiveCron;
-						scheduleNextSync(effectiveCron, gen);
-					} else {
-						activeCron = null;
-						logger.info("Purview sync cron cleared after execution");
+					try {
+						if (generation.get() != gen) {
+							logger.debug("Purview sync generation changed, not re-arming");
+							return;
+						}
+						String effectiveCron = resolveEffectiveCron();
+						if (effectiveCron != null) {
+							activeCron = effectiveCron;
+							scheduleNextSync(effectiveCron, gen);
+						} else {
+							activeCron = null;
+							logger.info("Purview sync cron cleared after execution");
+						}
+					} catch (Exception e) {
+						logger.warn("Error re-arming Purview sync schedule, next poll will recover: {}", e.getMessage());
 					}
 				}
 			}, delayMillis, TimeUnit.MILLISECONDS);

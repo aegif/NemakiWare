@@ -89,48 +89,52 @@ public class RetentionScheduler {
     }
 
     void reconcileSchedule() {
-        if (scheduler == null || scheduler.isShutdown()) {
-            return;
-        }
-
-        boolean retentionEnabled = propertyManager.readBoolean(PropertyKey.RETENTION_ENABLED);
-
-        // Reconcile local archive cron
-        String currentLocalCron = retentionEnabled ? resolveValidCron(PropertyKey.RETENTION_SCHEDULE_ARCHIVE_LOCAL) : null;
-        if (!Objects.equals(currentLocalCron, activeLocalCron)) {
-            cancelTask(localArchiveTask);
-            localArchiveTask = null;
-            long gen = localArchiveGeneration.incrementAndGet();
-
-            if (currentLocalCron == null) {
-                if (activeLocalCron != null) {
-                    log.info("Retention local-archive schedule stopped (was: " + activeLocalCron + ")");
-                }
-                activeLocalCron = null;
-            } else {
-                log.info("Retention local-archive schedule updated: " + activeLocalCron + " -> " + currentLocalCron);
-                activeLocalCron = currentLocalCron;
-                scheduleNextLocalArchive(currentLocalCron, gen);
+        try {
+            if (scheduler == null || scheduler.isShutdown()) {
+                return;
             }
-        }
 
-        // Reconcile cold move cron
-        String currentColdCron = retentionEnabled ? resolveValidCron(PropertyKey.RETENTION_SCHEDULE_ARCHIVE_COLD) : null;
-        if (!Objects.equals(currentColdCron, activeColdCron)) {
-            cancelTask(coldMoveTask);
-            coldMoveTask = null;
-            long gen = coldMoveGeneration.incrementAndGet();
+            boolean retentionEnabled = propertyManager.readBoolean(PropertyKey.RETENTION_ENABLED);
 
-            if (currentColdCron == null) {
-                if (activeColdCron != null) {
-                    log.info("Retention cold-move schedule stopped (was: " + activeColdCron + ")");
+            // Reconcile local archive cron
+            String currentLocalCron = retentionEnabled ? resolveValidCron(PropertyKey.RETENTION_SCHEDULE_ARCHIVE_LOCAL) : null;
+            if (!Objects.equals(currentLocalCron, activeLocalCron)) {
+                cancelTask(localArchiveTask);
+                localArchiveTask = null;
+                long gen = localArchiveGeneration.incrementAndGet();
+
+                if (currentLocalCron == null) {
+                    if (activeLocalCron != null) {
+                        log.info("Retention local-archive schedule stopped (was: " + activeLocalCron + ")");
+                    }
+                    activeLocalCron = null;
+                } else {
+                    log.info("Retention local-archive schedule updated: " + activeLocalCron + " -> " + currentLocalCron);
+                    activeLocalCron = currentLocalCron;
+                    scheduleNextLocalArchive(currentLocalCron, gen);
                 }
-                activeColdCron = null;
-            } else {
-                log.info("Retention cold-move schedule updated: " + activeColdCron + " -> " + currentColdCron);
-                activeColdCron = currentColdCron;
-                scheduleNextColdMove(currentColdCron, gen);
             }
+
+            // Reconcile cold move cron
+            String currentColdCron = retentionEnabled ? resolveValidCron(PropertyKey.RETENTION_SCHEDULE_ARCHIVE_COLD) : null;
+            if (!Objects.equals(currentColdCron, activeColdCron)) {
+                cancelTask(coldMoveTask);
+                coldMoveTask = null;
+                long gen = coldMoveGeneration.incrementAndGet();
+
+                if (currentColdCron == null) {
+                    if (activeColdCron != null) {
+                        log.info("Retention cold-move schedule stopped (was: " + activeColdCron + ")");
+                    }
+                    activeColdCron = null;
+                } else {
+                    log.info("Retention cold-move schedule updated: " + activeColdCron + " -> " + currentColdCron);
+                    activeColdCron = currentColdCron;
+                    scheduleNextColdMove(currentColdCron, gen);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error during retention schedule reconciliation, will retry on next poll: " + e.getMessage());
         }
     }
 
@@ -177,18 +181,22 @@ public class RetentionScheduler {
                 try {
                     executeLocalArchive();
                 } finally {
-                    if (localArchiveGeneration.get() != gen) {
-                        log.debug("Retention local-archive generation changed, not re-arming");
-                        return;
-                    }
-                    boolean enabled = propertyManager.readBoolean(PropertyKey.RETENTION_ENABLED);
-                    String effectiveCron = enabled ? resolveValidCron(PropertyKey.RETENTION_SCHEDULE_ARCHIVE_LOCAL) : null;
-                    if (effectiveCron != null) {
-                        activeLocalCron = effectiveCron;
-                        scheduleNextLocalArchive(effectiveCron, gen);
-                    } else {
-                        activeLocalCron = null;
-                        log.info("Retention local-archive cron cleared after execution");
+                    try {
+                        if (localArchiveGeneration.get() != gen) {
+                            log.debug("Retention local-archive generation changed, not re-arming");
+                            return;
+                        }
+                        boolean enabled = propertyManager.readBoolean(PropertyKey.RETENTION_ENABLED);
+                        String effectiveCron = enabled ? resolveValidCron(PropertyKey.RETENTION_SCHEDULE_ARCHIVE_LOCAL) : null;
+                        if (effectiveCron != null) {
+                            activeLocalCron = effectiveCron;
+                            scheduleNextLocalArchive(effectiveCron, gen);
+                        } else {
+                            activeLocalCron = null;
+                            log.info("Retention local-archive cron cleared after execution");
+                        }
+                    } catch (Exception e) {
+                        log.warn("Error re-arming retention local-archive schedule, next poll will recover: " + e.getMessage());
                     }
                 }
             }, delayMillis, TimeUnit.MILLISECONDS);
@@ -294,18 +302,22 @@ public class RetentionScheduler {
                 try {
                     executeColdMove();
                 } finally {
-                    if (coldMoveGeneration.get() != gen) {
-                        log.debug("Retention cold-move generation changed, not re-arming");
-                        return;
-                    }
-                    boolean enabled = propertyManager.readBoolean(PropertyKey.RETENTION_ENABLED);
-                    String effectiveCron = enabled ? resolveValidCron(PropertyKey.RETENTION_SCHEDULE_ARCHIVE_COLD) : null;
-                    if (effectiveCron != null) {
-                        activeColdCron = effectiveCron;
-                        scheduleNextColdMove(effectiveCron, gen);
-                    } else {
-                        activeColdCron = null;
-                        log.info("Retention cold-move cron cleared after execution");
+                    try {
+                        if (coldMoveGeneration.get() != gen) {
+                            log.debug("Retention cold-move generation changed, not re-arming");
+                            return;
+                        }
+                        boolean enabled = propertyManager.readBoolean(PropertyKey.RETENTION_ENABLED);
+                        String effectiveCron = enabled ? resolveValidCron(PropertyKey.RETENTION_SCHEDULE_ARCHIVE_COLD) : null;
+                        if (effectiveCron != null) {
+                            activeColdCron = effectiveCron;
+                            scheduleNextColdMove(effectiveCron, gen);
+                        } else {
+                            activeColdCron = null;
+                            log.info("Retention cold-move cron cleared after execution");
+                        }
+                    } catch (Exception e) {
+                        log.warn("Error re-arming retention cold-move schedule, next poll will recover: " + e.getMessage());
                     }
                 }
             }, delayMillis, TimeUnit.MILLISECONDS);

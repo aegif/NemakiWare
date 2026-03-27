@@ -154,7 +154,7 @@ public class PropertyManager{
 		Object result = null;
 
 		Configuration sysConf = getConfiguration(SystemConst.NEMAKI_CONF_DB);
-		if(sysConf.getConfiguration().containsKey(key)){
+		if(sysConf != null && sysConf.getConfiguration().containsKey(key)){
 			Object sysVal = sysConf.getConfiguration().get(key);
 			if(sysVal != null){
 				result = sysVal;
