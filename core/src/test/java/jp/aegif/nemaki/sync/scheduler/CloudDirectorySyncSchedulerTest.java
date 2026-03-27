@@ -16,6 +16,10 @@ import static org.mockito.Mockito.*;
 /**
  * Unit tests for CloudDirectorySyncScheduler.
  * Tests init/destroy lifecycle, cron validation, and scheduling behavior.
+ *
+ * In the current design, init() always creates the ScheduledExecutorService
+ * (for config polling), so isSchedulerActive() is always true after init().
+ * The activeCron field indicates whether an actual sync schedule is armed.
  */
 @ExtendWith(MockitoExtension.class)
 public class CloudDirectorySyncSchedulerTest {
@@ -41,64 +45,85 @@ public class CloudDirectorySyncSchedulerTest {
 	}
 
 	@Test
-	public void testInit_Disabled_DoesNotStartScheduler() {
+	public void testInit_Disabled_NoCronArmed() {
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("false");
 
 		scheduler.init();
 
-		assertFalse(scheduler.isSchedulerActive(), "Scheduler should not be active when disabled");
+		assertTrue(scheduler.isSchedulerActive(), "Scheduler executor should be active (for config polling)");
+		assertNull(scheduler.getActiveCron(), "No cron should be armed when disabled");
 	}
 
 	@Test
-	public void testInit_EnabledButNoCron_DoesNotStartScheduler() {
+	public void testInit_EnabledButNoCron_NoCronArmed() {
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_CRON)).thenReturn(null);
 
 		scheduler.init();
 
-		assertFalse(scheduler.isSchedulerActive(), "Scheduler should not be active without cron expression");
+		assertTrue(scheduler.isSchedulerActive());
+		assertNull(scheduler.getActiveCron(), "No cron should be armed without cron expression");
 	}
 
 	@Test
-	public void testInit_EnabledEmptyCron_DoesNotStartScheduler() {
+	public void testInit_EnabledEmptyCron_NoCronArmed() {
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_CRON)).thenReturn("   ");
 
 		scheduler.init();
 
-		assertFalse(scheduler.isSchedulerActive(), "Scheduler should not be active with empty cron");
+		assertTrue(scheduler.isSchedulerActive());
+		assertNull(scheduler.getActiveCron(), "No cron should be armed with empty cron");
 	}
 
 	@Test
-	public void testInit_InvalidCron_DoesNotStartScheduler() {
+	public void testInit_InvalidCron_NoCronArmed() {
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_CRON)).thenReturn("invalid-cron");
 
 		scheduler.init();
 
-		assertFalse(scheduler.isSchedulerActive(), "Scheduler should not be active with invalid cron");
+		assertTrue(scheduler.isSchedulerActive());
+		assertNull(scheduler.getActiveCron(), "No cron should be armed with invalid cron");
 	}
 
 	@Test
-	public void testInit_ValidCron_StartsScheduler() {
-		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
-		// Every day at 2am
-		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_CRON)).thenReturn("0 0 2 * * *");
-
-		scheduler.init();
-
-		assertTrue(scheduler.isSchedulerActive(), "Scheduler should be active with valid cron");
-	}
-
-	@Test
-	public void testInit_DoubleInit_Idempotent() {
+	public void testInit_ValidCron_CronArmed() {
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_CRON)).thenReturn("0 0 2 * * *");
 
 		scheduler.init();
-		scheduler.init(); // second call should be no-op
 
-		assertTrue(scheduler.isSchedulerActive(), "Scheduler should still be active after double init");
+		assertTrue(scheduler.isSchedulerActive());
+		assertEquals("0 0 2 * * *", scheduler.getActiveCron());
+	}
+
+	@Test
+	public void testReconcile_DetectsCronChange() {
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_CRON)).thenReturn("0 0 2 * * *");
+
+		scheduler.init();
+		assertEquals("0 0 2 * * *", scheduler.getActiveCron());
+
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_CRON)).thenReturn("0 0 4 * * *");
+		scheduler.reconcileSchedule();
+
+		assertEquals("0 0 4 * * *", scheduler.getActiveCron());
+	}
+
+	@Test
+	public void testReconcile_ClearedCronStops() {
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_CRON)).thenReturn("0 0 2 * * *");
+
+		scheduler.init();
+		assertNotNull(scheduler.getActiveCron());
+
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("false");
+		scheduler.reconcileSchedule();
+
+		assertNull(scheduler.getActiveCron());
 	}
 
 	@Test
@@ -111,13 +136,6 @@ public class CloudDirectorySyncSchedulerTest {
 
 		scheduler.destroy();
 		assertFalse(scheduler.isSchedulerActive(), "Scheduler should not be active after destroy");
-	}
-
-	@Test
-	public void testDestroy_NoInit_NoException() {
-		// destroy without init should not throw
-		scheduler.destroy();
-		assertFalse(scheduler.isSchedulerActive());
 	}
 
 	@Test

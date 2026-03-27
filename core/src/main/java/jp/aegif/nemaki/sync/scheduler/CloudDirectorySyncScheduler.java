@@ -12,11 +12,14 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Cron-based scheduler for cloud directory synchronization.
  * Dynamically reads cron configuration every 60 seconds,
  * so changes made via the admin UI or CouchDB take effect without restart.
+ *
+ * <p>Uses a generation token to prevent double-scheduling on cron changes.</p>
  */
 public class CloudDirectorySyncScheduler {
 
@@ -29,6 +32,7 @@ public class CloudDirectorySyncScheduler {
 	private ScheduledExecutorService scheduler;
 	private ScheduledFuture<?> syncTask;
 	private volatile String activeCron;
+	private final AtomicLong generation = new AtomicLong(0);
 
 	public void init() {
 		scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -60,6 +64,7 @@ public class CloudDirectorySyncScheduler {
 		}
 
 		cancelSyncTask();
+		long gen = generation.incrementAndGet();
 
 		if (currentCron == null) {
 			log.info("Cloud directory sync schedule stopped (was: " + activeCron + ")");
@@ -69,7 +74,7 @@ public class CloudDirectorySyncScheduler {
 
 		log.info("Cloud directory sync schedule updated: " + activeCron + " -> " + currentCron);
 		activeCron = currentCron;
-		scheduleNextSync(currentCron);
+		scheduleNextSync(currentCron, gen);
 	}
 
 	private String resolveEffectiveCron() {
@@ -89,7 +94,7 @@ public class CloudDirectorySyncScheduler {
 		return cron;
 	}
 
-	private void scheduleNextSync(String cronExpression) {
+	private void scheduleNextSync(String cronExpression, long gen) {
 		if (scheduler == null || scheduler.isShutdown()) {
 			return;
 		}
@@ -109,10 +114,14 @@ public class CloudDirectorySyncScheduler {
 				try {
 					executeSync();
 				} finally {
+					if (generation.get() != gen) {
+						log.debug("Cloud directory sync generation changed, not re-arming");
+						return;
+					}
 					String effectiveCron = resolveEffectiveCron();
 					if (effectiveCron != null) {
 						activeCron = effectiveCron;
-						scheduleNextSync(effectiveCron);
+						scheduleNextSync(effectiveCron, gen);
 					} else {
 						activeCron = null;
 						log.info("Cloud directory sync cron cleared after execution");

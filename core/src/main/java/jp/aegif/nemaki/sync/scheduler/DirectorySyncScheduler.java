@@ -35,6 +35,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -52,9 +53,12 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
  * Dynamically reads cron configuration every 60 seconds,
  * so changes made via the admin UI or CouchDB take effect without restart.
  *
- * Supports IP-based node control for cluster environments:
- * - If directory.sync.schedule.node.ip is configured, only the node with matching IP will execute sync
- * - If not configured, all nodes will execute sync (suitable for single-node deployments)
+ * <p>Supports IP-based node control for cluster environments:
+ * the {@code directory.sync.schedule.node.ip} property is re-evaluated on
+ * every 60-second config poll, so changing the designated node at runtime
+ * takes effect without restart.</p>
+ *
+ * <p>Uses a generation token to prevent double-scheduling on cron changes.</p>
  */
 public class DirectorySyncScheduler {
 
@@ -68,27 +72,13 @@ public class DirectorySyncScheduler {
     private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> syncTask;
     private volatile String activeCron;
+    private final AtomicLong generation = new AtomicLong(0);
 
     private Set<String> localIpAddresses;
-    private boolean nodeIpMismatch = false;
 
     public void init() {
         localIpAddresses = collectLocalIpAddresses();
         log.info("Local IP addresses: " + localIpAddresses);
-
-        // Node IP check: if this node doesn't match, skip scheduling entirely
-        String configuredNodeIp = propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_SCHEDULE_NODE_IP);
-        if (configuredNodeIp != null && !configuredNodeIp.trim().isEmpty()) {
-            if (!isLocalNode(configuredNodeIp.trim())) {
-                log.info("Directory sync scheduling skipped - configured node IP (" + configuredNodeIp +
-                        ") does not match this node's IPs: " + localIpAddresses);
-                nodeIpMismatch = true;
-                return;
-            }
-            log.info("This node matches configured IP (" + configuredNodeIp + "), will execute scheduled syncs");
-        } else {
-            log.info("No node IP configured, this node will execute scheduled syncs");
-        }
 
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "DirectorySyncScheduler");
@@ -119,23 +109,40 @@ public class DirectorySyncScheduler {
         }
 
         cancelSyncTask();
+        long gen = generation.incrementAndGet();
 
         if (currentCron == null) {
-            log.info("Directory sync schedule stopped (was: " + activeCron + ")");
+            if (activeCron != null) {
+                log.info("Directory sync schedule stopped (was: " + activeCron + ")");
+            }
             activeCron = null;
             return;
         }
 
         log.info("Directory sync schedule updated: " + activeCron + " -> " + currentCron);
         activeCron = currentCron;
-        scheduleNextSync(currentCron);
+        scheduleNextSync(currentCron, gen);
     }
 
+    /**
+     * Resolves the effective cron expression considering enabled state,
+     * cron validity, and cluster node IP routing.
+     * Called on every 60-second config poll so all checks are dynamic.
+     */
     private String resolveEffectiveCron() {
         boolean scheduleEnabled = propertyManager.readBoolean(PropertyKey.DIRECTORY_SYNC_SCHEDULE_ENABLED);
         if (!scheduleEnabled) {
             return null;
         }
+
+        // Cluster node routing: re-evaluate on every poll
+        String configuredNodeIp = propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_SCHEDULE_NODE_IP);
+        if (configuredNodeIp != null && !configuredNodeIp.trim().isEmpty()) {
+            if (!isLocalNode(configuredNodeIp.trim())) {
+                return null;
+            }
+        }
+
         String cron = propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_SCHEDULE_CRON);
         if (cron == null || cron.isBlank()) {
             return null;
@@ -148,7 +155,7 @@ public class DirectorySyncScheduler {
         return cron;
     }
 
-    private void scheduleNextSync(String cronExpression) {
+    private void scheduleNextSync(String cronExpression, long gen) {
         if (scheduler == null || scheduler.isShutdown()) {
             return;
         }
@@ -168,10 +175,14 @@ public class DirectorySyncScheduler {
                 try {
                     executeSync();
                 } finally {
+                    if (generation.get() != gen) {
+                        log.debug("Directory sync generation changed, not re-arming");
+                        return;
+                    }
                     String effectiveCron = resolveEffectiveCron();
                     if (effectiveCron != null) {
                         activeCron = effectiveCron;
-                        scheduleNextSync(effectiveCron);
+                        scheduleNextSync(effectiveCron, gen);
                     } else {
                         activeCron = null;
                         log.info("Directory sync cron cleared after execution");
@@ -192,10 +203,18 @@ public class DirectorySyncScheduler {
     }
 
     private void executeSync() {
-        boolean scheduleEnabled = propertyManager.readBoolean(PropertyKey.DIRECTORY_SYNC_SCHEDULE_ENABLED);
-        if (!scheduleEnabled) {
+        // Dynamic check: re-evaluate enabled + node IP before executing
+        if (!propertyManager.readBoolean(PropertyKey.DIRECTORY_SYNC_SCHEDULE_ENABLED)) {
             log.debug("Directory sync skipped: disabled (dynamic check)");
             return;
+        }
+
+        String configuredNodeIp = propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_SCHEDULE_NODE_IP);
+        if (configuredNodeIp != null && !configuredNodeIp.trim().isEmpty()) {
+            if (!isLocalNode(configuredNodeIp.trim())) {
+                log.info("Directory sync skipped: node IP mismatch (dynamic check)");
+                return;
+            }
         }
 
         log.info("Starting scheduled directory sync");

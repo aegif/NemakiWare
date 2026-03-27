@@ -17,11 +17,18 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Cron-based scheduler for Purview/Atlas incremental synchronization.
  * Dynamically reads cron configuration from CouchDB every 60 seconds,
  * so changes made via the admin UI take effect without restart.
+ *
+ * <p>Uses a generation token to prevent double-scheduling: when
+ * {@link #reconcileSchedule()} changes the cron, it increments the generation
+ * and schedules a new task. If an in-flight task's {@code finally} block fires
+ * after the generation changed, it yields to the newer schedule instead of
+ * re-arming a duplicate chain.</p>
  */
 @Component
 public class PurviewSyncScheduler {
@@ -34,8 +41,9 @@ public class PurviewSyncScheduler {
 	private final RepositoryInfoMap repositoryInfoMap;
 
 	private ScheduledExecutorService scheduler;
-	private ScheduledFuture<?> syncTask;       // next sync execution
-	private volatile String activeCron;        // currently scheduled cron (null = not scheduled)
+	private ScheduledFuture<?> syncTask;
+	private volatile String activeCron;
+	private final AtomicLong generation = new AtomicLong(0);
 
 	@Autowired
 	public PurviewSyncScheduler(
@@ -55,10 +63,8 @@ public class PurviewSyncScheduler {
 			return t;
 		});
 
-		// Initial schedule
 		reconcileSchedule();
 
-		// Always poll for config changes every 60 seconds
 		scheduler.scheduleWithFixedDelay(
 				this::reconcileSchedule,
 				CONFIG_CHECK_INTERVAL_SECONDS,
@@ -68,11 +74,6 @@ public class PurviewSyncScheduler {
 		logger.info("Purview sync scheduler initialized (activeCron={})", activeCron);
 	}
 
-	/**
-	 * Reads current CouchDB config and starts/changes/stops the sync schedule.
-	 * Called every 60 seconds by the config check timer, and at init.
-	 * Only modifies the sync task when the cron expression actually changes.
-	 */
 	void reconcileSchedule() {
 		if (scheduler == null || scheduler.isShutdown()) {
 			return;
@@ -81,11 +82,11 @@ public class PurviewSyncScheduler {
 		String currentCron = resolveEffectiveCron();
 
 		if (Objects.equals(currentCron, activeCron)) {
-			return; // No change
+			return;
 		}
 
-		// Cron changed — cancel pending sync task
 		cancelSyncTask();
+		long gen = generation.incrementAndGet();
 
 		if (currentCron == null) {
 			logger.info("Purview sync schedule stopped (was: {})", activeCron);
@@ -95,7 +96,7 @@ public class PurviewSyncScheduler {
 
 		logger.info("Purview sync schedule updated: {} -> {}", activeCron, currentCron);
 		activeCron = currentCron;
-		scheduleNextSync(currentCron);
+		scheduleNextSync(currentCron, gen);
 	}
 
 	private String resolveEffectiveCron() {
@@ -114,7 +115,7 @@ public class PurviewSyncScheduler {
 		return cron;
 	}
 
-	private void scheduleNextSync(String cronExpression) {
+	private void scheduleNextSync(String cronExpression, long gen) {
 		if (scheduler == null || scheduler.isShutdown()) {
 			return;
 		}
@@ -134,11 +135,14 @@ public class PurviewSyncScheduler {
 				try {
 					executeSync();
 				} finally {
-					// After execution, re-read config and schedule next
+					if (generation.get() != gen) {
+						logger.debug("Purview sync generation changed, not re-arming");
+						return;
+					}
 					String effectiveCron = resolveEffectiveCron();
 					if (effectiveCron != null) {
 						activeCron = effectiveCron;
-						scheduleNextSync(effectiveCron);
+						scheduleNextSync(effectiveCron, gen);
 					} else {
 						activeCron = null;
 						logger.info("Purview sync cron cleared after execution");

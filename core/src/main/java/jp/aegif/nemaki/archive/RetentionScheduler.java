@@ -13,6 +13,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 
 import java.time.Duration;
@@ -38,12 +39,13 @@ import jp.aegif.nemaki.util.lock.ThreadLockService;
  * Dynamically reads cron configuration every 60 seconds,
  * so changes made via the admin UI or CouchDB take effect without restart.
  *
- * Two independent jobs:
- * - Job A (Live→Archive): Archives documents in two phases:
- *   1. Expiration-based: documents whose cmis:rm_expirationDate has passed.
- *   2. Inactivity-based: documents without cmis:rm_expirationDate that have not been
- *      modified for retention.archive.local.after.days days.
- * - Job B (Archive→Cold): Moves ARCHIVED_LOCAL archives to cold storage after retention.archive.cold.after.days.
+ * <p>Two independent jobs, each with its own generation token to prevent
+ * double-scheduling when cron changes occur while a job is in-flight:</p>
+ * <ul>
+ *   <li>Job A (Live→Archive): Archives documents in two phases:
+ *       expiration-based and inactivity-based.</li>
+ *   <li>Job B (Archive→Cold): Moves ARCHIVED_LOCAL archives to cold storage.</li>
+ * </ul>
  */
 public class RetentionScheduler {
 
@@ -63,6 +65,8 @@ public class RetentionScheduler {
     private ScheduledFuture<?> coldMoveTask;
     private volatile String activeLocalCron;
     private volatile String activeColdCron;
+    private final AtomicLong localArchiveGeneration = new AtomicLong(0);
+    private final AtomicLong coldMoveGeneration = new AtomicLong(0);
 
     public void init() {
         // Pool size 3: local archive job + cold move job + config polling
@@ -96,6 +100,7 @@ public class RetentionScheduler {
         if (!Objects.equals(currentLocalCron, activeLocalCron)) {
             cancelTask(localArchiveTask);
             localArchiveTask = null;
+            long gen = localArchiveGeneration.incrementAndGet();
 
             if (currentLocalCron == null) {
                 if (activeLocalCron != null) {
@@ -105,7 +110,7 @@ public class RetentionScheduler {
             } else {
                 log.info("Retention local-archive schedule updated: " + activeLocalCron + " -> " + currentLocalCron);
                 activeLocalCron = currentLocalCron;
-                scheduleNextLocalArchive(currentLocalCron);
+                scheduleNextLocalArchive(currentLocalCron, gen);
             }
         }
 
@@ -114,6 +119,7 @@ public class RetentionScheduler {
         if (!Objects.equals(currentColdCron, activeColdCron)) {
             cancelTask(coldMoveTask);
             coldMoveTask = null;
+            long gen = coldMoveGeneration.incrementAndGet();
 
             if (currentColdCron == null) {
                 if (activeColdCron != null) {
@@ -123,7 +129,7 @@ public class RetentionScheduler {
             } else {
                 log.info("Retention cold-move schedule updated: " + activeColdCron + " -> " + currentColdCron);
                 activeColdCron = currentColdCron;
-                scheduleNextColdMove(currentColdCron);
+                scheduleNextColdMove(currentColdCron, gen);
             }
         }
     }
@@ -151,7 +157,7 @@ public class RetentionScheduler {
     // Local Archive Job (Live→Archive)
     // ========================
 
-    private void scheduleNextLocalArchive(String cronExpression) {
+    private void scheduleNextLocalArchive(String cronExpression, long gen) {
         if (scheduler == null || scheduler.isShutdown()) {
             return;
         }
@@ -171,11 +177,15 @@ public class RetentionScheduler {
                 try {
                     executeLocalArchive();
                 } finally {
+                    if (localArchiveGeneration.get() != gen) {
+                        log.debug("Retention local-archive generation changed, not re-arming");
+                        return;
+                    }
                     boolean enabled = propertyManager.readBoolean(PropertyKey.RETENTION_ENABLED);
                     String effectiveCron = enabled ? resolveValidCron(PropertyKey.RETENTION_SCHEDULE_ARCHIVE_LOCAL) : null;
                     if (effectiveCron != null) {
                         activeLocalCron = effectiveCron;
-                        scheduleNextLocalArchive(effectiveCron);
+                        scheduleNextLocalArchive(effectiveCron, gen);
                     } else {
                         activeLocalCron = null;
                         log.info("Retention local-archive cron cleared after execution");
@@ -264,7 +274,7 @@ public class RetentionScheduler {
     // Cold Move Job (Archive→Cold)
     // ========================
 
-    private void scheduleNextColdMove(String cronExpression) {
+    private void scheduleNextColdMove(String cronExpression, long gen) {
         if (scheduler == null || scheduler.isShutdown()) {
             return;
         }
@@ -284,11 +294,15 @@ public class RetentionScheduler {
                 try {
                     executeColdMove();
                 } finally {
+                    if (coldMoveGeneration.get() != gen) {
+                        log.debug("Retention cold-move generation changed, not re-arming");
+                        return;
+                    }
                     boolean enabled = propertyManager.readBoolean(PropertyKey.RETENTION_ENABLED);
                     String effectiveCron = enabled ? resolveValidCron(PropertyKey.RETENTION_SCHEDULE_ARCHIVE_COLD) : null;
                     if (effectiveCron != null) {
                         activeColdCron = effectiveCron;
-                        scheduleNextColdMove(effectiveCron);
+                        scheduleNextColdMove(effectiveCron, gen);
                     } else {
                         activeColdCron = null;
                         log.info("Retention cold-move cron cleared after execution");

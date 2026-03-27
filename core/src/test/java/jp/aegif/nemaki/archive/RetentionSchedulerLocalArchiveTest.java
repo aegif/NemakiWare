@@ -61,7 +61,8 @@ public class RetentionSchedulerLocalArchiveTest {
         scheduler.setRetentionLogDaoService(retentionLogDaoService);
         scheduler.setRepositoryInfoMap(repositoryInfoMap);
 
-        // Default: single repository, archive creation enabled
+        // Default: retention enabled, single repository, archive creation enabled
+        when(propertyManager.readBoolean(PropertyKey.RETENTION_ENABLED)).thenReturn(true);
         Set<String> repos = new LinkedHashSet<>();
         repos.add("bedroom");
         when(repositoryInfoMap.keys()).thenReturn(repos);
