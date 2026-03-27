@@ -70,7 +70,8 @@ public class IntegrationSettingsController {
 			"purview.client.secret",
 			"purview.basic.username",
 			"purview.basic.password",
-			"purview.collection"
+			"purview.collection",
+			"purview.sync.cron"
 	));
 
 	// Keys whose values should be masked in GET responses
@@ -238,7 +239,15 @@ public class IntegrationSettingsController {
 			PurviewConnectionStatus status = (body != null && !body.isEmpty())
 					? purviewConnectionService.testConnection(body)
 					: purviewConnectionService.testConnection();
-			response.put("status", status.isConnected() ? "success" : "failure");
+			String resultStatus;
+			if (status.isConnected()) {
+				resultStatus = "success";
+			} else if (!status.isFeatureEnabled()) {
+				resultStatus = "disabled";
+			} else {
+				resultStatus = "failure";
+			}
+			response.put("status", resultStatus);
 			response.put("connected", status.isConnected());
 			response.put("featureEnabled", status.isFeatureEnabled());
 			response.put("endpoint", status.getEndpoint());

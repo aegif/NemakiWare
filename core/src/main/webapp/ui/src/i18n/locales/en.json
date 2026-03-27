@@ -2604,6 +2604,7 @@
     "saveError": "Failed to save settings",
     "connectionSuccess": "Connection successful",
     "connectionFailure": "Connection failed",
+    "connectionDisabled": "Integration is disabled",
     "overriddenWarning": "This setting is overridden by {{source}} and cannot be changed from the admin UI",
     "source": {
       "system_property": "System Property",
@@ -2650,7 +2651,10 @@
       "basicUsername": "Basic Auth Username",
       "basicPassword": "Basic Auth Password",
       "collection": "Collection Name",
-      "betaNotice": "This feature is in beta. Behavior may be unstable."
+      "syncCron": "Incremental Sync Schedule (cron)",
+      "syncCronHelp": "Leave empty to disable. Example: 0 0 3 * * ? (daily at 3 AM)",
+      "betaNotice": "This feature is in beta.",
+      "disabledNotice": "Purview / Atlas integration is currently disabled."
     }
   }
 }

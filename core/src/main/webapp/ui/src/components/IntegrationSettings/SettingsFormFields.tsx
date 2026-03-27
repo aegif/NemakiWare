@@ -13,6 +13,8 @@ interface FieldDef {
   type: 'text' | 'password' | 'boolean' | 'textarea' | 'select';
   sensitive?: boolean;
   options?: SelectOption[];
+  helpKey?: string;
+  placeholder?: string;
 }
 
 interface SettingsFormFieldsProps {
@@ -73,6 +75,7 @@ export function SettingsFormFields({ fields, formValues, sources, onFieldChange 
                   )}
                 </span>
               }
+              help={field.helpKey ? t(field.helpKey) : undefined}
             >
               {field.type === 'boolean' ? (
                 <Switch
@@ -110,6 +113,7 @@ export function SettingsFormFields({ fields, formValues, sources, onFieldChange 
                 <Input
                   value={formValues[field.key] || ''}
                   onChange={e => onFieldChange(field.key, e.target.value)}
+                  placeholder={field.placeholder}
                   disabled={overridden}
                 />
               )}

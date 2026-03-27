@@ -14,6 +14,7 @@ import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -131,18 +132,20 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
         List<Map<String, Object>> entityBatch = new ArrayList<>();
         List<Archive> relationshipCandidates = new ArrayList<>();
         Map<String, String> guidAccumulator = new HashMap<>();
+        Set<String> failedQualifiedNames = new HashSet<>();
         int processedCount = 0;
 
         for (Archive archive : archives) {
             entityBatch.add(entityPayloadFactory.buildArchivedDocumentEntity(repositoryId, archive));
-            processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator);
+            processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator, failedQualifiedNames);
             entityBatch.add(entityPayloadFactory.buildArchiveEntity(repositoryId, archive));
             relationshipCandidates.add(archive);
-            processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator);
+            processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator, failedQualifiedNames);
         }
 
+        processedCount += flushEntities(repositoryId, entityBatch, guidAccumulator, failedQualifiedNames);
+        pruneFailedArchiveCandidates(repositoryId, relationshipCandidates, failedQualifiedNames);
         int archiveEntityCount = processedCount
-                + flushEntities(repositoryId, entityBatch, guidAccumulator)
                 + documentArchiveRelationshipService.upsertDocumentArchiveRelationships(repositoryId, relationshipCandidates, guidAccumulator);
         publishArchiveLineageBestEffort(repositoryId, archives, lineageCheckpoint);
         return archiveEntityCount;
@@ -170,23 +173,23 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
     }
 
     private int flushIfNeeded(List<Map<String, Object>> entities) {
-        return flushIfNeeded(null, entities, null);
+        return flushIfNeeded(null, entities, null, null);
     }
 
     private int flushIfNeeded(String repositoryId, List<Map<String, Object>> entities,
-            Map<String, String> guidAccumulator) {
+            Map<String, String> guidAccumulator, Set<String> failedQualifiedNames) {
         if (entities.size() < ENTITY_BATCH_SIZE) {
             return 0;
         }
-        return flushEntities(repositoryId, entities, guidAccumulator);
+        return flushEntities(repositoryId, entities, guidAccumulator, failedQualifiedNames);
     }
 
     private int flushEntities(List<Map<String, Object>> entities) {
-        return flushEntities(null, entities, null);
+        return flushEntities(null, entities, null, null);
     }
 
     private int flushEntities(String repositoryId, List<Map<String, Object>> entities,
-            Map<String, String> guidAccumulator) {
+            Map<String, String> guidAccumulator, Set<String> failedQualifiedNames) {
         if (entities.isEmpty()) {
             return 0;
         }
@@ -209,6 +212,9 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
                             failedItem.getQualifiedName(),
                             failedItem.getTypeName(),
                             failedItem.getErrorMessage()));
+                    if (failedQualifiedNames != null && failedItem.getQualifiedName() != null) {
+                        failedQualifiedNames.add(failedItem.getQualifiedName());
+                    }
                 }
             }
             if (guidAccumulator != null && result.getEntityGuids() != null) {
@@ -285,6 +291,25 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
     }
 
     private record SentEntityRef(String typeName, String qualifiedName) {
+    }
+
+    /**
+     * Removes Archive items from the candidate list whose entity upsert failed.
+     * An archive produces two entities (archived document + archive record);
+     * if either failed, the archive is removed from relationship candidates.
+     */
+    private void pruneFailedArchiveCandidates(String repositoryId, List<Archive> candidates, Set<String> failedQualifiedNames) {
+        if (failedQualifiedNames == null || failedQualifiedNames.isEmpty()) {
+            return;
+        }
+        candidates.removeIf(archive -> {
+            if (archive == null) {
+                return false;
+            }
+            String docQN = entityPayloadFactory.buildObjectQualifiedName(repositoryId, archive.getOriginalId());
+            String archiveQN = buildArchiveQualifiedName(repositoryId, archive.getId());
+            return failedQualifiedNames.contains(docQN) || failedQualifiedNames.contains(archiveQN);
+        });
     }
 
     private int reconcileMissingArchives(String repositoryId, String previousSnapshot, List<Archive> currentArchives) {

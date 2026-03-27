@@ -15,8 +15,10 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -77,10 +79,11 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         Map<String, String> pathMap = new HashMap<>();
         pathMap.put(rootFolderId, "/");
         Map<String, String> guidAccumulator = new HashMap<>();
+        Set<String> failedQualifiedNames = new HashSet<>();
         int processedCount = 0;
 
         entityBatch.add(entityPayloadFactory.buildRepositoryEntity(repositoryInfo));
-        processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator);
+        processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator, failedQualifiedNames);
 
         Content rootFolder = contentDaoService.getContent(repositoryId, rootFolderId);
         if (rootFolder == null || !rootFolder.isFolder()) {
@@ -88,7 +91,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         }
         entityBatch.add(entityPayloadFactory.buildFolderEntity(repositoryId, rootFolder, "/"));
         containmentCandidates.add(rootFolder);
-        processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator);
+        processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator, failedQualifiedNames);
 
         while (!folderQueue.isEmpty()) {
             String folderId = folderQueue.removeFirst();
@@ -117,7 +120,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
                         pathMap.put(child.getId(), childPath);
                         entityBatch.add(entityPayloadFactory.buildFolderEntity(repositoryId, child, childPath));
                         containmentCandidates.add(child);
-                        processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator);
+                        processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator, failedQualifiedNames);
                         folderQueue.addLast(child.getId());
                         continue;
                     }
@@ -128,13 +131,15 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
                     entityBatch.add(entityPayloadFactory.buildDocumentEntity(repositoryId, child, parentPath));
                     containmentCandidates.add(child);
                     relationshipCandidates.add(child);
-                    processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator);
+                    processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator, failedQualifiedNames);
                 }
             }
         }
 
+        processedCount += flushEntities(repositoryId, entityBatch, guidAccumulator, failedQualifiedNames);
+        pruneFailedCandidates(repositoryId, containmentCandidates, failedQualifiedNames);
+        pruneFailedCandidates(repositoryId, relationshipCandidates, failedQualifiedNames);
         return processedCount
-                + flushEntities(repositoryId, entityBatch, guidAccumulator)
                 + containmentRelationshipService.upsertContainmentRelationships(repositoryId, containmentCandidates, guidAccumulator)
                 + documentTypeRelationshipService.upsertDocumentTypeRelationships(repositoryId, relationshipCandidates, guidAccumulator);
     }
@@ -160,6 +165,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         List<Content> containmentCandidates = new ArrayList<>();
         List<Content> relationshipCandidates = new ArrayList<>();
         Map<String, String> guidAccumulator = new HashMap<>();
+        Set<String> failedQualifiedNames = new HashSet<>();
         int processedCount = 0;
         for (Content content : contents) {
             String folderPath = resolveFolderPath(repositoryId, content, pathCache);
@@ -172,10 +178,12 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
             if (content != null && content.isDocument()) {
                 relationshipCandidates.add(content);
             }
-            processedCount += flushIfNeeded(repositoryId, pending, guidAccumulator);
+            processedCount += flushIfNeeded(repositoryId, pending, guidAccumulator, failedQualifiedNames);
         }
+        processedCount += flushEntities(repositoryId, pending, guidAccumulator, failedQualifiedNames);
+        pruneFailedCandidates(repositoryId, containmentCandidates, failedQualifiedNames);
+        pruneFailedCandidates(repositoryId, relationshipCandidates, failedQualifiedNames);
         return processedCount
-                + flushEntities(repositoryId, pending, guidAccumulator)
                 + containmentRelationshipService.upsertContainmentRelationships(repositoryId, containmentCandidates, guidAccumulator)
                 + documentTypeRelationshipService.upsertDocumentTypeRelationships(repositoryId, relationshipCandidates, guidAccumulator);
     }
@@ -286,6 +294,23 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         return pathCache.get(folderId);
     }
 
+    /**
+     * Removes Content items from the candidate list whose entity upsert failed.
+     * Matches by converting Content.getId() to the qualifiedName format used by the payload factory.
+     */
+    private void pruneFailedCandidates(String repositoryId, List<Content> candidates, Set<String> failedQualifiedNames) {
+        if (failedQualifiedNames == null || failedQualifiedNames.isEmpty()) {
+            return;
+        }
+        candidates.removeIf(content -> {
+            if (content == null || content.getId() == null) {
+                return false;
+            }
+            String qualifiedName = entityPayloadFactory.buildObjectQualifiedName(repositoryId, content.getId());
+            return failedQualifiedNames.contains(qualifiedName);
+        });
+    }
+
     private String resolveRootFolderIdQuietly(String repositoryId) {
         try {
             RepositoryInfo repositoryInfo = resolveRepositoryInfo(repositoryId);
@@ -300,15 +325,15 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
     }
 
     private int flushIfNeeded(String repositoryId, List<Map<String, Object>> entities,
-            Map<String, String> guidAccumulator) {
+            Map<String, String> guidAccumulator, Set<String> failedQualifiedNames) {
         if (entities.size() < ENTITY_BATCH_SIZE) {
             return 0;
         }
-        return flushEntities(repositoryId, entities, guidAccumulator);
+        return flushEntities(repositoryId, entities, guidAccumulator, failedQualifiedNames);
     }
 
     private int flushEntities(String repositoryId, List<Map<String, Object>> entities,
-            Map<String, String> guidAccumulator) {
+            Map<String, String> guidAccumulator, Set<String> failedQualifiedNames) {
         if (entities.isEmpty()) {
             return 0;
         }
@@ -333,6 +358,9 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
                             failedItem.getQualifiedName(),
                             failedItem.getTypeName(),
                             failedItem.getErrorMessage()));
+                    if (failedQualifiedNames != null && failedItem.getQualifiedName() != null) {
+                        failedQualifiedNames.add(failedItem.getQualifiedName());
+                    }
                 }
             }
             if (guidAccumulator != null && result.getEntityGuids() != null) {

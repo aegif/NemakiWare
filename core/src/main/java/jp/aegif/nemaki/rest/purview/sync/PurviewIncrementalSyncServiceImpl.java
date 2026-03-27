@@ -17,12 +17,15 @@ import jp.aegif.nemaki.rest.purview.state.PurviewTombstoneState;
 import jp.aegif.nemaki.rest.purview.state.PurviewTombstoneStateService;
 import jp.aegif.nemaki.rest.purview.publish.PurviewTypeDefinitionPublishService;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 import org.apache.commons.logging.Log;
@@ -53,6 +56,7 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
     private static final String TOMBSTONE_STATUS_PENDING = "PENDING";
     private static final String PURVIEW_DOCUMENT_TYPE_NAME = "nemaki_document";
     private static final String PURVIEW_FOLDER_TYPE_NAME = "nemaki_folder";
+    private static final int MAX_DESCENDANT_COUNT = 5000;
 
     private final PurviewConfig purviewConfig;
     private final PurviewSchemaPlannerService schemaPlannerService;
@@ -289,8 +293,21 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
         }
 
         Map<String, Content> contents = getContentsInBatches(repositoryId, objectIds);
-        if (contents == null || contents.isEmpty()) {
+        if (contents.isEmpty()) {
             return new ChangeProcessingResult(0, List.of());
+        }
+
+        // When a folder is renamed/moved, its descendants' folderPath values become stale.
+        // Enqueue all descendants of changed folders so their paths are recalculated.
+        List<String> descendantIds = collectDescendantIdsForChangedFolders(repositoryId, contents);
+        if (!descendantIds.isEmpty()) {
+            contents.putAll(getContentsInBatches(repositoryId, descendantIds));
+            Set<String> existing = new LinkedHashSet<>(objectIds);
+            for (String descId : descendantIds) {
+                if (existing.add(descId)) {
+                    objectIds.add(descId);
+                }
+            }
         }
 
         List<Content> contentsToPublish = objectIds.stream()
@@ -322,11 +339,11 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
         return new ChangeProcessingResult(failures.size(), failures);
     }
 
+    /**
+     * Fetches contents by IDs in batches to avoid oversized CouchDB requests.
+     * Always returns a mutable, non-null map.
+     */
     private Map<String, Content> getContentsInBatches(String repositoryId, List<String> objectIds) {
-        if (objectIds.size() <= CONTENT_BATCH_SIZE) {
-            return contentDaoService.getContentsByIds(repositoryId, objectIds);
-        }
-
         Map<String, Content> merged = new HashMap<>();
         for (int i = 0; i < objectIds.size(); i += CONTENT_BATCH_SIZE) {
             List<String> batch = objectIds.subList(i, Math.min(i + CONTENT_BATCH_SIZE, objectIds.size()));
@@ -336,6 +353,60 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
             }
         }
         return merged;
+    }
+
+    /**
+     * For each changed folder in the contents map, collects all descendant
+     * document and folder IDs via BFS. This ensures that when a folder is
+     * renamed or moved, all descendants have their folderPath recalculated.
+     * Expansion is bounded by MAX_DESCENDANT_COUNT (total collected items).
+     */
+    private List<String> collectDescendantIdsForChangedFolders(String repositoryId, Map<String, Content> contents) {
+        List<String> changedFolderIds = new ArrayList<>();
+        for (Content content : contents.values()) {
+            if (content != null && content.isFolder()) {
+                changedFolderIds.add(content.getId());
+            }
+        }
+        if (changedFolderIds.isEmpty()) {
+            return List.of();
+        }
+
+        LinkedHashSet<String> descendantIds = new LinkedHashSet<>();
+        Deque<String> queue = new ArrayDeque<>(changedFolderIds);
+
+        while (!queue.isEmpty() && descendantIds.size() < MAX_DESCENDANT_COUNT) {
+            String folderId = queue.removeFirst();
+
+            List<Content> children = contentDaoService.getChildren(repositoryId, folderId);
+            if (children == null) {
+                continue;
+            }
+            for (Content child : children) {
+                if (child == null || child.getId() == null || child.getId().isBlank()) {
+                    continue;
+                }
+                if (contents.containsKey(child.getId())) {
+                    continue; // Already in the change set
+                }
+                if (descendantIds.add(child.getId())) {
+                    if (child.isFolder()) {
+                        queue.addLast(child.getId());
+                    }
+                }
+                if (descendantIds.size() >= MAX_DESCENDANT_COUNT) {
+                    log.warn("Purview folder descendant expansion reached limit ("
+                            + MAX_DESCENDANT_COUNT + ") for repository " + repositoryId);
+                    break;
+                }
+            }
+        }
+
+        if (!descendantIds.isEmpty()) {
+            log.info("Purview folder rename/move: enqueuing " + descendantIds.size()
+                    + " descendants for path recalculation");
+        }
+        return new ArrayList<>(descendantIds);
     }
 
     private void stageDeleteTombstones(String repositoryId, List<Change> changes) {

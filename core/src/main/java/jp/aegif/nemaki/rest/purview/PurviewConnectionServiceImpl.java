@@ -66,6 +66,11 @@ public class PurviewConnectionServiceImpl implements PurviewConnectionService {
             String endpoint, String configuredBasePath, String authType,
             String tenantId, String clientId, String clientSecret,
             String basicUsername, String basicPassword, boolean featureEnabled) {
+        if (!featureEnabled) {
+            return new PurviewConnectionStatus(false, false, endpoint, configuredBasePath,
+                    "Purview / Atlas integration is currently disabled");
+        }
+
         boolean basicAuth = "basic".equalsIgnoreCase(authType);
 
         List<String> missing = new ArrayList<>();

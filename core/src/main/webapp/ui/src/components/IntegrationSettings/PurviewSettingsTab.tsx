@@ -43,7 +43,7 @@ export function PurviewSettingsTab() {
     const common = [
       { key: 'purview.enabled', labelKey: 'integrationSettings.purview.enabled', type: 'boolean' as const },
       { key: 'purview.auth.type', labelKey: 'integrationSettings.purview.authType', type: 'select' as const, options: AUTH_TYPE_OPTIONS },
-      { key: 'purview.endpoint', labelKey: 'integrationSettings.purview.endpoint', type: 'text' as const },
+      { key: 'purview.endpoint', labelKey: 'integrationSettings.purview.endpoint', type: 'text' as const, placeholder: 'http://atlas-manual:21000' },
       { key: 'purview.atlas.base-path', labelKey: 'integrationSettings.purview.atlasBasePath', type: 'select' as const, options: BASE_PATH_OPTIONS },
     ];
 
@@ -63,7 +63,8 @@ export function PurviewSettingsTab() {
     return [
       ...common,
       ...authFields,
-      { key: 'purview.collection', labelKey: 'integrationSettings.purview.collection', type: 'text' as const },
+      { key: 'purview.collection', labelKey: 'integrationSettings.purview.collection', type: 'text' as const, placeholder: 'default' },
+      { key: 'purview.sync.cron', labelKey: 'integrationSettings.purview.syncCron', type: 'text' as const, helpKey: 'integrationSettings.purview.syncCronHelp' },
     ];
   }, [authType]);
 
@@ -76,6 +77,8 @@ export function PurviewSettingsTab() {
     }
   };
 
+  const isEnabled = formValues['purview.enabled'] === 'true';
+
   if (loading) return <Spin />;
 
   return (
@@ -84,10 +87,12 @@ export function PurviewSettingsTab() {
         message={
           <Space>
             <Tag color="blue">Beta</Tag>
-            {t('integrationSettings.purview.betaNotice')}
+            {isEnabled
+              ? t('integrationSettings.purview.betaNotice')
+              : t('integrationSettings.purview.disabledNotice')}
           </Space>
         }
-        type="info"
+        type={isEnabled ? 'info' : 'warning'}
         showIcon
         style={{ marginBottom: 16 }}
       />
@@ -103,9 +108,11 @@ export function PurviewSettingsTab() {
         <Alert
           message={testResult.status === 'success'
             ? t('integrationSettings.connectionSuccess')
-            : t('integrationSettings.connectionFailure')}
+            : testResult.status === 'disabled'
+              ? t('integrationSettings.connectionDisabled')
+              : t('integrationSettings.connectionFailure')}
           description={testResult.message}
-          type={testResult.status === 'success' ? 'success' : 'error'}
+          type={testResult.status === 'success' ? 'success' : testResult.status === 'disabled' ? 'warning' : 'error'}
           showIcon
           closable
           style={{ marginBottom: 16 }}

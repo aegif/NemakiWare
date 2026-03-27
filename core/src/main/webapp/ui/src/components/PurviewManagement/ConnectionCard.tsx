@@ -104,21 +104,21 @@ export const ConnectionCard: React.FC<ConnectionCardProps> = ({
           />
         )}
 
-        {connectionStatus && !connectionStatus.connected && (
+        {connectionStatus && !connectionStatus.featureEnabled && (
+          <Alert
+            type="warning"
+            message={t('purviewManagement.alerts.featureDisabled')}
+            description={connectionStatus.message}
+            showIcon
+          />
+        )}
+
+        {connectionStatus && connectionStatus.featureEnabled && !connectionStatus.connected && (
           <Alert
             type="error"
             message={t('purviewManagement.alerts.connectionFailed')}
             description={connectionStatus.message}
             icon={<DisconnectOutlined />}
-            showIcon
-          />
-        )}
-
-        {connectionStatus && connectionStatus.connected && !connectionStatus.featureEnabled && (
-          <Alert
-            type="warning"
-            message={t('purviewManagement.alerts.featureDisabled')}
-            description={connectionStatus.message}
             showIcon
           />
         )}

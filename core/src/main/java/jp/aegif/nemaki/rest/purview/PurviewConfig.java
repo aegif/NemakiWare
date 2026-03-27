@@ -61,6 +61,9 @@ public class PurviewConfig {
     @Value("${purview.delete-resolution.delay.ms:5000}")
     private long deleteResolutionDelayMs;
 
+    @Value("${purview.sync.cron:}")
+    private String syncCron;
+
     @PostConstruct
     void warnIfPlaintextSecret() {
         if (!enabled) {
@@ -170,6 +173,10 @@ public class PurviewConfig {
 
     public long getDeleteResolutionDelayMs() {
         return readDynamicLong("purview.delete-resolution.delay.ms", deleteResolutionDelayMs);
+    }
+
+    public String getSyncCron() {
+        return trimToEmpty(readDynamic("purview.sync.cron", syncCron));
     }
 
     private String readDynamic(String key, String startupDefault) {

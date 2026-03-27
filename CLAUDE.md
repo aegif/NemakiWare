@@ -233,7 +233,7 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ## 現在のバージョン
 
-**3.1.0-RC9** (2026-03-16)
+**3.1.1** (2026-03-27)
 
 ### RC9 (2026-03-16)
 - SAML 2.0認証: POST binding ACS (SamlAcsServlet — sessionStorageブリッジ)

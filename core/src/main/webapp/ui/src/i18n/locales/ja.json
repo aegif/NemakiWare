@@ -2604,6 +2604,7 @@
     "saveError": "設定の保存に失敗しました",
     "connectionSuccess": "接続に成功しました",
     "connectionFailure": "接続に失敗しました",
+    "connectionDisabled": "連携が無効です",
     "overriddenWarning": "この設定は {{source}} で上書きされているため、管理画面からは変更できません",
     "source": {
       "system_property": "システムプロパティ",
@@ -2650,7 +2651,10 @@
       "basicUsername": "Basic Auth ユーザー名",
       "basicPassword": "Basic Auth パスワード",
       "collection": "コレクション名",
-      "betaNotice": "この機能はベータ版です。動作が不安定な場合があります。"
+      "syncCron": "増分同期スケジュール (cron式)",
+      "syncCronHelp": "空の場合はスケジュール無効。例: 0 0 3 * * ? (毎日3時)",
+      "betaNotice": "この機能はベータ版です。",
+      "disabledNotice": "Purview / Atlas 連携は現在無効です。"
     }
   }
 }

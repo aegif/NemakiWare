@@ -129,7 +129,7 @@ export default defineConfig({
   base: '/core/ui/',
   define: {
     __UI_BUILD_TIME__: JSON.stringify(buildTime),
-    __UI_VERSION__: JSON.stringify('3.1.0')
+    __UI_VERSION__: JSON.stringify('3.1.1')
   },
   build: {
     outDir: 'dist',
