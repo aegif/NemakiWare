@@ -30,7 +30,7 @@ public class PurviewSchemaPayloadFactory {
                 buildFolderContainsDocumentRelationshipDef(),
                 buildDocumentHasTypeDefinitionRelationshipDef(),
                 buildDocumentHasArchiveRelationshipDef()));
-        payload.put("businessMetadataDefs", List.of(buildGovernanceBusinessMetadataDef()));
+        payload.put("businessMetadataDefs", List.of());
         payload.put("classificationDefs", List.of());
         payload.put("enumDefs", List.of());
         payload.put("structDefs", List.of());
@@ -236,17 +236,6 @@ public class PurviewSchemaPayloadFactory {
         relationshipDef.put("endDef2", relationshipEnd("nemaki_type_definition", "typeDefinition"));
         relationshipDef.put("propagateTags", "NONE");
         return relationshipDef;
-    }
-
-    private Map<String, Object> buildGovernanceBusinessMetadataDef() {
-        Map<String, Object> metadataDef = baseTypeDef("nemakiGovernance",
-                "Governance metadata synchronized from NemakiWare");
-        metadataDef.put("category", "BUSINESS_METADATA");
-        metadataDef.put("attributeDefs", List.of(
-                attribute("nemakiLifecycleState", "string", true),
-                attribute("ownerDepartment", "string", true),
-                attribute("retentionPolicy", "string", true)));
-        return metadataDef;
     }
 
     private Map<String, Object> baseTypeDef(String name, String description) {

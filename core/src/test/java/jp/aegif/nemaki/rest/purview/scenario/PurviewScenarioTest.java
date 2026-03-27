@@ -238,7 +238,7 @@ public class PurviewScenarioTest {
             PurviewSchemaPlannerService schemaPlannerService = mock(PurviewSchemaPlannerService.class);
             when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
                     "NemakiWare", "", "", "1", "desired-hash", true,
-                    List.of("nemaki_document"), List.of("nemaki_folder_contains_document"), List.of("nemakiGovernance")));
+                    List.of("nemaki_document"), List.of("nemaki_folder_contains_document"), List.of()));
             when(documentPublishService.publishRepositoryHierarchy(any())).thenReturn(0);
             when(archivePublishService.publishRepositoryArchives(any())).thenReturn(0);
             when(archivePublishService.buildRepositoryArchiveSnapshot(any())).thenReturn("");
@@ -589,10 +589,8 @@ public class PurviewScenarioTest {
             assertTrue(relNames.contains("nemaki_document_has_type_definition"), "ドキュメント-型定義関係");
             assertTrue(relNames.contains("nemaki_document_has_archive"), "ドキュメント-アーカイブ関係");
 
-            // ビジネスメタデータが存在すること
-            assertEquals(1, businessMetadataDefs.size(), "ビジネスメタデータ定義が1つ");
-            assertEquals("nemakiGovernance", businessMetadataDefs.get(0).get("name"),
-                    "nemakiGovernanceビジネスメタデータ");
+            // ビジネスメタデータは空であること（nemakiGovernanceはSoT未確定のため除外済み）
+            assertTrue(businessMetadataDefs.isEmpty(), "ビジネスメタデータ定義は空");
         }
     }
 

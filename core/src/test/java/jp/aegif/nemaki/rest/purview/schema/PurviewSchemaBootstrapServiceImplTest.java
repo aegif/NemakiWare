@@ -81,14 +81,14 @@ public class PurviewSchemaBootstrapServiceImplTest {
                 "NemakiWare", "1", "current-hash", "2", "desired-hash", true,
                 java.util.List.of("nemaki_external_asset"),
                 java.util.List.of("nemaki_document_has_archive"),
-                java.util.List.of("nemakiGovernance"));
+                java.util.List.of());
         when(schemaApplyService.applySchema("admin"))
                 .thenReturn(new PurviewSchemaApplyResult(true, "schema applied", nextState, diff));
 
         PurviewSchemaBootstrapResult result = service.startTypeBootstrap("admin");
 
         assertEquals("COMPLETED", result.getJobState().getStatus());
-        assertEquals(3, result.getJobState().getProcessedCount());
+        assertEquals(2, result.getJobState().getProcessedCount());
         assertEquals("desired-hash", result.getJobState().getCheckpoint());
         assertTrue(result.getApplyResult().isApplied());
     }

@@ -175,7 +175,7 @@ public class PurviewAdminControllerTest {
                 true,
                 java.util.List.of("nemaki_external_asset"),
                 java.util.List.of("nemaki_document_has_archive"),
-                java.util.List.of("nemakiGovernance"));
+                java.util.List.of());
         when(schemaPlannerService.getSchemaDiff()).thenReturn(diff);
 
         ResponseEntity<Map<String, Object>> response = controller.getTypeDefinitionDiff();
@@ -205,7 +205,7 @@ public class PurviewAdminControllerTest {
                 "NemakiWare", "", "", "1", "desired-hash", true,
                 java.util.List.of("nemaki_external_asset"),
                 java.util.List.of("nemaki_document_has_archive"),
-                java.util.List.of("nemakiGovernance"));
+                java.util.List.of());
         PurviewSchemaApplyResult applyResult = new PurviewSchemaApplyResult(true, "schema applied", schemaState, diff);
         PurviewJobState jobState = new PurviewJobState(
                 "job-bootstrap-001", "TYPE_BOOTSTRAP", "collection:NemakiWare", "COMPLETED",

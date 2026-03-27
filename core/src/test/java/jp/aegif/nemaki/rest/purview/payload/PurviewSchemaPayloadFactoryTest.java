@@ -63,8 +63,7 @@ public class PurviewSchemaPayloadFactoryTest {
         assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_folder_contains_document".equals(def.get("name"))));
         assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_document_has_type_definition".equals(def.get("name"))));
         assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_document_has_archive".equals(def.get("name"))));
-        assertEquals(1, businessMetadataDefs.size());
-        assertEquals("nemakiGovernance", businessMetadataDefs.get(0).get("name"));
+        assertTrue(businessMetadataDefs.isEmpty(), "businessMetadataDefs should be empty (nemakiGovernance removed)");
     }
 
     @Test
@@ -85,7 +84,7 @@ public class PurviewSchemaPayloadFactoryTest {
 
         assertFalse(manifest.getCustomTypeNames().isEmpty());
         assertFalse(manifest.getRelationshipTypeNames().isEmpty());
-        assertFalse(manifest.getBusinessMetadataNames().isEmpty());
+        assertTrue(manifest.getBusinessMetadataNames().isEmpty(), "businessMetadataNames should be empty");
         assertFalse(manifest.getSchemaHash().isEmpty());
         assertFalse(manifest.getSchemaVersion().isEmpty());
     }

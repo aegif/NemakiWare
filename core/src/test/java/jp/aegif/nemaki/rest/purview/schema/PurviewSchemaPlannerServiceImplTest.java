@@ -110,6 +110,6 @@ public class PurviewSchemaPlannerServiceImplTest {
         assertNotNull(diff.getBusinessMetadataNames());
         assertTrue(diff.getCustomTypeNames().contains("nemaki_document"));
         assertTrue(diff.getRelationshipTypeNames().contains("nemaki_folder_contains_document"));
-        assertTrue(diff.getBusinessMetadataNames().contains("nemakiGovernance"));
+        assertTrue(diff.getBusinessMetadataNames().isEmpty(), "businessMetadataNames should be empty");
     }
 }

@@ -92,7 +92,7 @@ public class PurviewSchemaApplyServiceImplTest {
                 "NemakiWare", "", "", manifest.getSchemaVersion(), manifest.getSchemaHash(), true,
                 java.util.List.of("nemaki_external_asset"),
                 java.util.List.of("nemaki_document_has_archive"),
-                java.util.List.of("nemakiGovernance"));
+                java.util.List.of());
         PurviewSchemaState savedState = new PurviewSchemaState(
                 "NemakiWare", manifest.getSchemaVersion(), manifest.getSchemaHash(),
                 "2026-03-20T01:00:00Z", "admin", "applied");
@@ -125,7 +125,7 @@ public class PurviewSchemaApplyServiceImplTest {
                 "NemakiWare", "", "", manifest.getSchemaVersion(), manifest.getSchemaHash(), true,
                 java.util.List.of("nemaki_external_asset"),
                 java.util.List.of("nemaki_document_has_archive"),
-                java.util.List.of("nemakiGovernance"));
+                java.util.List.of());
         when(plannerService.getCurrentSchemaState()).thenReturn(currentState);
         when(plannerService.getSchemaDiff()).thenReturn(diff);
         when(registryClient.applySchema(any(), any()))
@@ -147,7 +147,7 @@ public class PurviewSchemaApplyServiceImplTest {
                 "NemakiWare", "", "", manifest.getSchemaVersion(), manifest.getSchemaHash(), true,
                 java.util.List.of("nemaki_external_asset"),
                 java.util.List.of("nemaki_document_has_archive"),
-                java.util.List.of("nemakiGovernance"));
+                java.util.List.of());
         when(plannerService.getCurrentSchemaState()).thenReturn(currentState);
         when(plannerService.getSchemaDiff()).thenReturn(diff);
         when(registryClient.applySchema(any(), any()))
@@ -172,7 +172,7 @@ public class PurviewSchemaApplyServiceImplTest {
                 "NemakiWare", "", "", manifest.getSchemaVersion(), manifest.getSchemaHash(), true,
                 java.util.List.of("nemaki_external_asset"),
                 java.util.List.of("nemaki_document_has_archive"),
-                java.util.List.of("nemakiGovernance"));
+                java.util.List.of());
         String expectedPartialHash = manifest.getSchemaHash() + PurviewSchemaApplyServiceImpl.ATLAS_PARTIAL_SUFFIX;
         PurviewSchemaState savedState = new PurviewSchemaState(
                 "NemakiWare", manifest.getSchemaVersion(), expectedPartialHash,
@@ -209,7 +209,7 @@ public class PurviewSchemaApplyServiceImplTest {
                 "NemakiWare", "", "", manifest.getSchemaVersion(), manifest.getSchemaHash(), true,
                 java.util.List.of("nemaki_external_asset"),
                 java.util.List.of("nemaki_document_has_archive"),
-                java.util.List.of("nemakiGovernance"));
+                java.util.List.of());
         when(plannerService.getCurrentSchemaState()).thenReturn(currentState);
         when(plannerService.getSchemaDiff()).thenReturn(diff);
         when(registryClient.applySchema(any(), any()))
@@ -236,7 +236,7 @@ public class PurviewSchemaApplyServiceImplTest {
                 "NemakiWare", "", "", manifest.getSchemaVersion(), manifest.getSchemaHash(), true,
                 java.util.List.of("nemaki_external_asset"),
                 java.util.List.of("nemaki_document_has_archive"),
-                java.util.List.of("nemakiGovernance"));
+                java.util.List.of());
         when(plannerService.getCurrentSchemaState()).thenReturn(currentState);
         when(plannerService.getSchemaDiff()).thenReturn(diff);
         when(registryClient.applySchema(any(), any()))
@@ -258,7 +258,7 @@ public class PurviewSchemaApplyServiceImplTest {
                 "NemakiWare", "", "", manifest.getSchemaVersion(), manifest.getSchemaHash(), true,
                 java.util.List.of("nemaki_external_asset"),
                 java.util.List.of("nemaki_document_has_archive"),
-                java.util.List.of("nemakiGovernance"));
+                java.util.List.of());
         PurviewSchemaState savedState = new PurviewSchemaState(
                 "NemakiWare", manifest.getSchemaVersion(), manifest.getSchemaHash(),
                 "2026-03-20T01:00:00Z", "admin", "applied");
