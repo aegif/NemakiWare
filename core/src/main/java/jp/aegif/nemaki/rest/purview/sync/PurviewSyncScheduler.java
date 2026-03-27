@@ -20,7 +20,7 @@ import java.util.concurrent.*;
 
 /**
  * Cron-based scheduler for Purview/Atlas incremental synchronization.
- * Dynamically reads cron configuration from CouchDB on each reschedule,
+ * Dynamically reads cron configuration from CouchDB every 60 seconds,
  * so changes made via the admin UI take effect without restart.
  */
 @Component
@@ -34,8 +34,8 @@ public class PurviewSyncScheduler {
 	private final RepositoryInfoMap repositoryInfoMap;
 
 	private ScheduledExecutorService scheduler;
-	private ScheduledFuture<?> scheduledTask;
-	private volatile String activeCron;  // currently scheduled cron (null = not scheduled)
+	private ScheduledFuture<?> syncTask;       // next sync execution
+	private volatile String activeCron;        // currently scheduled cron (null = not scheduled)
 
 	@Autowired
 	public PurviewSyncScheduler(
@@ -54,13 +54,24 @@ public class PurviewSyncScheduler {
 			t.setDaemon(true);
 			return t;
 		});
+
+		// Initial schedule
 		reconcileSchedule();
+
+		// Always poll for config changes every 60 seconds
+		scheduler.scheduleWithFixedDelay(
+				this::reconcileSchedule,
+				CONFIG_CHECK_INTERVAL_SECONDS,
+				CONFIG_CHECK_INTERVAL_SECONDS,
+				TimeUnit.SECONDS);
+
 		logger.info("Purview sync scheduler initialized (activeCron={})", activeCron);
 	}
 
 	/**
-	 * Reads current CouchDB config and starts/changes/stops the schedule accordingly.
-	 * Called from init() and after each sync execution.
+	 * Reads current CouchDB config and starts/changes/stops the sync schedule.
+	 * Called every 60 seconds by the config check timer, and at init.
+	 * Only modifies the sync task when the cron expression actually changes.
 	 */
 	void reconcileSchedule() {
 		if (scheduler == null || scheduler.isShutdown()) {
@@ -70,28 +81,21 @@ public class PurviewSyncScheduler {
 		String currentCron = resolveEffectiveCron();
 
 		if (Objects.equals(currentCron, activeCron)) {
-			// No change — schedule next with same cron, or poll if null
-			if (currentCron != null) {
-				scheduleNext(currentCron);
-			} else {
-				scheduleConfigCheck();
-			}
-			return;
+			return; // No change
 		}
 
-		// Cron changed — cancel pending task
-		cancelPendingTask();
+		// Cron changed — cancel pending sync task
+		cancelSyncTask();
 
 		if (currentCron == null) {
 			logger.info("Purview sync schedule stopped (was: {})", activeCron);
 			activeCron = null;
-			scheduleConfigCheck();
 			return;
 		}
 
 		logger.info("Purview sync schedule updated: {} -> {}", activeCron, currentCron);
 		activeCron = currentCron;
-		scheduleNext(currentCron);
+		scheduleNextSync(currentCron);
 	}
 
 	private String resolveEffectiveCron() {
@@ -110,7 +114,7 @@ public class PurviewSyncScheduler {
 		return cron;
 	}
 
-	private void scheduleNext(String cronExpression) {
+	private void scheduleNextSync(String cronExpression) {
 		if (scheduler == null || scheduler.isShutdown()) {
 			return;
 		}
@@ -126,40 +130,31 @@ public class PurviewSyncScheduler {
 		long delayMillis = Duration.between(now, next).toMillis();
 
 		try {
-			scheduledTask = scheduler.schedule(() -> {
+			syncTask = scheduler.schedule(() -> {
 				try {
 					executeSync();
 				} finally {
-					reconcileSchedule();
+					// After execution, re-read config and schedule next
+					String effectiveCron = resolveEffectiveCron();
+					if (effectiveCron != null) {
+						activeCron = effectiveCron;
+						scheduleNextSync(effectiveCron);
+					} else {
+						activeCron = null;
+						logger.info("Purview sync cron cleared after execution");
+					}
 				}
 			}, delayMillis, TimeUnit.MILLISECONDS);
-			logger.debug("Next Purview incremental sync scheduled for: {}", next);
+			logger.debug("Next Purview incremental sync scheduled for: {} (delay: {}ms)", next, delayMillis);
 		} catch (RejectedExecutionException e) {
 			logger.debug("Purview sync schedule rejected (scheduler shutting down)");
 		}
 	}
 
-	/**
-	 * When no cron is configured, periodically re-check so that a cron
-	 * added via the admin UI is picked up without restart.
-	 */
-	private void scheduleConfigCheck() {
-		if (scheduler == null || scheduler.isShutdown()) {
-			return;
-		}
-		try {
-			scheduledTask = scheduler.schedule(
-					this::reconcileSchedule,
-					CONFIG_CHECK_INTERVAL_SECONDS, TimeUnit.SECONDS);
-		} catch (RejectedExecutionException e) {
-			// shutting down
-		}
-	}
-
-	private void cancelPendingTask() {
-		if (scheduledTask != null) {
-			scheduledTask.cancel(false);
-			scheduledTask = null;
+	private void cancelSyncTask() {
+		if (syncTask != null) {
+			syncTask.cancel(false);
+			syncTask = null;
 		}
 	}
 
@@ -190,7 +185,7 @@ public class PurviewSyncScheduler {
 
 	@PreDestroy
 	public void destroy() {
-		cancelPendingTask();
+		cancelSyncTask();
 		if (scheduler != null) {
 			scheduler.shutdown();
 			try {

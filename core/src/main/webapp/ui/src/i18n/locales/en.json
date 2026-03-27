@@ -1282,6 +1282,19 @@
     },
     "messages": {
       "searchFailed": "Search failed"
+    },
+    "purviewGovernance": {
+      "title": "Purview Governance Summary",
+      "loading": "Loading governance data...",
+      "failed": "Failed to load governance data",
+      "scanned": "Scanned: {{count}}",
+      "synced": "Synced: {{count}}",
+      "classified": "Classified: {{count}}",
+      "glossary": "Glossary: {{count}}",
+      "labeled": "Labeled: {{count}}",
+      "unresolved": "Unresolved: {{count}}",
+      "topClassifications": "Top Classifications",
+      "topGlossaryTerms": "Top Glossary Terms"
     }
   },
   "documentList": {

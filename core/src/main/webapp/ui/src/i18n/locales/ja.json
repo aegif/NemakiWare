@@ -1282,6 +1282,19 @@
     },
     "messages": {
       "searchFailed": "検索に失敗しました"
+    },
+    "purviewGovernance": {
+      "title": "Purview ガバナンス概要",
+      "loading": "ガバナンス情報を取得中...",
+      "failed": "ガバナンス情報の取得に失敗しました",
+      "scanned": "スキャン済: {{count}}",
+      "synced": "同期済: {{count}}",
+      "classified": "分類済: {{count}}",
+      "glossary": "用語集: {{count}}",
+      "labeled": "ラベル付: {{count}}",
+      "unresolved": "未解決: {{count}}",
+      "topClassifications": "主な分類",
+      "topGlossaryTerms": "主な用語集ターム"
     }
   },
   "documentList": {

@@ -304,6 +304,11 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
               file={pdfData}
               onLoadSuccess={onDocumentLoadSuccess}
               onLoadError={onDocumentLoadError}
+              options={{
+                cMapUrl: '/core/ui/pdf-worker/cmaps/',
+                cMapPacked: true,
+                standardFontDataUrl: '/core/ui/pdf-worker/standard_fonts/',
+              }}
               loading={
                 <div style={{ textAlign: 'center', padding: '40px' }}>
                   <Spin size="large" tip={t('preview.pdf.loadingDocument')} />
