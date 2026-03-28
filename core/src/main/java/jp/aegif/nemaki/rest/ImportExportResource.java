@@ -148,18 +148,6 @@ public class ImportExportResource extends ResourceBase {
         }
     }
 
-    private LineageEmitter getLineageEmitter() {
-        try {
-            LineageConfig config = SpringContext.getApplicationContext()
-                    .getBean(LineageConfig.class);
-            LineageJournalStore store = SpringContext.getApplicationContext()
-                    .getBean(LineageJournalStore.class);
-            return config.getEmitter(store);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     private LineageConfig getLineageConfig() {
         try {
             return SpringContext.getApplicationContext()
@@ -169,10 +157,21 @@ public class ImportExportResource extends ResourceBase {
         }
     }
 
+    /**
+     * Emit a lineage event using the per-repository effective mode.
+     * If the mode for the event's repository is DISABLED, the call is a no-op.
+     */
     private void emitLineageEvent(LineageEvent event) {
         try {
-            LineageEmitter emitter = getLineageEmitter();
-            if (emitter != null && emitter.isActive()) {
+            LineageConfig config = getLineageConfig();
+            if (config == null) return;
+            LineageMode mode = config.getModeForRepository(event.repositoryId());
+            if (mode == LineageMode.DISABLED) return;
+
+            LineageJournalStore store = SpringContext.getApplicationContext()
+                    .getBean(LineageJournalStore.class);
+            LineageEmitter emitter = config.createEmitterForMode(mode, store);
+            if (emitter.isActive()) {
                 emitter.emit(event);
             }
         } catch (Exception e) {
@@ -189,7 +188,7 @@ public class ImportExportResource extends ResourceBase {
         // When journal is active, it owns lineage for this processType.
         // Skip direct Purview call to avoid duplicate emission.
         LineageConfig lc = getLineageConfig();
-        if (lc != null && lc.getMode() != LineageMode.DISABLED) {
+        if (lc != null && lc.getModeForRepository(repositoryId) != LineageMode.DISABLED) {
             return;
         }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();
@@ -216,7 +215,7 @@ public class ImportExportResource extends ResourceBase {
             String requestedBy,
             ExportResult exportResult) {
         LineageConfig lc = getLineageConfig();
-        if (lc != null && lc.getMode() != LineageMode.DISABLED) {
+        if (lc != null && lc.getModeForRepository(repositoryId) != LineageMode.DISABLED) {
             return;
         }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();
@@ -243,7 +242,7 @@ public class ImportExportResource extends ResourceBase {
             String requestedBy,
             long objectCount) {
         LineageConfig lc = getLineageConfig();
-        if (lc != null && lc.getMode() != LineageMode.DISABLED) {
+        if (lc != null && lc.getModeForRepository(repositoryId) != LineageMode.DISABLED) {
             return;
         }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();
@@ -265,7 +264,7 @@ public class ImportExportResource extends ResourceBase {
             String requestedBy,
             long objectCount) {
         LineageConfig lc = getLineageConfig();
-        if (lc != null && lc.getMode() != LineageMode.DISABLED) {
+        if (lc != null && lc.getModeForRepository(repositoryId) != LineageMode.DISABLED) {
             return;
         }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();
@@ -286,7 +285,7 @@ public class ImportExportResource extends ResourceBase {
             String requestedBy,
             long objectCount) {
         LineageConfig lc = getLineageConfig();
-        if (lc != null && lc.getMode() != LineageMode.DISABLED) {
+        if (lc != null && lc.getModeForRepository(repositoryId) != LineageMode.DISABLED) {
             return;
         }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();

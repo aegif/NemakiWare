@@ -63,32 +63,42 @@ public class LineageJournalControllerTest {
 
     @Test
     void listEventsFiltersByRepositoryId() {
-        when(store.findByRepositoryId("bedroom", 50)).thenReturn(List.of());
+        when(store.findByRepositoryId("bedroom", 50, 0)).thenReturn(List.of());
 
         ResponseEntity<Map<String, Object>> response = controller.listEvents("bedroom", null, 50, 0);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        verify(store).findByRepositoryId("bedroom", 50);
+        verify(store).findByRepositoryId("bedroom", 50, 0);
     }
 
     @Test
     void listEventsFiltersByProcessType() {
-        when(store.findAll(150, 0)).thenReturn(List.of());
+        when(store.findByProcessType(LineageProcessType.ARCHIVE_LOCAL, 50, 0)).thenReturn(List.of());
 
         ResponseEntity<Map<String, Object>> response = controller.listEvents(null, "ARCHIVE_LOCAL", 50, 0);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        verify(store).findAll(150, 0);
+        verify(store).findByProcessType(LineageProcessType.ARCHIVE_LOCAL, 50, 0);
     }
 
     @Test
     void listEventsFiltersByBothRepoAndProcessType() {
-        when(store.findByProcessType("bedroom", LineageProcessType.ARCHIVE_LOCAL, 50)).thenReturn(List.of());
+        when(store.findByProcessType("bedroom", LineageProcessType.ARCHIVE_LOCAL, 50, 0)).thenReturn(List.of());
 
         ResponseEntity<Map<String, Object>> response = controller.listEvents("bedroom", "ARCHIVE_LOCAL", 50, 0);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        verify(store).findByProcessType("bedroom", LineageProcessType.ARCHIVE_LOCAL, 50);
+        verify(store).findByProcessType("bedroom", LineageProcessType.ARCHIVE_LOCAL, 50, 0);
+    }
+
+    @Test
+    void listEventsPassesOffsetToFilteredQuery() {
+        when(store.findByRepositoryId("bedroom", 50, 10)).thenReturn(List.of());
+
+        ResponseEntity<Map<String, Object>> response = controller.listEvents("bedroom", null, 50, 10);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(store).findByRepositoryId("bedroom", 50, 10);
     }
 
     @Test

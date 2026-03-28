@@ -316,6 +316,25 @@ public class LineageConfig {
     }
 
     /**
+     * Creates an emitter for an explicitly specified mode.
+     *
+     * <p>Use this when the caller has already resolved the effective mode
+     * via {@link #getModeForRepository(String)} and needs an emitter that
+     * matches that specific mode (which may differ from the global default).
+     *
+     * @param mode  the resolved lineage mode
+     * @param store the journal store (used only in JOURNALED mode)
+     * @return the emitter for the given mode
+     */
+    public LineageEmitter createEmitterForMode(LineageMode mode, LineageJournalStore store) {
+        return switch (mode) {
+            case DISABLED  -> new NoopLineageEmitter();
+            case DIRECT    -> new DirectLineageEmitter(this);
+            case JOURNALED -> new JournaledLineageEmitter(store, this);
+        };
+    }
+
+    /**
      * Returns a cached {@link LineageEmitter}, creating or replacing it
      * when the effective mode changes.
      *

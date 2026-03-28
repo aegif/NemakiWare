@@ -68,23 +68,19 @@ public class LineageJournalController {
             } catch (IllegalArgumentException e) {
                 return badRequest("Invalid processType: " + processType);
             }
-            events = journalStore.findByProcessType(repositoryId, pt, cappedLimit);
+            events = journalStore.findByProcessType(repositoryId, pt, cappedLimit, safeOffset);
         } else if (repositoryId != null && !repositoryId.isBlank()) {
             // Filter by repositoryId only
-            events = journalStore.findByRepositoryId(repositoryId, cappedLimit);
+            events = journalStore.findByRepositoryId(repositoryId, cappedLimit, safeOffset);
         } else if (processType != null && !processType.isBlank()) {
-            // Filter by processType only — use findAll and filter in memory
+            // Filter by processType only — server-side view query
             LineageProcessType pt;
             try {
                 pt = LineageProcessType.valueOf(processType);
             } catch (IllegalArgumentException e) {
                 return badRequest("Invalid processType: " + processType);
             }
-            List<LineageEvent> all = journalStore.findAll(cappedLimit * 3, 0);
-            events = all.stream()
-                    .filter(ev -> ev.processType() == pt)
-                    .limit(cappedLimit)
-                    .toList();
+            events = journalStore.findByProcessType(pt, cappedLimit, safeOffset);
         } else {
             // No filters — paginated listing
             events = journalStore.findAll(cappedLimit, safeOffset);

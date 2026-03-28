@@ -22,12 +22,17 @@ public class NoopLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
-    public List<LineageEvent> findByRepositoryId(String repositoryId, int limit) {
+    public List<LineageEvent> findByRepositoryId(String repositoryId, int limit, int offset) {
         return List.of();
     }
 
     @Override
-    public List<LineageEvent> findByProcessType(String repositoryId, LineageProcessType processType, int limit) {
+    public List<LineageEvent> findByProcessType(String repositoryId, LineageProcessType processType, int limit, int offset) {
+        return List.of();
+    }
+
+    @Override
+    public List<LineageEvent> findByProcessType(LineageProcessType processType, int limit, int offset) {
         return List.of();
     }
 

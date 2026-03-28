@@ -38,7 +38,7 @@ public class LineagePurviewBypassTest {
 
     @Test
     void publishFilesystemImportLineageSkipsPurviewWhenJournaled() throws Exception {
-        when(lineageConfig.getMode()).thenReturn(LineageMode.JOURNALED);
+        when(lineageConfig.getModeForRepository("bedroom")).thenReturn(LineageMode.JOURNALED);
 
         try (MockedStatic<SpringContext> ctx = mockStatic(SpringContext.class)) {
             ApplicationContext appCtx = mock(ApplicationContext.class);
@@ -57,7 +57,7 @@ public class LineagePurviewBypassTest {
 
     @Test
     void publishFilesystemImportLineageSkipsPurviewWhenDirect() throws Exception {
-        when(lineageConfig.getMode()).thenReturn(LineageMode.DIRECT);
+        when(lineageConfig.getModeForRepository("bedroom")).thenReturn(LineageMode.DIRECT);
 
         try (MockedStatic<SpringContext> ctx = mockStatic(SpringContext.class)) {
             ApplicationContext appCtx = mock(ApplicationContext.class);
@@ -76,7 +76,7 @@ public class LineagePurviewBypassTest {
 
     @Test
     void publishFilesystemImportLineageCallsPurviewWhenDisabled() throws Exception {
-        when(lineageConfig.getMode()).thenReturn(LineageMode.DISABLED);
+        when(lineageConfig.getModeForRepository("bedroom")).thenReturn(LineageMode.DISABLED);
 
         try (MockedStatic<SpringContext> ctx = mockStatic(SpringContext.class)) {
             ApplicationContext appCtx = mock(ApplicationContext.class);
@@ -97,7 +97,7 @@ public class LineagePurviewBypassTest {
 
     @Test
     void publishZipFolderExportLineageSkipsPurviewWhenJournaled() throws Exception {
-        when(lineageConfig.getMode()).thenReturn(LineageMode.JOURNALED);
+        when(lineageConfig.getModeForRepository("bedroom")).thenReturn(LineageMode.JOURNALED);
 
         try (MockedStatic<SpringContext> ctx = mockStatic(SpringContext.class)) {
             ApplicationContext appCtx = mock(ApplicationContext.class);
@@ -112,7 +112,7 @@ public class LineagePurviewBypassTest {
 
     @Test
     void publishZipFolderExportLineageCallsPurviewWhenDisabled() throws Exception {
-        when(lineageConfig.getMode()).thenReturn(LineageMode.DISABLED);
+        when(lineageConfig.getModeForRepository("bedroom")).thenReturn(LineageMode.DISABLED);
 
         try (MockedStatic<SpringContext> ctx = mockStatic(SpringContext.class)) {
             ApplicationContext appCtx = mock(ApplicationContext.class);
@@ -129,7 +129,7 @@ public class LineagePurviewBypassTest {
 
     @Test
     void publishUploadedImportLineageSkipsPurviewWhenDirect() throws Exception {
-        when(lineageConfig.getMode()).thenReturn(LineageMode.DIRECT);
+        when(lineageConfig.getModeForRepository("bedroom")).thenReturn(LineageMode.DIRECT);
 
         try (MockedStatic<SpringContext> ctx = mockStatic(SpringContext.class)) {
             ApplicationContext appCtx = mock(ApplicationContext.class);
@@ -144,7 +144,7 @@ public class LineagePurviewBypassTest {
 
     @Test
     void publishUploadedImportLineageCallsPurviewWhenDisabled() throws Exception {
-        when(lineageConfig.getMode()).thenReturn(LineageMode.DISABLED);
+        when(lineageConfig.getModeForRepository("bedroom")).thenReturn(LineageMode.DISABLED);
 
         try (MockedStatic<SpringContext> ctx = mockStatic(SpringContext.class)) {
             ApplicationContext appCtx = mock(ApplicationContext.class);

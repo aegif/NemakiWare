@@ -51,6 +51,7 @@ import jp.aegif.nemaki.dao.RetentionLogDaoService;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.rest.purview.journal.LineageConfig;
+import jp.aegif.nemaki.rest.purview.journal.LineageMode;
 import jp.aegif.nemaki.rest.purview.journal.LineageEmitter;
 import jp.aegif.nemaki.rest.purview.journal.LineageEvent;
 import jp.aegif.nemaki.rest.purview.journal.LineageEventBuilder;
@@ -638,18 +639,6 @@ public class ArchiveResource extends ResourceBase {
 	}
 
 
-	private LineageEmitter getLineageEmitter() {
-		try {
-			LineageConfig config = SpringContext.getApplicationContext()
-					.getBean(LineageConfig.class);
-			LineageJournalStore store = SpringContext.getApplicationContext()
-					.getBean(LineageJournalStore.class);
-			return config.getEmitter(store);
-		} catch (Exception e) {
-			return null;
-		}
-	}
-
 	private LineageConfig getLineageConfig() {
 		try {
 			return SpringContext.getApplicationContext()
@@ -661,9 +650,15 @@ public class ArchiveResource extends ResourceBase {
 
 	private void emitLineageEvent(String repositoryId, String objectId, HttpServletRequest httpRequest) {
 		try {
-			LineageEmitter emitter = getLineageEmitter();
-			if (emitter != null && emitter.isActive()) {
-				LineageConfig lc = getLineageConfig();
+			LineageConfig lc = getLineageConfig();
+			if (lc == null) return;
+			LineageMode mode = lc.getModeForRepository(repositoryId);
+			if (mode == LineageMode.DISABLED) return;
+
+			LineageJournalStore store = SpringContext.getApplicationContext()
+					.getBean(LineageJournalStore.class);
+			LineageEmitter emitter = lc.createEmitterForMode(mode, store);
+			if (emitter.isActive()) {
 				LineageEventBuilder b = new LineageEventBuilder()
 						.repositoryId(repositoryId)
 						.processType(LineageProcessType.ARCHIVE_LOCAL)

@@ -222,9 +222,19 @@ public interface LineageJournalStore {
 
     void appendAll(List<LineageEvent> events);
 
-    List<LineageEvent> findByRepositoryId(String repositoryId, int limit);
+    List<LineageEvent> findByRepositoryId(String repositoryId, int limit, int offset);
 
-    List<LineageEvent> findByProcessType(String repositoryId, LineageProcessType processType, int limit);
+    List<LineageEvent> findByProcessType(String repositoryId, LineageProcessType processType, int limit, int offset);
+
+    /**
+     * Returns events for the given process type across all repositories.
+     *
+     * @param processType the process type to filter by
+     * @param limit       maximum number of events to return
+     * @param offset      number of events to skip
+     * @return list of events (empty if store is inactive)
+     */
+    List<LineageEvent> findByProcessType(LineageProcessType processType, int limit, int offset);
 
     /**
      * Updates the publish status for a specific target on an event.

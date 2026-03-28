@@ -14,6 +14,7 @@ import jp.aegif.nemaki.businesslogic.impl.CloudDriveServiceImpl;
 import jp.aegif.nemaki.util.spring.SpringContext;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.rest.purview.journal.LineageConfig;
+import jp.aegif.nemaki.rest.purview.journal.LineageMode;
 import jp.aegif.nemaki.rest.purview.journal.LineageEmitter;
 import jp.aegif.nemaki.rest.purview.journal.LineageEvent;
 import jp.aegif.nemaki.rest.purview.journal.LineageEventBuilder;
@@ -276,18 +277,6 @@ public class CloudDriveResource extends ResourceBase {
 		}
 	}
 
-	private LineageEmitter getLineageEmitter() {
-		try {
-			LineageConfig config = SpringContext.getApplicationContext()
-					.getBean(LineageConfig.class);
-			LineageJournalStore store = SpringContext.getApplicationContext()
-					.getBean(LineageJournalStore.class);
-			return config.getEmitter(store);
-		} catch (Exception e) {
-			return null;
-		}
-	}
-
 	private LineageConfig getLineageConfig() {
 		try {
 			return SpringContext.getApplicationContext()
@@ -299,8 +288,15 @@ public class CloudDriveResource extends ResourceBase {
 
 	private void emitLineageEvent(LineageEvent event) {
 		try {
-			LineageEmitter emitter = getLineageEmitter();
-			if (emitter != null && emitter.isActive()) {
+			LineageConfig config = getLineageConfig();
+			if (config == null) return;
+			LineageMode mode = config.getModeForRepository(event.repositoryId());
+			if (mode == LineageMode.DISABLED) return;
+
+			LineageJournalStore store = SpringContext.getApplicationContext()
+					.getBean(LineageJournalStore.class);
+			LineageEmitter emitter = config.createEmitterForMode(mode, store);
+			if (emitter.isActive()) {
 				emitter.emit(event);
 			}
 		} catch (Exception e) {

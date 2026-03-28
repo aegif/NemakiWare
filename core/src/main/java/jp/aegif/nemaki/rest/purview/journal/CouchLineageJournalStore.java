@@ -110,6 +110,46 @@ public class CouchLineageJournalStore implements LineageJournalStore {
     }
 
     /**
+     * Ensures the lineage client is available for read operations.
+     *
+     * <p>After a JVM restart, {@link #dbProvisioned} is {@code false} even
+     * though the {@code nemaki_lineage} database still exists from a previous
+     * run. This method discovers the existing database without performing full
+     * provisioning (no view deployment, no DB creation), allowing read-only
+     * API calls (e.g. {@code /events}, {@code /stats}) to succeed immediately
+     * without waiting for the first write.
+     *
+     * @return {@code true} if the lineage client is now available
+     */
+    private boolean ensureClientForRead() {
+        if (lineageClient != null) {
+            return true;
+        }
+        synchronized (this) {
+            if (lineageClient != null) {
+                return true;
+            }
+            try {
+                CloudantClientWrapper anyRepoClient = connectorPool.getClient("nemaki_conf");
+                Cloudant cloudant = anyRepoClient.getClient();
+                GetDatabaseInformationOptions infoOpts = new GetDatabaseInformationOptions.Builder()
+                        .db(DB_NAME).build();
+                cloudant.getDatabaseInformation(infoOpts).execute();
+                // DB exists — set up client for reads (skip view deployment)
+                lineageClient = new CloudantClientWrapper(cloudant, DB_NAME, objectMapper);
+                logger.info("Discovered existing lineage journal database '{}' for read access", DB_NAME);
+                return true;
+            } catch (NotFoundException e) {
+                // DB does not exist — no data to read
+                return false;
+            } catch (Exception e) {
+                logger.debug("Lineage DB not available for read: {}", e.getMessage());
+                return false;
+            }
+        }
+    }
+
+    /**
      * Deploy CouchDB views for the lineage design document.
      */
     private void deployViews() {
@@ -131,10 +171,15 @@ public class CouchLineageJournalStore implements LineageJournalStore {
                         "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { emit([k, t[k]], null); } } } }",
                 "_count");
 
-        // View 4: by_process_type — countByProcessType stats
+        // View 4: by_process_type — countByProcessType stats and listing
         client.createOrUpdateView(DESIGN_DOC, "by_process_type",
                 "function(doc) { if (doc.type === 'lineage_event' && doc.processType) { emit(doc.processType, null); } }",
                 "_count");
+
+        // View 5: by_occurred_at — cross-repository time ordering for findAll
+        client.createOrUpdateView(DESIGN_DOC, "by_occurred_at",
+                "function(doc) { if (doc.type === 'lineage_event') { emit(doc.occurredAt, null); } }",
+                null);
 
         logger.info("Lineage journal views deployed to design document '{}'", DESIGN_DOC);
     }
@@ -178,28 +223,54 @@ public class CouchLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
-    public List<LineageEvent> findByRepositoryId(String repositoryId, int limit) {
-        if (!dbProvisioned.get()) {
+    public List<LineageEvent> findByRepositoryId(String repositoryId, int limit, int offset) {
+        if (!ensureClientForRead()) {
             return List.of();
         }
 
         Map<String, Object> params = new HashMap<>();
-        params.put("startkey", List.of(repositoryId, ""));
-        params.put("endkey", List.of(repositoryId, "\ufff0"));
+        // descending=true for newest-first within this repository
+        params.put("startkey", List.of(repositoryId, "\ufff0"));
+        params.put("endkey", List.of(repositoryId, ""));
         params.put("limit", limit);
+        if (offset > 0) {
+            params.put("skip", offset);
+        }
         params.put("include_docs", true);
+        params.put("descending", true);
 
         return queryEventsFromView("by_repository_and_time", params);
     }
 
     @Override
-    public List<LineageEvent> findByProcessType(String repositoryId, LineageProcessType processType, int limit) {
-        // Use by_repository_and_time view and filter in memory (no dedicated view for processType)
-        List<LineageEvent> all = findByRepositoryId(repositoryId, limit * 3);
+    public List<LineageEvent> findByProcessType(String repositoryId, LineageProcessType processType, int limit, int offset) {
+        // Fetch from repository view and filter by processType in memory.
+        // Overfetch to compensate for the in-memory filter, then apply offset/limit.
+        List<LineageEvent> all = findByRepositoryId(repositoryId, limit + offset + 200, 0);
         return all.stream()
                 .filter(e -> e.processType() == processType)
+                .skip(offset)
                 .limit(limit)
                 .toList();
+    }
+
+    @Override
+    public List<LineageEvent> findByProcessType(LineageProcessType processType, int limit, int offset) {
+        if (!ensureClientForRead()) {
+            return List.of();
+        }
+
+        // Use by_process_type view with reduce=false to list documents
+        Map<String, Object> params = new HashMap<>();
+        params.put("key", processType.name());
+        params.put("reduce", false);
+        params.put("limit", limit);
+        if (offset > 0) {
+            params.put("skip", offset);
+        }
+        params.put("include_docs", true);
+
+        return queryEventsFromView("by_process_type", params);
     }
 
     @Override
@@ -339,7 +410,7 @@ public class CouchLineageJournalStore implements LineageJournalStore {
 
     @Override
     public long countNonTerminalByTarget(String target) {
-        if (!dbProvisioned.get()) {
+        if (!ensureClientForRead()) {
             return 0;
         }
 
@@ -355,16 +426,15 @@ public class CouchLineageJournalStore implements LineageJournalStore {
 
     @Override
     public List<LineageEvent> findAll(int limit, int offset) {
-        if (!dbProvisioned.get()) {
+        if (!ensureClientForRead()) {
             return List.of();
         }
 
         int cappedLimit = Math.min(Math.max(limit, 1), 200);
 
-        // descending=true reverses the key order: startkey must be high, endkey must be low
+        // Use by_occurred_at (single-key view on occurredAt) for correct
+        // cross-repository time ordering. descending=true → newest first.
         Map<String, Object> params = new HashMap<>();
-        params.put("startkey", List.of("\ufff0", "\ufff0"));
-        params.put("endkey", List.of("", ""));
         params.put("limit", cappedLimit);
         if (offset > 0) {
             params.put("skip", offset);
@@ -372,12 +442,12 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         params.put("include_docs", true);
         params.put("descending", true);
 
-        return queryEventsFromView("by_repository_and_time", params);
+        return queryEventsFromView("by_occurred_at", params);
     }
 
     @Override
     public LineageEvent findByEventId(String eventId) {
-        if (!dbProvisioned.get() || eventId == null || eventId.isEmpty()) {
+        if (!ensureClientForRead() || eventId == null || eventId.isEmpty()) {
             return null;
         }
 
@@ -398,7 +468,7 @@ public class CouchLineageJournalStore implements LineageJournalStore {
 
     @Override
     public Map<LineageProcessType, Long> countByProcessType() {
-        if (!dbProvisioned.get()) {
+        if (!ensureClientForRead()) {
             return Map.of();
         }
 
@@ -434,23 +504,13 @@ public class CouchLineageJournalStore implements LineageJournalStore {
 
     @Override
     public boolean isActive() {
-        if (lineageConfig.getMode() != LineageMode.JOURNALED) {
-            return false;
+        // Active = journal DB exists and is reachable, regardless of global mode.
+        // This handles the case where only specific repos have journaled overrides.
+        if (dbProvisioned.get()) {
+            return true;
         }
-        if (!dbProvisioned.get()) {
-            // Try to check if DB exists without full provisioning
-            try {
-                CloudantClientWrapper anyClient = connectorPool.getClient("nemaki_conf");
-                Cloudant cloudant = anyClient.getClient();
-                GetDatabaseInformationOptions opts = new GetDatabaseInformationOptions.Builder()
-                        .db(DB_NAME).build();
-                cloudant.getDatabaseInformation(opts).execute();
-                return true;
-            } catch (Exception e) {
-                return false;
-            }
-        }
-        return true;
+        // Try lazy discovery (same as ensureClientForRead)
+        return ensureClientForRead();
     }
 
     // ---------------------------------------------------------------

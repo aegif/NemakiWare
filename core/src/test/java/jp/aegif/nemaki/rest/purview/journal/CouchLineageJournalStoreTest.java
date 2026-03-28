@@ -398,8 +398,11 @@ class CouchLineageJournalStoreTest {
     }
 
     @Test
-    void isActive_returnsFalseWhenModeIsDisabled() {
-        when(mockConfig.getMode()).thenReturn(LineageMode.DISABLED);
+    void isActive_returnsFalseWhenDbNotProvisioned() throws Exception {
+        // isActive() checks DB existence, not mode — returns false when DB is absent
+        setField(store, "dbProvisioned", new AtomicBoolean(false));
+        setField(store, "lineageClient", null);
+        // No connectorPool set, so ensureClientForRead() will fail
         assertFalse(store.isActive());
     }
 }

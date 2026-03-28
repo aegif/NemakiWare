@@ -27,8 +27,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * loop reads the current cron from {@link LineageConfig} and reschedules
  * if it changes.
  *
- * <p>Only active when {@code lineage.mode=journaled} and
- * {@code lineage.purge.cron} is a valid cron expression.
+ * <p>Only active when the journal store is active (i.e. the journal DB
+ * exists) and {@code lineage.purge.cron} is a valid cron expression.
+ * This covers both global {@code lineage.mode=journaled} and per-repository
+ * overrides ({@code lineage.mode.override.{repositoryId}=journaled}).
  */
 @Component
 public class LineagePurgeScheduler {
@@ -72,9 +74,9 @@ public class LineagePurgeScheduler {
                 return;
             }
 
-            // Purge only makes sense in JOURNALED mode
+            // Purge only makes sense when journal DB exists (covers repo-level overrides)
             String currentCron = null;
-            if (lineageConfig.getMode() == LineageMode.JOURNALED) {
+            if (journalStore.isActive()) {
                 currentCron = resolveValidCron();
             }
 
@@ -136,7 +138,7 @@ public class LineagePurgeScheduler {
                             logger.debug("Lineage purge generation changed, not re-arming");
                             return;
                         }
-                        if (lineageConfig.getMode() == LineageMode.JOURNALED) {
+                        if (journalStore.isActive()) {
                             String effectiveCron = resolveValidCron();
                             if (effectiveCron != null) {
                                 activeCron = effectiveCron;
