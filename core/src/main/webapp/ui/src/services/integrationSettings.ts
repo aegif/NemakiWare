@@ -2,7 +2,7 @@ import { AuthService } from './auth';
 
 const BASE_URL = '/core/api/v1/admin/integration-settings';
 
-export type SettingSource = 'system_property' | 'environment' | 'couchdb' | 'properties_file' | 'none';
+export type SettingSource = 'system_property' | 'environment' | 'couchdb' | 'properties_file' | 'default' | 'none';
 
 export interface IntegrationSettingsResponse {
   settings: Record<string, string>;
@@ -16,7 +16,7 @@ export interface UpdateResult {
 }
 
 export interface ConnectionTestResult {
-  status: 'success' | 'failure';
+  status: 'success' | 'failure' | 'disabled';
   message: string;
   connected?: boolean;
   featureEnabled?: boolean;
@@ -99,3 +99,7 @@ export const getPurviewSettings = () => getSettings('purview');
 export const updatePurviewSettings = (settings: Record<string, string>) => updateSettings('purview', settings);
 export const testPurviewConnection = (formValues?: Record<string, string>) =>
   testConnection('purview', formValues);
+
+// Lineage
+export const getLineageSettings = () => getSettings('lineage');
+export const updateLineageSettings = (settings: Record<string, string>) => updateSettings('lineage', settings);

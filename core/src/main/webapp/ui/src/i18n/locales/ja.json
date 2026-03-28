@@ -2610,7 +2610,8 @@
       "microsoft": "Microsoft認証",
       "saml": "SAML",
       "directorySync": "ディレクトリ同期",
-      "purview": "Purview / Atlas"
+      "purview": "Purview / Atlas",
+      "lineage": "Lineage Journal"
     },
     "save": "保存",
     "testConnection": "接続テスト",
@@ -2625,7 +2626,8 @@
       "environment": "環境変数",
       "couchdb": "CouchDB",
       "properties_file": "設定ファイル",
-      "none": "未設定"
+      "none": "未設定",
+      "default": "デフォルト"
     },
     "oidc": {
       "enabled": "OIDC認証を有効化",
@@ -2677,6 +2679,36 @@
       "syncCronHelp": "空の場合はスケジュール無効。例: 0 0 3 * * ? (毎日3時)",
       "betaNotice": "この機能はベータ版です。",
       "disabledNotice": "Purview / Atlas 連携は現在無効です。"
+    },
+    "lineage": {
+      "mode": "Lineageモード",
+      "modeDisabled": "無効 (保存なし)",
+      "modeDirect": "ダイレクト (直送のみ)",
+      "modeJournaled": "ジャーナル (CouchDB保存)",
+      "modeHelp": "インスタンス全体のデフォルト。優先順位: (1) リポジトリ単位の上書き lineage.mode.override.{repositoryId} → (2) ここで設定するグローバル値 → (3) 起動時デフォルト (disabled)。変更は即時反映（再起動不要）。クラスタ環境ではノード間の反映に数秒かかる場合があります",
+      "targets": "配信先ターゲット",
+      "targetsHelp": "カンマ区切り: purview, atlas, dataplex",
+      "retentionDays": "ジャーナル保持日数",
+      "retentionDaysHelp": "journaled モード時のみ有効。デフォルト: 90日",
+      "captureVersionEvents": "バージョンイベント記録",
+      "captureGenericRelationships": "汎用リレーション記録",
+      "purgeCron": "パージスケジュール (cron式)",
+      "purgeCronHelp": "空の場合は自動パージ無効。例: 0 0 4 * * ? (毎日4時)",
+      "snapshotMaxNameLength": "名前の最大文字数",
+      "snapshotMaxPathLength": "パスの最大文字数",
+      "snapshotCapturePath": "フォルダパスを記録する",
+      "disabledNotice": "Lineage Journal は現在無効です。追加のリソース消費やDB作成は発生しません。既存の Purview 同期は lineage 設定に関係なく独立して動作し続けます。有効化するにはモードを変更してください。",
+      "directNotice": "ダイレクトモード（設定のみ）: ターゲットへの配信パイプラインは将来実装予定です。現時点ではイベントは記録・配信されません。",
+      "journaledNotice": "ジャーナルモード: イベントが CouchDB に記録されます。外部ターゲット (Purview, Atlas 等) への投影はまだ有効になっていません。lineage.purge.cron を設定すると自動パージが有効になります。",
+      "backlogMaxRetryCount": "最大リトライ回数",
+      "backlogMaxRetryCountHelp": "ターゲットごとのリトライ上限。超過すると自動破棄（dead-letter に記録）。0 で無効。デフォルト: 5",
+      "backlogMaxRetryAgeHours": "最大リトライ経過時間 (時間)",
+      "backlogMaxRetryAgeHoursHelp": "イベント発生からこの時間を超えても未配信の場合、自動破棄。0 で無効。デフォルト: 72時間 (3日)",
+      "backlogMaxDocs": "バックログ最大件数",
+      "backlogMaxDocsHelp": "未配信イベントの総数がこの上限を超えると、古い順に自動破棄。0 で無効。デフォルト: 10000",
+      "backlogMaxSizeMb": "バックログ最大サイズ (MB)",
+      "backlogMaxSizeMbHelp": "未配信イベントの推定サイズがこの上限を超えると、古い順に自動破棄。0 で無効。デフォルト: 100MB",
+      "internalApiNotice": "イベントデータの閲覧・リプレイ機能は現在提供されていません。この画面では設定のみ変更できます。"
     }
   }
 }

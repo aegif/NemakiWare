@@ -39,7 +39,15 @@ export function useSettingsTab({ fetchSettings, saveSettings, testConnection }: 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await saveSettings(formValues);
+      // Only send fields that actually changed to avoid writing
+      // runtime defaults (blank → CouchDB) for untouched keys.
+      const changedFields: Record<string, string> = {};
+      for (const key of Object.keys(formValues)) {
+        if (formValues[key] !== settings[key]) {
+          changedFields[key] = formValues[key];
+        }
+      }
+      await saveSettings(changedFields);
       await load();
       return true;
     } catch (err) {

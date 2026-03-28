@@ -175,6 +175,53 @@ public class IntegrationSettingsService {
 	}
 
 	/**
+	 * Deletes configuration documents from CouchDB for the given keys.
+	 * After deletion the key reverts to the next source in the PropertyManager
+	 * priority chain (properties file → @Value default).
+	 */
+	public void deleteSettings(Set<String> keys) {
+		if (keys == null || keys.isEmpty()) {
+			return;
+		}
+		CloudantClientWrapper confClient = connectorPool.getClient(SystemConst.NEMAKI_CONF_DB);
+		if (confClient == null) {
+			throw new RuntimeException("nemaki_conf database client not available");
+		}
+
+		String dbName = confClient.getDatabaseName();
+		com.ibm.cloud.cloudant.v1.Cloudant cloudant = confClient.getClient();
+
+		for (String key : keys) {
+			Map<String, Object> selector = new HashMap<>();
+			selector.put("type", "configuration");
+			selector.put("key", key);
+
+			PostFindOptions findOptions = new PostFindOptions.Builder()
+					.db(dbName)
+					.selector(selector)
+					.limit(1)
+					.build();
+
+			FindResult findResult = cloudant.postFind(findOptions).execute().getResult();
+			List<com.ibm.cloud.cloudant.v1.model.Document> docs = findResult.getDocs();
+
+			if (docs != null && !docs.isEmpty()) {
+				com.ibm.cloud.cloudant.v1.model.Document existingDoc = docs.get(0);
+				com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions deleteOptions =
+						new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions.Builder()
+								.db(dbName)
+								.docId(existingDoc.getId())
+								.rev(existingDoc.getRev())
+								.build();
+				cloudant.deleteDocument(deleteOptions).execute();
+				log.info("Integration setting deleted (reverted to default): " + key);
+			}
+		}
+
+		invalidateAllConfigCaches();
+	}
+
+	/**
 	 * Invalidates the configuration cache for all known repositories
 	 * so that PropertyManager picks up the updated CouchDB values immediately.
 	 */

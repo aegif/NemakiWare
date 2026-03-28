@@ -2610,7 +2610,8 @@
       "microsoft": "Microsoft Auth",
       "saml": "SAML",
       "directorySync": "Directory Sync",
-      "purview": "Purview / Atlas"
+      "purview": "Purview / Atlas",
+      "lineage": "Lineage Journal"
     },
     "save": "Save",
     "testConnection": "Test Connection",
@@ -2625,7 +2626,8 @@
       "environment": "Environment Variable",
       "couchdb": "CouchDB",
       "properties_file": "Properties File",
-      "none": "Not Set"
+      "none": "Not Set",
+      "default": "Default"
     },
     "oidc": {
       "enabled": "Enable OIDC Authentication",
@@ -2677,6 +2679,36 @@
       "syncCronHelp": "Leave empty to disable. Example: 0 0 3 * * ? (daily at 3 AM)",
       "betaNotice": "This feature is in beta.",
       "disabledNotice": "Purview / Atlas integration is currently disabled."
+    },
+    "lineage": {
+      "mode": "Lineage Mode",
+      "modeDisabled": "Disabled (no storage)",
+      "modeDirect": "Direct (publish only)",
+      "modeJournaled": "Journaled (CouchDB storage)",
+      "modeHelp": "Instance-wide default. Priority: (1) repo override lineage.mode.override.{repositoryId} → (2) this global value → (3) startup default (disabled). Changes take effect immediately (no restart). In clusters, propagation may take a few seconds",
+      "targets": "Publish Targets",
+      "targetsHelp": "Comma-separated: purview, atlas, dataplex",
+      "retentionDays": "Journal Retention Days",
+      "retentionDaysHelp": "Only applies in journaled mode. Default: 90 days",
+      "captureVersionEvents": "Capture Version Events",
+      "captureGenericRelationships": "Capture Generic Relationships",
+      "purgeCron": "Purge Schedule (cron)",
+      "purgeCronHelp": "Leave empty to disable auto-purge. Example: 0 0 4 * * ? (daily at 4 AM)",
+      "snapshotMaxNameLength": "Max Name Length",
+      "snapshotMaxPathLength": "Max Path Length",
+      "snapshotCapturePath": "Capture Folder Path",
+      "disabledNotice": "Lineage Journal is currently disabled. No additional resource usage or DB creation occurs. Existing Purview sync operates independently of this setting. Change the mode to enable.",
+      "directNotice": "Direct mode (config only): the target delivery pipeline is not yet implemented. Events are not currently recorded or published.",
+      "journaledNotice": "Journaled mode: events are stored in CouchDB. Projection to external targets (Purview, Atlas, etc.) is not yet active. Set lineage.purge.cron to enable automatic purging.",
+      "backlogMaxRetryCount": "Max Retry Count",
+      "backlogMaxRetryCountHelp": "Per-target retry limit. Events exceeding this are auto-discarded (dead-lettered). 0 to disable. Default: 5",
+      "backlogMaxRetryAgeHours": "Max Retry Age (hours)",
+      "backlogMaxRetryAgeHoursHelp": "Events older than this with non-terminal targets are auto-discarded. 0 to disable. Default: 72 hours (3 days)",
+      "backlogMaxDocs": "Max Backlog Documents",
+      "backlogMaxDocsHelp": "When non-terminal events exceed this count, oldest are auto-discarded. 0 to disable. Default: 10000",
+      "backlogMaxSizeMb": "Max Backlog Size (MB)",
+      "backlogMaxSizeMbHelp": "When estimated non-terminal event size exceeds this, oldest are auto-discarded. 0 to disable. Default: 100MB",
+      "internalApiNotice": "Event browsing and replay are not available yet. This screen controls configuration only."
     }
   }
 }

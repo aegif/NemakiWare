@@ -6,6 +6,7 @@ import { MicrosoftAuthSettingsTab } from './MicrosoftAuthSettingsTab';
 import { SamlSettingsTab } from './SamlSettingsTab';
 import { DirectorySyncSettingsTab } from './DirectorySyncSettingsTab';
 import { PurviewSettingsTab } from './PurviewSettingsTab';
+import { LineageSettingsTab } from './LineageSettingsTab';
 
 const { Title } = Typography;
 
@@ -46,6 +47,11 @@ export function IntegrationSettings({ repositoryId: _repositoryId }: Integration
       key: 'purview',
       label: <Space size={4}>{t('integrationSettings.tabs.purview')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Beta</Tag></Space>,
       children: <PurviewSettingsTab />,
+    },
+    {
+      key: 'lineage',
+      label: t('integrationSettings.tabs.lineage'),
+      children: <LineageSettingsTab />,
     },
   ];
 

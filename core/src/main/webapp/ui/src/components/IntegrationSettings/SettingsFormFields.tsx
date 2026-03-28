@@ -29,6 +29,7 @@ const SOURCE_COLORS: Record<SettingSource, string> = {
   environment: 'orange',
   couchdb: 'blue',
   properties_file: 'default',
+  default: 'cyan',
   none: 'default',
 };
 

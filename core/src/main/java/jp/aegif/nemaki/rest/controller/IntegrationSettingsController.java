@@ -20,7 +20,7 @@ import java.time.Duration;
 import java.util.*;
 
 /**
- * REST controller for managing integration settings (OIDC, Google, Microsoft, SAML, Purview).
+ * REST controller for managing integration settings (OIDC, Google, Microsoft, SAML, Purview, Lineage).
  * Admin-only endpoints for reading and updating configuration stored in CouchDB nemaki_conf.
  */
 @RestController
@@ -80,6 +80,40 @@ public class IntegrationSettingsController {
 			"purview.collection",
 			"purview.sync.cron"
 	));
+
+	private static final Set<String> LINEAGE_KEYS = new LinkedHashSet<>(Arrays.asList(
+			"lineage.mode",
+			"lineage.targets",
+			"lineage.retention.days",
+			"lineage.capture.version-events",
+			"lineage.capture.generic-relationships",
+			"lineage.purge.cron",
+			"lineage.snapshot.max-name-length",
+			"lineage.snapshot.max-path-length",
+			"lineage.snapshot.capture-path",
+			"lineage.backlog.max-retry-count",
+			"lineage.backlog.max-retry-age-hours",
+			"lineage.backlog.max-docs",
+			"lineage.backlog.max-size-mb"
+	));
+
+	/**
+	 * Runtime defaults for lineage keys (mirrors @Value defaults in LineageConfig).
+	 * Used to surface the effective value in the UI when no explicit configuration exists.
+	 */
+	private static final Map<String, String> LINEAGE_DEFAULTS = Map.ofEntries(
+			Map.entry("lineage.mode", "disabled"),
+			Map.entry("lineage.retention.days", "90"),
+			Map.entry("lineage.capture.version-events", "false"),
+			Map.entry("lineage.capture.generic-relationships", "false"),
+			Map.entry("lineage.snapshot.max-name-length", "512"),
+			Map.entry("lineage.snapshot.max-path-length", "2048"),
+			Map.entry("lineage.snapshot.capture-path", "true"),
+			Map.entry("lineage.backlog.max-retry-count", "5"),
+			Map.entry("lineage.backlog.max-retry-age-hours", "72"),
+			Map.entry("lineage.backlog.max-docs", "10000"),
+			Map.entry("lineage.backlog.max-size-mb", "100")
+	);
 
 	// Keys whose values should be masked in GET responses
 	private static final Set<String> SENSITIVE_KEYS = new LinkedHashSet<>(Arrays.asList(
@@ -201,6 +235,22 @@ public class IntegrationSettingsController {
 		return handleUpdate(PURVIEW_KEYS, body);
 	}
 
+	// ==================== Lineage Journal ====================
+
+	@GetMapping("/lineage")
+	public ResponseEntity<Map<String, Object>> getLineageSettings() {
+		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+		if (forbidden != null) return forbidden;
+		return ResponseEntity.ok(buildSettingsResponseWithDefaults(LINEAGE_KEYS, LINEAGE_DEFAULTS));
+	}
+
+	@PutMapping("/lineage")
+	public ResponseEntity<Map<String, Object>> updateLineageSettings(@RequestBody Map<String, String> body) {
+		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+		if (forbidden != null) return forbidden;
+		return handleUpdate(LINEAGE_KEYS, body, LINEAGE_DEFAULTS);
+	}
+
 	// ==================== Connection Tests ====================
 
 	@PostMapping("/oidc/test-connection")
@@ -284,6 +334,40 @@ public class IntegrationSettingsController {
 
 	// ==================== Helpers ====================
 
+	/**
+	 * Builds settings response with runtime defaults applied for unconfigured keys.
+	 * When a key has no explicit value (source="none") and a runtime default exists,
+	 * the default is surfaced so the UI shows the effective value.
+	 */
+	private Map<String, Object> buildSettingsResponseWithDefaults(Set<String> keys, Map<String, String> defaults) {
+		Map<String, String> settings = settingsService.readSettings(keys);
+		Map<String, String> sources = settingsService.readSettingSources(keys);
+
+		for (Map.Entry<String, String> def : defaults.entrySet()) {
+			String key = def.getKey();
+			String defValue = def.getValue();
+			if ("none".equals(sources.get(key)) && defValue != null && !defValue.isEmpty()) {
+				settings.put(key, defValue);
+				sources.put(key, "default");
+			}
+		}
+
+		Map<String, String> maskedSettings = new LinkedHashMap<>(settings);
+		for (String sensitiveKey : SENSITIVE_KEYS) {
+			if (maskedSettings.containsKey(sensitiveKey)) {
+				String val = maskedSettings.get(sensitiveKey);
+				if (val != null && !val.isEmpty()) {
+					maskedSettings.put(sensitiveKey, MASK);
+				}
+			}
+		}
+
+		Map<String, Object> response = new LinkedHashMap<>();
+		response.put("settings", maskedSettings);
+		response.put("sources", sources);
+		return response;
+	}
+
 	private Map<String, Object> buildSettingsResponse(Set<String> keys) {
 		Map<String, String> settings = settingsService.readSettings(keys);
 		Map<String, String> sources = settingsService.readSettingSources(keys);
@@ -306,8 +390,14 @@ public class IntegrationSettingsController {
 	}
 
 	private ResponseEntity<Map<String, Object>> handleUpdate(Set<String> allowedKeys, Map<String, String> body) {
+		return handleUpdate(allowedKeys, body, Map.of());
+	}
+
+	private ResponseEntity<Map<String, Object>> handleUpdate(Set<String> allowedKeys, Map<String, String> body,
+			Map<String, String> defaults) {
 		// Filter to only allowed keys, skip [configured] values
 		Map<String, String> toWrite = new LinkedHashMap<>();
+		Set<String> toDelete = new LinkedHashSet<>();
 		for (Map.Entry<String, String> entry : body.entrySet()) {
 			String key = entry.getKey();
 			String value = entry.getValue();
@@ -317,10 +407,16 @@ public class IntegrationSettingsController {
 			if (MASK.equals(value)) {
 				continue; // Don't overwrite sensitive value with mask placeholder
 			}
+			// Empty value for a key that has a runtime default → delete the CouchDB
+			// override so the @Value default takes effect again.
+			if ((value == null || value.isEmpty()) && defaults.containsKey(key)) {
+				toDelete.add(key);
+				continue;
+			}
 			toWrite.put(key, value);
 		}
 
-		if (toWrite.isEmpty()) {
+		if (toWrite.isEmpty() && toDelete.isEmpty()) {
 			Map<String, Object> response = new LinkedHashMap<>();
 			response.put("status", "success");
 			response.put("message", "No changes to save");
@@ -328,11 +424,18 @@ public class IntegrationSettingsController {
 		}
 
 		try {
-			settingsService.writeSettings(toWrite);
+			if (!toWrite.isEmpty()) {
+				settingsService.writeSettings(toWrite);
+			}
+			if (!toDelete.isEmpty()) {
+				settingsService.deleteSettings(toDelete);
+			}
 			Map<String, Object> response = new LinkedHashMap<>();
 			response.put("status", "success");
 			response.put("message", "Settings updated successfully");
-			response.put("updatedKeys", new ArrayList<>(toWrite.keySet()));
+			List<String> affected = new ArrayList<>(toWrite.keySet());
+			affected.addAll(toDelete);
+			response.put("updatedKeys", affected);
 			return ResponseEntity.ok(response);
 		} catch (Exception e) {
 			log.error("Failed to update integration settings", e);

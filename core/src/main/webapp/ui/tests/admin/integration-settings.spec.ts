@@ -8,7 +8,7 @@ import { TestHelper } from '../utils/test-helper';
  * Tests the admin-only integration settings page (/integration-settings).
  * Verifies:
  * - Admin access and page rendering
- * - Tab navigation (OIDC, Google, Microsoft, SAML, Purview)
+ * - Tab navigation (OIDC, Google, Microsoft, SAML, Directory Sync, Purview, Lineage)
  * - Settings display with source tags
  * - Settings update via PUT API
  * - Sensitive value masking
@@ -49,21 +49,29 @@ test.describe('Integration Settings - Page Rendering', () => {
     await expect(title).toBeVisible({ timeout: 10000 });
   });
 
-  test('should display all five tabs', async ({ page }) => {
+  test('should display all seven tabs', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
     await page.waitForTimeout(3000);
 
     const tabs = page.locator('.ant-tabs-tab');
     const tabCount = await tabs.count();
     console.log(`Found ${tabCount} tabs`);
-    expect(tabCount).toBe(5);
+    expect(tabCount).toBe(7);
 
-    // Verify tab labels
-    const expectedTabs = ['OIDC', 'Google', 'Microsoft', 'SAML', 'Purview'];
-    for (const tabName of expectedTabs) {
-      const tab = tabs.filter({ hasText: new RegExp(tabName, 'i') });
+    // Verify tab labels (i18n-safe: match English or Japanese)
+    const expectedTabs = [
+      /OIDC/i,
+      /Google/i,
+      /Microsoft/i,
+      /SAML/i,
+      /Directory|ディレクトリ/i,
+      /Purview/i,
+      /Lineage/i,
+    ];
+    for (const tabPattern of expectedTabs) {
+      const tab = tabs.filter({ hasText: tabPattern });
       await expect(tab).toBeVisible({ timeout: 5000 });
-      console.log(`Tab '${tabName}' found`);
+      console.log(`Tab '${tabPattern}' found`);
     }
   });
 
@@ -239,8 +247,8 @@ test.describe('Integration Settings - API', () => {
     console.log(`OIDC sources: ${JSON.stringify(data.sources)}`);
   });
 
-  test('should return all five setting groups', async ({ page }) => {
-    const groups = ['oidc', 'google-auth', 'microsoft-auth', 'saml', 'purview'];
+  test('should return all seven setting groups', async ({ page }) => {
+    const groups = ['oidc', 'google-auth', 'microsoft-auth', 'saml', 'directory-sync', 'purview', 'lineage'];
     for (const group of groups) {
       const response = await page.request.get(
         `${BASE_URL}/core/api/v1/admin/integration-settings/${group}`,
