@@ -220,6 +220,7 @@ import { WebhookManagement } from './components/WebhookManagement/WebhookManagem
 import { CloudDirectorySync } from './components/CloudDirectorySync/CloudDirectorySync';
 import { ConfigViewer } from './components/ConfigViewer/ConfigViewer';
 import { IntegrationSettings } from './components/IntegrationSettings/IntegrationSettings';
+import LineageJournalPage from './components/LineageJournal/LineageJournalPage';
 import { PurviewManagement } from './components/PurviewManagement/PurviewManagement';
 import { RssTokenManagement } from './components/RssTokenManagement/RssTokenManagement';
 import { AccountSettings } from './components/AccountSettings/AccountSettings';
@@ -471,6 +472,13 @@ function AppRoutes() {
             <ProtectedRoute>
               <AdminRoute>
                 <IntegrationSettings repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/lineage-journal" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <LineageJournalPage />
               </AdminRoute>
             </ProtectedRoute>
           } />

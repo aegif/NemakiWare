@@ -103,7 +103,11 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         }
     }
 
-    private CloudantClientWrapper getLineageClient() {
+    /**
+     * Returns the lineage database client, ensuring the DB is provisioned.
+     * Package-private so that sibling stores (dead-letter, cursor) can reuse it.
+     */
+    CloudantClientWrapper getLineageClient() {
         if (lineageClient == null) {
             ensureDatabase();
         }
@@ -188,6 +192,28 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         client.createOrUpdateView(DESIGN_DOC, "by_repository_and_process_type",
                 "function(doc) { if (doc.type === 'lineage_event' && doc.repositoryId && doc.processType) { " +
                         "emit([doc.repositoryId, doc.processType], null); } }",
+                null);
+
+        // View 7: dead_letter_by_time — dead-letter events ordered by time
+        client.createOrUpdateView(DESIGN_DOC, "dead_letter_by_time",
+                "function(doc) { if (doc.type === 'lineage_dead_letter') { emit(doc.recordedAt, null); } }",
+                null);
+
+        // View 8: dead_letter_by_replayed — dead-letter events grouped by replayed status
+        client.createOrUpdateView(DESIGN_DOC, "dead_letter_by_replayed",
+                "function(doc) { if (doc.type === 'lineage_dead_letter') { emit([doc.replayed || false, doc.recordedAt], null); } }",
+                "_count");
+
+        // View 9: by_target_status_time — target+status+occurredAt for oldest-first queries
+        client.createOrUpdateView(DESIGN_DOC, "by_target_status_time",
+                "function(doc) { if (doc.type === 'lineage_event' && doc.publishStatusByTarget && doc.occurredAt) { " +
+                        "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { emit([k, t[k], doc.occurredAt], null); } } } }",
+                null);
+
+        // View 10: by_repository_and_sequence — projection cursor sequence ordering
+        client.createOrUpdateView(DESIGN_DOC, "by_repository_and_sequence",
+                "function(doc) { if (doc.type === 'lineage_event' && doc.repositoryId && doc.sequenceNumber) { " +
+                        "emit([doc.repositoryId, doc.sequenceNumber], null); } }",
                 null);
 
         logger.info("Lineage journal views deployed to design document '{}'", DESIGN_DOC);
@@ -556,6 +582,20 @@ public class CouchLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
+    public List<LineageEvent> findByTargetAndStatusOldestFirst(String target, LineagePublishStatus status, int limit) {
+        if (!ensureClientForRead()) {
+            return List.of();
+        }
+        Map<String, Object> params = new HashMap<>();
+        // by_target_status_time key: [target, status, occurredAt] — ascending = oldest first
+        params.put("startkey", List.of(target, status.name(), ""));
+        params.put("endkey", List.of(target, status.name(), "\ufff0"));
+        params.put("limit", limit);
+        params.put("include_docs", true);
+        return queryEventsFromView("by_target_status_time", params);
+    }
+
+    @Override
     public int reapStaleProjecting(String target, int staleMinutes) {
         if (!ensureClientForRead()) {
             return 0;
@@ -618,6 +658,50 @@ public class CouchLineageJournalStore implements LineageJournalStore {
             logger.debug("Error reading retry count for event {}: {}", eventId, e.getMessage());
             return 0;
         }
+    }
+
+
+
+    @Override
+    public List<LineageEvent> findByDateRange(String start, String end, int limit, int offset) {
+        if (!ensureClientForRead()) return List.of();
+        int cappedLimit = Math.min(Math.max(limit, 1), 200);
+        return queryEventsFromView("by_occurred_at", start, end, false, cappedLimit, offset);
+    }
+
+    @Override
+    public List<LineageEvent> findByRepositoryAndSequenceRange(String repositoryId, long fromSequence, int limit) {
+        if (!ensureClientForRead()) return List.of();
+        int cappedLimit = Math.min(Math.max(limit, 1), 200);
+
+        // by_repository_and_sequence view key = [repositoryId, sequenceNumber]
+        // Query: startkey=[repoId, fromSequence+1], endkey=[repoId, {}], ascending
+        Map<String, Object> params = new HashMap<>();
+        params.put("startkey", List.of(repositoryId, fromSequence + 1));
+        params.put("endkey", List.of(repositoryId, new LinkedHashMap<>())); // {} sorts after all numbers
+        params.put("limit", cappedLimit);
+        params.put("include_docs", true);
+        params.put("reduce", false);
+        return queryEventsFromView("by_repository_and_sequence", params);
+    }
+
+    @Override
+    public long getEstimatedNonTerminalSizeBytes(String target) {
+        if (!isActive()) return 0;
+        try {
+            DatabaseInformation dbInfo = getLineageClient().getDatabaseInfo();
+            if (dbInfo != null && dbInfo.getSizes() != null) {
+                long activeSize = dbInfo.getSizes().getActive();
+                long totalDocs = dbInfo.getDocCount();
+                if (totalDocs == 0) return 0;
+                long nonTerminal = countNonTerminalByTarget(target);
+                return (long) ((double) nonTerminal / totalDocs * activeSize);
+            }
+        } catch (Exception e) {
+            logger.debug("Failed to get database info for size estimation, falling back to count-based", e);
+        }
+        // Fallback: count × estimated average size
+        return countNonTerminalByTarget(target) * 2048;
     }
 
     @Override
@@ -732,6 +816,21 @@ public class CouchLineageJournalStore implements LineageJournalStore {
             logger.error("Error querying lineage view {}: {}", viewName, e.getMessage(), e);
             return List.of();
         }
+    }
+
+    /**
+     * Convenience overload for range queries on single-key views.
+     */
+    private List<LineageEvent> queryEventsFromView(String viewName, String startKey, String endKey,
+                                                    boolean descending, int limit, int offset) {
+        Map<String, Object> params = new HashMap<>();
+        if (startKey != null) params.put(descending ? "endkey" : "startkey", startKey);
+        if (endKey != null) params.put(descending ? "startkey" : "endkey", endKey);
+        params.put("descending", descending);
+        params.put("limit", limit);
+        if (offset > 0) params.put("skip", offset);
+        params.put("include_docs", true);
+        return queryEventsFromView(viewName, params);
     }
 
     /**

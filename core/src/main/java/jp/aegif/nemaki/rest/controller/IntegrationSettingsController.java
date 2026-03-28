@@ -94,7 +94,24 @@ public class IntegrationSettingsController {
 			"lineage.backlog.max-retry-count",
 			"lineage.backlog.max-retry-age-hours",
 			"lineage.backlog.max-docs",
-			"lineage.backlog.max-size-mb"
+			"lineage.backlog.max-size-mb",
+			"lineage.leader-election.enabled",
+			"lineage.leader-election.heartbeat-seconds",
+			"lineage.leader-election.ttl-seconds"
+	));
+
+	private static final Set<String> ATLAS_KEYS = new LinkedHashSet<>(Arrays.asList(
+			"atlas.enabled",
+			"atlas.endpoint",
+			"atlas.username",
+			"atlas.password"
+	));
+
+	private static final Set<String> DATAPLEX_KEYS = new LinkedHashSet<>(Arrays.asList(
+			"dataplex.enabled",
+			"dataplex.project-id",
+			"dataplex.location",
+			"dataplex.credentials-file"
 	));
 
 	/**
@@ -112,14 +129,18 @@ public class IntegrationSettingsController {
 			Map.entry("lineage.backlog.max-retry-count", "5"),
 			Map.entry("lineage.backlog.max-retry-age-hours", "72"),
 			Map.entry("lineage.backlog.max-docs", "10000"),
-			Map.entry("lineage.backlog.max-size-mb", "100")
+			Map.entry("lineage.backlog.max-size-mb", "100"),
+			Map.entry("lineage.leader-election.enabled", "false"),
+			Map.entry("lineage.leader-election.heartbeat-seconds", "15"),
+			Map.entry("lineage.leader-election.ttl-seconds", "60")
 	);
 
 	// Keys whose values should be masked in GET responses
 	private static final Set<String> SENSITIVE_KEYS = new LinkedHashSet<>(Arrays.asList(
 			"saml.idp.certificate",
 			"purview.client.secret",
-			"purview.basic.password"
+			"purview.basic.password",
+			"atlas.password"
 	));
 
 	private final IntegrationSettingsService settingsService;
@@ -249,6 +270,38 @@ public class IntegrationSettingsController {
 		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
 		if (forbidden != null) return forbidden;
 		return handleUpdate(LINEAGE_KEYS, body, LINEAGE_DEFAULTS);
+	}
+
+	// ==================== Atlas ====================
+
+	@GetMapping("/atlas")
+	public ResponseEntity<Map<String, Object>> getAtlasSettings() {
+		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+		if (forbidden != null) return forbidden;
+		return ResponseEntity.ok(buildSettingsResponse(ATLAS_KEYS));
+	}
+
+	@PutMapping("/atlas")
+	public ResponseEntity<Map<String, Object>> updateAtlasSettings(@RequestBody Map<String, String> body) {
+		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+		if (forbidden != null) return forbidden;
+		return handleUpdate(ATLAS_KEYS, body);
+	}
+
+	// ==================== Dataplex ====================
+
+	@GetMapping("/dataplex")
+	public ResponseEntity<Map<String, Object>> getDataplexSettings() {
+		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+		if (forbidden != null) return forbidden;
+		return ResponseEntity.ok(buildSettingsResponse(DATAPLEX_KEYS));
+	}
+
+	@PutMapping("/dataplex")
+	public ResponseEntity<Map<String, Object>> updateDataplexSettings(@RequestBody Map<String, String> body) {
+		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+		if (forbidden != null) return forbidden;
+		return handleUpdate(DATAPLEX_KEYS, body);
 	}
 
 	// ==================== Connection Tests ====================

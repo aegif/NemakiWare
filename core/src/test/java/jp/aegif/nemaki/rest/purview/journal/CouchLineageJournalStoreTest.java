@@ -1,5 +1,7 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
+import com.ibm.cloud.cloudant.v1.model.ContentInformationSizes;
+import com.ibm.cloud.cloudant.v1.model.DatabaseInformation;
 import com.ibm.cloud.cloudant.v1.model.Document;
 import com.ibm.cloud.cloudant.v1.model.DocumentResult;
 import com.ibm.cloud.cloudant.v1.model.ViewResult;
@@ -600,5 +602,76 @@ class CouchLineageJournalStoreTest {
         doReturn(doc).when(mockClient).get(eq(Map.class), eq("lineage:evt-7"), isNull());
 
         assertEquals(0, store.getRetryCount("evt-7", "purview"));
+    }
+
+    @Test
+    void getEstimatedNonTerminalSizeBytes_usesDbInfo() {
+        // Mock DatabaseInformation with ContentInformationSizes
+        DatabaseInformation dbInfo = mock(DatabaseInformation.class);
+        ContentInformationSizes sizes = mock(ContentInformationSizes.class);
+        when(sizes.getActive()).thenReturn(1_000_000L);
+        when(dbInfo.getSizes()).thenReturn(sizes);
+        when(dbInfo.getDocCount()).thenReturn(100L);
+        when(mockClient.getDatabaseInfo()).thenReturn(dbInfo);
+
+        // Mock countNonTerminalByTarget via queryView (3-param overload)
+        // Each non-terminal status query returns count=10 (PENDING, PROJECTING, FAILED → 3 calls)
+        // But we only need total nonTerminal=10, so mock each call to return ~3.33
+        // Simpler: return 10 for one status, 0 for others is tricky since it loops.
+        // Actually: countNonTerminalByTarget sums queryTargetStatusCount for each non-terminal status.
+        // queryTargetStatusCount calls queryView("lineage", "by_target_status", params) with reduce=true.
+        // Mock all calls to return ViewResult with value=10 (so 3 statuses × 10 = 30 would be total)
+        // But we want nonTerminal=10 → return ~3 per call? Let's just mock to return 10
+        // and adjust expected: nonTerminal=30, totalDocs=100, activeSize=1MB → 300,000
+        ViewResult countResult = mock(ViewResult.class);
+        ViewResultRow countRow = mock(ViewResultRow.class);
+        when(countRow.getValue()).thenReturn(10L);
+        when(countResult.getRows()).thenReturn(List.of(countRow));
+        doReturn(countResult).when(mockClient).queryView(eq("lineage"), eq("by_target_status"), any(Map.class));
+
+        long result = store.getEstimatedNonTerminalSizeBytes("purview");
+        // 3 non-terminal statuses × 10 each = 30 nonTerminal, 100 totalDocs, 1MB active
+        // (30.0 / 100) * 1_000_000 = 300_000
+        assertEquals(300_000L, result);
+    }
+
+    @Test
+    void findByTargetAndStatusOldestFirst_queriesTimeView() {
+        ViewResult viewResult = mock(ViewResult.class);
+        ViewResultRow row = mock(ViewResultRow.class);
+
+        Map<String, Object> docProps = new HashMap<>();
+        docProps.put("eventId", "evt-old");
+        docProps.put("type", "lineage_event");
+        docProps.put("repositoryId", "bedroom");
+        docProps.put("occurredAt", "2024-01-01T00:00:00Z");
+        docProps.put("processType", "IMPORT_UPLOADED");
+        Map<String, String> statusMap = new LinkedHashMap<>();
+        statusMap.put("purview", "PENDING");
+        docProps.put("publishStatusByTarget", statusMap);
+
+        when(row.getDoc()).thenReturn(toDocument(docProps));
+        when(viewResult.getRows()).thenReturn(List.of(row));
+        doReturn(viewResult).when(mockClient).queryView(eq("lineage"), eq("by_target_status_time"), any(Map.class));
+
+        List<LineageEvent> results = store.findByTargetAndStatusOldestFirst("purview", LineagePublishStatus.PENDING, 10);
+        assertEquals(1, results.size());
+        assertEquals("evt-old", results.get(0).eventId());
+    }
+
+    @Test
+    void getEstimatedNonTerminalSizeBytes_fallsBackWhenDbInfoNull() {
+        when(mockClient.getDatabaseInfo()).thenReturn(null);
+
+        // Mock countNonTerminalByTarget via queryView (3-param overload)
+        ViewResult countResult = mock(ViewResult.class);
+        ViewResultRow countRow = mock(ViewResultRow.class);
+        when(countRow.getValue()).thenReturn(5L);
+        when(countResult.getRows()).thenReturn(List.of(countRow));
+        doReturn(countResult).when(mockClient).queryView(eq("lineage"), eq("by_target_status"), any(Map.class));
+
+        long result = store.getEstimatedNonTerminalSizeBytes("purview");
+        // 3 non-terminal statuses × 5 each = 15, fallback: 15 × 2048 = 30720
+        assertEquals(30_720L, result);
     }
 }

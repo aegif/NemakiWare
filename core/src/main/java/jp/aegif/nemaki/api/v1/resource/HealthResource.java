@@ -57,6 +57,12 @@ public class HealthResource {
     @Autowired(required = false)
     private PropertyManager propertyManager;
 
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageConfig lineageConfig;
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageJournalStore lineageJournalStore;
+
     @GET
     @Operation(
             summary = "Get system health status",
@@ -85,6 +91,11 @@ public class HealthResource {
 
         HealthCheckResult memoryCheck = checkMemory();
         response.addCheck("memory", memoryCheck);
+
+        HealthCheckResult lineageCheck = checkLineage();
+        if (lineageCheck != null) {
+            response.addCheck("lineage", lineageCheck);
+        }
 
         String overallStatus = calculateOverallStatus(response.getChecks());
         response.setStatus(overallStatus);
@@ -166,6 +177,50 @@ public class HealthResource {
         }
 
         return result;
+    }
+
+    /**
+     * Check lineage journal health. Returns null if lineage is not configured.
+     */
+    private HealthCheckResult checkLineage() {
+        if (lineageConfig == null) return null;
+
+        try {
+            String mode = lineageConfig.getMode().name().toLowerCase();
+            if ("disabled".equals(mode)) return null;
+
+            HealthCheckResult result = new HealthCheckResult();
+            result.addDetail("mode", mode);
+
+            boolean storeActive = lineageJournalStore != null && lineageJournalStore.isActive();
+            result.addDetail("storeActive", storeActive);
+
+            if ("journaled".equals(mode) && !storeActive) {
+                result.setStatus("down");
+                result.setError("Journaled mode enabled but journal store is not active");
+                return result;
+            }
+
+            // Check backlog for warning
+            if (storeActive) {
+                int maxDocs = lineageConfig.getBacklogMaxDocs();
+                for (String target : lineageConfig.getTargets()) {
+                    long nonTerminal = lineageJournalStore.countNonTerminalByTarget(target);
+                    if (maxDocs > 0 && nonTerminal > maxDocs * 0.8) {
+                        result.addDetail("warning", "Backlog for '" + target + "' at " +
+                                (nonTerminal * 100 / maxDocs) + "% capacity (" + nonTerminal + "/" + maxDocs + ")");
+                    }
+                }
+            }
+
+            result.setStatus("up");
+            return result;
+        } catch (Exception e) {
+            HealthCheckResult result = new HealthCheckResult();
+            result.setStatus("down");
+            result.setError("Lineage health check failed: " + e.getMessage());
+            return result;
+        }
     }
 
     /**

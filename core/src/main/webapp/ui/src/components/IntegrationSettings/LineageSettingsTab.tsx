@@ -47,6 +47,9 @@ export function LineageSettingsTab() {
     { key: 'lineage.projection.poll-interval-seconds', labelKey: 'integrationSettings.lineage.projectionPollInterval', type: 'text' as const, placeholder: '10', helpKey: 'integrationSettings.lineage.projectionPollIntervalHelp' },
     { key: 'lineage.projection.batch-size', labelKey: 'integrationSettings.lineage.projectionBatchSize', type: 'text' as const, placeholder: '50', helpKey: 'integrationSettings.lineage.projectionBatchSizeHelp' },
     { key: 'lineage.projection.stale-threshold-minutes', labelKey: 'integrationSettings.lineage.projectionStaleThreshold', type: 'text' as const, placeholder: '5', helpKey: 'integrationSettings.lineage.projectionStaleThresholdHelp' },
+    { key: 'lineage.leader-election.enabled', labelKey: 'integrationSettings.lineage.leaderElectionEnabled', type: 'boolean' as const, helpKey: 'integrationSettings.lineage.leaderElectionEnabledHelp' },
+    { key: 'lineage.leader-election.heartbeat-seconds', labelKey: 'integrationSettings.lineage.leaderHeartbeatSeconds', type: 'text' as const, placeholder: '15', helpKey: 'integrationSettings.lineage.leaderHeartbeatSecondsHelp' },
+    { key: 'lineage.leader-election.ttl-seconds', labelKey: 'integrationSettings.lineage.leaderTtlSeconds', type: 'text' as const, placeholder: '60', helpKey: 'integrationSettings.lineage.leaderTtlSecondsHelp' },
   ], []);
 
   const onSave = async () => {

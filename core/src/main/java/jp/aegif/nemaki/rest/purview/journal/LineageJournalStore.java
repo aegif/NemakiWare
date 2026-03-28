@@ -372,5 +372,56 @@ public interface LineageJournalStore {
      */
     int getRetryCount(String eventId, String target);
 
+
+
+    /**
+     * Returns events within the given date range, ordered by occurredAt ascending.
+     *
+     * @param start  start of range (inclusive), ISO-8601 string
+     * @param end    end of range (inclusive), ISO-8601 string
+     * @param limit  maximum number of events to return
+     * @param offset number of events to skip
+     * @return list of events within the date range
+     */
+    List<LineageEvent> findByDateRange(String start, String end, int limit, int offset);
+
+    /**
+     * Estimates the total size in bytes of non-terminal events for the given target.
+     *
+     * <p>Uses database-level size information (e.g. CouchDB active size) and
+     * proportional scaling based on the ratio of non-terminal to total documents.
+     * Falls back to {@code countNonTerminalByTarget(target) * 2048} if database
+     * size information is unavailable.
+     *
+     * @param target the target sink name (e.g. "purview")
+     * @return estimated size in bytes, or 0 if the store is inactive
+     */
+    long getEstimatedNonTerminalSizeBytes(String target);
+
+    /**
+     * Returns events for a specific target and publish status, ordered by occurredAt ascending (oldest first).
+     *
+     * <p>Used by the backlog overflow discard logic to ensure oldest events are discarded first.
+     *
+     * @param target the target sink name (e.g. "purview")
+     * @param status the publish status to filter by
+     * @param limit  maximum number of events to return
+     * @return list of events ordered oldest-first (empty if store is inactive)
+     */
+    List<LineageEvent> findByTargetAndStatusOldestFirst(String target, LineagePublishStatus status, int limit);
+
+    /**
+     * Finds events by repository ID and sequence range, ordered by sequence number.
+     *
+     * <p>Returns events where {@code repositoryId} matches and
+     * {@code sequenceNumber > fromSequence}, ordered ascending by sequence.
+     *
+     * @param repositoryId the repository to query
+     * @param fromSequence the exclusive lower bound of the sequence range
+     * @param limit maximum number of events to return
+     * @return list of events in sequence order
+     */
+    List<LineageEvent> findByRepositoryAndSequenceRange(String repositoryId, long fromSequence, int limit);
+
     boolean isActive();
 }

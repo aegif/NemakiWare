@@ -9,8 +9,10 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -31,8 +33,6 @@ public class LineageProjectionLoop {
 
     private static final Logger logger = LoggerFactory.getLogger(LineageProjectionLoop.class);
     private static final int CONFIG_CHECK_INTERVAL_SECONDS = 60;
-    /** Estimated average event document size in bytes (JSON with snapshot attributes). */
-    private static final long ESTIMATED_EVENT_SIZE_BYTES = 2048;
 
     @Autowired
     private LineageConfig lineageConfig;
@@ -43,11 +43,30 @@ public class LineageProjectionLoop {
     @Autowired(required = false)
     private List<LineageTargetSink> targetSinks;
 
+    @Autowired(required = false)
+    private LineageMetrics lineageMetrics;
+
+    @Autowired(required = false)
+    private LineageDeadLetterStore deadLetterStore;
+
+    @Autowired(required = false)
+    private LeaderElection leaderElection;
+
+    @Autowired(required = false)
+    private ProjectionCursorStore cursorStore;
+
     private ScheduledExecutorService scheduler;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     @PostConstruct
     public void init() {
+        if (lineageMetrics != null) {
+            LineageDeadLetterSink.setMetrics(lineageMetrics);
+        }
+        if (deadLetterStore != null) {
+            LineageDeadLetterSink.setStore(deadLetterStore);
+        }
+
         scheduler = Executors.newScheduledThreadPool(2, r -> {
             Thread t = new Thread(r, "LineageProjectionLoop");
             t.setDaemon(true);
@@ -79,13 +98,20 @@ public class LineageProjectionLoop {
      * <ol>
      *   <li>Enforce backlog thresholds (auto-discard overflows)</li>
      *   <li>Reap stale PROJECTING events</li>
-     *   <li>Project PENDING events</li>
+     *   <li>Project PENDING events (ordered if cursor store available)</li>
      *   <li>Retry FAILED events</li>
      * </ol>
      */
     void pollAndProject() {
         try {
             if (!journalStore.isActive()) {
+                return;
+            }
+
+            // Leader election guard: only the leader node runs projection
+            if (leaderElection != null && leaderElection.isEnabled()
+                    && !leaderElection.isLeader("projection")) {
+                logger.debug("Not the leader for 'projection' — skipping poll cycle");
                 return;
             }
 
@@ -109,11 +135,20 @@ public class LineageProjectionLoop {
                 try {
                     enforceBacklogThresholds(targetName);
                     reapStaleProjecting(targetName);
-                    projectEvents(targetName, sink, LineagePublishStatus.PENDING);
-                    projectEvents(targetName, sink, LineagePublishStatus.FAILED);
+
+                    // Use cursor-based ordered processing if cursor store is available
+                    if (cursorStore != null && cursorStore.isActive()) {
+                        projectEventsOrdered(targetName, sink);
+                    } else {
+                        projectEvents(targetName, sink, LineagePublishStatus.PENDING);
+                        projectEvents(targetName, sink, LineagePublishStatus.FAILED);
+                    }
                 } catch (Exception e) {
                     logger.warn("Error during projection for target '{}': {}", targetName, e.getMessage());
                 }
+            }
+            if (lineageMetrics != null) {
+                lineageMetrics.recordPollComplete(configuredTargets.size());
             }
         } catch (Exception e) {
             logger.warn("Error in projection poll cycle: {}", e.getMessage());
@@ -143,6 +178,7 @@ public class LineageProjectionLoop {
 
                 if (result.success()) {
                     journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.PUBLISHED);
+                    if (lineageMetrics != null) lineageMetrics.recordPublish(targetName);
                     logger.debug("Published event to '{}': eventKey={}, entities={}",
                             targetName, event.eventKey(), result.entityCount());
                 } else {
@@ -155,11 +191,120 @@ public class LineageProjectionLoop {
     }
 
     /**
+     * Cursor-based ordered projection for a target.
+     *
+     * <p>For each repository, fetches events in sequence order starting from
+     * the cursor position. Processing stops at the first failure to maintain
+     * strict ordering guarantees.
+     *
+     * <p>Sequence order:
+     * <ol>
+     *   <li>Get all cursor positions for this target</li>
+     *   <li>For each (target, repositoryId) pair, fetch events after cursor</li>
+     *   <li>Terminal events → advance cursor, skip</li>
+     *   <li>PENDING/FAILED → CAS claim → publish → advance cursor</li>
+     *   <li>Failure → stop processing this repository (preserve order)</li>
+     *   <li>PROJECTING by other node → stop processing this repository</li>
+     * </ol>
+     */
+    private void projectEventsOrdered(String targetName, LineageTargetSink sink) {
+        int batchSize = lineageConfig.getProjectionBatchSize();
+
+        // Collect distinct repository IDs from cursor store + pending events
+        Set<String> repositoryIds = new LinkedHashSet<>();
+        List<ProjectionCursor> cursors = cursorStore.getAllCursors();
+        for (ProjectionCursor c : cursors) {
+            if (targetName.equals(c.target())) {
+                repositoryIds.add(c.repositoryId());
+            }
+        }
+
+        // Also check for PENDING and FAILED events that may have no cursor yet
+        List<LineageEvent> pending = journalStore.findByTargetAndStatus(targetName, LineagePublishStatus.PENDING, batchSize);
+        for (LineageEvent e : pending) {
+            if (e.repositoryId() != null) repositoryIds.add(e.repositoryId());
+        }
+        List<LineageEvent> failed = journalStore.findByTargetAndStatus(targetName, LineagePublishStatus.FAILED, batchSize);
+        for (LineageEvent e : failed) {
+            if (e.repositoryId() != null) repositoryIds.add(e.repositoryId());
+        }
+
+        for (String repositoryId : repositoryIds) {
+            projectEventsOrderedForRepo(targetName, sink, repositoryId, batchSize);
+        }
+    }
+
+    /**
+     * Process events in sequence order for a single (target, repository) pair.
+     */
+    private void projectEventsOrderedForRepo(String targetName, LineageTargetSink sink,
+                                              String repositoryId, int batchSize) {
+        ProjectionCursor cursor = cursorStore.getCursor(targetName, repositoryId);
+        long fromSeq = (cursor != null) ? cursor.lastProcessedSequence() : 0;
+
+        List<LineageEvent> events = journalStore.findByRepositoryAndSequenceRange(repositoryId, fromSeq, batchSize);
+
+        for (LineageEvent event : events) {
+            // Check the status for this target
+            LineagePublishStatus status = event.publishStatusByTarget().getOrDefault(targetName, LineagePublishStatus.PENDING);
+
+            // Already terminal → advance cursor, continue
+            if (status.isTerminal()) {
+                advanceCursor(targetName, repositoryId, event.sequenceNumber());
+                continue;
+            }
+
+            // PROJECTING by another node → stop for this repo
+            if (status == LineagePublishStatus.PROJECTING) {
+                logger.debug("Event {} is PROJECTING by another node — stopping ordered projection for repo '{}'",
+                        event.eventKey(), repositoryId);
+                break;
+            }
+
+            // PENDING or FAILED → try to claim and publish
+            try {
+                int claimed = journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.PROJECTING);
+                if (claimed == 0) {
+                    // Another node claimed it — stop to preserve order
+                    break;
+                }
+
+                LineageTargetSinkResult result = sink.publish(event);
+
+                if (result.success()) {
+                    journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.PUBLISHED);
+                    if (lineageMetrics != null) lineageMetrics.recordPublish(targetName);
+                    advanceCursor(targetName, repositoryId, event.sequenceNumber());
+                    logger.debug("Published event (ordered) to '{}': eventKey={}, seq={}",
+                            targetName, event.eventKey(), event.sequenceNumber());
+                } else {
+                    // Publish failed — stop processing this repo to preserve order
+                    handlePublishFailure(event, targetName, result.message());
+                    break;
+                }
+            } catch (Exception e) {
+                handlePublishFailure(event, targetName, e.getMessage());
+                break;
+            }
+        }
+    }
+
+    private void advanceCursor(String targetName, String repositoryId, long sequenceNumber) {
+        try {
+            ProjectionCursor updated = new ProjectionCursor(targetName, repositoryId, sequenceNumber, java.time.Instant.now());
+            cursorStore.updateCursor(updated);
+        } catch (Exception e) {
+            logger.warn("Failed to advance cursor for target='{}', repo='{}': {}", targetName, repositoryId, e.getMessage());
+        }
+    }
+
+    /**
      * Handles a publish failure: transitions to FAILED, checks retry limits,
      * and writes to dead-letter if needed. Auto-discards if max retries exceeded.
      */
     private void handlePublishFailure(LineageEvent event, String targetName, String errorMessage) {
         journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.FAILED);
+        if (lineageMetrics != null) lineageMetrics.recordFail(targetName);
 
         // Check retry count limit — auto-discard if exceeded
         int maxRetries = lineageConfig.getBacklogMaxRetryCount();
@@ -171,6 +316,7 @@ public class LineageProjectionLoop {
                 LineageDeadLetterSink.record(event,
                         "auto-discard:max-retry-count:" + retryCount + ":" + targetName);
                 journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.DISCARDED);
+                if (lineageMetrics != null) lineageMetrics.recordDiscard();
                 return;
             }
         }
@@ -232,24 +378,30 @@ public class LineageProjectionLoop {
             }
         }
 
-        // 3. Max size (MB) — estimated from document count × average event size
+        // 3. Max size (MB) — uses real DB size proportional estimation
         int maxSizeMb = lineageConfig.getBacklogMaxSizeMb();
         if (maxSizeMb > 0) {
-            long count = journalStore.countNonTerminalByTarget(targetName);
-            // Estimate ~2KB per event document (JSON with snapshot attributes)
-            long estimatedSizeBytes = count * ESTIMATED_EVENT_SIZE_BYTES;
+            long estimatedSizeBytes = journalStore.getEstimatedNonTerminalSizeBytes(targetName);
             long maxSizeBytes = (long) maxSizeMb * 1024 * 1024;
             if (estimatedSizeBytes > maxSizeBytes) {
-                long targetCount = maxSizeBytes / ESTIMATED_EVENT_SIZE_BYTES;
+                long count = journalStore.countNonTerminalByTarget(targetName);
+                long avgPerDoc = count > 0 ? estimatedSizeBytes / count : 2048;
+                long targetCount = avgPerDoc > 0 ? maxSizeBytes / avgPerDoc : count;
                 long excess = count - targetCount;
-                logger.warn("Backlog for target '{}' exceeds max-size ({} MB est. / {} MB limit), discarding {} oldest",
-                        targetName, estimatedSizeBytes / (1024 * 1024), maxSizeMb, excess);
-                discardOldest(targetName, LineagePublishStatus.PENDING, (int) excess);
-                count = journalStore.countNonTerminalByTarget(targetName);
-                long newEstimate = count * ESTIMATED_EVENT_SIZE_BYTES;
-                if (newEstimate > maxSizeBytes) {
-                    long remaining = count - (maxSizeBytes / ESTIMATED_EVENT_SIZE_BYTES);
-                    discardOldest(targetName, LineagePublishStatus.FAILED, (int) remaining);
+                if (excess > 0) {
+                    logger.warn("Backlog for target '{}' exceeds max-size ({} MB est. / {} MB limit), discarding {} oldest",
+                            targetName, estimatedSizeBytes / (1024 * 1024), maxSizeMb, excess);
+                    discardOldest(targetName, LineagePublishStatus.PENDING, (int) excess);
+                    // Recheck after discard
+                    long newEstimate = journalStore.getEstimatedNonTerminalSizeBytes(targetName);
+                    if (newEstimate > maxSizeBytes) {
+                        long newCount = journalStore.countNonTerminalByTarget(targetName);
+                        long newAvg = newCount > 0 ? newEstimate / newCount : 2048;
+                        long remaining = newAvg > 0 ? newCount - (maxSizeBytes / newAvg) : 0;
+                        if (remaining > 0) {
+                            discardOldest(targetName, LineagePublishStatus.FAILED, (int) remaining);
+                        }
+                    }
                 }
             }
         }
@@ -257,7 +409,7 @@ public class LineageProjectionLoop {
 
     private void discardOldest(String targetName, LineagePublishStatus status, int count) {
         if (count <= 0) return;
-        List<LineageEvent> events = journalStore.findByTargetAndStatus(targetName, status, count);
+        List<LineageEvent> events = journalStore.findByTargetAndStatusOldestFirst(targetName, status, count);
         for (LineageEvent event : events) {
             journalStore.discardEvent(event.eventId(), targetName);
             LineageDeadLetterSink.record(event, "auto-discard: backlog-overflow");

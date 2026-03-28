@@ -64,8 +64,28 @@ public final class LineageDeadLetterSink {
     private static final Logger deadLetterLogger = LoggerFactory.getLogger("LINEAGE_DEAD_LETTER");
     private static final Marker DLQ_MARKER = MarkerFactory.getMarker("LINEAGE_DEAD_LETTER");
 
+    /** Static holder for metrics — set by LineageProjectionLoop at startup. */
+    private static volatile LineageMetrics metrics;
+
+    /** Static holder for persistent dead-letter store. */
+    private static volatile LineageDeadLetterStore store;
+
     private LineageDeadLetterSink() {
         // utility class
+    }
+
+    /**
+     * Sets the metrics instance. Called once at startup.
+     */
+    public static void setMetrics(LineageMetrics metricsInstance) {
+        metrics = metricsInstance;
+    }
+
+    /**
+     * Sets the persistent dead-letter store. Called once at startup.
+     */
+    public static void setStore(LineageDeadLetterStore storeInstance) {
+        store = storeInstance;
     }
 
     /**
@@ -81,6 +101,16 @@ public final class LineageDeadLetterSink {
         try {
             String json = toCompactJson(event, reason);
             deadLetterLogger.error(DLQ_MARKER, json);
+            if (metrics != null) metrics.recordDeadLetter();
+            // Also persist to CouchDB store if available
+            if (store != null) {
+                try {
+                    store.record(event, reason);
+                } catch (Exception storeEx) {
+                    // Store persistence is best-effort; log file is the primary record
+                    deadLetterLogger.debug("Dead-letter store persistence failed: {}", storeEx.getMessage());
+                }
+            }
         } catch (Exception suppressed) {
             // Last-resort: even logging failed. Nothing more we can do.
         }

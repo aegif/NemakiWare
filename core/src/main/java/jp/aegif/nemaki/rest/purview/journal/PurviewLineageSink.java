@@ -76,6 +76,9 @@ public class PurviewLineageSink implements LineageTargetSink {
         }
         processAttrs.put("outputs", outputRefs);
 
+        // Add process-type-specific required fields
+        addProcessTypeAttributes(processAttrs, event);
+
         processEntity.put("attributes", processAttrs);
 
         // Build entity list: process + input entities + output entities
@@ -134,19 +137,29 @@ public class PurviewLineageSink implements LineageTargetSink {
     // ---------------------------------------------------------------
 
     /**
-     * Derives a Purview typeName from a nemaki URI based on path segments.
+     * Derives a Purview typeName from a URI based on scheme and path segments.
      *
-     * <p>URI format: {@code nemaki://{repositoryId}/{segment}/{objectId}}
+     * <p>Supported URI schemes:
      * <ul>
-     *   <li>{@code /objects/} → {@code nemaki_document}</li>
-     *   <li>{@code /archives/} → {@code nemaki_archive}</li>
-     *   <li>{@code /external-assets/} → {@code nemaki_external_asset}</li>
+     *   <li>{@code upload://} → {@code nemaki_external_asset}</li>
+     *   <li>{@code file://} → {@code nemaki_external_asset}</li>
+     *   <li>{@code cloud://} → {@code nemaki_external_asset}</li>
+     *   <li>{@code cold://} → {@code nemaki_external_asset}</li>
+     *   <li>{@code nemaki://.../archives/} → {@code nemaki_archive}</li>
+     *   <li>{@code nemaki://.../external-assets/} → {@code nemaki_external_asset}</li>
+     *   <li>{@code nemaki://.../objects/} → {@code nemaki_document}</li>
      * </ul>
      */
     static String inferAssetTypeName(String uri) {
         if (uri == null || uri.isEmpty()) {
             return "nemaki_document";
         }
+        // External scheme-based URIs
+        if (uri.startsWith("upload://") || uri.startsWith("file://")
+                || uri.startsWith("cloud://") || uri.startsWith("cold://")) {
+            return "nemaki_external_asset";
+        }
+        // nemaki:// path-based URIs
         if (uri.contains("/archives/")) {
             return "nemaki_archive";
         }
@@ -154,6 +167,18 @@ public class PurviewLineageSink implements LineageTargetSink {
             return "nemaki_external_asset";
         }
         return "nemaki_document";
+    }
+
+    /**
+     * Infers the sourceSystem from a URI scheme for external assets.
+     */
+    static String inferSourceSystem(String uri) {
+        if (uri == null) return "unknown";
+        if (uri.startsWith("upload://")) return "upload";
+        if (uri.startsWith("file://")) return "filesystem";
+        if (uri.startsWith("cloud://")) return "cloud-drive";
+        if (uri.startsWith("cold://")) return "cold-storage";
+        return "nemakiware";
     }
 
     /**
@@ -187,7 +212,7 @@ public class PurviewLineageSink implements LineageTargetSink {
     }
 
     /**
-     * Builds a full asset entity for the bulk payload.
+     * Builds a full asset entity for the bulk payload with type-specific required fields.
      */
     private static Map<String, Object> buildAssetEntity(String uri, Map<String, String> snapshotAttributes) {
         Map<String, Object> entity = new LinkedHashMap<>();
@@ -200,12 +225,79 @@ public class PurviewLineageSink implements LineageTargetSink {
         String name = snapshotAttributes.getOrDefault("name", extractNameFromUri(uri));
         attrs.put("name", name);
 
+        // Type-specific required fields
+        switch (typeName) {
+            case "nemaki_external_asset" -> {
+                attrs.put("externalStableKey", uri);
+                attrs.put("sourceSystem", inferSourceSystem(uri));
+                String path = extractPathFromUri(uri);
+                if (path != null) attrs.put("externalPath", path);
+            }
+            case "nemaki_archive" -> {
+                attrs.put("originalObjectId",
+                        snapshotAttributes.getOrDefault("originalId", extractLastSegment(uri)));
+                attrs.put("archiveRepositoryId",
+                        snapshotAttributes.getOrDefault("repositoryId", extractRepositoryIdFromUri(uri)));
+                attrs.put("lifecycleState", "ARCHIVED");
+            }
+            case "nemaki_document" -> {
+                attrs.put("repositoryId", extractRepositoryIdFromUri(uri));
+                attrs.put("objectId", extractLastSegment(uri));
+            }
+            default -> { /* no additional fields */ }
+        }
+
         entity.put("attributes", attrs);
         return entity;
     }
 
     /**
-     * Extracts a display name from a nemaki URI (last path segment).
+     * Adds process-type-specific required fields to the process entity attributes.
+     */
+    private static void addProcessTypeAttributes(Map<String, Object> processAttrs,
+                                                  LineageEvent event) {
+        if (event.processType() == null) return;
+        Map<String, String> snap = event.snapshotAttributes();
+
+        switch (event.processType()) {
+            case IMPORT_FILESYSTEM, IMPORT_UPLOADED -> {
+                processAttrs.putIfAbsent("repositoryId", event.repositoryId());
+                if (!event.outputs().isEmpty()) {
+                    processAttrs.putIfAbsent("folderId", extractLastSegment(event.outputs().get(0)));
+                }
+                processAttrs.putIfAbsent("importMode", snap.getOrDefault("importMode", "uploaded"));
+            }
+            case EXPORT_FILESYSTEM, EXPORT_ZIP_FOLDER, EXPORT_SELECTED_OBJECTS -> {
+                processAttrs.putIfAbsent("repositoryId", event.repositoryId());
+                processAttrs.putIfAbsent("exportMode", event.processType().name().toLowerCase());
+            }
+            case CLOUD_SYNC_UPLOAD, CLOUD_SYNC_DOWNLOAD -> {
+                processAttrs.putIfAbsent("repositoryId", event.repositoryId());
+                if (!event.outputs().isEmpty()) {
+                    processAttrs.putIfAbsent("objectId", extractLastSegment(event.outputs().get(0)));
+                }
+                processAttrs.putIfAbsent("cloudProvider", snap.getOrDefault("provider", "unknown"));
+                // Find cloud:// URI in inputs or outputs for externalStableKey
+                for (String uri : event.inputs()) {
+                    if (uri.startsWith("cloud://")) { processAttrs.putIfAbsent("externalStableKey", uri); break; }
+                }
+                for (String uri : event.outputs()) {
+                    if (uri.startsWith("cloud://")) { processAttrs.putIfAbsent("externalStableKey", uri); break; }
+                }
+            }
+            case ARCHIVE_COLD, ARCHIVE_LOCAL -> {
+                processAttrs.putIfAbsent("repositoryId", event.repositoryId());
+                if (!event.outputs().isEmpty()) {
+                    String outputUri = event.outputs().get(0);
+                    processAttrs.putIfAbsent("archiveId", extractLastSegment(outputUri));
+                    processAttrs.putIfAbsent("externalStableKey", outputUri);
+                }
+            }
+        }
+    }
+
+    /**
+     * Extracts a display name from a URI (last path segment).
      */
     static String extractNameFromUri(String uri) {
         if (uri == null || uri.isEmpty()) return "unknown";
@@ -214,6 +306,38 @@ public class PurviewLineageSink implements LineageTargetSink {
             return uri.substring(lastSlash + 1);
         }
         return uri;
+    }
+
+    /**
+     * Extracts the last path segment from a URI.
+     */
+    static String extractLastSegment(String uri) {
+        if (uri == null || uri.isEmpty()) return "";
+        // Remove trailing slash
+        String clean = uri.endsWith("/") ? uri.substring(0, uri.length() - 1) : uri;
+        int lastSlash = clean.lastIndexOf('/');
+        return (lastSlash >= 0 && lastSlash < clean.length() - 1) ? clean.substring(lastSlash + 1) : clean;
+    }
+
+    /**
+     * Extracts the path portion from a URI (after scheme://host).
+     */
+    static String extractPathFromUri(String uri) {
+        if (uri == null) return null;
+        int schemeEnd = uri.indexOf("://");
+        if (schemeEnd < 0) return uri;
+        return uri.substring(schemeEnd + 3);
+    }
+
+    /**
+     * Extracts the repositoryId from a nemaki:// URI.
+     * Format: nemaki://{repositoryId}/...
+     */
+    static String extractRepositoryIdFromUri(String uri) {
+        if (uri == null || !uri.startsWith("nemaki://")) return "";
+        String afterScheme = uri.substring("nemaki://".length());
+        int slash = afterScheme.indexOf('/');
+        return slash > 0 ? afterScheme.substring(0, slash) : afterScheme;
     }
 
     private PurviewConnectionRequest buildConnectionRequest() {

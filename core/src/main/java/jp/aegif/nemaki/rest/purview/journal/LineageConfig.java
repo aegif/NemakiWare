@@ -151,6 +151,17 @@ public class LineageConfig {
     @Value("${lineage.projection.stale-threshold-minutes:5}")
     private int projectionStaleThresholdMinutes;
 
+    // --- Leader election (multi-node deployments) ---
+
+    @Value("${lineage.leader-election.enabled:false}")
+    private boolean leaderElectionEnabled;
+
+    @Value("${lineage.leader-election.heartbeat-seconds:15}")
+    private int leaderHeartbeatSeconds;
+
+    @Value("${lineage.leader-election.ttl-seconds:60}")
+    private int leaderTtlSeconds;
+
     /** Returns the instance-wide default lineage mode. */
     public LineageMode getMode() {
         return LineageMode.fromString(readDynamic("lineage.mode", mode));
@@ -311,6 +322,23 @@ public class LineageConfig {
     /** Minutes before a PROJECTING event is considered stale. Default: 5. */
     public int getProjectionStaleThresholdMinutes() {
         return readDynamicInt("lineage.projection.stale-threshold-minutes", projectionStaleThresholdMinutes);
+    }
+
+    // --- Leader election getters (multi-node deployments) ---
+
+    /** Whether CouchDB CAS-based leader election is enabled. Default: false (single-node). */
+    public boolean isLeaderElectionEnabled() {
+        return readDynamicBoolean("lineage.leader-election.enabled", leaderElectionEnabled);
+    }
+
+    /** Heartbeat interval in seconds for the leader election. Default: 15. */
+    public int getLeaderHeartbeatSeconds() {
+        return readDynamicInt("lineage.leader-election.heartbeat-seconds", leaderHeartbeatSeconds);
+    }
+
+    /** TTL in seconds before a leader's heartbeat is considered expired. Default: 60. */
+    public int getLeaderTtlSeconds() {
+        return readDynamicInt("lineage.leader-election.ttl-seconds", leaderTtlSeconds);
     }
 
     // --- Cached emitter (lazy-init, mode-change tracking) ---

@@ -2,8 +2,10 @@ package jp.aegif.nemaki.rest.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jp.aegif.nemaki.rest.purview.journal.LineageConfig;
+import jp.aegif.nemaki.rest.purview.journal.LineageDeadLetterStore;
 import jp.aegif.nemaki.rest.purview.journal.LineageEvent;
 import jp.aegif.nemaki.rest.purview.journal.LineageJournalStore;
+import jp.aegif.nemaki.rest.purview.journal.LineageMetrics;
 import jp.aegif.nemaki.rest.purview.journal.LineageProcessType;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -14,6 +16,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -36,6 +40,12 @@ public class LineageJournalController {
     @Autowired
     private LineageConfig lineageConfig;
 
+    @Autowired(required = false)
+    private LineageMetrics lineageMetrics;
+
+    @Autowired(required = false)
+    private LineageDeadLetterStore deadLetterStore;
+
     private HttpServletRequest httpRequest;
 
     @Autowired
@@ -49,6 +59,8 @@ public class LineageJournalController {
     public ResponseEntity<Map<String, Object>> listEvents(
             @RequestParam(required = false) String repositoryId,
             @RequestParam(required = false) String processType,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
             @RequestParam(defaultValue = "50") int limit,
             @RequestParam(defaultValue = "0") int offset) {
 
@@ -58,9 +70,20 @@ public class LineageJournalController {
         int cappedLimit = Math.min(Math.max(limit, 1), 200);
         int safeOffset = Math.max(offset, 0);
 
+        // Fetch limit+1 to detect whether more results exist beyond this page
+        int fetchLimit = cappedLimit + 1;
         List<LineageEvent> events;
 
-        if (repositoryId != null && !repositoryId.isBlank() && processType != null && !processType.isBlank()) {
+        // Date range filter takes priority
+        if (startDate != null && !startDate.isBlank() && endDate != null && !endDate.isBlank()) {
+            try {
+                Instant.parse(startDate);
+                Instant.parse(endDate);
+            } catch (DateTimeParseException e) {
+                return badRequest("Invalid date format (expected ISO-8601): " + e.getMessage());
+            }
+            events = journalStore.findByDateRange(startDate, endDate, fetchLimit, safeOffset);
+        } else if (repositoryId != null && !repositoryId.isBlank() && processType != null && !processType.isBlank()) {
             // Filter by both repositoryId and processType
             LineageProcessType pt;
             try {
@@ -68,10 +91,10 @@ public class LineageJournalController {
             } catch (IllegalArgumentException e) {
                 return badRequest("Invalid processType: " + processType);
             }
-            events = journalStore.findByProcessType(repositoryId, pt, cappedLimit, safeOffset);
+            events = journalStore.findByProcessType(repositoryId, pt, fetchLimit, safeOffset);
         } else if (repositoryId != null && !repositoryId.isBlank()) {
             // Filter by repositoryId only
-            events = journalStore.findByRepositoryId(repositoryId, cappedLimit, safeOffset);
+            events = journalStore.findByRepositoryId(repositoryId, fetchLimit, safeOffset);
         } else if (processType != null && !processType.isBlank()) {
             // Filter by processType only — server-side view query
             LineageProcessType pt;
@@ -80,19 +103,28 @@ public class LineageJournalController {
             } catch (IllegalArgumentException e) {
                 return badRequest("Invalid processType: " + processType);
             }
-            events = journalStore.findByProcessType(pt, cappedLimit, safeOffset);
+            events = journalStore.findByProcessType(pt, fetchLimit, safeOffset);
         } else {
             // No filters — paginated listing
-            events = journalStore.findAll(cappedLimit, safeOffset);
+            events = journalStore.findAll(fetchLimit, safeOffset);
         }
 
-        List<Map<String, Object>> eventList = events.stream()
+        boolean hasMore = events.size() > cappedLimit;
+        List<LineageEvent> pageEvents = hasMore ? events.subList(0, cappedLimit) : events;
+
+        List<Map<String, Object>> eventList = pageEvents.stream()
                 .map(this::eventToMap)
                 .toList();
 
+        // Provide a total estimate for the UI pagination component.
+        // Exact total would require a separate count query; the limit+1 approach
+        // guarantees the "next page" button appears when more results exist.
+        int estimatedTotal = hasMore ? safeOffset + cappedLimit + 1 : safeOffset + eventList.size();
+
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("events", eventList);
-        response.put("total", eventList.size());
+        response.put("total", estimatedTotal);
+        response.put("hasMore", hasMore);
         response.put("limit", cappedLimit);
         response.put("offset", safeOffset);
         return ResponseEntity.ok(response);
@@ -140,6 +172,163 @@ public class LineageJournalController {
         response.put("nonTerminalCount", nonTerminalCount);
         response.put("byProcessType", byProcessTypeStrings);
         response.put("storeActive", journalStore.isActive());
+        return ResponseEntity.ok(response);
+    }
+
+    // ==================== Event actions ====================
+
+    @PostMapping("/events/{eventId}/replay")
+    public ResponseEntity<Map<String, Object>> replayEvent(
+            @PathVariable String eventId,
+            @RequestParam(defaultValue = "purview") String target) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        LineageEvent event = journalStore.findByEventId(eventId);
+        if (event == null) {
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", "error");
+            response.put("message", "Event not found: " + eventId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+        }
+
+        // Reset status to PENDING for the target to allow re-projection
+        int updated = journalStore.updatePublishStatus(eventId, target,
+                jp.aegif.nemaki.rest.purview.journal.LineagePublishStatus.PENDING);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", updated > 0 ? "ok" : "error");
+        response.put("message", updated > 0 ? "Event queued for replay" : "Failed to reset status");
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/events/{eventId}/discard")
+    public ResponseEntity<Map<String, Object>> discardEvent(
+            @PathVariable String eventId,
+            @RequestParam(defaultValue = "purview") String target) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        int updated = journalStore.discardEvent(eventId, target);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", updated > 0 ? "ok" : "error");
+        response.put("message", updated > 0 ? "Event discarded" : "Failed to discard");
+        return ResponseEntity.ok(response);
+    }
+
+    // ==================== Dead-letter endpoints ====================
+
+    @GetMapping("/dead-letters")
+    public ResponseEntity<Map<String, Object>> listDeadLetters(
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(required = false) Boolean replayed) {
+
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        if (deadLetterStore == null) {
+            return badRequest("Dead-letter store not available");
+        }
+
+        List<Map<String, Object>> records = deadLetterStore.findAll(limit, offset, replayed);
+        long total = deadLetterStore.count(replayed);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("deadLetters", records);
+        response.put("total", total);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/dead-letters/{eventId}")
+    public ResponseEntity<Map<String, Object>> getDeadLetter(@PathVariable String eventId) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        if (deadLetterStore == null) {
+            return badRequest("Dead-letter store not available");
+        }
+
+        Map<String, Object> record = deadLetterStore.findByEventId(eventId);
+        if (record == null) {
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", "error");
+            response.put("message", "Dead-letter not found: " + eventId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+        }
+        return ResponseEntity.ok(record);
+    }
+
+    @PostMapping("/dead-letters/{eventId}/replay")
+    public ResponseEntity<Map<String, Object>> replayDeadLetter(@PathVariable String eventId) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        if (deadLetterStore == null) {
+            return badRequest("Dead-letter store not available");
+        }
+
+        boolean success = deadLetterStore.replay(eventId, journalStore);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", success ? "ok" : "error");
+        response.put("message", success ? "Event replayed" : "Failed to replay (not found or already replayed)");
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/dead-letters/replay-all")
+    public ResponseEntity<Map<String, Object>> replayAllDeadLetters() {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        if (deadLetterStore == null) {
+            return badRequest("Dead-letter store not available");
+        }
+
+        int count = deadLetterStore.replayAll(journalStore);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", "ok");
+        response.put("replayed", count);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/dead-letters/count")
+    public ResponseEntity<Map<String, Object>> countDeadLetters(
+            @RequestParam(required = false) Boolean replayed) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        if (deadLetterStore == null) {
+            return badRequest("Dead-letter store not available");
+        }
+
+        long count = deadLetterStore.count(replayed);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("count", count);
+        return ResponseEntity.ok(response);
+    }
+
+    // ==================== GET /metrics ====================
+
+    @GetMapping("/metrics")
+    public ResponseEntity<Map<String, Object>> getMetrics() {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        if (lineageMetrics != null) {
+            response.putAll(lineageMetrics.snapshot());
+        }
+
+        // Add backlog info per target
+        Map<String, Object> backlog = new LinkedHashMap<>();
+        for (String target : lineageConfig.getTargets()) {
+            Map<String, Object> targetBacklog = new LinkedHashMap<>();
+            targetBacklog.put("nonTerminal", journalStore.countNonTerminalByTarget(target));
+            targetBacklog.put("maxDocs", lineageConfig.getBacklogMaxDocs());
+            targetBacklog.put("estimatedSizeBytes", journalStore.getEstimatedNonTerminalSizeBytes(target));
+            backlog.put(target, targetBacklog);
+        }
+        response.put("backlog", backlog);
         return ResponseEntity.ok(response);
     }
 

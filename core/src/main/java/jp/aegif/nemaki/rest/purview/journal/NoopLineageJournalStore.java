@@ -78,12 +78,34 @@ public class NoopLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
+    public List<LineageEvent> findByTargetAndStatusOldestFirst(String target, LineagePublishStatus status, int limit) {
+        return List.of();
+    }
+
+    @Override
     public int reapStaleProjecting(String target, int staleMinutes) {
         return 0;
     }
 
     @Override
     public int getRetryCount(String eventId, String target) {
+        return 0;
+    }
+
+
+
+    @Override
+    public List<LineageEvent> findByDateRange(String start, String end, int limit, int offset) {
+        return List.of();
+    }
+
+    @Override
+    public List<LineageEvent> findByRepositoryAndSequenceRange(String repositoryId, long fromSequence, int limit) {
+        return List.of();
+    }
+
+    @Override
+    public long getEstimatedNonTerminalSizeBytes(String target) {
         return 0;
     }
 

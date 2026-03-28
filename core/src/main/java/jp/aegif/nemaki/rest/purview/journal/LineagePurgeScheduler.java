@@ -44,6 +44,9 @@ public class LineagePurgeScheduler {
     @Autowired
     private LineageJournalStore journalStore;
 
+    @Autowired(required = false)
+    private LeaderElection leaderElection;
+
     private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> purgeTask;
     private volatile String activeCron;
@@ -162,6 +165,13 @@ public class LineagePurgeScheduler {
     }
 
     private void executePurge() {
+        // Leader election guard: only the leader node runs purge
+        if (leaderElection != null && leaderElection.isEnabled()
+                && !leaderElection.isLeader("purge")) {
+            logger.debug("Not the leader for 'purge' — skipping purge cycle");
+            return;
+        }
+
         try {
             int days = lineageConfig.getRetentionDays();
             Instant cutoff = Instant.now().minus(Duration.ofDays(days));

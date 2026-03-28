@@ -285,8 +285,8 @@ class LineageProjectionLoopTest {
     @Test
     void enforceBacklogThresholds_maxSizeMb_discardsWhenExceeded() {
         when(mockConfig.getBacklogMaxSizeMb()).thenReturn(1); // 1 MB = 1048576 bytes
-        // Each event ~2048 bytes, so 1MB / 2048 = 512 events max
-        // 600 events → exceeds 1MB
+        // Real DB size estimation returns 2MB (exceeds 1MB limit)
+        when(mockStore.getEstimatedNonTerminalSizeBytes("purview")).thenReturn(2_097_152L);
         when(mockStore.countNonTerminalByTarget("purview")).thenReturn(600L);
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
                 .thenReturn(List.of());
@@ -295,9 +295,27 @@ class LineageProjectionLoopTest {
 
         loop.enforceBacklogThresholds("purview");
 
-        // Should attempt to discard oldest pending events
-        // (discardOldest queries PENDING with the excess count)
+        // Should use getEstimatedNonTerminalSizeBytes for size check
+        verify(mockStore, atLeastOnce()).getEstimatedNonTerminalSizeBytes("purview");
         verify(mockStore, atLeastOnce()).countNonTerminalByTarget("purview");
+    }
+
+    @Test
+    void enforceBacklogThresholds_maxSizeMb_skipsWhenBelowLimit() {
+        when(mockConfig.getBacklogMaxSizeMb()).thenReturn(100); // 100 MB limit
+        // Real DB size estimation returns 500KB (well below 100MB limit)
+        when(mockStore.getEstimatedNonTerminalSizeBytes("purview")).thenReturn(512_000L);
+        when(mockStore.countNonTerminalByTarget("purview")).thenReturn(10L);
+        when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
+                .thenReturn(List.of());
+        when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
+                .thenReturn(List.of());
+
+        loop.enforceBacklogThresholds("purview");
+
+        // Should check size but NOT discard anything
+        verify(mockStore).getEstimatedNonTerminalSizeBytes("purview");
+        verify(mockStore, never()).discardEvent(any(), any());
     }
 
     private static void setField(Object target, String fieldName, Object value) throws Exception {

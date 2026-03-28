@@ -103,3 +103,11 @@ export const testPurviewConnection = (formValues?: Record<string, string>) =>
 // Lineage
 export const getLineageSettings = () => getSettings('lineage');
 export const updateLineageSettings = (settings: Record<string, string>) => updateSettings('lineage', settings);
+
+// Atlas
+export const getAtlasSettings = () => getSettings('atlas');
+export const updateAtlasSettings = (settings: Record<string, string>) => updateSettings('atlas', settings);
+
+// Dataplex
+export const getDataplexSettings = () => getSettings('dataplex');
+export const updateDataplexSettings = (settings: Record<string, string>) => updateSettings('dataplex', settings);

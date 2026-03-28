@@ -439,6 +439,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           icon: <DeploymentUnitOutlined />,
           label: <span>{t('navigation.purview')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginLeft: 4 }}>Beta</Tag></span>,
         },
+        {
+          key: '/admin/lineage-journal',
+          icon: <DatabaseOutlined />,
+          label: <span>{t('navigation.lineageJournalTitle')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginLeft: 4 }}>Beta</Tag></span>,
+        },
         ...(featureToggles['rss.enabled'] ? [{
           key: '/rss-tokens',
           icon: <WifiOutlined />,
