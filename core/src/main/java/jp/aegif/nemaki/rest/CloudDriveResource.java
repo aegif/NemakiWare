@@ -13,6 +13,12 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.impl.CloudDriveServiceImpl;
 import jp.aegif.nemaki.util.spring.SpringContext;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.rest.purview.journal.LineageConfig;
+import jp.aegif.nemaki.rest.purview.journal.LineageEmitter;
+import jp.aegif.nemaki.rest.purview.journal.LineageEvent;
+import jp.aegif.nemaki.rest.purview.journal.LineageEventBuilder;
+import jp.aegif.nemaki.rest.purview.journal.LineageJournalStore;
+import jp.aegif.nemaki.rest.purview.journal.LineageProcessType;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -270,6 +276,38 @@ public class CloudDriveResource extends ResourceBase {
 		}
 	}
 
+	private LineageEmitter getLineageEmitter() {
+		try {
+			LineageConfig config = SpringContext.getApplicationContext()
+					.getBean(LineageConfig.class);
+			LineageJournalStore store = SpringContext.getApplicationContext()
+					.getBean(LineageJournalStore.class);
+			return config.getEmitter(store);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+
+	private LineageConfig getLineageConfig() {
+		try {
+			return SpringContext.getApplicationContext()
+					.getBean(LineageConfig.class);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+
+	private void emitLineageEvent(LineageEvent event) {
+		try {
+			LineageEmitter emitter = getLineageEmitter();
+			if (emitter != null && emitter.isActive()) {
+				emitter.emit(event);
+			}
+		} catch (Exception e) {
+			log.warn("Lineage event emission failed (non-fatal): " + e.getMessage());
+		}
+	}
+
 	/**
 	 * Push a document (typically a PWC) to a cloud drive.
 	 * If the document already has cloud metadata (nemaki:cloudFileId), updates the existing cloud file.
@@ -375,6 +413,21 @@ public class CloudDriveResource extends ResourceBase {
 			} catch (Exception e) {
 				log.warn("Failed to save cloud metadata to object properties: " + e.getMessage(), e);
 				// Don't fail the push operation just because metadata save failed
+			}
+
+			// Lineage Journal: CLOUD_SYNC_UPLOAD
+			{
+				LineageConfig lc = getLineageConfig();
+				LineageEventBuilder b = new LineageEventBuilder()
+						.repositoryId(repositoryId)
+						.processType(LineageProcessType.CLOUD_SYNC_UPLOAD)
+						.addInputObject(repositoryId, objectId)
+						.addOutput("cloud://" + provider + "/" + cloudFileId)
+						.snapshotAttribute("provider", provider);
+				if (lc != null) {
+					b.targets(lc.getTargets());
+				}
+				emitLineageEvent(b.build());
 			}
 
 			result.put("cloudFileId", cloudFileId);
@@ -539,6 +592,21 @@ public class CloudDriveResource extends ResourceBase {
 				// Don't fail the pull operation just because comments fetch failed
 				log.warn("[pullFromCloud] Failed to fetch/save cloud comments: " + e.getClass().getSimpleName());
 				log.debug("[pullFromCloud] Cloud comments fetch exception detail", e);
+			}
+
+			// Lineage Journal: CLOUD_SYNC_DOWNLOAD
+			{
+				LineageConfig lc = getLineageConfig();
+				LineageEventBuilder b = new LineageEventBuilder()
+						.repositoryId(repositoryId)
+						.processType(LineageProcessType.CLOUD_SYNC_DOWNLOAD)
+						.addInput("cloud://" + provider + "/" + cloudFileId)
+						.addOutputObject(repositoryId, objectIdHolder.getValue())
+						.snapshotAttribute("provider", provider);
+				if (lc != null) {
+					b.targets(lc.getTargets());
+				}
+				emitLineageEvent(b.build());
 			}
 
 			result.put("objectId", objectIdHolder.getValue());

@@ -2,6 +2,7 @@ package jp.aegif.nemaki.rest.purview.journal;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * No-op implementation of {@link LineageJournalStore} used when lineage mode
@@ -48,6 +49,22 @@ public class NoopLineageJournalStore implements LineageJournalStore {
     @Override
     public long countNonTerminalByTarget(String target) {
         return 0;
+    }
+
+
+    @Override
+    public List<LineageEvent> findAll(int limit, int offset) {
+        return List.of();
+    }
+
+    @Override
+    public LineageEvent findByEventId(String eventId) {
+        return null;
+    }
+
+    @Override
+    public Map<LineageProcessType, Long> countByProcessType() {
+        return Map.of();
     }
 
     @Override

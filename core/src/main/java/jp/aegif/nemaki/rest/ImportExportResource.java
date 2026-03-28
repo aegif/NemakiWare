@@ -28,6 +28,13 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.rest.purview.lineage.PurviewImportExportLineageService;
+import jp.aegif.nemaki.rest.purview.journal.LineageConfig;
+import jp.aegif.nemaki.rest.purview.journal.LineageMode;
+import jp.aegif.nemaki.rest.purview.journal.LineageEmitter;
+import jp.aegif.nemaki.rest.purview.journal.LineageEvent;
+import jp.aegif.nemaki.rest.purview.journal.LineageEventBuilder;
+import jp.aegif.nemaki.rest.purview.journal.LineageJournalStore;
+import jp.aegif.nemaki.rest.purview.journal.LineageProcessType;
 import jp.aegif.nemaki.rest.importexport.FilesystemExporter;
 import jp.aegif.nemaki.rest.importexport.FilesystemImporter;
 import jp.aegif.nemaki.rest.importexport.ImportExportUtils;
@@ -141,12 +148,50 @@ public class ImportExportResource extends ResourceBase {
         }
     }
 
+    private LineageEmitter getLineageEmitter() {
+        try {
+            LineageConfig config = SpringContext.getApplicationContext()
+                    .getBean(LineageConfig.class);
+            LineageJournalStore store = SpringContext.getApplicationContext()
+                    .getBean(LineageJournalStore.class);
+            return config.getEmitter(store);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private LineageConfig getLineageConfig() {
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean(LineageConfig.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void emitLineageEvent(LineageEvent event) {
+        try {
+            LineageEmitter emitter = getLineageEmitter();
+            if (emitter != null && emitter.isActive()) {
+                emitter.emit(event);
+            }
+        } catch (Exception e) {
+            log.warn("Lineage event emission failed (non-fatal): " + e.getMessage());
+        }
+    }
+
     private void publishFilesystemImportLineage(
             String repositoryId,
             String folderId,
             String sourcePath,
             String requestedBy,
             ImportResult importResult) {
+        // When journal is active, it owns lineage for this processType.
+        // Skip direct Purview call to avoid duplicate emission.
+        LineageConfig lc = getLineageConfig();
+        if (lc != null && lc.getMode() != LineageMode.DISABLED) {
+            return;
+        }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();
         if (service == null || importResult == null) {
             return;
@@ -170,6 +215,10 @@ public class ImportExportResource extends ResourceBase {
             String targetPath,
             String requestedBy,
             ExportResult exportResult) {
+        LineageConfig lc = getLineageConfig();
+        if (lc != null && lc.getMode() != LineageMode.DISABLED) {
+            return;
+        }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();
         if (service == null || exportResult == null) {
             return;
@@ -193,6 +242,10 @@ public class ImportExportResource extends ResourceBase {
             String folderName,
             String requestedBy,
             long objectCount) {
+        LineageConfig lc = getLineageConfig();
+        if (lc != null && lc.getMode() != LineageMode.DISABLED) {
+            return;
+        }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();
         if (service == null || objectCount <= 0L) {
             return;
@@ -211,6 +264,10 @@ public class ImportExportResource extends ResourceBase {
             String importMode,
             String requestedBy,
             long objectCount) {
+        LineageConfig lc = getLineageConfig();
+        if (lc != null && lc.getMode() != LineageMode.DISABLED) {
+            return;
+        }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();
         if (service == null || objectCount <= 0L) {
             return;
@@ -228,6 +285,10 @@ public class ImportExportResource extends ResourceBase {
             List<? extends Content> contents,
             String requestedBy,
             long objectCount) {
+        LineageConfig lc = getLineageConfig();
+        if (lc != null && lc.getMode() != LineageMode.DISABLED) {
+            return;
+        }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();
         if (service == null || contents == null || contents.isEmpty() || objectCount <= 0L) {
             return;
@@ -340,6 +401,27 @@ public class ImportExportResource extends ResourceBase {
                     format == ImportFormat.ACP ? "acp-upload" : "zip-upload",
                     getCallContextUsername(request),
                     (long) importedFolders + importedDocuments);
+
+            // Lineage Journal: IMPORT_UPLOADED
+            {
+                long objCount = (long) importedFolders + importedDocuments;
+                if (objCount > 0) {
+                    String importMode = format == ImportFormat.ACP ? "acp-upload" : "zip-upload";
+                    LineageConfig lc = getLineageConfig();
+                    LineageEventBuilder b = new LineageEventBuilder()
+                            .repositoryId(repositoryId)
+                            .processType(LineageProcessType.IMPORT_UPLOADED)
+                            .addInput("upload://" + importMode)
+                            .addOutputObject(repositoryId, folderId)
+                            .snapshotAttribute("importMode", importMode)
+                            .snapshotAttribute("objectCount", String.valueOf(objCount))
+                            .snapshotAttribute("requestedBy", getCallContextUsername(request));
+                    if (lc != null) {
+                        b.targets(lc.getTargets());
+                    }
+                    emitLineageEvent(b.build());
+                }
+            }
 
             String status = "success";
             if (!errors.isEmpty()) {
@@ -470,6 +552,22 @@ public class ImportExportResource extends ResourceBase {
                                 exportFolderName,
                                 exportUsername,
                                 exportedObjectIds.size());
+
+                        // Lineage Journal: EXPORT_ZIP_FOLDER
+                        if (!exportedObjectIds.isEmpty()) {
+                            LineageConfig lc = getLineageConfig();
+                            LineageEventBuilder b = new LineageEventBuilder()
+                                    .repositoryId(repositoryId)
+                                    .processType(LineageProcessType.EXPORT_ZIP_FOLDER)
+                                    .addInputObject(repositoryId, folderId)
+                                    .snapshotAttribute("folderName", exportFolderName)
+                                    .snapshotAttribute("objectCount", String.valueOf(exportedObjectIds.size()))
+                                    .snapshotAttribute("requestedBy", exportUsername);
+                            if (lc != null) {
+                                b.targets(lc.getTargets());
+                            }
+                            emitLineageEvent(b.build());
+                        }
 
                         // Audit after streaming completes successfully
                         AuditLogger audit = getAuditLogger();
@@ -624,6 +722,23 @@ public class ImportExportResource extends ResourceBase {
                                 contents,
                                 exportUsername,
                                 exportedObjectIds.size());
+
+                        // Lineage Journal: EXPORT_SELECTED_OBJECTS
+                        if (!exportedObjectIds.isEmpty()) {
+                            LineageConfig lc = getLineageConfig();
+                            LineageEventBuilder b = new LineageEventBuilder()
+                                    .repositoryId(repositoryId)
+                                    .processType(LineageProcessType.EXPORT_SELECTED_OBJECTS)
+                                    .snapshotAttribute("objectCount", String.valueOf(exportedObjectIds.size()))
+                                    .snapshotAttribute("requestedBy", exportUsername);
+                            for (Content c : contents) {
+                                b.addInputObject(repositoryId, c.getId());
+                            }
+                            if (lc != null) {
+                                b.targets(lc.getTargets());
+                            }
+                            emitLineageEvent(b.build());
+                        }
                     } catch (Exception e) {
                         log.error("Export streaming failed: " + e.getMessage(), e);
                         throw new IOException("Export failed: " + e.getMessage(), e);
@@ -748,6 +863,26 @@ public class ImportExportResource extends ResourceBase {
                     sourceDir.toString(),
                     getCallContextUsername(request),
                     importResult);
+
+            // Lineage Journal: IMPORT_FILESYSTEM
+            {
+                long objCount = (long) importResult.documentsCreated + importResult.foldersCreated;
+                if (objCount > 0) {
+                    LineageConfig lc = getLineageConfig();
+                    LineageEventBuilder b = new LineageEventBuilder()
+                            .repositoryId(repositoryId)
+                            .processType(LineageProcessType.IMPORT_FILESYSTEM)
+                            .addInput("file://" + sourceDir)
+                            .addOutputObject(repositoryId, folderId)
+                            .snapshotAttribute("sourcePath", sourceDir.toString())
+                            .snapshotAttribute("objectCount", String.valueOf(objCount))
+                            .snapshotAttribute("requestedBy", getCallContextUsername(request));
+                    if (lc != null) {
+                        b.targets(lc.getTargets());
+                    }
+                    emitLineageEvent(b.build());
+                }
+            }
 
             AuditLogger audit = getAuditLogger();
             if (audit != null) {
@@ -878,6 +1013,26 @@ public class ImportExportResource extends ResourceBase {
                     targetDir.toString(),
                     getCallContextUsername(request),
                     exportResult);
+
+            // Lineage Journal: EXPORT_FILESYSTEM
+            {
+                long objCount = (long) exportResult.documentsExported + exportResult.foldersExported;
+                if (objCount > 0) {
+                    LineageConfig lc = getLineageConfig();
+                    LineageEventBuilder b = new LineageEventBuilder()
+                            .repositoryId(repositoryId)
+                            .processType(LineageProcessType.EXPORT_FILESYSTEM)
+                            .addInputObject(repositoryId, folderId)
+                            .addOutput("file://" + targetDir)
+                            .snapshotAttribute("targetPath", targetDir.toString())
+                            .snapshotAttribute("objectCount", String.valueOf(objCount))
+                            .snapshotAttribute("requestedBy", getCallContextUsername(request));
+                    if (lc != null) {
+                        b.targets(lc.getTargets());
+                    }
+                    emitLineageEvent(b.build());
+                }
+            }
 
             AuditLogger audit = getAuditLogger();
             if (audit != null) {

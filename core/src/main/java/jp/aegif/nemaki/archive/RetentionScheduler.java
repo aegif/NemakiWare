@@ -26,6 +26,12 @@ import org.springframework.scheduling.support.CronExpression;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.rest.purview.journal.LineageConfig;
+import jp.aegif.nemaki.rest.purview.journal.LineageEmitter;
+import jp.aegif.nemaki.rest.purview.journal.LineageEvent;
+import jp.aegif.nemaki.rest.purview.journal.LineageEventBuilder;
+import jp.aegif.nemaki.rest.purview.journal.LineageJournalStore;
+import jp.aegif.nemaki.rest.purview.journal.LineageProcessType;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.RetentionLogDaoService;
 import jp.aegif.nemaki.model.Archive;
@@ -33,6 +39,7 @@ import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
+import jp.aegif.nemaki.util.spring.SpringContext;
 
 /**
  * Cron-based scheduler for retention lifecycle management.
@@ -450,6 +457,22 @@ public class RetentionScheduler {
             contentService.deleteDocument(systemContext, repositoryId, documentId, true, false);
             nemakiCachePool.get(repositoryId).removeCmisCache(documentId);
             result.incrementSucceeded();
+
+            // Lineage Journal: ARCHIVE_LOCAL
+            {
+                LineageConfig lc = getLineageConfig();
+                LineageEventBuilder b = new LineageEventBuilder()
+                        .repositoryId(repositoryId)
+                        .processType(LineageProcessType.ARCHIVE_LOCAL)
+                        .addInputObject(repositoryId, documentId)
+                        .addOutput("nemaki://" + repositoryId + "/archives/" + documentId)
+                        .snapshotAttribute("reason", reason);
+                if (lc != null) {
+                    b.targets(lc.getTargets());
+                }
+                emitLineageEvent(b.build());
+            }
+
             log.info("Archived " + reason + " document: " + documentId);
         } catch (Exception e) {
             log.error("Failed to archive " + reason + " document " + documentId + ": " + e.getMessage(), e);
@@ -533,6 +556,22 @@ public class RetentionScheduler {
                     log.info("Move mode: deleted local archive content after cold storage write: " + archiveId);
                 }
 
+                // Lineage Journal: ARCHIVE_COLD
+                {
+                    LineageConfig lc = getLineageConfig();
+                    LineageEventBuilder b = new LineageEventBuilder()
+                            .repositoryId(repositoryId)
+                            .processType(LineageProcessType.ARCHIVE_COLD)
+                            .addInput("nemaki://" + repositoryId + "/archives/" + archiveId)
+                            .addOutput("cold://" + (storageRef != null ? storageRef : archiveId))
+                            .snapshotAttribute("originalId", originalId != null ? originalId : "")
+                            .snapshotAttribute("coldMoveMode", coldMoveMode);
+                    if (lc != null) {
+                        b.targets(lc.getTargets());
+                    }
+                    emitLineageEvent(b.build());
+                }
+
                 log.info("Successfully moved archive to cold storage: " + archiveId
                         + " (mode: " + coldMoveMode + ")");
                 return true;
@@ -583,6 +622,38 @@ public class RetentionScheduler {
             }
         }
         log.info("Retention scheduler stopped");
+    }
+
+    private LineageEmitter getLineageEmitter() {
+        try {
+            LineageConfig config = SpringContext.getApplicationContext()
+                    .getBean(LineageConfig.class);
+            LineageJournalStore store = SpringContext.getApplicationContext()
+                    .getBean(LineageJournalStore.class);
+            return config.getEmitter(store);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private LineageConfig getLineageConfig() {
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean(LineageConfig.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void emitLineageEvent(LineageEvent event) {
+        try {
+            LineageEmitter emitter = getLineageEmitter();
+            if (emitter != null && emitter.isActive()) {
+                emitter.emit(event);
+            }
+        } catch (Exception e) {
+            log.warn("Lineage event emission failed (non-fatal): " + e.getMessage());
+        }
     }
 
     public boolean isSchedulerActive() {

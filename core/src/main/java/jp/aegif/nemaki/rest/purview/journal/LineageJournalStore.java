@@ -2,6 +2,7 @@ package jp.aegif.nemaki.rest.purview.journal;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Persistence interface for lineage journal events.
@@ -298,6 +299,31 @@ public interface LineageJournalStore {
      * @return the count of non-terminal events for this target
      */
     long countNonTerminalByTarget(String target);
+
+
+    /**
+     * Returns all events with pagination, ordered by time (newest first).
+     *
+     * @param limit  maximum number of events to return (capped at 200)
+     * @param offset number of events to skip
+     * @return list of events (empty if store is inactive)
+     */
+    List<LineageEvent> findAll(int limit, int offset);
+
+    /**
+     * Returns a single event by its eventId.
+     *
+     * @param eventId the event identifier (not the CouchDB document ID)
+     * @return the event, or null if not found
+     */
+    LineageEvent findByEventId(String eventId);
+
+    /**
+     * Returns event counts grouped by {@link LineageProcessType}.
+     *
+     * @return a map of process type to event count (empty if store is inactive)
+     */
+    Map<LineageProcessType, Long> countByProcessType();
 
     boolean isActive();
 }

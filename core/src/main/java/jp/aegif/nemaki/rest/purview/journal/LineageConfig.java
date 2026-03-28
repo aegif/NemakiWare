@@ -284,6 +284,11 @@ public class LineageConfig {
         return readDynamicInt("lineage.backlog.max-size-mb", backlogMaxSizeMb);
     }
 
+
+    // --- Cached emitter (lazy-init, mode-change tracking) ---
+    private volatile LineageEmitter cachedEmitter;
+    private volatile LineageMode cachedMode;
+
     /**
      * Creates the appropriate {@link LineageEmitter} for the current instance-wide mode.
      *
@@ -308,6 +313,27 @@ public class LineageConfig {
             case DIRECT    -> new DirectLineageEmitter(this);
             case JOURNALED -> new JournaledLineageEmitter(store, this);
         };
+    }
+
+    /**
+     * Returns a cached {@link LineageEmitter}, creating or replacing it
+     * when the effective mode changes.
+     *
+     * <p>This method is the preferred way to obtain an emitter at emit
+     * points (REST resources, schedulers). It avoids creating a new
+     * instance on every call while still tracking dynamic mode changes
+     * made through {@link PropertyManager}.
+     *
+     * @param store the journal store (passed through to {@link #createEmitter})
+     * @return the cached emitter for the current mode (never null)
+     */
+    public LineageEmitter getEmitter(LineageJournalStore store) {
+        LineageMode current = getMode();
+        if (cachedEmitter == null || current != cachedMode) {
+            cachedEmitter = createEmitter(store);
+            cachedMode = current;
+        }
+        return cachedEmitter;
     }
 
     private String readDynamic(String key, String startupDefault) {

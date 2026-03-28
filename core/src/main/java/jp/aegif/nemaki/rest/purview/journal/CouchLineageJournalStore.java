@@ -131,6 +131,11 @@ public class CouchLineageJournalStore implements LineageJournalStore {
                         "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { emit([k, t[k]], null); } } } }",
                 "_count");
 
+        // View 4: by_process_type — countByProcessType stats
+        client.createOrUpdateView(DESIGN_DOC, "by_process_type",
+                "function(doc) { if (doc.type === 'lineage_event' && doc.processType) { emit(doc.processType, null); } }",
+                "_count");
+
         logger.info("Lineage journal views deployed to design document '{}'", DESIGN_DOC);
     }
 
@@ -345,6 +350,86 @@ public class CouchLineageJournalStore implements LineageJournalStore {
             }
         }
         return count;
+    }
+
+
+    @Override
+    public List<LineageEvent> findAll(int limit, int offset) {
+        if (!dbProvisioned.get()) {
+            return List.of();
+        }
+
+        int cappedLimit = Math.min(Math.max(limit, 1), 200);
+
+        // descending=true reverses the key order: startkey must be high, endkey must be low
+        Map<String, Object> params = new HashMap<>();
+        params.put("startkey", List.of("\ufff0", "\ufff0"));
+        params.put("endkey", List.of("", ""));
+        params.put("limit", cappedLimit);
+        if (offset > 0) {
+            params.put("skip", offset);
+        }
+        params.put("include_docs", true);
+        params.put("descending", true);
+
+        return queryEventsFromView("by_repository_and_time", params);
+    }
+
+    @Override
+    public LineageEvent findByEventId(String eventId) {
+        if (!dbProvisioned.get() || eventId == null || eventId.isEmpty()) {
+            return null;
+        }
+
+        try {
+            String docId = CouchLineageEvent.ID_PREFIX + eventId;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> doc = (Map<String, Object>) getLineageClient().get(Map.class, docId, null);
+            if (doc == null) {
+                return null;
+            }
+            CouchLineageEvent couchEvent = new CouchLineageEvent(doc);
+            return couchEvent.toLineageEvent();
+        } catch (Exception e) {
+            logger.debug("Error finding lineage event by id {}: {}", eventId, e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public Map<LineageProcessType, Long> countByProcessType() {
+        if (!dbProvisioned.get()) {
+            return Map.of();
+        }
+
+        try {
+            Map<String, Object> params = new HashMap<>();
+            params.put("reduce", true);
+            params.put("group", true);
+
+            ViewResult result = getLineageClient().queryView(DESIGN_DOC, "by_process_type", params);
+            if (result == null || result.getRows() == null) {
+                return Map.of();
+            }
+
+            Map<LineageProcessType, Long> counts = new LinkedHashMap<>();
+            for (ViewResultRow row : result.getRows()) {
+                Object key = row.getKey();
+                Object value = row.getValue();
+                if (key instanceof String keyStr && value instanceof Number num) {
+                    try {
+                        LineageProcessType pt = LineageProcessType.valueOf(keyStr);
+                        counts.put(pt, num.longValue());
+                    } catch (IllegalArgumentException ignored) {
+                        // Unknown process type — skip
+                    }
+                }
+            }
+            return counts;
+        } catch (Exception e) {
+            logger.error("Error querying countByProcessType: {}", e.getMessage(), e);
+            return Map.of();
+        }
     }
 
     @Override

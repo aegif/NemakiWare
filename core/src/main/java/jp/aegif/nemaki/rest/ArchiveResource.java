@@ -50,6 +50,12 @@ import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.dao.RetentionLogDaoService;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.rest.purview.journal.LineageConfig;
+import jp.aegif.nemaki.rest.purview.journal.LineageEmitter;
+import jp.aegif.nemaki.rest.purview.journal.LineageEvent;
+import jp.aegif.nemaki.rest.purview.journal.LineageEventBuilder;
+import jp.aegif.nemaki.rest.purview.journal.LineageJournalStore;
+import jp.aegif.nemaki.rest.purview.journal.LineageProcessType;
 import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
@@ -631,6 +637,50 @@ public class ArchiveResource extends ResourceBase {
 		return makeResult(status, result, errMsg).toJSONString();
 	}
 
+
+	private LineageEmitter getLineageEmitter() {
+		try {
+			LineageConfig config = SpringContext.getApplicationContext()
+					.getBean(LineageConfig.class);
+			LineageJournalStore store = SpringContext.getApplicationContext()
+					.getBean(LineageJournalStore.class);
+			return config.getEmitter(store);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+
+	private LineageConfig getLineageConfig() {
+		try {
+			return SpringContext.getApplicationContext()
+					.getBean(LineageConfig.class);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+
+	private void emitLineageEvent(String repositoryId, String objectId, HttpServletRequest httpRequest) {
+		try {
+			LineageEmitter emitter = getLineageEmitter();
+			if (emitter != null && emitter.isActive()) {
+				LineageConfig lc = getLineageConfig();
+				LineageEventBuilder b = new LineageEventBuilder()
+						.repositoryId(repositoryId)
+						.processType(LineageProcessType.ARCHIVE_LOCAL)
+						.addInputObject(repositoryId, objectId)
+						.addOutput("nemaki://" + repositoryId + "/archives/" + objectId)
+						.snapshotAttribute("reason", "force-archive")
+						.snapshotAttribute("requestedBy", getCallContextUsername(httpRequest));
+				if (lc != null) {
+					b.targets(lc.getTargets());
+				}
+				emitter.emit(b.build());
+			}
+		} catch (Exception e) {
+			log.warn("Lineage event emission failed (non-fatal): " + e.getMessage());
+		}
+	}
+
 	/**
 	 * Force archive an expired document (Admin only).
 	 */
@@ -681,6 +731,9 @@ public class ArchiveResource extends ResourceBase {
 			if (cachePool != null) {
 				cachePool.get(repositoryId).removeCmisCache(objectId);
 			}
+
+			// Lineage Journal: ARCHIVE_LOCAL (force-archive)
+			emitLineageEvent(repositoryId, objectId, httpRequest);
 		} catch (Exception e) {
 			log.error("Failed to force-archive document " + objectId, e);
 			status = false;
