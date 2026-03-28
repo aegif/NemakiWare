@@ -35,6 +35,7 @@ import jp.aegif.nemaki.rest.purview.journal.LineageEvent;
 import jp.aegif.nemaki.rest.purview.journal.LineageEventBuilder;
 import jp.aegif.nemaki.rest.purview.journal.LineageJournalStore;
 import jp.aegif.nemaki.rest.purview.journal.LineageProcessType;
+import jp.aegif.nemaki.rest.purview.journal.LineageTargetSink;
 import jp.aegif.nemaki.rest.importexport.FilesystemExporter;
 import jp.aegif.nemaki.rest.importexport.FilesystemImporter;
 import jp.aegif.nemaki.rest.importexport.ImportExportUtils;
@@ -170,7 +171,11 @@ public class ImportExportResource extends ResourceBase {
 
             LineageJournalStore store = SpringContext.getApplicationContext()
                     .getBean(LineageJournalStore.class);
-            LineageEmitter emitter = config.createEmitterForMode(mode, store);
+            @SuppressWarnings("unchecked")
+            java.util.List<LineageTargetSink> sinks = (java.util.List<LineageTargetSink>)
+                    (java.util.List<?>) SpringContext.getApplicationContext()
+                    .getBeansOfType(LineageTargetSink.class).values().stream().toList();
+            LineageEmitter emitter = config.createEmitterForMode(mode, store, sinks);
             if (emitter.isActive()) {
                 emitter.emit(event);
             }

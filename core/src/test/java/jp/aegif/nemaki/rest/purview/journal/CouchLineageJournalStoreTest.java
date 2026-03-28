@@ -405,4 +405,200 @@ class CouchLineageJournalStoreTest {
         // No connectorPool set, so ensureClientForRead() will fail
         assertFalse(store.isActive());
     }
+
+    // ---------------------------------------------------------------
+    // findByTargetAndStatus tests
+    // ---------------------------------------------------------------
+
+    @Test
+    void findByTargetAndStatus_queriesView() {
+        ViewResult viewResult = mock(ViewResult.class);
+        ViewResultRow row = mock(ViewResultRow.class);
+
+        Map<String, Object> docProps = new HashMap<>();
+        docProps.put("eventId", "evt-1");
+        docProps.put("type", "lineage_event");
+        docProps.put("repositoryId", "bedroom");
+        docProps.put("occurredAt", "2024-01-01T00:00:00Z");
+        docProps.put("processType", "IMPORT_UPLOADED");
+        Map<String, String> statusMap = new LinkedHashMap<>();
+        statusMap.put("purview", "PENDING");
+        docProps.put("publishStatusByTarget", statusMap);
+
+        when(row.getDoc()).thenReturn(toDocument(docProps));
+        when(viewResult.getRows()).thenReturn(List.of(row));
+        doReturn(viewResult).when(mockClient).queryView(eq("lineage"), eq("by_target_status"), any(Map.class));
+
+        List<LineageEvent> results = store.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50);
+        assertEquals(1, results.size());
+        assertEquals("evt-1", results.get(0).eventId());
+    }
+
+    @Test
+    void findByTargetAndStatus_returnsEmptyWhenNoResults() {
+        ViewResult viewResult = mock(ViewResult.class);
+        when(viewResult.getRows()).thenReturn(List.of());
+        doReturn(viewResult).when(mockClient).queryView(eq("lineage"), eq("by_target_status"), any(Map.class));
+
+        List<LineageEvent> results = store.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50);
+        assertTrue(results.isEmpty());
+    }
+
+    // ---------------------------------------------------------------
+    // findByProcessType (repository-scoped, P2 fix) tests
+    // ---------------------------------------------------------------
+
+    @Test
+    void findByProcessType_usesCompositeView() {
+        ViewResult viewResult = mock(ViewResult.class);
+        ViewResultRow row = mock(ViewResultRow.class);
+
+        Map<String, Object> docProps = new HashMap<>();
+        docProps.put("eventId", "evt-1");
+        docProps.put("type", "lineage_event");
+        docProps.put("repositoryId", "bedroom");
+        docProps.put("occurredAt", "2024-01-01T00:00:00Z");
+        docProps.put("processType", "IMPORT_FILESYSTEM");
+
+        when(row.getDoc()).thenReturn(toDocument(docProps));
+        when(viewResult.getRows()).thenReturn(List.of(row));
+        doReturn(viewResult).when(mockClient).queryView(eq("lineage"), eq("by_repository_and_process_type"), any(Map.class));
+
+        List<LineageEvent> results = store.findByProcessType("bedroom", LineageProcessType.IMPORT_FILESYSTEM, 10, 0);
+        assertEquals(1, results.size());
+        assertEquals("evt-1", results.get(0).eventId());
+        assertEquals(LineageProcessType.IMPORT_FILESYSTEM, results.get(0).processType());
+    }
+
+    // ---------------------------------------------------------------
+    // updatePublishStatus retryCountByTarget tests
+    // ---------------------------------------------------------------
+
+    @Test
+    void updatePublishStatus_incrementsRetryCountOnFailed() {
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("_id", "lineage:evt-1");
+        doc.put("_rev", "1-abc");
+        Map<String, String> statusMap = new LinkedHashMap<>();
+        statusMap.put("purview", "PROJECTING");
+        doc.put("publishStatusByTarget", statusMap);
+
+        doReturn(doc).when(mockClient).get(eq(Map.class), eq("lineage:evt-1"), isNull());
+        DocumentResult result = mock(DocumentResult.class);
+        when(result.isOk()).thenReturn(true);
+        when(mockClient.update(any(Map.class))).thenReturn(result);
+
+        int updated = store.updatePublishStatus("evt-1", "purview", LineagePublishStatus.FAILED);
+        assertEquals(1, updated);
+
+        verify(mockClient).update(argThat(map -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> m = (Map<String, Object>) map;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> retryCounts = (Map<String, Object>) m.get("retryCountByTarget");
+            return retryCounts != null && ((Number) retryCounts.get("purview")).intValue() == 1;
+        }));
+    }
+
+    // ---------------------------------------------------------------
+    // updatePublishStatus claimedAtByTarget tests (R4)
+    // ---------------------------------------------------------------
+
+    @Test
+    void updatePublishStatus_setsClaimedAtOnProjecting() {
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("_id", "lineage:evt-2");
+        doc.put("_rev", "1-abc");
+        Map<String, String> statusMap = new LinkedHashMap<>();
+        statusMap.put("purview", "PENDING");
+        doc.put("publishStatusByTarget", statusMap);
+
+        doReturn(doc).when(mockClient).get(eq(Map.class), eq("lineage:evt-2"), isNull());
+        DocumentResult result = mock(DocumentResult.class);
+        when(result.isOk()).thenReturn(true);
+        when(mockClient.update(any(Map.class))).thenReturn(result);
+
+        int updated = store.updatePublishStatus("evt-2", "purview", LineagePublishStatus.PROJECTING);
+        assertEquals(1, updated);
+
+        verify(mockClient).update(argThat(map -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> m = (Map<String, Object>) map;
+            @SuppressWarnings("unchecked")
+            Map<String, String> claimedAt = (Map<String, String>) m.get("claimedAtByTarget");
+            return claimedAt != null && claimedAt.containsKey("purview")
+                    && claimedAt.get("purview").startsWith("20"); // ISO 8601 timestamp
+        }));
+    }
+
+    @Test
+    void updatePublishStatus_doesNotSetClaimedAtOnNonProjecting() {
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("_id", "lineage:evt-3");
+        doc.put("_rev", "1-abc");
+        Map<String, String> statusMap = new LinkedHashMap<>();
+        statusMap.put("purview", "PROJECTING");
+        doc.put("publishStatusByTarget", statusMap);
+
+        doReturn(doc).when(mockClient).get(eq(Map.class), eq("lineage:evt-3"), isNull());
+        DocumentResult result = mock(DocumentResult.class);
+        when(result.isOk()).thenReturn(true);
+        when(mockClient.update(any(Map.class))).thenReturn(result);
+
+        store.updatePublishStatus("evt-3", "purview", LineagePublishStatus.PUBLISHED);
+
+        verify(mockClient).update(argThat(map -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> m = (Map<String, Object>) map;
+            // claimedAtByTarget should not be set for PUBLISHED transition
+            return !m.containsKey("claimedAtByTarget");
+        }));
+    }
+
+    // ---------------------------------------------------------------
+    // getRetryCount tests (R5)
+    // ---------------------------------------------------------------
+
+    @Test
+    void getRetryCount_returnsCountFromDocument() {
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("_id", "lineage:evt-4");
+        Map<String, Object> retryCounts = new LinkedHashMap<>();
+        retryCounts.put("purview", 3);
+        doc.put("retryCountByTarget", retryCounts);
+
+        doReturn(doc).when(mockClient).get(eq(Map.class), eq("lineage:evt-4"), isNull());
+
+        assertEquals(3, store.getRetryCount("evt-4", "purview"));
+    }
+
+    @Test
+    void getRetryCount_returnsZeroWhenNoRetryField() {
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("_id", "lineage:evt-5");
+
+        doReturn(doc).when(mockClient).get(eq(Map.class), eq("lineage:evt-5"), isNull());
+
+        assertEquals(0, store.getRetryCount("evt-5", "purview"));
+    }
+
+    @Test
+    void getRetryCount_returnsZeroWhenDocNotFound() {
+        doReturn(null).when(mockClient).get(eq(Map.class), eq("lineage:evt-6"), isNull());
+
+        assertEquals(0, store.getRetryCount("evt-6", "purview"));
+    }
+
+    @Test
+    void getRetryCount_returnsZeroWhenTargetNotInMap() {
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("_id", "lineage:evt-7");
+        Map<String, Object> retryCounts = new LinkedHashMap<>();
+        retryCounts.put("atlas", 2);
+        doc.put("retryCountByTarget", retryCounts);
+
+        doReturn(doc).when(mockClient).get(eq(Map.class), eq("lineage:evt-7"), isNull());
+
+        assertEquals(0, store.getRetryCount("evt-7", "purview"));
+    }
 }

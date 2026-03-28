@@ -2708,6 +2708,12 @@
       "backlogMaxDocsHelp": "未配信イベントの総数がこの上限を超えると、古い順に自動破棄。0 で無効。デフォルト: 10000",
       "backlogMaxSizeMb": "バックログ最大サイズ (MB)",
       "backlogMaxSizeMbHelp": "未配信イベントの推定サイズがこの上限を超えると、古い順に自動破棄。0 で無効。デフォルト: 100MB",
+      "projectionPollInterval": "プロジェクションポーリング間隔 (秒)",
+      "projectionPollIntervalHelp": "ジャーナルからターゲットへの投影ポーリング間隔。デフォルト: 10秒",
+      "projectionBatchSize": "プロジェクションバッチサイズ",
+      "projectionBatchSizeHelp": "1回のポーリングで処理するイベントの最大数。デフォルト: 50",
+      "projectionStaleThreshold": "PROJECTING タイムアウト (分)",
+      "projectionStaleThresholdHelp": "PROJECTING 状態がこの時間を超えると FAILED にリセット。デフォルト: 5分",
       "internalApiNotice": "イベントデータの閲覧・リプレイ機能は現在提供されていません。この画面では設定のみ変更できます。"
     }
   }

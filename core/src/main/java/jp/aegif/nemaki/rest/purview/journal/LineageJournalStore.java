@@ -335,5 +335,42 @@ public interface LineageJournalStore {
      */
     Map<LineageProcessType, Long> countByProcessType();
 
+    /**
+     * Returns events for a specific target and publish status.
+     *
+     * <p>Used by the projection loop to find PENDING or FAILED events
+     * that need to be published or retried.
+     *
+     * @param target the target sink name (e.g. "purview")
+     * @param status the publish status to filter by
+     * @param limit  maximum number of events to return
+     * @return list of events (empty if store is inactive)
+     */
+    List<LineageEvent> findByTargetAndStatus(String target, LineagePublishStatus status, int limit);
+
+
+    /**
+     * Reaps stale PROJECTING events for the given target.
+     *
+     * <p>Events stuck in PROJECTING state longer than {@code staleMinutes}
+     * are reset to FAILED for retry. Uses {@code claimedAtByTarget} timestamp
+     * rather than {@code occurredAt} for accurate staleness detection.
+     *
+     * @param target       the target sink name (e.g. "purview")
+     * @param staleMinutes threshold in minutes; PROJECTING events older than this are reset
+     * @return number of events reset to FAILED
+     */
+    int reapStaleProjecting(String target, int staleMinutes);
+
+
+    /**
+     * Returns the retry count for a specific event-target pair.
+     *
+     * @param eventId the event identifier
+     * @param target  the target sink name
+     * @return the retry count, or 0 if not found or not tracked
+     */
+    int getRetryCount(String eventId, String target);
+
     boolean isActive();
 }

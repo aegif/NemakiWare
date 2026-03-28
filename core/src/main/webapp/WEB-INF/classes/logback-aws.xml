@@ -23,6 +23,20 @@
 		</encoder>
 	</appender>
 
+	<!-- Lineage Dead-Letter Appender -->
+	<property name="LINEAGE_DLQ_FILE" value="${catalina.home}/logs/lineage-dead-letter.log" />
+	<appender name="LINEAGE_DLQ"
+		class="ch.qos.logback.core.FileAppender">
+		<file>${LINEAGE_DLQ_FILE}</file>
+		<encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+			<pattern>%d{ISO8601} %msg%n</pattern>
+		</encoder>
+	</appender>
+
+	<logger name="LINEAGE_DEAD_LETTER" level="ERROR" additivity="false">
+		<appender-ref ref="LINEAGE_DLQ" />
+	</logger>
+
 	<root level="WARN">
 		<appender-ref ref="FILE" />
 	</root>

@@ -44,6 +44,9 @@ export function LineageSettingsTab() {
     { key: 'lineage.backlog.max-retry-age-hours', labelKey: 'integrationSettings.lineage.backlogMaxRetryAgeHours', type: 'text' as const, placeholder: '72', helpKey: 'integrationSettings.lineage.backlogMaxRetryAgeHoursHelp' },
     { key: 'lineage.backlog.max-docs', labelKey: 'integrationSettings.lineage.backlogMaxDocs', type: 'text' as const, placeholder: '10000', helpKey: 'integrationSettings.lineage.backlogMaxDocsHelp' },
     { key: 'lineage.backlog.max-size-mb', labelKey: 'integrationSettings.lineage.backlogMaxSizeMb', type: 'text' as const, placeholder: '100', helpKey: 'integrationSettings.lineage.backlogMaxSizeMbHelp' },
+    { key: 'lineage.projection.poll-interval-seconds', labelKey: 'integrationSettings.lineage.projectionPollInterval', type: 'text' as const, placeholder: '10', helpKey: 'integrationSettings.lineage.projectionPollIntervalHelp' },
+    { key: 'lineage.projection.batch-size', labelKey: 'integrationSettings.lineage.projectionBatchSize', type: 'text' as const, placeholder: '50', helpKey: 'integrationSettings.lineage.projectionBatchSizeHelp' },
+    { key: 'lineage.projection.stale-threshold-minutes', labelKey: 'integrationSettings.lineage.projectionStaleThreshold', type: 'text' as const, placeholder: '5', helpKey: 'integrationSettings.lineage.projectionStaleThresholdHelp' },
   ], []);
 
   const onSave = async () => {

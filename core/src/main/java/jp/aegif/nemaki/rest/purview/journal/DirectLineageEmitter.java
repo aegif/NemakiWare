@@ -1,5 +1,9 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
+import java.util.List;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
@@ -17,10 +21,6 @@ import org.slf4j.LoggerFactory;
  * returns immediately. The caller's thread is never blocked by
  * Purview/Atlas/Dataplex latency or outages.
  *
- * <p>Phase 2 will inject an async executor and actual publish sink
- * adapters (Purview, Atlas, Dataplex). Until then, {@code emit()} logs
- * and returns.
- *
  * <h3>Delivery Guarantee: at-most-once, best-effort</h3>
  *
  * <p>This emitter has <b>no local store</b> and <b>no automatic retry</b>.
@@ -32,13 +32,6 @@ import org.slf4j.LoggerFactory;
  *   <li><b>Not retried automatically</b></li>
  * </ol>
  *
- * <p>Recovery requires operator intervention: extract events from the
- * dead-letter log and replay them via the admin API after the target
- * recovers.
- *
- * <p><b>If automatic retry or at-least-once delivery is required,
- * use {@code journaled} mode instead.</b>
- *
  * <h3>Failure Policy (fail-open)</h3>
  * <p>This emitter catches all exceptions, logs an error, records to
  * dead-letter, and returns normally. The parent business operation is
@@ -49,10 +42,24 @@ public class DirectLineageEmitter implements LineageEmitter {
     private static final Logger logger = LoggerFactory.getLogger(DirectLineageEmitter.class);
 
     private final LineageConfig config;
+    private final List<LineageTargetSink> sinks;
+    private final ThreadPoolExecutor asyncWorker;
     private final AtomicLong failureCount = new AtomicLong(0);
 
+    /** Backward-compatible constructor (no sinks — log-only mode). */
     public DirectLineageEmitter(LineageConfig config) {
+        this(config, List.of());
+    }
+
+    public DirectLineageEmitter(LineageConfig config, List<LineageTargetSink> sinks) {
         this.config = config;
+        this.sinks = sinks != null ? sinks : List.of();
+        this.asyncWorker = new ThreadPoolExecutor(
+                0, Integer.MAX_VALUE,
+                60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(1000),
+                Thread.ofVirtual().name("lineage-direct-", 0).factory(),
+                new ThreadPoolExecutor.CallerRunsPolicy());
     }
 
     @Override
@@ -66,18 +73,42 @@ public class DirectLineageEmitter implements LineageEmitter {
                         event.eventKey(), event.processType(), event.repositoryId(),
                         event.sequenceNumber());
             }
-            // Phase 2: enqueue for async publish to each target sink.
-            // The async worker iterates config.getTargets() and dispatches.
-            // No external network I/O occurs on the caller's thread.
-            // Idempotency is enforced by eventKey at each sink adapter.
+
+            // Dispatch to each available target sink asynchronously
+            for (LineageTargetSink sink : sinks) {
+                if (!sink.isAvailable()) {
+                    continue;
+                }
+                asyncWorker.submit(() -> publishToSink(sink, event));
+            }
         } catch (Exception e) {
             // Fail-open: never block the business operation
             failureCount.incrementAndGet();
-            logger.error("Failed to publish lineage event (fail-open): eventKey={}, repo={}, error={}",
+            logger.error("Failed to enqueue lineage event (fail-open): eventKey={}, repo={}, error={}",
                     event.eventKey(), event.repositoryId(), e.getMessage(), e);
 
             // Persist to file-based dead-letter log so the event is not silently lost.
             LineageDeadLetterSink.record(event, e.getMessage());
+        }
+    }
+
+    private void publishToSink(LineageTargetSink sink, LineageEvent event) {
+        try {
+            LineageTargetSinkResult result = sink.publish(event);
+            if (!result.success()) {
+                failureCount.incrementAndGet();
+                logger.warn("Direct publish failed to '{}': eventKey={}, error={}",
+                        sink.targetName(), event.eventKey(), result.message());
+                LineageDeadLetterSink.record(event, "direct-publish-failed:" + sink.targetName() + ":" + result.message());
+            } else {
+                logger.debug("Direct publish succeeded to '{}': eventKey={}, entities={}",
+                        sink.targetName(), event.eventKey(), result.entityCount());
+            }
+        } catch (Exception e) {
+            failureCount.incrementAndGet();
+            logger.error("Direct publish exception to '{}': eventKey={}, error={}",
+                    sink.targetName(), event.eventKey(), e.getMessage(), e);
+            LineageDeadLetterSink.record(event, "direct-publish-exception:" + sink.targetName() + ":" + e.getMessage());
         }
     }
 

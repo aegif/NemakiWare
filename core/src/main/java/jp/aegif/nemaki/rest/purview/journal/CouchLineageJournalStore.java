@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -135,8 +136,10 @@ public class CouchLineageJournalStore implements LineageJournalStore {
                 GetDatabaseInformationOptions infoOpts = new GetDatabaseInformationOptions.Builder()
                         .db(DB_NAME).build();
                 cloudant.getDatabaseInformation(infoOpts).execute();
-                // DB exists — set up client for reads (skip view deployment)
+                // DB exists — set up client for reads and ensure views are deployed
                 lineageClient = new CloudantClientWrapper(cloudant, DB_NAME, objectMapper);
+                deployViews();
+                dbProvisioned.set(true);
                 logger.info("Discovered existing lineage journal database '{}' for read access", DB_NAME);
                 return true;
             } catch (NotFoundException e) {
@@ -179,6 +182,12 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         // View 5: by_occurred_at — cross-repository time ordering for findAll
         client.createOrUpdateView(DESIGN_DOC, "by_occurred_at",
                 "function(doc) { if (doc.type === 'lineage_event') { emit(doc.occurredAt, null); } }",
+                null);
+
+        // View 6: by_repository_and_process_type — repository+processType composite filter
+        client.createOrUpdateView(DESIGN_DOC, "by_repository_and_process_type",
+                "function(doc) { if (doc.type === 'lineage_event' && doc.repositoryId && doc.processType) { " +
+                        "emit([doc.repositoryId, doc.processType], null); } }",
                 null);
 
         logger.info("Lineage journal views deployed to design document '{}'", DESIGN_DOC);
@@ -244,14 +253,20 @@ public class CouchLineageJournalStore implements LineageJournalStore {
 
     @Override
     public List<LineageEvent> findByProcessType(String repositoryId, LineageProcessType processType, int limit, int offset) {
-        // Fetch from repository view and filter by processType in memory.
-        // Overfetch to compensate for the in-memory filter, then apply offset/limit.
-        List<LineageEvent> all = findByRepositoryId(repositoryId, limit + offset + 200, 0);
-        return all.stream()
-                .filter(e -> e.processType() == processType)
-                .skip(offset)
-                .limit(limit)
-                .toList();
+        if (!ensureClientForRead()) {
+            return List.of();
+        }
+        Map<String, Object> params = new HashMap<>();
+        List<String> key = List.of(repositoryId, processType.name());
+        params.put("startkey", key);
+        params.put("endkey", key);
+        params.put("reduce", false);
+        params.put("limit", limit);
+        if (offset > 0) {
+            params.put("skip", offset);
+        }
+        params.put("include_docs", true);
+        return queryEventsFromView("by_repository_and_process_type", params);
     }
 
     @Override
@@ -297,6 +312,29 @@ public class CouchLineageJournalStore implements LineageJournalStore {
             }
             statusMap.put(target, status.name());
             doc.put("publishStatusByTarget", statusMap);
+
+            // Record claim timestamp on PROJECTING transition (for stale reaper)
+            if (status == LineagePublishStatus.PROJECTING) {
+                @SuppressWarnings("unchecked")
+                Map<String, String> claimedAtMap = (Map<String, String>) doc.get("claimedAtByTarget");
+                if (claimedAtMap == null) {
+                    claimedAtMap = new LinkedHashMap<>();
+                } else {
+                    claimedAtMap = new LinkedHashMap<>(claimedAtMap);
+                }
+                claimedAtMap.put(target, Instant.now().toString());
+                doc.put("claimedAtByTarget", claimedAtMap);
+            }
+
+            // Increment retry count on FAILED transition
+            if (status == LineagePublishStatus.FAILED) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> retryCounts = (Map<String, Object>) doc.getOrDefault("retryCountByTarget", new LinkedHashMap<>());
+                retryCounts = new LinkedHashMap<>(retryCounts);
+                int current = retryCounts.containsKey(target) ? ((Number) retryCounts.get(target)).intValue() : 0;
+                retryCounts.put(target, current + 1);
+                doc.put("retryCountByTarget", retryCounts);
+            }
 
             var result = getLineageClient().update(doc);
             if (result != null && result.isOk()) {
@@ -499,6 +537,86 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         } catch (Exception e) {
             logger.error("Error querying countByProcessType: {}", e.getMessage(), e);
             return Map.of();
+        }
+    }
+
+    @Override
+    public List<LineageEvent> findByTargetAndStatus(String target, LineagePublishStatus status, int limit) {
+        if (!ensureClientForRead()) {
+            return List.of();
+        }
+        Map<String, Object> params = new HashMap<>();
+        List<String> key = List.of(target, status.name());
+        params.put("startkey", key);
+        params.put("endkey", key);
+        params.put("reduce", false);
+        params.put("limit", limit);
+        params.put("include_docs", true);
+        return queryEventsFromView("by_target_status", params);
+    }
+
+    @Override
+    public int reapStaleProjecting(String target, int staleMinutes) {
+        if (!ensureClientForRead()) {
+            return 0;
+        }
+        Instant staleCutoff = Instant.now().minus(Duration.ofMinutes(staleMinutes));
+        String staleCutoffStr = staleCutoff.toString();
+
+        List<LineageEvent> projecting = findByTargetAndStatus(
+                target, LineagePublishStatus.PROJECTING, 200);
+
+        int reaped = 0;
+        for (LineageEvent event : projecting) {
+            try {
+                String docId = CouchLineageEvent.ID_PREFIX + event.eventId();
+                @SuppressWarnings("unchecked")
+                Map<String, Object> doc = (Map<String, Object>) getLineageClient().get(Map.class, docId, null);
+                if (doc == null) continue;
+
+                // Check claimedAtByTarget for accurate staleness
+                @SuppressWarnings("unchecked")
+                Map<String, String> claimedAtMap = (Map<String, String>) doc.get("claimedAtByTarget");
+                String claimedAt = (claimedAtMap != null) ? claimedAtMap.get(target) : null;
+
+                // Fall back to occurredAt if claimedAt not present (pre-upgrade events)
+                String compareTs = (claimedAt != null) ? claimedAt : event.occurredAt();
+
+                if (compareTs.compareTo(staleCutoffStr) < 0) {
+                    int reset = updatePublishStatus(event.eventId(), target, LineagePublishStatus.FAILED);
+                    if (reset > 0) {
+                        logger.info("Reset stale PROJECTING event to FAILED: eventKey={}, target={}, claimedAt={}",
+                                event.eventKey(), target, compareTs);
+                        reaped++;
+                    }
+                }
+            } catch (Exception e) {
+                logger.debug("Error checking stale event {}: {}", event.eventId(), e.getMessage());
+            }
+        }
+        return reaped;
+    }
+
+    @Override
+    public int getRetryCount(String eventId, String target) {
+        if (!ensureClientForRead()) {
+            return 0;
+        }
+        try {
+            String docId = CouchLineageEvent.ID_PREFIX + eventId;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> doc = (Map<String, Object>) getLineageClient().get(Map.class, docId, null);
+            if (doc == null) return 0;
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> retryCounts = (Map<String, Object>) doc.get("retryCountByTarget");
+            if (retryCounts == null) return 0;
+
+            Object count = retryCounts.get(target);
+            return (count instanceof Number) ? ((Number) count).intValue() : 0;
+        } catch (Exception e) {
+            logger.debug("Error reading retry count for event {}: {}", eventId, e.getMessage());
+            return 0;
         }
     }
 

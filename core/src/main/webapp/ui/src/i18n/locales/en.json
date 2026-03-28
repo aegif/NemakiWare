@@ -2708,6 +2708,12 @@
       "backlogMaxDocsHelp": "When non-terminal events exceed this count, oldest are auto-discarded. 0 to disable. Default: 10000",
       "backlogMaxSizeMb": "Max Backlog Size (MB)",
       "backlogMaxSizeMbHelp": "When estimated non-terminal event size exceeds this, oldest are auto-discarded. 0 to disable. Default: 100MB",
+      "projectionPollInterval": "Projection Poll Interval (seconds)",
+      "projectionPollIntervalHelp": "How often the projector polls the journal for pending events. Default: 10 seconds",
+      "projectionBatchSize": "Projection Batch Size",
+      "projectionBatchSizeHelp": "Maximum events processed per poll cycle. Default: 50",
+      "projectionStaleThreshold": "PROJECTING Timeout (minutes)",
+      "projectionStaleThresholdHelp": "PROJECTING events older than this are reset to FAILED. Default: 5 minutes",
       "internalApiNotice": "Event browsing and replay are not available yet. This screen controls configuration only."
     }
   }

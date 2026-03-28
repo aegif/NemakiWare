@@ -33,6 +33,7 @@ import jp.aegif.nemaki.rest.purview.journal.LineageEvent;
 import jp.aegif.nemaki.rest.purview.journal.LineageEventBuilder;
 import jp.aegif.nemaki.rest.purview.journal.LineageJournalStore;
 import jp.aegif.nemaki.rest.purview.journal.LineageProcessType;
+import jp.aegif.nemaki.rest.purview.journal.LineageTargetSink;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.RetentionLogDaoService;
 import jp.aegif.nemaki.model.Archive;
@@ -643,7 +644,11 @@ public class RetentionScheduler {
 
             LineageJournalStore store = SpringContext.getApplicationContext()
                     .getBean(LineageJournalStore.class);
-            LineageEmitter emitter = config.createEmitterForMode(mode, store);
+            @SuppressWarnings("unchecked")
+            java.util.List<LineageTargetSink> sinks = (java.util.List<LineageTargetSink>)
+                    (java.util.List<?>) SpringContext.getApplicationContext()
+                    .getBeansOfType(LineageTargetSink.class).values().stream().toList();
+            LineageEmitter emitter = config.createEmitterForMode(mode, store, sinks);
             if (emitter.isActive()) {
                 emitter.emit(event);
             }

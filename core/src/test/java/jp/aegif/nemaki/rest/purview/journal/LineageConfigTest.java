@@ -257,6 +257,41 @@ public class LineageConfigTest {
         assertEquals(5, config.getBacklogMaxRetryCount());
     }
 
+    // --- Projection loop settings tests ---
+
+    @Test
+    public void testProjectionPollIntervalSecondsDefault() throws Exception {
+        LineageConfig config = newConfig("disabled", "", 90, false, false, "");
+        assertEquals(10, config.getProjectionPollIntervalSeconds());
+    }
+
+    @Test
+    public void testProjectionBatchSizeDefault() throws Exception {
+        LineageConfig config = newConfig("disabled", "", 90, false, false, "");
+        assertEquals(50, config.getProjectionBatchSize());
+    }
+
+    @Test
+    public void testProjectionStaleThresholdMinutesDefault() throws Exception {
+        LineageConfig config = newConfig("disabled", "", 90, false, false, "");
+        assertEquals(5, config.getProjectionStaleThresholdMinutes());
+    }
+
+    @Test
+    public void testProjectionSettingsDynamicOverride() throws Exception {
+        LineageConfig config = newConfig("disabled", "", 90, false, false, "");
+
+        PropertyManager pm = mock(PropertyManager.class);
+        when(pm.readValue("lineage.projection.poll-interval-seconds")).thenReturn("30");
+        when(pm.readValue("lineage.projection.batch-size")).thenReturn("100");
+        when(pm.readValue("lineage.projection.stale-threshold-minutes")).thenReturn("10");
+        setField(config, "propertyManager", pm);
+
+        assertEquals(30, config.getProjectionPollIntervalSeconds());
+        assertEquals(100, config.getProjectionBatchSize());
+        assertEquals(10, config.getProjectionStaleThresholdMinutes());
+    }
+
     private LineageConfig newConfig(String mode, String targets, int retentionDays,
                                      boolean captureVersionEvents, boolean captureGenericRelationships,
                                      String purgeCron) throws Exception {
@@ -274,6 +309,9 @@ public class LineageConfigTest {
         setField(config, "backlogMaxRetryAgeHours", 72);
         setField(config, "backlogMaxDocs", 10000);
         setField(config, "backlogMaxSizeMb", 100);
+        setField(config, "projectionPollIntervalSeconds", 10);
+        setField(config, "projectionBatchSize", 50);
+        setField(config, "projectionStaleThresholdMinutes", 5);
         return config;
     }
 

@@ -140,6 +140,17 @@ public class LineageConfig {
     @Value("${lineage.backlog.max-size-mb:100}")
     private int backlogMaxSizeMb;
 
+    // --- Projection loop settings (journaled mode) ---
+
+    @Value("${lineage.projection.poll-interval-seconds:10}")
+    private int projectionPollIntervalSeconds;
+
+    @Value("${lineage.projection.batch-size:50}")
+    private int projectionBatchSize;
+
+    @Value("${lineage.projection.stale-threshold-minutes:5}")
+    private int projectionStaleThresholdMinutes;
+
     /** Returns the instance-wide default lineage mode. */
     public LineageMode getMode() {
         return LineageMode.fromString(readDynamic("lineage.mode", mode));
@@ -285,6 +296,23 @@ public class LineageConfig {
     }
 
 
+    // --- Projection loop getters (journaled mode only) ---
+
+    /** Poll interval in seconds for the projection loop. Default: 10. */
+    public int getProjectionPollIntervalSeconds() {
+        return readDynamicInt("lineage.projection.poll-interval-seconds", projectionPollIntervalSeconds);
+    }
+
+    /** Maximum events per projection batch. Default: 50. */
+    public int getProjectionBatchSize() {
+        return readDynamicInt("lineage.projection.batch-size", projectionBatchSize);
+    }
+
+    /** Minutes before a PROJECTING event is considered stale. Default: 5. */
+    public int getProjectionStaleThresholdMinutes() {
+        return readDynamicInt("lineage.projection.stale-threshold-minutes", projectionStaleThresholdMinutes);
+    }
+
     // --- Cached emitter (lazy-init, mode-change tracking) ---
     private volatile LineageEmitter cachedEmitter;
     private volatile LineageMode cachedMode;
@@ -308,9 +336,20 @@ public class LineageConfig {
      * @return the emitter for the current lineage mode
      */
     public LineageEmitter createEmitter(LineageJournalStore store) {
+        return createEmitter(store, List.of());
+    }
+
+    /**
+     * Creates the appropriate {@link LineageEmitter} with target sinks.
+     *
+     * @param store the journal store (used only in JOURNALED mode)
+     * @param sinks target sinks for direct mode async dispatch
+     * @return the emitter for the current lineage mode
+     */
+    public LineageEmitter createEmitter(LineageJournalStore store, List<LineageTargetSink> sinks) {
         return switch (getMode()) {
             case DISABLED  -> new NoopLineageEmitter();
-            case DIRECT    -> new DirectLineageEmitter(this);
+            case DIRECT    -> new DirectLineageEmitter(this, sinks);
             case JOURNALED -> new JournaledLineageEmitter(store, this);
         };
     }
@@ -327,9 +366,22 @@ public class LineageConfig {
      * @return the emitter for the given mode
      */
     public LineageEmitter createEmitterForMode(LineageMode mode, LineageJournalStore store) {
+        return createEmitterForMode(mode, store, List.of());
+    }
+
+    /**
+     * Creates an emitter for an explicitly specified mode with target sinks.
+     *
+     * @param mode  the resolved lineage mode
+     * @param store the journal store (used only in JOURNALED mode)
+     * @param sinks target sinks for direct mode async dispatch
+     * @return the emitter for the given mode
+     */
+    public LineageEmitter createEmitterForMode(LineageMode mode, LineageJournalStore store,
+                                                List<LineageTargetSink> sinks) {
         return switch (mode) {
             case DISABLED  -> new NoopLineageEmitter();
-            case DIRECT    -> new DirectLineageEmitter(this);
+            case DIRECT    -> new DirectLineageEmitter(this, sinks);
             case JOURNALED -> new JournaledLineageEmitter(store, this);
         };
     }
@@ -347,9 +399,20 @@ public class LineageConfig {
      * @return the cached emitter for the current mode (never null)
      */
     public LineageEmitter getEmitter(LineageJournalStore store) {
+        return getEmitter(store, List.of());
+    }
+
+    /**
+     * Returns a cached {@link LineageEmitter} with target sinks.
+     *
+     * @param store the journal store
+     * @param sinks target sinks for direct mode async dispatch
+     * @return the cached emitter for the current mode (never null)
+     */
+    public LineageEmitter getEmitter(LineageJournalStore store, List<LineageTargetSink> sinks) {
         LineageMode current = getMode();
         if (cachedEmitter == null || current != cachedMode) {
-            cachedEmitter = createEmitter(store);
+            cachedEmitter = createEmitter(store, sinks);
             cachedMode = current;
         }
         return cachedEmitter;
