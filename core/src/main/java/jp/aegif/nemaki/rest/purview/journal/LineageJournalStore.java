@@ -423,5 +423,17 @@ public interface LineageJournalStore {
      */
     List<LineageEvent> findByRepositoryAndSequenceRange(String repositoryId, long fromSequence, int limit);
 
+    /**
+     * Returns distinct repository IDs that have at least one non-terminal event
+     * for the given target (PENDING, FAILED, or PROJECTING).
+     *
+     * <p>Used by the ordered projection loop to discover all repositories
+     * that need processing, without being limited by a batch size.
+     *
+     * @param target the target sink name (e.g. "purview")
+     * @return distinct repository IDs with non-terminal events
+     */
+    List<String> findDistinctNonTerminalRepositoryIds(String target);
+
     boolean isActive();
 }

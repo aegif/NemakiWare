@@ -145,14 +145,41 @@ public class CouchLineageDeadLetterStore implements LineageDeadLetterStore {
             Boolean alreadyReplayed = (Boolean) doc.get("replayed");
             if (Boolean.TRUE.equals(alreadyReplayed)) return false;
 
-            // Reconstruct LineageEvent
-            LineageEvent event = reconstructEvent(doc);
-            if (event == null) return false;
+            // Check if the original journal event still exists
+            LineageEvent existing = targetStore.findByEventId(eventId);
+            if (existing != null) {
+                // Original exists — reset FAILED/DISCARDED targets to PENDING
+                boolean anyReset = false;
+                for (Map.Entry<String, LineagePublishStatus> entry : existing.publishStatusByTarget().entrySet()) {
+                    LineagePublishStatus status = entry.getValue();
+                    if (status == LineagePublishStatus.FAILED || status == LineagePublishStatus.DISCARDED) {
+                        int updated = targetStore.updatePublishStatus(eventId, entry.getKey(), LineagePublishStatus.PENDING);
+                        if (updated > 0) anyReset = true;
+                    }
+                }
+                if (!anyReset) {
+                    logger.info("Replay of dead-letter {} — no targets needed reset", eventId);
+                }
+            } else {
+                // Original was purged — reconstruct with proper publishStatusByTarget
+                LineageEvent base = reconstructEvent(doc);
+                if (base == null) return false;
 
-            // Re-append to journal (idempotent by eventKey)
-            targetStore.append(event);
+                Map<String, LineagePublishStatus> statusMap = new LinkedHashMap<>();
+                for (String target : lineageConfig.getTargets()) {
+                    statusMap.put(target, LineagePublishStatus.PENDING);
+                }
 
-            // Mark as replayed
+                LineageEvent replayEvent = new LineageEvent(
+                        base.schemaVersion(), base.eventId(), base.eventKey(),
+                        base.sequenceNumber(), base.occurredAt(), base.repositoryId(),
+                        base.processType(), base.inputs(), base.outputs(),
+                        base.runId(), base.correlationId(), base.version(),
+                        base.snapshotAttributes(), statusMap);
+                targetStore.append(replayEvent);
+            }
+
+            // Mark dead-letter as replayed
             doc.put("replayed", true);
             doc.put("replayedAt", Instant.now().toString());
             client.update(doc);

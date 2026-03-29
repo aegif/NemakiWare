@@ -210,7 +210,9 @@ public class LineageProjectionLoop {
     private void projectEventsOrdered(String targetName, LineageTargetSink sink) {
         int batchSize = lineageConfig.getProjectionBatchSize();
 
-        // Collect distinct repository IDs from cursor store + pending events
+        // Collect distinct repository IDs from cursor store + all non-terminal events.
+        // Uses a dedicated view query (no batchSize limit) to avoid starving
+        // repositories that happen to fall outside the first N events.
         Set<String> repositoryIds = new LinkedHashSet<>();
         List<ProjectionCursor> cursors = cursorStore.getAllCursors();
         for (ProjectionCursor c : cursors) {
@@ -219,15 +221,9 @@ public class LineageProjectionLoop {
             }
         }
 
-        // Also check for PENDING and FAILED events that may have no cursor yet
-        List<LineageEvent> pending = journalStore.findByTargetAndStatus(targetName, LineagePublishStatus.PENDING, batchSize);
-        for (LineageEvent e : pending) {
-            if (e.repositoryId() != null) repositoryIds.add(e.repositoryId());
-        }
-        List<LineageEvent> failed = journalStore.findByTargetAndStatus(targetName, LineagePublishStatus.FAILED, batchSize);
-        for (LineageEvent e : failed) {
-            if (e.repositoryId() != null) repositoryIds.add(e.repositoryId());
-        }
+        // Discover all repositories with non-terminal events via grouped view query
+        List<String> nonTerminalRepos = journalStore.findDistinctNonTerminalRepositoryIds(targetName);
+        repositoryIds.addAll(nonTerminalRepos);
 
         for (String repositoryId : repositoryIds) {
             projectEventsOrderedForRepo(targetName, sink, repositoryId, batchSize);

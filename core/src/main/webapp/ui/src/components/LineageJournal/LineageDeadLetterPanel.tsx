@@ -14,11 +14,13 @@ export default function LineageDeadLetterPanel() {
   const [records, setRecords] = useState<DeadLetterRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await getDeadLetters({ limit: 100 });
+      const offset = (pagination.current - 1) * pagination.pageSize;
+      const result = await getDeadLetters({ limit: pagination.pageSize, offset });
       setRecords(result.deadLetters || []);
       setTotal(result.total ?? result.deadLetters?.length ?? 0);
     } catch {
@@ -26,7 +28,7 @@ export default function LineageDeadLetterPanel() {
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [pagination, t]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -121,7 +123,13 @@ export default function LineageDeadLetterPanel() {
         rowKey="eventId"
         loading={loading}
         size="small"
-        pagination={{ pageSize: 20, total }}
+        pagination={{
+          current: pagination.current,
+          pageSize: pagination.pageSize,
+          total,
+          onChange: (page, pageSize) => setPagination({ current: page, pageSize }),
+          showSizeChanger: true,
+        }}
         locale={{ emptyText: t('integrationSettings.lineage.deadLetterEmpty') }}
       />
     </>

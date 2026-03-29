@@ -318,6 +318,32 @@ class LineageProjectionLoopTest {
         verify(mockStore, never()).discardEvent(any(), any());
     }
 
+    @Test
+    void pollAndProject_orderedUsesDistinctRepoIds() throws Exception {
+        // Set up cursor store to enable ordered path
+        ProjectionCursorStore mockCursorStore = mock(ProjectionCursorStore.class);
+        when(mockCursorStore.isActive()).thenReturn(true);
+        when(mockCursorStore.getAllCursors()).thenReturn(List.of());
+        setField(loop, "cursorStore", mockCursorStore);
+
+        // findDistinctNonTerminalRepositoryIds returns repos without batchSize limit
+        when(mockStore.findDistinctNonTerminalRepositoryIds("purview"))
+                .thenReturn(List.of("bedroom", "canopy"));
+
+        // No events for either repo (sequence range returns empty)
+        when(mockStore.findByRepositoryAndSequenceRange(anyString(), anyLong(), anyInt()))
+                .thenReturn(List.of());
+        when(mockStore.countNonTerminalByTarget("purview")).thenReturn(0L);
+        when(mockStore.reapStaleProjecting("purview", 5)).thenReturn(0);
+
+        loop.pollAndProject();
+
+        // Should discover repos via findDistinctNonTerminalRepositoryIds, not findByTargetAndStatus
+        verify(mockStore).findDistinctNonTerminalRepositoryIds("purview");
+        verify(mockStore).findByRepositoryAndSequenceRange("bedroom", 0, 50);
+        verify(mockStore).findByRepositoryAndSequenceRange("canopy", 0, 50);
+    }
+
     private static void setField(Object target, String fieldName, Object value) throws Exception {
         Field field = target.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);

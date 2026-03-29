@@ -124,29 +124,74 @@ class CouchLineageDeadLetterStoreTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    void replay_reappendsAndMarksReplayed() {
-        Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("_id", "lineage_dl:evt-1");
-        doc.put("_rev", "1-abc");
-        doc.put("eventId", "evt-1");
-        doc.put("eventKey", "bedroom:ARCHIVE_LOCAL:doc-1:arc-1");
-        doc.put("repositoryId", "bedroom");
-        doc.put("processType", "ARCHIVE_LOCAL");
-        doc.put("occurredAt", "2026-01-15T10:00:00Z");
-        doc.put("inputs", List.of("nemaki://bedroom/objects/doc-1"));
-        doc.put("outputs", List.of("nemaki://bedroom/archives/arc-1"));
-        doc.put("snapshotAttributes", Map.of("name", "test.txt"));
-        doc.put("replayed", false);
+    void replay_resetsStatusWhenOriginalExists() {
+        // Dead-letter record
+        Map<String, Object> dlDoc = new LinkedHashMap<>();
+        dlDoc.put("_id", "lineage_dl:evt-1");
+        dlDoc.put("_rev", "1-abc");
+        dlDoc.put("eventId", "evt-1");
+        dlDoc.put("replayed", false);
+
+        doReturn(dlDoc).when(mockClient).get(eq(Map.class), eq("lineage_dl:evt-1"), isNull());
+
+        // Original journal event exists with FAILED target
+        LineageEvent existing = new LineageEvent(
+                1, "evt-1", "key-1", 1, "2026-01-15T10:00:00Z", "bedroom",
+                LineageProcessType.ARCHIVE_LOCAL,
+                List.of("nemaki://bedroom/objects/doc-1"),
+                List.of("nemaki://bedroom/archives/arc-1"),
+                "", "", 1, Map.of(),
+                Map.of("purview", LineagePublishStatus.FAILED));
 
         LineageJournalStore targetStore = mock(LineageJournalStore.class);
-        doReturn(doc).when(mockClient).get(eq(Map.class), eq("lineage_dl:evt-1"), isNull());
+        when(targetStore.findByEventId("evt-1")).thenReturn(existing);
+        when(targetStore.updatePublishStatus("evt-1", "purview", LineagePublishStatus.PENDING)).thenReturn(1);
 
         boolean result = deadLetterStore.replay("evt-1", targetStore);
 
         assertTrue(result);
-        verify(targetStore).append(any(LineageEvent.class));
+        // Should reset FAILED target to PENDING, not call append
+        verify(targetStore).updatePublishStatus("evt-1", "purview", LineagePublishStatus.PENDING);
+        verify(targetStore, never()).append(any(LineageEvent.class));
+        // Dead-letter marked as replayed
         verify(mockClient).update(argThat(updated -> {
-            @SuppressWarnings("unchecked")
+            Map<String, Object> m = (Map<String, Object>) updated;
+            return Boolean.TRUE.equals(m.get("replayed"));
+        }));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void replay_appendsWithPendingTargetsWhenOriginalPurged() {
+        // Dead-letter record with full event data
+        Map<String, Object> dlDoc = new LinkedHashMap<>();
+        dlDoc.put("_id", "lineage_dl:evt-1");
+        dlDoc.put("_rev", "1-abc");
+        dlDoc.put("eventId", "evt-1");
+        dlDoc.put("eventKey", "bedroom:ARCHIVE_LOCAL:doc-1:arc-1");
+        dlDoc.put("repositoryId", "bedroom");
+        dlDoc.put("processType", "ARCHIVE_LOCAL");
+        dlDoc.put("occurredAt", "2026-01-15T10:00:00Z");
+        dlDoc.put("inputs", List.of("nemaki://bedroom/objects/doc-1"));
+        dlDoc.put("outputs", List.of("nemaki://bedroom/archives/arc-1"));
+        dlDoc.put("snapshotAttributes", Map.of("name", "test.txt"));
+        dlDoc.put("replayed", false);
+
+        doReturn(dlDoc).when(mockClient).get(eq(Map.class), eq("lineage_dl:evt-1"), isNull());
+
+        // Original event was purged
+        LineageJournalStore targetStore = mock(LineageJournalStore.class);
+        when(targetStore.findByEventId("evt-1")).thenReturn(null);
+        when(mockConfig.getTargets()).thenReturn(List.of("purview"));
+
+        boolean result = deadLetterStore.replay("evt-1", targetStore);
+
+        assertTrue(result);
+        // Should reconstruct and append with PENDING targets
+        verify(targetStore).append(argThat(event ->
+                event.publishStatusByTarget().get("purview") == LineagePublishStatus.PENDING
+        ));
+        verify(mockClient).update(argThat(updated -> {
             Map<String, Object> m = (Map<String, Object>) updated;
             return Boolean.TRUE.equals(m.get("replayed"))
                     && m.get("replayedAt") != null;

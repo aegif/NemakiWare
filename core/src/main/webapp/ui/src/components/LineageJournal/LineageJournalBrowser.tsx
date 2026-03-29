@@ -108,7 +108,10 @@ export default function LineageJournalBrowser() {
           allowClear
           placeholder={t('integrationSettings.lineage.filterProcessType')}
           style={{ width: 200 }}
-          onChange={(v) => setProcessTypeFilter(v)}
+          onChange={(v) => {
+            setProcessTypeFilter(v);
+            setPagination((prev) => ({ ...prev, current: 1 }));
+          }}
           options={[
             'CREATE_DOCUMENT', 'UPDATE_DOCUMENT', 'DELETE_DOCUMENT',
             'IMPORT_UPLOADED', 'EXPORT_ZIP_FOLDER', 'ARCHIVE_COLD',

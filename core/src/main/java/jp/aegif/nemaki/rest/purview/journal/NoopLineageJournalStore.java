@@ -110,6 +110,11 @@ public class NoopLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
+    public List<String> findDistinctNonTerminalRepositoryIds(String target) {
+        return List.of();
+    }
+
+    @Override
     public boolean isActive() {
         return false;
     }

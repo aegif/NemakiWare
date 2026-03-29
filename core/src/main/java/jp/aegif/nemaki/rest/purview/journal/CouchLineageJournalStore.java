@@ -216,6 +216,13 @@ public class CouchLineageJournalStore implements LineageJournalStore {
                         "emit([doc.repositoryId, doc.sequenceNumber], null); } }",
                 null);
 
+        // View 11: non_terminal_by_target_repo — distinct repos with non-terminal events per target
+        client.createOrUpdateView(DESIGN_DOC, "non_terminal_by_target_repo",
+                "function(doc) { if (doc.type === 'lineage_event' && doc.publishStatusByTarget && doc.repositoryId) { " +
+                        "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { " +
+                        "var s = t[k]; if (s === 'PENDING' || s === 'FAILED' || s === 'PROJECTING') { emit([k, doc.repositoryId], null); } } } } }",
+                "_count");
+
         logger.info("Lineage journal views deployed to design document '{}'", DESIGN_DOC);
     }
 
@@ -702,6 +709,40 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         }
         // Fallback: count × estimated average size
         return countNonTerminalByTarget(target) * 2048;
+    }
+
+    @Override
+    public List<String> findDistinctNonTerminalRepositoryIds(String target) {
+        if (!ensureClientForRead()) {
+            return List.of();
+        }
+        try {
+            Map<String, Object> params = new HashMap<>();
+            params.put("startkey", List.of(target, ""));
+            params.put("endkey", List.of(target, "\ufff0"));
+            params.put("reduce", true);
+            params.put("group", true);
+
+            ViewResult result = getLineageClient().queryView(DESIGN_DOC, "non_terminal_by_target_repo", params);
+            if (result == null || result.getRows() == null) {
+                return List.of();
+            }
+
+            List<String> repositoryIds = new ArrayList<>();
+            for (ViewResultRow row : result.getRows()) {
+                Object key = row.getKey();
+                if (key instanceof List<?> keyList && keyList.size() >= 2) {
+                    String repoId = String.valueOf(keyList.get(1));
+                    if (!repositoryIds.contains(repoId)) {
+                        repositoryIds.add(repoId);
+                    }
+                }
+            }
+            return repositoryIds;
+        } catch (Exception e) {
+            logger.debug("Error querying distinct non-terminal repository IDs for target {}: {}", target, e.getMessage());
+            return List.of();
+        }
     }
 
     @Override
