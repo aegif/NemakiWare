@@ -3,7 +3,7 @@ package jp.aegif.nemaki.rest.purview.publish;
 import jp.aegif.nemaki.rest.purview.lineage.PurviewArchiveLineageService;
 import jp.aegif.nemaki.rest.purview.sync.PurviewArchiveSyncResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.state.PurviewDeadLetterState;
 import jp.aegif.nemaki.rest.purview.state.PurviewDeadLetterStateService;
@@ -47,7 +47,7 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
     private static final String ARCHIVE_LINEAGE_TYPE_NAME = "nemaki_archive_process";
     private static final String UNIQUE_ATTRIBUTE_NAME = "qualifiedName";
 
-    private final PurviewConfig purviewConfig;
+    private final MetadataCatalogConnectionResolver connectionResolver;
     private final PurviewEntityPayloadFactory entityPayloadFactory;
     private final PurviewEntityRegistryClient entityRegistryClient;
     private final ContentDaoService contentDaoService;
@@ -57,7 +57,7 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
     private final PurviewDeadLetterStateService deadLetterStateService;
 
     public PurviewArchivePublishServiceImpl(
-            PurviewConfig purviewConfig,
+            MetadataCatalogConnectionResolver connectionResolver,
             PurviewEntityPayloadFactory entityPayloadFactory,
             PurviewEntityRegistryClient entityRegistryClient,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService,
@@ -65,7 +65,7 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
             PurviewDocumentPublishService documentPublishService,
             PurviewArchiveLineageService archiveLineageService,
             PurviewDeadLetterStateService deadLetterStateService) {
-        this.purviewConfig = purviewConfig;
+        this.connectionResolver = connectionResolver;
         this.entityPayloadFactory = entityPayloadFactory;
         this.entityRegistryClient = entityRegistryClient;
         this.contentDaoService = contentDaoService;
@@ -220,7 +220,7 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
             if (guidAccumulator != null && result.getEntityGuids() != null) {
                 guidAccumulator.putAll(result.getEntityGuids());
             }
-            if (guidAccumulator != null && purviewConfig.isAtlasOnPrem()) {
+            if (guidAccumulator != null && connectionResolver.isAtlasOnPrem()) {
                 resolveUnmappedGuids(sentRefs, guidAccumulator, result.getEntityGuids());
             }
             int publishedCount = result.getPublishedCount();
@@ -473,16 +473,6 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
     }
 
     private PurviewConnectionRequest buildConnectionRequest() {
-        return new PurviewConnectionRequest(
-                purviewConfig.getEndpoint(),
-                purviewConfig.getAtlasBasePath(),
-                purviewConfig.getAuthType(),
-                purviewConfig.getTenantId(),
-                purviewConfig.getClientId(),
-                purviewConfig.getClientSecret(),
-                purviewConfig.getBasicUsername(),
-                purviewConfig.getBasicPassword(),
-                purviewConfig.getConnectTimeoutMs(),
-                purviewConfig.getReadTimeoutMs());
+        return connectionResolver.buildConnectionRequest();
     }
 }

@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.purview.lineage;
 
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
@@ -17,15 +17,15 @@ import jp.aegif.nemaki.model.Content;
 @Service
 public class PurviewImportExportLineageServiceImpl implements PurviewImportExportLineageService {
 
-    private final PurviewConfig purviewConfig;
+    private final MetadataCatalogConnectionResolver connectionResolver;
     private final PurviewEntityPayloadFactory entityPayloadFactory;
     private final PurviewEntityRegistryClient entityRegistryClient;
 
     public PurviewImportExportLineageServiceImpl(
-            PurviewConfig purviewConfig,
+            MetadataCatalogConnectionResolver connectionResolver,
             PurviewEntityPayloadFactory entityPayloadFactory,
             PurviewEntityRegistryClient entityRegistryClient) {
-        this.purviewConfig = purviewConfig;
+        this.connectionResolver = connectionResolver;
         this.entityPayloadFactory = entityPayloadFactory;
         this.entityRegistryClient = entityRegistryClient;
     }
@@ -37,7 +37,7 @@ public class PurviewImportExportLineageServiceImpl implements PurviewImportExpor
             String sourcePath,
             String requestedBy,
             long objectCount) {
-        if (!purviewConfig.isEnabled()
+        if (!connectionResolver.isAnyEnabled()
                 || isBlank(repositoryId)
                 || isBlank(folderId)
                 || isBlank(sourcePath)) {
@@ -66,7 +66,7 @@ public class PurviewImportExportLineageServiceImpl implements PurviewImportExpor
             String importMode,
             String requestedBy,
             long objectCount) {
-        if (!purviewConfig.isEnabled()
+        if (!connectionResolver.isAnyEnabled()
                 || isBlank(repositoryId)
                 || isBlank(folderId)
                 || isBlank(importMode)
@@ -91,7 +91,7 @@ public class PurviewImportExportLineageServiceImpl implements PurviewImportExpor
             String targetPath,
             String requestedBy,
             long objectCount) {
-        if (!purviewConfig.isEnabled()
+        if (!connectionResolver.isAnyEnabled()
                 || isBlank(repositoryId)
                 || isBlank(folderId)
                 || isBlank(targetPath)) {
@@ -120,7 +120,7 @@ public class PurviewImportExportLineageServiceImpl implements PurviewImportExpor
             String folderName,
             String requestedBy,
             long objectCount) {
-        if (!purviewConfig.isEnabled()
+        if (!connectionResolver.isAnyEnabled()
                 || isBlank(repositoryId)
                 || isBlank(folderId)
                 || objectCount <= 0L) {
@@ -143,7 +143,7 @@ public class PurviewImportExportLineageServiceImpl implements PurviewImportExpor
             List<? extends Content> contents,
             String requestedBy,
             long objectCount) {
-        if (!purviewConfig.isEnabled()
+        if (!connectionResolver.isAnyEnabled()
                 || isBlank(repositoryId)
                 || contents == null
                 || contents.isEmpty()
@@ -175,17 +175,7 @@ public class PurviewImportExportLineageServiceImpl implements PurviewImportExpor
     }
 
     private PurviewConnectionRequest buildConnectionRequest() {
-        return new PurviewConnectionRequest(
-                purviewConfig.getEndpoint(),
-                purviewConfig.getAtlasBasePath(),
-                purviewConfig.getAuthType(),
-                purviewConfig.getTenantId(),
-                purviewConfig.getClientId(),
-                purviewConfig.getClientSecret(),
-                purviewConfig.getBasicUsername(),
-                purviewConfig.getBasicPassword(),
-                purviewConfig.getConnectTimeoutMs(),
-                purviewConfig.getReadTimeoutMs());
+        return connectionResolver.buildConnectionRequest();
     }
 
     private boolean isBlank(String value) {

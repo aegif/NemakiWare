@@ -1,6 +1,8 @@
 package jp.aegif.nemaki.rest.purview.governance;
 
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.CatalogBackendKind;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
+import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
@@ -13,6 +15,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -21,6 +24,8 @@ import java.util.Map;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
@@ -30,7 +35,7 @@ import jp.aegif.nemaki.model.Relationship;
 
 public class PurviewGovernanceServiceImplTest {
 
-    private PurviewConfig purviewConfig;
+    private MetadataCatalogConnectionResolver connectionResolver;
     private ContentService contentService;
     private ExceptionService exceptionService;
     private PurviewEntityRegistryClient entityRegistryClient;
@@ -38,22 +43,25 @@ public class PurviewGovernanceServiceImplTest {
 
     @BeforeEach
     public void setUp() throws Exception {
-        purviewConfig = mock(PurviewConfig.class);
+        connectionResolver = mock(MetadataCatalogConnectionResolver.class);
         contentService = mock(ContentService.class);
         exceptionService = mock(ExceptionService.class);
         entityRegistryClient = mock(PurviewEntityRegistryClient.class);
 
-        when(purviewConfig.isEnabled()).thenReturn(true);
-        when(purviewConfig.getEndpoint()).thenReturn("https://example-account.purview.azure.com");
-        when(purviewConfig.getAtlasBasePath()).thenReturn("catalog/api/atlas/v2");
-        when(purviewConfig.getTenantId()).thenReturn("tenant-123");
-        when(purviewConfig.getClientId()).thenReturn("client-123");
-        when(purviewConfig.getClientSecret()).thenReturn("secret-123");
-        when(purviewConfig.getConnectTimeoutMs()).thenReturn(5000);
-        when(purviewConfig.getReadTimeoutMs()).thenReturn(30000);
+        when(connectionResolver.isAnyEnabled()).thenReturn(true);
+        when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.PURVIEW);
+        when(connectionResolver.buildConnectionRequest()).thenReturn(
+                new PurviewConnectionRequest("https://example-account.purview.azure.com",
+                        "datamap/api/atlas/v2", "tenant-123", "client-123", "secret-123", 5000, 30000));
+        when(connectionResolver.buildConnectionRequest(eq("catalog/api/atlas/v2"))).thenReturn(
+                new PurviewConnectionRequest("https://example-account.purview.azure.com",
+                        "catalog/api/atlas/v2", "tenant-123", "client-123", "secret-123", 5000, 30000));
+        when(connectionResolver.buildConnectionRequest(eq("datamap/api/atlas/v2"))).thenReturn(
+                new PurviewConnectionRequest("https://example-account.purview.azure.com",
+                        "datamap/api/atlas/v2", "tenant-123", "client-123", "secret-123", 5000, 30000));
 
         service = new PurviewGovernanceServiceImpl(
-                purviewConfig,
+                connectionResolver,
                 contentService,
                 exceptionService,
                 entityRegistryClient,
@@ -62,6 +70,11 @@ public class PurviewGovernanceServiceImplTest {
 
     @Test
     public void testGetGovernanceLoadsClassificationsTermsLabelsAndBusinessMetadata() throws Exception {
+        // Override default basePath so that catalog is tried first, then fallback to datamap
+        when(connectionResolver.buildConnectionRequest()).thenReturn(
+                new PurviewConnectionRequest("https://example-account.purview.azure.com",
+                        "catalog/api/atlas/v2", "tenant-123", "client-123", "secret-123", 5000, 30000));
+
         Document document = new Document();
         document.setId("doc-001");
         document.setObjectType("D:custom:report");
@@ -140,7 +153,7 @@ public class PurviewGovernanceServiceImplTest {
         Document document = new Document();
         document.setId("doc-001");
         when(contentService.getContent("bedroom", "doc-001")).thenReturn(document);
-        when(purviewConfig.isEnabled()).thenReturn(false);
+        when(connectionResolver.isAnyEnabled()).thenReturn(false);
 
         PurviewGovernanceView view = service.getGovernance("bedroom", "doc-001", mock(CallContext.class));
 
@@ -157,60 +170,15 @@ public class PurviewGovernanceServiceImplTest {
         document.setId("doc-001");
         document.setObjectType("cmis:document");
         when(contentService.getContent("bedroom", "doc-001")).thenReturn(document);
-        when(purviewConfig.getEndpoint()).thenReturn("");
+        when(connectionResolver.buildConnectionRequest()).thenReturn(
+                new PurviewConnectionRequest("", "datamap/api/atlas/v2",
+                        "tenant-123", "client-123", "secret-123", 5000, 30000));
 
         PurviewGovernanceView view = service.getGovernance("bedroom", "doc-001", mock(CallContext.class));
 
         assertTrue(view.isFeatureEnabled());
         assertFalse(view.isAvailable());
         assertTrue(view.getMessage().contains("endpoint"));
-        verifyNoInteractions(entityRegistryClient);
-    }
-
-    @Test
-    public void testGetGovernanceBasicAuthModeSatisfiedByBasicCredentials() throws Exception {
-        // Basic auth mode: tenantId/clientId/clientSecret are empty but basicUsername/basicPassword are set
-        when(purviewConfig.isBasicAuth()).thenReturn(true);
-        when(purviewConfig.getTenantId()).thenReturn("");
-        when(purviewConfig.getClientId()).thenReturn("");
-        when(purviewConfig.getClientSecret()).thenReturn("");
-        when(purviewConfig.getBasicUsername()).thenReturn("admin");
-        when(purviewConfig.getBasicPassword()).thenReturn("admin");
-        when(purviewConfig.getAuthType()).thenReturn("basic");
-
-        Document document = new Document();
-        document.setId("doc-001");
-        document.setObjectType("cmis:document");
-        when(contentService.getContent("bedroom", "doc-001")).thenReturn(document);
-        when(entityRegistryClient.getEntityByUniqueAttribute(any(), any(), any(), any()))
-                .thenReturn(null);
-
-        PurviewGovernanceView view = service.getGovernance("bedroom", "doc-001", mock(CallContext.class));
-
-        // Should not report missing configuration — should reach the entity lookup path
-        assertFalse(view.getMessage().contains("Missing"));
-        assertTrue(view.isAvailable());
-    }
-
-    @Test
-    public void testGetGovernanceBasicAuthModeReportsMissingBasicCredentials() {
-        when(purviewConfig.isBasicAuth()).thenReturn(true);
-        when(purviewConfig.getTenantId()).thenReturn("");
-        when(purviewConfig.getClientId()).thenReturn("");
-        when(purviewConfig.getClientSecret()).thenReturn("");
-        when(purviewConfig.getBasicUsername()).thenReturn("");
-        when(purviewConfig.getBasicPassword()).thenReturn("");
-
-        Document document = new Document();
-        document.setId("doc-001");
-        document.setObjectType("cmis:document");
-        when(contentService.getContent("bedroom", "doc-001")).thenReturn(document);
-
-        PurviewGovernanceView view = service.getGovernance("bedroom", "doc-001", mock(CallContext.class));
-
-        assertTrue(view.getMessage().contains("basicUsername"));
-        assertTrue(view.getMessage().contains("basicPassword"));
-        assertFalse(view.isAvailable());
         verifyNoInteractions(entityRegistryClient);
     }
 
@@ -283,5 +251,95 @@ public class PurviewGovernanceServiceImplTest {
         assertEquals("OK", items.get(0).getStatus());
         assertEquals("missing-001", items.get(1).getObjectId());
         assertEquals("NOT_FOUND", items.get(1).getStatus());
+    }
+
+    @Nested
+    @DisplayName("getMissingConfiguration backend-specific validation")
+    class MissingConfigurationValidation {
+
+        @Test
+        @DisplayName("OAuth2 mode reports missing tenantId, clientId, clientSecret")
+        public void testOAuth2MissingCredentials() {
+            Document document = new Document();
+            document.setId("doc-001");
+            document.setObjectType("cmis:document");
+            when(contentService.getContent("bedroom", "doc-001")).thenReturn(document);
+            when(connectionResolver.buildConnectionRequest()).thenReturn(
+                    new PurviewConnectionRequest("https://purview.azure.com",
+                            "datamap/api/atlas/v2", "oauth2",
+                            "", "", "",  // missing tenantId, clientId, clientSecret
+                            "", "",
+                            5000, 30000));
+
+            PurviewGovernanceView view = service.getGovernance("bedroom", "doc-001", mock(CallContext.class));
+
+            assertTrue(view.isFeatureEnabled());
+            assertFalse(view.isAvailable());
+            assertTrue(view.getMessage().contains("tenantId"));
+            assertTrue(view.getMessage().contains("clientId"));
+            assertTrue(view.getMessage().contains("clientSecret"));
+        }
+
+        @Test
+        @DisplayName("Basic auth mode reports missing username and password")
+        public void testBasicAuthMissingCredentials() {
+            Document document = new Document();
+            document.setId("doc-001");
+            document.setObjectType("cmis:document");
+            when(contentService.getContent("bedroom", "doc-001")).thenReturn(document);
+            when(connectionResolver.buildConnectionRequest()).thenReturn(
+                    new PurviewConnectionRequest("https://atlas.example.com",
+                            "api/atlas/v2", "basic",
+                            "", "", "",
+                            "", "",  // missing username, password
+                            5000, 30000));
+
+            PurviewGovernanceView view = service.getGovernance("bedroom", "doc-001", mock(CallContext.class));
+
+            assertTrue(view.isFeatureEnabled());
+            assertFalse(view.isAvailable());
+            assertTrue(view.getMessage().contains("username"));
+            assertTrue(view.getMessage().contains("password"));
+        }
+
+        @Test
+        @DisplayName("No backend enabled reports appropriate message")
+        public void testNoBackendEnabled() {
+            Document document = new Document();
+            document.setId("doc-001");
+            document.setObjectType("cmis:document");
+            when(contentService.getContent("bedroom", "doc-001")).thenReturn(document);
+            when(connectionResolver.buildConnectionRequest())
+                    .thenThrow(new IllegalStateException("No catalog backend enabled"));
+
+            PurviewGovernanceView view = service.getGovernance("bedroom", "doc-001", mock(CallContext.class));
+
+            assertTrue(view.isFeatureEnabled());
+            assertFalse(view.isAvailable());
+            assertTrue(view.getMessage().contains("No catalog backend enabled"));
+        }
+
+        @Test
+        @DisplayName("Fully configured OAuth2 passes validation")
+        public void testOAuth2FullyConfiguredPassesValidation() throws Exception {
+            Document document = new Document();
+            document.setId("doc-001");
+            document.setObjectType("cmis:document");
+            when(contentService.getContent("bedroom", "doc-001")).thenReturn(document);
+            when(connectionResolver.buildConnectionRequest()).thenReturn(
+                    new PurviewConnectionRequest("https://purview.azure.com",
+                            "datamap/api/atlas/v2", "oauth2",
+                            "tenant-id", "client-id", "client-secret",
+                            "", "",
+                            5000, 30000));
+            when(entityRegistryClient.getEntityByUniqueAttribute(any(), any(), any(), any()))
+                    .thenReturn(null);
+
+            PurviewGovernanceView view = service.getGovernance("bedroom", "doc-001", mock(CallContext.class));
+
+            assertTrue(view.isAvailable());
+            // Configuration is valid, so it proceeds to entity lookup (may try multiple candidate paths)
+            verify(entityRegistryClient, atLeastOnce()).getEntityByUniqueAttribute(any(), any(), any(), any());
+        }
     }
 }

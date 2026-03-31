@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.purview.publish;
 
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.relationship.PurviewContainmentRelationshipService;
 import jp.aegif.nemaki.rest.purview.relationship.PurviewDocumentTypeRelationshipService;
@@ -39,7 +39,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
     private static final int ENTITY_BATCH_SIZE = 100;
     private static final String DOCUMENT_ENTITY_STREAM_KIND = "document-entity";
 
-    private final PurviewConfig purviewConfig;
+    private final MetadataCatalogConnectionResolver connectionResolver;
     private final RepositoryInfoMap repositoryInfoMap;
     private final ContentDaoService contentDaoService;
     private final PurviewEntityPayloadFactory entityPayloadFactory;
@@ -49,7 +49,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
     private final PurviewDeadLetterStateService deadLetterStateService;
 
     public PurviewDocumentPublishServiceImpl(
-            PurviewConfig purviewConfig,
+            MetadataCatalogConnectionResolver connectionResolver,
             RepositoryInfoMap repositoryInfoMap,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService,
             PurviewEntityPayloadFactory entityPayloadFactory,
@@ -57,7 +57,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
             PurviewContainmentRelationshipService containmentRelationshipService,
             PurviewDocumentTypeRelationshipService documentTypeRelationshipService,
             PurviewDeadLetterStateService deadLetterStateService) {
-        this.purviewConfig = purviewConfig;
+        this.connectionResolver = connectionResolver;
         this.repositoryInfoMap = repositoryInfoMap;
         this.contentDaoService = contentDaoService;
         this.entityPayloadFactory = entityPayloadFactory;
@@ -368,7 +368,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
             }
 
             // Atlas on-prem: resolve missing GUIDs via individual lookups
-            if (guidAccumulator != null && purviewConfig.isAtlasOnPrem()) {
+            if (guidAccumulator != null && connectionResolver.isAtlasOnPrem()) {
                 resolveUnmappedGuids(sentRefs, guidAccumulator, result.getEntityGuids());
             }
 
@@ -481,17 +481,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
     }
 
     private PurviewConnectionRequest buildConnectionRequest() {
-        return new PurviewConnectionRequest(
-                purviewConfig.getEndpoint(),
-                purviewConfig.getAtlasBasePath(),
-                purviewConfig.getAuthType(),
-                purviewConfig.getTenantId(),
-                purviewConfig.getClientId(),
-                purviewConfig.getClientSecret(),
-                purviewConfig.getBasicUsername(),
-                purviewConfig.getBasicPassword(),
-                purviewConfig.getConnectTimeoutMs(),
-                purviewConfig.getReadTimeoutMs());
+        return connectionResolver.buildConnectionRequest();
     }
 
     private String resolveRootFolderId(String repositoryId) {

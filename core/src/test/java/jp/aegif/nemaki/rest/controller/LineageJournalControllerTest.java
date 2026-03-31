@@ -363,14 +363,17 @@ public class LineageJournalControllerTest {
 
     // ==================== GET /stats ====================
 
+    @SuppressWarnings("unchecked")
     @Test
-    void getStatsReturnsAggregatedData() {
+    void getStatsReturnsPerTargetBacklog() {
         Map<LineageProcessType, Long> counts = new LinkedHashMap<>();
         counts.put(LineageProcessType.ARCHIVE_LOCAL, 80L);
         counts.put(LineageProcessType.IMPORT_FILESYSTEM, 30L);
         counts.put(LineageProcessType.EXPORT_ZIP_FOLDER, 32L);
         when(store.countByProcessType()).thenReturn(counts);
+        when(lineageConfig.getTargets()).thenReturn(List.of("purview", "atlas"));
         when(store.countNonTerminalByTarget("purview")).thenReturn(5L);
+        when(store.countNonTerminalByTarget("atlas")).thenReturn(12L);
         when(store.isActive()).thenReturn(true);
         when(lineageConfig.getMode()).thenReturn(LineageMode.JOURNALED);
 
@@ -380,10 +383,17 @@ public class LineageJournalControllerTest {
         Map<String, Object> body = response.getBody();
         assertEquals("journaled", body.get("mode"));
         assertEquals(142L, body.get("totalEvents"));
-        assertEquals(5L, body.get("nonTerminalCount"));
         assertTrue((Boolean) body.get("storeActive"));
 
-        @SuppressWarnings("unchecked")
+        // Per-target backlog
+        Map<String, Long> nonTerminal = (Map<String, Long>) body.get("nonTerminalByTarget");
+        assertEquals(5L, nonTerminal.get("purview"));
+        assertEquals(12L, nonTerminal.get("atlas"));
+
+        // Targets list
+        List<String> targets = (List<String>) body.get("targets");
+        assertEquals(List.of("purview", "atlas"), targets);
+
         Map<String, Long> byType = (Map<String, Long>) body.get("byProcessType");
         assertEquals(80L, byType.get("ARCHIVE_LOCAL"));
         assertEquals(30L, byType.get("IMPORT_FILESYSTEM"));
@@ -402,7 +412,7 @@ public class LineageJournalControllerTest {
     @Test
     void getStatsHandlesInactiveStore() {
         when(store.countByProcessType()).thenReturn(Map.of());
-        when(store.countNonTerminalByTarget("purview")).thenReturn(0L);
+        when(lineageConfig.getTargets()).thenReturn(List.of());
         when(store.isActive()).thenReturn(false);
         when(lineageConfig.getMode()).thenReturn(LineageMode.DISABLED);
 
@@ -412,6 +422,24 @@ public class LineageJournalControllerTest {
         assertEquals("disabled", response.getBody().get("mode"));
         assertEquals(0L, response.getBody().get("totalEvents"));
         assertFalse((Boolean) response.getBody().get("storeActive"));
+        // No hasRepositoryOverrides when both disabled and inactive
+        assertNull(response.getBody().get("hasRepositoryOverrides"));
+    }
+
+    @Test
+    void getStatsSurfacesOverridesWhenDisabledButActive() {
+        when(store.countByProcessType()).thenReturn(Map.of());
+        when(lineageConfig.getTargets()).thenReturn(List.of("purview"));
+        when(store.countNonTerminalByTarget("purview")).thenReturn(3L);
+        when(store.isActive()).thenReturn(true);
+        when(lineageConfig.getMode()).thenReturn(LineageMode.DISABLED);
+
+        ResponseEntity<Map<String, Object>> response = controller.getStats();
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("disabled", response.getBody().get("mode"));
+        assertTrue((Boolean) response.getBody().get("storeActive"));
+        assertTrue((Boolean) response.getBody().get("hasRepositoryOverrides"));
     }
 
     // ==================== GET /metrics (D-12) ====================

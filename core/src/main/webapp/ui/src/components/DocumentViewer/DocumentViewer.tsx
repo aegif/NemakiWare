@@ -282,6 +282,7 @@ import { TypeMigrationModal } from '../TypeMigrationModal/TypeMigrationModal';
 import { ExternalContextTab } from './ExternalContextTab';
 import { WebhookConfigTab } from './WebhookConfigTab';
 import { PurviewGovernancePanel } from '../PurviewGovernance/PurviewGovernancePanel';
+import { PurviewAdminService } from '../../services/purviewAdmin';
 import { canPreview } from '../../utils/previewUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchCloudAuthConfig, CloudAuthConfig } from '../../services/cloud-auth';
@@ -328,7 +329,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [externalSourceId, setExternalSourceId] = useState<string | null>(null);
   const [externalContextUpdatedAt, setExternalContextUpdatedAt] = useState<string | null>(null);
   const [relationshipTypeDefinition, setRelationshipTypeDefinition] = useState<TypeDefinition | null>(null);
-  // RAG Similar Documents state
+  // Purview / RAG feature flags
+  const [purviewEnabled, setPurviewEnabled] = useState(false);
   const [ragEnabled, setRagEnabled] = useState(false);
   const [similarDocuments, setSimilarDocuments] = useState<RAGSearchResult[]>([]);
   const [similarDocsLoading, setSimilarDocsLoading] = useState(false);
@@ -376,6 +378,14 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       loadRelationships();
     }
   }, [objectId, repositoryId]);
+
+  // Check governance availability once per object load (public endpoint, no admin required)
+  useEffect(() => {
+    const purviewAdminService = new PurviewAdminService(() => handleAuthError(new Error('auth')));
+    purviewAdminService.getGovernanceAvailability()
+      .then(({ enabled }) => setPurviewEnabled(enabled))
+      .catch(() => setPurviewEnabled(false));
+  }, [objectId]);
 
   // Load version history only for documents (folders are not versionable in CMIS)
   // Also check RAG health and load similar documents for documents only
@@ -1261,7 +1271,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         </Space>
       ),
     },
-    ...((object.baseType === 'cmis:document' || object.baseType === 'cmis:folder') ? [{
+    ...(purviewEnabled && (object.baseType === 'cmis:document' || object.baseType === 'cmis:folder') ? [{
       key: 'purviewGovernance',
       label: t('documentViewer.purviewGovernance.tab'),
       children: (

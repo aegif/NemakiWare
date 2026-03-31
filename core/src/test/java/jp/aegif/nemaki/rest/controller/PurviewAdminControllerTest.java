@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -12,12 +13,16 @@ import java.util.Map;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import jp.aegif.nemaki.rest.purview.CatalogBackendKind;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.PurviewConnectionService;
 import jp.aegif.nemaki.rest.purview.PurviewConnectionStatus;
 import jp.aegif.nemaki.rest.purview.state.PurviewCursorState;
@@ -43,11 +48,13 @@ import jp.aegif.nemaki.rest.purview.state.PurviewSchemaState;
 import jp.aegif.nemaki.rest.purview.state.PurviewStateOverview;
 import jp.aegif.nemaki.rest.purview.state.PurviewStateOverviewService;
 import jp.aegif.nemaki.rest.purview.state.PurviewTombstoneState;
+import jp.aegif.nemaki.rest.purview.lineage.PurviewCloudSyncLineageService;
 import jp.aegif.nemaki.rest.purview.sync.PurviewTypeReconciliationService;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 
 public class PurviewAdminControllerTest {
 
+    private MetadataCatalogConnectionResolver connectionResolver;
     private PurviewConnectionService connectionService;
     private PurviewSchemaPlannerService schemaPlannerService;
     private PurviewSchemaBootstrapService schemaBootstrapService;
@@ -62,11 +69,14 @@ public class PurviewAdminControllerTest {
     private PurviewCursorStateService cursorStateService;
     private PurviewStateOverviewService stateOverviewService;
     private PurviewDeadLetterStateService deadLetterStateService;
+    private PurviewCloudSyncLineageService cloudSyncLineageService;
     private PurviewDeadLetterRetryService deadLetterRetryService;
     private PurviewAdminController controller;
 
     @BeforeEach
     public void setUp() {
+        connectionResolver = mock(MetadataCatalogConnectionResolver.class);
+        when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.PURVIEW);
         connectionService = mock(PurviewConnectionService.class);
         schemaPlannerService = mock(PurviewSchemaPlannerService.class);
         schemaBootstrapService = mock(PurviewSchemaBootstrapService.class);
@@ -82,11 +92,13 @@ public class PurviewAdminControllerTest {
         stateOverviewService = mock(PurviewStateOverviewService.class);
         deadLetterStateService = mock(PurviewDeadLetterStateService.class);
         deadLetterRetryService = mock(PurviewDeadLetterRetryService.class);
+        cloudSyncLineageService = mock(PurviewCloudSyncLineageService.class);
         controller = new PurviewAdminController(
-                connectionService, schemaPlannerService, schemaBootstrapService, fullSyncService,
+                connectionResolver, connectionService, schemaPlannerService, schemaBootstrapService, fullSyncService,
                 incrementalSyncService, archiveReconciliationService, cloudMetadataReconciliationService, containmentReconciliationService, typeReconciliationService,
                 deleteResolutionService, jobStateService,
-                cursorStateService, stateOverviewService, deadLetterStateService, deadLetterRetryService);
+                cursorStateService, stateOverviewService, deadLetterStateService, deadLetterRetryService,
+                cloudSyncLineageService);
     }
 
     @Test
@@ -621,5 +633,128 @@ public class PurviewAdminControllerTest {
         ResponseEntity<Map<String, Object>> response = controller.purgeJobHistory(50);
 
         assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("testConnection dispatches to Atlas when Atlas backend is active")
+    public void testTestConnectionDispatchesToAtlasWhenAtlasBackendIsActive() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.ATLAS);
+        PurviewConnectionStatus atlasStatus = new PurviewConnectionStatus(
+                true, false, "https://atlas.example.com", "api/atlas/v2",
+                "Atlas connection succeeded");
+        when(connectionService.testAtlasConnection(null)).thenReturn(atlasStatus);
+
+        ResponseEntity<Map<String, Object>> response = controller.testConnection();
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("success", response.getBody().get("status"));
+        assertEquals("ATLAS", response.getBody().get("backend"));
+        assertEquals("https://atlas.example.com", response.getBody().get("endpoint"));
+        verify(connectionService).testAtlasConnection(null);
+        verify(connectionService, never()).testConnection();
+    }
+
+    @Test
+    @DisplayName("testConnection dispatches to Purview when Purview backend is active")
+    public void testTestConnectionDispatchesToPurviewWhenPurviewBackendIsActive() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.PURVIEW);
+        PurviewConnectionStatus purviewStatus = new PurviewConnectionStatus(
+                true, false, "https://purview.azure.com", "datamap/api/atlas/v2",
+                "Purview connection succeeded");
+        when(connectionService.testConnection()).thenReturn(purviewStatus);
+
+        ResponseEntity<Map<String, Object>> response = controller.testConnection();
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("PURVIEW", response.getBody().get("backend"));
+        verify(connectionService).testConnection();
+        verify(connectionService, never()).testAtlasConnection(null);
+    }
+
+    @Nested
+    @DisplayName("GovernanceAvailability")
+    class GovernanceAvailability {
+
+        @Test
+        @DisplayName("governance-available returns enabled=true when any backend is enabled")
+        public void testGovernanceAvailableEnabledWhenBackendIsActive() {
+            HttpServletRequest request = mock(HttpServletRequest.class);
+            CallContext callContext = mock(CallContext.class);
+            when(callContext.getUsername()).thenReturn("regular-user");
+            when(request.getAttribute("CallContext")).thenReturn(callContext);
+            controller.setHttpRequest(request);
+
+            when(connectionResolver.isAnyEnabled()).thenReturn(true);
+            when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.PURVIEW);
+
+            ResponseEntity<Map<String, Object>> response = controller.getGovernanceAvailability();
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertEquals(Boolean.TRUE, response.getBody().get("enabled"));
+            assertEquals("PURVIEW", response.getBody().get("backend"));
+        }
+
+        @Test
+        @DisplayName("governance-available returns enabled=false when no backend is enabled")
+        public void testGovernanceAvailableDisabledWhenNoBackend() {
+            HttpServletRequest request = mock(HttpServletRequest.class);
+            CallContext callContext = mock(CallContext.class);
+            when(callContext.getUsername()).thenReturn("regular-user");
+            when(request.getAttribute("CallContext")).thenReturn(callContext);
+            controller.setHttpRequest(request);
+
+            when(connectionResolver.isAnyEnabled()).thenReturn(false);
+            when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.NONE);
+
+            ResponseEntity<Map<String, Object>> response = controller.getGovernanceAvailability();
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertEquals(Boolean.FALSE, response.getBody().get("enabled"));
+            assertEquals("NONE", response.getBody().get("backend"));
+        }
+
+        @Test
+        @DisplayName("governance-available does not require admin access")
+        public void testGovernanceAvailableDoesNotRequireAdmin() {
+            HttpServletRequest request = mock(HttpServletRequest.class);
+            CallContext callContext = mock(CallContext.class);
+            when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.FALSE);
+            when(callContext.getUsername()).thenReturn("regular-user");
+            when(request.getAttribute("CallContext")).thenReturn(callContext);
+            controller.setHttpRequest(request);
+
+            when(connectionResolver.isAnyEnabled()).thenReturn(true);
+            when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.ATLAS);
+
+            ResponseEntity<Map<String, Object>> response = controller.getGovernanceAvailability();
+
+            // Should succeed (200), NOT forbidden (403)
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertEquals(Boolean.TRUE, response.getBody().get("enabled"));
+        }
+
+        @Test
+        @DisplayName("governance-available returns 401 when no authentication")
+        public void testGovernanceAvailableReturns401WhenNotAuthenticated() {
+            HttpServletRequest request = mock(HttpServletRequest.class);
+            when(request.getAttribute("CallContext")).thenReturn(null);
+            controller.setHttpRequest(request);
+
+            ResponseEntity<Map<String, Object>> response = controller.getGovernanceAvailability();
+
+            assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        }
     }
 }

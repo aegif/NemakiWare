@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.purview.publish;
 
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
@@ -29,17 +29,17 @@ public class PurviewTypeDefinitionPublishServiceImpl implements PurviewTypeDefin
     private static final String TYPE_DEFINITION_TYPE_NAME = "nemaki_type_definition";
     private static final String UNIQUE_ATTRIBUTE_NAME = "qualifiedName";
 
-    private final PurviewConfig purviewConfig;
+    private final MetadataCatalogConnectionResolver connectionResolver;
     private final PurviewEntityPayloadFactory entityPayloadFactory;
     private final PurviewEntityRegistryClient entityRegistryClient;
     private final ContentDaoService contentDaoService;
 
     public PurviewTypeDefinitionPublishServiceImpl(
-            PurviewConfig purviewConfig,
+            MetadataCatalogConnectionResolver connectionResolver,
             PurviewEntityPayloadFactory entityPayloadFactory,
             PurviewEntityRegistryClient entityRegistryClient,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService) {
-        this.purviewConfig = purviewConfig;
+        this.connectionResolver = connectionResolver;
         this.entityPayloadFactory = entityPayloadFactory;
         this.entityRegistryClient = entityRegistryClient;
         this.contentDaoService = contentDaoService;
@@ -207,16 +207,6 @@ public class PurviewTypeDefinitionPublishServiceImpl implements PurviewTypeDefin
     }
 
     private PurviewConnectionRequest buildConnectionRequest() {
-        return new PurviewConnectionRequest(
-                purviewConfig.getEndpoint(),
-                purviewConfig.getAtlasBasePath(),
-                purviewConfig.getAuthType(),
-                purviewConfig.getTenantId(),
-                purviewConfig.getClientId(),
-                purviewConfig.getClientSecret(),
-                purviewConfig.getBasicUsername(),
-                purviewConfig.getBasicPassword(),
-                purviewConfig.getConnectTimeoutMs(),
-                purviewConfig.getReadTimeoutMs());
+        return connectionResolver.buildConnectionRequest();
     }
 }

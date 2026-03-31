@@ -3,6 +3,8 @@ package jp.aegif.nemaki.rest.purview.sync;
 import jp.aegif.nemaki.rest.purview.publish.PurviewCloudMetadataPublishService;
 import jp.aegif.nemaki.rest.purview.state.PurviewCursorState;
 import jp.aegif.nemaki.rest.purview.state.PurviewCursorStateService;
+import jp.aegif.nemaki.rest.purview.state.PurviewDeadLetterState;
+import jp.aegif.nemaki.rest.purview.state.PurviewDeadLetterStateService;
 import jp.aegif.nemaki.rest.purview.state.PurviewJobState;
 import jp.aegif.nemaki.rest.purview.state.PurviewJobStateService;
 import jp.aegif.nemaki.rest.purview.state.PurviewLockStateService;
@@ -18,6 +20,7 @@ public class PurviewCloudMetadataReconciliationServiceImpl implements PurviewClo
 
     private static final String JOB_KIND = "CLOUD_METADATA_RECONCILIATION";
     private static final String STREAM_KIND = "cloud-metadata-snapshot";
+    private static final String CLOUD_LINEAGE_STREAM_KIND = "cloud-sync-lineage";
     private static final String CURSOR_KIND = "snapshot";
 
     private final PurviewSchemaPlannerService schemaPlannerService;
@@ -25,18 +28,21 @@ public class PurviewCloudMetadataReconciliationServiceImpl implements PurviewClo
     private final PurviewJobStateService jobStateService;
     private final PurviewCursorStateService cursorStateService;
     private final PurviewCloudMetadataPublishService cloudMetadataPublishService;
+    private final PurviewDeadLetterStateService deadLetterStateService;
 
     public PurviewCloudMetadataReconciliationServiceImpl(
             PurviewSchemaPlannerService schemaPlannerService,
             PurviewLockStateService lockStateService,
             PurviewJobStateService jobStateService,
             PurviewCursorStateService cursorStateService,
-            PurviewCloudMetadataPublishService cloudMetadataPublishService) {
+            PurviewCloudMetadataPublishService cloudMetadataPublishService,
+            PurviewDeadLetterStateService deadLetterStateService) {
         this.schemaPlannerService = schemaPlannerService;
         this.lockStateService = lockStateService;
         this.jobStateService = jobStateService;
         this.cursorStateService = cursorStateService;
         this.cloudMetadataPublishService = cloudMetadataPublishService;
+        this.deadLetterStateService = deadLetterStateService;
     }
 
     @Override
@@ -79,6 +85,27 @@ public class PurviewCloudMetadataReconciliationServiceImpl implements PurviewClo
                 PurviewCloudMetadataSyncResult syncResult = cloudMetadataPublishService
                         .syncRepositoryCloudMetadataIfChanged(repositoryId, previousSnapshot);
                 seedCloudMetadataCursor(repositoryId, syncResult.getSnapshot(), now, currentCursorState);
+
+                // Check whether cloud-lineage publishing failed silently
+                // (syncRepositoryCloudMetadataIfChanged catches lineage errors internally
+                // and records a dead-letter state instead of re-throwing).
+                PurviewDeadLetterState lineageDl = deadLetterStateService.getDeadLetterState(
+                        repositoryId, CLOUD_LINEAGE_STREAM_KIND, repositoryId);
+                if (lineageDl != null) {
+                    String dlError = lineageDl.getErrorSummary();
+                    return jobStateService.saveJobState(new PurviewJobState(
+                            jobId,
+                            JOB_KIND,
+                            repositoryId,
+                            "COMPLETED_WITH_ERRORS",
+                            now,
+                            Instant.now().toString(),
+                            syncResult.getProcessedCount(),
+                            1,
+                            "",
+                            "cloud-sync-lineage: " + (dlError != null ? dlError : "lineage publish failed")));
+                }
+
                 return jobStateService.saveJobState(new PurviewJobState(
                         jobId,
                         JOB_KIND,

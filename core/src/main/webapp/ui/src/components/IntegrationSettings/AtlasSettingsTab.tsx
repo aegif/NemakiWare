@@ -3,14 +3,9 @@ import { Form, Button, Space, Spin, Alert, App, Tag } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useSettingsTab } from './useSettingsTab';
 import { SettingsFormFields } from './SettingsFormFields';
-import { getPurviewSettings, updatePurviewSettings, testPurviewConnection } from '../../services/integrationSettings';
+import { getAtlasSettings, updateAtlasSettings, testAtlasConnection } from '../../services/integrationSettings';
 
-const BASE_PATH_OPTIONS = [
-  { value: 'datamap/api/atlas/v2', labelKey: 'integrationSettings.purview.basePathPurview' },
-  { value: 'catalog/api/atlas/v2', labelKey: 'integrationSettings.purview.basePathCatalog' },
-];
-
-export function PurviewSettingsTab() {
+export function AtlasSettingsTab() {
   const { t } = useTranslation();
   const { message } = App.useApp();
 
@@ -27,20 +22,18 @@ export function PurviewSettingsTab() {
     handleTestConnection,
     updateField,
   } = useSettingsTab({
-    fetchSettings: getPurviewSettings,
-    saveSettings: updatePurviewSettings,
-    testConnection: testPurviewConnection,
+    fetchSettings: getAtlasSettings,
+    saveSettings: updateAtlasSettings,
+    testConnection: testAtlasConnection,
   });
 
   const fields = useMemo(() => [
-    { key: 'purview.enabled', labelKey: 'integrationSettings.purview.enabled', type: 'boolean' as const },
-    { key: 'purview.endpoint', labelKey: 'integrationSettings.purview.endpoint', type: 'text' as const, placeholder: 'https://account.purview.azure.com' },
-    { key: 'purview.atlas.base-path', labelKey: 'integrationSettings.purview.atlasBasePath', type: 'select' as const, options: BASE_PATH_OPTIONS },
-    { key: 'purview.tenant.id', labelKey: 'integrationSettings.purview.tenantId', type: 'text' as const },
-    { key: 'purview.client.id', labelKey: 'integrationSettings.purview.clientId', type: 'text' as const },
-    { key: 'purview.client.secret', labelKey: 'integrationSettings.purview.clientSecret', type: 'password' as const, sensitive: true },
-    { key: 'purview.collection', labelKey: 'integrationSettings.purview.collection', type: 'text' as const, placeholder: 'default' },
-    { key: 'purview.sync.cron', labelKey: 'integrationSettings.purview.syncCron', type: 'text' as const, helpKey: 'integrationSettings.purview.syncCronHelp' },
+    { key: 'atlas.enabled', labelKey: 'integrationSettings.atlas.enabled', type: 'boolean' as const },
+    { key: 'atlas.endpoint', labelKey: 'integrationSettings.atlas.endpoint', type: 'text' as const, placeholder: 'http://localhost:21000', helpKey: 'integrationSettings.atlas.endpointHelp' },
+    { key: 'atlas.username', labelKey: 'integrationSettings.atlas.username', type: 'text' as const },
+    { key: 'atlas.password', labelKey: 'integrationSettings.atlas.password', type: 'password' as const, sensitive: true },
+    { key: 'atlas.collection', labelKey: 'integrationSettings.atlas.collection', type: 'text' as const, placeholder: 'NemakiWare' },
+    { key: 'atlas.sync.cron', labelKey: 'integrationSettings.atlas.syncCron', type: 'text' as const, helpKey: 'integrationSettings.atlas.syncCronHelp' },
   ], []);
 
   const onSave = async () => {
@@ -52,7 +45,7 @@ export function PurviewSettingsTab() {
     }
   };
 
-  const isEnabled = formValues['purview.enabled'] === 'true';
+  const isEnabled = formValues['atlas.enabled'] === 'true';
 
   if (loading) return <Spin />;
 
@@ -62,15 +55,22 @@ export function PurviewSettingsTab() {
         message={
           <Space>
             <Tag color="blue">Beta</Tag>
-            {isEnabled
-              ? t('integrationSettings.purview.betaNotice')
-              : t('integrationSettings.purview.disabledNotice')}
+            {t('integrationSettings.atlas.notice')}
           </Space>
         }
-        type={isEnabled ? 'info' : 'warning'}
+        type="info"
         showIcon
         style={{ marginBottom: 16 }}
       />
+
+      {!isEnabled && (
+        <Alert
+          message={t('integrationSettings.atlas.disabledNotice')}
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+      )}
 
       <SettingsFormFields
         fields={fields}
@@ -111,7 +111,7 @@ export function PurviewSettingsTab() {
             {t('integrationSettings.save')}
           </Button>
           <Button onClick={handleTestConnection} loading={testing}>
-            {t('integrationSettings.testConnection')}
+            {t('integrationSettings.atlas.testConnection')}
           </Button>
         </Space>
       </Form.Item>

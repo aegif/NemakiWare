@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.rest.purview.publish;
 
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
+import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
@@ -31,29 +32,25 @@ import jp.aegif.nemaki.model.NemakiTypeDefinition;
 
 public class PurviewTypeDefinitionPublishServiceImplTest {
 
-    private PurviewConfig config;
+    private MetadataCatalogConnectionResolver connectionResolver;
     private ContentDaoService contentDaoService;
     private PurviewEntityRegistryClient entityRegistryClient;
     private PurviewTypeDefinitionPublishServiceImpl service;
 
     @BeforeEach
     public void setUp() throws Exception {
-        config = mock(PurviewConfig.class);
+        connectionResolver = mock(MetadataCatalogConnectionResolver.class);
         contentDaoService = mock(ContentDaoService.class);
         entityRegistryClient = mock(PurviewEntityRegistryClient.class);
 
-        when(config.getEndpoint()).thenReturn("https://example-account.purview.azure.com");
-        when(config.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
-        when(config.getTenantId()).thenReturn("tenant-123");
-        when(config.getClientId()).thenReturn("client-123");
-        when(config.getClientSecret()).thenReturn("secret-123");
-        when(config.getConnectTimeoutMs()).thenReturn(5000);
-        when(config.getReadTimeoutMs()).thenReturn(30000);
+        when(connectionResolver.buildConnectionRequest()).thenReturn(
+                new PurviewConnectionRequest("https://example-account.purview.azure.com",
+                        "datamap/api/atlas/v2", "tenant-123", "client-123", "secret-123", 5000, 30000));
         when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
                 .thenReturn(PurviewEntityPublishResult.success(2, "published"));
 
         service = new PurviewTypeDefinitionPublishServiceImpl(
-                config,
+                connectionResolver,
                 new PurviewEntityPayloadFactory(),
                 entityRegistryClient,
                 contentDaoService);

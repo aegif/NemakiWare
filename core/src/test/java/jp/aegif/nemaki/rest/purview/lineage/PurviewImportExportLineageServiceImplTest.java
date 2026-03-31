@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.rest.purview.lineage;
 
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
+import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
@@ -23,28 +24,24 @@ import jp.aegif.nemaki.model.Folder;
 
 public class PurviewImportExportLineageServiceImplTest {
 
-    private PurviewConfig config;
+    private MetadataCatalogConnectionResolver connectionResolver;
     private PurviewEntityRegistryClient entityRegistryClient;
     private PurviewImportExportLineageServiceImpl service;
 
     @BeforeEach
     public void setUp() throws Exception {
-        config = mock(PurviewConfig.class);
+        connectionResolver = mock(MetadataCatalogConnectionResolver.class);
         entityRegistryClient = mock(PurviewEntityRegistryClient.class);
 
-        when(config.isEnabled()).thenReturn(true);
-        when(config.getEndpoint()).thenReturn("https://example-account.purview.azure.com");
-        when(config.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
-        when(config.getTenantId()).thenReturn("tenant-123");
-        when(config.getClientId()).thenReturn("client-123");
-        when(config.getClientSecret()).thenReturn("secret-123");
-        when(config.getConnectTimeoutMs()).thenReturn(5000);
-        when(config.getReadTimeoutMs()).thenReturn(30000);
+        when(connectionResolver.isAnyEnabled()).thenReturn(true);
+        when(connectionResolver.buildConnectionRequest()).thenReturn(
+                new PurviewConnectionRequest("https://example-account.purview.azure.com",
+                        "datamap/api/atlas/v2", "tenant-123", "client-123", "secret-123", 5000, 30000));
         when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
                 .thenReturn(PurviewEntityPublishResult.success(2, "published"));
 
         service = new PurviewImportExportLineageServiceImpl(
-                config,
+                connectionResolver,
                 new PurviewEntityPayloadFactory(),
                 entityRegistryClient);
     }
@@ -149,7 +146,7 @@ public class PurviewImportExportLineageServiceImplTest {
 
     @Test
     public void testUpsertFilesystemLineageSkipsWhenPurviewIsDisabled() throws Exception {
-        when(config.isEnabled()).thenReturn(false);
+        when(connectionResolver.isAnyEnabled()).thenReturn(false);
 
         int importCount = service.upsertFilesystemImportLineage(
                 "bedroom",

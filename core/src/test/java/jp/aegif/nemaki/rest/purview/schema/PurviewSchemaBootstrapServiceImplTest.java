@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.rest.purview.schema;
 
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.state.PurviewJobStateService;
 import jp.aegif.nemaki.rest.purview.state.PurviewLockStateService;
 import jp.aegif.nemaki.rest.purview.state.PurviewSchemaState;
@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 
 public class PurviewSchemaBootstrapServiceImplTest {
 
-    private PurviewConfig config;
+    private MetadataCatalogConnectionResolver connectionResolver;
     private PurviewSchemaApplyService schemaApplyService;
     private PurviewJobStateService jobStateService;
     private PurviewLockStateService lockStateService;
@@ -26,17 +26,17 @@ public class PurviewSchemaBootstrapServiceImplTest {
 
     @BeforeEach
     public void setUp() {
-        config = mock(PurviewConfig.class);
+        connectionResolver = mock(MetadataCatalogConnectionResolver.class);
         schemaApplyService = mock(PurviewSchemaApplyService.class);
         jobStateService = mock(PurviewJobStateService.class);
         lockStateService = mock(PurviewLockStateService.class);
 
-        when(config.getCollection()).thenReturn("NemakiWare");
+        when(connectionResolver.getCollection()).thenReturn("NemakiWare");
         when(jobStateService.saveJobState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(lockStateService.tryAcquireRepositoryLock(any(), any(), any(), any())).thenReturn(true);
 
         service = new PurviewSchemaBootstrapServiceImpl(
-                config,
+                connectionResolver,
                 schemaApplyService,
                 jobStateService,
                 lockStateService);

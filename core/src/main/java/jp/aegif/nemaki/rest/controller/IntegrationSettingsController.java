@@ -69,14 +69,11 @@ public class IntegrationSettingsController {
 
 	private static final Set<String> PURVIEW_KEYS = new LinkedHashSet<>(Arrays.asList(
 			"purview.enabled",
-			"purview.auth.type",
 			"purview.endpoint",
 			"purview.atlas.base-path",
 			"purview.tenant.id",
 			"purview.client.id",
 			"purview.client.secret",
-			"purview.basic.username",
-			"purview.basic.password",
 			"purview.collection",
 			"purview.sync.cron"
 	));
@@ -104,7 +101,11 @@ public class IntegrationSettingsController {
 			"atlas.enabled",
 			"atlas.endpoint",
 			"atlas.username",
-			"atlas.password"
+			"atlas.password",
+			"atlas.collection",
+			"atlas.sync.cron",
+			"atlas.connect.timeout.ms",
+			"atlas.read.timeout.ms"
 	));
 
 	private static final Set<String> DATAPLEX_KEYS = new LinkedHashSet<>(Arrays.asList(
@@ -139,7 +140,6 @@ public class IntegrationSettingsController {
 	private static final Set<String> SENSITIVE_KEYS = new LinkedHashSet<>(Arrays.asList(
 			"saml.idp.certificate",
 			"purview.client.secret",
-			"purview.basic.password",
 			"atlas.password"
 	));
 
@@ -246,14 +246,14 @@ public class IntegrationSettingsController {
 	public ResponseEntity<Map<String, Object>> getPurviewSettings() {
 		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
 		if (forbidden != null) return forbidden;
-		return ResponseEntity.ok(buildSettingsResponse(PURVIEW_KEYS));
+		return appendDualBackendWarningIfNeeded(ResponseEntity.ok(buildSettingsResponse(PURVIEW_KEYS)));
 	}
 
 	@PutMapping("/purview")
 	public ResponseEntity<Map<String, Object>> updatePurviewSettings(@RequestBody Map<String, String> body) {
 		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
 		if (forbidden != null) return forbidden;
-		return handleUpdate(PURVIEW_KEYS, body);
+		return appendDualBackendWarningIfNeeded(handleUpdate(PURVIEW_KEYS, body));
 	}
 
 	// ==================== Lineage Journal ====================
@@ -278,14 +278,14 @@ public class IntegrationSettingsController {
 	public ResponseEntity<Map<String, Object>> getAtlasSettings() {
 		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
 		if (forbidden != null) return forbidden;
-		return ResponseEntity.ok(buildSettingsResponse(ATLAS_KEYS));
+		return appendDualBackendWarningIfNeeded(ResponseEntity.ok(buildSettingsResponse(ATLAS_KEYS)));
 	}
 
 	@PutMapping("/atlas")
 	public ResponseEntity<Map<String, Object>> updateAtlasSettings(@RequestBody Map<String, String> body) {
 		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
 		if (forbidden != null) return forbidden;
-		return handleUpdate(ATLAS_KEYS, body);
+		return appendDualBackendWarningIfNeeded(handleUpdate(ATLAS_KEYS, body));
 	}
 
 	// ==================== Dataplex ====================
@@ -381,6 +381,41 @@ public class IntegrationSettingsController {
 		} catch (Exception e) {
 			response.put("status", "failure");
 			response.put("message", "Purview connection test failed: " + e.getMessage());
+		}
+		return ResponseEntity.ok(response);
+	}
+
+	@PostMapping("/atlas/test-connection")
+	public ResponseEntity<Map<String, Object>> testAtlasConnection(
+			@RequestBody(required = false) Map<String, String> body) {
+		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+		if (forbidden != null) return forbidden;
+
+		Map<String, Object> response = new LinkedHashMap<>();
+		if (purviewConnectionService == null) {
+			response.put("status", "failure");
+			response.put("message", "Atlas connector is not available");
+			return ResponseEntity.ok(response);
+		}
+
+		try {
+			PurviewConnectionStatus status = purviewConnectionService.testAtlasConnection(body);
+			String resultStatus;
+			if (status.isConnected()) {
+				resultStatus = "success";
+			} else if (!status.isFeatureEnabled()) {
+				resultStatus = "disabled";
+			} else {
+				resultStatus = "failure";
+			}
+			response.put("status", resultStatus);
+			response.put("connected", status.isConnected());
+			response.put("featureEnabled", status.isFeatureEnabled());
+			response.put("endpoint", status.getEndpoint());
+			response.put("message", status.getMessage());
+		} catch (Exception e) {
+			response.put("status", "failure");
+			response.put("message", "Atlas connection test failed: " + e.getMessage());
 		}
 		return ResponseEntity.ok(response);
 	}
@@ -507,6 +542,21 @@ public class IntegrationSettingsController {
 			return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
 		}
 		return null;
+	}
+
+	private ResponseEntity<Map<String, Object>> appendDualBackendWarningIfNeeded(
+			ResponseEntity<Map<String, Object>> result) {
+		if (result.getStatusCode() != HttpStatus.OK || result.getBody() == null) {
+			return result;
+		}
+		String purviewEnabled = settingsService.readSetting("purview.enabled");
+		String atlasEnabled = settingsService.readSetting("atlas.enabled");
+		if ("true".equalsIgnoreCase(purviewEnabled) && "true".equalsIgnoreCase(atlasEnabled)) {
+			Map<String, Object> body = new LinkedHashMap<>(result.getBody());
+			body.put("warning", "Both Purview and Atlas backends are enabled. Only one backend can be active at a time; Purview takes priority.");
+			return ResponseEntity.ok(body);
+		}
+		return result;
 	}
 
 	private boolean isAdmin() {

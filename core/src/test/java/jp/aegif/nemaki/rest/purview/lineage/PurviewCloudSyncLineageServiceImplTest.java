@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.rest.purview.lineage;
 
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
+import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
@@ -9,6 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -17,6 +20,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,29 +32,25 @@ import jp.aegif.nemaki.model.Property;
 
 public class PurviewCloudSyncLineageServiceImplTest {
 
-    private PurviewConfig config;
+    private MetadataCatalogConnectionResolver connectionResolver;
     private PurviewEntityRegistryClient entityRegistryClient;
     private PurviewCloudSyncLineageServiceImpl service;
 
     @BeforeEach
     public void setUp() throws Exception {
-        config = mock(PurviewConfig.class);
+        connectionResolver = mock(MetadataCatalogConnectionResolver.class);
         entityRegistryClient = mock(PurviewEntityRegistryClient.class);
 
-        when(config.getEndpoint()).thenReturn("https://example-account.purview.azure.com");
-        when(config.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
-        when(config.getTenantId()).thenReturn("tenant-123");
-        when(config.getClientId()).thenReturn("client-123");
-        when(config.getClientSecret()).thenReturn("secret-123");
-        when(config.getConnectTimeoutMs()).thenReturn(5000);
-        when(config.getReadTimeoutMs()).thenReturn(30000);
+        when(connectionResolver.buildConnectionRequest()).thenReturn(
+                new PurviewConnectionRequest("https://example-account.purview.azure.com",
+                        "datamap/api/atlas/v2", "tenant-123", "client-123", "secret-123", 5000, 30000));
         when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
                 .thenReturn(PurviewEntityPublishResult.success(2, "published"));
         when(entityRegistryClient.deleteByUniqueAttribute(any(), any(), any(), any()))
                 .thenReturn(PurviewEntityPublishResult.success(1, "deleted"));
 
         service = new PurviewCloudSyncLineageServiceImpl(
-                config,
+                connectionResolver,
                 new PurviewEntityPayloadFactory(),
                 entityRegistryClient);
     }
@@ -63,18 +63,25 @@ public class PurviewCloudSyncLineageServiceImplTest {
         int processedCount = service.upsertCloudSyncLineage("bedroom", List.of(document));
 
         assertEquals(1, processedCount);
+        // 2-phase bulk: Phase 1 = external assets, Phase 2 = process entities
         ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(entityRegistryClient).bulkCreateOrUpdateEntities(any(), payloadCaptor.capture());
-        List<Map<String, Object>> entities = (List<Map<String, Object>>) payloadCaptor.getValue().get("entities");
-        assertEquals(List.of("nemaki_cloud_sync_process", "nemaki_external_asset"),
-                entities.stream().map(entity -> entity.get("typeName").toString()).sorted().toList());
-        Map<String, Object> externalAsset = entities.stream()
-                .filter(e -> "nemaki_external_asset".equals(e.get("typeName"))).findFirst().orElse(null);
-        Map<String, Object> syncProcess = entities.stream()
-                .filter(e -> "nemaki_cloud_sync_process".equals(e.get("typeName"))).findFirst().orElse(null);
+        verify(entityRegistryClient, times(2)).bulkCreateOrUpdateEntities(any(), payloadCaptor.capture());
+        List<Map<String, Object>> allPayloads = payloadCaptor.getAllValues();
+
+        // Phase 1: external assets
+        List<Map<String, Object>> assetEntities = (List<Map<String, Object>>) allPayloads.get(0).get("entities");
+        assertEquals(1, assetEntities.size());
+        Map<String, Object> externalAsset = assetEntities.get(0);
+        assertEquals("nemaki_external_asset", externalAsset.get("typeName"));
         Map<String, Object> assetAttrs = (Map<String, Object>) externalAsset.get("attributes");
         assertEquals("google", assetAttrs.get("sourceSystem"));
         assertEquals("google:cloud-001", assetAttrs.get("externalStableKey"));
+
+        // Phase 2: process entities
+        List<Map<String, Object>> processEntities = (List<Map<String, Object>>) allPayloads.get(1).get("entities");
+        assertEquals(1, processEntities.size());
+        Map<String, Object> syncProcess = processEntities.get(0);
+        assertEquals("nemaki_cloud_sync_process", syncProcess.get("typeName"));
         Map<String, Object> processAttrs = (Map<String, Object>) syncProcess.get("attributes");
         assertEquals("google", processAttrs.get("cloudProvider"));
         assertEquals("google:cloud-001", processAttrs.get("externalStableKey"));
@@ -84,7 +91,8 @@ public class PurviewCloudSyncLineageServiceImplTest {
     public void testReconcileRemovedCloudSyncLineageDeletesProcessAndExternalAsset() throws Exception {
         int reconciledCount = service.reconcileRemovedCloudSyncLineage(
                 "bedroom",
-                Map.of("doc-001", "doc-001|google|cloud-001|https://drive.example/doc-001|2026-03-20T03:00:00.000+0000"));
+                Map.of("doc-001", "doc-001|google|cloud-001|https://drive.example/doc-001|2026-03-20T03:00:00.000+0000"),
+                Set.of());
 
         assertEquals(2, reconciledCount);
         verify(entityRegistryClient, times(2)).deleteByUniqueAttribute(any(), any(), any(), any());
@@ -144,7 +152,7 @@ public class PurviewCloudSyncLineageServiceImplTest {
 
     @Test
     public void testReconcileRemovedCloudSyncLineageReturnsZeroForEmptyMap() throws Exception {
-        int reconciledCount = service.reconcileRemovedCloudSyncLineage("bedroom", Map.of());
+        int reconciledCount = service.reconcileRemovedCloudSyncLineage("bedroom", Map.of(), Set.of());
 
         assertEquals(0, reconciledCount);
         verify(entityRegistryClient, never()).deleteByUniqueAttribute(any(), any(), any(), any());
@@ -157,9 +165,49 @@ public class PurviewCloudSyncLineageServiceImplTest {
 
         IllegalStateException error = assertThrows(IllegalStateException.class,
                 () -> service.reconcileRemovedCloudSyncLineage("bedroom",
-                        Map.of("doc-001", "doc-001|google|cloud-001|https://drive.example/doc-001|2026-03-20T03:00:00.000+0000")));
+                        Map.of("doc-001", "doc-001|google|cloud-001|https://drive.example/doc-001|2026-03-20T03:00:00.000+0000"),
+                        Set.of()));
 
         assertTrue(error.getMessage().contains("403"));
+    }
+
+    @Test
+    public void testDeleteObsoleteExternalAssetDeletesExternalAssetEntity() throws Exception {
+        int deletedCount = service.deleteObsoleteExternalAsset("bedroom", "google:cloud-001");
+
+        assertEquals(1, deletedCount);
+        verify(entityRegistryClient).deleteByUniqueAttribute(
+                any(),
+                eq("nemaki_external_asset"),
+                eq("qualifiedName"),
+                argThat(qn -> qn != null && qn.startsWith("nemaki://bedroom/external-assets/")));
+    }
+
+    @Test
+    public void testDeleteObsoleteExternalAssetReturnsZeroForNullStableKey() throws Exception {
+        int deletedCount = service.deleteObsoleteExternalAsset("bedroom", null);
+
+        assertEquals(0, deletedCount);
+        verify(entityRegistryClient, never()).deleteByUniqueAttribute(any(), any(), any(), any());
+    }
+
+    @Test
+    public void testDeleteObsoleteExternalAssetReturnsZeroForBlankStableKey() throws Exception {
+        int deletedCount = service.deleteObsoleteExternalAsset("bedroom", "  ");
+
+        assertEquals(0, deletedCount);
+        verify(entityRegistryClient, never()).deleteByUniqueAttribute(any(), any(), any(), any());
+    }
+
+    @Test
+    public void testDeleteObsoleteExternalAssetIgnores404Error() throws Exception {
+        when(entityRegistryClient.deleteByUniqueAttribute(any(), any(), any(), any()))
+                .thenReturn(PurviewEntityPublishResult.failure("HTTP 404: Entity not found"));
+
+        // 404 errors are caught internally and return 0 (entity already gone)
+        int deletedCount = service.deleteObsoleteExternalAsset("bedroom", "google:cloud-001");
+
+        assertEquals(0, deletedCount);
     }
 
     private Document documentWithCloud(String objectId, String provider, String externalFileId, String cloudFileUrl) {

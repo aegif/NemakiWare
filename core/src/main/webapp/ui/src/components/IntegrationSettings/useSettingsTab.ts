@@ -15,6 +15,7 @@ export function useSettingsTab({ fetchSettings, saveSettings, testConnection }: 
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
+  const [saveWarning, setSaveWarning] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -23,6 +24,8 @@ export function useSettingsTab({ fetchSettings, saveSettings, testConnection }: 
       setSettings(data.settings);
       setSources(data.sources);
       setFormValues({ ...data.settings });
+      // Show/clear dual-backend conflict warning from GET response
+      setSaveWarning(data.warning ?? null);
     } catch (err) {
       console.error('Failed to load settings:', err);
     } finally {
@@ -38,6 +41,7 @@ export function useSettingsTab({ fetchSettings, saveSettings, testConnection }: 
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveWarning(null);
     try {
       // Only send fields that actually changed to avoid writing
       // runtime defaults (blank → CouchDB) for untouched keys.
@@ -48,6 +52,7 @@ export function useSettingsTab({ fetchSettings, saveSettings, testConnection }: 
         }
       }
       await saveSettings(changedFields);
+      // load() will fetch the latest state including any dual-backend warning
       await load();
       return true;
     } catch (err) {
@@ -87,6 +92,7 @@ export function useSettingsTab({ fetchSettings, saveSettings, testConnection }: 
     saving,
     testing,
     testResult,
+    saveWarning,
     hasChanges,
     handleSave,
     handleTestConnection,

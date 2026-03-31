@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.rest.purview.publish;
 
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
+import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.relationship.PurviewContainmentRelationshipService;
 import jp.aegif.nemaki.rest.purview.relationship.PurviewDocumentTypeRelationshipService;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
@@ -36,7 +37,7 @@ import jp.aegif.nemaki.model.Folder;
 
 public class PurviewDocumentPublishServiceImplTest {
 
-    private PurviewConfig config;
+    private MetadataCatalogConnectionResolver connectionResolver;
     private RepositoryInfoMap repositoryInfoMap;
     private ContentDaoService contentDaoService;
     private PurviewEntityRegistryClient entityRegistryClient;
@@ -47,7 +48,7 @@ public class PurviewDocumentPublishServiceImplTest {
 
     @BeforeEach
     public void setUp() throws Exception {
-        config = mock(PurviewConfig.class);
+        connectionResolver = mock(MetadataCatalogConnectionResolver.class);
         repositoryInfoMap = mock(RepositoryInfoMap.class);
         contentDaoService = mock(ContentDaoService.class);
         entityRegistryClient = mock(PurviewEntityRegistryClient.class);
@@ -55,20 +56,16 @@ public class PurviewDocumentPublishServiceImplTest {
         documentTypeRelationshipService = mock(PurviewDocumentTypeRelationshipService.class);
         deadLetterStateService = mock(PurviewDeadLetterStateService.class);
 
-        when(config.getEndpoint()).thenReturn("https://example-account.purview.azure.com");
-        when(config.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
-        when(config.getTenantId()).thenReturn("tenant-123");
-        when(config.getClientId()).thenReturn("client-123");
-        when(config.getClientSecret()).thenReturn("secret-123");
-        when(config.getConnectTimeoutMs()).thenReturn(5000);
-        when(config.getReadTimeoutMs()).thenReturn(30000);
+        when(connectionResolver.buildConnectionRequest()).thenReturn(
+                new PurviewConnectionRequest("https://example-account.purview.azure.com",
+                        "datamap/api/atlas/v2", "tenant-123", "client-123", "secret-123", 5000, 30000));
         when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
                 .thenAnswer(this::successWithEntityCount);
         when(containmentRelationshipService.upsertContainmentRelationships(any(), any(), anyMap())).thenReturn(0);
         when(documentTypeRelationshipService.upsertDocumentTypeRelationships(any(), any(), anyMap())).thenReturn(0);
 
         service = new PurviewDocumentPublishServiceImpl(
-                config,
+                connectionResolver,
                 repositoryInfoMap,
                 contentDaoService,
                 new PurviewEntityPayloadFactory(),
@@ -369,8 +366,7 @@ public class PurviewDocumentPublishServiceImplTest {
     @Test
     public void testUpsertContentsAtlasModeResolvesUnmappedGuidsViaFollowUpLookup() throws Exception {
         // Configure Atlas on-prem mode
-        when(config.isAtlasOnPrem()).thenReturn(true);
-        when(config.getAtlasBasePath()).thenReturn("api/atlas/v2");
+        when(connectionResolver.isAtlasOnPrem()).thenReturn(true);
 
         // Bulk response returns no qualifiedName for the entities (only guid + typeName)
         when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
@@ -396,7 +392,7 @@ public class PurviewDocumentPublishServiceImplTest {
     @Test
     public void testUpsertContentsPurviewModeSkipsGuidFollowUpLookup() throws Exception {
         // Purview cloud mode (default setUp)
-        when(config.isAtlasOnPrem()).thenReturn(false);
+        when(connectionResolver.isAtlasOnPrem()).thenReturn(false);
 
         // Bulk response returns no qualifiedName for entities
         when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))

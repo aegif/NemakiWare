@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
@@ -22,28 +22,21 @@ class PurviewLineageSinkTest {
 
     private PurviewLineageSink sink;
     private PurviewEntityRegistryClient mockClient;
-    private PurviewConfig mockConfig;
+    private MetadataCatalogConnectionResolver mockConnectionResolver;
 
     @BeforeEach
     void setUp() throws Exception {
         sink = new PurviewLineageSink();
         mockClient = mock(PurviewEntityRegistryClient.class);
-        mockConfig = mock(PurviewConfig.class);
+        mockConnectionResolver = mock(MetadataCatalogConnectionResolver.class);
 
-        when(mockConfig.isEnabled()).thenReturn(true);
-        when(mockConfig.getEndpoint()).thenReturn("https://test.purview.azure.com");
-        when(mockConfig.getAtlasBasePath()).thenReturn("api/atlas/v2");
-        when(mockConfig.getAuthType()).thenReturn("oauth2");
-        when(mockConfig.getTenantId()).thenReturn("tenant-1");
-        when(mockConfig.getClientId()).thenReturn("client-1");
-        when(mockConfig.getClientSecret()).thenReturn("secret");
-        when(mockConfig.getBasicUsername()).thenReturn("");
-        when(mockConfig.getBasicPassword()).thenReturn("");
-        when(mockConfig.getConnectTimeoutMs()).thenReturn(5000);
-        when(mockConfig.getReadTimeoutMs()).thenReturn(30000);
+        when(mockConnectionResolver.isAnyEnabled()).thenReturn(true);
+        when(mockConnectionResolver.buildConnectionRequest()).thenReturn(
+                new PurviewConnectionRequest("https://test.purview.azure.com",
+                        "api/atlas/v2", "tenant-1", "client-1", "secret", 5000, 30000));
 
         setField(sink, "registryClient", mockClient);
-        setField(sink, "purviewConfig", mockConfig);
+        setField(sink, "connectionResolver", mockConnectionResolver);
     }
 
     @Test
@@ -58,13 +51,15 @@ class PurviewLineageSinkTest {
 
     @Test
     void isAvailable_falseWhenDisabled() {
-        when(mockConfig.isEnabled()).thenReturn(false);
+        when(mockConnectionResolver.isAnyEnabled()).thenReturn(false);
         assertFalse(sink.isAvailable());
     }
 
     @Test
     void isAvailable_falseWhenNoEndpoint() {
-        when(mockConfig.getEndpoint()).thenReturn("");
+        when(mockConnectionResolver.buildConnectionRequest()).thenReturn(
+                new PurviewConnectionRequest("",
+                        "api/atlas/v2", "tenant-1", "client-1", "secret", 5000, 30000));
         assertFalse(sink.isAvailable());
     }
 

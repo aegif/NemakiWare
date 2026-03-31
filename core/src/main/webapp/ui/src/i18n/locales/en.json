@@ -99,12 +99,13 @@
       "filesystemImportExport": "Filesystem Import/Export",
       "integrationSettings": "Integration Settings",
       "configViewer": "Config Viewer",
-      "purview": "Purview / Atlas",
+      "purview": "Microsoft Purview",
       "rssManagement": "RSS Token Management",
-      "accountSettings": "Account Settings"
+      "accountSettings": "Account Settings",
+      "lineageJournalTitle": "Lineage Journal"
     },
   "purviewManagement": {
-    "title": "Purview / Atlas Management",
+    "title": "Microsoft Purview Management",
     "actions": {
       "testConnection": "Test Connection",
       "lookupGovernance": "Lookup Governance",
@@ -122,7 +123,7 @@
     "alerts": {
       "loadFailed": "Failed to load Purview state",
       "connectionFailed": "Purview connection failed",
-      "featureDisabled": "Purview feature is disabled",
+      "featureDisabled": "Both Purview and Atlas are disabled",
       "applyRequired": "Purview schema apply is required",
       "applyRequiredDescription": "Apply type definitions before running repository sync jobs.",
       "deadLettersPresent": "Dead letters are present",
@@ -2610,8 +2611,10 @@
       "microsoft": "Microsoft Auth",
       "saml": "SAML",
       "directorySync": "Directory Sync",
-      "purview": "Purview / Atlas",
+      "purview": "Microsoft Purview",
       "lineage": "Lineage Journal",
+      "atlas": "Apache Atlas",
+      "dataplex": "Google Dataplex",
       "lineageJournalTitle": "Lineage Journal"
     },
     "save": "Save",
@@ -2621,6 +2624,8 @@
     "connectionSuccess": "Connection successful",
     "connectionFailure": "Connection failed",
     "connectionDisabled": "Integration is disabled",
+    "dualBackendWarning": "Multiple backends enabled",
+    "dualBackendWarningDescription": "Both Purview and Atlas backends are enabled. Only one backend can be active at a time; Purview takes priority.",
     "overriddenWarning": "This setting is overridden by {{source}} and cannot be changed from the admin UI",
     "source": {
       "system_property": "System Property",
@@ -2661,25 +2666,19 @@
       "notice": "Directory sync schedule settings. Changes take effect within ~60 seconds after saving (no restart required)."
     },
     "purview": {
-      "enabled": "Enable Purview / Atlas Integration",
-      "authType": "Authentication Method",
-      "authTypeOAuth2": "OAuth2 (Microsoft Purview)",
-      "authTypeBasic": "Basic Auth (Apache Atlas)",
+      "enabled": "Enable Microsoft Purview Integration",
       "endpoint": "Endpoint URL",
       "atlasBasePath": "Atlas API Base Path",
       "basePathPurview": "datamap/api/atlas/v2 (Purview DataMap)",
       "basePathCatalog": "catalog/api/atlas/v2 (Purview Catalog)",
-      "basePathAtlas": "api/atlas/v2 (Atlas on-prem)",
       "tenantId": "Tenant ID",
       "clientId": "Client ID",
       "clientSecret": "Client Secret",
-      "basicUsername": "Basic Auth Username",
-      "basicPassword": "Basic Auth Password",
       "collection": "Collection Name",
       "syncCron": "Incremental Sync Schedule (cron)",
       "syncCronHelp": "Leave empty to disable. Example: 0 0 3 * * ? (daily at 3 AM)",
       "betaNotice": "This feature is in beta.",
-      "disabledNotice": "Purview / Atlas integration is currently disabled."
+      "disabledNotice": "Microsoft Purview integration is currently disabled."
     },
     "lineage": {
       "mode": "Lineage Mode",
@@ -2722,6 +2721,8 @@
       "leaderTtlSeconds": "Leader TTL (seconds)",
       "leaderTtlSecondsHelp": "Time after last heartbeat before leadership expires. Default: 60 seconds",
       "internalApiNotice": "Event browsing and replay are not available yet. This screen controls configuration only.",
+      "journalLinkNotice": "Journaled mode is active. You can browse and replay events from the Lineage Journal screen.",
+      "journalLinkLabel": "Open Lineage Journal",
       "deadLetter": "Dead-letter",
       "deadLetterTitle": "Dead-letter Events",
       "deadLetterEmpty": "No dead-letter events",
@@ -2760,18 +2761,25 @@
       "storeActive": "Store Active",
       "backlog": "Backlog",
       "nonTerminal": "Non-terminal",
+      "nonTerminalByTarget": "Backlog by Target",
       "estimatedSize": "Estimated Size",
       "replayAllConfirm": "Replay all unreplayed dead-letters?",
-      "replayedCount": "Replayed {{count}} events"
+      "replayedCount": "Replayed {{count}} events",
+      "repoOverridesActive": "repository overrides active"
     },
     "atlas": {
       "title": "Apache Atlas Settings",
       "enabled": "Enable Atlas Integration",
       "endpoint": "Atlas Endpoint URL",
-      "endpointHelp": "Example: https://atlas.example.com:21443",
+      "endpointHelp": "Example: http://localhost:21000",
       "username": "Username",
       "password": "Password",
-      "notice": "Direct Apache Atlas integration settings. This is separate from Purview's Atlas API."
+      "collection": "Collection Name",
+      "syncCron": "Incremental Sync Schedule (cron)",
+      "syncCronHelp": "Leave empty to disable. Example: 0 0 3 * * ? (daily at 3 AM)",
+      "testConnection": "Test Atlas Connection",
+      "notice": "Apache Atlas on-premises integration. Configure endpoint and Basic Auth credentials.",
+      "disabledNotice": "Atlas integration is currently disabled."
     },
     "dataplex": {
       "title": "Google Dataplex Settings",

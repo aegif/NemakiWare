@@ -6,6 +6,8 @@ import { MicrosoftAuthSettingsTab } from './MicrosoftAuthSettingsTab';
 import { SamlSettingsTab } from './SamlSettingsTab';
 import { DirectorySyncSettingsTab } from './DirectorySyncSettingsTab';
 import { PurviewSettingsTab } from './PurviewSettingsTab';
+import { AtlasSettingsTab } from './AtlasSettingsTab';
+import { DataplexSettingsTab } from './DataplexSettingsTab';
 import { LineageSettingsTab } from './LineageSettingsTab';
 
 const { Title } = Typography;
@@ -49,8 +51,18 @@ export function IntegrationSettings({ repositoryId: _repositoryId }: Integration
       children: <PurviewSettingsTab />,
     },
     {
+      key: 'atlas',
+      label: <Space size={4}>{t('integrationSettings.tabs.atlas')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Beta</Tag></Space>,
+      children: <AtlasSettingsTab />,
+    },
+    {
+      key: 'dataplex',
+      label: <Space size={4}>{t('integrationSettings.tabs.dataplex')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Beta</Tag></Space>,
+      children: <DataplexSettingsTab />,
+    },
+    {
       key: 'lineage',
-      label: t('integrationSettings.tabs.lineage'),
+      label: <Space size={4}>{t('integrationSettings.tabs.lineage')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Beta</Tag></Space>,
       children: <LineageSettingsTab />,
     },
   ];

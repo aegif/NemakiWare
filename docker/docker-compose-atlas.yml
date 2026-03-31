@@ -1,0 +1,26 @@
+# Apache Atlas overlay for docker-compose-simple.yml
+#
+# Usage:
+#   docker compose -f docker-compose-simple.yml -f docker-compose-atlas.yml up -d --build
+#
+# Atlas UI: http://localhost:21000  (admin:admin)
+# Wait for healthy: until curl -sf http://localhost:21000/api/atlas/v2/types/typedefs/headers -u admin:admin; do sleep 10; done
+
+services:
+  atlas:
+    image: sburn/apache-atlas:2.3.0
+    ports:
+      - "21000:21000"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:21000/api/atlas/v2/types/typedefs/headers", "-u", "admin:admin"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+
+  core:
+    depends_on:
+      atlas:
+        condition: service_healthy
+    environment:
+      - CATALINA_OPTS=${CATALINA_OPTS} -Dpurview.enabled=true -Dpurview.endpoint=http://atlas:21000 -Dpurview.auth.type=basic -Dpurview.basic.username=admin -Dpurview.basic.password=admin -Dpurview.atlas.base-path=api/atlas/v2 -Datlas.enabled=true -Datlas.endpoint=http://atlas:21000 -Datlas.username=admin -Datlas.password=admin -Dlineage.mode=journaled -Dlineage.targets=atlas

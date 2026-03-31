@@ -3,6 +3,8 @@ package jp.aegif.nemaki.rest.purview.sync;
 import jp.aegif.nemaki.rest.purview.publish.PurviewCloudMetadataPublishService;
 import jp.aegif.nemaki.rest.purview.state.PurviewCursorState;
 import jp.aegif.nemaki.rest.purview.state.PurviewCursorStateService;
+import jp.aegif.nemaki.rest.purview.state.PurviewDeadLetterState;
+import jp.aegif.nemaki.rest.purview.state.PurviewDeadLetterStateService;
 import jp.aegif.nemaki.rest.purview.state.PurviewJobState;
 import jp.aegif.nemaki.rest.purview.state.PurviewJobStateService;
 import jp.aegif.nemaki.rest.purview.state.PurviewLockStateService;
@@ -11,6 +13,7 @@ import jp.aegif.nemaki.rest.purview.schema.PurviewSchemaPlannerService;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -26,6 +29,7 @@ public class PurviewCloudMetadataReconciliationServiceImplTest {
     private PurviewJobStateService jobStateService;
     private PurviewCursorStateService cursorStateService;
     private PurviewCloudMetadataPublishService cloudMetadataPublishService;
+    private PurviewDeadLetterStateService deadLetterStateService;
     private PurviewCloudMetadataReconciliationServiceImpl service;
 
     @BeforeEach
@@ -35,6 +39,7 @@ public class PurviewCloudMetadataReconciliationServiceImplTest {
         jobStateService = mock(PurviewJobStateService.class);
         cursorStateService = mock(PurviewCursorStateService.class);
         cloudMetadataPublishService = mock(PurviewCloudMetadataPublishService.class);
+        deadLetterStateService = mock(PurviewDeadLetterStateService.class);
 
         when(jobStateService.saveJobState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(cursorStateService.saveCursorState(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -45,7 +50,8 @@ public class PurviewCloudMetadataReconciliationServiceImplTest {
                 lockStateService,
                 jobStateService,
                 cursorStateService,
-                cloudMetadataPublishService);
+                cloudMetadataPublishService,
+                deadLetterStateService);
     }
 
     @Test
@@ -82,6 +88,7 @@ public class PurviewCloudMetadataReconciliationServiceImplTest {
                 "2026-03-20T01:00:00Z", "2026-03-20T01:00:00Z", "", "", 0, 0));
         when(cloudMetadataPublishService.syncRepositoryCloudMetadataIfChanged("bedroom", "cloud-old"))
                 .thenReturn(new PurviewCloudMetadataSyncResult("cloud-new", true, 2, 1));
+        when(deadLetterStateService.getDeadLetterState("bedroom", "cloud-sync-lineage", "bedroom")).thenReturn(null);
 
         PurviewJobState result = service.startCloudMetadataReconciliation("bedroom", "admin");
 
@@ -105,5 +112,26 @@ public class PurviewCloudMetadataReconciliationServiceImplTest {
         assertEquals("FAILED", result.getStatus());
         assertEquals(1, result.getFailedCount());
         assertTrue(result.getErrorSummary().contains("purview unavailable"));
+    }
+
+    @Test
+    public void testCompletedWithErrorsWhenCloudLineageDeadLetterExists() {
+        when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
+                "NemakiWare", "5", "current-hash", "5", "current-hash", false,
+                java.util.List.of(), java.util.List.of(), java.util.List.of()));
+        when(cloudMetadataPublishService.syncRepositoryCloudMetadataIfChanged("bedroom", ""))
+                .thenReturn(new PurviewCloudMetadataSyncResult("snap1", true, 3, 0));
+        PurviewDeadLetterState dl = new PurviewDeadLetterState(
+                "bedroom", "cloud-sync-lineage", "bedroom",
+                "nemaki_cloud_sync_process", "nemaki://bedroom/purview/cloud-sync-lineage",
+                "2026-03-29T10:00:00Z", "2026-03-29T10:00:00Z", 1, "", "Atlas 404");
+        when(deadLetterStateService.getDeadLetterState("bedroom", "cloud-sync-lineage", "bedroom")).thenReturn(dl);
+
+        PurviewJobState result = service.startCloudMetadataReconciliation("bedroom", "admin");
+
+        assertEquals("COMPLETED_WITH_ERRORS", result.getStatus());
+        assertEquals(3, result.getProcessedCount());
+        assertEquals(1, result.getFailedCount());
+        assertTrue(result.getErrorSummary().contains("cloud-sync-lineage"));
     }
 }

@@ -1,7 +1,10 @@
 package jp.aegif.nemaki.rest.purview.sync;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.rest.purview.CatalogBackendKind;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.journal.AtlasConfig;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,8 +39,11 @@ public class PurviewSyncScheduler {
 	private static final Logger logger = LoggerFactory.getLogger(PurviewSyncScheduler.class);
 	private static final long CONFIG_CHECK_INTERVAL_SECONDS = 60;
 
+	private final MetadataCatalogConnectionResolver connectionResolver;
 	private final PurviewConfig purviewConfig;
+	private final AtlasConfig atlasConfig;
 	private final PurviewIncrementalSyncService purviewIncrementalSyncService;
+	private final PurviewDeleteResolutionService purviewDeleteResolutionService;
 	private final RepositoryInfoMap repositoryInfoMap;
 
 	private ScheduledExecutorService scheduler;
@@ -47,11 +53,17 @@ public class PurviewSyncScheduler {
 
 	@Autowired
 	public PurviewSyncScheduler(
+			MetadataCatalogConnectionResolver connectionResolver,
 			PurviewConfig purviewConfig,
+			AtlasConfig atlasConfig,
 			PurviewIncrementalSyncService purviewIncrementalSyncService,
+			PurviewDeleteResolutionService purviewDeleteResolutionService,
 			RepositoryInfoMap repositoryInfoMap) {
+		this.connectionResolver = connectionResolver;
 		this.purviewConfig = purviewConfig;
+		this.atlasConfig = atlasConfig;
 		this.purviewIncrementalSyncService = purviewIncrementalSyncService;
+		this.purviewDeleteResolutionService = purviewDeleteResolutionService;
 		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
@@ -104,16 +116,20 @@ public class PurviewSyncScheduler {
 	}
 
 	private String resolveEffectiveCron() {
-		if (!purviewConfig.isEnabled()) {
+		if (!connectionResolver.isAnyEnabled()) {
 			return null;
 		}
-		String cron = purviewConfig.getSyncCron();
+		String cron = switch (connectionResolver.activeBackend()) {
+			case PURVIEW -> purviewConfig.getSyncCron();
+			case ATLAS -> atlasConfig.getSyncCron();
+			case NONE -> null;
+		};
 		if (cron == null || cron.isBlank()) {
 			return null;
 		}
 		cron = cron.trim();
 		if (!CronExpression.isValidExpression(cron)) {
-			logger.warn("Invalid Purview sync cron expression: {}", cron);
+			logger.warn("Invalid sync cron expression: {}", cron);
 			return null;
 		}
 		return cron;
@@ -171,12 +187,12 @@ public class PurviewSyncScheduler {
 	}
 
 	private void executeSync() {
-		if (!purviewConfig.isEnabled()) {
-			logger.debug("Purview sync skipped: purview.enabled is false (dynamic check)");
+		if (!connectionResolver.isAnyEnabled()) {
+			logger.debug("Purview sync skipped: no catalog backend enabled (dynamic check)");
 			return;
 		}
 
-		logger.info("Starting scheduled Purview incremental sync");
+		logger.info("Starting scheduled Purview/Atlas incremental sync");
 
 		List<String> repositoryIds = repositoryInfoMap.getMainRepositoryKeys();
 		if (repositoryIds.isEmpty()) {
@@ -190,6 +206,15 @@ public class PurviewSyncScheduler {
 				purviewIncrementalSyncService.startIncrementalSync(repoId, "scheduled");
 			} catch (Exception e) {
 				logger.error("Scheduled Purview incremental sync failed for repository {}: {}",
+						repoId, e.getMessage(), e);
+			}
+		}
+
+		for (String repoId : repositoryIds) {
+			try {
+				purviewDeleteResolutionService.startDeleteResolution(repoId, "scheduled");
+			} catch (Exception e) {
+				logger.error("Scheduled Purview delete resolution failed for repository {}: {}",
 						repoId, e.getMessage(), e);
 			}
 		}

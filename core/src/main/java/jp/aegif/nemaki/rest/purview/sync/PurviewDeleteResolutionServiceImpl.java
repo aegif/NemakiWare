@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.purview.sync;
 
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
@@ -32,7 +32,7 @@ public class PurviewDeleteResolutionServiceImpl implements PurviewDeleteResoluti
     private static final String TOMBSTONE_STATUS_ERROR = "ERROR";
     private static final String UNIQUE_ATTRIBUTE_NAME = "qualifiedName";
 
-    private final PurviewConfig purviewConfig;
+    private final MetadataCatalogConnectionResolver connectionResolver;
     private final PurviewSchemaPlannerService schemaPlannerService;
     private final PurviewLockStateService lockStateService;
     private final PurviewJobStateService jobStateService;
@@ -41,14 +41,14 @@ public class PurviewDeleteResolutionServiceImpl implements PurviewDeleteResoluti
     private final ContentDaoService contentDaoService;
 
     public PurviewDeleteResolutionServiceImpl(
-            PurviewConfig purviewConfig,
+            MetadataCatalogConnectionResolver connectionResolver,
             PurviewSchemaPlannerService schemaPlannerService,
             PurviewLockStateService lockStateService,
             PurviewJobStateService jobStateService,
             PurviewTombstoneStateService tombstoneStateService,
             PurviewEntityRegistryClient entityRegistryClient,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService) {
-        this.purviewConfig = purviewConfig;
+        this.connectionResolver = connectionResolver;
         this.schemaPlannerService = schemaPlannerService;
         this.lockStateService = lockStateService;
         this.jobStateService = jobStateService;
@@ -164,17 +164,7 @@ public class PurviewDeleteResolutionServiceImpl implements PurviewDeleteResoluti
     }
 
     private PurviewConnectionRequest buildConnectionRequest() {
-        return new PurviewConnectionRequest(
-                purviewConfig.getEndpoint(),
-                purviewConfig.getAtlasBasePath(),
-                purviewConfig.getAuthType(),
-                purviewConfig.getTenantId(),
-                purviewConfig.getClientId(),
-                purviewConfig.getClientSecret(),
-                purviewConfig.getBasicUsername(),
-                purviewConfig.getBasicPassword(),
-                purviewConfig.getConnectTimeoutMs(),
-                purviewConfig.getReadTimeoutMs());
+        return connectionResolver.buildConnectionRequest();
     }
 
     private PurviewTombstoneState copyWithStatus(PurviewTombstoneState tombstoneState, String status) {

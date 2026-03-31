@@ -37,10 +37,15 @@ public interface LineageDeadLetterStore {
     Map<String, Object> findByEventId(String eventId);
 
     /**
-     * Replays a single dead-letter event by re-appending to the journal store.
+     * Replays a single dead-letter event.
+     *
+     * <p>If the original journal event still exists, only FAILED/DISCARDED targets
+     * are reset to PENDING via {@code updatePublishStatus()}; already-successful
+     * targets are left untouched. If the original was purged, a new journal event
+     * is re-appended with only the failed targets from the dead-letter record.
      *
      * @param eventId the event ID to replay
-     * @param journalStore the journal store to append to
+     * @param journalStore the journal store to update or append to
      * @return true if replayed successfully, false if not found or already replayed
      */
     boolean replay(String eventId, LineageJournalStore journalStore);

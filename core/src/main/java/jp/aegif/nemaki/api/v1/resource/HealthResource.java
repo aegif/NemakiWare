@@ -187,12 +187,15 @@ public class HealthResource {
 
         try {
             String mode = lineageConfig.getMode().name().toLowerCase();
-            if ("disabled".equals(mode)) return null;
+            boolean storeActive = lineageJournalStore != null && lineageJournalStore.isActive();
+
+            // Show lineage section when global mode is not disabled OR when
+            // the journal store is active (repository overrides may enable
+            // journaling even when the global mode is disabled).
+            if ("disabled".equals(mode) && !storeActive) return null;
 
             HealthCheckResult result = new HealthCheckResult();
             result.addDetail("mode", mode);
-
-            boolean storeActive = lineageJournalStore != null && lineageJournalStore.isActive();
             result.addDetail("storeActive", storeActive);
 
             if ("journaled".equals(mode) && !storeActive) {

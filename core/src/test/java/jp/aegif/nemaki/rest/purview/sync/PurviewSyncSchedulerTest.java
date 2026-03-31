@@ -16,37 +16,56 @@ import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.rest.purview.CatalogBackendKind;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.journal.AtlasConfig;
 
 public class PurviewSyncSchedulerTest {
 
+	private MetadataCatalogConnectionResolver connectionResolver;
+	private PurviewConfig purviewConfig;
+	private AtlasConfig atlasConfig;
+	private PurviewIncrementalSyncService syncService;
+	private PurviewDeleteResolutionService deleteResolutionService;
+	private RepositoryInfoMap repoInfoMap;
+
+	private PurviewSyncScheduler createScheduler() {
+		return new PurviewSyncScheduler(connectionResolver, purviewConfig, atlasConfig,
+				syncService, deleteResolutionService, repoInfoMap);
+	}
+
+	private void setupMocks() {
+		connectionResolver = mock(MetadataCatalogConnectionResolver.class);
+		purviewConfig = mock(PurviewConfig.class);
+		atlasConfig = mock(AtlasConfig.class);
+		syncService = mock(PurviewIncrementalSyncService.class);
+		deleteResolutionService = mock(PurviewDeleteResolutionService.class);
+		repoInfoMap = mock(RepositoryInfoMap.class);
+	}
+
 	@Test
-	public void testInitDisabledWhenPurviewNotEnabled() {
-		PurviewConfig config = mock(PurviewConfig.class);
-		when(config.isEnabled()).thenReturn(false);
+	public void testInitDisabledWhenNeitherBackendEnabled() {
+		setupMocks();
+		when(connectionResolver.isAnyEnabled()).thenReturn(false);
+		when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.NONE);
 
-		PurviewIncrementalSyncService syncService = mock(PurviewIncrementalSyncService.class);
-		RepositoryInfoMap repoInfoMap = mock(RepositoryInfoMap.class);
-
-		PurviewSyncScheduler scheduler = new PurviewSyncScheduler(config, syncService, repoInfoMap);
+		PurviewSyncScheduler scheduler = createScheduler();
 		scheduler.init();
 
-		// Executor is always created, but activeCron should be null
 		assertTrue(scheduler.isSchedulerActive());
 		assertNull(scheduler.getActiveCron());
 		scheduler.destroy();
 	}
 
 	@Test
-	public void testInitDisabledWhenCronEmpty() {
-		PurviewConfig config = mock(PurviewConfig.class);
-		when(config.isEnabled()).thenReturn(true);
-		when(config.getSyncCron()).thenReturn("");
+	public void testInitDisabledWhenPurviewCronEmpty() {
+		setupMocks();
+		when(connectionResolver.isAnyEnabled()).thenReturn(true);
+		when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.PURVIEW);
+		when(purviewConfig.getSyncCron()).thenReturn("");
 
-		PurviewIncrementalSyncService syncService = mock(PurviewIncrementalSyncService.class);
-		RepositoryInfoMap repoInfoMap = mock(RepositoryInfoMap.class);
-
-		PurviewSyncScheduler scheduler = new PurviewSyncScheduler(config, syncService, repoInfoMap);
+		PurviewSyncScheduler scheduler = createScheduler();
 		scheduler.init();
 
 		assertTrue(scheduler.isSchedulerActive());
@@ -56,14 +75,12 @@ public class PurviewSyncSchedulerTest {
 
 	@Test
 	public void testInitDisabledWhenCronInvalid() {
-		PurviewConfig config = mock(PurviewConfig.class);
-		when(config.isEnabled()).thenReturn(true);
-		when(config.getSyncCron()).thenReturn("not-a-cron");
+		setupMocks();
+		when(connectionResolver.isAnyEnabled()).thenReturn(true);
+		when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.PURVIEW);
+		when(purviewConfig.getSyncCron()).thenReturn("not-a-cron");
 
-		PurviewIncrementalSyncService syncService = mock(PurviewIncrementalSyncService.class);
-		RepositoryInfoMap repoInfoMap = mock(RepositoryInfoMap.class);
-
-		PurviewSyncScheduler scheduler = new PurviewSyncScheduler(config, syncService, repoInfoMap);
+		PurviewSyncScheduler scheduler = createScheduler();
 		scheduler.init();
 
 		assertTrue(scheduler.isSchedulerActive());
@@ -72,15 +89,13 @@ public class PurviewSyncSchedulerTest {
 	}
 
 	@Test
-	public void testInitStartsSchedulerWhenEnabledAndCronValid() {
-		PurviewConfig config = mock(PurviewConfig.class);
-		when(config.isEnabled()).thenReturn(true);
-		when(config.getSyncCron()).thenReturn("0 0 3 * * ?");
+	public void testInitStartsSchedulerWhenPurviewEnabledAndCronValid() {
+		setupMocks();
+		when(connectionResolver.isAnyEnabled()).thenReturn(true);
+		when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.PURVIEW);
+		when(purviewConfig.getSyncCron()).thenReturn("0 0 3 * * ?");
 
-		PurviewIncrementalSyncService syncService = mock(PurviewIncrementalSyncService.class);
-		RepositoryInfoMap repoInfoMap = mock(RepositoryInfoMap.class);
-
-		PurviewSyncScheduler scheduler = new PurviewSyncScheduler(config, syncService, repoInfoMap);
+		PurviewSyncScheduler scheduler = createScheduler();
 		scheduler.init();
 
 		assertTrue(scheduler.isSchedulerActive());
@@ -89,53 +104,62 @@ public class PurviewSyncSchedulerTest {
 	}
 
 	@Test
-	public void testExecuteSyncCallsIncrementalSyncForEachRepository() throws Exception {
-		PurviewConfig config = mock(PurviewConfig.class);
-		when(config.isEnabled()).thenReturn(true);
+	public void testInitStartsSchedulerWhenAtlasEnabledAndCronValid() {
+		setupMocks();
+		when(connectionResolver.isAnyEnabled()).thenReturn(true);
+		when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.ATLAS);
+		when(atlasConfig.getSyncCron()).thenReturn("0 30 2 * * ?");
 
-		PurviewIncrementalSyncService syncService = mock(PurviewIncrementalSyncService.class);
-		RepositoryInfoMap repoInfoMap = mock(RepositoryInfoMap.class);
+		PurviewSyncScheduler scheduler = createScheduler();
+		scheduler.init();
+
+		assertTrue(scheduler.isSchedulerActive());
+		assertEquals("0 30 2 * * ?", scheduler.getActiveCron());
+		scheduler.destroy();
+	}
+
+	@Test
+	public void testExecuteSyncCallsIncrementalSyncForEachRepository() throws Exception {
+		setupMocks();
+		when(connectionResolver.isAnyEnabled()).thenReturn(true);
+		when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.PURVIEW);
 		when(repoInfoMap.getMainRepositoryKeys()).thenReturn(Arrays.asList("bedroom", "canopy"));
 
-		PurviewSyncScheduler scheduler = new PurviewSyncScheduler(config, syncService, repoInfoMap);
+		PurviewSyncScheduler scheduler = createScheduler();
 
-		// Invoke executeSync via reflection
 		Method executeSyncMethod = PurviewSyncScheduler.class.getDeclaredMethod("executeSync");
 		executeSyncMethod.setAccessible(true);
 		executeSyncMethod.invoke(scheduler);
 
 		verify(syncService).startIncrementalSync("bedroom", "scheduled");
 		verify(syncService).startIncrementalSync("canopy", "scheduled");
+		verify(deleteResolutionService).startDeleteResolution("bedroom", "scheduled");
+		verify(deleteResolutionService).startDeleteResolution("canopy", "scheduled");
 	}
 
 	@Test
-	public void testExecuteSyncSkipsWhenPurviewDisabledDynamically() throws Exception {
-		PurviewConfig config = mock(PurviewConfig.class);
-		when(config.isEnabled()).thenReturn(false);
+	public void testExecuteSyncSkipsWhenNeitherBackendEnabled() throws Exception {
+		setupMocks();
+		when(connectionResolver.isAnyEnabled()).thenReturn(false);
 
-		PurviewIncrementalSyncService syncService = mock(PurviewIncrementalSyncService.class);
-		RepositoryInfoMap repoInfoMap = mock(RepositoryInfoMap.class);
+		PurviewSyncScheduler scheduler = createScheduler();
 
-		PurviewSyncScheduler scheduler = new PurviewSyncScheduler(config, syncService, repoInfoMap);
-
-		// Invoke executeSync via reflection
 		Method executeSyncMethod = PurviewSyncScheduler.class.getDeclaredMethod("executeSync");
 		executeSyncMethod.setAccessible(true);
 		executeSyncMethod.invoke(scheduler);
 
 		verify(syncService, never()).startIncrementalSync(anyString(), anyString());
+		verify(deleteResolutionService, never()).startDeleteResolution(anyString(), anyString());
 	}
 
 	@Test
 	public void testDestroyStopsScheduler() {
-		PurviewConfig config = mock(PurviewConfig.class);
-		when(config.isEnabled()).thenReturn(true);
-		when(config.getSyncCron()).thenReturn("0 0 3 * * ?");
+		setupMocks();
+		when(connectionResolver.isAnyEnabled()).thenReturn(true);
+		when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.PURVIEW);
+		when(purviewConfig.getSyncCron()).thenReturn("0 0 3 * * ?");
 
-		PurviewIncrementalSyncService syncService = mock(PurviewIncrementalSyncService.class);
-		RepositoryInfoMap repoInfoMap = mock(RepositoryInfoMap.class);
-
-		PurviewSyncScheduler scheduler = new PurviewSyncScheduler(config, syncService, repoInfoMap);
+		PurviewSyncScheduler scheduler = createScheduler();
 		scheduler.init();
 		assertTrue(scheduler.isSchedulerActive());
 
@@ -145,19 +169,16 @@ public class PurviewSyncSchedulerTest {
 
 	@Test
 	public void testReconcileDetectsCronChange() {
-		PurviewConfig config = mock(PurviewConfig.class);
-		when(config.isEnabled()).thenReturn(true);
-		when(config.getSyncCron()).thenReturn("0 0 3 * * ?");
+		setupMocks();
+		when(connectionResolver.isAnyEnabled()).thenReturn(true);
+		when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.PURVIEW);
+		when(purviewConfig.getSyncCron()).thenReturn("0 0 3 * * ?");
 
-		PurviewIncrementalSyncService syncService = mock(PurviewIncrementalSyncService.class);
-		RepositoryInfoMap repoInfoMap = mock(RepositoryInfoMap.class);
-
-		PurviewSyncScheduler scheduler = new PurviewSyncScheduler(config, syncService, repoInfoMap);
+		PurviewSyncScheduler scheduler = createScheduler();
 		scheduler.init();
 		assertEquals("0 0 3 * * ?", scheduler.getActiveCron());
 
-		// Simulate cron change via admin UI
-		when(config.getSyncCron()).thenReturn("0 30 2 * * ?");
+		when(purviewConfig.getSyncCron()).thenReturn("0 30 2 * * ?");
 		scheduler.reconcileSchedule();
 
 		assertEquals("0 30 2 * * ?", scheduler.getActiveCron());
@@ -166,23 +187,20 @@ public class PurviewSyncSchedulerTest {
 
 	@Test
 	public void testReconcileClearedCronStops() {
-		PurviewConfig config = mock(PurviewConfig.class);
-		when(config.isEnabled()).thenReturn(true);
-		when(config.getSyncCron()).thenReturn("0 0 3 * * ?");
+		setupMocks();
+		when(connectionResolver.isAnyEnabled()).thenReturn(true);
+		when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.PURVIEW);
+		when(purviewConfig.getSyncCron()).thenReturn("0 0 3 * * ?");
 
-		PurviewIncrementalSyncService syncService = mock(PurviewIncrementalSyncService.class);
-		RepositoryInfoMap repoInfoMap = mock(RepositoryInfoMap.class);
-
-		PurviewSyncScheduler scheduler = new PurviewSyncScheduler(config, syncService, repoInfoMap);
+		PurviewSyncScheduler scheduler = createScheduler();
 		scheduler.init();
 		assertEquals("0 0 3 * * ?", scheduler.getActiveCron());
 
-		// Simulate cron cleared via admin UI
-		when(config.getSyncCron()).thenReturn("");
+		when(purviewConfig.getSyncCron()).thenReturn("");
 		scheduler.reconcileSchedule();
 
 		assertNull(scheduler.getActiveCron());
-		assertTrue(scheduler.isSchedulerActive()); // executor still alive for polling
+		assertTrue(scheduler.isSchedulerActive());
 		scheduler.destroy();
 	}
 }

@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.rest.purview.relationship;
 
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
+import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.sync.PurviewContainmentSyncResult;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
@@ -34,7 +35,7 @@ public class PurviewContainmentRelationshipServiceImplTest {
 
     private RepositoryInfoMap repositoryInfoMap;
     private ContentDaoService contentDaoService;
-    private PurviewConfig config;
+    private MetadataCatalogConnectionResolver connectionResolver;
     private PurviewEntityRegistryClient entityRegistryClient;
     private PurviewStateStore stateStore;
     private PurviewContainmentRelationshipServiceImpl service;
@@ -43,7 +44,7 @@ public class PurviewContainmentRelationshipServiceImplTest {
     public void setUp() throws Exception {
         repositoryInfoMap = mock(RepositoryInfoMap.class);
         contentDaoService = mock(ContentDaoService.class);
-        config = mock(PurviewConfig.class);
+        connectionResolver = mock(MetadataCatalogConnectionResolver.class);
         entityRegistryClient = mock(PurviewEntityRegistryClient.class);
         stateStore = mock(PurviewStateStore.class);
 
@@ -52,13 +53,9 @@ public class PurviewContainmentRelationshipServiceImplTest {
         repositoryInfo.setRootFolder("root-001");
         when(repositoryInfoMap.get("bedroom")).thenReturn(repositoryInfo);
 
-        when(config.getEndpoint()).thenReturn("https://example-account.purview.azure.com");
-        when(config.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
-        when(config.getTenantId()).thenReturn("tenant-123");
-        when(config.getClientId()).thenReturn("client-123");
-        when(config.getClientSecret()).thenReturn("secret-123");
-        when(config.getConnectTimeoutMs()).thenReturn(5000);
-        when(config.getReadTimeoutMs()).thenReturn(30000);
+        when(connectionResolver.buildConnectionRequest()).thenReturn(
+                new PurviewConnectionRequest("https://example-account.purview.azure.com",
+                        "datamap/api/atlas/v2", "tenant-123", "client-123", "secret-123", 5000, 30000));
         when(entityRegistryClient.createRelationship(any(), any()))
                 .thenReturn(PurviewEntityPublishResult.success(1, "relationship created", "rel-guid"));
         when(entityRegistryClient.deleteRelationshipByGuid(any(), any()))
@@ -67,7 +64,7 @@ public class PurviewContainmentRelationshipServiceImplTest {
         service = new PurviewContainmentRelationshipServiceImpl(
                 repositoryInfoMap,
                 contentDaoService,
-                config,
+                connectionResolver,
                 new PurviewEntityPayloadFactory(),
                 entityRegistryClient,
                 stateStore);

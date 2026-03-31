@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.rest.purview.publish;
 
 import jp.aegif.nemaki.rest.purview.PurviewCloudMetadataSupport;
+import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.sync.PurviewCloudMetadataSyncResult;
 import jp.aegif.nemaki.rest.purview.lineage.PurviewCloudSyncLineageService;
 import jp.aegif.nemaki.rest.purview.state.PurviewDeadLetterState;
@@ -14,6 +15,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -35,18 +37,21 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
     private final PurviewDocumentPublishService documentPublishService;
     private final PurviewCloudSyncLineageService cloudSyncLineageService;
     private final PurviewDeadLetterStateService deadLetterStateService;
+    private final PurviewEntityPayloadFactory entityPayloadFactory;
 
     public PurviewCloudMetadataPublishServiceImpl(
             RepositoryInfoMap repositoryInfoMap,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService,
             PurviewDocumentPublishService documentPublishService,
             PurviewCloudSyncLineageService cloudSyncLineageService,
-            PurviewDeadLetterStateService deadLetterStateService) {
+            PurviewDeadLetterStateService deadLetterStateService,
+            PurviewEntityPayloadFactory entityPayloadFactory) {
         this.repositoryInfoMap = repositoryInfoMap;
         this.contentDaoService = contentDaoService;
         this.documentPublishService = documentPublishService;
         this.cloudSyncLineageService = cloudSyncLineageService;
         this.deadLetterStateService = deadLetterStateService;
+        this.entityPayloadFactory = entityPayloadFactory;
     }
 
     @Override
@@ -79,23 +84,29 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
         String normalizedPreviousSnapshot = normalizeSnapshot(previousSnapshot);
         Map<String, String> previousByObjectId = parseSnapshot(normalizedPreviousSnapshot);
         List<Content> changedDocuments = new ArrayList<>();
-        Map<String, String> obsoleteSnapshotEntries = new LinkedHashMap<>();
         for (Content content : cloudMetadataDocuments) {
             String snapshotEntry = buildSnapshotEntry(content);
             String previousSnapshotEntry = previousByObjectId.remove(content.getId());
             if (!Objects.equals(snapshotEntry, previousSnapshotEntry)) {
                 changedDocuments.add(content);
-                if (previousSnapshotEntry != null && !previousSnapshotEntry.isBlank()) {
-                    obsoleteSnapshotEntries.put(content.getId(), previousSnapshotEntry);
-                }
             }
         }
-        obsoleteSnapshotEntries.putAll(previousByObjectId);
+        // After the loop, previousByObjectId contains only removed documents
+        Map<String, String> obsoleteSnapshotEntries = previousByObjectId;
+
+        // Collect active stable keys to protect shared external assets
+        Set<String> activeStableKeys = new LinkedHashSet<>();
+        for (Content content : cloudMetadataDocuments) {
+            String sk = entityPayloadFactory.resolveCloudExternalStableKey(content);
+            if (sk != null && !sk.isBlank()) {
+                activeStableKeys.add(sk);
+            }
+        }
 
         int lineagePublishedCount = changedDocuments.isEmpty() ? 0 : cloudSyncLineageService.upsertCloudSyncLineage(repositoryId, changedDocuments);
         int lineageReconciledCount = obsoleteSnapshotEntries.isEmpty()
                 ? 0
-                : cloudSyncLineageService.reconcileRemovedCloudSyncLineage(repositoryId, obsoleteSnapshotEntries);
+                : cloudSyncLineageService.reconcileRemovedCloudSyncLineage(repositoryId, obsoleteSnapshotEntries, activeStableKeys);
         return lineagePublishedCount + lineageReconciledCount;
     }
 
@@ -111,20 +122,38 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
         Map<String, String> previousByObjectId = parseSnapshot(normalizedPreviousSnapshot);
         Map<String, String> currentByObjectId = new LinkedHashMap<>();
         List<Content> changedDocuments = new ArrayList<>();
-        Map<String, String> obsoleteSnapshotEntries = new LinkedHashMap<>();
+        Set<String> obsoleteStableKeys = new LinkedHashSet<>();
         for (Content content : cloudMetadataDocuments) {
             String snapshotEntry = buildSnapshotEntry(content);
             String previousSnapshotEntry = previousByObjectId.remove(content.getId());
             currentByObjectId.put(content.getId(), snapshotEntry);
             if (!Objects.equals(snapshotEntry, previousSnapshotEntry)) {
                 changedDocuments.add(content);
-                if (previousSnapshotEntry != null && !previousSnapshotEntry.isBlank()) {
-                    obsoleteSnapshotEntries.put(content.getId(), previousSnapshotEntry);
+                // Detect stableKey changes: if the document's cloud link target changed,
+                // the old external asset becomes orphaned in Atlas/Purview.
+                if (previousSnapshotEntry != null) {
+                    String oldStableKey = parseStableKeyFromEntry(previousSnapshotEntry);
+                    String newStableKey = parseStableKeyFromEntry(snapshotEntry);
+                    if (oldStableKey != null && !oldStableKey.equals(newStableKey)) {
+                        obsoleteStableKeys.add(oldStableKey);
+                    }
                 }
             }
         }
 
-        obsoleteSnapshotEntries.putAll(previousByObjectId);
+        // After the loop, previousByObjectId contains only documents that
+        // disappeared from the current set (cloud link removed or document deleted).
+        Map<String, String> obsoleteSnapshotEntries = previousByObjectId;
+
+        // Collect the set of stable keys still in active use, so reconciliation
+        // does not delete shared external assets that other documents still reference.
+        Set<String> activeStableKeys = new LinkedHashSet<>();
+        for (Content content : cloudMetadataDocuments) {
+            String sk = entityPayloadFactory.resolveCloudExternalStableKey(content);
+            if (sk != null && !sk.isBlank()) {
+                activeStableKeys.add(sk);
+            }
+        }
 
         List<Content> clearedDocuments = loadClearedDocuments(repositoryId, previousByObjectId.keySet());
         int publishedCount = changedDocuments.isEmpty() ? 0 : documentPublishService.upsertContents(repositoryId, changedDocuments);
@@ -135,7 +164,13 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
             lineagePublishedCount = changedDocuments.isEmpty() ? 0 : cloudSyncLineageService.upsertCloudSyncLineage(repositoryId, changedDocuments);
             lineageReconciledCount = obsoleteSnapshotEntries.isEmpty()
                     ? 0
-                    : cloudSyncLineageService.reconcileRemovedCloudSyncLineage(repositoryId, obsoleteSnapshotEntries);
+                    : cloudSyncLineageService.reconcileRemovedCloudSyncLineage(repositoryId, obsoleteSnapshotEntries, activeStableKeys);
+            // Clean up orphaned external assets from stableKey changes
+            for (String obsoleteKey : obsoleteStableKeys) {
+                if (!activeStableKeys.contains(obsoleteKey)) {
+                    cloudSyncLineageService.deleteObsoleteExternalAsset(repositoryId, obsoleteKey);
+                }
+            }
             deadLetterStateService.deleteDeadLetterState(repositoryId, CLOUD_LINEAGE_STREAM_KIND, repositoryId);
         } catch (RuntimeException e) {
             deadLetterStateService.saveDeadLetterState(buildRepositoryDeadLetterState(
@@ -226,7 +261,7 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
 
     private Map<String, String> parseSnapshot(String snapshot) {
         if (snapshot == null || snapshot.isBlank()) {
-            return Map.of();
+            return new LinkedHashMap<>();
         }
 
         LinkedHashMap<String, String> byObjectId = new LinkedHashMap<>();
@@ -252,6 +287,17 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
 
     private String normalizeSnapshot(String snapshot) {
         return snapshot == null ? "" : snapshot;
+    }
+
+    private String parseStableKeyFromEntry(String snapshotEntry) {
+        if (snapshotEntry == null || snapshotEntry.isBlank()) {
+            return null;
+        }
+        String[] parts = snapshotEntry.split("\\|", -1);
+        if (parts.length < 3 || parts[1].isBlank() || parts[2].isBlank()) {
+            return null;
+        }
+        return parts[1] + ":" + parts[2];
     }
 
     private String nullToEmpty(String value) {

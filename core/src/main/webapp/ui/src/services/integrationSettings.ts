@@ -7,12 +7,14 @@ export type SettingSource = 'system_property' | 'environment' | 'couchdb' | 'pro
 export interface IntegrationSettingsResponse {
   settings: Record<string, string>;
   sources: Record<string, SettingSource>;
+  warning?: string;
 }
 
 export interface UpdateResult {
   status: string;
   message: string;
   updatedKeys?: string[];
+  warning?: string;
 }
 
 export interface ConnectionTestResult {
@@ -107,6 +109,8 @@ export const updateLineageSettings = (settings: Record<string, string>) => updat
 // Atlas
 export const getAtlasSettings = () => getSettings('atlas');
 export const updateAtlasSettings = (settings: Record<string, string>) => updateSettings('atlas', settings);
+export const testAtlasConnection = (formValues?: Record<string, string>) =>
+  testConnection('atlas', formValues);
 
 // Dataplex
 export const getDataplexSettings = () => getSettings('dataplex');

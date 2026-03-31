@@ -8,7 +8,7 @@ import { TestHelper } from '../utils/test-helper';
  * Tests the admin-only integration settings page (/integration-settings).
  * Verifies:
  * - Admin access and page rendering
- * - Tab navigation (OIDC, Google, Microsoft, SAML, Directory Sync, Purview, Lineage)
+ * - Tab navigation (OIDC, Google, Microsoft, SAML, Directory Sync, Purview, Atlas, Dataplex, Lineage)
  * - Settings display with source tags
  * - Settings update via PUT API
  * - Sensitive value masking
@@ -49,29 +49,33 @@ test.describe('Integration Settings - Page Rendering', () => {
     await expect(title).toBeVisible({ timeout: 10000 });
   });
 
-  test('should display all seven tabs', async ({ page }) => {
+  test('should display all nine tabs', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
     await page.waitForTimeout(3000);
 
-    const tabs = page.locator('.ant-tabs-tab');
+    // Use role=tab to count all tabs including those in overflow dropdown
+    const tabs = page.locator('[role="tab"]');
     const tabCount = await tabs.count();
     console.log(`Found ${tabCount} tabs`);
-    expect(tabCount).toBe(7);
+    expect(tabCount).toBe(9);
 
-    // Verify tab labels (i18n-safe: match English or Japanese)
+    // Verify tab labels by role (i18n-safe: match English or Japanese)
     const expectedTabs = [
       /OIDC/i,
-      /Google/i,
+      /Google(?!.*Dataplex)/i,
       /Microsoft/i,
       /SAML/i,
       /Directory|ディレクトリ/i,
       /Purview/i,
+      /Apache Atlas/i,
+      /Google Dataplex/i,
       /Lineage/i,
     ];
     for (const tabPattern of expectedTabs) {
       const tab = tabs.filter({ hasText: tabPattern });
-      await expect(tab).toBeVisible({ timeout: 5000 });
-      console.log(`Tab '${tabPattern}' found`);
+      const count = await tab.count();
+      console.log(`Tab '${tabPattern}' found: ${count} match(es)`);
+      expect(count).toBeGreaterThanOrEqual(1);
     }
   });
 
@@ -103,8 +107,8 @@ test.describe('Integration Settings - Page Rendering', () => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
     await page.waitForTimeout(3000);
 
-    // Click Google tab
-    const googleTab = page.locator('.ant-tabs-tab').filter({ hasText: /Google/i });
+    // Click Google Auth tab (exclude "Google Dataplex")
+    const googleTab = page.locator('.ant-tabs-tab').filter({ hasText: /Google(?!.*Dataplex)/i });
     await googleTab.click();
     await page.waitForTimeout(2000);
 
@@ -115,8 +119,8 @@ test.describe('Integration Settings - Page Rendering', () => {
     await expect(googleFormItem).toBeVisible({ timeout: 5000 });
     console.log('Google tab loaded');
 
-    // Click Microsoft tab
-    const msTab = page.locator('.ant-tabs-tab').filter({ hasText: /Microsoft/i });
+    // Click Microsoft tab (exclude "Microsoft Purview")
+    const msTab = page.locator('.ant-tabs-tab').filter({ hasText: /Microsoft(?!.*Purview)/i });
     await msTab.click();
     await page.waitForTimeout(2000);
 
@@ -159,6 +163,30 @@ test.describe('Integration Settings - Page Rendering', () => {
     const testButton = purviewPanel.locator('button').filter({ hasText: /接続テスト|Test\s*Connection/i });
     await expect(testButton).toBeVisible({ timeout: 10000 });
     console.log('Purview tab loaded with Test Connection button');
+
+    // Click Atlas tab
+    const atlasTab = page.locator('.ant-tabs-tab').filter({ hasText: /Apache Atlas/i });
+    await atlasTab.click();
+    await page.waitForTimeout(2000);
+
+    const atlasPanel = page.locator('.ant-tabs-tabpane-active');
+    const atlasFormItems = atlasPanel.locator('.ant-form-item');
+    const atlasItemCount = await atlasFormItems.count();
+    console.log(`Atlas tab has ${atlasItemCount} form items`);
+    expect(atlasItemCount).toBeGreaterThan(3); // enabled, endpoint, username, password + save button
+    console.log('Atlas tab loaded');
+
+    // Click Dataplex tab
+    const dataplexTab = page.locator('.ant-tabs-tab').filter({ hasText: /Google Dataplex/i });
+    await dataplexTab.click();
+    await page.waitForTimeout(2000);
+
+    const dataplexPanel = page.locator('.ant-tabs-tabpane-active');
+    const dataplexFormItems = dataplexPanel.locator('.ant-form-item');
+    const dataplexItemCount = await dataplexFormItems.count();
+    console.log(`Dataplex tab has ${dataplexItemCount} form items`);
+    expect(dataplexItemCount).toBeGreaterThan(3); // enabled, projectId, location, credentialsFile + save button
+    console.log('Dataplex tab loaded');
   });
 
   test('should display source tags', async ({ page }) => {
@@ -247,8 +275,8 @@ test.describe('Integration Settings - API', () => {
     console.log(`OIDC sources: ${JSON.stringify(data.sources)}`);
   });
 
-  test('should return all seven setting groups', async ({ page }) => {
-    const groups = ['oidc', 'google-auth', 'microsoft-auth', 'saml', 'directory-sync', 'purview', 'lineage'];
+  test('should return all nine setting groups', async ({ page }) => {
+    const groups = ['oidc', 'google-auth', 'microsoft-auth', 'saml', 'directory-sync', 'purview', 'atlas', 'dataplex', 'lineage'];
     for (const group of groups) {
       const response = await page.request.get(
         `${BASE_URL}/core/api/v1/admin/integration-settings/${group}`,
@@ -321,6 +349,112 @@ test.describe('Integration Settings - API', () => {
       }
     );
     console.log('Purview test data cleaned up');
+  });
+
+  test('should update and read back Atlas settings', async ({ page }) => {
+    const testValues = {
+      'atlas.enabled': 'true',
+      'atlas.endpoint': 'https://e2e-atlas.example.com:21443',
+      'atlas.username': 'e2e-atlas-user',
+      'atlas.password': 'e2e-atlas-secret',
+    };
+
+    const putResponse = await page.request.put(
+      `${BASE_URL}/core/api/v1/admin/integration-settings/atlas`,
+      {
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        data: testValues
+      }
+    );
+    expect(putResponse.ok()).toBe(true);
+    const putData = await putResponse.json();
+    expect(putData.status).toBe('success');
+    expect(putData.updatedKeys).toContain('atlas.endpoint');
+    console.log(`Atlas PUT response: ${JSON.stringify(putData)}`);
+
+    // Read back
+    const getResponse = await page.request.get(
+      `${BASE_URL}/core/api/v1/admin/integration-settings/atlas`,
+      { headers: { 'Authorization': authHeader } }
+    );
+    expect(getResponse.ok()).toBe(true);
+    const getData = await getResponse.json();
+
+    expect(getData.settings['atlas.enabled']).toBe('true');
+    expect(getData.settings['atlas.endpoint']).toBe('https://e2e-atlas.example.com:21443');
+    expect(getData.settings['atlas.username']).toBe('e2e-atlas-user');
+    expect(getData.settings['atlas.password']).toBe('[configured]');
+    expect(getData.sources['atlas.endpoint']).toBe('couchdb');
+
+    console.log('Atlas settings round-trip verified');
+
+    // Cleanup
+    await page.request.put(
+      `${BASE_URL}/core/api/v1/admin/integration-settings/atlas`,
+      {
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        data: {
+          'atlas.enabled': '',
+          'atlas.endpoint': '',
+          'atlas.username': '',
+          'atlas.password': '',
+        }
+      }
+    );
+    console.log('Atlas test data cleaned up');
+  });
+
+  test('should update and read back Dataplex settings', async ({ page }) => {
+    const testValues = {
+      'dataplex.enabled': 'true',
+      'dataplex.project-id': 'e2e-project-123',
+      'dataplex.location': 'us-central1',
+      'dataplex.credentials-file': '/tmp/e2e-creds.json',
+    };
+
+    const putResponse = await page.request.put(
+      `${BASE_URL}/core/api/v1/admin/integration-settings/dataplex`,
+      {
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        data: testValues
+      }
+    );
+    expect(putResponse.ok()).toBe(true);
+    const putData = await putResponse.json();
+    expect(putData.status).toBe('success');
+    expect(putData.updatedKeys).toContain('dataplex.project-id');
+    console.log(`Dataplex PUT response: ${JSON.stringify(putData)}`);
+
+    // Read back
+    const getResponse = await page.request.get(
+      `${BASE_URL}/core/api/v1/admin/integration-settings/dataplex`,
+      { headers: { 'Authorization': authHeader } }
+    );
+    expect(getResponse.ok()).toBe(true);
+    const getData = await getResponse.json();
+
+    expect(getData.settings['dataplex.enabled']).toBe('true');
+    expect(getData.settings['dataplex.project-id']).toBe('e2e-project-123');
+    expect(getData.settings['dataplex.location']).toBe('us-central1');
+    expect(getData.settings['dataplex.credentials-file']).toBe('/tmp/e2e-creds.json');
+    expect(getData.sources['dataplex.project-id']).toBe('couchdb');
+
+    console.log('Dataplex settings round-trip verified');
+
+    // Cleanup
+    await page.request.put(
+      `${BASE_URL}/core/api/v1/admin/integration-settings/dataplex`,
+      {
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        data: {
+          'dataplex.enabled': '',
+          'dataplex.project-id': '',
+          'dataplex.location': '',
+          'dataplex.credentials-file': '',
+        }
+      }
+    );
+    console.log('Dataplex test data cleaned up');
   });
 
   test('should skip [configured] values on PUT', async ({ page }) => {

@@ -256,6 +256,10 @@ export class PurviewAdminService {
     return this.post<PurviewJobState>(`/retry-failed/${encodeURIComponent(repositoryId)}`);
   }
 
+  async getGovernanceAvailability(): Promise<{ enabled: boolean; backend: string }> {
+    return this.get<{ enabled: boolean; backend: string }>('/governance-available');
+  }
+
   async lookupGovernance(repositoryId: string, objectId: string): Promise<PurviewGovernanceView> {
     const response = await this.httpClient.getJson(
       `/core/api/v1/repo/${encodeURIComponent(repositoryId)}/purview/governance/${encodeURIComponent(objectId)}`

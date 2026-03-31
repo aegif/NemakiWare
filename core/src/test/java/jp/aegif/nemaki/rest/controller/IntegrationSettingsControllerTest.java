@@ -1,0 +1,158 @@
+package jp.aegif.nemaki.rest.controller;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.lang.reflect.Field;
+import java.util.Map;
+
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jp.aegif.nemaki.util.constant.CallContextKey;
+
+public class IntegrationSettingsControllerTest {
+
+    private IntegrationSettingsService settingsService;
+    private IntegrationSettingsController controller;
+    private HttpServletRequest httpRequest;
+    private CallContext callContext;
+
+    @BeforeEach
+    public void setUp() throws Exception {
+        settingsService = mock(IntegrationSettingsService.class);
+        httpRequest = mock(HttpServletRequest.class);
+        callContext = mock(CallContext.class);
+
+        when(httpRequest.getAttribute("CallContext")).thenReturn(callContext);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(true);
+
+        // Default: no settings configured
+        when(settingsService.readSetting(any())).thenReturn(null);
+        when(settingsService.readSettings(any())).thenReturn(Map.of());
+        when(settingsService.readSettingSources(any())).thenReturn(Map.of());
+
+        controller = new IntegrationSettingsController(settingsService);
+        controller.setHttpRequest(httpRequest);
+    }
+
+    @Nested
+    @DisplayName("Dual backend warning")
+    class DualBackendWarning {
+
+        @Test
+        @DisplayName("updatePurviewSettings returns warning when Atlas is also enabled")
+        public void testPurviewUpdateWarnsWhenAtlasEnabled() {
+            when(settingsService.readSetting("purview.enabled")).thenReturn("true");
+            when(settingsService.readSetting("atlas.enabled")).thenReturn("true");
+
+            ResponseEntity<Map<String, Object>> response = controller.updatePurviewSettings(
+                    Map.of("purview.enabled", "true"));
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertTrue(response.getBody().containsKey("warning"));
+            String warning = (String) response.getBody().get("warning");
+            assertTrue(warning.contains("Purview") && warning.contains("Atlas"));
+        }
+
+        @Test
+        @DisplayName("updateAtlasSettings returns warning when Purview is also enabled")
+        public void testAtlasUpdateWarnsWhenPurviewEnabled() {
+            when(settingsService.readSetting("purview.enabled")).thenReturn("true");
+            when(settingsService.readSetting("atlas.enabled")).thenReturn("true");
+
+            ResponseEntity<Map<String, Object>> response = controller.updateAtlasSettings(
+                    Map.of("atlas.enabled", "true"));
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertTrue(response.getBody().containsKey("warning"));
+            String warning = (String) response.getBody().get("warning");
+            assertTrue(warning.contains("Purview") && warning.contains("Atlas"));
+        }
+
+        @Test
+        @DisplayName("updatePurviewSettings has no warning when Atlas is disabled")
+        public void testPurviewUpdateNoWarningWhenAtlasDisabled() {
+            when(settingsService.readSetting("purview.enabled")).thenReturn("true");
+            when(settingsService.readSetting("atlas.enabled")).thenReturn("false");
+
+            ResponseEntity<Map<String, Object>> response = controller.updatePurviewSettings(
+                    Map.of("purview.enabled", "true"));
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertFalse(response.getBody().containsKey("warning"));
+        }
+
+        @Test
+        @DisplayName("updateAtlasSettings has no warning when Purview is disabled")
+        public void testAtlasUpdateNoWarningWhenPurviewDisabled() {
+            when(settingsService.readSetting("purview.enabled")).thenReturn(null);
+            when(settingsService.readSetting("atlas.enabled")).thenReturn("true");
+
+            ResponseEntity<Map<String, Object>> response = controller.updateAtlasSettings(
+                    Map.of("atlas.enabled", "true"));
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertFalse(response.getBody().containsKey("warning"));
+        }
+
+        @Test
+        @DisplayName("getPurviewSettings returns warning on load when both backends are enabled")
+        public void testPurviewGetWarnsWhenBothEnabled() {
+            when(settingsService.readSetting("purview.enabled")).thenReturn("true");
+            when(settingsService.readSetting("atlas.enabled")).thenReturn("true");
+
+            ResponseEntity<Map<String, Object>> response = controller.getPurviewSettings();
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertTrue(response.getBody().containsKey("warning"));
+        }
+
+        @Test
+        @DisplayName("getAtlasSettings returns warning on load when both backends are enabled")
+        public void testAtlasGetWarnsWhenBothEnabled() {
+            when(settingsService.readSetting("purview.enabled")).thenReturn("true");
+            when(settingsService.readSetting("atlas.enabled")).thenReturn("true");
+
+            ResponseEntity<Map<String, Object>> response = controller.getAtlasSettings();
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertTrue(response.getBody().containsKey("warning"));
+        }
+
+        @Test
+        @DisplayName("getPurviewSettings has no warning when only Purview is enabled")
+        public void testPurviewGetNoWarningWhenAlone() {
+            when(settingsService.readSetting("purview.enabled")).thenReturn("true");
+            when(settingsService.readSetting("atlas.enabled")).thenReturn("false");
+
+            ResponseEntity<Map<String, Object>> response = controller.getPurviewSettings();
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertFalse(response.getBody().containsKey("warning"));
+        }
+
+        @Test
+        @DisplayName("getAtlasSettings has no warning when only Atlas is enabled")
+        public void testAtlasGetNoWarningWhenAlone() {
+            when(settingsService.readSetting("purview.enabled")).thenReturn(null);
+            when(settingsService.readSetting("atlas.enabled")).thenReturn("true");
+
+            ResponseEntity<Map<String, Object>> response = controller.getAtlasSettings();
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertFalse(response.getBody().containsKey("warning"));
+        }
+    }
+}

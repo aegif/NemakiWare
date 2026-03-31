@@ -4,6 +4,7 @@ import jp.aegif.nemaki.rest.purview.client.PurviewApiClient;
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
 import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.client.PurviewProbeResult;
+import jp.aegif.nemaki.rest.purview.journal.AtlasConfig;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -19,25 +20,25 @@ public class PurviewConnectionServiceImpl implements PurviewConnectionService {
     public static final String ALTERNATE_ATLAS_BASE_PATH = "catalog/api/atlas/v2";
 
     private final PurviewConfig purviewConfig;
+    private final AtlasConfig atlasConfig;
     private final PurviewApiClient purviewApiClient;
 
     @Autowired
-    public PurviewConnectionServiceImpl(PurviewConfig purviewConfig, PurviewApiClient purviewApiClient) {
+    public PurviewConnectionServiceImpl(PurviewConfig purviewConfig, AtlasConfig atlasConfig,
+            PurviewApiClient purviewApiClient) {
         this.purviewConfig = purviewConfig;
+        this.atlasConfig = atlasConfig;
         this.purviewApiClient = purviewApiClient;
     }
 
     @Override
     public PurviewConnectionStatus testConnection() {
-        return doTestConnection(
+        return doTestPurviewConnection(
                 purviewConfig.getEndpoint(),
                 purviewConfig.getAtlasBasePath(),
-                purviewConfig.getAuthType(),
                 purviewConfig.getTenantId(),
                 purviewConfig.getClientId(),
                 purviewConfig.getClientSecret(),
-                purviewConfig.getBasicUsername(),
-                purviewConfig.getBasicPassword(),
                 purviewConfig.isEnabled());
     }
 
@@ -45,55 +46,54 @@ public class PurviewConnectionServiceImpl implements PurviewConnectionService {
     public PurviewConnectionStatus testConnection(Map<String, String> formValues) {
         String endpoint = firstNonBlank(formValues.get("purview.endpoint"), purviewConfig.getEndpoint());
         String basePath = firstNonBlank(formValues.get("purview.atlas.base-path"), purviewConfig.getAtlasBasePath());
-        String authType = firstNonBlank(formValues.get("purview.auth.type"), purviewConfig.getAuthType());
         String tenantId = firstNonBlank(formValues.get("purview.tenant.id"), purviewConfig.getTenantId());
         String clientId = firstNonBlank(formValues.get("purview.client.id"), purviewConfig.getClientId());
         String clientSecret = formValues.containsKey("purview.client.secret")
                 && !isPlaceholder(formValues.get("purview.client.secret"))
                 ? formValues.get("purview.client.secret") : purviewConfig.getClientSecret();
-        String basicUsername = firstNonBlank(formValues.get("purview.basic.username"), purviewConfig.getBasicUsername());
-        String basicPassword = formValues.containsKey("purview.basic.password")
-                && !isPlaceholder(formValues.get("purview.basic.password"))
-                ? formValues.get("purview.basic.password") : purviewConfig.getBasicPassword();
         boolean featureEnabled = formValues.containsKey("purview.enabled")
                 ? "true".equals(formValues.get("purview.enabled")) : purviewConfig.isEnabled();
 
-        return doTestConnection(endpoint, basePath, authType, tenantId, clientId, clientSecret,
-                basicUsername, basicPassword, featureEnabled);
+        return doTestPurviewConnection(endpoint, basePath, tenantId, clientId, clientSecret, featureEnabled);
     }
 
-    private PurviewConnectionStatus doTestConnection(
-            String endpoint, String configuredBasePath, String authType,
-            String tenantId, String clientId, String clientSecret,
-            String basicUsername, String basicPassword, boolean featureEnabled) {
+    @Override
+    public PurviewConnectionStatus testAtlasConnection(Map<String, String> formValues) {
+        String endpoint = firstNonBlank(
+                formValues != null ? formValues.get("atlas.endpoint") : null,
+                atlasConfig.getEndpoint());
+        String username = firstNonBlank(
+                formValues != null ? formValues.get("atlas.username") : null,
+                atlasConfig.getUsername());
+        String password = formValues != null && formValues.containsKey("atlas.password")
+                && !isPlaceholder(formValues.get("atlas.password"))
+                ? formValues.get("atlas.password") : atlasConfig.getPassword();
+        boolean featureEnabled = formValues != null && formValues.containsKey("atlas.enabled")
+                ? "true".equals(formValues.get("atlas.enabled")) : atlasConfig.isEnabled();
+
+        return doTestAtlasConnection(endpoint, username, password, featureEnabled);
+    }
+
+    private PurviewConnectionStatus doTestPurviewConnection(
+            String endpoint, String configuredBasePath,
+            String tenantId, String clientId, String clientSecret, boolean featureEnabled) {
         if (!featureEnabled) {
             return new PurviewConnectionStatus(false, false, endpoint, configuredBasePath,
-                    "Purview / Atlas integration is currently disabled");
+                    "Purview integration is currently disabled");
         }
-
-        boolean basicAuth = "basic".equalsIgnoreCase(authType);
 
         List<String> missing = new ArrayList<>();
         if (isBlank(endpoint)) {
             missing.add("endpoint");
         }
-        if (basicAuth) {
-            if (isBlank(basicUsername)) {
-                missing.add("basicUsername");
-            }
-            if (isBlank(basicPassword)) {
-                missing.add("basicPassword");
-            }
-        } else {
-            if (isBlank(tenantId)) {
-                missing.add("tenantId");
-            }
-            if (isBlank(clientId)) {
-                missing.add("clientId");
-            }
-            if (isBlank(clientSecret)) {
-                missing.add("clientSecret");
-            }
+        if (isBlank(tenantId)) {
+            missing.add("tenantId");
+        }
+        if (isBlank(clientId)) {
+            missing.add("clientId");
+        }
+        if (isBlank(clientSecret)) {
+            missing.add("clientSecret");
         }
 
         if (!missing.isEmpty()) {
@@ -116,12 +116,9 @@ public class PurviewConnectionServiceImpl implements PurviewConnectionService {
             PurviewConnectionRequest request = new PurviewConnectionRequest(
                     endpoint,
                     candidateBasePath,
-                    authType,
                     tenantId,
                     clientId,
                     clientSecret,
-                    basicUsername,
-                    basicPassword,
                     purviewConfig.getConnectTimeoutMs(),
                     purviewConfig.getReadTimeoutMs());
 
@@ -145,6 +142,56 @@ public class PurviewConnectionServiceImpl implements PurviewConnectionService {
 
         String failureMessage = lastFailure != null ? lastFailure.getMessage() : "Purview connection failed";
         return new PurviewConnectionStatus(false, featureEnabled, endpoint, lastAttemptedBasePath, failureMessage);
+    }
+
+    private PurviewConnectionStatus doTestAtlasConnection(
+            String endpoint, String username, String password, boolean featureEnabled) {
+        if (!featureEnabled) {
+            return new PurviewConnectionStatus(false, false, endpoint, "api/atlas/v2",
+                    "Atlas integration is currently disabled");
+        }
+
+        List<String> missing = new ArrayList<>();
+        if (isBlank(endpoint)) {
+            missing.add("endpoint");
+        }
+        if (isBlank(username)) {
+            missing.add("username");
+        }
+        if (isBlank(password)) {
+            missing.add("password");
+        }
+
+        if (!missing.isEmpty()) {
+            return new PurviewConnectionStatus(
+                    false,
+                    featureEnabled,
+                    endpoint,
+                    "api/atlas/v2",
+                    "Missing required Atlas configuration: " + String.join(", ", missing));
+        }
+
+        PurviewConnectionRequest request = new PurviewConnectionRequest(
+                endpoint,
+                "api/atlas/v2",
+                "basic",
+                "", "", "",
+                username,
+                password,
+                atlasConfig.getConnectTimeoutMs(),
+                atlasConfig.getReadTimeoutMs());
+
+        try {
+            PurviewProbeResult probeResult = purviewApiClient.probeConnection(request);
+            if (probeResult.isSuccess()) {
+                return new PurviewConnectionStatus(true, featureEnabled, endpoint, "api/atlas/v2",
+                        "Atlas connection succeeded");
+            }
+            return new PurviewConnectionStatus(false, featureEnabled, endpoint, "api/atlas/v2",
+                    probeResult.getMessage());
+        } catch (PurviewClientException e) {
+            return new PurviewConnectionStatus(false, featureEnabled, endpoint, "api/atlas/v2", e.getMessage());
+        }
     }
 
     private List<String> buildCandidateBasePaths(String configuredBasePath) {

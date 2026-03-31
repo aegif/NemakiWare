@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.purview.relationship;
 
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
@@ -16,15 +16,15 @@ import jp.aegif.nemaki.model.Archive;
 @Service
 public class PurviewDocumentArchiveRelationshipServiceImpl implements PurviewDocumentArchiveRelationshipService {
 
-    private final PurviewConfig purviewConfig;
+    private final MetadataCatalogConnectionResolver connectionResolver;
     private final PurviewEntityPayloadFactory entityPayloadFactory;
     private final PurviewEntityRegistryClient entityRegistryClient;
 
     public PurviewDocumentArchiveRelationshipServiceImpl(
-            PurviewConfig purviewConfig,
+            MetadataCatalogConnectionResolver connectionResolver,
             PurviewEntityPayloadFactory entityPayloadFactory,
             PurviewEntityRegistryClient entityRegistryClient) {
-        this.purviewConfig = purviewConfig;
+        this.connectionResolver = connectionResolver;
         this.entityPayloadFactory = entityPayloadFactory;
         this.entityRegistryClient = entityRegistryClient;
     }
@@ -66,16 +66,6 @@ public class PurviewDocumentArchiveRelationshipServiceImpl implements PurviewDoc
     }
 
     private PurviewConnectionRequest buildConnectionRequest() {
-        return new PurviewConnectionRequest(
-                purviewConfig.getEndpoint(),
-                purviewConfig.getAtlasBasePath(),
-                purviewConfig.getAuthType(),
-                purviewConfig.getTenantId(),
-                purviewConfig.getClientId(),
-                purviewConfig.getClientSecret(),
-                purviewConfig.getBasicUsername(),
-                purviewConfig.getBasicPassword(),
-                purviewConfig.getConnectTimeoutMs(),
-                purviewConfig.getReadTimeoutMs());
+        return connectionResolver.buildConnectionRequest();
     }
 }

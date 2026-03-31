@@ -58,9 +58,11 @@ export interface LineageMetricsData {
 export interface LineageStatsData {
   mode: string;
   totalEvents: number;
-  nonTerminalCount: number;
+  nonTerminalByTarget: Record<string, number>;
   byProcessType: Record<string, number>;
   storeActive: boolean;
+  targets: string[];
+  hasRepositoryOverrides?: boolean;
 }
 
 // ==================== Events ====================

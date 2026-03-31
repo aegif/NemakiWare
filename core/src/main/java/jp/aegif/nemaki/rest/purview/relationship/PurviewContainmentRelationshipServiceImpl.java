@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.purview.relationship;
 
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.sync.PurviewContainmentSyncResult;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
@@ -37,7 +37,7 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
 
     private final RepositoryInfoMap repositoryInfoMap;
     private final ContentDaoService contentDaoService;
-    private final PurviewConfig purviewConfig;
+    private final MetadataCatalogConnectionResolver connectionResolver;
     private final PurviewEntityPayloadFactory entityPayloadFactory;
     private final PurviewEntityRegistryClient entityRegistryClient;
     private final PurviewStateStore stateStore;
@@ -45,13 +45,13 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
     public PurviewContainmentRelationshipServiceImpl(
             RepositoryInfoMap repositoryInfoMap,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService,
-            PurviewConfig purviewConfig,
+            MetadataCatalogConnectionResolver connectionResolver,
             PurviewEntityPayloadFactory entityPayloadFactory,
             PurviewEntityRegistryClient entityRegistryClient,
             PurviewStateStore stateStore) {
         this.repositoryInfoMap = repositoryInfoMap;
         this.contentDaoService = contentDaoService;
-        this.purviewConfig = purviewConfig;
+        this.connectionResolver = connectionResolver;
         this.entityPayloadFactory = entityPayloadFactory;
         this.entityRegistryClient = entityRegistryClient;
         this.stateStore = stateStore;
@@ -268,17 +268,7 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
     }
 
     private PurviewConnectionRequest buildConnectionRequest() {
-        return new PurviewConnectionRequest(
-                purviewConfig.getEndpoint(),
-                purviewConfig.getAtlasBasePath(),
-                purviewConfig.getAuthType(),
-                purviewConfig.getTenantId(),
-                purviewConfig.getClientId(),
-                purviewConfig.getClientSecret(),
-                purviewConfig.getBasicUsername(),
-                purviewConfig.getBasicPassword(),
-                purviewConfig.getConnectTimeoutMs(),
-                purviewConfig.getReadTimeoutMs());
+        return connectionResolver.buildConnectionRequest();
     }
 
     private record ContainmentEdge(String edgeKey, Map<String, Object> relationshipPayload) {

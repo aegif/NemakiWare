@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.rest.purview.scenario;
 
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.CatalogBackendKind;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.payload.PurviewSchemaManifest;
 import jp.aegif.nemaki.rest.purview.payload.PurviewSchemaManifestFactory;
@@ -38,8 +39,10 @@ import jp.aegif.nemaki.rest.purview.state.PurviewJobStateService;
 import jp.aegif.nemaki.rest.purview.state.PurviewLockStateService;
 import jp.aegif.nemaki.rest.purview.state.PurviewSchemaState;
 import jp.aegif.nemaki.rest.purview.state.PurviewSchemaStateService;
+import jp.aegif.nemaki.rest.purview.PurviewConfig;
 import jp.aegif.nemaki.rest.purview.PurviewConnectionServiceImpl;
 import jp.aegif.nemaki.rest.purview.PurviewConnectionStatus;
+import jp.aegif.nemaki.rest.purview.journal.AtlasConfig;
 import jp.aegif.nemaki.rest.purview.sync.PurviewFullSyncServiceImpl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -82,7 +85,9 @@ import jp.aegif.nemaki.model.Relationship;
 public class PurviewScenarioTest {
 
     // ─── 共通モック ────────────────────────────────────────
-    private PurviewConfig config;
+    private MetadataCatalogConnectionResolver connectionResolver;
+    private PurviewConfig purviewConfig;
+    private AtlasConfig atlasConfig;
     private PurviewApiClient apiClient;
     private PurviewSchemaRegistryClient schemaRegistryClient;
     private PurviewEntityRegistryClient entityRegistryClient;
@@ -101,7 +106,9 @@ public class PurviewScenarioTest {
 
     @BeforeEach
     public void setUp() throws Exception {
-        config = mock(PurviewConfig.class);
+        connectionResolver = mock(MetadataCatalogConnectionResolver.class);
+        purviewConfig = mock(PurviewConfig.class);
+        atlasConfig = mock(AtlasConfig.class);
         apiClient = mock(PurviewApiClient.class);
         schemaRegistryClient = mock(PurviewSchemaRegistryClient.class);
         entityRegistryClient = mock(PurviewEntityRegistryClient.class);
@@ -118,15 +125,22 @@ public class PurviewScenarioTest {
         contentService = mock(ContentService.class);
         exceptionService = mock(ExceptionService.class);
 
-        when(config.isEnabled()).thenReturn(true);
-        when(config.getEndpoint()).thenReturn("https://my-purview.purview.azure.com");
-        when(config.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
-        when(config.getTenantId()).thenReturn("tenant-001");
-        when(config.getClientId()).thenReturn("client-001");
-        when(config.getClientSecret()).thenReturn("secret-001");
-        when(config.getCollection()).thenReturn("NemakiWare");
-        when(config.getConnectTimeoutMs()).thenReturn(5000);
-        when(config.getReadTimeoutMs()).thenReturn(30000);
+        when(connectionResolver.isAnyEnabled()).thenReturn(true);
+        when(connectionResolver.activeBackend()).thenReturn(CatalogBackendKind.PURVIEW);
+        when(connectionResolver.buildConnectionRequest()).thenReturn(
+                new PurviewConnectionRequest("https://my-purview.purview.azure.com",
+                        "datamap/api/atlas/v2", "tenant-001", "client-001", "secret-001", 5000, 30000));
+        when(connectionResolver.getCollection()).thenReturn("NemakiWare");
+
+        when(purviewConfig.isEnabled()).thenReturn(true);
+        when(purviewConfig.getEndpoint()).thenReturn("https://my-purview.purview.azure.com");
+        when(purviewConfig.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
+        when(purviewConfig.getTenantId()).thenReturn("tenant-001");
+        when(purviewConfig.getClientId()).thenReturn("client-001");
+        when(purviewConfig.getClientSecret()).thenReturn("secret-001");
+        when(purviewConfig.getCollection()).thenReturn("NemakiWare");
+        when(purviewConfig.getConnectTimeoutMs()).thenReturn(5000);
+        when(purviewConfig.getReadTimeoutMs()).thenReturn(30000);
 
         when(jobStateService.saveJobState(any())).thenAnswer(inv -> inv.getArgument(0));
         when(cursorStateService.saveCursorState(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -145,7 +159,7 @@ public class PurviewScenarioTest {
         @DisplayName("接続テスト成功 → スキーマ適用 → 全同期完了の一連フローが成功する")
         public void testCompleteInitialSetupFlow() throws Exception {
             // ── Step 1: 接続テスト ──
-            PurviewConnectionServiceImpl connectionService = new PurviewConnectionServiceImpl(config, apiClient);
+            PurviewConnectionServiceImpl connectionService = new PurviewConnectionServiceImpl(purviewConfig, atlasConfig, apiClient);
             when(apiClient.probeConnection(any()))
                     .thenReturn(PurviewProbeResult.success(200, "OK"));
 
@@ -155,7 +169,7 @@ public class PurviewScenarioTest {
             // ── Step 2: スキーマ適用 ──
             PurviewSchemaManifestFactory manifestFactory = new PurviewSchemaManifestFactory();
             PurviewSchemaPlannerServiceImpl plannerService = new PurviewSchemaPlannerServiceImpl(
-                    config, schemaStateService, manifestFactory);
+                    connectionResolver, schemaStateService, manifestFactory);
             when(schemaStateService.getSchemaState("NemakiWare"))
                     .thenReturn(new PurviewSchemaState("NemakiWare", "", "", "", "", ""));
 
@@ -165,7 +179,7 @@ public class PurviewScenarioTest {
             assertTrue(diff.getCustomTypeNames().contains("nemaki_document"), "nemaki_document型が含まれること");
 
             PurviewSchemaApplyServiceImpl applyService = new PurviewSchemaApplyServiceImpl(
-                    config, plannerService, schemaStateService,
+                    connectionResolver, plannerService, schemaStateService,
                     new PurviewSchemaManifestFactory(), new PurviewSchemaPayloadFactory(),
                     schemaRegistryClient,
                     new jp.aegif.nemaki.rest.purview.schema.AtlasSchemaCompatHelper());
@@ -173,7 +187,7 @@ public class PurviewScenarioTest {
                     .thenReturn(PurviewSchemaPublishResult.success("applied"));
 
             PurviewSchemaBootstrapServiceImpl bootstrapService = new PurviewSchemaBootstrapServiceImpl(
-                    config, applyService, jobStateService, lockStateService);
+                    connectionResolver, applyService, jobStateService, lockStateService);
             PurviewSchemaBootstrapResult bootstrapResult = bootstrapService.startTypeBootstrap("admin");
 
             assertEquals("COMPLETED", bootstrapResult.getJobState().getStatus(), "スキーマ適用ジョブが完了すること");
@@ -212,7 +226,7 @@ public class PurviewScenarioTest {
         @Test
         @DisplayName("接続テスト失敗時は、スキーマ適用に進まずエラーを返す")
         public void testConnectionFailureBlocksEntireSetup() throws Exception {
-            PurviewConnectionServiceImpl connectionService = new PurviewConnectionServiceImpl(config, apiClient);
+            PurviewConnectionServiceImpl connectionService = new PurviewConnectionServiceImpl(purviewConfig, atlasConfig, apiClient);
             when(apiClient.probeConnection(any()))
                     .thenThrow(new PurviewClientException("ネットワーク到達不可"));
 
@@ -276,7 +290,7 @@ public class PurviewScenarioTest {
         @BeforeEach
         public void setUpGovernanceService() {
             governanceService = new PurviewGovernanceServiceImpl(
-                    config, contentService, exceptionService,
+                    connectionResolver, contentService, exceptionService,
                     entityRegistryClient, new PurviewEntityPayloadFactory());
         }
 
@@ -391,7 +405,7 @@ public class PurviewScenarioTest {
         @DisplayName("ガバナンス参照時にPurviewが応答しない場合、エラーメッセージ付きViewが返される")
         public void testGovernanceShowsErrorWhenPurviewIsUnreachable() throws Exception {
             PurviewGovernanceServiceImpl governanceService = new PurviewGovernanceServiceImpl(
-                    config, contentService, exceptionService,
+                    connectionResolver, contentService, exceptionService,
                     entityRegistryClient, new PurviewEntityPayloadFactory());
             Document document = new Document();
             document.setId("doc-001");
@@ -465,9 +479,9 @@ public class PurviewScenarioTest {
         @Test
         @DisplayName("ガバナンス参照時に「Purview連携が無効です」という明確なメッセージが返される")
         public void testGovernanceShowsDisabledMessageWhenPurviewIsOff() {
-            when(config.isEnabled()).thenReturn(false);
+            when(connectionResolver.isAnyEnabled()).thenReturn(false);
             PurviewGovernanceServiceImpl governanceService = new PurviewGovernanceServiceImpl(
-                    config, contentService, exceptionService,
+                    connectionResolver, contentService, exceptionService,
                     entityRegistryClient, new PurviewEntityPayloadFactory());
 
             Document document = new Document();
@@ -498,7 +512,7 @@ public class PurviewScenarioTest {
         public void testSchemaReapplyDetectedAfterVersionUpgrade() throws Exception {
             PurviewSchemaManifestFactory manifestFactory = new PurviewSchemaManifestFactory();
             PurviewSchemaPlannerServiceImpl plannerService = new PurviewSchemaPlannerServiceImpl(
-                    config, schemaStateService, manifestFactory);
+                    connectionResolver, schemaStateService, manifestFactory);
 
             // 旧バージョンのハッシュが保存されている状態を模擬
             PurviewSchemaManifest currentManifest = manifestFactory.buildManifest();
@@ -521,7 +535,7 @@ public class PurviewScenarioTest {
 
             // スキーマブートストラップ実行
             PurviewSchemaApplyServiceImpl applyService = new PurviewSchemaApplyServiceImpl(
-                    config, plannerService, schemaStateService,
+                    connectionResolver, plannerService, schemaStateService,
                     new PurviewSchemaManifestFactory(), new PurviewSchemaPayloadFactory(),
                     schemaRegistryClient,
                     new jp.aegif.nemaki.rest.purview.schema.AtlasSchemaCompatHelper());
@@ -529,7 +543,7 @@ public class PurviewScenarioTest {
                     .thenReturn(PurviewSchemaPublishResult.success("applied"));
 
             PurviewSchemaBootstrapServiceImpl bootstrapService = new PurviewSchemaBootstrapServiceImpl(
-                    config, applyService, jobStateService, lockStateService);
+                    connectionResolver, applyService, jobStateService, lockStateService);
             PurviewSchemaBootstrapResult result = bootstrapService.startTypeBootstrap("admin");
 
             assertEquals("COMPLETED", result.getJobState().getStatus(), "再適用が成功すること");

@@ -26,6 +26,14 @@ export default function LineageJournalStats() {
 
   if (loading) return <Spin />;
 
+  // Localize mode label; append override indicator when global mode is disabled
+  // but repository overrides are enabling journaling
+  const modeKey = stats?.mode ? `integrationSettings.lineage.mode${stats.mode.charAt(0).toUpperCase()}${stats.mode.slice(1)}` : '';
+  let modeLabel = modeKey ? t(modeKey, stats?.mode ?? '') : (stats?.mode ?? '');
+  if (stats?.hasRepositoryOverrides) {
+    modeLabel += ` (${t('integrationSettings.lineage.repoOverridesActive')})`;
+  }
+
   return (
     <div>
       <Row gutter={[16, 16]}>
@@ -64,16 +72,29 @@ export default function LineageJournalStats() {
         </Col>
         <Col span={6}>
           <Card>
-            <Statistic title={t('integrationSettings.lineage.mode')} value={String(stats?.mode ?? 'unknown')} />
+            <Statistic title={t('integrationSettings.lineage.mode')} value={modeLabel} />
           </Card>
         </Col>
         <Col span={6}>
           <Card>
-            <Statistic title={t('integrationSettings.lineage.storeActive')} value={stats?.storeActive ? 'Yes' : 'No'} />
+            <Statistic title={t('integrationSettings.lineage.storeActive')} value={stats?.storeActive ? t('common.yes') : t('common.no')} />
           </Card>
         </Col>
       </Row>
 
+      {/* Per-target non-terminal counts from stats API */}
+      {stats?.nonTerminalByTarget && Object.keys(stats.nonTerminalByTarget).length > 0 && (
+        <Card title={t('integrationSettings.lineage.nonTerminalByTarget')} style={{ marginTop: 16 }}>
+          {Object.entries(stats.nonTerminalByTarget).map(([target, count]) => (
+            <div key={target} style={{ marginBottom: 8 }}>
+              <Tag>{target}</Tag>
+              {t('integrationSettings.lineage.nonTerminal')}: <strong>{count}</strong>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* Detailed backlog from metrics API (includes maxDocs and estimated size) */}
       {metrics?.backlog && Object.keys(metrics.backlog).length > 0 && (
         <Card title={t('integrationSettings.lineage.backlog')} style={{ marginTop: 16 }}>
           {Object.entries(metrics.backlog).map(([target, info]) => (

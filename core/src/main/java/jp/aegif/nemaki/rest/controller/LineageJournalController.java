@@ -157,7 +157,13 @@ public class LineageJournalController {
 
         Map<LineageProcessType, Long> byProcessType = journalStore.countByProcessType();
         long totalEvents = byProcessType.values().stream().mapToLong(Long::longValue).sum();
-        long nonTerminalCount = journalStore.countNonTerminalByTarget("purview");
+
+        // Build per-target backlog instead of hardcoding "purview"
+        List<String> targets = lineageConfig.getTargets();
+        Map<String, Long> nonTerminalByTarget = new LinkedHashMap<>();
+        for (String target : targets) {
+            nonTerminalByTarget.put(target, journalStore.countNonTerminalByTarget(target));
+        }
 
         Map<String, Long> byProcessTypeStrings = byProcessType.entrySet().stream()
                 .collect(Collectors.toMap(
@@ -166,12 +172,22 @@ public class LineageJournalController {
                         (a, b) -> a,
                         LinkedHashMap::new));
 
+        String globalMode = lineageConfig.getMode().name().toLowerCase();
+        boolean storeActive = journalStore.isActive();
+
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("mode", lineageConfig.getMode().name().toLowerCase());
+        response.put("mode", globalMode);
         response.put("totalEvents", totalEvents);
-        response.put("nonTerminalCount", nonTerminalCount);
+        response.put("nonTerminalByTarget", nonTerminalByTarget);
         response.put("byProcessType", byProcessTypeStrings);
-        response.put("storeActive", journalStore.isActive());
+        response.put("storeActive", storeActive);
+        response.put("targets", targets);
+        // When global mode is disabled but the store is active, repository
+        // overrides must be enabling journaling. Surface this so the UI does
+        // not show a misleading "disabled" status.
+        if ("disabled".equals(globalMode) && storeActive) {
+            response.put("hasRepositoryOverrides", true);
+        }
         return ResponseEntity.ok(response);
     }
 

@@ -1,5 +1,9 @@
 package jp.aegif.nemaki.rest.purview;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -7,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
+import jp.aegif.nemaki.rest.controller.IntegrationSettingsService;
 import jp.aegif.nemaki.util.PropertyManager;
 
 @Component
@@ -18,6 +23,9 @@ public class PurviewConfig {
 
     @Autowired(required = false)
     private PropertyManager propertyManager;
+
+    @Autowired(required = false)
+    private IntegrationSettingsService integrationSettingsService;
 
     @Value("${purview.enabled:false}")
     private boolean enabled;
@@ -49,30 +57,103 @@ public class PurviewConfig {
     @Value("${purview.timeout.read.ms:30000}")
     private int readTimeoutMs;
 
-    @Value("${purview.auth.type:oauth2}")
-    private String authType;
-
-    @Value("${purview.basic.username:}")
-    private String basicUsername;
-
-    @Value("${purview.basic.password:}")
-    private String basicPassword;
-
     @Value("${purview.delete-resolution.delay.ms:5000}")
     private long deleteResolutionDelayMs;
 
     @Value("${purview.sync.cron:}")
     private String syncCron;
 
+    // Legacy fields kept for migration detection only
+    @Value("${purview.auth.type:oauth2}")
+    private String legacyAuthType;
+
+    @Value("${purview.basic.username:}")
+    private String legacyBasicUsername;
+
+    @Value("${purview.basic.password:}")
+    private String legacyBasicPassword;
+
     @PostConstruct
-    void warnIfPlaintextSecret() {
-        if (!enabled) {
+    void postConstruct() {
+        if (enabled) {
+            String secret = trimToEmpty(clientSecret);
+            if (!secret.isEmpty() && looksLikePlaintext(secret)) {
+                logger.warn("purview.client.secret appears to be a plaintext value. "
+                        + "Consider using an encrypted or externalized secret (e.g., environment variable, vault).");
+            }
+        }
+        migrateBasicAuthToAtlas();
+    }
+
+    /**
+     * One-time migration: if the legacy purview.auth.type=basic configuration is detected,
+     * automatically write atlas.* settings to CouchDB and remove the legacy keys.
+     * Falls back to warning-only if IntegrationSettingsService is not available.
+     */
+    void migrateBasicAuthToAtlas() {
+        String authType = trimToEmpty(legacyAuthType);
+        if (!"basic".equalsIgnoreCase(authType)) {
             return;
         }
-        String secret = trimToEmpty(clientSecret);
-        if (!secret.isEmpty() && looksLikePlaintext(secret)) {
-            logger.warn("purview.client.secret appears to be a plaintext value. "
-                    + "Consider using an encrypted or externalized secret (e.g., environment variable, vault).");
+
+        if (integrationSettingsService == null) {
+            logger.warn("Detected legacy purview.auth.type=basic but IntegrationSettingsService is not available. "
+                    + "Auto-migration skipped. Please manually migrate to atlas.* settings.");
+            return;
+        }
+
+        // Skip only if a previous migration already wrote atlas.enabled=true
+        // to CouchDB. We must check the *source* — if atlas.enabled=true comes
+        // from a properties file or environment variable the migration has NOT
+        // run yet and purview.enabled=false still needs to be written back.
+        if ("true".equalsIgnoreCase(integrationSettingsService.readSetting("atlas.enabled"))
+                && "couchdb".equals(integrationSettingsService.readSettingSource("atlas.enabled"))) {
+            logger.info("Legacy purview.auth.type=basic detected but atlas.enabled=true already exists in CouchDB. "
+                    + "Skipping re-migration. Remove purview.auth.type from your properties file to suppress this message.");
+            return;
+        }
+
+        try {
+            // Write atlas.* settings from the legacy purview.basic.* values
+            Map<String, String> atlasSettings = new HashMap<>();
+            atlasSettings.put("atlas.enabled", "true");
+            String legacyEndpoint = trimToEmpty(readDynamic("purview.endpoint", endpoint));
+            if (!legacyEndpoint.isEmpty()) {
+                atlasSettings.put("atlas.endpoint", legacyEndpoint);
+            }
+            String basicUser = trimToEmpty(readDynamic("purview.basic.username", legacyBasicUsername));
+            if (!basicUser.isEmpty()) {
+                atlasSettings.put("atlas.username", basicUser);
+            }
+            String basicPass = trimToEmpty(readDynamic("purview.basic.password", legacyBasicPassword));
+            if (!basicPass.isEmpty()) {
+                atlasSettings.put("atlas.password", basicPass);
+            }
+            // Preserve collection scope so schema/sync targets don't silently change
+            String legacyCollection = trimToEmpty(readDynamic("purview.collection", collection));
+            if (!legacyCollection.isEmpty()) {
+                atlasSettings.put("atlas.collection", legacyCollection);
+            }
+
+            // Atomically disable Purview so the resolver picks Atlas after migration.
+            // Without this, purview.enabled=true would keep the Purview/OAuth2 path
+            // active (Purview takes priority), and the migrated Atlas credentials
+            // would never be used.
+            atlasSettings.put("purview.enabled", "false");
+
+            integrationSettingsService.writeSettings(atlasSettings);
+
+            // Remove legacy keys from CouchDB
+            integrationSettingsService.deleteSettings(Set.of(
+                    "purview.auth.type", "purview.basic.username", "purview.basic.password"));
+
+            logger.warn("Auto-migrated legacy purview.auth.type=basic to atlas.* settings in CouchDB. "
+                    + "purview.enabled has been set to false so that Atlas is used. "
+                    + "Please remove purview.auth.type, purview.basic.username, and purview.basic.password "
+                    + "from your properties file to suppress this message.");
+        } catch (Exception e) {
+            logger.error("Failed to auto-migrate legacy purview.auth.type=basic to atlas.* settings: {}",
+                    e.getMessage(), e);
         }
     }
 
@@ -80,7 +161,6 @@ public class PurviewConfig {
         if (value == null || value.isEmpty()) {
             return false;
         }
-        // Encrypted values and env-var references typically start with specific prefixes
         if (value.startsWith("${") || value.startsWith("ENC(") || value.startsWith("vault:")) {
             return false;
         }
@@ -139,36 +219,8 @@ public class PurviewConfig {
         return readDynamicInt("purview.timeout.read.ms", readTimeoutMs);
     }
 
-    public String getAuthType() {
-        return trimToEmpty(readDynamic("purview.auth.type", authType)).isEmpty()
-                ? "oauth2"
-                : trimToEmpty(readDynamic("purview.auth.type", authType));
-    }
-
-    public boolean isBasicAuth() {
-        return "basic".equalsIgnoreCase(getAuthType());
-    }
-
     public boolean isPurviewDataMap() {
         return getAtlasBasePath().startsWith("datamap/");
-    }
-
-    /**
-     * Returns true when the configured atlas base path indicates an Apache Atlas
-     * on-prem deployment (i.e. the path does not start with a known Purview cloud
-     * prefix such as {@code datamap/} or {@code catalog/}).
-     */
-    public boolean isAtlasOnPrem() {
-        String path = getAtlasBasePath();
-        return !path.startsWith("datamap/") && !path.startsWith("catalog/");
-    }
-
-    public String getBasicUsername() {
-        return trimToEmpty(readDynamic("purview.basic.username", basicUsername));
-    }
-
-    public String getBasicPassword() {
-        return trimToEmpty(readDynamic("purview.basic.password", basicPassword));
     }
 
     public long getDeleteResolutionDelayMs() {

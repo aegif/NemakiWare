@@ -2,6 +2,7 @@ package jp.aegif.nemaki.rest.purview.publish;
 
 import jp.aegif.nemaki.rest.purview.sync.PurviewCloudMetadataSyncResult;
 import jp.aegif.nemaki.rest.purview.lineage.PurviewCloudSyncLineageService;
+import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.state.PurviewDeadLetterStateService;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -11,7 +12,9 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -35,6 +38,7 @@ public class PurviewCloudMetadataPublishServiceImplTest {
     private PurviewDocumentPublishService documentPublishService;
     private PurviewCloudSyncLineageService cloudSyncLineageService;
     private PurviewDeadLetterStateService deadLetterStateService;
+    private PurviewEntityPayloadFactory entityPayloadFactory;
     private PurviewCloudMetadataPublishServiceImpl service;
 
     @BeforeEach
@@ -44,6 +48,7 @@ public class PurviewCloudMetadataPublishServiceImplTest {
         documentPublishService = mock(PurviewDocumentPublishService.class);
         cloudSyncLineageService = mock(PurviewCloudSyncLineageService.class);
         deadLetterStateService = mock(PurviewDeadLetterStateService.class);
+        entityPayloadFactory = new PurviewEntityPayloadFactory();
         when(documentPublishService.upsertContents(any(), any())).thenAnswer(invocation -> invocation.getArgument(1, List.class).size());
         when(cloudSyncLineageService.upsertCloudSyncLineage(any(), any())).thenAnswer(invocation -> invocation.getArgument(1, List.class).size());
         when(deadLetterStateService.saveDeadLetterState(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -53,7 +58,8 @@ public class PurviewCloudMetadataPublishServiceImplTest {
                 contentDaoService,
                 documentPublishService,
                 cloudSyncLineageService,
-                deadLetterStateService);
+                deadLetterStateService,
+                entityPayloadFactory);
     }
 
     @Test
@@ -147,11 +153,10 @@ public class PurviewCloudMetadataPublishServiceImplTest {
         verify(documentPublishService).upsertContents("bedroom", List.of(clearedDocument));
         verify(cloudSyncLineageService).upsertCloudSyncLineage("bedroom", List.of(currentDocument));
         verify(cloudSyncLineageService).reconcileRemovedCloudSyncLineage(eq("bedroom"), argThat(entries ->
-                entries.size() == 2
-                        && "doc-001|google|cloud-old|https://drive.example/doc-001|2026-03-19T03:00:00.000+0000"
-                                .equals(entries.get("doc-001"))
+                entries.size() == 1
                         && "doc-legacy|microsoft|cloud-legacy|https://onedrive.example/doc-legacy|2026-03-19T01:00:00.000+0000"
-                                .equals(entries.get("doc-legacy"))));
+                                .equals(entries.get("doc-legacy"))),
+                argThat(keys -> keys.size() == 1 && keys.contains("google:cloud-001")));
     }
 
     @Test
@@ -204,6 +209,79 @@ public class PurviewCloudMetadataPublishServiceImplTest {
         verify(documentPublishService, never()).upsertContents(any(), any());
         verify(cloudSyncLineageService, never()).upsertCloudSyncLineage(any(), any());
         verify(contentDaoService, never()).getContentFresh(eq("bedroom"), eq("doc-001"));
+    }
+
+    @Test
+    public void testSyncRepositoryCloudMetadataIfChangedDeletesOrphanedExternalAssetWhenStableKeyChanges() {
+        RepositoryInfo repositoryInfo = new RepositoryInfo();
+        repositoryInfo.setId("bedroom");
+        repositoryInfo.setRootFolder("root-001");
+        when(repositoryInfoMap.get("bedroom")).thenReturn(repositoryInfo);
+        when(contentDaoService.getContent("bedroom", "root-001")).thenReturn(folder("root-001"));
+        when(contentDaoService.getChildrenCount("bedroom", "root-001")).thenReturn(1L);
+        // Document changed its cloud link from google:cloud-old to microsoft:cloud-new
+        Document currentDocument = documentWithCloud("doc-001", "root-001", "microsoft", "cloud-new",
+                "https://onedrive.example/cloud-new", "2026-03-20T03:00:00.000+0000");
+        when(contentDaoService.getChildrenPaged("bedroom", "root-001", 0, 100)).thenReturn(List.of(currentDocument));
+
+        PurviewCloudMetadataSyncResult result = service.syncRepositoryCloudMetadataIfChanged(
+                "bedroom",
+                "doc-001|google|cloud-old|https://drive.example/doc-001|2026-03-19T03:00:00.000+0000");
+
+        assertTrue(result.isChanged());
+        // Old external asset (google:cloud-old) should be deleted since it's no longer active
+        verify(cloudSyncLineageService).deleteObsoleteExternalAsset("bedroom", "google:cloud-old");
+        verify(cloudSyncLineageService).upsertCloudSyncLineage("bedroom", List.of(currentDocument));
+    }
+
+    @Test
+    public void testSyncRepositoryCloudMetadataIfChangedSkipsOrphanDeletionWhenOldStableKeyStillActive() {
+        RepositoryInfo repositoryInfo = new RepositoryInfo();
+        repositoryInfo.setId("bedroom");
+        repositoryInfo.setRootFolder("root-001");
+        when(repositoryInfoMap.get("bedroom")).thenReturn(repositoryInfo);
+        when(contentDaoService.getContent("bedroom", "root-001")).thenReturn(folder("root-001"));
+        when(contentDaoService.getChildrenCount("bedroom", "root-001")).thenReturn(2L);
+        // doc-001 changed stableKey from google:shared-file to microsoft:cloud-new
+        Document changedDocument = documentWithCloud("doc-001", "root-001", "microsoft", "cloud-new",
+                "https://onedrive.example/cloud-new", "2026-03-20T03:00:00.000+0000");
+        // doc-002 still uses google:shared-file — so it must NOT be deleted
+        Document sharedDocument = documentWithCloud("doc-002", "root-001", "google", "shared-file",
+                "https://drive.example/shared-file", "2026-03-20T03:00:00.000+0000");
+        when(contentDaoService.getChildrenPaged("bedroom", "root-001", 0, 100))
+                .thenReturn(List.of(changedDocument, sharedDocument));
+
+        PurviewCloudMetadataSyncResult result = service.syncRepositoryCloudMetadataIfChanged(
+                "bedroom",
+                "doc-001|google|shared-file|https://drive.example/shared-file|2026-03-19T03:00:00.000+0000\n"
+                        + "doc-002|google|shared-file|https://drive.example/shared-file|2026-03-20T03:00:00.000+0000");
+
+        assertTrue(result.isChanged());
+        // google:shared-file is still active via doc-002, so deleteObsoleteExternalAsset should NOT be called
+        verify(cloudSyncLineageService, never()).deleteObsoleteExternalAsset(any(), any());
+    }
+
+    @Test
+    public void testSyncRepositoryCloudMetadataIfChangedNoOrphanDeletionWhenStableKeyUnchanged() {
+        RepositoryInfo repositoryInfo = new RepositoryInfo();
+        repositoryInfo.setId("bedroom");
+        repositoryInfo.setRootFolder("root-001");
+        when(repositoryInfoMap.get("bedroom")).thenReturn(repositoryInfo);
+        when(contentDaoService.getContent("bedroom", "root-001")).thenReturn(folder("root-001"));
+        when(contentDaoService.getChildrenCount("bedroom", "root-001")).thenReturn(1L);
+        // Only the URL changed, not the stableKey (google:cloud-001 remains the same)
+        Document currentDocument = documentWithCloud("doc-001", "root-001", "google", "cloud-001",
+                "https://drive.example/doc-001-updated", "2026-03-20T03:00:00.000+0000");
+        when(contentDaoService.getChildrenPaged("bedroom", "root-001", 0, 100)).thenReturn(List.of(currentDocument));
+
+        PurviewCloudMetadataSyncResult result = service.syncRepositoryCloudMetadataIfChanged(
+                "bedroom",
+                "doc-001|google|cloud-001|https://drive.example/doc-001|2026-03-19T03:00:00.000+0000");
+
+        assertTrue(result.isChanged());
+        // StableKey did not change, so no orphan deletion
+        verify(cloudSyncLineageService, never()).deleteObsoleteExternalAsset(any(), any());
+        verify(cloudSyncLineageService).upsertCloudSyncLineage("bedroom", List.of(currentDocument));
     }
 
     private Folder folder(String objectId) {

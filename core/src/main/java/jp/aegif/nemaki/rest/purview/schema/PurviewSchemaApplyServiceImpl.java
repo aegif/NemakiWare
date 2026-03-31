@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.purview.schema;
 
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.payload.PurviewSchemaManifest;
 import jp.aegif.nemaki.rest.purview.payload.PurviewSchemaManifestFactory;
@@ -23,7 +23,7 @@ public class PurviewSchemaApplyServiceImpl implements PurviewSchemaApplyService 
     private static final Logger logger = LoggerFactory.getLogger(PurviewSchemaApplyServiceImpl.class);
     static final String ATLAS_PARTIAL_SUFFIX = ":atlas-partial";
 
-    private final PurviewConfig purviewConfig;
+    private final MetadataCatalogConnectionResolver connectionResolver;
     private final PurviewSchemaPlannerService schemaPlannerService;
     private final PurviewSchemaStateService schemaStateService;
     private final PurviewSchemaManifestFactory schemaManifestFactory;
@@ -32,14 +32,14 @@ public class PurviewSchemaApplyServiceImpl implements PurviewSchemaApplyService 
     private final AtlasSchemaCompatHelper atlasSchemaCompatHelper;
 
     public PurviewSchemaApplyServiceImpl(
-            PurviewConfig purviewConfig,
+            MetadataCatalogConnectionResolver connectionResolver,
             PurviewSchemaPlannerService schemaPlannerService,
             PurviewSchemaStateService schemaStateService,
             PurviewSchemaManifestFactory schemaManifestFactory,
             PurviewSchemaPayloadFactory schemaPayloadFactory,
             PurviewSchemaRegistryClient schemaRegistryClient,
             AtlasSchemaCompatHelper atlasSchemaCompatHelper) {
-        this.purviewConfig = purviewConfig;
+        this.connectionResolver = connectionResolver;
         this.schemaPlannerService = schemaPlannerService;
         this.schemaStateService = schemaStateService;
         this.schemaManifestFactory = schemaManifestFactory;
@@ -58,21 +58,11 @@ public class PurviewSchemaApplyServiceImpl implements PurviewSchemaApplyService 
 
         PurviewSchemaManifest manifest = schemaManifestFactory.buildManifest();
         Map<String, Object> payload = schemaPayloadFactory.buildTypeDefinitionsPayload(manifest);
-        PurviewConnectionRequest request = new PurviewConnectionRequest(
-                purviewConfig.getEndpoint(),
-                purviewConfig.getAtlasBasePath(),
-                purviewConfig.getAuthType(),
-                purviewConfig.getTenantId(),
-                purviewConfig.getClientId(),
-                purviewConfig.getClientSecret(),
-                purviewConfig.getBasicUsername(),
-                purviewConfig.getBasicPassword(),
-                purviewConfig.getConnectTimeoutMs(),
-                purviewConfig.getReadTimeoutMs());
+        PurviewConnectionRequest request = connectionResolver.buildConnectionRequest();
 
         try {
             // Atlas mode: patch businessMetadataDefs for compatibility
-            if (purviewConfig.isAtlasOnPrem()) {
+            if (connectionResolver.isAtlasOnPrem()) {
                 payload = atlasSchemaCompatHelper.patchForAtlas(payload);
             }
 
@@ -80,7 +70,7 @@ public class PurviewSchemaApplyServiceImpl implements PurviewSchemaApplyService 
             PurviewSchemaPublishResult publishResult = schemaRegistryClient.applySchema(request, payload);
 
             // Atlas fallback: retry without businessMetadataDefs if first attempt failed
-            if (!publishResult.isSuccess() && purviewConfig.isAtlasOnPrem()) {
+            if (!publishResult.isSuccess() && connectionResolver.isAtlasOnPrem()) {
                 logger.warn("Atlas schema apply failed, retrying without businessMetadataDefs: {}",
                         publishResult.getMessage());
                 Map<String, Object> fallback = atlasSchemaCompatHelper.removeBusinessMetadataDefs(payload);
@@ -108,7 +98,7 @@ public class PurviewSchemaApplyServiceImpl implements PurviewSchemaApplyService 
             }
 
             PurviewSchemaState nextState = schemaStateService.saveSchemaState(new PurviewSchemaState(
-                    purviewConfig.getCollection(),
+                    connectionResolver.getCollection(),
                     manifest.getSchemaVersion(),
                     schemaHash,
                     Instant.now().toString(),

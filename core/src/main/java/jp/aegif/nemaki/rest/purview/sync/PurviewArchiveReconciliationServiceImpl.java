@@ -2,7 +2,7 @@ package jp.aegif.nemaki.rest.purview.sync;
 
 import jp.aegif.nemaki.rest.purview.publish.PurviewArchivePublishService;
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.state.PurviewCursorState;
 import jp.aegif.nemaki.rest.purview.state.PurviewCursorStateService;
@@ -38,7 +38,7 @@ public class PurviewArchiveReconciliationServiceImpl implements PurviewArchiveRe
     private static final String TOMBSTONE_STATUS_ARCHIVED = "ARCHIVED";
     private static final String TOMBSTONE_STATUS_ERROR = "ERROR";
 
-    private final PurviewConfig purviewConfig;
+    private final MetadataCatalogConnectionResolver connectionResolver;
     private final PurviewSchemaPlannerService schemaPlannerService;
     private final PurviewLockStateService lockStateService;
     private final PurviewJobStateService jobStateService;
@@ -51,7 +51,7 @@ public class PurviewArchiveReconciliationServiceImpl implements PurviewArchiveRe
     private final PurviewDocumentArchiveRelationshipService documentArchiveRelationshipService;
 
     public PurviewArchiveReconciliationServiceImpl(
-            PurviewConfig purviewConfig,
+            MetadataCatalogConnectionResolver connectionResolver,
             PurviewSchemaPlannerService schemaPlannerService,
             PurviewLockStateService lockStateService,
             PurviewJobStateService jobStateService,
@@ -62,7 +62,7 @@ public class PurviewArchiveReconciliationServiceImpl implements PurviewArchiveRe
             PurviewEntityRegistryClient entityRegistryClient,
             @Qualifier("ContentDaoService") ContentDaoService contentDaoService,
             PurviewDocumentArchiveRelationshipService documentArchiveRelationshipService) {
-        this.purviewConfig = purviewConfig;
+        this.connectionResolver = connectionResolver;
         this.schemaPlannerService = schemaPlannerService;
         this.lockStateService = lockStateService;
         this.jobStateService = jobStateService;
@@ -182,17 +182,7 @@ public class PurviewArchiveReconciliationServiceImpl implements PurviewArchiveRe
     }
 
     private PurviewConnectionRequest buildConnectionRequest() {
-        return new PurviewConnectionRequest(
-                purviewConfig.getEndpoint(),
-                purviewConfig.getAtlasBasePath(),
-                purviewConfig.getAuthType(),
-                purviewConfig.getTenantId(),
-                purviewConfig.getClientId(),
-                purviewConfig.getClientSecret(),
-                purviewConfig.getBasicUsername(),
-                purviewConfig.getBasicPassword(),
-                purviewConfig.getConnectTimeoutMs(),
-                purviewConfig.getReadTimeoutMs());
+        return connectionResolver.buildConnectionRequest();
     }
 
     private PurviewTombstoneState copyWithStatus(PurviewTombstoneState tombstoneState, String status) {

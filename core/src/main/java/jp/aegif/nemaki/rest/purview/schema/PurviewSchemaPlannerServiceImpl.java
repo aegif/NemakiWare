@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.rest.purview.schema;
 
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.payload.PurviewSchemaManifest;
 import jp.aegif.nemaki.rest.purview.payload.PurviewSchemaManifestFactory;
 import jp.aegif.nemaki.rest.purview.state.PurviewSchemaState;
@@ -10,22 +10,22 @@ import org.springframework.stereotype.Service;
 @Service
 public class PurviewSchemaPlannerServiceImpl implements PurviewSchemaPlannerService {
 
-    private final PurviewConfig purviewConfig;
+    private final MetadataCatalogConnectionResolver connectionResolver;
     private final PurviewSchemaStateService schemaStateService;
     private final PurviewSchemaManifestFactory schemaManifestFactory;
 
     public PurviewSchemaPlannerServiceImpl(
-            PurviewConfig purviewConfig,
+            MetadataCatalogConnectionResolver connectionResolver,
             PurviewSchemaStateService schemaStateService,
             PurviewSchemaManifestFactory schemaManifestFactory) {
-        this.purviewConfig = purviewConfig;
+        this.connectionResolver = connectionResolver;
         this.schemaStateService = schemaStateService;
         this.schemaManifestFactory = schemaManifestFactory;
     }
 
     @Override
     public PurviewSchemaState getCurrentSchemaState() {
-        return schemaStateService.getSchemaState(purviewConfig.getCollection());
+        return schemaStateService.getSchemaState(connectionResolver.getCollection());
     }
 
     @Override
@@ -37,7 +37,7 @@ public class PurviewSchemaPlannerServiceImpl implements PurviewSchemaPlannerServ
                 || !manifest.getSchemaHash().equals(currentState.getSchemaHash());
 
         return new PurviewSchemaDiff(
-                purviewConfig.getCollection(),
+                connectionResolver.getCollection(),
                 currentState.getSchemaVersion(),
                 currentState.getSchemaHash(),
                 manifest.getSchemaVersion(),

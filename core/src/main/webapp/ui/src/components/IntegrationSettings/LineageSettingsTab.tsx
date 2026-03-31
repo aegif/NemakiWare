@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Form, Button, Spin, Alert, App } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { useSettingsTab } from './useSettingsTab';
 import { SettingsFormFields } from './SettingsFormFields';
 import { getLineageSettings, updateLineageSettings } from '../../services/integrationSettings';
@@ -78,11 +79,16 @@ export function LineageSettingsTab() {
         style={{ marginBottom: 16 }}
       />
 
-      <Alert
-        message={t('integrationSettings.lineage.internalApiNotice')}
-        type="info"
-        style={{ marginBottom: 16 }}
-      />
+      {mode === 'journaled' && (
+        <Alert
+          message={<>
+            {t('integrationSettings.lineage.journalLinkNotice')}{' '}
+            <Link to="/lineage-journal">{t('integrationSettings.lineage.journalLinkLabel')}</Link>
+          </>}
+          type="info"
+          style={{ marginBottom: 16 }}
+        />
+      )}
 
       <SettingsFormFields
         fields={fields}

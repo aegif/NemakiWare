@@ -7,4 +7,6 @@ public interface PurviewConnectionService {
     PurviewConnectionStatus testConnection();
 
     PurviewConnectionStatus testConnection(Map<String, String> formValues);
+
+    PurviewConnectionStatus testAtlasConnection(Map<String, String> formValues);
 }

@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.purview.lineage;
 
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
@@ -22,15 +23,15 @@ public class PurviewCloudSyncLineageServiceImpl implements PurviewCloudSyncLinea
     private static final String EXTERNAL_ASSET_TYPE_NAME = "nemaki_external_asset";
     private static final String CLOUD_SYNC_PROCESS_TYPE_NAME = "nemaki_cloud_sync_process";
 
-    private final PurviewConfig purviewConfig;
+    private final MetadataCatalogConnectionResolver connectionResolver;
     private final PurviewEntityPayloadFactory entityPayloadFactory;
     private final PurviewEntityRegistryClient entityRegistryClient;
 
     public PurviewCloudSyncLineageServiceImpl(
-            PurviewConfig purviewConfig,
+            MetadataCatalogConnectionResolver connectionResolver,
             PurviewEntityPayloadFactory entityPayloadFactory,
             PurviewEntityRegistryClient entityRegistryClient) {
-        this.purviewConfig = purviewConfig;
+        this.connectionResolver = connectionResolver;
         this.entityPayloadFactory = entityPayloadFactory;
         this.entityRegistryClient = entityRegistryClient;
     }
@@ -63,15 +64,30 @@ public class PurviewCloudSyncLineageServiceImpl implements PurviewCloudSyncLinea
             return 0;
         }
 
-        List<Map<String, Object>> entities = new ArrayList<>(externalAssetsByStableKey.values());
-        entities.addAll(processEntities);
         try {
-            PurviewEntityPublishResult result = entityRegistryClient.bulkCreateOrUpdateEntities(
-                    buildConnectionRequest(),
-                    entityPayloadFactory.buildBulkPayload(entities));
-            if (!result.isSuccess()) {
-                throw new IllegalStateException(result.getMessage());
+            PurviewConnectionRequest connReq = buildConnectionRequest();
+
+            // Phase 1: Create/update external asset entities first so that Atlas
+            // can resolve relationship references when process entities are created.
+            if (!externalAssetsByStableKey.isEmpty()) {
+                List<Map<String, Object>> assetEntities = new ArrayList<>(externalAssetsByStableKey.values());
+                PurviewEntityPublishResult assetResult = entityRegistryClient.bulkCreateOrUpdateEntities(
+                        connReq, entityPayloadFactory.buildBulkPayload(assetEntities));
+                if (!assetResult.isSuccess()) {
+                    throw new IllegalStateException("External asset publish failed: " + assetResult.getMessage());
+                }
             }
+
+            // Phase 2: Create/update process entities with lineage relationships
+            // (inputs → external asset, outputs → nemaki document).
+            if (!processEntities.isEmpty()) {
+                PurviewEntityPublishResult processResult = entityRegistryClient.bulkCreateOrUpdateEntities(
+                        connReq, entityPayloadFactory.buildBulkPayload(processEntities));
+                if (!processResult.isSuccess()) {
+                    throw new IllegalStateException("Cloud sync process publish failed: " + processResult.getMessage());
+                }
+            }
+
             return processEntities.size();
         } catch (PurviewClientException e) {
             throw new IllegalStateException(e.getMessage(), e);
@@ -79,11 +95,12 @@ public class PurviewCloudSyncLineageServiceImpl implements PurviewCloudSyncLinea
     }
 
     @Override
-    public int reconcileRemovedCloudSyncLineage(String repositoryId, Map<String, String> obsoleteSnapshotEntries) {
+    public int reconcileRemovedCloudSyncLineage(String repositoryId, Map<String, String> obsoleteSnapshotEntries, Set<String> activeStableKeys) {
         if (obsoleteSnapshotEntries == null || obsoleteSnapshotEntries.isEmpty()) {
             return 0;
         }
 
+        Set<String> safeActiveKeys = (activeStableKeys != null) ? activeStableKeys : Set.of();
         int reconciledCount = 0;
         for (Map.Entry<String, String> entry : obsoleteSnapshotEntries.entrySet()) {
             String objectId = entry.getKey();
@@ -92,16 +109,69 @@ public class PurviewCloudSyncLineageServiceImpl implements PurviewCloudSyncLinea
                 continue;
             }
 
+            // Always delete the cloud-sync process entity (unique per document)
             reconciledCount += deleteEntity(
                     CLOUD_SYNC_PROCESS_TYPE_NAME,
                     entityPayloadFactory.buildCloudSyncProcessQualifiedName(repositoryId, objectId));
-            if (stableKey != null && !stableKey.isBlank()) {
+
+            // Only delete the external asset if no other current document still uses the same stable key
+            if (stableKey != null && !stableKey.isBlank() && !safeActiveKeys.contains(stableKey)) {
                 reconciledCount += deleteEntity(
                         EXTERNAL_ASSET_TYPE_NAME,
                         entityPayloadFactory.buildExternalAssetQualifiedName(repositoryId, stableKey));
             }
         }
         return reconciledCount;
+    }
+
+
+    @Override
+    public int deleteCloudSyncLineageByObjectId(String repositoryId, String objectId, String stableKey) {
+        if (objectId == null || objectId.isBlank()) {
+            return 0;
+        }
+        int deletedCount = 0;
+        // Delete the cloud-sync process entity (always unique per objectId)
+        try {
+            deletedCount += deleteEntity(
+                    CLOUD_SYNC_PROCESS_TYPE_NAME,
+                    entityPayloadFactory.buildCloudSyncProcessQualifiedName(repositoryId, objectId));
+        } catch (IllegalStateException e) {
+            // Entity may not exist — ignore 404-style errors
+            if (!e.getMessage().contains("404")) {
+                throw e;
+            }
+        }
+        // Delete the external asset entity if stableKey is provided
+        if (stableKey != null && !stableKey.isBlank()) {
+            try {
+                deletedCount += deleteEntity(
+                        EXTERNAL_ASSET_TYPE_NAME,
+                        entityPayloadFactory.buildExternalAssetQualifiedName(repositoryId, stableKey));
+            } catch (IllegalStateException e) {
+                if (!e.getMessage().contains("404")) {
+                    throw e;
+                }
+            }
+        }
+        return deletedCount;
+    }
+
+    @Override
+    public int deleteObsoleteExternalAsset(String repositoryId, String stableKey) {
+        if (stableKey == null || stableKey.isBlank()) {
+            return 0;
+        }
+        try {
+            return deleteEntity(
+                    EXTERNAL_ASSET_TYPE_NAME,
+                    entityPayloadFactory.buildExternalAssetQualifiedName(repositoryId, stableKey));
+        } catch (IllegalStateException e) {
+            if (!e.getMessage().contains("404")) {
+                throw e;
+            }
+            return 0;
+        }
     }
 
     private String parseStableKey(String snapshotEntry) {
@@ -132,16 +202,6 @@ public class PurviewCloudSyncLineageServiceImpl implements PurviewCloudSyncLinea
     }
 
     private PurviewConnectionRequest buildConnectionRequest() {
-        return new PurviewConnectionRequest(
-                purviewConfig.getEndpoint(),
-                purviewConfig.getAtlasBasePath(),
-                purviewConfig.getAuthType(),
-                purviewConfig.getTenantId(),
-                purviewConfig.getClientId(),
-                purviewConfig.getClientSecret(),
-                purviewConfig.getBasicUsername(),
-                purviewConfig.getBasicPassword(),
-                purviewConfig.getConnectTimeoutMs(),
-                purviewConfig.getReadTimeoutMs());
+        return connectionResolver.buildConnectionRequest();
     }
 }

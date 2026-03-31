@@ -1,7 +1,8 @@
 package jp.aegif.nemaki.rest.purview.sync;
 
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
+import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient;
 import jp.aegif.nemaki.rest.purview.state.PurviewJobState;
@@ -32,7 +33,7 @@ import jp.aegif.nemaki.model.Document;
 
 public class PurviewDeleteResolutionServiceImplTest {
 
-    private PurviewConfig purviewConfig;
+    private MetadataCatalogConnectionResolver connectionResolver;
     private PurviewSchemaPlannerService schemaPlannerService;
     private PurviewLockStateService lockStateService;
     private PurviewJobStateService jobStateService;
@@ -43,7 +44,7 @@ public class PurviewDeleteResolutionServiceImplTest {
 
     @BeforeEach
     public void setUp() {
-        purviewConfig = mock(PurviewConfig.class);
+        connectionResolver = mock(MetadataCatalogConnectionResolver.class);
         schemaPlannerService = mock(PurviewSchemaPlannerService.class);
         lockStateService = mock(PurviewLockStateService.class);
         jobStateService = mock(PurviewJobStateService.class);
@@ -54,16 +55,12 @@ public class PurviewDeleteResolutionServiceImplTest {
         when(jobStateService.saveJobState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(lockStateService.tryAcquireRepositoryLock(any(), any(), any(), any())).thenReturn(true);
         when(tombstoneStateService.saveTombstoneState(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(purviewConfig.getEndpoint()).thenReturn("https://example.purview.azure.com");
-        when(purviewConfig.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
-        when(purviewConfig.getTenantId()).thenReturn("tenant-id");
-        when(purviewConfig.getClientId()).thenReturn("client-id");
-        when(purviewConfig.getClientSecret()).thenReturn("client-secret");
-        when(purviewConfig.getConnectTimeoutMs()).thenReturn(5000);
-        when(purviewConfig.getReadTimeoutMs()).thenReturn(30000);
+        when(connectionResolver.buildConnectionRequest()).thenReturn(
+                new PurviewConnectionRequest("https://example-account.purview.azure.com",
+                        "datamap/api/atlas/v2", "tenant-123", "client-123", "secret-123", 5000, 30000));
 
         service = new PurviewDeleteResolutionServiceImpl(
-                purviewConfig,
+                connectionResolver,
                 schemaPlannerService,
                 lockStateService,
                 jobStateService,

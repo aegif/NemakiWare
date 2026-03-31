@@ -2,7 +2,8 @@ package jp.aegif.nemaki.rest.purview.publish;
 
 import jp.aegif.nemaki.rest.purview.lineage.PurviewArchiveLineageService;
 import jp.aegif.nemaki.rest.purview.sync.PurviewArchiveSyncResult;
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
+import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.state.PurviewDeadLetterStateService;
 import jp.aegif.nemaki.rest.purview.relationship.PurviewDocumentArchiveRelationshipService;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
@@ -37,7 +38,7 @@ import jp.aegif.nemaki.model.Archive;
 
 public class PurviewArchivePublishServiceImplTest {
 
-    private PurviewConfig config;
+    private MetadataCatalogConnectionResolver connectionResolver;
     private ContentDaoService contentDaoService;
     private PurviewEntityRegistryClient entityRegistryClient;
     private PurviewDocumentArchiveRelationshipService documentArchiveRelationshipService;
@@ -48,7 +49,7 @@ public class PurviewArchivePublishServiceImplTest {
 
     @BeforeEach
     public void setUp() throws Exception {
-        config = mock(PurviewConfig.class);
+        connectionResolver = mock(MetadataCatalogConnectionResolver.class);
         contentDaoService = mock(ContentDaoService.class);
         entityRegistryClient = mock(PurviewEntityRegistryClient.class);
         documentArchiveRelationshipService = mock(PurviewDocumentArchiveRelationshipService.class);
@@ -56,13 +57,9 @@ public class PurviewArchivePublishServiceImplTest {
         archiveLineageService = mock(PurviewArchiveLineageService.class);
         deadLetterStateService = mock(PurviewDeadLetterStateService.class);
 
-        when(config.getEndpoint()).thenReturn("https://example-account.purview.azure.com");
-        when(config.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
-        when(config.getTenantId()).thenReturn("tenant-123");
-        when(config.getClientId()).thenReturn("client-123");
-        when(config.getClientSecret()).thenReturn("secret-123");
-        when(config.getConnectTimeoutMs()).thenReturn(5000);
-        when(config.getReadTimeoutMs()).thenReturn(30000);
+        when(connectionResolver.buildConnectionRequest()).thenReturn(
+                new PurviewConnectionRequest("https://example-account.purview.azure.com",
+                        "datamap/api/atlas/v2", "tenant-123", "client-123", "secret-123", 5000, 30000));
         when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
                 .thenAnswer(this::successWithEntityCount);
         when(entityRegistryClient.deleteByUniqueAttribute(any(), any(), any(), any()))
@@ -72,7 +69,7 @@ public class PurviewArchivePublishServiceImplTest {
         when(deadLetterStateService.saveDeadLetterState(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service = new PurviewArchivePublishServiceImpl(
-                config,
+                connectionResolver,
                 new PurviewEntityPayloadFactory(),
                 entityRegistryClient,
                 contentDaoService,

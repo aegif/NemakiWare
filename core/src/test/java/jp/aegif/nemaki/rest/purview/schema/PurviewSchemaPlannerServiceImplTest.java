@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.rest.purview.schema;
 
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.payload.PurviewSchemaManifest;
 import jp.aegif.nemaki.rest.purview.payload.PurviewSchemaManifestFactory;
 import jp.aegif.nemaki.rest.purview.state.PurviewSchemaState;
@@ -18,18 +18,18 @@ import org.junit.jupiter.api.Test;
 
 public class PurviewSchemaPlannerServiceImplTest {
 
-    private PurviewConfig config;
+    private MetadataCatalogConnectionResolver connectionResolver;
     private PurviewSchemaStateService schemaStateService;
     private PurviewSchemaManifestFactory manifestFactory;
     private PurviewSchemaPlannerServiceImpl plannerService;
 
     @BeforeEach
     public void setUp() {
-        config = mock(PurviewConfig.class);
+        connectionResolver = mock(MetadataCatalogConnectionResolver.class);
         schemaStateService = mock(PurviewSchemaStateService.class);
         manifestFactory = new PurviewSchemaManifestFactory();
-        plannerService = new PurviewSchemaPlannerServiceImpl(config, schemaStateService, manifestFactory);
-        when(config.getCollection()).thenReturn("NemakiWare");
+        plannerService = new PurviewSchemaPlannerServiceImpl(connectionResolver, schemaStateService, manifestFactory);
+        when(connectionResolver.getCollection()).thenReturn("NemakiWare");
     }
 
     @Test

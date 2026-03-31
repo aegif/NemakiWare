@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jp.aegif.nemaki.rest.purview.CatalogBackendKind;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.PurviewConnectionService;
 import jp.aegif.nemaki.rest.purview.PurviewConnectionStatus;
 import jp.aegif.nemaki.rest.purview.state.PurviewCursorState;
@@ -41,6 +43,7 @@ import jp.aegif.nemaki.rest.purview.state.PurviewSchemaState;
 import jp.aegif.nemaki.rest.purview.state.PurviewStateOverview;
 import jp.aegif.nemaki.rest.purview.state.PurviewStateOverviewService;
 import jp.aegif.nemaki.rest.purview.state.PurviewTombstoneState;
+import jp.aegif.nemaki.rest.purview.lineage.PurviewCloudSyncLineageService;
 import jp.aegif.nemaki.rest.purview.sync.PurviewTypeReconciliationService;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 
@@ -49,6 +52,7 @@ import jp.aegif.nemaki.util.constant.CallContextKey;
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class PurviewAdminController {
 
+    private final MetadataCatalogConnectionResolver connectionResolver;
     private final PurviewConnectionService purviewConnectionService;
     private final PurviewSchemaPlannerService purviewSchemaPlannerService;
     private final PurviewSchemaBootstrapService purviewSchemaBootstrapService;
@@ -64,11 +68,13 @@ public class PurviewAdminController {
     private final PurviewStateOverviewService purviewStateOverviewService;
     private final PurviewDeadLetterStateService purviewDeadLetterStateService;
     private final PurviewDeadLetterRetryService purviewDeadLetterRetryService;
+    private final PurviewCloudSyncLineageService purviewCloudSyncLineageService;
 
     private HttpServletRequest httpRequest;
 
     @Autowired
     public PurviewAdminController(
+            MetadataCatalogConnectionResolver connectionResolver,
             PurviewConnectionService purviewConnectionService,
             PurviewSchemaPlannerService purviewSchemaPlannerService,
             PurviewSchemaBootstrapService purviewSchemaBootstrapService,
@@ -83,7 +89,9 @@ public class PurviewAdminController {
             PurviewCursorStateService purviewCursorStateService,
             PurviewStateOverviewService purviewStateOverviewService,
             PurviewDeadLetterStateService purviewDeadLetterStateService,
-            PurviewDeadLetterRetryService purviewDeadLetterRetryService) {
+            PurviewDeadLetterRetryService purviewDeadLetterRetryService,
+            PurviewCloudSyncLineageService purviewCloudSyncLineageService) {
+        this.connectionResolver = connectionResolver;
         this.purviewConnectionService = purviewConnectionService;
         this.purviewSchemaPlannerService = purviewSchemaPlannerService;
         this.purviewSchemaBootstrapService = purviewSchemaBootstrapService;
@@ -99,6 +107,7 @@ public class PurviewAdminController {
         this.purviewStateOverviewService = purviewStateOverviewService;
         this.purviewDeadLetterStateService = purviewDeadLetterStateService;
         this.purviewDeadLetterRetryService = purviewDeadLetterRetryService;
+        this.purviewCloudSyncLineageService = purviewCloudSyncLineageService;
     }
 
     @Autowired
@@ -113,18 +122,42 @@ public class PurviewAdminController {
         return null;
     }
 
+    /**
+     * Public endpoint (authentication required, admin NOT required).
+     * Returns whether any catalog backend is enabled, for the DocumentViewer governance tab.
+     */
+    @GetMapping("/governance-available")
+    public ResponseEntity<Map<String, Object>> getGovernanceAvailability() {
+        if (!isAuthenticated()) {
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", "error");
+            response.put("message", "Authentication required");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("enabled", connectionResolver.isAnyEnabled());
+        response.put("backend", connectionResolver.activeBackend().name());
+        return ResponseEntity.ok(response);
+    }
+
     @PostMapping("/test-connection")
     public ResponseEntity<Map<String, Object>> testConnection() {
         ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
         if (forbidden != null) return forbidden;
 
-        PurviewConnectionStatus status = purviewConnectionService.testConnection();
+        CatalogBackendKind backend = connectionResolver.activeBackend();
+        PurviewConnectionStatus status = switch (backend) {
+            case ATLAS -> purviewConnectionService.testAtlasConnection(null);
+            default -> purviewConnectionService.testConnection();
+        };
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", status.isConnected() ? "success" : "failure");
         response.put("connected", status.isConnected());
         response.put("featureEnabled", status.isFeatureEnabled());
         response.put("endpoint", status.getEndpoint());
         response.put("atlasBasePath", status.getAtlasBasePath());
+        response.put("backend", backend.name());
         response.put("message", status.getMessage());
         return ResponseEntity.ok(response);
     }
@@ -227,6 +260,32 @@ public class PurviewAdminController {
         PurviewJobState jobState = purviewCloudMetadataReconciliationService.startCloudMetadataReconciliation(
                 repositoryId, getAuthenticatedUsername());
         return ResponseEntity.ok(buildJobResponse(jobState));
+    }
+
+    @PostMapping("/cleanup/cloud-sync-lineage/{repositoryId}")
+    public ResponseEntity<Map<String, Object>> cleanupCloudSyncLineage(
+            @PathVariable("repositoryId") String repositoryId,
+            @RequestParam("objectId") String objectId,
+            @RequestParam(value = "stableKey", required = false) String stableKey) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        try {
+            int deletedCount = purviewCloudSyncLineageService.deleteCloudSyncLineageByObjectId(
+                    repositoryId, objectId, stableKey);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("repositoryId", repositoryId);
+            result.put("objectId", objectId);
+            result.put("stableKey", stableKey != null ? stableKey : "");
+            result.put("deletedCount", deletedCount);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            Map<String, Object> error = new LinkedHashMap<>();
+            error.put("repositoryId", repositoryId);
+            error.put("objectId", objectId);
+            error.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
     }
 
     @PostMapping("/reconcile/containment/{repositoryId}")
@@ -351,6 +410,7 @@ public class PurviewAdminController {
         String collection = purviewSchemaPlannerService.getCurrentSchemaState().getCollection();
         PurviewStateOverview overview = purviewStateOverviewService.getStateOverview(collection);
         Map<String, Object> response = new LinkedHashMap<>();
+        response.put("activeBackend", connectionResolver.activeBackend().name());
         response.put("collection", overview.getCollection());
         response.put("schemaState", buildSchemaStateResponse(overview.getSchemaState()));
         response.put("jobs", overview.getJobs().stream().map(this::buildJobResponse).toList());
@@ -359,6 +419,14 @@ public class PurviewAdminController {
         response.put("tombstones", overview.getTombstones().stream().map(this::buildTombstoneResponse).toList());
         response.put("deadLetters", overview.getDeadLetters().stream().map(this::buildDeadLetterResponse).toList());
         return ResponseEntity.ok(response);
+    }
+
+    private boolean isAuthenticated() {
+        if (httpRequest == null) {
+            return false;
+        }
+        CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+        return callContext != null && callContext.getUsername() != null && !callContext.getUsername().isBlank();
     }
 
     private boolean isAdmin() {

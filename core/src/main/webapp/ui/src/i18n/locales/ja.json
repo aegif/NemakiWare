@@ -99,12 +99,13 @@
       "filesystemImportExport": "ファイルシステム インポート/エクスポート",
       "integrationSettings": "連携設定",
       "configViewer": "設定ビューア",
-      "purview": "Purview / Atlas",
+      "purview": "Microsoft Purview",
       "rssManagement": "RSSトークン管理",
-      "accountSettings": "アカウント設定"
+      "accountSettings": "アカウント設定",
+      "lineageJournalTitle": "Lineage ジャーナル"
     },
   "purviewManagement": {
-    "title": "Purview / Atlas 管理",
+    "title": "Microsoft Purview 管理",
     "actions": {
       "testConnection": "接続確認",
       "lookupGovernance": "Governance 参照",
@@ -122,7 +123,7 @@
     "alerts": {
       "loadFailed": "Purview 状態の読み込みに失敗しました",
       "connectionFailed": "Purview 接続に失敗しました",
-      "featureDisabled": "Purview 機能が無効です",
+      "featureDisabled": "Purview / Atlas どちらも無効です",
       "applyRequired": "Purview schema の適用が必要です",
       "applyRequiredDescription": "type definitions を apply してから同期ジョブを流す構成です。",
       "deadLettersPresent": "dead-letter が残っています",
@@ -2610,8 +2611,10 @@
       "microsoft": "Microsoft認証",
       "saml": "SAML",
       "directorySync": "ディレクトリ同期",
-      "purview": "Purview / Atlas",
+      "purview": "Microsoft Purview",
       "lineage": "Lineage ジャーナル",
+      "atlas": "Apache Atlas",
+      "dataplex": "Google Dataplex",
       "lineageJournalTitle": "Lineage ジャーナル"
     },
     "save": "保存",
@@ -2621,6 +2624,8 @@
     "connectionSuccess": "接続に成功しました",
     "connectionFailure": "接続に失敗しました",
     "connectionDisabled": "連携が無効です",
+    "dualBackendWarning": "複数のバックエンドが有効です",
+    "dualBackendWarningDescription": "Purview と Atlas の両方のバックエンドが有効です。一度にアクティブにできるバックエンドは1つのみです。Purview が優先されます。",
     "overriddenWarning": "この設定は {{source}} で上書きされているため、管理画面からは変更できません",
     "source": {
       "system_property": "システムプロパティ",
@@ -2661,25 +2666,19 @@
       "notice": "ディレクトリ同期のスケジュール設定です。変更は保存後、約60秒以内にスケジューラに反映されます（再起動不要）。"
     },
     "purview": {
-      "enabled": "Purview / Atlas 連携を有効化",
-      "authType": "認証方式",
-      "authTypeOAuth2": "OAuth2 (Microsoft Purview)",
-      "authTypeBasic": "Basic Auth (Apache Atlas)",
+      "enabled": "Microsoft Purview 連携を有効化",
       "endpoint": "エンドポイントURL",
       "atlasBasePath": "Atlas API ベースパス",
       "basePathPurview": "datamap/api/atlas/v2 (Purview DataMap)",
       "basePathCatalog": "catalog/api/atlas/v2 (Purview Catalog)",
-      "basePathAtlas": "api/atlas/v2 (Atlas on-prem)",
       "tenantId": "テナントID",
       "clientId": "クライアントID",
       "clientSecret": "クライアントシークレット",
-      "basicUsername": "Basic Auth ユーザー名",
-      "basicPassword": "Basic Auth パスワード",
       "collection": "コレクション名",
       "syncCron": "増分同期スケジュール (cron式)",
       "syncCronHelp": "空の場合はスケジュール無効。例: 0 0 3 * * ? (毎日3時)",
       "betaNotice": "この機能はベータ版です。",
-      "disabledNotice": "Purview / Atlas 連携は現在無効です。"
+      "disabledNotice": "Microsoft Purview 連携は現在無効です。"
     },
     "lineage": {
       "mode": "Lineageモード",
@@ -2722,6 +2721,8 @@
       "leaderTtlSeconds": "リーダー TTL (秒)",
       "leaderTtlSecondsHelp": "ハートビートが途絶えてからリーダーシップが失効するまでの時間。デフォルト: 60秒",
       "internalApiNotice": "イベントデータの閲覧・リプレイ機能は現在提供されていません。この画面では設定のみ変更できます。",
+      "journalLinkNotice": "ジャーナルモードが有効です。イベントの閲覧・リプレイは Lineage ジャーナル画面で行えます。",
+      "journalLinkLabel": "Lineage ジャーナルを開く",
       "deadLetter": "Dead-letter",
       "deadLetterTitle": "Dead-letter イベント",
       "deadLetterEmpty": "Dead-letter イベントはありません",
@@ -2760,18 +2761,25 @@
       "storeActive": "ストア稼働状態",
       "backlog": "バックログ",
       "nonTerminal": "未配信",
+      "nonTerminalByTarget": "ターゲット別バックログ",
       "estimatedSize": "推定サイズ",
       "replayAllConfirm": "未リプレイのDead-letterを全てリプレイしますか？",
-      "replayedCount": "{{count}} 件リプレイしました"
+      "replayedCount": "{{count}} 件リプレイしました",
+      "repoOverridesActive": "リポジトリ単位の有効化あり"
     },
     "atlas": {
       "title": "Apache Atlas 設定",
       "enabled": "Atlas 連携を有効化",
       "endpoint": "Atlas エンドポイント URL",
-      "endpointHelp": "例: https://atlas.example.com:21443",
+      "endpointHelp": "Apache Atlas REST API のベースURL",
       "username": "ユーザー名",
       "password": "パスワード",
-      "notice": "Apache Atlas との直接連携設定です。Purview 経由の Atlas API とは異なります。"
+      "collection": "コレクション名",
+      "syncCron": "増分同期スケジュール (cron式)",
+      "syncCronHelp": "空の場合はスケジュール無効。例: 0 0 3 * * ? (毎日3時)",
+      "testConnection": "Atlas 接続テスト",
+      "notice": "Apache Atlas との直接連携設定です。Basic Auth を使用してオンプレミスの Atlas に接続します。",
+      "disabledNotice": "Atlas 連携は現在無効です。"
     },
     "dataplex": {
       "title": "Google Dataplex 設定",

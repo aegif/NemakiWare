@@ -1,7 +1,8 @@
 package jp.aegif.nemaki.rest.purview.sync;
 
 import jp.aegif.nemaki.rest.purview.publish.PurviewArchivePublishService;
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
+import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.state.PurviewCursorStateService;
 import jp.aegif.nemaki.rest.purview.relationship.PurviewDocumentArchiveRelationshipService;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
@@ -38,7 +39,7 @@ import jp.aegif.nemaki.model.Document;
 
 public class PurviewArchiveReconciliationServiceImplTest {
 
-    private PurviewConfig purviewConfig;
+    private MetadataCatalogConnectionResolver connectionResolver;
     private PurviewSchemaPlannerService schemaPlannerService;
     private PurviewLockStateService lockStateService;
     private PurviewJobStateService jobStateService;
@@ -53,7 +54,7 @@ public class PurviewArchiveReconciliationServiceImplTest {
 
     @BeforeEach
     public void setUp() {
-        purviewConfig = mock(PurviewConfig.class);
+        connectionResolver = mock(MetadataCatalogConnectionResolver.class);
         schemaPlannerService = mock(PurviewSchemaPlannerService.class);
         lockStateService = mock(PurviewLockStateService.class);
         jobStateService = mock(PurviewJobStateService.class);
@@ -70,17 +71,13 @@ public class PurviewArchiveReconciliationServiceImplTest {
         when(lockStateService.tryAcquireRepositoryLock(any(), any(), any(), any())).thenReturn(true);
         when(tombstoneStateService.saveTombstoneState(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(archivePublishService.buildRepositoryArchiveSnapshot(any())).thenReturn("");
-        when(purviewConfig.getEndpoint()).thenReturn("https://example.purview.azure.com");
-        when(purviewConfig.getAtlasBasePath()).thenReturn("datamap/api/atlas/v2");
-        when(purviewConfig.getTenantId()).thenReturn("tenant-id");
-        when(purviewConfig.getClientId()).thenReturn("client-id");
-        when(purviewConfig.getClientSecret()).thenReturn("client-secret");
-        when(purviewConfig.getConnectTimeoutMs()).thenReturn(5000);
-        when(purviewConfig.getReadTimeoutMs()).thenReturn(30000);
+        when(connectionResolver.buildConnectionRequest()).thenReturn(
+                new PurviewConnectionRequest("https://example-account.purview.azure.com",
+                        "datamap/api/atlas/v2", "tenant-123", "client-123", "secret-123", 5000, 30000));
         when(documentArchiveRelationshipService.upsertDocumentArchiveRelationships(any(), any())).thenReturn(0);
 
         service = new PurviewArchiveReconciliationServiceImpl(
-                purviewConfig,
+                connectionResolver,
                 schemaPlannerService,
                 lockStateService,
                 jobStateService,

@@ -287,7 +287,7 @@ class CouchLineageJournalStoreTest {
 
         when(row.getDoc()).thenReturn(toDocument(docProps));
         when(viewResult.getRows()).thenReturn(List.of(row));
-        doReturn(viewResult).when(mockClient).queryView(eq("lineage"), eq("by_repository_and_time"), any(Map.class));
+        doReturn(viewResult).when(mockClient).queryView(eq("lineage"), eq("by_occurred_at"), any(Map.class));
 
         int purged = store.purgeOlderThan(Instant.now());
         assertEquals(0, purged);
@@ -312,7 +312,7 @@ class CouchLineageJournalStoreTest {
 
         when(row.getDoc()).thenReturn(toDocument(docProps));
         when(viewResult.getRows()).thenReturn(List.of(row));
-        doReturn(viewResult).when(mockClient).queryView(eq("lineage"), eq("by_repository_and_time"), any(Map.class));
+        doReturn(viewResult).when(mockClient).queryView(eq("lineage"), eq("by_occurred_at"), any(Map.class));
 
         // Return doc with _rev for deletion
         Map<String, Object> fullDoc = new HashMap<>(docProps);
@@ -464,7 +464,7 @@ class CouchLineageJournalStoreTest {
 
         when(row.getDoc()).thenReturn(toDocument(docProps));
         when(viewResult.getRows()).thenReturn(List.of(row));
-        doReturn(viewResult).when(mockClient).queryView(eq("lineage"), eq("by_repository_and_process_type"), any(Map.class));
+        doReturn(viewResult).when(mockClient).queryView(eq("lineage"), eq("by_repo_process_type_time"), any(Map.class));
 
         List<LineageEvent> results = store.findByProcessType("bedroom", LineageProcessType.IMPORT_FILESYSTEM, 10, 0);
         assertEquals(1, results.size());

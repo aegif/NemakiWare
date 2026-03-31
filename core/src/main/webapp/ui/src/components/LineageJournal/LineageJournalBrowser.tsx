@@ -113,8 +113,10 @@ export default function LineageJournalBrowser() {
             setPagination((prev) => ({ ...prev, current: 1 }));
           }}
           options={[
-            'CREATE_DOCUMENT', 'UPDATE_DOCUMENT', 'DELETE_DOCUMENT',
-            'IMPORT_UPLOADED', 'EXPORT_ZIP_FOLDER', 'ARCHIVE_COLD',
+            'ARCHIVE_COLD', 'ARCHIVE_LOCAL',
+            'CLOUD_SYNC_UPLOAD', 'CLOUD_SYNC_DOWNLOAD',
+            'IMPORT_FILESYSTEM', 'IMPORT_UPLOADED',
+            'EXPORT_FILESYSTEM', 'EXPORT_ZIP_FOLDER', 'EXPORT_SELECTED_OBJECTS',
           ].map((pt) => ({ label: pt, value: pt }))}
         />
         <Button icon={<ReloadOutlined />} onClick={fetchEvents} loading={loading}>

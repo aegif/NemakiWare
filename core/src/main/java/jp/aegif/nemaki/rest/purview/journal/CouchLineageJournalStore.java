@@ -223,6 +223,29 @@ public class CouchLineageJournalStore implements LineageJournalStore {
                         "var s = t[k]; if (s === 'PENDING' || s === 'FAILED' || s === 'PROJECTING') { emit([k, doc.repositoryId], null); } } } } }",
                 "_count");
 
+        // View 12: projecting_by_claimed_at — PROJECTING events ordered by claimedAt for stale reaping.
+        // Key: [target, claimedAt], where claimedAt falls back to occurredAt for pre-upgrade events.
+        // This allows scanning from oldest-claimed first so stale events are always found,
+        // regardless of the sample window size.
+        client.createOrUpdateView(DESIGN_DOC, "projecting_by_claimed_at",
+                "function(doc) { if (doc.type === 'lineage_event' && doc.publishStatusByTarget) { " +
+                        "var t = doc.publishStatusByTarget; var c = doc.claimedAtByTarget || {}; " +
+                        "for (var k in t) { if (t.hasOwnProperty(k) && t[k] === 'PROJECTING') { " +
+                        "var ts = c[k] || doc.occurredAt || ''; emit([k, ts], null); } } } }",
+                null);
+
+        // View 13: by_process_type_time — processType + occurredAt descending for time-ordered filtered listings
+        client.createOrUpdateView(DESIGN_DOC, "by_process_type_time",
+                "function(doc) { if (doc.type === 'lineage_event' && doc.processType && doc.occurredAt) { " +
+                        "emit([doc.processType, doc.occurredAt], null); } }",
+                null);
+
+        // View 14: by_repo_process_type_time — repositoryId + processType + occurredAt for filtered listings per repo
+        client.createOrUpdateView(DESIGN_DOC, "by_repo_process_type_time",
+                "function(doc) { if (doc.type === 'lineage_event' && doc.repositoryId && doc.processType && doc.occurredAt) { " +
+                        "emit([doc.repositoryId, doc.processType, doc.occurredAt], null); } }",
+                null);
+
         logger.info("Lineage journal views deployed to design document '{}'", DESIGN_DOC);
     }
 
@@ -289,17 +312,18 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         if (!ensureClientForRead()) {
             return List.of();
         }
+        // Use by_repo_process_type_time view: key [repositoryId, processType, occurredAt]
+        // descending=true gives newest-first ordering, consistent with unfiltered listings
         Map<String, Object> params = new HashMap<>();
-        List<String> key = List.of(repositoryId, processType.name());
-        params.put("startkey", key);
-        params.put("endkey", key);
-        params.put("reduce", false);
+        params.put("startkey", List.of(repositoryId, processType.name(), "\ufff0"));
+        params.put("endkey", List.of(repositoryId, processType.name(), ""));
+        params.put("descending", true);
         params.put("limit", limit);
         if (offset > 0) {
             params.put("skip", offset);
         }
         params.put("include_docs", true);
-        return queryEventsFromView("by_repository_and_process_type", params);
+        return queryEventsFromView("by_repo_process_type_time", params);
     }
 
     @Override
@@ -308,17 +332,19 @@ public class CouchLineageJournalStore implements LineageJournalStore {
             return List.of();
         }
 
-        // Use by_process_type view with reduce=false to list documents
+        // Use by_process_type_time view: key [processType, occurredAt]
+        // descending=true gives newest-first ordering, consistent with unfiltered listings
         Map<String, Object> params = new HashMap<>();
-        params.put("key", processType.name());
-        params.put("reduce", false);
+        params.put("startkey", List.of(processType.name(), "\ufff0"));
+        params.put("endkey", List.of(processType.name(), ""));
+        params.put("descending", true);
         params.put("limit", limit);
         if (offset > 0) {
             params.put("skip", offset);
         }
         params.put("include_docs", true);
 
-        return queryEventsFromView("by_process_type", params);
+        return queryEventsFromView("by_process_type_time", params);
     }
 
     @Override
@@ -390,18 +416,17 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         String cutoffStr = cutoff.toString();
         int totalPurged = 0;
 
-        // Query all events before cutoff time, across all repositories
-        // Use startkey ["", ""] and endkey ["\ufff0", cutoffStr]
-        // Actually, to be safe, iterate known repository prefixes or use a broad range.
-        // Since by_repository_and_time key is [repositoryId, occurredAt],
-        // we query with a broad startkey and endkey that covers all repos.
+        // Use by_occurred_at view (key = occurredAt) for accurate time-bounded purge.
+        // The previous by_repository_and_time approach with composite key
+        // [repositoryId, occurredAt] did not properly constrain time across
+        // repositories because CouchDB evaluates array keys element-by-element.
         Map<String, Object> params = new HashMap<>();
-        params.put("startkey", List.of("", ""));
-        params.put("endkey", List.of("\ufff0", cutoffStr));
+        params.put("startkey", "");
+        params.put("endkey", cutoffStr);
         params.put("limit", PURGE_BATCH_SIZE);
         params.put("include_docs", true);
 
-        List<LineageEvent> candidates = queryEventsFromView("by_repository_and_time", params);
+        List<LineageEvent> candidates = queryEventsFromView("by_occurred_at", params);
 
         List<String[]> toDelete = new ArrayList<>(); // [id, rev] pairs
         for (LineageEvent event : candidates) {
@@ -610,38 +635,42 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         Instant staleCutoff = Instant.now().minus(Duration.ofMinutes(staleMinutes));
         String staleCutoffStr = staleCutoff.toString();
 
-        List<LineageEvent> projecting = findByTargetAndStatus(
-                target, LineagePublishStatus.PROJECTING, 200);
+        // Use the projecting_by_claimed_at view to query PROJECTING events
+        // whose claimedAt (or occurredAt fallback) is <= staleCutoff.
+        // The view key is [target, claimedAt], so the range query returns
+        // only events that are actually stale — no window limitation.
+        int totalReaped = 0;
+        int batchSize = 200;
+        int maxIterations = 50; // safeguard: at most 10,000 stale events
+        for (int i = 0; i < maxIterations; i++) {
+            Map<String, Object> params = new HashMap<>();
+            params.put("startkey", List.of(target, ""));
+            params.put("endkey", List.of(target, staleCutoffStr));
+            params.put("limit", batchSize);
+            params.put("include_docs", true);
 
-        int reaped = 0;
-        for (LineageEvent event : projecting) {
-            try {
-                String docId = CouchLineageEvent.ID_PREFIX + event.eventId();
-                @SuppressWarnings("unchecked")
-                Map<String, Object> doc = (Map<String, Object>) getLineageClient().get(Map.class, docId, null);
-                if (doc == null) continue;
+            List<LineageEvent> staleProjecting = queryEventsFromView("projecting_by_claimed_at", params);
+            if (staleProjecting.isEmpty()) break;
 
-                // Check claimedAtByTarget for accurate staleness
-                @SuppressWarnings("unchecked")
-                Map<String, String> claimedAtMap = (Map<String, String>) doc.get("claimedAtByTarget");
-                String claimedAt = (claimedAtMap != null) ? claimedAtMap.get(target) : null;
-
-                // Fall back to occurredAt if claimedAt not present (pre-upgrade events)
-                String compareTs = (claimedAt != null) ? claimedAt : event.occurredAt();
-
-                if (compareTs.compareTo(staleCutoffStr) < 0) {
+            int batchReaped = 0;
+            for (LineageEvent event : staleProjecting) {
+                try {
                     int reset = updatePublishStatus(event.eventId(), target, LineagePublishStatus.FAILED);
                     if (reset > 0) {
-                        logger.info("Reset stale PROJECTING event to FAILED: eventKey={}, target={}, claimedAt={}",
-                                event.eventKey(), target, compareTs);
-                        reaped++;
+                        logger.info("Reset stale PROJECTING event to FAILED: eventKey={}, target={}",
+                                event.eventKey(), target);
+                        batchReaped++;
                     }
+                } catch (Exception e) {
+                    logger.debug("Error resetting stale event {}: {}", event.eventId(), e.getMessage());
                 }
-            } catch (Exception e) {
-                logger.debug("Error checking stale event {}: {}", event.eventId(), e.getMessage());
             }
+            totalReaped += batchReaped;
+
+            // Stop iterating when no progress was made in this batch
+            if (batchReaped == 0) break;
         }
-        return reaped;
+        return totalReaped;
     }
 
     @Override

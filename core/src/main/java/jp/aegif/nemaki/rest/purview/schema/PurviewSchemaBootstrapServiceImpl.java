@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.rest.purview.schema;
 
-import jp.aegif.nemaki.rest.purview.PurviewConfig;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.state.PurviewJobState;
 import jp.aegif.nemaki.rest.purview.state.PurviewJobStateService;
 import jp.aegif.nemaki.rest.purview.state.PurviewLockStateService;
@@ -15,17 +15,17 @@ public class PurviewSchemaBootstrapServiceImpl implements PurviewSchemaBootstrap
     private static final String JOB_KIND = "TYPE_BOOTSTRAP";
     private static final String COLLECTION_SCOPE_PREFIX = "collection:";
 
-    private final PurviewConfig purviewConfig;
+    private final MetadataCatalogConnectionResolver connectionResolver;
     private final PurviewSchemaApplyService schemaApplyService;
     private final PurviewJobStateService jobStateService;
     private final PurviewLockStateService lockStateService;
 
     public PurviewSchemaBootstrapServiceImpl(
-            PurviewConfig purviewConfig,
+            MetadataCatalogConnectionResolver connectionResolver,
             PurviewSchemaApplyService schemaApplyService,
             PurviewJobStateService jobStateService,
             PurviewLockStateService lockStateService) {
-        this.purviewConfig = purviewConfig;
+        this.connectionResolver = connectionResolver;
         this.schemaApplyService = schemaApplyService;
         this.jobStateService = jobStateService;
         this.lockStateService = lockStateService;
@@ -48,7 +48,7 @@ public class PurviewSchemaBootstrapServiceImpl implements PurviewSchemaBootstrap
                     0,
                     0,
                     "",
-                    "Purview schema bootstrap is already running for collection " + purviewConfig.getCollection()));
+                    "Purview schema bootstrap is already running for collection " + connectionResolver.getCollection()));
             PurviewSchemaApplyResult rejectedApply = new PurviewSchemaApplyResult(
                     false,
                     rejectedJob.getErrorSummary(),
@@ -149,6 +149,6 @@ public class PurviewSchemaBootstrapServiceImpl implements PurviewSchemaBootstrap
     }
 
     private String buildCollectionScope() {
-        return COLLECTION_SCOPE_PREFIX + purviewConfig.getCollection();
+        return COLLECTION_SCOPE_PREFIX + connectionResolver.getCollection();
     }
 }

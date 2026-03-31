@@ -54,6 +54,11 @@ public class CouchLineageDeadLetterStore implements LineageDeadLetterStore {
             doc.put("inputs", event.inputs());
             doc.put("outputs", event.outputs());
             doc.put("snapshotAttributes", event.snapshotAttributes());
+            // Persist original target status so replay can restore the exact
+            // targets that failed, even if the target config changes later.
+            Map<String, String> originalTargets = new LinkedHashMap<>();
+            event.publishStatusByTarget().forEach((k, v) -> originalTargets.put(k, v.name()));
+            doc.put("originalPublishStatusByTarget", originalTargets);
             doc.put("reason", reason);
             doc.put("recordedAt", Instant.now().toString());
             doc.put("replayed", false);
@@ -161,13 +166,38 @@ public class CouchLineageDeadLetterStore implements LineageDeadLetterStore {
                     logger.info("Replay of dead-letter {} — no targets needed reset", eventId);
                 }
             } else {
-                // Original was purged — reconstruct with proper publishStatusByTarget
+                // Original was purged — reconstruct with targets from the dead-letter record.
+                // Use the persisted originalPublishStatusByTarget to restore exactly the
+                // targets that were active when the event failed, preventing drift when
+                // the target config changes between recording and replay.
                 LineageEvent base = reconstructEvent(doc);
                 if (base == null) return false;
 
                 Map<String, LineagePublishStatus> statusMap = new LinkedHashMap<>();
-                for (String target : lineageConfig.getTargets()) {
-                    statusMap.put(target, LineagePublishStatus.PENDING);
+                @SuppressWarnings("unchecked")
+                Map<String, String> originalTargets = (Map<String, String>) doc.get("originalPublishStatusByTarget");
+                if (originalTargets != null && !originalTargets.isEmpty()) {
+                    // Only include targets that were FAILED or DISCARDED at record time.
+                    // Already-successful targets (PUBLISHED) are excluded entirely so the
+                    // reconstructed journal row never triggers duplicate external publishes.
+                    for (Map.Entry<String, String> entry : originalTargets.entrySet()) {
+                        String statusStr = entry.getValue();
+                        if ("FAILED".equals(statusStr) || "DISCARDED".equals(statusStr)) {
+                            statusMap.put(entry.getKey(), LineagePublishStatus.PENDING);
+                        }
+                        // PUBLISHED / PROJECTING / PENDING targets are intentionally omitted
+                    }
+                } else {
+                    // Legacy dead-letter records without originalPublishStatusByTarget:
+                    // fall back to current config (best-effort)
+                    for (String target : lineageConfig.getTargets()) {
+                        statusMap.put(target, LineagePublishStatus.PENDING);
+                    }
+                }
+
+                if (statusMap.isEmpty()) {
+                    logger.warn("Replay of purged dead-letter {} — no targets to restore", eventId);
+                    return false;
                 }
 
                 LineageEvent replayEvent = new LineageEvent(

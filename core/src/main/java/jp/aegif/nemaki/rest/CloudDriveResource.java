@@ -879,6 +879,21 @@ public class CloudDriveResource extends ResourceBase {
 			result.put("provider", provider);
 			result.put("isNewVersion", isNewVersion);
 
+			// Lineage Journal: CLOUD_SYNC_DOWNLOAD (import from cloud → NemakiWare)
+			{
+				LineageConfig lc = getLineageConfig();
+				LineageEventBuilder b = new LineageEventBuilder()
+						.repositoryId(repositoryId)
+						.processType(LineageProcessType.CLOUD_SYNC_DOWNLOAD)
+						.addInput("cloud://" + provider + "/" + cloudFileId)
+						.addOutputObject(repositoryId, newObjectId)
+						.snapshotAttribute("provider", provider);
+				if (lc != null) {
+					b.targets(lc.getTargets());
+				}
+				emitLineageEvent(b.build());
+			}
+
 		} catch (Exception e) {
 			log.error("Error importing from cloud: " + e.getMessage(), e);
 			status = false;

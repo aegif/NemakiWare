@@ -1,6 +1,8 @@
 package jp.aegif.nemaki.rest.purview.governance;
 
+import jp.aegif.nemaki.rest.purview.CatalogBackendKind;
 import jp.aegif.nemaki.rest.purview.client.PurviewClientException;
+import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.PurviewConfig;
 import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.PurviewConnectionServiceImpl;
@@ -29,19 +31,19 @@ public class PurviewGovernanceServiceImpl implements PurviewGovernanceService {
     private static final String DOCUMENT_ENTITY_TYPE = "nemaki_document";
     private static final String FOLDER_ENTITY_TYPE = "nemaki_folder";
 
-    private final PurviewConfig purviewConfig;
+    private final MetadataCatalogConnectionResolver connectionResolver;
     private final ContentService contentService;
     private final ExceptionService exceptionService;
     private final PurviewEntityRegistryClient entityRegistryClient;
     private final PurviewEntityPayloadFactory entityPayloadFactory;
 
     public PurviewGovernanceServiceImpl(
-            PurviewConfig purviewConfig,
+            MetadataCatalogConnectionResolver connectionResolver,
             @Qualifier("ContentService") ContentService contentService,
             ExceptionService exceptionService,
             PurviewEntityRegistryClient entityRegistryClient,
             PurviewEntityPayloadFactory entityPayloadFactory) {
-        this.purviewConfig = purviewConfig;
+        this.connectionResolver = connectionResolver;
         this.contentService = contentService;
         this.exceptionService = exceptionService;
         this.entityRegistryClient = entityRegistryClient;
@@ -60,7 +62,7 @@ public class PurviewGovernanceServiceImpl implements PurviewGovernanceService {
         GovernanceTarget target = resolveTarget(repositoryId, content);
         if (!target.supportedObjectType()) {
             return new PurviewGovernanceView(
-                    purviewConfig.isEnabled(),
+                    connectionResolver.isAnyEnabled(),
                     false,
                     false,
                     false,
@@ -69,7 +71,7 @@ public class PurviewGovernanceServiceImpl implements PurviewGovernanceService {
                     target.objectBaseType(),
                     null,
                     null,
-                    purviewConfig.getAtlasBasePath(),
+                    resolveEffectiveBasePath(),
                     "Purview governance is available only for documents and folders",
                     List.of(),
                     List.of(),
@@ -77,7 +79,7 @@ public class PurviewGovernanceServiceImpl implements PurviewGovernanceService {
                     Map.of());
         }
 
-        if (!purviewConfig.isEnabled()) {
+        if (!connectionResolver.isAnyEnabled()) {
             return new PurviewGovernanceView(
                     false,
                     false,
@@ -88,8 +90,8 @@ public class PurviewGovernanceServiceImpl implements PurviewGovernanceService {
                     target.objectBaseType(),
                     target.entityTypeName(),
                     target.qualifiedName(),
-                    purviewConfig.getAtlasBasePath(),
-                    "Purview integration is disabled",
+                    resolveEffectiveBasePath(),
+                    "Purview / Atlas integration is disabled",
                     List.of(),
                     List.of(),
                     List.of(),
@@ -108,20 +110,21 @@ public class PurviewGovernanceServiceImpl implements PurviewGovernanceService {
                     target.objectBaseType(),
                     target.entityTypeName(),
                     target.qualifiedName(),
-                    purviewConfig.getAtlasBasePath(),
-                    "Missing Purview configuration: " + String.join(", ", missingConfiguration),
+                    resolveEffectiveBasePath(),
+                    "Missing configuration: " + String.join(", ", missingConfiguration),
                     List.of(),
                     List.of(),
                     List.of(),
                     Map.of());
         }
 
-        String lastBasePath = purviewConfig.getAtlasBasePath();
-        for (String candidateBasePath : buildCandidateBasePaths(purviewConfig.getAtlasBasePath())) {
+        String effectiveBasePath = resolveEffectiveBasePath();
+        String lastBasePath = effectiveBasePath;
+        for (String candidateBasePath : buildCandidateBasePaths(effectiveBasePath)) {
             lastBasePath = candidateBasePath;
             try {
                 Map<String, Object> response = entityRegistryClient.getEntityByUniqueAttribute(
-                        buildConnectionRequest(candidateBasePath),
+                        connectionResolver.buildConnectionRequest(candidateBasePath),
                         target.entityTypeName(),
                         "qualifiedName",
                         target.qualifiedName());
@@ -325,21 +328,25 @@ public class PurviewGovernanceServiceImpl implements PurviewGovernanceService {
         return new GovernanceTarget(false, stringValue(content.getType()), null, null);
     }
 
-    private PurviewConnectionRequest buildConnectionRequest(String atlasBasePath) {
-        return new PurviewConnectionRequest(
-                purviewConfig.getEndpoint(),
-                atlasBasePath,
-                purviewConfig.getAuthType(),
-                purviewConfig.getTenantId(),
-                purviewConfig.getClientId(),
-                purviewConfig.getClientSecret(),
-                purviewConfig.getBasicUsername(),
-                purviewConfig.getBasicPassword(),
-                purviewConfig.getConnectTimeoutMs(),
-                purviewConfig.getReadTimeoutMs());
+    private String resolveEffectiveBasePath() {
+        return switch (connectionResolver.activeBackend()) {
+            case PURVIEW -> {
+                try {
+                    yield connectionResolver.buildConnectionRequest().getAtlasBasePath();
+                } catch (IllegalStateException e) {
+                    yield PurviewConfig.DEFAULT_ATLAS_BASE_PATH;
+                }
+            }
+            case ATLAS -> "api/atlas/v2";
+            case NONE -> PurviewConfig.DEFAULT_ATLAS_BASE_PATH;
+        };
     }
 
     private List<String> buildCandidateBasePaths(String configuredBasePath) {
+        if (connectionResolver.isAtlasOnPrem()) {
+            // Atlas on-prem uses a single fixed base path
+            return List.of("api/atlas/v2");
+        }
         Set<String> candidates = new LinkedHashSet<>();
         candidates.add(configuredBasePath);
         candidates.add(PurviewConfig.DEFAULT_ATLAS_BASE_PATH);
@@ -348,29 +355,24 @@ public class PurviewGovernanceServiceImpl implements PurviewGovernanceService {
     }
 
     private List<String> getMissingConfiguration() {
-        List<String> missing = new ArrayList<>();
-        if (isBlank(purviewConfig.getEndpoint())) {
-            missing.add("endpoint");
+        try {
+            PurviewConnectionRequest request = connectionResolver.buildConnectionRequest();
+            List<String> missing = new ArrayList<>();
+            if (isBlank(request.getEndpoint())) {
+                missing.add("endpoint");
+            }
+            if (request.isBasicAuth()) {
+                if (isBlank(request.getBasicUsername())) missing.add("username");
+                if (isBlank(request.getBasicPassword())) missing.add("password");
+            } else {
+                if (isBlank(request.getTenantId())) missing.add("tenantId");
+                if (isBlank(request.getClientId())) missing.add("clientId");
+                if (isBlank(request.getClientSecret())) missing.add("clientSecret");
+            }
+            return missing;
+        } catch (IllegalStateException e) {
+            return List.of("No catalog backend enabled");
         }
-        if (purviewConfig.isBasicAuth()) {
-            if (isBlank(purviewConfig.getBasicUsername())) {
-                missing.add("basicUsername");
-            }
-            if (isBlank(purviewConfig.getBasicPassword())) {
-                missing.add("basicPassword");
-            }
-        } else {
-            if (isBlank(purviewConfig.getTenantId())) {
-                missing.add("tenantId");
-            }
-            if (isBlank(purviewConfig.getClientId())) {
-                missing.add("clientId");
-            }
-            if (isBlank(purviewConfig.getClientSecret())) {
-                missing.add("clientSecret");
-            }
-        }
-        return missing;
     }
 
     private boolean isBlank(String value) {
