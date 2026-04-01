@@ -73,6 +73,12 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         if (def.getProfileId() == null || def.getProfileId().isBlank()) {
             throw new IllegalArgumentException("profileId is required");
         }
+        if (def.getRepositoryId() == null || def.getRepositoryId().isBlank()) {
+            throw new IllegalArgumentException("repositoryId is required and cannot be removed on update");
+        }
+        if (def.getTargetFolderId() == null && def.getTargetFolderPath() == null) {
+            throw new IllegalArgumentException("Either targetFolderId or targetFolderPath is required");
+        }
         def.setUpdatedAt(Instant.now().toString());
         upsertDocument(def);
         logger.info("Updated import profile: {}", def.getProfileId());

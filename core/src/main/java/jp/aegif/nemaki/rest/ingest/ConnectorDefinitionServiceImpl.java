@@ -31,9 +31,7 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
 
     @Override
     public ConnectorDefinition create(ConnectorDefinition def) {
-        if (def.getConnectorId() == null || def.getConnectorId().isBlank()) {
-            throw new IllegalArgumentException("connectorId is required");
-        }
+        validateRequiredFields(def);
         if (exists(def.getConnectorId())) {
             throw new IllegalStateException("Connector already exists: " + def.getConnectorId());
         }
@@ -67,9 +65,7 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
 
     @Override
     public ConnectorDefinition update(ConnectorDefinition def) {
-        if (def.getConnectorId() == null || def.getConnectorId().isBlank()) {
-            throw new IllegalArgumentException("connectorId is required");
-        }
+        validateRequiredFields(def);
         def.setUpdatedAt(Instant.now().toString());
         upsertDocument(def);
         logger.info("Updated connector definition: {}", def.getConnectorId());
@@ -94,6 +90,18 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
     @Override
     public boolean exists(String connectorId) {
         return get(connectorId) != null;
+    }
+
+    private void validateRequiredFields(ConnectorDefinition def) {
+        if (def.getConnectorId() == null || def.getConnectorId().isBlank()) {
+            throw new IllegalArgumentException("connectorId is required");
+        }
+        if (def.getSourceArchetype() == null) {
+            throw new IllegalArgumentException("sourceArchetype is required");
+        }
+        if (def.getSourceSystem() == null || def.getSourceSystem().isBlank()) {
+            throw new IllegalArgumentException("sourceSystem is required");
+        }
     }
 
     // --- Internal ---

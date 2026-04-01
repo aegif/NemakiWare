@@ -334,9 +334,10 @@ public class PurviewLineageSink implements LineageTargetSink {
             case EXTERNAL_NOTE_IMPORT, EXTERNAL_ATTACHMENT_IMPORT,
                  BUSINESS_RECORD_IMPORT, CHAT_ATTACHMENT_IMPORT -> {
                 processAttrs.putIfAbsent("repositoryId", event.repositoryId());
-                if (!event.outputs().isEmpty()) {
-                    processAttrs.putIfAbsent("folderId", extractLastSegment(event.outputs().get(0)));
-                }
+                // Use targetFolderId from snapshot (set by CanonicalImportService),
+                // NOT from outputs which contains the created document objectId.
+                processAttrs.putIfAbsent("folderId",
+                        snap.getOrDefault("targetFolderId", ""));
                 processAttrs.putIfAbsent("importMode",
                         snap.getOrDefault("sourceArchetype", "external"));
                 processAttrs.putIfAbsent("sourceDescription",

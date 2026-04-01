@@ -152,7 +152,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             applySourceMetadata(repositoryId, objectId, callContext, connector, request);
 
             // 7. Emit lineage event
-            String lineageEventId = emitLineageEvent(repositoryId, objectId, connector, request);
+            String lineageEventId = emitLineageEvent(repositoryId, objectId, targetFolderId, connector, request);
 
             logger.info("Canonical import completed: requestId={}, objectId={}, profile={}, connector={}",
                     requestId, objectId, profile.getProfileId(), connector.getConnectorId());
@@ -265,15 +265,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
     }
 
-    private String emitLineageEvent(String repositoryId, String objectId,
+    private String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
                                     ConnectorDefinition connector, ExternalIngestRequest request) {
         try {
             LineageProcessType processType = resolveProcessType(connector.getSourceArchetype());
-            String sourceUri = ExternalSourceUri.build(
-                    connector.getSourceSystem(),
-                    connector.getTenantId(),
-                    request.getSourceObjectType(),
-                    request.getSourceObjectId());
+            String sourceUri = buildCanonicalSourceUri(connector, request);
 
             LineageEventBuilder builder = new LineageEventBuilder()
                     .repositoryId(repositoryId)
@@ -288,6 +284,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             if (request.getSourceObjectType() != null) {
                 builder.snapshotAttribute("sourceObjectType", request.getSourceObjectType());
+            }
+            if (targetFolderId != null) {
+                builder.snapshotAttribute("targetFolderId", targetFolderId);
             }
 
             LineageEvent event = builder.build();
@@ -337,6 +336,30 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     + "Please configure targetFolderId directly.", folderPath);
         }
         return null;
+    }
+
+    /**
+     * Builds a canonical source URI using the archetype-specific helper,
+     * normalizing the object type path segment by archetype rather than
+     * passing raw caller-supplied values.
+     */
+    private static String buildCanonicalSourceUri(ConnectorDefinition connector, ExternalIngestRequest request) {
+        String system = connector.getSourceSystem();
+        String tenant = connector.getTenantId();
+        String objectId = request.getSourceObjectId();
+        SourceArchetype archetype = connector.getSourceArchetype();
+
+        if (archetype == null) {
+            return ExternalSourceUri.build(system, tenant, request.getSourceObjectType(), objectId);
+        }
+        return switch (archetype) {
+            case FILE_SHARE -> ExternalSourceUri.forFileShare(system, tenant, objectId);
+            case COMPOUND_NOTE -> ExternalSourceUri.forNotePage(system, tenant, objectId);
+            case CHAT_CONTEXT -> ExternalSourceUri.forChatMessage(system, tenant,
+                    request.getSourceObjectType() != null ? request.getSourceObjectType() : "unknown", objectId);
+            case BUSINESS_RECORD -> ExternalSourceUri.forBusinessRecord(system, tenant,
+                    request.getSourceObjectType() != null ? request.getSourceObjectType() : "record", objectId);
+        };
     }
 
     private static LineageProcessType resolveProcessType(SourceArchetype archetype) {

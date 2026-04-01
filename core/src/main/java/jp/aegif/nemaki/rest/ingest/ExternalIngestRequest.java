@@ -27,7 +27,8 @@ public class ExternalIngestRequest {
     private String correlationId;
     private String fileName;
     private String mimeType;
-    private Map<String, String> metadata;
+    /** Structured external context — persisted as nemaki:externalContext JSON. Supports nested objects/arrays. */
+    private Map<String, Object> metadata;
     private Map<String, String> overrides;
 
     @JsonIgnore
@@ -78,8 +79,8 @@ public class ExternalIngestRequest {
     public String getMimeType() { return mimeType; }
     public void setMimeType(String mimeType) { this.mimeType = mimeType; }
 
-    public Map<String, String> getMetadata() { return metadata; }
-    public void setMetadata(Map<String, String> metadata) { this.metadata = metadata; }
+    public Map<String, Object> getMetadata() { return metadata; }
+    public void setMetadata(Map<String, Object> metadata) { this.metadata = metadata; }
 
     public Map<String, String> getOverrides() { return overrides; }
     public void setOverrides(Map<String, String> overrides) { this.overrides = overrides; }
