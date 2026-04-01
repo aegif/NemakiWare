@@ -56,6 +56,7 @@ public class CatalogPropertyMappingResolver {
     // Per-publish-run cache — cleared by clearResolvedCache() between runs
     private volatile Map<String, ResolvedMapping> cachedGlobalUnion;
     private volatile Map<String, Map<String, ResolvedMapping>> cachedPerRepo = new LinkedHashMap<>();
+    private volatile Map<String, Map<String, Map<String, PropertyMapping>>> cachedLoadedMappings = new LinkedHashMap<>();
 
     public CatalogPropertyMappingResolver(IntegrationSettingsService settingsService,
                                           TypeService typeService,
@@ -72,6 +73,7 @@ public class CatalogPropertyMappingResolver {
     public void clearResolvedCache() {
         cachedGlobalUnion = null;
         cachedPerRepo = new LinkedHashMap<>();
+        cachedLoadedMappings = new LinkedHashMap<>();
     }
 
     // ── Data structures ──────────────────────────────────────────────
@@ -177,6 +179,10 @@ public class CatalogPropertyMappingResolver {
         if (settingsService == null || repositoryId == null) {
             return Collections.emptyMap();
         }
+        Map<String, Map<String, PropertyMapping>> cached = cachedLoadedMappings.get(repositoryId);
+        if (cached != null) {
+            return cached;
+        }
         String json = settingsService.readSetting(SETTINGS_KEY_PREFIX + repositoryId);
         if (json == null || json.isBlank()) {
             // Check for legacy global key and warn
@@ -187,9 +193,12 @@ public class CatalogPropertyMappingResolver {
                         + "Please re-configure mappings via the admin UI.",
                         LEGACY_GLOBAL_KEY, SETTINGS_KEY_PREFIX);
             }
+            cachedLoadedMappings.put(repositoryId, Collections.emptyMap());
             return Collections.emptyMap();
         }
-        return parseMappingsJson(json);
+        Map<String, Map<String, PropertyMapping>> result = parseMappingsJson(json);
+        cachedLoadedMappings.put(repositoryId, result);
+        return result;
     }
 
     private Map<String, Map<String, PropertyMapping>> parseMappingsJson(String json) {
