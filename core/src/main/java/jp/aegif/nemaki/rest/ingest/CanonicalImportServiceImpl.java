@@ -111,6 +111,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     "Archetype " + connector.getSourceArchetype() + " is not allowed by profile '" + profile.getProfileId() + "'");
         }
 
+        // 3b. Archetype-specific validation
+        if (connector.getSourceArchetype() == SourceArchetype.CHAT_CONTEXT) {
+            String channelId = resolveChannelId(request);
+            if (channelId == null) {
+                return ExternalIngestResult.error(requestId,
+                        "metadata.channelId is required for CHAT_CONTEXT archetype");
+            }
+        }
+
         // 4. Dry-run check
         if (request.isDryRun()) {
             // TODO Phase 2: actual dedupe check
@@ -335,6 +344,17 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 var objectData = objectService.getObjectByPath(callContext, repositoryId,
                         folderPath, null, Boolean.FALSE, null, null, Boolean.FALSE, Boolean.FALSE, null);
                 if (objectData != null && objectData.getId() != null) {
+                    // Verify it's actually a folder, not a document
+                    Object baseTypeId = objectData.getProperties() != null
+                            ? objectData.getProperties().getProperties().get("cmis:baseTypeId")
+                            : null;
+                    String baseType = baseTypeId instanceof org.apache.chemistry.opencmis.commons.data.PropertyData<?> pd
+                            ? String.valueOf(pd.getFirstValue()) : null;
+                    if (baseType != null && !"cmis:folder".equals(baseType)) {
+                        logger.warn("targetFolderPath '{}' resolved to a {} ({}), not a folder",
+                                folderPath, baseType, objectData.getId());
+                        return null;
+                    }
                     logger.debug("Resolved targetFolderPath '{}' to folderId '{}'", folderPath, objectData.getId());
                     return objectData.getId();
                 }
@@ -357,6 +377,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         String objectId = request.getSourceObjectId();
         SourceArchetype archetype = connector.getSourceArchetype();
 
+        // Attachment detection: regardless of archetype, attachments use the files path
+        if (isAttachmentObjectType(request.getSourceObjectType())) {
+            return ExternalSourceUri.forFileShare(system, tenant, objectId);
+        }
+
         if (archetype == null) {
             return ExternalSourceUri.build(system, tenant, request.getSourceObjectType(), objectId);
         }
@@ -364,17 +389,26 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             case FILE_SHARE -> ExternalSourceUri.forFileShare(system, tenant, objectId);
             case COMPOUND_NOTE -> ExternalSourceUri.forNotePage(system, tenant, objectId);
             case CHAT_CONTEXT -> {
-                // channelId comes from metadata, not sourceObjectType
-                String channelId = "unknown";
-                if (request.getMetadata() != null) {
-                    Object ch = request.getMetadata().get("channelId");
-                    if (ch instanceof String s && !s.isBlank()) channelId = s;
-                }
+                String channelId = resolveChannelId(request);
                 yield ExternalSourceUri.forChatMessage(system, tenant, channelId, objectId);
             }
             case BUSINESS_RECORD -> ExternalSourceUri.forBusinessRecord(system, tenant,
                     request.getSourceObjectType() != null ? request.getSourceObjectType() : "record", objectId);
         };
+    }
+
+    private static boolean isAttachmentObjectType(String sourceObjectType) {
+        if (sourceObjectType == null) return false;
+        String lower = sourceObjectType.toLowerCase();
+        return "attachment".equals(lower) || "file".equals(lower);
+    }
+
+    private static String resolveChannelId(ExternalIngestRequest request) {
+        if (request.getMetadata() != null) {
+            Object ch = request.getMetadata().get("channelId");
+            if (ch instanceof String s && !s.isBlank()) return s;
+        }
+        return null;
     }
 
     /**
