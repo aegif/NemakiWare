@@ -206,6 +206,34 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testChatContextRejectsWhenChannelIdMissing() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        when(profileService.get("p1")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.CHAT_CONTEXT);
+        connector.setSourceSystem("slack");
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("msg-1");
+        // No metadata.channelId
+
+        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        assertFalse(result.isSuccess());
+        assertTrue(result.errors().get(0).contains("channelId"));
+    }
+
+    @Test
     void testAttachmentSourceObjectTypeUsesAttachmentProcessType() {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
