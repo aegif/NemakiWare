@@ -53,12 +53,25 @@ public class CatalogPropertyMappingResolver {
     private final TypeService typeService;
     private final RepositoryInfoMap repositoryInfoMap;
 
+    // Per-publish-run cache — cleared by clearResolvedCache() between runs
+    private volatile Map<String, ResolvedMapping> cachedGlobalUnion;
+    private volatile Map<String, Map<String, ResolvedMapping>> cachedPerRepo = new LinkedHashMap<>();
+
     public CatalogPropertyMappingResolver(IntegrationSettingsService settingsService,
                                           TypeService typeService,
                                           RepositoryInfoMap repositoryInfoMap) {
         this.settingsService = settingsService;
         this.typeService = typeService;
         this.repositoryInfoMap = repositoryInfoMap;
+    }
+
+    /**
+     * Clears the resolved mapping cache. Should be called at the start of each
+     * publish run or when mappings/type definitions may have changed.
+     */
+    public void clearResolvedCache() {
+        cachedGlobalUnion = null;
+        cachedPerRepo = new LinkedHashMap<>();
     }
 
     // ── Data structures ──────────────────────────────────────────────
@@ -105,6 +118,10 @@ public class CatalogPropertyMappingResolver {
      * @return outer key = catalogName, value = resolved mapping (deduplicated)
      */
     public Map<String, ResolvedMapping> getResolvedMappings(String repositoryId) {
+        Map<String, ResolvedMapping> cached = cachedPerRepo.get(repositoryId);
+        if (cached != null) {
+            return cached;
+        }
         Map<String, Map<String, PropertyMapping>> all = loadMappings(repositoryId);
         if (all.isEmpty()) {
             return Collections.emptyMap();
@@ -149,6 +166,7 @@ public class CatalogPropertyMappingResolver {
                 result.putIfAbsent(m.catalogName(), resolved);
             }
         }
+        cachedPerRepo.put(repositoryId, result);
         return result;
     }
 
@@ -203,6 +221,9 @@ public class CatalogPropertyMappingResolver {
      * first occurrence wins.
      */
     public Map<String, ResolvedMapping> getResolvedMappingsAllRepositories() {
+        if (cachedGlobalUnion != null) {
+            return cachedGlobalUnion;
+        }
         if (repositoryInfoMap == null) {
             return Collections.emptyMap();
         }
@@ -226,6 +247,7 @@ public class CatalogPropertyMappingResolver {
                 }
             }
         }
+        cachedGlobalUnion = union;
         return union;
     }
 

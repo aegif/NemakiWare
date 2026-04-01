@@ -242,6 +242,8 @@ class CatalogPropertyMappingResolverTest {
             CatalogPropertyMappingResolver r = resolver(service, typeService);
             String fp1 = r.computeMappingFingerprint("bedroom");
 
+            // Simulate type definition change: clear cache and re-resolve
+            r.clearResolvedCache();
             when(typeService.getPropertyDefinitionCoreByPropertyId("bedroom", "nemaki:x")).thenReturn(intCore);
             String fp2 = r.computeMappingFingerprint("bedroom");
 

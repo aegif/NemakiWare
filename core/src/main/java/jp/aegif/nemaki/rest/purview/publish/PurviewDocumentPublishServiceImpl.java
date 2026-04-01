@@ -69,6 +69,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
 
     @Override
     public int publishRepositoryHierarchy(String repositoryId) {
+        entityPayloadFactory.clearPropertyMappingCache();
         RepositoryInfo repositoryInfo = resolveRepositoryInfo(repositoryId);
         String rootFolderId = resolveRootFolderId(repositoryId);
         Deque<String> folderQueue = new ArrayDeque<>();
@@ -154,6 +155,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         if (contents == null || contents.isEmpty()) {
             return 0;
         }
+        entityPayloadFactory.clearPropertyMappingCache();
 
         Map<String, String> pathCache = new HashMap<>();
         String rootFolderId = resolveRootFolderIdQuietly(repositoryId);

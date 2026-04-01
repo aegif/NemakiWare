@@ -44,6 +44,16 @@ public class PurviewEntityPayloadFactory {
         this.propertyMappingResolver = propertyMappingResolver;
     }
 
+    /**
+     * Clears the resolved mapping cache in the underlying resolver.
+     * Call at the start of each publish run to ensure fresh type definitions are used.
+     */
+    public void clearPropertyMappingCache() {
+        if (propertyMappingResolver != null) {
+            propertyMappingResolver.clearResolvedCache();
+        }
+    }
+
     public Map<String, Object> buildBulkPayload(List<Map<String, Object>> entities) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("referredEntities", Map.of());
