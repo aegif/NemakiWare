@@ -50,7 +50,7 @@
     "items": "{{count}}個",
     "moreResults": "さらに結果があります",
     "unknownError": "不明なエラー",
-    "beta": "Beta",
+    "beta": "ベータ",
     "showSettings": "設定を表示",
     "hideSettings": "設定を非表示",
     "validation": {
