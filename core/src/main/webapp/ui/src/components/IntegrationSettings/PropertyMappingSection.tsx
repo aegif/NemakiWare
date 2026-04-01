@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Card, Table, Switch, Input, Button, Select, Space, Typography, message, Spin, Empty, Tag } from 'antd';
+import { Alert, Card, Table, Switch, Input, Button, Select, Space, Typography, message, Spin, Empty, Tag } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { AuthService } from '../../services/auth';
 import {
@@ -48,6 +48,7 @@ const PropertyMappingSection: React.FC<Props> = ({ repositoryId }) => {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [conflictWarnings, setConflictWarnings] = useState<string[]>([]);
   const [customTypes, setCustomTypes] = useState<TypeInfo[]>([]);
   const [selectedTypeId, setSelectedTypeId] = useState<string | undefined>();
   const [mappings, setMappings] = useState<Record<string, Record<string, PropertyMappingEntry>>>({});
@@ -117,6 +118,7 @@ const PropertyMappingSection: React.FC<Props> = ({ repositoryId }) => {
     try {
       const data = await getPropertyMappings(repositoryId);
       setMappings(data.mappings || {});
+      setConflictWarnings(data.warnings || []);
     } catch (err) {
       console.error('Failed to load property mappings:', err);
     }
@@ -187,11 +189,8 @@ const PropertyMappingSection: React.FC<Props> = ({ repositoryId }) => {
       const result = await updatePropertyMappings(repositoryId, updated);
       setMappings(updated);
       message.success(t('integrationSettings.propertyMappingSaved'));
-      // Show cross-repo conflict warnings if any
-      const warnings = result.warnings;
-      if (warnings && warnings.length > 0) {
-        message.warning(warnings.join('\n'), 8);
-      }
+      // Update persistent conflict warnings from save response
+      setConflictWarnings(result.warnings || []);
     } catch (err) {
       const detail = err instanceof Error ? err.message : '';
       message.error(detail || t('integrationSettings.propertyMappingSaveFailed'));
@@ -271,6 +270,14 @@ const PropertyMappingSection: React.FC<Props> = ({ repositoryId }) => {
   return (
     <Card title={t('integrationSettings.propertyMapping')} style={{ marginTop: 16 }}>
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
+        {conflictWarnings.length > 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            message={t('integrationSettings.crossRepoConflict')}
+            description={conflictWarnings.map((w, i) => <div key={i}>{w}</div>)}
+          />
+        )}
         <Space>
           <Text>{t('integrationSettings.selectType')}:</Text>
           <Select

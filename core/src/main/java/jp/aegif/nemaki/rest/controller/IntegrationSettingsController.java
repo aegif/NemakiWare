@@ -454,6 +454,12 @@ public class IntegrationSettingsController {
 			jsonMappings.put(typeEntry.getKey(), typeMap);
 		}
 		response.put("mappings", jsonMappings);
+		// Include cross-repo conflict warnings so the admin can see if any
+		// of this repository's mappings are inactive due to type mismatches
+		List<String> conflicts = propertyMappingResolver.detectCrossRepoConflicts(repositoryId);
+		if (!conflicts.isEmpty()) {
+			response.put("warnings", conflicts);
+		}
 		return ResponseEntity.ok(response);
 	}
 

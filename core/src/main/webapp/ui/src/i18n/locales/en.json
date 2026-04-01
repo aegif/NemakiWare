@@ -2633,6 +2633,7 @@
     "propertyMappingSaveFailed": "Failed to save property mappings",
     "noCustomTypes": "No custom types with properties found in this repository",
     "blankCatalogNameError": "Catalog attribute name must not be empty for enabled properties: {{properties}}",
+    "crossRepoConflict": "Some mappings in this repository conflict with other repositories",
     "connectionSuccess": "Connection successful",
     "connectionFailure": "Connection failed",
     "connectionDisabled": "Integration is disabled",

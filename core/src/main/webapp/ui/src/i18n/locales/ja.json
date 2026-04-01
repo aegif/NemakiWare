@@ -2633,6 +2633,7 @@
     "propertyMappingSaveFailed": "プロパティマッピングの保存に失敗しました",
     "noCustomTypes": "カスタムプロパティを持つカスタムタイプがこのリポジトリに存在しません",
     "blankCatalogNameError": "有効なプロパティのカタログ属性名は空にできません: {{properties}}",
+    "crossRepoConflict": "このリポジトリの一部のマッピングが他のリポジトリと競合しています",
     "connectionSuccess": "接続に成功しました",
     "connectionFailure": "接続に失敗しました",
     "connectionDisabled": "連携が無効です",

@@ -126,6 +126,7 @@ export interface PropertyMappingEntry {
 export interface PropertyMappingsResponse {
   mappings: Record<string, Record<string, PropertyMappingEntry>>;
   message?: string;
+  warnings?: string[];
 }
 
 export async function getPropertyMappings(repositoryId: string): Promise<PropertyMappingsResponse> {
