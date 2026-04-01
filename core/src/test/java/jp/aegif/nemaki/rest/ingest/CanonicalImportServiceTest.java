@@ -206,6 +206,37 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testAttachmentSourceObjectTypeUsesAttachmentProcessType() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        when(profileService.get("p1")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.COMPOUND_NOTE);
+        connector.setSourceSystem("notion");
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn("attachment-id");
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("attach-1");
+        req.setSourceObjectType("attachment");
+
+        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        assertTrue(result.isSuccess());
+    }
+
+    @Test
     void testExecuteHappyPath() {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");

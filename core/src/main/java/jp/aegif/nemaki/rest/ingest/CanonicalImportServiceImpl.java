@@ -118,7 +118,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
 
         // 5. Create document
-        String targetFolderId = resolveTargetFolderId(profile, repositoryId);
+        String targetFolderId = resolveTargetFolderId(profile, repositoryId, callContext);
         if (targetFolderId == null || targetFolderId.isBlank()) {
             return ExternalIngestResult.error(requestId,
                     "Profile has no resolvable target folder (neither targetFolderId nor targetFolderPath)");
@@ -268,7 +268,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
                                     ConnectorDefinition connector, ExternalIngestRequest request) {
         try {
-            LineageProcessType processType = resolveProcessType(connector.getSourceArchetype());
+            LineageProcessType processType = resolveProcessType(connector.getSourceArchetype(), request.getSourceObjectType());
             String sourceUri = buildCanonicalSourceUri(connector, request);
 
             LineageEventBuilder builder = new LineageEventBuilder()
@@ -320,20 +320,28 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
-     * Resolves a concrete folder ID from the profile. If targetFolderId is set,
-     * use it directly. If only targetFolderPath is set, resolve via getObjectByPath
-     * (Phase 2 enhancement — currently logs a warning and returns null).
+     * Resolves a concrete folder ID from the profile. Uses targetFolderId if set,
+     * otherwise resolves targetFolderPath via ObjectService.getObjectByPath.
      */
-    private String resolveTargetFolderId(ImportProfileDefinition profile, String repositoryId) {
+    private String resolveTargetFolderId(ImportProfileDefinition profile, String repositoryId,
+                                         CallContext callContext) {
         String folderId = profile.getTargetFolderId();
         if (folderId != null && !folderId.isBlank()) {
             return folderId;
         }
         String folderPath = profile.getTargetFolderPath();
         if (folderPath != null && !folderPath.isBlank()) {
-            // TODO Phase 2: resolve folderPath to folderId via ObjectService.getObjectByPath
-            logger.warn("targetFolderPath '{}' is configured but path resolution is not yet implemented. "
-                    + "Please configure targetFolderId directly.", folderPath);
+            try {
+                var objectData = objectService.getObjectByPath(callContext, repositoryId,
+                        folderPath, null, Boolean.FALSE, null, null, Boolean.FALSE, Boolean.FALSE, null);
+                if (objectData != null && objectData.getId() != null) {
+                    logger.debug("Resolved targetFolderPath '{}' to folderId '{}'", folderPath, objectData.getId());
+                    return objectData.getId();
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to resolve targetFolderPath '{}' in repository '{}': {}",
+                        folderPath, repositoryId, e.getMessage());
+            }
         }
         return null;
     }
@@ -355,14 +363,34 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return switch (archetype) {
             case FILE_SHARE -> ExternalSourceUri.forFileShare(system, tenant, objectId);
             case COMPOUND_NOTE -> ExternalSourceUri.forNotePage(system, tenant, objectId);
-            case CHAT_CONTEXT -> ExternalSourceUri.forChatMessage(system, tenant,
-                    request.getSourceObjectType() != null ? request.getSourceObjectType() : "unknown", objectId);
+            case CHAT_CONTEXT -> {
+                // channelId comes from metadata, not sourceObjectType
+                String channelId = "unknown";
+                if (request.getMetadata() != null) {
+                    Object ch = request.getMetadata().get("channelId");
+                    if (ch instanceof String s && !s.isBlank()) channelId = s;
+                }
+                yield ExternalSourceUri.forChatMessage(system, tenant, channelId, objectId);
+            }
             case BUSINESS_RECORD -> ExternalSourceUri.forBusinessRecord(system, tenant,
                     request.getSourceObjectType() != null ? request.getSourceObjectType() : "record", objectId);
         };
     }
 
-    private static LineageProcessType resolveProcessType(SourceArchetype archetype) {
+    /**
+     * Resolves the lineage process type from archetype and sourceObjectType.
+     * If sourceObjectType indicates an attachment (e.g. "attachment", "file"),
+     * uses EXTERNAL_ATTACHMENT_IMPORT regardless of archetype.
+     */
+    private static LineageProcessType resolveProcessType(SourceArchetype archetype, String sourceObjectType) {
+        // Attachment detection: if the source object is an attachment/file within
+        // a compound note or chat context, use the attachment-specific process type.
+        if (sourceObjectType != null) {
+            String lower = sourceObjectType.toLowerCase();
+            if ("attachment".equals(lower) || "file".equals(lower)) {
+                return LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT;
+            }
+        }
         if (archetype == null) {
             return LineageProcessType.IMPORT_UPLOADED;
         }

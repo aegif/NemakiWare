@@ -31,12 +31,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
 
     @Override
     public ImportProfileDefinition create(ImportProfileDefinition def) {
-        if (def.getProfileId() == null || def.getProfileId().isBlank()) {
-            throw new IllegalArgumentException("profileId is required");
-        }
-        if (def.getRepositoryId() == null || def.getRepositoryId().isBlank()) {
-            throw new IllegalArgumentException("repositoryId is required");
-        }
+        validateRequiredFields(def);
         if (exists(def.getProfileId())) {
             throw new IllegalStateException("Import profile already exists: " + def.getProfileId());
         }
@@ -70,15 +65,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
 
     @Override
     public ImportProfileDefinition update(ImportProfileDefinition def) {
-        if (def.getProfileId() == null || def.getProfileId().isBlank()) {
-            throw new IllegalArgumentException("profileId is required");
-        }
-        if (def.getRepositoryId() == null || def.getRepositoryId().isBlank()) {
-            throw new IllegalArgumentException("repositoryId is required and cannot be removed on update");
-        }
-        if (def.getTargetFolderId() == null && def.getTargetFolderPath() == null) {
-            throw new IllegalArgumentException("Either targetFolderId or targetFolderPath is required");
-        }
+        validateRequiredFields(def);
         def.setUpdatedAt(Instant.now().toString());
         upsertDocument(def);
         logger.info("Updated import profile: {}", def.getProfileId());
@@ -103,6 +90,20 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
     @Override
     public boolean exists(String profileId) {
         return get(profileId) != null;
+    }
+
+    private void validateRequiredFields(ImportProfileDefinition def) {
+        if (def.getProfileId() == null || def.getProfileId().isBlank()) {
+            throw new IllegalArgumentException("profileId is required");
+        }
+        if (def.getRepositoryId() == null || def.getRepositoryId().isBlank()) {
+            throw new IllegalArgumentException("repositoryId is required");
+        }
+        boolean hasFolderId = def.getTargetFolderId() != null && !def.getTargetFolderId().isBlank();
+        boolean hasFolderPath = def.getTargetFolderPath() != null && !def.getTargetFolderPath().isBlank();
+        if (!hasFolderId && !hasFolderPath) {
+            throw new IllegalArgumentException("Either targetFolderId or targetFolderPath is required");
+        }
     }
 
     // --- Internal ---

@@ -74,7 +74,21 @@ public class ExternalIngestController {
         if (result.isSuccess() || result.skipped() || result.dryRun()) {
             return ResponseEntity.ok(result);
         }
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        // Map validation/config errors to appropriate HTTP status
+        HttpStatus errorStatus = classifyErrorStatus(result);
+        return ResponseEntity.status(errorStatus).body(result);
+    }
+
+    private static HttpStatus classifyErrorStatus(ExternalIngestResult result) {
+        if (result.errors() == null || result.errors().isEmpty()) {
+            return HttpStatus.INTERNAL_SERVER_ERROR;
+        }
+        String firstError = result.errors().get(0).toLowerCase();
+        if (firstError.contains("not found")) return HttpStatus.NOT_FOUND;
+        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")) return HttpStatus.FORBIDDEN;
+        if (firstError.contains("disabled") || firstError.contains("is required")
+                || firstError.contains("no resolvable")) return HttpStatus.BAD_REQUEST;
+        return HttpStatus.INTERNAL_SERVER_ERROR;
     }
 
     private CallContext getCallContext() {
