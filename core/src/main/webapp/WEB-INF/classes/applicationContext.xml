@@ -31,6 +31,8 @@
 		<!-- Exclude ALL Purview classes: they are scanned in serviceContext.xml after refresh -->
 		<!-- (applicationContext.xml beans are replaced by NemakiApplicationContextLoader.refresh()) -->
 		<context:exclude-filter type="regex" expression="jp\.aegif\.nemaki\.rest\.purview\..*"/>
+		<!-- Exclude ingest controllers: scanned in spring-mvc-context.xml, services in serviceContext.xml -->
+		<context:exclude-filter type="regex" expression="jp\.aegif\.nemaki\.rest\.ingest\..*"/>
 	</context:component-scan>
 
 	<!-- AuthenticationFilter will be defined in serviceContext.xml as restAuthenticationFilter -->
