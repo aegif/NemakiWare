@@ -52,5 +52,25 @@ public enum LineageProcessType {
     EXPORT_ZIP_FOLDER,
 
     /** Export of individually selected objects. Journal-owned. */
-    EXPORT_SELECTED_OBJECTS;
+    EXPORT_SELECTED_OBJECTS,
+
+    // ── External Ingestion (Phase 1+) ──────────────────────────────
+
+    /** External note/page import (compound_note archetype). Journal-owned. */
+    EXTERNAL_NOTE_IMPORT,
+
+    /** External attachment import (any archetype). Journal-owned. */
+    EXTERNAL_ATTACHMENT_IMPORT,
+
+    /** Business record import (business_record archetype). Journal-owned. */
+    BUSINESS_RECORD_IMPORT,
+
+    /** Chat attachment import (chat_context archetype). Journal-owned. */
+    CHAT_ATTACHMENT_IMPORT,
+
+    /** Generic file share sync download (file_share archetype). Journal-owned. */
+    FILE_SHARE_SYNC_DOWNLOAD,
+
+    /** Generic file share sync upload (file_share archetype). Journal-owned. */
+    FILE_SHARE_SYNC_UPLOAD;
 }

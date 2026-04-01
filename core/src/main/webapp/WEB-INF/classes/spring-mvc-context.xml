@@ -31,6 +31,7 @@
 	<!-- Component scanning for REST controllers only -->
 	<!-- Purview @Service beans are in root context (serviceContext.xml) and visible to MVC via parent -->
 	<context:component-scan base-package="jp.aegif.nemaki.rest.controller" />
+	<context:component-scan base-package="jp.aegif.nemaki.rest.ingest" />
 
 	<!-- Exception handler for REST API -->
 	<bean class="jp.aegif.nemaki.rest.controller.GlobalExceptionHandler" />

@@ -798,6 +798,21 @@
         <constructor-arg ref="repositoryInfoMap" />
     </bean>
 
+    <!-- External Ingestion Services -->
+    <bean id="connectorDefinitionService" class="jp.aegif.nemaki.rest.ingest.ConnectorDefinitionServiceImpl">
+        <property name="connectorPool" ref="connectorPool" />
+    </bean>
+    <bean id="importProfileDefinitionService" class="jp.aegif.nemaki.rest.ingest.ImportProfileDefinitionServiceImpl">
+        <property name="connectorPool" ref="connectorPool" />
+    </bean>
+    <bean id="canonicalImportService" class="jp.aegif.nemaki.rest.ingest.CanonicalImportServiceImpl">
+        <property name="connectorDefinitionService" ref="connectorDefinitionService" />
+        <property name="importProfileDefinitionService" ref="importProfileDefinitionService" />
+        <property name="contentService" ref="ContentService" />
+        <property name="objectService" ref="objectService" />
+        <property name="nemakiCachePool" ref="nemakiCachePool" />
+    </bean>
+
     <!-- Password Policy Service -->
     <bean id="passwordPolicyService" class="jp.aegif.nemaki.util.PasswordPolicyService">
         <property name="propertyManager" ref="propertyManager" />

@@ -135,7 +135,10 @@ public class PurviewLineageSink implements LineageTargetSink {
             case ARCHIVE_COLD, ARCHIVE_LOCAL -> "nemaki_archive_process";
             case IMPORT_FILESYSTEM, IMPORT_UPLOADED -> "nemaki_import_process";
             case EXPORT_FILESYSTEM, EXPORT_ZIP_FOLDER, EXPORT_SELECTED_OBJECTS -> "nemaki_export_process";
-            case CLOUD_SYNC_UPLOAD, CLOUD_SYNC_DOWNLOAD -> "nemaki_cloud_sync_process";
+            case CLOUD_SYNC_UPLOAD, CLOUD_SYNC_DOWNLOAD,
+                 FILE_SHARE_SYNC_UPLOAD, FILE_SHARE_SYNC_DOWNLOAD -> "nemaki_cloud_sync_process";
+            case EXTERNAL_NOTE_IMPORT, EXTERNAL_ATTACHMENT_IMPORT,
+                 BUSINESS_RECORD_IMPORT, CHAT_ATTACHMENT_IMPORT -> "nemaki_import_process";
         };
     }
 
@@ -202,9 +205,12 @@ public class PurviewLineageSink implements LineageTargetSink {
         if (pt == null) return "processes";
         return switch (pt) {
             case ARCHIVE_COLD, ARCHIVE_LOCAL -> "archive-processes";
-            case IMPORT_FILESYSTEM, IMPORT_UPLOADED -> "import-processes";
+            case IMPORT_FILESYSTEM, IMPORT_UPLOADED,
+                 EXTERNAL_NOTE_IMPORT, EXTERNAL_ATTACHMENT_IMPORT,
+                 BUSINESS_RECORD_IMPORT, CHAT_ATTACHMENT_IMPORT -> "import-processes";
             case EXPORT_FILESYSTEM, EXPORT_ZIP_FOLDER, EXPORT_SELECTED_OBJECTS -> "export-processes";
-            case CLOUD_SYNC_UPLOAD, CLOUD_SYNC_DOWNLOAD -> "cloud-sync-processes";
+            case CLOUD_SYNC_UPLOAD, CLOUD_SYNC_DOWNLOAD,
+                 FILE_SHARE_SYNC_UPLOAD, FILE_SHARE_SYNC_DOWNLOAD -> "cloud-sync-processes";
         };
     }
 
