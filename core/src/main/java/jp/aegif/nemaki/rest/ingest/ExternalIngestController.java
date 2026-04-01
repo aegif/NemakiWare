@@ -49,9 +49,14 @@ public class ExternalIngestController {
         try {
             ExternalIngestRequest request = MAPPER.readValue(requestJson, ExternalIngestRequest.class);
             if (content != null && !content.isEmpty()) {
+                // Guard against oversized uploads (100MB default)
+                if (content.getSize() > 100 * 1024 * 1024) {
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                            .body(ExternalIngestResult.error("unknown", "File exceeds maximum size (100MB)"));
+                }
                 request.setContentStream(content.getInputStream());
                 if (request.getFileName() == null || request.getFileName().isBlank()) {
-                    request.setFileName(content.getOriginalFilename());
+                    request.setFileName(sanitizeFilename(content.getOriginalFilename()));
                 }
                 if (request.getMimeType() == null || request.getMimeType().isBlank()) {
                     request.setMimeType(content.getContentType());
@@ -89,6 +94,19 @@ public class ExternalIngestController {
         if (firstError.contains("disabled") || firstError.contains("is required")
                 || firstError.contains("no resolvable")) return HttpStatus.BAD_REQUEST;
         return HttpStatus.INTERNAL_SERVER_ERROR;
+    }
+
+    /** Strip path separators and parent-directory traversal from uploaded filenames. */
+    static String sanitizeFilename(String name) {
+        if (name == null || name.isBlank()) return name;
+        // Extract basename (after last / or \)
+        int lastSlash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+        if (lastSlash >= 0) {
+            name = name.substring(lastSlash + 1);
+        }
+        // Remove leading dots to prevent hidden files / traversal
+        name = name.replaceAll("^\\.+", "");
+        return name.isBlank() ? "imported-file" : name;
     }
 
     private CallContext getCallContext() {

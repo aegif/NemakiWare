@@ -91,6 +91,33 @@ class PurviewLineageSinkTest {
     }
 
     @Test
+    void mapProcessTypeName_fileShareSync() {
+        assertEquals("nemaki_cloud_sync_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.FILE_SHARE_SYNC_UPLOAD));
+        assertEquals("nemaki_cloud_sync_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.FILE_SHARE_SYNC_DOWNLOAD));
+    }
+
+    @Test
+    void mapProcessTypeName_externalImports() {
+        assertEquals("nemaki_import_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.EXTERNAL_NOTE_IMPORT));
+        assertEquals("nemaki_import_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT));
+        assertEquals("nemaki_import_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.BUSINESS_RECORD_IMPORT));
+        assertEquals("nemaki_import_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.CHAT_ATTACHMENT_IMPORT));
+    }
+
+    @Test
+    void inferSourceSystem_canonicalExternalUri() {
+        assertEquals("google_drive", PurviewLineageSink.inferSourceSystem("google_drive://tenant/t1/files/f1"));
+        assertEquals("notion", PurviewLineageSink.inferSourceSystem("notion://workspace/ws1/pages/p1"));
+        assertEquals("salesforce", PurviewLineageSink.inferSourceSystem("salesforce://org/o1/records/Account/r1"));
+    }
+
+    @Test
+    void inferAssetTypeName_canonicalExternalUri() {
+        assertEquals("nemaki_external_asset", PurviewLineageSink.inferAssetTypeName("google_drive://tenant/t1/files/f1"));
+        assertEquals("nemaki_external_asset", PurviewLineageSink.inferAssetTypeName("notion://workspace/ws1/pages/p1"));
+    }
+
+    @Test
     void mapProcessTypeName_null() {
         assertEquals("nemaki_unknown_process", PurviewLineageSink.mapProcessTypeName(null));
     }

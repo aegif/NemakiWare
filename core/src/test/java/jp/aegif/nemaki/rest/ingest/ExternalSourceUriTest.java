@@ -54,6 +54,20 @@ class ExternalSourceUriTest {
     }
 
     @Test
+    void testEncodesSpecialCharactersInObjectId() {
+        String uri = ExternalSourceUri.forFileShare("google_drive", "t1", "file with spaces.txt");
+        assertTrue(uri.contains("file+with+spaces.txt") || uri.contains("file%20with%20spaces.txt"),
+                "objectId should be URL-encoded: " + uri);
+        assertFalse(uri.contains(" "), "Should not contain raw space: " + uri);
+    }
+
+    @Test
+    void testEncodesSpecialCharactersInTenantId() {
+        String uri = ExternalSourceUri.build("notion", "workspace/id", "pages", "p1");
+        assertFalse(uri.contains("workspace/id"), "tenantId should be URL-encoded: " + uri);
+    }
+
+    @Test
     void testForBusinessRecord() {
         assertEquals("salesforce://tenant/org1/records/Account/r1",
                 ExternalSourceUri.forBusinessRecord("salesforce", "org1", "Account", "r1"));

@@ -1,9 +1,16 @@
 package jp.aegif.nemaki.rest.ingest;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+
 /**
  * Builds canonical URIs for external source objects used as lineage inputs.
  *
  * <p>Pattern: {@code {sourceSystem}://tenant/{tenantId}/{objectTypePath}/{objectId}}
+ *
+ * <p>User-supplied segments (tenantId, objectId) are percent-encoded to ensure
+ * valid URI syntax. Path structure segments (sourceSystem, objectTypePath) are
+ * assumed to be code-controlled and are not encoded.
  *
  * <p>Examples:
  * <ul>
@@ -34,13 +41,17 @@ public final class ExternalSourceUri {
         }
         StringBuilder sb = new StringBuilder(sourceSystem).append("://");
         if (tenantId != null && !tenantId.isBlank()) {
-            sb.append("tenant/").append(tenantId).append('/');
+            sb.append("tenant/").append(encode(tenantId)).append('/');
         }
         if (objectTypePath != null && !objectTypePath.isBlank()) {
             sb.append(objectTypePath).append('/');
         }
-        sb.append(objectId);
+        sb.append(encode(objectId));
         return sb.toString();
+    }
+
+    private static String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     /** Shorthand for file_share sources: {@code {system}://tenant/{tenant}/files/{fileId}} */
