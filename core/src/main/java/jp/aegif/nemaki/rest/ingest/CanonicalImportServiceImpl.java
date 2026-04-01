@@ -224,12 +224,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             // Persist externalContext from request metadata if provided
             if (request.getMetadata() != null && !request.getMetadata().isEmpty()) {
-                try {
-                    String contextJson = JSON_MAPPER.writeValueAsString(request.getMetadata());
-                    newProps.put("nemaki:externalContext", contextJson);
-                } catch (Exception e) {
-                    logger.debug("Failed to serialize metadata as externalContext: {}", e.getMessage());
-                }
+                String contextJson = JSON_MAPPER.writeValueAsString(request.getMetadata());
+                newProps.put("nemaki:externalContext", contextJson);
             }
 
             // Merge: preserve existing properties, overwrite with new values
