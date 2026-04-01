@@ -1,24 +1,30 @@
 package jp.aegif.nemaki.rest.ingest;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
-import jp.aegif.nemaki.util.constant.CallContextKey;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.LinkedHashMap;
-import java.util.Map;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * REST endpoint for canonical external ingestion.
- * Accepts an {@link ExternalIngestRequest} and delegates to {@link CanonicalImportService}.
+ *
+ * <p>Supports two content types:
+ * <ul>
+ *   <li>{@code application/json} — metadata-only import (no file content)</li>
+ *   <li>{@code multipart/form-data} — file import with {@code content} part + {@code request} JSON part</li>
+ * </ul>
  */
 @RestController
 @RequestMapping("/v1/repo/{repositoryId}/ingest")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class ExternalIngestController {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Autowired
     private CanonicalImportService canonicalImportService;
@@ -26,18 +32,45 @@ public class ExternalIngestController {
     @Autowired
     private HttpServletRequest httpRequest;
 
-    @PostMapping
-    public ResponseEntity<ExternalIngestResult> ingest(
+    /** JSON-only ingest (metadata-only, no file content). */
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ExternalIngestResult> ingestJson(
             @PathVariable String repositoryId,
             @RequestBody ExternalIngestRequest request) {
+        return doIngest(repositoryId, request);
+    }
+
+    /** Multipart ingest with file content. */
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ExternalIngestResult> ingestMultipart(
+            @PathVariable String repositoryId,
+            @RequestPart("request") String requestJson,
+            @RequestPart(value = "content", required = false) MultipartFile content) {
+        try {
+            ExternalIngestRequest request = MAPPER.readValue(requestJson, ExternalIngestRequest.class);
+            if (content != null && !content.isEmpty()) {
+                request.setContentStream(content.getInputStream());
+                if (request.getFileName() == null || request.getFileName().isBlank()) {
+                    request.setFileName(content.getOriginalFilename());
+                }
+                if (request.getMimeType() == null || request.getMimeType().isBlank()) {
+                    request.setMimeType(content.getContentType());
+                }
+            }
+            return doIngest(repositoryId, request);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ExternalIngestResult.error("unknown", "Invalid request: " + e.getMessage()));
+        }
+    }
+
+    private ResponseEntity<ExternalIngestResult> doIngest(String repositoryId, ExternalIngestRequest request) {
         CallContext callContext = getCallContext();
         if (callContext == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-
         request.setRepositoryId(repositoryId);
         ExternalIngestResult result = canonicalImportService.execute(callContext, request);
-
         if (result.isSuccess() || result.skipped() || result.dryRun()) {
             return ResponseEntity.ok(result);
         }

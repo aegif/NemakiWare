@@ -137,6 +137,25 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testExecuteProfileRepositoryMismatch() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setRepositoryId("canopy");
+        when(profileService.get("p1")).thenReturn(profile);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        assertFalse(result.isSuccess());
+        assertTrue(result.errors().get(0).contains("scoped to repository"));
+    }
+
+    @Test
     void testExecuteDryRun() {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");

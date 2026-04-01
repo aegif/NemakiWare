@@ -164,9 +164,14 @@ public class PurviewLineageSink implements LineageTargetSink {
         if (uri == null || uri.isEmpty()) {
             return "nemaki_document";
         }
-        // External scheme-based URIs
+        // External scheme-based URIs (legacy and canonical ingestion)
         if (uri.startsWith("upload://") || uri.startsWith("file://")
                 || uri.startsWith("cloud://") || uri.startsWith("cold://")) {
+            return "nemaki_external_asset";
+        }
+        // Canonical external source URIs: {sourceSystem}://...
+        // Any URI with :// that is NOT nemaki:// is an external asset
+        if (uri.contains("://") && !uri.startsWith("nemaki://")) {
             return "nemaki_external_asset";
         }
         // nemaki:// path-based URIs
@@ -188,6 +193,11 @@ public class PurviewLineageSink implements LineageTargetSink {
         if (uri.startsWith("file://")) return "filesystem";
         if (uri.startsWith("cloud://")) return "cloud-drive";
         if (uri.startsWith("cold://")) return "cold-storage";
+        // Canonical external source URIs: extract sourceSystem from scheme
+        int schemeEnd = uri.indexOf("://");
+        if (schemeEnd > 0 && !uri.startsWith("nemaki://")) {
+            return uri.substring(0, schemeEnd);
+        }
         return "nemakiware";
     }
 
@@ -304,6 +314,40 @@ public class PurviewLineageSink implements LineageTargetSink {
                     String outputUri = event.outputs().get(0);
                     processAttrs.putIfAbsent("archiveId", extractLastSegment(outputUri));
                     processAttrs.putIfAbsent("externalStableKey", outputUri);
+                }
+            }
+            case FILE_SHARE_SYNC_UPLOAD, FILE_SHARE_SYNC_DOWNLOAD -> {
+                processAttrs.putIfAbsent("repositoryId", event.repositoryId());
+                if (!event.outputs().isEmpty()) {
+                    processAttrs.putIfAbsent("objectId", extractLastSegment(event.outputs().get(0)));
+                }
+                processAttrs.putIfAbsent("cloudProvider",
+                        snap.getOrDefault("sourceSystem", snap.getOrDefault("provider", "unknown")));
+                // Find external source URI in inputs for externalStableKey
+                for (String uri : event.inputs()) {
+                    if (uri.contains("://") && !uri.startsWith("nemaki://")) {
+                        processAttrs.putIfAbsent("externalStableKey", uri);
+                        break;
+                    }
+                }
+            }
+            case EXTERNAL_NOTE_IMPORT, EXTERNAL_ATTACHMENT_IMPORT,
+                 BUSINESS_RECORD_IMPORT, CHAT_ATTACHMENT_IMPORT -> {
+                processAttrs.putIfAbsent("repositoryId", event.repositoryId());
+                if (!event.outputs().isEmpty()) {
+                    processAttrs.putIfAbsent("folderId", extractLastSegment(event.outputs().get(0)));
+                }
+                processAttrs.putIfAbsent("importMode",
+                        snap.getOrDefault("sourceArchetype", "external"));
+                processAttrs.putIfAbsent("sourceDescription",
+                        snap.getOrDefault("sourceSystem", "") + ":"
+                        + snap.getOrDefault("sourceObjectId", ""));
+                // External source URI as stableKey
+                for (String uri : event.inputs()) {
+                    if (uri.contains("://") && !uri.startsWith("nemaki://")) {
+                        processAttrs.putIfAbsent("externalStableKey", uri);
+                        break;
+                    }
                 }
             }
         }

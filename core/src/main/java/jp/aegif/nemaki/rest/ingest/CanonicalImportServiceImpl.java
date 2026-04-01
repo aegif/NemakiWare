@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.GregorianCalendar;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Default implementation of the canonical import pipeline.
@@ -83,6 +84,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (!profile.isEnabled()) {
             return ExternalIngestResult.error(requestId, "Import profile is disabled: " + request.getProfileId());
         }
+        // Enforce repository scope: profile must match the request's repository
+        String repositoryId = request.getRepositoryId();
+        if (profile.getRepositoryId() != null && !profile.getRepositoryId().equals(repositoryId)) {
+            return ExternalIngestResult.error(requestId,
+                    "Profile '" + profile.getProfileId() + "' is scoped to repository '"
+                    + profile.getRepositoryId() + "', not '" + repositoryId + "'");
+        }
 
         // 2. Resolve connector
         ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
@@ -110,10 +118,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
 
         // 5. Create document
-        String repositoryId = request.getRepositoryId();
-        String targetFolderId = profile.getTargetFolderId();
+        String targetFolderId = resolveTargetFolderId(profile, repositoryId);
         if (targetFolderId == null || targetFolderId.isBlank()) {
-            return ExternalIngestResult.error(requestId, "Profile has no targetFolderId configured");
+            return ExternalIngestResult.error(requestId,
+                    "Profile has no resolvable target folder (neither targetFolderId nor targetFolderPath)");
         }
 
         try {
@@ -177,28 +185,58 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     .findFirst()
                     .orElse(null);
 
-            List<Property> extProps = new ArrayList<>();
-            extProps.add(new Property("nemaki:sourceArchetype",
-                    connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : ""));
-            extProps.add(new Property("nemaki:sourceSystem",
-                    connector.getSourceSystem() != null ? connector.getSourceSystem() : ""));
-            extProps.add(new Property("nemaki:sourceObjectType",
-                    request.getSourceObjectType() != null ? request.getSourceObjectType() : ""));
-            extProps.add(new Property("nemaki:sourceObjectId",
-                    request.getSourceObjectId() != null ? request.getSourceObjectId() : ""));
-            extProps.add(new Property("nemaki:sourceUrl",
-                    request.getSourceUrl() != null ? request.getSourceUrl() : ""));
-            extProps.add(new Property("nemaki:ingestionRunId", request.getRequestId()));
-            extProps.add(new Property("nemaki:externalSourceType",
-                    connector.getSourceArchetype() != null ? connector.getSourceArchetype().name().toLowerCase() : ""));
-            extProps.add(new Property("nemaki:externalSourceId",
-                    connector.getSourceSystem() != null ? connector.getSourceSystem() : ""));
-            extProps.add(new Property("nemaki:externalContextUpdatedAt", new GregorianCalendar()));
+            // Build property map for merge (preserves existing properties not in this set)
+            Map<String, Object> newProps = new java.util.LinkedHashMap<>();
+            newProps.put("nemaki:sourceArchetype",
+                    connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : "");
+            newProps.put("nemaki:sourceSystem",
+                    connector.getSourceSystem() != null ? connector.getSourceSystem() : "");
+            newProps.put("nemaki:sourceObjectType",
+                    request.getSourceObjectType() != null ? request.getSourceObjectType() : "");
+            newProps.put("nemaki:sourceObjectId",
+                    request.getSourceObjectId() != null ? request.getSourceObjectId() : "");
+            newProps.put("nemaki:sourceUrl",
+                    request.getSourceUrl() != null ? request.getSourceUrl() : "");
+            newProps.put("nemaki:ingestionRunId", request.getRequestId());
+            newProps.put("nemaki:externalSourceType",
+                    connector.getSourceArchetype() != null ? connector.getSourceArchetype().name().toLowerCase() : "");
+            newProps.put("nemaki:externalSourceId",
+                    connector.getSourceSystem() != null ? connector.getSourceSystem() : "");
+            newProps.put("nemaki:externalContextUpdatedAt", new GregorianCalendar());
+
+            // Persist externalContext from request metadata if provided
+            if (request.getMetadata() != null && !request.getMetadata().isEmpty()) {
+                try {
+                    String contextJson = new com.fasterxml.jackson.databind.ObjectMapper()
+                            .writeValueAsString(request.getMetadata());
+                    newProps.put("nemaki:externalContext", contextJson);
+                } catch (Exception e) {
+                    logger.debug("Failed to serialize metadata as externalContext: {}", e.getMessage());
+                }
+            }
+
+            // Merge: preserve existing properties, overwrite with new values
+            List<Property> mergedProps;
+            if (extAspect != null && extAspect.getProperties() != null) {
+                Map<String, Property> propMap = new java.util.LinkedHashMap<>();
+                for (Property p : extAspect.getProperties()) {
+                    propMap.put(p.getKey(), p);
+                }
+                for (Map.Entry<String, Object> entry : newProps.entrySet()) {
+                    propMap.put(entry.getKey(), new Property(entry.getKey(), entry.getValue()));
+                }
+                mergedProps = new ArrayList<>(propMap.values());
+            } else {
+                mergedProps = new ArrayList<>();
+                for (Map.Entry<String, Object> entry : newProps.entrySet()) {
+                    mergedProps.add(new Property(entry.getKey(), entry.getValue()));
+                }
+            }
 
             if (extAspect != null) {
-                extAspect.setProperties(extProps);
+                extAspect.setProperties(mergedProps);
             } else {
-                aspects.add(new Aspect("nemaki:externalIntegration", extProps));
+                aspects.add(new Aspect("nemaki:externalIntegration", mergedProps));
             }
 
             // Add secondary type to secondaryIds if not present
@@ -280,6 +318,25 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         } catch (Exception e) {
             logger.warn("Lineage event emission failed (non-fatal): {}", e.getMessage());
         }
+    }
+
+    /**
+     * Resolves a concrete folder ID from the profile. If targetFolderId is set,
+     * use it directly. If only targetFolderPath is set, resolve via getObjectByPath
+     * (Phase 2 enhancement — currently logs a warning and returns null).
+     */
+    private String resolveTargetFolderId(ImportProfileDefinition profile, String repositoryId) {
+        String folderId = profile.getTargetFolderId();
+        if (folderId != null && !folderId.isBlank()) {
+            return folderId;
+        }
+        String folderPath = profile.getTargetFolderPath();
+        if (folderPath != null && !folderPath.isBlank()) {
+            // TODO Phase 2: resolve folderPath to folderId via ObjectService.getObjectByPath
+            logger.warn("targetFolderPath '{}' is configured but path resolution is not yet implemented. "
+                    + "Please configure targetFolderId directly.", folderPath);
+        }
+        return null;
     }
 
     private static LineageProcessType resolveProcessType(SourceArchetype archetype) {
