@@ -39,12 +39,7 @@ public class PurviewSchemaManifestFactory {
         this.propertyMappingResolver = propertyMappingResolver;
     }
 
-    /** @deprecated Use {@link #buildManifest(String)} */
     public PurviewSchemaManifest buildManifest() {
-        return buildManifest(null);
-    }
-
-    public PurviewSchemaManifest buildManifest(String repositoryId) {
         String mappingFingerprint = propertyMappingResolver != null
                 ? propertyMappingResolver.computeMappingFingerprintAllRepositories()
                 : "";

@@ -170,7 +170,7 @@ public class PurviewSchemaPayloadFactoryTest {
         PurviewSchemaPayloadFactory payloadFactory = new PurviewSchemaPayloadFactory();
         payloadFactory.setPropertyMappingResolver(resolver);
 
-        Map<String, Object> payload = payloadFactory.buildTypeDefinitionsPayload(manifestFactory.buildManifest(), "bedroom");
+        Map<String, Object> payload = payloadFactory.buildTypeDefinitionsPayload(manifestFactory.buildManifest());
         List<Map<String, Object>> entityDefs = (List<Map<String, Object>>) payload.get("entityDefs");
         List<String> docAttrs = attributeNames(entityDefs, "nemaki_document");
 

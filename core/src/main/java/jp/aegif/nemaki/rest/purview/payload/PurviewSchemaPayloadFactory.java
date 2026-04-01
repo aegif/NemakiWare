@@ -20,13 +20,8 @@ public class PurviewSchemaPayloadFactory {
         this.propertyMappingResolver = propertyMappingResolver;
     }
 
-    /** @deprecated Use {@link #buildTypeDefinitionsPayload(PurviewSchemaManifest, String)} */
     public Map<String, Object> buildTypeDefinitionsPayload(PurviewSchemaManifest manifest) {
-        return buildTypeDefinitionsPayload(manifest, null);
-    }
-
-    public Map<String, Object> buildTypeDefinitionsPayload(PurviewSchemaManifest manifest, String repositoryId) {
-        List<Map<String, Object>> customAttrDefs = buildCustomPropertyAttributeDefs(repositoryId);
+        List<Map<String, Object>> customAttrDefs = buildCustomPropertyAttributeDefs();
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("entityDefs", List.of(
                 buildRepositoryEntityDef(),
@@ -110,7 +105,7 @@ public class PurviewSchemaPayloadFactory {
      * for a specific repository. Type and cardinality are derived from
      * the repository's current type definitions (not stored in the mapping).
      */
-    List<Map<String, Object>> buildCustomPropertyAttributeDefs(String repositoryId) {
+    List<Map<String, Object>> buildCustomPropertyAttributeDefs() {
         if (propertyMappingResolver == null) {
             return List.of();
         }

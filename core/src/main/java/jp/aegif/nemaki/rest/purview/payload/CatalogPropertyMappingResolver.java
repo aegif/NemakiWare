@@ -305,8 +305,6 @@ public class CatalogPropertyMappingResolver {
      */
     public static List<String> validateMappings(Map<String, Map<String, PropertyMapping>> mappings) {
         List<String> errors = new java.util.ArrayList<>();
-        Map<String, Boolean> seenCatalogNames = new LinkedHashMap<>();
-
         for (Map.Entry<String, Map<String, PropertyMapping>> typeEntry : mappings.entrySet()) {
             for (Map.Entry<String, PropertyMapping> propEntry : typeEntry.getValue().entrySet()) {
                 PropertyMapping m = propEntry.getValue();
@@ -322,7 +320,6 @@ public class CatalogPropertyMappingResolver {
                     errors.add("Property " + loc
                             + " uses reserved catalog attribute name '" + m.catalogName() + "'");
                 }
-                seenCatalogNames.put(m.catalogName(), true);
             }
         }
         return errors;
@@ -352,6 +349,8 @@ public class CatalogPropertyMappingResolver {
             }
             String json = OBJECT_MAPPER.writeValueAsString(raw);
             settingsService.writeSetting(SETTINGS_KEY_PREFIX + repositoryId, json);
+            // Invalidate caches so subsequent reads see the new data
+            clearResolvedCache();
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
