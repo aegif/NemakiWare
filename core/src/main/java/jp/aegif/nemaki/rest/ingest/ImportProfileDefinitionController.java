@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +33,8 @@ public class ImportProfileDefinitionController {
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("status", "success");
             response.put("profileId", created.getProfileId());
+            List<String> warnings = getPhase2Warnings(def);
+            if (!warnings.isEmpty()) response.put("warnings", warnings);
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (IllegalArgumentException | IllegalStateException e) {
             return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
@@ -66,6 +69,8 @@ public class ImportProfileDefinitionController {
             importProfileDefinitionService.update(def);
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("status", "success");
+            List<String> warnings = getPhase2Warnings(def);
+            if (!warnings.isEmpty()) response.put("warnings", warnings);
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
             return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
@@ -80,6 +85,32 @@ public class ImportProfileDefinitionController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "success");
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Returns warnings for profile fields that are persisted but not yet enforced at runtime.
+     */
+    private List<String> getPhase2Warnings(ImportProfileDefinition def) {
+        List<String> warnings = new ArrayList<>();
+        if (def.getDedupePolicy() != null && !"skip_if_same_version".equals(def.getDedupePolicy())) {
+            warnings.add("dedupePolicy '" + def.getDedupePolicy() + "' is configured but not yet enforced (Phase 2)");
+        }
+        if (def.getUpdatePolicy() != null && !"version_up_on_content_change".equals(def.getUpdatePolicy())) {
+            warnings.add("updatePolicy '" + def.getUpdatePolicy() + "' is configured but not yet enforced (Phase 2)");
+        }
+        if (def.getVersioningPolicy() != null && !"major".equals(def.getVersioningPolicy())) {
+            warnings.add("versioningPolicy '" + def.getVersioningPolicy() + "' is configured but not yet enforced (Phase 2)");
+        }
+        if (def.getRelationshipPolicy() != null) {
+            warnings.add("relationshipPolicy is configured but not yet enforced (Phase 2)");
+        }
+        if (def.getSecondaryTypeIds() != null && !def.getSecondaryTypeIds().isEmpty()) {
+            warnings.add("secondaryTypeIds is configured but not yet auto-applied (Phase 2)");
+        }
+        if (def.getRetentionDays() != null) {
+            warnings.add("retentionDays is configured but not yet enforced (Phase 2)");
+        }
+        return warnings;
     }
 
     private boolean isAdmin() {
