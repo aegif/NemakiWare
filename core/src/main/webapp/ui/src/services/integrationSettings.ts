@@ -15,6 +15,7 @@ export interface UpdateResult {
   message: string;
   updatedKeys?: string[];
   warning?: string;
+  warnings?: string[];
 }
 
 export interface ConnectionTestResult {

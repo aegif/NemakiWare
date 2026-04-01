@@ -500,6 +500,11 @@ public class IntegrationSettingsController {
 			propertyMappingResolver.saveMappings(repositoryId, parsed);
 			response.put("status", "success");
 			response.put("message", "Property mappings updated successfully");
+			// Check for cross-repository type conflicts and surface as warnings
+			List<String> conflicts = propertyMappingResolver.detectCrossRepoConflicts(repositoryId);
+			if (!conflicts.isEmpty()) {
+				response.put("warnings", conflicts);
+			}
 			return ResponseEntity.ok(response);
 		} catch (IllegalArgumentException e) {
 			response.put("status", "error");

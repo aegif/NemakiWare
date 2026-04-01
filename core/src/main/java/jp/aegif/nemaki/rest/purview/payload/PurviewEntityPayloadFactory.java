@@ -205,13 +205,14 @@ public class PurviewEntityPayloadFactory {
                 continue;
             }
             // Skip if our local resolved mapping disagrees with the schema entry
-            // on propertyId, type, or cardinality (we lost the conflict)
+            // on type or cardinality. Different propertyIds mapping to the same
+            // catalogName are allowed as long as their types are compatible — this
+            // is the intended use case for repository-scoped normalization.
             CatalogPropertyMappingResolver.ResolvedMapping localEntry = localResolved.get(catalogName);
             if (localEntry == null) {
                 continue;
             }
-            if (!localEntry.cmisPropertyId().equals(schemaEntry.cmisPropertyId())
-                    || localEntry.propertyType() != schemaEntry.propertyType()
+            if (localEntry.propertyType() != schemaEntry.propertyType()
                     || localEntry.cardinality() != schemaEntry.cardinality()) {
                 continue;
             }

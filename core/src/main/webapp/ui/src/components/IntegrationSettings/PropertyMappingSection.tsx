@@ -98,13 +98,19 @@ const PropertyMappingSection: React.FC<Props> = ({ repositoryId }) => {
         }
       }
       setCustomTypes(types);
-      if (types.length > 0 && !selectedTypeId) {
-        setSelectedTypeId(types[0].typeId);
+      // Always select the first type when types are loaded (handles repo switch)
+      if (types.length > 0) {
+        setSelectedTypeId(prev => {
+          if (prev && types.some(t => t.typeId === prev)) return prev;
+          return types[0].typeId;
+        });
+      } else {
+        setSelectedTypeId(undefined);
       }
     } catch (err) {
       console.error('Failed to load custom types:', err);
     }
-  }, [repositoryId, selectedTypeId]);
+  }, [repositoryId]);
 
   // Load existing mappings from backend (repository-scoped)
   const loadMappings = useCallback(async () => {
@@ -178,9 +184,14 @@ const PropertyMappingSection: React.FC<Props> = ({ repositoryId }) => {
         };
       }
       updated[selectedTypeId] = typeMappings;
-      await updatePropertyMappings(repositoryId, updated);
+      const result = await updatePropertyMappings(repositoryId, updated);
       setMappings(updated);
       message.success(t('integrationSettings.propertyMappingSaved'));
+      // Show cross-repo conflict warnings if any
+      const warnings = result.warnings;
+      if (warnings && warnings.length > 0) {
+        message.warning(warnings.join('\n'), 8);
+      }
     } catch (err) {
       const detail = err instanceof Error ? err.message : '';
       message.error(detail || t('integrationSettings.propertyMappingSaveFailed'));

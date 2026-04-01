@@ -834,6 +834,57 @@ public class PurviewEntityPayloadFactoryTest {
         assertNull(canopyAttrs.get("priority"), "Losing repo with type mismatch should NOT emit value");
     }
 
+    /**
+     * Cross-repo normalization: different propertyIds mapping to the same catalogName
+     * with the same type should both be emitted (this is the intended use case).
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testCrossRepoDifferentPropertyIdSameTypeBothEmitted() {
+        IntegrationSettingsService service = mock(IntegrationSettingsService.class);
+        // bedroom maps nemaki:dept_a → "department", canopy maps nemaki:dept_b → "department"
+        when(service.readSetting("catalog.sync.propertyMappings.bedroom")).thenReturn(
+                "{ \"nemaki:doc\": { \"nemaki:dept_a\": { \"enabled\": true, \"catalogName\": \"department\" } } }");
+        when(service.readSetting("catalog.sync.propertyMappings.canopy")).thenReturn(
+                "{ \"nemaki:doc\": { \"nemaki:dept_b\": { \"enabled\": true, \"catalogName\": \"department\" } } }");
+
+        TypeService typeService = mock(TypeService.class);
+        NemakiPropertyDefinitionCore strCore = mockCore(PropertyType.STRING);
+        when(typeService.getPropertyDefinitionCoreByPropertyId("bedroom", "nemaki:dept_a")).thenReturn(strCore);
+        when(typeService.getPropertyDefinitionCoreByPropertyId("canopy", "nemaki:dept_b")).thenReturn(strCore);
+
+        RepositoryInfoMap repoMap = mock(RepositoryInfoMap.class);
+        when(repoMap.keys()).thenReturn(new java.util.LinkedHashSet<>(java.util.List.of("bedroom", "canopy")));
+        CatalogPropertyMappingResolver resolver = new CatalogPropertyMappingResolver(service, typeService, repoMap);
+
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        factory.setPropertyMappingResolver(resolver);
+
+        Document bedroomDoc = new Document();
+        bedroomDoc.setId("doc-br");
+        bedroomDoc.setName("BR Doc");
+        bedroomDoc.setObjectType("nemaki:doc");
+        List<Property> brProps = new ArrayList<>();
+        brProps.add(new Property("nemaki:dept_a", "Engineering"));
+        bedroomDoc.setSubTypeProperties(brProps);
+
+        Document canopyDoc = new Document();
+        canopyDoc.setId("doc-cn");
+        canopyDoc.setName("CN Doc");
+        canopyDoc.setObjectType("nemaki:doc");
+        List<Property> cnProps = new ArrayList<>();
+        cnProps.add(new Property("nemaki:dept_b", "Sales"));
+        canopyDoc.setSubTypeProperties(cnProps);
+
+        // Both repos should emit because type is compatible
+        Map<String, Object> brEntity = factory.buildDocumentEntity("bedroom", bedroomDoc);
+        assertEquals("Engineering", ((Map<String, Object>) brEntity.get("attributes")).get("department"));
+
+        Map<String, Object> cnEntity = factory.buildDocumentEntity("canopy", canopyDoc);
+        assertEquals("Sales", ((Map<String, Object>) cnEntity.get("attributes")).get("department"),
+                "Different propertyId but same catalogName and type should be emitted");
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     public void testBuildDocumentEntityWithoutResolverOmitsCustomProps() {

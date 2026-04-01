@@ -230,6 +230,34 @@ public class CatalogPropertyMappingResolver {
     }
 
     /**
+     * Detects cross-repository type/cardinality conflicts for a given repository's mappings
+     * against the global schema union. Returns human-readable warning messages.
+     * An empty list means no conflicts.
+     */
+    public List<String> detectCrossRepoConflicts(String repositoryId) {
+        Map<String, ResolvedMapping> globalUnion = getResolvedMappingsAllRepositories();
+        Map<String, ResolvedMapping> local = getResolvedMappings(repositoryId);
+        List<String> warnings = new java.util.ArrayList<>();
+        for (Map.Entry<String, ResolvedMapping> entry : local.entrySet()) {
+            String catalogName = entry.getKey();
+            ResolvedMapping localMapping = entry.getValue();
+            ResolvedMapping globalMapping = globalUnion.get(catalogName);
+            if (globalMapping != null
+                    && (localMapping.propertyType() != globalMapping.propertyType()
+                        || localMapping.cardinality() != globalMapping.cardinality())) {
+                warnings.add("Catalog attribute '" + catalogName + "' ("
+                        + localMapping.cmisPropertyId() + ": "
+                        + localMapping.propertyType() + "/" + localMapping.cardinality()
+                        + ") conflicts with another repository's definition ("
+                        + globalMapping.cmisPropertyId() + ": "
+                        + globalMapping.propertyType() + "/" + globalMapping.cardinality()
+                        + "). This mapping will be inactive until the conflict is resolved.");
+            }
+        }
+        return warnings;
+    }
+
+    /**
      * Computes a fingerprint covering all repositories' mappings, for schema hash calculation.
      */
     public String computeMappingFingerprintAllRepositories() {
