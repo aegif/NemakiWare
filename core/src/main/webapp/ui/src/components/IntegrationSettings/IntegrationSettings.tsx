@@ -48,27 +48,27 @@ export function IntegrationSettings({ repositoryId }: IntegrationSettingsProps) 
     },
     {
       key: 'purview',
-      label: <Space size={4}>{t('integrationSettings.tabs.purview')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Beta</Tag></Space>,
+      label: <Space size={4}>{t('integrationSettings.tabs.purview')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
       children: <PurviewSettingsTab />,
     },
     {
       key: 'atlas',
-      label: <Space size={4}>{t('integrationSettings.tabs.atlas')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Beta</Tag></Space>,
+      label: <Space size={4}>{t('integrationSettings.tabs.atlas')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
       children: <AtlasSettingsTab />,
     },
     {
       key: 'dataplex',
-      label: <Space size={4}>{t('integrationSettings.tabs.dataplex')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Beta</Tag></Space>,
+      label: <Space size={4}>{t('integrationSettings.tabs.dataplex')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
       children: <DataplexSettingsTab />,
     },
     {
       key: 'lineage',
-      label: <Space size={4}>{t('integrationSettings.tabs.lineage')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Beta</Tag></Space>,
+      label: <Space size={4}>{t('integrationSettings.tabs.lineage')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
       children: <LineageSettingsTab />,
     },
     {
       key: 'property-mapping',
-      label: <Space size={4}>{t('integrationSettings.tabs.propertyMapping')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Beta</Tag></Space>,
+      label: <Space size={4}>{t('integrationSettings.tabs.propertyMapping')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
       children: <PropertyMappingSection repositoryId={repositoryId} />,
     },
   ];
