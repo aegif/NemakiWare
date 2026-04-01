@@ -43,6 +43,7 @@ import java.util.Map;
 public class CanonicalImportServiceImpl implements CanonicalImportService {
 
     private static final Logger logger = LoggerFactory.getLogger(CanonicalImportServiceImpl.class);
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON_MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
 
     private ConnectorDefinitionService connectorDefinitionService;
     private ImportProfileDefinitionService importProfileDefinitionService;
@@ -158,7 +159,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     targetFolderId, contentStream, VersioningState.MAJOR, null, null, null, null);
 
             // 6. Apply secondary types
-            applySourceMetadata(repositoryId, objectId, callContext, connector, request);
+            List<String> warnings = new ArrayList<>();
+            String metadataError = applySourceMetadata(repositoryId, objectId, callContext, connector, request);
+            if (metadataError != null) {
+                warnings.add(metadataError);
+            }
 
             // 7. Emit lineage event
             String lineageEventId = emitLineageEvent(repositoryId, objectId, targetFolderId, connector, request);
@@ -166,7 +171,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             logger.info("Canonical import completed: requestId={}, objectId={}, profile={}, connector={}",
                     requestId, objectId, profile.getProfileId(), connector.getConnectorId());
 
-            return ExternalIngestResult.success(requestId, objectId, "1.0", false, lineageEventId);
+            return new ExternalIngestResult(requestId, objectId, "1.0", false,
+                    false, false, null, lineageEventId, List.of(), warnings);
 
         } catch (Exception e) {
             logger.error("Canonical import failed: requestId={}, error={}", requestId, e.getMessage(), e);
@@ -174,13 +180,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
     }
 
-    private void applySourceMetadata(String repositoryId, String objectId, CallContext callContext,
-                                     ConnectorDefinition connector, ExternalIngestRequest request) {
+    /**
+     * @return error message if metadata application failed, null on success
+     */
+    private String applySourceMetadata(String repositoryId, String objectId, CallContext callContext,
+                                       ConnectorDefinition connector, ExternalIngestRequest request) {
         try {
             Content content = contentService.getContent(repositoryId, objectId);
             if (content == null) {
                 logger.warn("Content not found after creation: {}", objectId);
-                return;
+                return "Content not found after creation: " + objectId;
             }
 
             List<Aspect> aspects = content.getAspects();
@@ -216,8 +225,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // Persist externalContext from request metadata if provided
             if (request.getMetadata() != null && !request.getMetadata().isEmpty()) {
                 try {
-                    String contextJson = new com.fasterxml.jackson.databind.ObjectMapper()
-                            .writeValueAsString(request.getMetadata());
+                    String contextJson = JSON_MAPPER.writeValueAsString(request.getMetadata());
                     newProps.put("nemaki:externalContext", contextJson);
                 } catch (Exception e) {
                     logger.debug("Failed to serialize metadata as externalContext: {}", e.getMessage());
@@ -269,8 +277,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     logger.debug("Cache invalidation failed for {}: {}", objectId, e.getMessage());
                 }
             }
+            return null;
         } catch (Exception e) {
             logger.warn("Failed to apply source metadata to {}: {}", objectId, e.getMessage());
+            return "Source metadata application failed: " + e.getMessage();
         }
     }
 
