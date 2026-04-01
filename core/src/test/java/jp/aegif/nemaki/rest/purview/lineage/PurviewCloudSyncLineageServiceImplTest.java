@@ -210,6 +210,24 @@ public class PurviewCloudSyncLineageServiceImplTest {
         assertEquals(0, deletedCount);
     }
 
+    /**
+     * Regression: manual cleanup deletes only the process entity.
+     * The external asset is skipped because it may be shared with other documents.
+     */
+    @Test
+    public void testDeleteCloudSyncLineageByObjectIdSkipsExternalAsset() throws Exception {
+        int deletedCount = service.deleteCloudSyncLineageByObjectId(
+                "bedroom", "doc-001", "google:cloud-001");
+
+        // Only the process entity should be deleted (1 call), not the external asset
+        assertEquals(1, deletedCount);
+        verify(entityRegistryClient, times(1)).deleteByUniqueAttribute(
+                any(), eq("nemaki_cloud_sync_process"), any(), any());
+        // External asset delete must NOT be called
+        verify(entityRegistryClient, never()).deleteByUniqueAttribute(
+                any(), eq("nemaki_external_asset"), any(), any());
+    }
+
     private Document documentWithCloud(String objectId, String provider, String externalFileId, String cloudFileUrl) {
         Document document = new Document();
         document.setId(objectId);
