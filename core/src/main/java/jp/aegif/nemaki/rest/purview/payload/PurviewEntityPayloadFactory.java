@@ -1,12 +1,14 @@
 package jp.aegif.nemaki.rest.purview.payload;
 
 import jp.aegif.nemaki.rest.purview.PurviewCloudMetadataSupport;
+import jp.aegif.nemaki.model.Property;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
@@ -34,6 +36,13 @@ public class PurviewEntityPayloadFactory {
     private static final String FILESYSTEM_SOURCE_SYSTEM = "filesystem";
     private static final String ZIP_FOLDER_EXPORT_MODE = "zip-folder";
     private static final String ZIP_SELECTION_EXPORT_MODE = "zip-selection";
+
+    private CatalogPropertyMappingResolver propertyMappingResolver;
+
+    @Autowired(required = false)
+    public void setPropertyMappingResolver(CatalogPropertyMappingResolver propertyMappingResolver) {
+        this.propertyMappingResolver = propertyMappingResolver;
+    }
 
     public Map<String, Object> buildBulkPayload(List<Map<String, Object>> entities) {
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -86,6 +95,9 @@ public class PurviewEntityPayloadFactory {
         }
         attributes.put("lifecycleState", LIFECYCLE_ACTIVE);
 
+        // Inject custom property values based on mapping configuration
+        appendCustomPropertyValues(attributes, repositoryId, content);
+
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", FOLDER_TYPE_NAME);
         entity.put("attributes", attributes);
@@ -134,6 +146,9 @@ public class PurviewEntityPayloadFactory {
         attributes.put("cloudFileUrl", PurviewCloudMetadataSupport.getCloudFileUrl(content));
         attributes.put("cloudLastSyncedAt", PurviewCloudMetadataSupport.getCloudLastSyncedAt(content));
 
+        // Inject custom property values based on mapping configuration
+        appendCustomPropertyValues(attributes, repositoryId, content);
+
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", DOCUMENT_TYPE_NAME);
         entity.put("attributes", attributes);
@@ -142,6 +157,85 @@ public class PurviewEntityPayloadFactory {
         entity.put("updatedBy", firstNonBlank(content.getModifier(), content.getCreator(), "system"));
         entity.put("version", 0);
         return entity;
+    }
+
+    /**
+     * Appends custom property values from the content's subTypeProperties
+     * to the entity attributes map, using the catalog attribute names
+     * defined in the property mapping configuration for the given repository.
+     */
+    void appendCustomPropertyValues(Map<String, Object> attributes, String repositoryId, Content content) {
+        if (propertyMappingResolver == null || content == null || repositoryId == null) {
+            return;
+        }
+        String typeId = content.getObjectType();
+        if (typeId == null || typeId.isBlank()) {
+            return;
+        }
+        Map<String, String> mappings = propertyMappingResolver.getEnabledMappings(repositoryId, typeId);
+        if (mappings.isEmpty()) {
+            return;
+        }
+        // Use the same global union that schema generation uses, so payload never
+        // emits attributes that were dropped by cross-repo conflict resolution
+        // or missing type definitions.
+        Map<String, CatalogPropertyMappingResolver.ResolvedMapping> schemaUnion =
+                propertyMappingResolver.getResolvedMappingsAllRepositories();
+
+        List<Property> subTypeProperties = content.getSubTypeProperties();
+        if (subTypeProperties == null || subTypeProperties.isEmpty()) {
+            return;
+        }
+        Map<String, Object> propertyValues = new LinkedHashMap<>();
+        for (Property prop : subTypeProperties) {
+            if (prop.getKey() != null) {
+                propertyValues.put(prop.getKey(), prop.getValue());
+            }
+        }
+        // Also resolve this repository's mappings to compare type/cardinality
+        Map<String, CatalogPropertyMappingResolver.ResolvedMapping> localResolved =
+                propertyMappingResolver.getResolvedMappings(repositoryId);
+
+        for (Map.Entry<String, String> mapping : mappings.entrySet()) {
+            String cmisPropertyId = mapping.getKey();
+            String catalogName = mapping.getValue();
+            // Skip if this catalogName is not in the global schema union
+            CatalogPropertyMappingResolver.ResolvedMapping schemaEntry = schemaUnion.get(catalogName);
+            if (schemaEntry == null) {
+                continue;
+            }
+            // Skip if our local resolved mapping disagrees with the schema entry
+            // on propertyId, type, or cardinality (we lost the conflict)
+            CatalogPropertyMappingResolver.ResolvedMapping localEntry = localResolved.get(catalogName);
+            if (localEntry == null) {
+                continue;
+            }
+            if (!localEntry.cmisPropertyId().equals(schemaEntry.cmisPropertyId())
+                    || localEntry.propertyType() != schemaEntry.propertyType()
+                    || localEntry.cardinality() != schemaEntry.cardinality()) {
+                continue;
+            }
+            Object value = propertyValues.get(cmisPropertyId);
+            if (value != null) {
+                attributes.put(catalogName, convertPropertyValue(value));
+            }
+        }
+    }
+
+    private Object convertPropertyValue(Object value) {
+        if (value instanceof java.util.GregorianCalendar cal) {
+            return cal.getTimeInMillis();
+        }
+        if (value instanceof java.util.Date date) {
+            return date.getTime();
+        }
+        if (value instanceof java.math.BigDecimal bd) {
+            return bd.doubleValue();
+        }
+        if (value instanceof List<?> list) {
+            return list.stream().map(this::convertPropertyValue).toList();
+        }
+        return value;
     }
 
     public Map<String, Object> buildTypeDefinitionEntity(String repositoryId, NemakiTypeDefinition typeDefinition) {

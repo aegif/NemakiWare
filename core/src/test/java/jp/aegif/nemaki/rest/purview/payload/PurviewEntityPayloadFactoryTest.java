@@ -4,12 +4,24 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.GregorianCalendar;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
 
+import jp.aegif.nemaki.businesslogic.TypeService;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
+import jp.aegif.nemaki.rest.controller.IntegrationSettingsService;
+import org.apache.chemistry.opencmis.commons.enums.Cardinality;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.junit.jupiter.api.Test;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
@@ -644,6 +656,214 @@ public class PurviewEntityPayloadFactoryTest {
         Map<String, Object> folderFolderRel = factory.buildFolderFolderRelationship("bedroom", childFolder, folderFolderGuids);
         assertEquals("guid-parent", ((Map<String, Object>) folderFolderRel.get("end1")).get("guid"));
         assertEquals("guid-child", ((Map<String, Object>) folderFolderRel.get("end2")).get("guid"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildDocumentEntityIncludesCustomPropertyValues() {
+        IntegrationSettingsService service = mock(IntegrationSettingsService.class);
+        String json = """
+                {
+                  "nemaki:document": {
+                    "nemaki:department": { "enabled": true, "catalogName": "department" },
+                    "nemaki:priority": { "enabled": true, "catalogName": "priority" }
+                  }
+                }
+                """;
+        when(service.readSetting("catalog.sync.propertyMappings.bedroom")).thenReturn(json);
+
+        TypeService typeService = mock(TypeService.class);
+        NemakiPropertyDefinitionCore stringCore = mockCore(PropertyType.STRING);
+        NemakiPropertyDefinitionCore intCore = mockCore(PropertyType.INTEGER);
+        when(typeService.getPropertyDefinitionCoreByPropertyId("bedroom", "nemaki:department")).thenReturn(stringCore);
+        when(typeService.getPropertyDefinitionCoreByPropertyId("bedroom", "nemaki:priority")).thenReturn(intCore);
+
+        RepositoryInfoMap repoMap = mock(RepositoryInfoMap.class);
+        when(repoMap.keys()).thenReturn(java.util.Set.of("bedroom"));
+        CatalogPropertyMappingResolver resolver = new CatalogPropertyMappingResolver(service, typeService, repoMap);
+
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        factory.setPropertyMappingResolver(resolver);
+
+        Document doc = new Document();
+        doc.setId("doc-001");
+        doc.setName("Test Document");
+        doc.setObjectType("nemaki:document");
+        doc.setCreator("user1");
+        List<Property> customProps = new ArrayList<>();
+        customProps.add(new Property("nemaki:department", "Engineering"));
+        customProps.add(new Property("nemaki:priority", 5));
+        doc.setSubTypeProperties(customProps);
+
+        Map<String, Object> entity = factory.buildDocumentEntity("bedroom", doc);
+        Map<String, Object> attrs = (Map<String, Object>) entity.get("attributes");
+
+        assertEquals("Engineering", attrs.get("department"));
+        assertEquals(5, attrs.get("priority"));
+        assertEquals("doc-001", attrs.get("objectId"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildDocumentEntityOmitsDisabledMappings() {
+        IntegrationSettingsService service = mock(IntegrationSettingsService.class);
+        String json = """
+                {
+                  "nemaki:document": {
+                    "nemaki:department": { "enabled": true, "catalogName": "department" },
+                    "nemaki:secret": { "enabled": false, "catalogName": "secret" }
+                  }
+                }
+                """;
+        when(service.readSetting("catalog.sync.propertyMappings.bedroom")).thenReturn(json);
+
+        TypeService typeService = mock(TypeService.class);
+        NemakiPropertyDefinitionCore strCore = mockCore(PropertyType.STRING);
+        when(typeService.getPropertyDefinitionCoreByPropertyId(eq("bedroom"), anyString()))
+                .thenReturn(strCore);
+
+        RepositoryInfoMap repoMap = mock(RepositoryInfoMap.class);
+        when(repoMap.keys()).thenReturn(java.util.Set.of("bedroom"));
+        CatalogPropertyMappingResolver resolver = new CatalogPropertyMappingResolver(service, typeService, repoMap);
+
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        factory.setPropertyMappingResolver(resolver);
+
+        Document doc = new Document();
+        doc.setId("doc-002");
+        doc.setName("Secret Doc");
+        doc.setObjectType("nemaki:document");
+        List<Property> customProps = new ArrayList<>();
+        customProps.add(new Property("nemaki:department", "Sales"));
+        customProps.add(new Property("nemaki:secret", "classified"));
+        doc.setSubTypeProperties(customProps);
+
+        Map<String, Object> entity = factory.buildDocumentEntity("bedroom", doc);
+        Map<String, Object> attrs = (Map<String, Object>) entity.get("attributes");
+
+        assertEquals("Sales", attrs.get("department"));
+        assertNull(attrs.get("secret"), "Disabled mapping should not be included");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testRepositoryIsolationInPayload() {
+        IntegrationSettingsService service = mock(IntegrationSettingsService.class);
+        when(service.readSetting("catalog.sync.propertyMappings.bedroom")).thenReturn(
+                "{ \"nemaki:doc\": { \"nemaki:dept\": { \"enabled\": true, \"catalogName\": \"dept_a\" } } }");
+        when(service.readSetting("catalog.sync.propertyMappings.canopy")).thenReturn(
+                "{ \"nemaki:doc\": { \"nemaki:dept\": { \"enabled\": true, \"catalogName\": \"dept_b\" } } }");
+
+        TypeService typeService = mock(TypeService.class);
+        NemakiPropertyDefinitionCore strCore = mockCore(PropertyType.STRING);
+        when(typeService.getPropertyDefinitionCoreByPropertyId(anyString(), eq("nemaki:dept")))
+                .thenReturn(strCore);
+
+        RepositoryInfoMap repoMap = mock(RepositoryInfoMap.class);
+        when(repoMap.keys()).thenReturn(java.util.Set.of("bedroom", "canopy"));
+        CatalogPropertyMappingResolver resolver = new CatalogPropertyMappingResolver(service, typeService, repoMap);
+
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        factory.setPropertyMappingResolver(resolver);
+
+        Document doc = new Document();
+        doc.setId("doc-x");
+        doc.setName("Doc");
+        doc.setObjectType("nemaki:doc");
+        List<Property> customProps = new ArrayList<>();
+        customProps.add(new Property("nemaki:dept", "Engineering"));
+        doc.setSubTypeProperties(customProps);
+
+        Map<String, Object> bedroomEntity = factory.buildDocumentEntity("bedroom", doc);
+        Map<String, Object> canopyEntity = factory.buildDocumentEntity("canopy", doc);
+        Map<String, Object> bedroomAttrs = (Map<String, Object>) bedroomEntity.get("attributes");
+        Map<String, Object> canopyAttrs = (Map<String, Object>) canopyEntity.get("attributes");
+
+        assertEquals("Engineering", bedroomAttrs.get("dept_a"));
+        assertNull(bedroomAttrs.get("dept_b"));
+        assertEquals("Engineering", canopyAttrs.get("dept_b"));
+        assertNull(canopyAttrs.get("dept_a"));
+    }
+
+    /**
+     * Regression test: same catalogName, same propertyId, but different type across repos.
+     * Schema generation keeps the first repo's type (bedroom=STRING wins over canopy=INTEGER).
+     * Payload from the losing repo (canopy) must NOT emit the value because its type
+     * disagrees with the schema.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testCrossRepoSamePropertyIdTypeMismatchSuppressesLosingPayload() {
+        IntegrationSettingsService service = mock(IntegrationSettingsService.class);
+        // Both repos map nemaki:priority → "priority", but bedroom resolves as STRING, canopy as INTEGER
+        when(service.readSetting("catalog.sync.propertyMappings.bedroom")).thenReturn(
+                "{ \"nemaki:doc\": { \"nemaki:priority\": { \"enabled\": true, \"catalogName\": \"priority\" } } }");
+        when(service.readSetting("catalog.sync.propertyMappings.canopy")).thenReturn(
+                "{ \"nemaki:doc\": { \"nemaki:priority\": { \"enabled\": true, \"catalogName\": \"priority\" } } }");
+
+        TypeService typeService = mock(TypeService.class);
+        NemakiPropertyDefinitionCore strCore = mockCore(PropertyType.STRING);
+        NemakiPropertyDefinitionCore intCore = mockCore(PropertyType.INTEGER);
+        when(typeService.getPropertyDefinitionCoreByPropertyId("bedroom", "nemaki:priority")).thenReturn(strCore);
+        when(typeService.getPropertyDefinitionCoreByPropertyId("canopy", "nemaki:priority")).thenReturn(intCore);
+
+        // bedroom comes first in iteration order → STRING wins in global union
+        RepositoryInfoMap repoMap = mock(RepositoryInfoMap.class);
+        when(repoMap.keys()).thenReturn(new java.util.LinkedHashSet<>(java.util.List.of("bedroom", "canopy")));
+        CatalogPropertyMappingResolver resolver = new CatalogPropertyMappingResolver(service, typeService, repoMap);
+
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        factory.setPropertyMappingResolver(resolver);
+
+        Document doc = new Document();
+        doc.setId("doc-conflict");
+        doc.setName("Conflict Doc");
+        doc.setObjectType("nemaki:doc");
+        List<Property> customProps = new ArrayList<>();
+        customProps.add(new Property("nemaki:priority", "high"));
+        doc.setSubTypeProperties(customProps);
+
+        // bedroom (STRING, winner) → value emitted
+        Map<String, Object> bedroomEntity = factory.buildDocumentEntity("bedroom", doc);
+        Map<String, Object> bedroomAttrs = (Map<String, Object>) bedroomEntity.get("attributes");
+        assertEquals("high", bedroomAttrs.get("priority"), "Winner repo should emit value");
+
+        // canopy (INTEGER, loser) → value suppressed
+        Map<String, Object> canopyEntity = factory.buildDocumentEntity("canopy", doc);
+        Map<String, Object> canopyAttrs = (Map<String, Object>) canopyEntity.get("attributes");
+        assertNull(canopyAttrs.get("priority"), "Losing repo with type mismatch should NOT emit value");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testBuildDocumentEntityWithoutResolverOmitsCustomProps() {
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+
+        Document doc = new Document();
+        doc.setId("doc-003");
+        doc.setName("Plain Doc");
+        doc.setObjectType("nemaki:document");
+        List<Property> customProps = new ArrayList<>();
+        customProps.add(new Property("nemaki:department", "HR"));
+        doc.setSubTypeProperties(customProps);
+
+        Map<String, Object> entity = factory.buildDocumentEntity("bedroom", doc);
+        Map<String, Object> attrs = (Map<String, Object>) entity.get("attributes");
+
+        assertNull(attrs.get("department"), "Without resolver, custom props should not appear");
+        assertEquals("doc-003", attrs.get("objectId"));
+    }
+
+    private static NemakiPropertyDefinitionCore mockCore(PropertyType type) {
+        return mockCore(type, Cardinality.SINGLE);
+    }
+
+    private static NemakiPropertyDefinitionCore mockCore(PropertyType type, Cardinality card) {
+        NemakiPropertyDefinitionCore core = org.mockito.Mockito.mock(NemakiPropertyDefinitionCore.class,
+                org.mockito.Mockito.withSettings().stubOnly());
+        org.mockito.Mockito.doReturn(type).when(core).getPropertyType();
+        org.mockito.Mockito.doReturn(card).when(core).getCardinality();
+        return core;
     }
 
     private GregorianCalendar calendar(String isoInstant) {

@@ -4,6 +4,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.rest.purview.PurviewConnectionService;
 import jp.aegif.nemaki.rest.purview.PurviewConnectionStatus;
+import jp.aegif.nemaki.rest.purview.payload.CatalogPropertyMappingResolver;
+import jp.aegif.nemaki.rest.purview.payload.CatalogPropertyMappingResolver.PropertyMapping;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -149,6 +151,9 @@ public class IntegrationSettingsController {
 
 	@Autowired(required = false)
 	private PurviewConnectionService purviewConnectionService;
+
+	@Autowired(required = false)
+	private CatalogPropertyMappingResolver propertyMappingResolver;
 
 	@Autowired
 	public IntegrationSettingsController(IntegrationSettingsService settingsService) {
@@ -418,6 +423,94 @@ public class IntegrationSettingsController {
 			response.put("message", "Atlas connection test failed: " + e.getMessage());
 		}
 		return ResponseEntity.ok(response);
+	}
+
+	// ==================== Property Mappings ====================
+
+	/**
+	 * Returns the property mapping configuration for a specific repository.
+	 */
+	@GetMapping("/property-mappings/{repositoryId}")
+	public ResponseEntity<Map<String, Object>> getPropertyMappings(@PathVariable String repositoryId) {
+		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+		if (forbidden != null) return forbidden;
+
+		Map<String, Object> response = new LinkedHashMap<>();
+		if (propertyMappingResolver == null) {
+			response.put("mappings", Map.of());
+			response.put("message", "Property mapping resolver is not available");
+			return ResponseEntity.ok(response);
+		}
+		Map<String, Map<String, PropertyMapping>> mappings = propertyMappingResolver.loadMappings(repositoryId);
+		Map<String, Map<String, Map<String, Object>>> jsonMappings = new LinkedHashMap<>();
+		for (Map.Entry<String, Map<String, PropertyMapping>> typeEntry : mappings.entrySet()) {
+			Map<String, Map<String, Object>> typeMap = new LinkedHashMap<>();
+			for (Map.Entry<String, PropertyMapping> propEntry : typeEntry.getValue().entrySet()) {
+				Map<String, Object> fields = new LinkedHashMap<>();
+				fields.put("enabled", propEntry.getValue().enabled());
+				fields.put("catalogName", propEntry.getValue().catalogName());
+				typeMap.put(propEntry.getKey(), fields);
+			}
+			jsonMappings.put(typeEntry.getKey(), typeMap);
+		}
+		response.put("mappings", jsonMappings);
+		return ResponseEntity.ok(response);
+	}
+
+	/**
+	 * Updates the property mapping configuration for a specific repository.
+	 * Accepts the same format as returned by GET.
+	 */
+	@SuppressWarnings("unchecked")
+	@PutMapping("/property-mappings/{repositoryId}")
+	public ResponseEntity<Map<String, Object>> updatePropertyMappings(
+			@PathVariable String repositoryId, @RequestBody Map<String, Object> body) {
+		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+		if (forbidden != null) return forbidden;
+
+		Map<String, Object> response = new LinkedHashMap<>();
+		if (propertyMappingResolver == null) {
+			response.put("status", "error");
+			response.put("message", "Property mapping resolver is not available");
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+		}
+
+		try {
+			Object mappingsObj = body.get("mappings");
+			if (!(mappingsObj instanceof Map<?, ?>)) {
+				response.put("status", "error");
+				response.put("message", "Missing or invalid 'mappings' field");
+				return ResponseEntity.badRequest().body(response);
+			}
+			Map<String, Object> rawMappings = (Map<String, Object>) mappingsObj;
+			Map<String, Map<String, PropertyMapping>> parsed = new LinkedHashMap<>();
+			for (Map.Entry<String, Object> typeEntry : rawMappings.entrySet()) {
+				if (!(typeEntry.getValue() instanceof Map<?, ?>)) continue;
+				Map<String, Object> typeMap = (Map<String, Object>) typeEntry.getValue();
+				Map<String, PropertyMapping> typeMappings = new LinkedHashMap<>();
+				for (Map.Entry<String, Object> propEntry : typeMap.entrySet()) {
+					if (!(propEntry.getValue() instanceof Map<?, ?>)) continue;
+					Map<String, Object> fields = (Map<String, Object>) propEntry.getValue();
+					boolean enabled = Boolean.TRUE.equals(fields.get("enabled"));
+					String catalogName = fields.get("catalogName") instanceof String s ? s : propEntry.getKey();
+					typeMappings.put(propEntry.getKey(), new PropertyMapping(enabled, catalogName));
+				}
+				parsed.put(typeEntry.getKey(), typeMappings);
+			}
+			propertyMappingResolver.saveMappings(repositoryId, parsed);
+			response.put("status", "success");
+			response.put("message", "Property mappings updated successfully");
+			return ResponseEntity.ok(response);
+		} catch (IllegalArgumentException e) {
+			response.put("status", "error");
+			response.put("message", e.getMessage());
+			return ResponseEntity.badRequest().body(response);
+		} catch (Exception e) {
+			log.error("Failed to update property mappings", e);
+			response.put("status", "error");
+			response.put("message", "Failed to update property mappings: " + e.getMessage());
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+		}
 	}
 
 	// ==================== Helpers ====================

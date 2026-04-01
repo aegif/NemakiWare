@@ -3,11 +3,20 @@ package jp.aegif.nemaki.rest.purview.payload;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
+import jp.aegif.nemaki.businesslogic.TypeService;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
+import jp.aegif.nemaki.rest.controller.IntegrationSettingsService;
+import org.apache.chemistry.opencmis.commons.enums.Cardinality;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.junit.jupiter.api.Test;
 
 public class PurviewSchemaPayloadFactoryTest {
@@ -118,6 +127,90 @@ public class PurviewSchemaPayloadFactoryTest {
             assertTrue(relDef.containsKey("endDef1"), "relDef missing 'endDef1': " + relDef.get("name"));
             assertTrue(relDef.containsKey("endDef2"), "relDef missing 'endDef2': " + relDef.get("name"));
         }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testDocumentEntityDefIncludesCustomPropertyMappings() {
+        IntegrationSettingsService service = mock(IntegrationSettingsService.class);
+        String json = """
+                {
+                  "nemaki:document": {
+                    "nemaki:dept": { "enabled": true, "catalogName": "department" },
+                    "nemaki:priority": { "enabled": true, "catalogName": "priority" }
+                  },
+                  "nemaki:report": {
+                    "nemaki:date": { "enabled": true, "catalogName": "report_date" }
+                  }
+                }
+                """;
+        when(service.readSetting("catalog.sync.propertyMappings.bedroom")).thenReturn(json);
+
+        // Mock TypeService to resolve types at runtime
+        TypeService typeService = mock(TypeService.class);
+        NemakiPropertyDefinitionCore stringCore = mock(NemakiPropertyDefinitionCore.class);
+        when(stringCore.getPropertyType()).thenReturn(PropertyType.STRING);
+        when(stringCore.getCardinality()).thenReturn(Cardinality.SINGLE);
+        NemakiPropertyDefinitionCore intCore = mock(NemakiPropertyDefinitionCore.class);
+        when(intCore.getPropertyType()).thenReturn(PropertyType.INTEGER);
+        when(intCore.getCardinality()).thenReturn(Cardinality.SINGLE);
+        NemakiPropertyDefinitionCore dateCore = mock(NemakiPropertyDefinitionCore.class);
+        when(dateCore.getPropertyType()).thenReturn(PropertyType.DATETIME);
+        when(dateCore.getCardinality()).thenReturn(Cardinality.SINGLE);
+        when(typeService.getPropertyDefinitionCoreByPropertyId("bedroom", "nemaki:dept")).thenReturn(stringCore);
+        when(typeService.getPropertyDefinitionCoreByPropertyId("bedroom", "nemaki:priority")).thenReturn(intCore);
+        when(typeService.getPropertyDefinitionCoreByPropertyId("bedroom", "nemaki:date")).thenReturn(dateCore);
+
+        RepositoryInfoMap repoMap = mock(RepositoryInfoMap.class);
+        when(repoMap.keys()).thenReturn(Set.of("bedroom"));
+
+        CatalogPropertyMappingResolver resolver = new CatalogPropertyMappingResolver(service, typeService, repoMap);
+
+        PurviewSchemaManifestFactory manifestFactory = new PurviewSchemaManifestFactory();
+        PurviewSchemaPayloadFactory payloadFactory = new PurviewSchemaPayloadFactory();
+        payloadFactory.setPropertyMappingResolver(resolver);
+
+        Map<String, Object> payload = payloadFactory.buildTypeDefinitionsPayload(manifestFactory.buildManifest(), "bedroom");
+        List<Map<String, Object>> entityDefs = (List<Map<String, Object>>) payload.get("entityDefs");
+        List<String> docAttrs = attributeNames(entityDefs, "nemaki_document");
+
+        // Standard attributes still present
+        assertTrue(docAttrs.contains("objectId"));
+        assertTrue(docAttrs.contains("repositoryId"));
+        // Custom mapped attributes added to both document and folder
+        assertTrue(docAttrs.contains("department"), "Expected custom attr 'department'");
+        assertTrue(docAttrs.contains("priority"), "Expected custom attr 'priority'");
+        assertTrue(docAttrs.contains("report_date"), "Expected custom attr 'report_date'");
+
+        // Verify correct Atlas types (resolved from TypeService, not stored)
+        Map<String, Object> docDef = entityDefs.stream()
+                .filter(d -> "nemaki_document".equals(d.get("name"))).findFirst().orElseThrow();
+        List<Map<String, Object>> attrDefs = (List<Map<String, Object>>) docDef.get("attributeDefs");
+        Map<String, Object> priorityAttr = attrDefs.stream()
+                .filter(a -> "priority".equals(a.get("name"))).findFirst().orElseThrow();
+        assertEquals("long", priorityAttr.get("typeName"), "INTEGER should map to Atlas 'long'");
+        Map<String, Object> dateAttr = attrDefs.stream()
+                .filter(a -> "report_date".equals(a.get("name"))).findFirst().orElseThrow();
+        assertEquals("long", dateAttr.get("typeName"), "DATETIME should map to Atlas 'long'");
+
+        // Folder should also have custom attrs
+        List<String> folderAttrs = attributeNames(entityDefs, "nemaki_folder");
+        assertTrue(folderAttrs.contains("department"), "Folder should also have custom attrs");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testDocumentEntityDefWithoutMappingResolverHasNoCustomAttrs() {
+        PurviewSchemaManifestFactory manifestFactory = new PurviewSchemaManifestFactory();
+        PurviewSchemaPayloadFactory payloadFactory = new PurviewSchemaPayloadFactory();
+        // No resolver set
+
+        Map<String, Object> payload = payloadFactory.buildTypeDefinitionsPayload(manifestFactory.buildManifest());
+        List<Map<String, Object>> entityDefs = (List<Map<String, Object>>) payload.get("entityDefs");
+        List<String> docAttrs = attributeNames(entityDefs, "nemaki_document");
+
+        // Should have exactly 16 standard attributes
+        assertEquals(16, docAttrs.size());
     }
 
     @SuppressWarnings("unchecked")

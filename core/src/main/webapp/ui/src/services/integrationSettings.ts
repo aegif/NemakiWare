@@ -115,3 +115,38 @@ export const testAtlasConnection = (formValues?: Record<string, string>) =>
 // Dataplex
 export const getDataplexSettings = () => getSettings('dataplex');
 export const updateDataplexSettings = (settings: Record<string, string>) => updateSettings('dataplex', settings);
+
+// Property Mappings
+export interface PropertyMappingEntry {
+  enabled: boolean;
+  catalogName: string;
+}
+
+export interface PropertyMappingsResponse {
+  mappings: Record<string, Record<string, PropertyMappingEntry>>;
+  message?: string;
+}
+
+export async function getPropertyMappings(repositoryId: string): Promise<PropertyMappingsResponse> {
+  const response = await fetchWithAuth(`${BASE_URL}/property-mappings/${encodeURIComponent(repositoryId)}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch property mappings: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function updatePropertyMappings(
+  repositoryId: string,
+  mappings: Record<string, Record<string, PropertyMappingEntry>>
+): Promise<UpdateResult> {
+  const response = await fetchWithAuth(`${BASE_URL}/property-mappings/${encodeURIComponent(repositoryId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mappings }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `Failed to update property mappings: ${response.status}`);
+  }
+  return response.json();
+}

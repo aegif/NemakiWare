@@ -6,12 +6,13 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class PurviewSchemaManifestFactory {
 
-    private static final String SCHEMA_VERSION = "12";
+    private static final String SCHEMA_VERSION = "13";
     private static final List<String> CUSTOM_TYPE_NAMES = List.of(
             "nemaki_repository",
             "nemaki_folder",
@@ -31,12 +32,28 @@ public class PurviewSchemaManifestFactory {
             "nemaki_document_has_archive");
     private static final List<String> BUSINESS_METADATA_NAMES = List.of();
 
+    private CatalogPropertyMappingResolver propertyMappingResolver;
+
+    @Autowired(required = false)
+    public void setPropertyMappingResolver(CatalogPropertyMappingResolver propertyMappingResolver) {
+        this.propertyMappingResolver = propertyMappingResolver;
+    }
+
+    /** @deprecated Use {@link #buildManifest(String)} */
     public PurviewSchemaManifest buildManifest() {
+        return buildManifest(null);
+    }
+
+    public PurviewSchemaManifest buildManifest(String repositoryId) {
+        String mappingFingerprint = propertyMappingResolver != null
+                ? propertyMappingResolver.computeMappingFingerprintAllRepositories()
+                : "";
         String canonical = String.join("\n",
                 "schemaVersion=" + SCHEMA_VERSION,
                 "customTypes=" + String.join(",", CUSTOM_TYPE_NAMES),
                 "relationshipTypes=" + String.join(",", RELATIONSHIP_TYPE_NAMES),
-                "businessMetadata=" + String.join(",", BUSINESS_METADATA_NAMES));
+                "businessMetadata=" + String.join(",", BUSINESS_METADATA_NAMES),
+                "propertyMappings=" + mappingFingerprint);
         String schemaHash = sha256(canonical);
         return new PurviewSchemaManifest(
                 SCHEMA_VERSION,

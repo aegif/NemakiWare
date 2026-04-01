@@ -12,12 +12,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import jp.aegif.nemaki.model.Content;
 
 @Service
 public class PurviewCloudSyncLineageServiceImpl implements PurviewCloudSyncLineageService {
+
+    private static final Logger logger = LoggerFactory.getLogger(PurviewCloudSyncLineageServiceImpl.class);
 
     private static final String UNIQUE_ATTRIBUTE_NAME = "qualifiedName";
     private static final String EXTERNAL_ASSET_TYPE_NAME = "nemaki_external_asset";
@@ -142,17 +146,15 @@ public class PurviewCloudSyncLineageServiceImpl implements PurviewCloudSyncLinea
                 throw e;
             }
         }
-        // Delete the external asset entity if stableKey is provided
+        // External asset entities may be shared across multiple documents with the
+        // same stableKey. The reconcile path checks activeStableKeys before deleting,
+        // but this manual cleanup path cannot determine whether other documents still
+        // reference the same key without a full scan. Skip deletion and log a notice
+        // so the admin can use reconciliation to clean up orphaned assets safely.
         if (stableKey != null && !stableKey.isBlank()) {
-            try {
-                deletedCount += deleteEntity(
-                        EXTERNAL_ASSET_TYPE_NAME,
-                        entityPayloadFactory.buildExternalAssetQualifiedName(repositoryId, stableKey));
-            } catch (IllegalStateException e) {
-                if (!e.getMessage().contains("404")) {
-                    throw e;
-                }
-            }
+            logger.info("Skipping external asset deletion for stableKey '{}' during manual cleanup of object '{}' "
+                    + "in repository '{}'. Use full reconciliation to safely remove orphaned external assets.",
+                    stableKey, objectId, repositoryId);
         }
         return deletedCount;
     }

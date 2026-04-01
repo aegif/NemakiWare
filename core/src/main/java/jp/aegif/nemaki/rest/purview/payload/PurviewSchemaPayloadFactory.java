@@ -1,9 +1,11 @@
 package jp.aegif.nemaki.rest.purview.payload;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -11,12 +13,25 @@ public class PurviewSchemaPayloadFactory {
 
     private static final String SERVICE_TYPE = "NemakiWare-Custom-Types";
 
+    private CatalogPropertyMappingResolver propertyMappingResolver;
+
+    @Autowired(required = false)
+    public void setPropertyMappingResolver(CatalogPropertyMappingResolver propertyMappingResolver) {
+        this.propertyMappingResolver = propertyMappingResolver;
+    }
+
+    /** @deprecated Use {@link #buildTypeDefinitionsPayload(PurviewSchemaManifest, String)} */
     public Map<String, Object> buildTypeDefinitionsPayload(PurviewSchemaManifest manifest) {
+        return buildTypeDefinitionsPayload(manifest, null);
+    }
+
+    public Map<String, Object> buildTypeDefinitionsPayload(PurviewSchemaManifest manifest, String repositoryId) {
+        List<Map<String, Object>> customAttrDefs = buildCustomPropertyAttributeDefs(repositoryId);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("entityDefs", List.of(
                 buildRepositoryEntityDef(),
-                buildFolderEntityDef(),
-                buildDocumentEntityDef(),
+                buildFolderEntityDef(customAttrDefs),
+                buildDocumentEntityDef(customAttrDefs),
                 buildTypeDefinitionEntityDef(),
                 buildExternalAssetEntityDef(),
                 buildArchiveEntityDef(),
@@ -48,25 +63,27 @@ public class PurviewSchemaPayloadFactory {
         return entityDef;
     }
 
-    private Map<String, Object> buildFolderEntityDef() {
+    private Map<String, Object> buildFolderEntityDef(List<Map<String, Object>> customAttrDefs) {
         Map<String, Object> entityDef = baseTypeDef("nemaki_folder",
                 "Folder synchronized from NemakiWare");
         entityDef.put("superTypes", List.of("Referenceable"));
-        entityDef.put("attributeDefs", List.of(
+        List<Map<String, Object>> attrs = new ArrayList<>(List.of(
                 attribute("repositoryId", "string", false),
                 attribute("objectId", "string", false),
                 attribute("parentId", "string", true),
                 attribute("typeId", "string", true),
                 attribute("folderPath", "string", true),
                 attribute("lifecycleState", "string", true)));
+        attrs.addAll(customAttrDefs);
+        entityDef.put("attributeDefs", attrs);
         return entityDef;
     }
 
-    private Map<String, Object> buildDocumentEntityDef() {
+    private Map<String, Object> buildDocumentEntityDef(List<Map<String, Object>> customAttrDefs) {
         Map<String, Object> entityDef = baseTypeDef("nemaki_document",
                 "Document synchronized from NemakiWare");
         entityDef.put("superTypes", List.of("DataSet"));
-        entityDef.put("attributeDefs", List.of(
+        List<Map<String, Object>> attrs = new ArrayList<>(List.of(
                 attribute("repositoryId", "string", false),
                 attribute("objectId", "string", false),
                 attribute("parentId", "string", true),
@@ -83,7 +100,37 @@ public class PurviewSchemaPayloadFactory {
                 attribute("externalFileId", "string", true),
                 attribute("cloudFileUrl", "string", true),
                 attribute("cloudLastSyncedAt", "string", true)));
+        attrs.addAll(customAttrDefs);
+        entityDef.put("attributeDefs", attrs);
         return entityDef;
+    }
+
+    /**
+     * Builds attribute definitions from the resolved property mappings
+     * for a specific repository. Type and cardinality are derived from
+     * the repository's current type definitions (not stored in the mapping).
+     */
+    List<Map<String, Object>> buildCustomPropertyAttributeDefs(String repositoryId) {
+        if (propertyMappingResolver == null) {
+            return List.of();
+        }
+        // Schema is global to the catalog backend — union all repositories' mappings
+        Map<String, CatalogPropertyMappingResolver.ResolvedMapping> resolved =
+                propertyMappingResolver.getResolvedMappingsAllRepositories();
+        if (resolved.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (CatalogPropertyMappingResolver.ResolvedMapping m : resolved.values()) {
+            String atlasType = CatalogPropertyMappingResolver.toAtlasTypeName(m.propertyType());
+            String cardinality = m.cardinality() == org.apache.chemistry.opencmis.commons.enums.Cardinality.MULTI
+                    ? "SET" : "SINGLE";
+            if ("SET".equals(cardinality)) {
+                atlasType = "array<" + atlasType + ">";
+            }
+            result.add(attribute(m.catalogName(), atlasType, true, cardinality));
+        }
+        return result;
     }
 
     private Map<String, Object> buildTypeDefinitionEntityDef() {
@@ -251,13 +298,17 @@ public class PurviewSchemaPayloadFactory {
     }
 
     private Map<String, Object> attribute(String name, String typeName, boolean optional) {
+        return attribute(name, typeName, optional, "SINGLE");
+    }
+
+    private Map<String, Object> attribute(String name, String typeName, boolean optional, String cardinality) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("name", name);
         map.put("typeName", typeName);
         map.put("isOptional", optional);
-        map.put("cardinality", "SINGLE");
+        map.put("cardinality", cardinality);
         map.put("valuesMinCount", optional ? 0 : 1);
-        map.put("valuesMaxCount", 1);
+        map.put("valuesMaxCount", "SET".equals(cardinality) ? Integer.MAX_VALUE : 1);
         map.put("isUnique", false);
         map.put("isIndexable", true);
         if ("string".equals(typeName)) {

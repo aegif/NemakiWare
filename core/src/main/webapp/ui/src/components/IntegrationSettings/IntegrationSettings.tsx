@@ -9,6 +9,7 @@ import { PurviewSettingsTab } from './PurviewSettingsTab';
 import { AtlasSettingsTab } from './AtlasSettingsTab';
 import { DataplexSettingsTab } from './DataplexSettingsTab';
 import { LineageSettingsTab } from './LineageSettingsTab';
+import PropertyMappingSection from './PropertyMappingSection';
 
 const { Title } = Typography;
 
@@ -16,7 +17,7 @@ interface IntegrationSettingsProps {
   repositoryId: string;
 }
 
-export function IntegrationSettings({ repositoryId: _repositoryId }: IntegrationSettingsProps) {
+export function IntegrationSettings({ repositoryId }: IntegrationSettingsProps) {
   const { t } = useTranslation();
 
   const items = [
@@ -64,6 +65,11 @@ export function IntegrationSettings({ repositoryId: _repositoryId }: Integration
       key: 'lineage',
       label: <Space size={4}>{t('integrationSettings.tabs.lineage')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Beta</Tag></Space>,
       children: <LineageSettingsTab />,
+    },
+    {
+      key: 'property-mapping',
+      label: <Space size={4}>{t('integrationSettings.tabs.propertyMapping')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Beta</Tag></Space>,
+      children: <PropertyMappingSection repositoryId={repositoryId} />,
     },
   ];
 

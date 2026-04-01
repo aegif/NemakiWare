@@ -791,6 +791,13 @@
         <property name="repositoryInfoMap" ref="repositoryInfoMap" />
     </bean>
 
+    <!-- Catalog Property Mapping Resolver -->
+    <bean id="catalogPropertyMappingResolver" class="jp.aegif.nemaki.rest.purview.payload.CatalogPropertyMappingResolver">
+        <constructor-arg ref="integrationSettingsService" />
+        <constructor-arg ref="TypeService" />
+        <constructor-arg ref="repositoryInfoMap" />
+    </bean>
+
     <!-- Password Policy Service -->
     <bean id="passwordPolicyService" class="jp.aegif.nemaki.util.PasswordPolicyService">
         <property name="propertyManager" ref="propertyManager" />

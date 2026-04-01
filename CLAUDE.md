@@ -233,7 +233,21 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ## 現在のバージョン
 
-**3.1.1** (2026-03-27)
+**3.1.1** (2026-04-01)
+
+### RC10 (2026-04-01)
+- マルチカタログバックエンド: MetadataCatalogConnectionResolver, CatalogBackendKind enum, Atlas/Dataplex 設定タブ
+- カスタムプロパティマッピング: リポジトリ単位で CMIS カスタムプロパティを Purview/Atlas/Dataplex にマッピング
+  - CatalogPropertyMappingResolver (repository-scoped 保存, TypeService 実行時型解決)
+  - PurviewSchemaPayloadFactory: カスタム attributeDefs 動的生成 (全リポジトリ union)
+  - PurviewEntityPayloadFactory: カスタムプロパティ値の schema-aligned payload 生成
+  - 予約属性名・空名・型衝突バリデーション (保存時拒否)
+  - UI: プロパティマッピングタブ (タイプ選択 → プロパティ on/off → カタログ属性名設定)
+- レガシー purview.auth.type=basic → atlas.* 自動移行 (source-aware idempotency)
+- デュアルバックエンド警告 (GET/PUT 両方, i18n 対応)
+- Governance API: 非管理者向け公開エンドポイント追加
+- E2E テスト: Microsoft タブロケータ曖昧性修正, Atlas E2E スキップ条件改善
+- Cloud Sync Lineage: 手動クリーンアップでの shared stableKey external asset 保護
 
 ### RC9 (2026-03-16)
 - SAML 2.0認証: POST binding ACS (SamlAcsServlet — sessionStorageブリッジ)
