@@ -293,6 +293,39 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testMessageContextAttachmentUsesMailAttachmentProcessType() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        when(profileService.get("p1")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.MESSAGE_CONTEXT);
+        connector.setSourceSystem("imap");
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn("att-obj-id");
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("att-1");
+        req.setSourceObjectType("attachment");
+        req.setMetadata(java.util.Map.of("mailboxId", "INBOX", "messageStableId", "msg-1"));
+
+        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        assertTrue(result.isSuccess());
+        assertEquals("att-obj-id", result.objectId());
+    }
+
+    @Test
     void testExecuteHappyPath() {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
