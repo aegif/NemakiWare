@@ -26,4 +26,18 @@ public interface CanonicalImportService {
      * @return result with created objectId, lineage eventId, or errors
      */
     ExternalIngestResult execute(CallContext callContext, ExternalIngestRequest request);
+
+    /**
+     * Auto-resolve connector and profile by sourceSystem and archetype, then execute.
+     * Used by legacy code paths (e.g. CloudDriveResource) that don't have explicit
+     * connector/profile IDs.
+     *
+     * @param callContext CMIS call context
+     * @param request     the ingest request (profileId and connectorId may be null)
+     * @param sourceSystem canonical source system name (e.g. "google", "microsoft")
+     * @param archetype    source archetype for auto-resolution
+     * @return result with created objectId, or error if auto-resolution fails
+     */
+    ExternalIngestResult executeWithAutoResolve(CallContext callContext, ExternalIngestRequest request,
+                                                String sourceSystem, SourceArchetype archetype);
 }

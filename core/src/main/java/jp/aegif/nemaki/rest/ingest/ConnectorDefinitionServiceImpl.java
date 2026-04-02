@@ -92,6 +92,17 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         return get(connectorId) != null;
     }
 
+    @Override
+    public ConnectorDefinition findBySystemAndArchetype(String sourceSystem, SourceArchetype archetype) {
+        if (sourceSystem == null || archetype == null) return null;
+        List<ConnectorDefinition> candidates = findBySelector(Map.of(
+                "type", ConnectorDefinition.DOC_TYPE,
+                "sourceSystem", sourceSystem,
+                "sourceArchetype", archetype.name(),
+                "enabled", true));
+        return candidates.isEmpty() ? null : candidates.get(0);
+    }
+
     private void validateRequiredFields(ConnectorDefinition def) {
         if (def.getConnectorId() == null || def.getConnectorId().isBlank()) {
             throw new IllegalArgumentException("connectorId is required");

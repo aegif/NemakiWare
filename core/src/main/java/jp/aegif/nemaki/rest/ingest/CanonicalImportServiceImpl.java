@@ -2,6 +2,8 @@ package jp.aegif.nemaki.rest.ingest;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.service.ObjectService;
+import jp.aegif.nemaki.cmis.service.VersioningService;
+import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.model.Property;
@@ -17,7 +19,9 @@ import jp.aegif.nemaki.util.spring.SpringContext;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
+import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
@@ -48,7 +52,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private ConnectorDefinitionService connectorDefinitionService;
     private ImportProfileDefinitionService importProfileDefinitionService;
     private ContentService contentService;
+    private ContentDaoService contentDaoService;
     private ObjectService objectService;
+    private VersioningService versioningService;
     private NemakiCachePool nemakiCachePool;
 
     // --- DI setters ---
@@ -65,12 +71,52 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         this.contentService = contentService;
     }
 
+    public void setContentDaoService(ContentDaoService contentDaoService) {
+        this.contentDaoService = contentDaoService;
+    }
+
     public void setObjectService(ObjectService objectService) {
         this.objectService = objectService;
     }
 
+    public void setVersioningService(VersioningService versioningService) {
+        this.versioningService = versioningService;
+    }
+
     public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
         this.nemakiCachePool = nemakiCachePool;
+    }
+
+    @Override
+    public ExternalIngestResult executeWithAutoResolve(CallContext callContext, ExternalIngestRequest request,
+                                                       String sourceSystem, SourceArchetype archetype) {
+        String requestId = request.getRequestId();
+
+        // Auto-resolve connector if not explicitly set
+        if (request.getConnectorId() == null || request.getConnectorId().isBlank()) {
+            ConnectorDefinition autoConnector = connectorDefinitionService.findBySystemAndArchetype(sourceSystem, archetype);
+            if (autoConnector == null) {
+                return ExternalIngestResult.error(requestId,
+                        "No enabled connector found for sourceSystem='" + sourceSystem + "', archetype=" + archetype
+                        + ". Create a connector definition via /v1/admin/connectors first.");
+            }
+            request.setConnectorId(autoConnector.getConnectorId());
+        }
+
+        // Auto-resolve profile if not explicitly set
+        if (request.getProfileId() == null || request.getProfileId().isBlank()) {
+            ImportProfileDefinition autoProfile = importProfileDefinitionService
+                    .findDefaultForRepository(request.getRepositoryId(), archetype);
+            if (autoProfile == null) {
+                return ExternalIngestResult.error(requestId,
+                        "No enabled import profile found for repository='" + request.getRepositoryId()
+                        + "', archetype=" + archetype
+                        + ". Create an import profile via /v1/admin/import-profiles first.");
+            }
+            request.setProfileId(autoProfile.getProfileId());
+        }
+
+        return execute(callContext, request);
     }
 
     @Override
@@ -152,18 +198,51 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 fileName = "imported-" + request.getSourceObjectId();
             }
 
-            PropertiesImpl properties = new PropertiesImpl();
-            properties.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, objectTypeId));
-            properties.addProperty(new PropertyStringImpl(PropertyIds.NAME, fileName));
-
             ContentStream contentStream = null;
             if (request.getContentStream() != null) {
                 String mimeType = request.getMimeType() != null ? request.getMimeType() : "application/octet-stream";
                 contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(-1), mimeType, request.getContentStream());
             }
 
-            String objectId = objectService.createDocument(callContext, repositoryId, properties,
-                    targetFolderId, contentStream, VersioningState.MAJOR, null, null, null, null);
+            // 5a. Dedupe: check for existing document with same name in target folder
+            String dedupePolicy = profile.getDedupePolicy() != null ? profile.getDedupePolicy() : "create_new_version";
+            Content existingDoc = contentDaoService != null
+                    ? contentDaoService.getChildByName(repositoryId, targetFolderId, fileName)
+                    : null;
+
+            String objectId;
+            boolean isNewVersion = false;
+            String versionLabel = "1.0";
+
+            if (existingDoc != null && existingDoc.isDocument()) {
+                // Existing document found — apply dedupe policy
+                if ("skip_if_same_version".equals(dedupePolicy)) {
+                    return ExternalIngestResult.skipped(requestId,
+                            "Document with name '" + fileName + "' already exists in target folder");
+                }
+                // Default: create_new_version — CheckOut + CheckIn
+                objectId = existingDoc.getId();
+                isNewVersion = true;
+                Holder<String> objectIdHolder = new Holder<>(objectId);
+                Holder<Boolean> contentCopied = new Holder<>(Boolean.FALSE);
+                versioningService.checkOut(callContext, repositoryId, objectIdHolder, contentCopied, null);
+                String pwcId = objectIdHolder.getValue();
+
+                Holder<String> checkinHolder = new Holder<>(pwcId);
+                versioningService.checkIn(callContext, repositoryId, checkinHolder, Boolean.TRUE,
+                        null, contentStream, "Imported from " + connector.getSourceSystem(),
+                        null, null, null, null);
+                objectId = checkinHolder.getValue();
+                versionLabel = "new version";
+                logger.info("Dedupe: updated existing document {} with new version", objectId);
+            } else {
+                // New document
+                PropertiesImpl properties = new PropertiesImpl();
+                properties.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, objectTypeId));
+                properties.addProperty(new PropertyStringImpl(PropertyIds.NAME, fileName));
+                objectId = objectService.createDocument(callContext, repositoryId, properties,
+                        targetFolderId, contentStream, VersioningState.MAJOR, null, null, null, null);
+            }
 
             // 6. Apply secondary types
             List<String> warnings = new ArrayList<>();
@@ -178,7 +257,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             logger.info("Canonical import completed: requestId={}, objectId={}, profile={}, connector={}",
                     requestId, objectId, profile.getProfileId(), connector.getConnectorId());
 
-            return new ExternalIngestResult(requestId, objectId, "1.0", false,
+            return new ExternalIngestResult(requestId, objectId, versionLabel, isNewVersion,
                     false, false, null, lineageEventId, List.of(), warnings);
 
         } catch (Exception e) {

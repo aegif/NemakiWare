@@ -28,6 +28,10 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
+import jp.aegif.nemaki.rest.ingest.CanonicalImportService;
+import jp.aegif.nemaki.rest.ingest.ExternalIngestRequest;
+import jp.aegif.nemaki.rest.ingest.ExternalIngestResult;
+import jp.aegif.nemaki.rest.ingest.SourceArchetype;
 import java.io.InputStream;
 import java.net.URI;
 import java.util.List;
@@ -722,6 +726,14 @@ public class CloudDriveResource extends ResourceBase {
 			}
 			log.info("Using filename: " + finalFileName);
 
+			// Try canonical import pipeline if connector/profile are configured
+			String canonicalResult = tryCanonicalImport(callContext, repositoryId, folderId, provider,
+					cloudFileId, accessToken, finalFileName, contentStream, clientCloudFileUrl, result, errMsg);
+			if (canonicalResult != null) {
+				return canonicalResult;
+			}
+
+			// Legacy path: direct import (connector/profile not configured)
 			// Create document using ObjectService
 			jp.aegif.nemaki.cmis.service.ObjectService objectService =
 				SpringContext.getApplicationContext().getBean("objectService",
@@ -1048,6 +1060,112 @@ public class CloudDriveResource extends ResourceBase {
 	 *
 	 * @param callContext The authenticated user's call context (must not be null)
 	 */
+	/**
+	 * Attempts to use the canonical import pipeline. Returns the JSON response string
+	 * if successful, or null if no connector/profile is configured (fall back to legacy).
+	 */
+	@SuppressWarnings("unchecked")
+	private String tryCanonicalImport(
+			org.apache.chemistry.opencmis.commons.server.CallContext callContext,
+			String repositoryId, String folderId, String provider,
+			String cloudFileId, String accessToken, String fileName,
+			InputStream content, String clientCloudFileUrl,
+			JSONObject result, JSONArray errMsg) {
+		try {
+			var ctx = SpringContext.getApplicationContext();
+			if (ctx == null) return null;
+			CanonicalImportService importService = ctx.getBean(CanonicalImportService.class);
+			if (importService == null) return null;
+
+			// Build request
+			ExternalIngestRequest req = new ExternalIngestRequest();
+			req.setRepositoryId(repositoryId);
+			req.setSourceObjectId(cloudFileId);
+			req.setSourceObjectType("file");
+			req.setFileName(fileName);
+			req.setContentStream(content);
+			req.setExecutionMode("manual");
+
+			// Pass cloud context as metadata
+			java.util.Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+			if (clientCloudFileUrl != null && !clientCloudFileUrl.isEmpty()) {
+				metadata.put("cloudFileUrl", clientCloudFileUrl);
+			}
+			// Fetch comments if access token available
+			CloudDriveService service = getCloudDriveService();
+			if (accessToken != null && !accessToken.isEmpty() && service != null) {
+				try {
+					String commentsJson = service.getCloudComments(provider, cloudFileId, accessToken);
+					if (commentsJson != null && !commentsJson.isEmpty()) {
+						metadata.put("comments", commentsJson);
+					}
+				} catch (Exception e) {
+					log.debug("Failed to fetch cloud comments for canonical import: " + e.getMessage());
+				}
+			}
+			if (!metadata.isEmpty()) {
+				req.setMetadata(metadata);
+			}
+
+			// Try auto-resolve connector/profile
+			ExternalIngestResult ingestResult = importService.executeWithAutoResolve(
+					callContext, req, provider, SourceArchetype.FILE_SHARE);
+
+			if (!ingestResult.isSuccess() && !ingestResult.skipped()) {
+				// Check if auto-resolve failed (no connector/profile) → fall back to legacy
+				if (ingestResult.errors() != null && !ingestResult.errors().isEmpty()) {
+					String firstError = ingestResult.errors().get(0);
+					if (firstError.contains("No enabled connector") || firstError.contains("No enabled import profile")) {
+						log.debug("Canonical import not available (" + firstError + "), falling back to legacy path");
+						return null; // Fall back to legacy
+					}
+				}
+				// Real error from canonical import
+				for (String err : ingestResult.errors()) {
+					addErrMsg(errMsg, "import", err);
+				}
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+
+			if (ingestResult.skipped()) {
+				result.put("status", "success");
+				result.put("skipped", true);
+				result.put("skipReason", ingestResult.skipReason());
+				return result.toJSONString();
+			}
+
+			String newObjectId = ingestResult.objectId();
+
+			// Save provider-specific cloudDriveMetadata (not handled by CanonicalImportService)
+			String cloudFileUrl;
+			if (clientCloudFileUrl != null && !clientCloudFileUrl.isEmpty()
+					&& isAllowedCloudUrl(provider, clientCloudFileUrl)) {
+				cloudFileUrl = clientCloudFileUrl;
+			} else {
+				cloudFileUrl = (service != null) ? service.getCloudFileUrl(provider, cloudFileId) : null;
+			}
+			saveCloudMetadata(callContext, repositoryId, newObjectId, provider, cloudFileId, cloudFileUrl);
+
+			result.put("status", "success");
+			result.put("objectId", newObjectId);
+			result.put("name", fileName);
+			result.put("cloudFileId", cloudFileId);
+			result.put("cloudFileUrl", cloudFileUrl);
+			result.put("provider", provider);
+			result.put("isNewVersion", ingestResult.isNewVersion());
+			result.put("canonicalImport", true);
+			if (ingestResult.lineageEventId() != null) {
+				result.put("lineageEventId", ingestResult.lineageEventId());
+			}
+			return result.toJSONString();
+
+		} catch (Exception e) {
+			log.debug("Canonical import attempt failed, falling back to legacy: " + e.getMessage());
+			return null; // Fall back to legacy
+		}
+	}
+
 	private void saveCloudMetadata(org.apache.chemistry.opencmis.commons.server.CallContext callContext,
 			String repositoryId, String objectId,
 			String provider, String cloudFileId, String cloudFileUrl) {

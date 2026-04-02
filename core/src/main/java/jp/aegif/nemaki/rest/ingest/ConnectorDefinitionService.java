@@ -13,4 +13,12 @@ public interface ConnectorDefinitionService {
     ConnectorDefinition update(ConnectorDefinition def);
     void delete(String connectorId);
     boolean exists(String connectorId);
+
+    /**
+     * Finds the first enabled connector matching the given sourceSystem and archetype.
+     * Used for auto-resolution when the caller does not explicitly specify a connectorId.
+     *
+     * @return matching connector, or null if none found
+     */
+    ConnectorDefinition findBySystemAndArchetype(String sourceSystem, SourceArchetype archetype);
 }

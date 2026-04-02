@@ -13,4 +13,12 @@ public interface ImportProfileDefinitionService {
     ImportProfileDefinition update(ImportProfileDefinition def);
     void delete(String profileId);
     boolean exists(String profileId);
+
+    /**
+     * Finds the first enabled profile for the given repository that allows the specified archetype.
+     * Used for auto-resolution when the caller does not explicitly specify a profileId.
+     *
+     * @return matching profile, or null if none found
+     */
+    ImportProfileDefinition findDefaultForRepository(String repositoryId, SourceArchetype archetype);
 }

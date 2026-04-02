@@ -809,7 +809,9 @@
         <property name="connectorDefinitionService" ref="connectorDefinitionService" />
         <property name="importProfileDefinitionService" ref="importProfileDefinitionService" />
         <property name="contentService" ref="ContentService" />
+        <property name="contentDaoService" ref="ContentDaoService" />
         <property name="objectService" ref="objectService" />
+        <property name="versioningService" ref="VersioningService" />
         <property name="nemakiCachePool" ref="nemakiCachePool" />
     </bean>
 

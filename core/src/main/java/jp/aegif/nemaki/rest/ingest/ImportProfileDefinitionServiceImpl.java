@@ -92,6 +92,18 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         return get(profileId) != null;
     }
 
+    @Override
+    public ImportProfileDefinition findDefaultForRepository(String repositoryId, SourceArchetype archetype) {
+        if (repositoryId == null) return null;
+        List<ImportProfileDefinition> candidates = listByRepository(repositoryId);
+        for (ImportProfileDefinition p : candidates) {
+            if (p.isEnabled() && p.isArchetypeAllowed(archetype)) {
+                return p;
+            }
+        }
+        return null;
+    }
+
     private void validateRequiredFields(ImportProfileDefinition def) {
         if (def.getProfileId() == null || def.getProfileId().isBlank()) {
             throw new IllegalArgumentException("profileId is required");
