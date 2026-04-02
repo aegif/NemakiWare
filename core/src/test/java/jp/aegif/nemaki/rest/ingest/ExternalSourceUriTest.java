@@ -75,15 +75,25 @@ class ExternalSourceUriTest {
 
     @Test
     void testForMailMessage() {
-        String uri = ExternalSourceUri.forMailMessage("acct1", "INBOX", "msg-stable-1");
-        assertTrue(uri.startsWith("mail://tenant/acct1/mailboxes/INBOX/messages/"), uri);
+        String uri = ExternalSourceUri.forMailMessage("imap", "acct1", "INBOX", "msg-stable-1");
+        assertTrue(uri.startsWith("imap://tenant/acct1/mailboxes/INBOX/messages/"), uri);
         assertTrue(uri.endsWith("msg-stable-1"), uri);
     }
 
     @Test
+    void testForMailMessagePreservesSourceSystem() {
+        String gmailUri = ExternalSourceUri.forMailMessage("gmail_mail", "acct1", "INBOX", "msg-1");
+        assertTrue(gmailUri.startsWith("gmail_mail://"), gmailUri);
+
+        String m365Uri = ExternalSourceUri.forMailMessage("m365_mail", "acct1", "INBOX", "msg-1");
+        assertTrue(m365Uri.startsWith("m365_mail://"), m365Uri);
+    }
+
+    @Test
     void testForMailAttachment() {
-        String uri = ExternalSourceUri.forMailAttachment("acct1", "INBOX", "msg-1", "att-1");
+        String uri = ExternalSourceUri.forMailAttachment("imap", "acct1", "INBOX", "msg-1", "att-1");
         assertTrue(uri.contains("mailboxes/INBOX/messages/msg-1/attachments/"), uri);
         assertTrue(uri.endsWith("att-1"), uri);
+        assertTrue(uri.startsWith("imap://"), uri);
     }
 }

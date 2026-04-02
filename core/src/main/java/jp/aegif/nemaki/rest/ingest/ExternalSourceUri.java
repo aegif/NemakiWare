@@ -76,15 +76,16 @@ public final class ExternalSourceUri {
         return build(sourceSystem, orgId, "records/" + objectType, recordId);
     }
 
-    /** Shorthand for mail messages: {@code mail://tenant/{accountId}/mailboxes/{mailboxId}/messages/{messageStableId}} */
-    public static String forMailMessage(String accountId, String mailboxId, String messageStableId) {
-        return build("mail", accountId, "mailboxes/" + encode(mailboxId) + "/messages", messageStableId);
+    /** Shorthand for mail messages: {@code {sourceSystem}://tenant/{accountId}/mailboxes/{mailboxId}/messages/{messageStableId}} */
+    public static String forMailMessage(String sourceSystem, String accountId,
+                                        String mailboxId, String messageStableId) {
+        return build(sourceSystem, accountId, "mailboxes/" + encode(mailboxId) + "/messages", messageStableId);
     }
 
-    /** Shorthand for mail attachments: {@code mail://tenant/{accountId}/mailboxes/{mailboxId}/messages/{msgId}/attachments/{attachId}} */
-    public static String forMailAttachment(String accountId, String mailboxId,
+    /** Shorthand for mail attachments: {@code {sourceSystem}://tenant/{accountId}/mailboxes/{mailboxId}/messages/{msgId}/attachments/{attachId}} */
+    public static String forMailAttachment(String sourceSystem, String accountId, String mailboxId,
                                            String messageStableId, String attachmentId) {
-        return build("mail", accountId,
+        return build(sourceSystem, accountId,
                 "mailboxes/" + encode(mailboxId) + "/messages/" + encode(messageStableId) + "/attachments",
                 attachmentId);
     }

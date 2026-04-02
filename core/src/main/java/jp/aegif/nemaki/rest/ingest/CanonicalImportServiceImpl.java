@@ -390,32 +390,39 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         String objectId = request.getSourceObjectId();
         SourceArchetype archetype = connector.getSourceArchetype();
 
-        // Attachment detection: regardless of archetype, attachments use the files path
-        if (isAttachmentObjectType(request.getSourceObjectType())) {
-            return ExternalSourceUri.forFileShare(system, tenant, objectId);
-        }
-
         if (archetype == null) {
             return ExternalSourceUri.build(system, tenant, request.getSourceObjectType(), objectId);
         }
+        boolean isAttachment = isAttachmentObjectType(request.getSourceObjectType());
         return switch (archetype) {
             case FILE_SHARE -> ExternalSourceUri.forFileShare(system, tenant, objectId);
-            case COMPOUND_NOTE -> ExternalSourceUri.forNotePage(system, tenant, objectId);
+            case COMPOUND_NOTE -> {
+                // Attachments within notes use the note system's files path
+                if (isAttachment) {
+                    yield ExternalSourceUri.build(system, tenant, "files", objectId);
+                }
+                yield ExternalSourceUri.forNotePage(system, tenant, objectId);
+            }
             case CHAT_CONTEXT -> {
                 String channelId = resolveChannelId(request);
+                if (isAttachment) {
+                    yield ExternalSourceUri.build(system, tenant,
+                            "channels/" + channelId + "/files", objectId);
+                }
                 yield ExternalSourceUri.forChatMessage(system, tenant, channelId, objectId);
             }
             case BUSINESS_RECORD -> ExternalSourceUri.forBusinessRecord(system, tenant,
                     request.getSourceObjectType() != null ? request.getSourceObjectType() : "record", objectId);
             case MESSAGE_CONTEXT -> {
                 String mailboxId = resolveMetadataString(request, "mailboxId");
-                if (isAttachmentObjectType(request.getSourceObjectType())) {
+                if (isAttachment) {
                     String msgId = resolveMetadataString(request, "messageStableId");
-                    yield ExternalSourceUri.forMailAttachment(tenant, mailboxId != null ? mailboxId : "default",
+                    yield ExternalSourceUri.forMailAttachment(system, tenant,
+                            mailboxId != null ? mailboxId : "default",
                             msgId != null ? msgId : "unknown", objectId);
-                } else {
-                    yield ExternalSourceUri.forMailMessage(tenant, mailboxId != null ? mailboxId : "default", objectId);
                 }
+                yield ExternalSourceUri.forMailMessage(system, tenant,
+                        mailboxId != null ? mailboxId : "default", objectId);
             }
         };
     }
@@ -444,23 +451,22 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * uses EXTERNAL_ATTACHMENT_IMPORT regardless of archetype.
      */
     private static LineageProcessType resolveProcessType(SourceArchetype archetype, String sourceObjectType) {
-        // Attachment detection: if the source object is an attachment/file within
-        // a compound note or chat context, use the attachment-specific process type.
-        if (sourceObjectType != null) {
-            String lower = sourceObjectType.toLowerCase();
-            if ("attachment".equals(lower) || "file".equals(lower)) {
-                return LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT;
-            }
-        }
+        boolean isAttachment = isAttachmentObjectType(sourceObjectType);
         if (archetype == null) {
-            return LineageProcessType.IMPORT_UPLOADED;
+            return isAttachment ? LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT : LineageProcessType.IMPORT_UPLOADED;
         }
         return switch (archetype) {
             case FILE_SHARE -> LineageProcessType.FILE_SHARE_SYNC_DOWNLOAD;
-            case COMPOUND_NOTE -> LineageProcessType.EXTERNAL_NOTE_IMPORT;
-            case CHAT_CONTEXT -> LineageProcessType.CHAT_ATTACHMENT_IMPORT;
+            case COMPOUND_NOTE -> isAttachment
+                    ? LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT
+                    : LineageProcessType.EXTERNAL_NOTE_IMPORT;
+            case CHAT_CONTEXT -> isAttachment
+                    ? LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT
+                    : LineageProcessType.CHAT_ATTACHMENT_IMPORT;
             case BUSINESS_RECORD -> LineageProcessType.BUSINESS_RECORD_IMPORT;
-            case MESSAGE_CONTEXT -> LineageProcessType.MAIL_MESSAGE_IMPORT;
+            case MESSAGE_CONTEXT -> isAttachment
+                    ? LineageProcessType.MAIL_ATTACHMENT_IMPORT
+                    : LineageProcessType.MAIL_MESSAGE_IMPORT;
         };
     }
 }
