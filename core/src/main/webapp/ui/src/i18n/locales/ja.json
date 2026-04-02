@@ -51,6 +51,8 @@
     "moreResults": "さらに結果があります",
     "unknownError": "不明なエラー",
     "beta": "ベータ",
+    "on": "有効",
+    "off": "無効",
     "showSettings": "設定を表示",
     "hideSettings": "設定を非表示",
     "validation": {
@@ -2819,6 +2821,12 @@
     "createTitle": "コネクタ作成",
     "editTitle": "コネクタ編集",
     "deleteConfirm": "このコネクタを削除しますか？",
+    "authTypes": {
+      "oauth2": "OAuth 2.0",
+      "apiKey": "APIキー",
+      "serviceAccount": "サービスアカウント",
+      "none": "なし"
+    },
     "columns": {
       "connectorId": "コネクタID",
       "displayName": "表示名",
@@ -2849,6 +2857,16 @@
     "createTitle": "インポートプロファイル作成",
     "editTitle": "インポートプロファイル編集",
     "deleteConfirm": "このインポートプロファイルを削除しますか？",
+    "dedupePolicies": {
+      "skip": "同一バージョンならスキップ",
+      "newVersion": "新バージョン作成",
+      "replace": "置換"
+    },
+    "versioningPolicies": {
+      "major": "メジャー",
+      "minor": "マイナー",
+      "none": "なし"
+    },
     "phase2Warning": "一部の設定はまだランタイムで適用されません",
     "columns": {
       "profileId": "プロファイルID",

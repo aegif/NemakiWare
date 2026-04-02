@@ -104,7 +104,7 @@ export function ConnectorManagementTab() {
       dataIndex: 'enabled',
       key: 'enabled',
       width: 80,
-      render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? 'ON' : 'OFF'}</Tag>,
+      render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? t('common.on') : t('common.off')}</Tag>,
     },
     {
       title: t('connectorManagement.columns.actions'),
@@ -165,10 +165,10 @@ export function ConnectorManagementTab() {
           </Form.Item>
           <Form.Item name="authType" label={t('connectorManagement.form.authType')}>
             <Select allowClear options={[
-              { value: 'oauth2', label: 'OAuth 2.0' },
-              { value: 'api_key', label: 'API Key' },
-              { value: 'service_account', label: 'Service Account' },
-              { value: 'none', label: 'None' },
+              { value: 'oauth2', label: t('connectorManagement.authTypes.oauth2') },
+              { value: 'api_key', label: t('connectorManagement.authTypes.apiKey') },
+              { value: 'service_account', label: t('connectorManagement.authTypes.serviceAccount') },
+              { value: 'none', label: t('connectorManagement.authTypes.none') },
             ]} />
           </Form.Item>
           <Form.Item name="endpoint" label={t('connectorManagement.form.endpoint')}>

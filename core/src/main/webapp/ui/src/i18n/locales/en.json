@@ -51,6 +51,8 @@
     "moreResults": "More results available",
     "unknownError": "Unknown error",
     "beta": "Beta",
+    "on": "ON",
+    "off": "OFF",
     "showSettings": "Show Settings",
     "hideSettings": "Hide Settings",
     "validation": {
@@ -2819,6 +2821,12 @@
     "createTitle": "Create Connector",
     "editTitle": "Edit Connector",
     "deleteConfirm": "Delete this connector?",
+    "authTypes": {
+      "oauth2": "OAuth 2.0",
+      "apiKey": "API Key",
+      "serviceAccount": "Service Account",
+      "none": "None"
+    },
     "columns": {
       "connectorId": "Connector ID",
       "displayName": "Display Name",
@@ -2849,6 +2857,16 @@
     "createTitle": "Create Import Profile",
     "editTitle": "Edit Import Profile",
     "deleteConfirm": "Delete this import profile?",
+    "dedupePolicies": {
+      "skip": "Skip if same version",
+      "newVersion": "Create new version",
+      "replace": "Replace"
+    },
+    "versioningPolicies": {
+      "major": "Major",
+      "minor": "Minor",
+      "none": "None"
+    },
     "phase2Warning": "Some settings are not yet enforced at runtime",
     "columns": {
       "profileId": "Profile ID",

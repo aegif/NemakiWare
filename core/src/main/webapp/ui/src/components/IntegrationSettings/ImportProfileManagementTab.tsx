@@ -14,17 +14,8 @@ const ARCHETYPE_OPTIONS = [
   'FILE_SHARE', 'COMPOUND_NOTE', 'CHAT_CONTEXT', 'BUSINESS_RECORD', 'MESSAGE_CONTEXT',
 ];
 
-const DEDUPE_OPTIONS = [
-  { value: 'skip_if_same_version', label: 'Skip if same version' },
-  { value: 'create_new_version', label: 'Create new version' },
-  { value: 'replace', label: 'Replace' },
-];
+// Options are built inside component to access t()
 
-const VERSIONING_OPTIONS = [
-  { value: 'major', label: 'Major' },
-  { value: 'minor', label: 'Minor' },
-  { value: 'none', label: 'None' },
-];
 
 interface Props {
   repositoryId: string;
@@ -33,6 +24,17 @@ interface Props {
 export function ImportProfileManagementTab({ repositoryId }: Props) {
   const { t } = useTranslation();
   const { message } = App.useApp();
+
+  const DEDUPE_OPTIONS = [
+    { value: 'skip_if_same_version', label: t('importProfileManagement.dedupePolicies.skip') },
+    { value: 'create_new_version', label: t('importProfileManagement.dedupePolicies.newVersion') },
+    { value: 'replace', label: t('importProfileManagement.dedupePolicies.replace') },
+  ];
+  const VERSIONING_OPTIONS = [
+    { value: 'major', label: t('importProfileManagement.versioningPolicies.major') },
+    { value: 'minor', label: t('importProfileManagement.versioningPolicies.minor') },
+    { value: 'none', label: t('importProfileManagement.versioningPolicies.none') },
+  ];
   const [profiles, setProfiles] = useState<ImportProfileDefinition[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -143,7 +145,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
       dataIndex: 'enabled',
       key: 'enabled',
       width: 80,
-      render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? 'ON' : 'OFF'}</Tag>,
+      render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? t('common.on') : t('common.off')}</Tag>,
     },
     {
       title: t('importProfileManagement.columns.actions'),
