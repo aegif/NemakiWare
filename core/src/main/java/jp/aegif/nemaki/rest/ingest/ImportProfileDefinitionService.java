@@ -20,5 +20,9 @@ public interface ImportProfileDefinitionService {
      *
      * @return matching profile, or null if none found
      */
-    ImportProfileDefinition findDefaultForRepository(String repositoryId, SourceArchetype archetype);
+    /**
+     * Finds the first enabled profile for the given repository that allows the specified
+     * archetype AND the specified connector.
+     */
+    ImportProfileDefinition findDefaultForRepository(String repositoryId, SourceArchetype archetype, String connectorId);
 }

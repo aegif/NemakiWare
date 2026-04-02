@@ -106,7 +106,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // Auto-resolve profile if not explicitly set
         if (request.getProfileId() == null || request.getProfileId().isBlank()) {
             ImportProfileDefinition autoProfile = importProfileDefinitionService
-                    .findDefaultForRepository(request.getRepositoryId(), archetype);
+                    .findDefaultForRepository(request.getRepositoryId(), archetype, request.getConnectorId());
             if (autoProfile == null) {
                 return ExternalIngestResult.error(requestId,
                         "No enabled import profile found for repository='" + request.getRepositoryId()
@@ -180,8 +180,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             return ExternalIngestResult.dryRun(requestId, null, true);
         }
 
-        // 5. Create document
-        String targetFolderId = resolveTargetFolderId(profile, repositoryId, callContext);
+        // 5. Resolve target folder (caller override takes precedence over profile)
+        String targetFolderId = (request.getTargetFolderOverride() != null && !request.getTargetFolderOverride().isBlank())
+                ? request.getTargetFolderOverride()
+                : resolveTargetFolderId(profile, repositoryId, callContext);
         if (targetFolderId == null || targetFolderId.isBlank()) {
             return ExternalIngestResult.error(requestId,
                     "Profile has no resolvable target folder (neither targetFolderId nor targetFolderPath)");
@@ -204,11 +206,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(-1), mimeType, request.getContentStream());
             }
 
-            // 5a. Dedupe: check for existing document with same name in target folder
+            // 5a. Dedupe: check for existing document by sourceObjectId or filename
             String dedupePolicy = profile.getDedupePolicy() != null ? profile.getDedupePolicy() : "create_new_version";
-            Content existingDoc = contentDaoService != null
-                    ? contentDaoService.getChildByName(repositoryId, targetFolderId, fileName)
-                    : null;
+            Content existingDoc = findExistingDocument(repositoryId, targetFolderId, fileName,
+                    connector.getSourceSystem(), request.getSourceObjectId());
 
             String objectId;
             boolean isNewVersion = false;
@@ -418,6 +419,59 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         } catch (Exception e) {
             logger.warn("Lineage event emission failed (non-fatal): {}", e.getMessage());
         }
+    }
+
+    /**
+     * Finds an existing document in the target folder by source identity or filename.
+     * Priority: sourceSystem + sourceObjectId match > filename match.
+     * Only considers documents (not folders) in the target folder.
+     */
+    private Content findExistingDocument(String repositoryId, String targetFolderId,
+                                         String fileName, String sourceSystem, String sourceObjectId) {
+        if (contentDaoService == null) return null;
+
+        // First pass: search by sourceObjectId in target folder children
+        if (sourceObjectId != null && !sourceObjectId.isBlank()) {
+            try {
+                List<Content> children = contentDaoService.getChildren(repositoryId, targetFolderId);
+                if (children != null) {
+                    for (Content child : children) {
+                        if (child == null || !child.isDocument()) continue;
+                        String existingSourceId = getAspectProperty(child, "nemaki:externalIntegration", "nemaki:sourceObjectId");
+                        String existingSourceSystem = getAspectProperty(child, "nemaki:externalIntegration", "nemaki:sourceSystem");
+                        if (sourceObjectId.equals(existingSourceId)
+                                && (sourceSystem == null || sourceSystem.equals(existingSourceSystem))) {
+                            logger.debug("Dedupe: found existing document {} by sourceObjectId={}", child.getId(), sourceObjectId);
+                            return child;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                logger.debug("Dedupe source-identity search failed: {}", e.getMessage());
+            }
+        }
+
+        // Fallback: match by filename (backward compat with legacy cloud import)
+        Content byName = contentDaoService.getChildByName(repositoryId, targetFolderId, fileName);
+        if (byName != null && byName.isDocument()) {
+            logger.debug("Dedupe: found existing document {} by filename={}", byName.getId(), fileName);
+            return byName;
+        }
+        return null;
+    }
+
+    private static String getAspectProperty(Content content, String aspectName, String propertyKey) {
+        if (content.getAspects() == null) return null;
+        for (Aspect aspect : content.getAspects()) {
+            if (aspectName.equals(aspect.getName()) && aspect.getProperties() != null) {
+                for (Property prop : aspect.getProperties()) {
+                    if (propertyKey.equals(prop.getKey())) {
+                        return prop.getValue() instanceof String s ? s : null;
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     /**

@@ -93,11 +93,11 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
     }
 
     @Override
-    public ImportProfileDefinition findDefaultForRepository(String repositoryId, SourceArchetype archetype) {
+    public ImportProfileDefinition findDefaultForRepository(String repositoryId, SourceArchetype archetype, String connectorId) {
         if (repositoryId == null) return null;
         List<ImportProfileDefinition> candidates = listByRepository(repositoryId);
         for (ImportProfileDefinition p : candidates) {
-            if (p.isEnabled() && p.isArchetypeAllowed(archetype)) {
+            if (p.isEnabled() && p.isArchetypeAllowed(archetype) && p.isConnectorAllowed(connectorId)) {
                 return p;
             }
         }

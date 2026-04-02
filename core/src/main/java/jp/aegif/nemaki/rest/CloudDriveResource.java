@@ -1080,6 +1080,7 @@ public class CloudDriveResource extends ResourceBase {
 			// Build request
 			ExternalIngestRequest req = new ExternalIngestRequest();
 			req.setRepositoryId(repositoryId);
+			req.setTargetFolderOverride(folderId); // Preserve caller-selected folder
 			req.setSourceObjectId(cloudFileId);
 			req.setSourceObjectType("file");
 			req.setFileName(fileName);
@@ -1108,8 +1109,14 @@ public class CloudDriveResource extends ResourceBase {
 			}
 
 			// Try auto-resolve connector/profile
-			ExternalIngestResult ingestResult = importService.executeWithAutoResolve(
-					callContext, req, provider, SourceArchetype.FILE_SHARE);
+			ExternalIngestResult ingestResult;
+			try {
+				ingestResult = importService.executeWithAutoResolve(
+						callContext, req, provider, SourceArchetype.FILE_SHARE);
+			} catch (Exception e) {
+				log.debug("Canonical import auto-resolve failed, falling back to legacy: " + e.getMessage());
+				return null; // Fall back to legacy — no side effects yet
+			}
 
 			if (!ingestResult.isSuccess() && !ingestResult.skipped()) {
 				// Check if auto-resolve failed (no connector/profile) → fall back to legacy
@@ -1120,7 +1127,7 @@ public class CloudDriveResource extends ResourceBase {
 						return null; // Fall back to legacy
 					}
 				}
-				// Real error from canonical import
+				// Real error from canonical import — do NOT fall back (side effects may exist)
 				for (String err : ingestResult.errors()) {
 					addErrMsg(errMsg, "import", err);
 				}
@@ -1135,34 +1142,49 @@ public class CloudDriveResource extends ResourceBase {
 				return result.toJSONString();
 			}
 
+			// Canonical import succeeded — save provider-specific metadata
+			// Any exception here must NOT fall back to legacy (document already created)
 			String newObjectId = ingestResult.objectId();
+			try {
+				String cloudFileUrl;
+				if (clientCloudFileUrl != null && !clientCloudFileUrl.isEmpty()
+						&& isAllowedCloudUrl(provider, clientCloudFileUrl)) {
+					cloudFileUrl = clientCloudFileUrl;
+				} else {
+					cloudFileUrl = (service != null) ? service.getCloudFileUrl(provider, cloudFileId) : null;
+				}
+				saveCloudMetadata(callContext, repositoryId, newObjectId, provider, cloudFileId, cloudFileUrl);
 
-			// Save provider-specific cloudDriveMetadata (not handled by CanonicalImportService)
-			String cloudFileUrl;
-			if (clientCloudFileUrl != null && !clientCloudFileUrl.isEmpty()
-					&& isAllowedCloudUrl(provider, clientCloudFileUrl)) {
-				cloudFileUrl = clientCloudFileUrl;
-			} else {
-				cloudFileUrl = (service != null) ? service.getCloudFileUrl(provider, cloudFileId) : null;
+				result.put("status", "success");
+				result.put("objectId", newObjectId);
+				result.put("name", fileName);
+				result.put("cloudFileId", cloudFileId);
+				result.put("cloudFileUrl", cloudFileUrl);
+				result.put("provider", provider);
+				result.put("isNewVersion", ingestResult.isNewVersion());
+				result.put("canonicalImport", true);
+				if (ingestResult.lineageEventId() != null) {
+					result.put("lineageEventId", ingestResult.lineageEventId());
+				}
+				return result.toJSONString();
+			} catch (Exception e) {
+				// Document was created but cloudDriveMetadata failed — report partial success
+				log.warn("Canonical import succeeded but cloudDriveMetadata failed: " + e.getMessage());
+				result.put("status", "success");
+				result.put("objectId", newObjectId);
+				result.put("name", fileName);
+				result.put("cloudFileId", cloudFileId);
+				result.put("provider", provider);
+				result.put("isNewVersion", ingestResult.isNewVersion());
+				result.put("canonicalImport", true);
+				result.put("warning", "Document imported but cloud metadata attachment failed: " + e.getMessage());
+				return result.toJSONString();
 			}
-			saveCloudMetadata(callContext, repositoryId, newObjectId, provider, cloudFileId, cloudFileUrl);
-
-			result.put("status", "success");
-			result.put("objectId", newObjectId);
-			result.put("name", fileName);
-			result.put("cloudFileId", cloudFileId);
-			result.put("cloudFileUrl", cloudFileUrl);
-			result.put("provider", provider);
-			result.put("isNewVersion", ingestResult.isNewVersion());
-			result.put("canonicalImport", true);
-			if (ingestResult.lineageEventId() != null) {
-				result.put("lineageEventId", ingestResult.lineageEventId());
-			}
-			return result.toJSONString();
 
 		} catch (Exception e) {
-			log.debug("Canonical import attempt failed, falling back to legacy: " + e.getMessage());
-			return null; // Fall back to legacy
+			// Only pre-execute failures (bean lookup, request construction) should fall back
+			log.debug("Canonical import setup failed, falling back to legacy: " + e.getMessage());
+			return null;
 		}
 	}
 

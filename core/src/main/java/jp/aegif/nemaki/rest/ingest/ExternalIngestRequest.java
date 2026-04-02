@@ -29,6 +29,8 @@ public class ExternalIngestRequest {
     private String mimeType;
     /** Structured external context — persisted as nemaki:externalContext JSON. Supports nested objects/arrays. */
     private Map<String, Object> metadata;
+    /** If set, overrides the profile's targetFolderId. Used by legacy endpoints that let callers choose the folder. */
+    private String targetFolderOverride;
     private Map<String, String> overrides;
 
     @JsonIgnore
@@ -81,6 +83,9 @@ public class ExternalIngestRequest {
 
     public Map<String, Object> getMetadata() { return metadata; }
     public void setMetadata(Map<String, Object> metadata) { this.metadata = metadata; }
+
+    public String getTargetFolderOverride() { return targetFolderOverride; }
+    public void setTargetFolderOverride(String targetFolderOverride) { this.targetFolderOverride = targetFolderOverride; }
 
     public Map<String, String> getOverrides() { return overrides; }
     public void setOverrides(Map<String, String> overrides) { this.overrides = overrides; }
