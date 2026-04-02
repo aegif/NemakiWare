@@ -72,4 +72,18 @@ class ExternalSourceUriTest {
         assertEquals("salesforce://tenant/org1/records/Account/r1",
                 ExternalSourceUri.forBusinessRecord("salesforce", "org1", "Account", "r1"));
     }
+
+    @Test
+    void testForMailMessage() {
+        String uri = ExternalSourceUri.forMailMessage("acct1", "INBOX", "msg-stable-1");
+        assertTrue(uri.startsWith("mail://tenant/acct1/mailboxes/INBOX/messages/"), uri);
+        assertTrue(uri.endsWith("msg-stable-1"), uri);
+    }
+
+    @Test
+    void testForMailAttachment() {
+        String uri = ExternalSourceUri.forMailAttachment("acct1", "INBOX", "msg-1", "att-1");
+        assertTrue(uri.contains("mailboxes/INBOX/messages/msg-1/attachments/"), uri);
+        assertTrue(uri.endsWith("att-1"), uri);
+    }
 }

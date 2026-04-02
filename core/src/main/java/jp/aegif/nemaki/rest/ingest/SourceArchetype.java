@@ -16,5 +16,8 @@ public enum SourceArchetype {
     CHAT_CONTEXT,
 
     /** Structured business record (CRM, ERP, BPM). */
-    BUSINESS_RECORD
+    BUSINESS_RECORD,
+
+    /** Email / mail message (IMAP, Gmail API, M365 Mail). */
+    MESSAGE_CONTEXT
 }

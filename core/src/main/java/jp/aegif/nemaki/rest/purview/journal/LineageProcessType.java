@@ -72,5 +72,11 @@ public enum LineageProcessType {
     FILE_SHARE_SYNC_DOWNLOAD,
 
     /** Generic file share sync upload (file_share archetype). Journal-owned. */
-    FILE_SHARE_SYNC_UPLOAD;
+    FILE_SHARE_SYNC_UPLOAD,
+
+    /** Mail message import (message_context archetype). Journal-owned. */
+    MAIL_MESSAGE_IMPORT,
+
+    /** Mail attachment import (message_context archetype). Journal-owned. */
+    MAIL_ATTACHMENT_IMPORT;
 }

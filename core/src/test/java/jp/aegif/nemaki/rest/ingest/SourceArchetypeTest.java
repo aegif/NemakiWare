@@ -6,12 +6,13 @@ import static org.junit.jupiter.api.Assertions.*;
 class SourceArchetypeTest {
 
     @Test
-    void testAllFourValuesExist() {
-        assertEquals(4, SourceArchetype.values().length);
+    void testAllFiveValuesExist() {
+        assertEquals(5, SourceArchetype.values().length);
         assertNotNull(SourceArchetype.valueOf("FILE_SHARE"));
         assertNotNull(SourceArchetype.valueOf("COMPOUND_NOTE"));
         assertNotNull(SourceArchetype.valueOf("CHAT_CONTEXT"));
         assertNotNull(SourceArchetype.valueOf("BUSINESS_RECORD"));
+        assertNotNull(SourceArchetype.valueOf("MESSAGE_CONTEXT"));
     }
 
     @Test

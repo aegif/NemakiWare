@@ -102,6 +102,8 @@ class PurviewLineageSinkTest {
         assertEquals("nemaki_import_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT));
         assertEquals("nemaki_import_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.BUSINESS_RECORD_IMPORT));
         assertEquals("nemaki_import_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.CHAT_ATTACHMENT_IMPORT));
+        assertEquals("nemaki_import_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.MAIL_MESSAGE_IMPORT));
+        assertEquals("nemaki_import_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.MAIL_ATTACHMENT_IMPORT));
     }
 
     @Test

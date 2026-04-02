@@ -75,4 +75,17 @@ public final class ExternalSourceUri {
                                            String objectType, String recordId) {
         return build(sourceSystem, orgId, "records/" + objectType, recordId);
     }
+
+    /** Shorthand for mail messages: {@code mail://tenant/{accountId}/mailboxes/{mailboxId}/messages/{messageStableId}} */
+    public static String forMailMessage(String accountId, String mailboxId, String messageStableId) {
+        return build("mail", accountId, "mailboxes/" + encode(mailboxId) + "/messages", messageStableId);
+    }
+
+    /** Shorthand for mail attachments: {@code mail://tenant/{accountId}/mailboxes/{mailboxId}/messages/{msgId}/attachments/{attachId}} */
+    public static String forMailAttachment(String accountId, String mailboxId,
+                                           String messageStableId, String attachmentId) {
+        return build("mail", accountId,
+                "mailboxes/" + encode(mailboxId) + "/messages/" + encode(messageStableId) + "/attachments",
+                attachmentId);
+    }
 }

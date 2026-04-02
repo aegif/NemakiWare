@@ -120,6 +120,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         "metadata.channelId is required for CHAT_CONTEXT archetype");
             }
         }
+        if (connector.getSourceArchetype() == SourceArchetype.MESSAGE_CONTEXT) {
+            String mailboxId = resolveMetadataString(request, "mailboxId");
+            if (mailboxId == null) {
+                return ExternalIngestResult.error(requestId,
+                        "metadata.mailboxId is required for MESSAGE_CONTEXT archetype");
+            }
+        }
 
         // 4. Dry-run check
         if (request.isDryRun()) {
@@ -400,6 +407,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
             case BUSINESS_RECORD -> ExternalSourceUri.forBusinessRecord(system, tenant,
                     request.getSourceObjectType() != null ? request.getSourceObjectType() : "record", objectId);
+            case MESSAGE_CONTEXT -> {
+                String mailboxId = resolveMetadataString(request, "mailboxId");
+                if (isAttachmentObjectType(request.getSourceObjectType())) {
+                    String msgId = resolveMetadataString(request, "messageStableId");
+                    yield ExternalSourceUri.forMailAttachment(tenant, mailboxId != null ? mailboxId : "default",
+                            msgId != null ? msgId : "unknown", objectId);
+                } else {
+                    yield ExternalSourceUri.forMailMessage(tenant, mailboxId != null ? mailboxId : "default", objectId);
+                }
+            }
         };
     }
 
@@ -410,9 +427,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     private static String resolveChannelId(ExternalIngestRequest request) {
+        return resolveMetadataString(request, "channelId");
+    }
+
+    private static String resolveMetadataString(ExternalIngestRequest request, String key) {
         if (request.getMetadata() != null) {
-            Object ch = request.getMetadata().get("channelId");
-            if (ch instanceof String s && !s.isBlank()) return s;
+            Object val = request.getMetadata().get(key);
+            if (val instanceof String s && !s.isBlank()) return s;
         }
         return null;
     }
@@ -439,6 +460,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             case COMPOUND_NOTE -> LineageProcessType.EXTERNAL_NOTE_IMPORT;
             case CHAT_CONTEXT -> LineageProcessType.CHAT_ATTACHMENT_IMPORT;
             case BUSINESS_RECORD -> LineageProcessType.BUSINESS_RECORD_IMPORT;
+            case MESSAGE_CONTEXT -> LineageProcessType.MAIL_MESSAGE_IMPORT;
         };
     }
 }
