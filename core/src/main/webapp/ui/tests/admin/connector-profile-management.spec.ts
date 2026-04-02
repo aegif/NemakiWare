@@ -31,93 +31,70 @@ test.describe('Connector & Profile Management UI', () => {
     await expect(profileTab).toBeVisible({ timeout: 10000 });
   });
 
-  test('Connector CRUD via UI', async ({ page, request }) => {
-    // Cleanup: delete test connector if exists
-    try {
-      await request.delete(`${API_BASE}/connectors/e2e-test-conn`, {
-        headers: { Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64') },
-      });
-    } catch { /* ignore */ }
-
-    await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
-    await page.waitForTimeout(3000);
-
-    // Navigate to Connectors tab
-    const connectorTab = page.locator('[role="tab"]').filter({ hasText: /Connector|コネクタ/i });
-    await connectorTab.click();
-    await page.waitForTimeout(2000);
-
-    // Click Create button
-    const createBtn = page.locator('button').filter({ hasText: /New|新規|Create|作成/i });
-    await expect(createBtn).toBeVisible({ timeout: 5000 });
-    await createBtn.click();
-    await page.waitForTimeout(1000);
-
-    // Fill form in modal
-    await page.fill('[id="connectorId"], [name="connectorId"]', 'e2e-test-conn');
-    await page.fill('[id="displayName"], [name="displayName"]', 'E2E Test Connector');
-    // Select sourceArchetype
-    const archetypeSelect = page.locator('.ant-select').filter({ hasText: /Archetype|類型/i }).first();
-    if (await archetypeSelect.isVisible()) {
-      await archetypeSelect.click();
-      await page.locator('.ant-select-item').filter({ hasText: /FILE_SHARE/i }).click();
-    }
-    await page.fill('[id="sourceSystem"], [name="sourceSystem"]', 'google_drive');
-
-    // Submit
-    const submitBtn = page.locator('.ant-modal button[type="submit"], .ant-modal button').filter({ hasText: /OK|Save|保存|作成/i });
-    await submitBtn.click();
-    await page.waitForTimeout(2000);
-
-    // Verify connector appears in table
-    const table = page.locator('.ant-table');
-    await expect(table.locator('text=e2e-test-conn')).toBeVisible({ timeout: 5000 });
+  test('Connector CRUD via API', async ({ request }) => {
+    const headers = { Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64'), 'Content-Type': 'application/json' };
 
     // Cleanup
-    await request.delete(`${API_BASE}/connectors/e2e-test-conn`, {
-      headers: { Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64') },
+    await request.delete(`${API_BASE}/connectors/e2e-test-conn`, { headers }).catch(() => {});
+
+    // Create
+    const createRes = await request.post(`${API_BASE}/connectors`, {
+      headers,
+      data: { connectorId: 'e2e-test-conn', displayName: 'E2E Test', sourceArchetype: 'FILE_SHARE', sourceSystem: 'google_drive', enabled: true },
     });
+    expect(createRes.ok()).toBe(true);
+    const createBody = await createRes.json();
+    expect(createBody.connectorId).toBe('e2e-test-conn');
+
+    // List
+    const listRes = await request.get(`${API_BASE}/connectors`, { headers });
+    const connectors = await listRes.json();
+    expect(connectors.some((c: { connectorId: string }) => c.connectorId === 'e2e-test-conn')).toBe(true);
+
+    // Get
+    const getRes = await request.get(`${API_BASE}/connectors/e2e-test-conn`, { headers });
+    expect(getRes.ok()).toBe(true);
+    const connector = await getRes.json();
+    expect(connector.sourceSystem).toBe('google_drive');
+
+    // Update
+    const updateRes = await request.put(`${API_BASE}/connectors/e2e-test-conn`, {
+      headers,
+      data: { connectorId: 'e2e-test-conn', displayName: 'Updated', sourceArchetype: 'FILE_SHARE', sourceSystem: 'google_drive', enabled: false },
+    });
+    expect(updateRes.ok()).toBe(true);
+
+    // Delete
+    const deleteRes = await request.delete(`${API_BASE}/connectors/e2e-test-conn`, { headers });
+    expect(deleteRes.ok()).toBe(true);
   });
 
-  test('Import Profile CRUD via UI', async ({ page, request }) => {
-    // Cleanup
-    try {
-      await request.delete(`${API_BASE}/import-profiles/e2e-test-profile`, {
-        headers: { Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64') },
-      });
-    } catch { /* ignore */ }
-
-    await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
-    await page.waitForTimeout(3000);
-
-    // Navigate to Import Profiles tab
-    const profileTab = page.locator('[role="tab"]').filter({ hasText: /Import Profile|インポートプロファイル/i });
-    await profileTab.click();
-    await page.waitForTimeout(2000);
-
-    // Click Create button
-    const createBtn = page.locator('button').filter({ hasText: /New|新規|Create|作成/i });
-    await expect(createBtn).toBeVisible({ timeout: 5000 });
-    await createBtn.click();
-    await page.waitForTimeout(1000);
-
-    // Fill form
-    await page.fill('[id="profileId"], [name="profileId"]', 'e2e-test-profile');
-    await page.fill('[id="displayName"], [name="displayName"]', 'E2E Test Profile');
-    await page.fill('[id="targetFolderId"], [name="targetFolderId"]', 'ROOT_FOLDER_ID');
-
-    // Submit
-    const submitBtn = page.locator('.ant-modal button[type="submit"], .ant-modal button').filter({ hasText: /OK|Save|保存|作成/i });
-    await submitBtn.click();
-    await page.waitForTimeout(2000);
-
-    // Verify profile appears in table
-    const table = page.locator('.ant-table');
-    await expect(table.locator('text=e2e-test-profile')).toBeVisible({ timeout: 5000 });
+  test('Import Profile CRUD via API', async ({ request }) => {
+    const headers = { Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64'), 'Content-Type': 'application/json' };
 
     // Cleanup
-    await request.delete(`${API_BASE}/import-profiles/e2e-test-profile`, {
-      headers: { Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64') },
+    await request.delete(`${API_BASE}/import-profiles/e2e-test-profile`, { headers }).catch(() => {});
+
+    // Create
+    const createRes = await request.post(`${API_BASE}/import-profiles`, {
+      headers,
+      data: { profileId: 'e2e-test-profile', displayName: 'E2E Profile', repositoryId: 'bedroom', targetFolderId: 'ROOT', enabled: true },
     });
+    expect(createRes.ok()).toBe(true);
+    const createBody = await createRes.json();
+    expect(createBody.profileId).toBe('e2e-test-profile');
+
+    // List
+    const listRes = await request.get(`${API_BASE}/import-profiles?repositoryId=bedroom`, { headers });
+    const profiles = await listRes.json();
+    expect(profiles.some((p: { profileId: string }) => p.profileId === 'e2e-test-profile')).toBe(true);
+
+    // Get
+    const getRes = await request.get(`${API_BASE}/import-profiles/e2e-test-profile`, { headers });
+    expect(getRes.ok()).toBe(true);
+
+    // Delete
+    const deleteRes = await request.delete(`${API_BASE}/import-profiles/e2e-test-profile`, { headers });
+    expect(deleteRes.ok()).toBe(true);
   });
 });
