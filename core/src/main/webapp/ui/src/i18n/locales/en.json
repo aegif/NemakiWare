@@ -2616,7 +2616,9 @@
       "atlas": "Apache Atlas",
       "dataplex": "Google Dataplex",
       "lineageJournalTitle": "Lineage Journal",
-      "propertyMapping": "Property Mapping"
+      "propertyMapping": "Property Mapping",
+      "connectors": "Connectors",
+      "importProfiles": "Import Profiles"
     },
     "save": "Save",
     "testConnection": "Test Connection",
@@ -2804,6 +2806,68 @@
       "credentialsFile": "Service Account Credentials File Path",
       "credentialsFileHelp": "Absolute path to the JSON key file on the server",
       "notice": "Google Cloud Dataplex Lineage API integration. Required IAM role: roles/datalineage.admin"
+    }
+  },
+  "connectorManagement": {
+    "loadError": "Failed to load connectors",
+    "createSuccess": "Connector created successfully",
+    "updateSuccess": "Connector updated successfully",
+    "deleteSuccess": "Connector deleted successfully",
+    "deleteError": "Failed to delete connector",
+    "saveError": "Failed to save connector",
+    "create": "New Connector",
+    "createTitle": "Create Connector",
+    "editTitle": "Edit Connector",
+    "deleteConfirm": "Delete this connector?",
+    "columns": {
+      "connectorId": "Connector ID",
+      "displayName": "Display Name",
+      "archetype": "Archetype",
+      "sourceSystem": "Source System",
+      "enabled": "Enabled",
+      "actions": "Actions"
+    },
+    "form": {
+      "connectorId": "Connector ID",
+      "displayName": "Display Name",
+      "archetype": "Archetype",
+      "sourceSystem": "Source System",
+      "authType": "Auth Type",
+      "endpoint": "Endpoint",
+      "tenantId": "Tenant / Workspace ID",
+      "enabled": "Enabled"
+    }
+  },
+  "importProfileManagement": {
+    "loadError": "Failed to load import profiles",
+    "createSuccess": "Import profile created successfully",
+    "updateSuccess": "Import profile updated successfully",
+    "deleteSuccess": "Import profile deleted successfully",
+    "deleteError": "Failed to delete import profile",
+    "saveError": "Failed to save import profile",
+    "create": "New Profile",
+    "createTitle": "Create Import Profile",
+    "editTitle": "Edit Import Profile",
+    "deleteConfirm": "Delete this import profile?",
+    "phase2Warning": "Some settings are not yet enforced at runtime",
+    "columns": {
+      "profileId": "Profile ID",
+      "displayName": "Display Name",
+      "targetFolder": "Target Folder",
+      "dedupePolicy": "Dedupe Policy",
+      "enabled": "Enabled",
+      "actions": "Actions"
+    },
+    "form": {
+      "profileId": "Profile ID",
+      "displayName": "Display Name",
+      "targetFolderId": "Target Folder ID",
+      "targetFolderRequired": "Target folder is required",
+      "objectType": "Default Object Type",
+      "allowedArchetypes": "Allowed Archetypes",
+      "dedupePolicy": "Dedupe Policy",
+      "versioningPolicy": "Versioning Policy",
+      "enabled": "Enabled"
     }
   }
 }

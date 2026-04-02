@@ -10,6 +10,8 @@ import { AtlasSettingsTab } from './AtlasSettingsTab';
 import { DataplexSettingsTab } from './DataplexSettingsTab';
 import { LineageSettingsTab } from './LineageSettingsTab';
 import PropertyMappingSection from './PropertyMappingSection';
+import { ConnectorManagementTab } from './ConnectorManagementTab';
+import { ImportProfileManagementTab } from './ImportProfileManagementTab';
 
 const { Title } = Typography;
 
@@ -70,6 +72,16 @@ export function IntegrationSettings({ repositoryId }: IntegrationSettingsProps) 
       key: 'property-mapping',
       label: <Space size={4}>{t('integrationSettings.tabs.propertyMapping')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
       children: <PropertyMappingSection repositoryId={repositoryId} />,
+    },
+    {
+      key: 'connectors',
+      label: <Space size={4}>{t('integrationSettings.tabs.connectors')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
+      children: <ConnectorManagementTab />,
+    },
+    {
+      key: 'import-profiles',
+      label: <Space size={4}>{t('integrationSettings.tabs.importProfiles')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
+      children: <ImportProfileManagementTab repositoryId={repositoryId} />,
     },
   ];
 

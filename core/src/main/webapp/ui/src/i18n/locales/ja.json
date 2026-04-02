@@ -2616,7 +2616,9 @@
       "atlas": "Apache Atlas",
       "dataplex": "Google Dataplex",
       "lineageJournalTitle": "Lineage ジャーナル",
-      "propertyMapping": "プロパティマッピング"
+      "propertyMapping": "プロパティマッピング",
+      "connectors": "コネクタ",
+      "importProfiles": "インポートプロファイル"
     },
     "save": "保存",
     "testConnection": "接続テスト",
@@ -2804,6 +2806,68 @@
       "credentialsFile": "サービスアカウント認証ファイルパス",
       "credentialsFileHelp": "サーバー上の JSON キーファイルの絶対パス",
       "notice": "Google Cloud Dataplex Lineage API との連携設定です。サービスアカウントに必要な IAM ロール: roles/datalineage.admin"
+    }
+  },
+  "connectorManagement": {
+    "loadError": "コネクタの読み込みに失敗しました",
+    "createSuccess": "コネクタを作成しました",
+    "updateSuccess": "コネクタを更新しました",
+    "deleteSuccess": "コネクタを削除しました",
+    "deleteError": "コネクタの削除に失敗しました",
+    "saveError": "コネクタの保存に失敗しました",
+    "create": "新規コネクタ",
+    "createTitle": "コネクタ作成",
+    "editTitle": "コネクタ編集",
+    "deleteConfirm": "このコネクタを削除しますか？",
+    "columns": {
+      "connectorId": "コネクタID",
+      "displayName": "表示名",
+      "archetype": "類型",
+      "sourceSystem": "ソースシステム",
+      "enabled": "有効",
+      "actions": "操作"
+    },
+    "form": {
+      "connectorId": "コネクタID",
+      "displayName": "表示名",
+      "archetype": "類型",
+      "sourceSystem": "ソースシステム",
+      "authType": "認証タイプ",
+      "endpoint": "エンドポイント",
+      "tenantId": "テナント / ワークスペースID",
+      "enabled": "有効"
+    }
+  },
+  "importProfileManagement": {
+    "loadError": "インポートプロファイルの読み込みに失敗しました",
+    "createSuccess": "インポートプロファイルを作成しました",
+    "updateSuccess": "インポートプロファイルを更新しました",
+    "deleteSuccess": "インポートプロファイルを削除しました",
+    "deleteError": "インポートプロファイルの削除に失敗しました",
+    "saveError": "インポートプロファイルの保存に失敗しました",
+    "create": "新規プロファイル",
+    "createTitle": "インポートプロファイル作成",
+    "editTitle": "インポートプロファイル編集",
+    "deleteConfirm": "このインポートプロファイルを削除しますか？",
+    "phase2Warning": "一部の設定はまだランタイムで適用されません",
+    "columns": {
+      "profileId": "プロファイルID",
+      "displayName": "表示名",
+      "targetFolder": "ターゲットフォルダ",
+      "dedupePolicy": "重複排除ポリシー",
+      "enabled": "有効",
+      "actions": "操作"
+    },
+    "form": {
+      "profileId": "プロファイルID",
+      "displayName": "表示名",
+      "targetFolderId": "ターゲットフォルダID",
+      "targetFolderRequired": "ターゲットフォルダは必須です",
+      "objectType": "デフォルトオブジェクトタイプ",
+      "allowedArchetypes": "許可する類型",
+      "dedupePolicy": "重複排除ポリシー",
+      "versioningPolicy": "バージョニングポリシー",
+      "enabled": "有効"
     }
   }
 }
