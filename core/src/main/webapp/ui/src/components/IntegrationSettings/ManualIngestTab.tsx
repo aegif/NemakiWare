@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, Form, Select, Input, Upload, Button, Alert, Space, Typography, App, Switch } from 'antd';
 import { UploadOutlined, SendOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -34,6 +34,7 @@ export function ManualIngestTab({ repositoryId }: Props) {
   const { message } = App.useApp();
   const [connectors, setConnectors] = useState<ConnectorDefinition[]>([]);
   const [profiles, setProfiles] = useState<ImportProfileDefinition[]>([]);
+  const [selectedConnectorId, setSelectedConnectorId] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<IngestResult | null>(null);
   const [form] = Form.useForm();
@@ -50,6 +51,41 @@ export function ManualIngestTab({ repositoryId }: Props) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Derive selected connector's archetype for conditional fields + profile filtering
+  const selectedConnector = useMemo(
+    () => connectors.find(c => c.connectorId === selectedConnectorId),
+    [connectors, selectedConnectorId]
+  );
+  const selectedArchetype = selectedConnector?.sourceArchetype;
+
+  // Filter profiles to those compatible with the selected connector
+  const compatibleProfiles = useMemo(() => {
+    if (!selectedConnector) return profiles;
+    return profiles.filter(p => {
+      if (p.allowedConnectorIds && p.allowedConnectorIds.length > 0
+          && !p.allowedConnectorIds.includes(selectedConnector.connectorId)) {
+        return false;
+      }
+      if (p.allowedArchetypes && p.allowedArchetypes.length > 0
+          && !p.allowedArchetypes.includes(selectedConnector.sourceArchetype)) {
+        return false;
+      }
+      return true;
+    });
+  }, [profiles, selectedConnector]);
+
+  const handleConnectorChange = (connectorId: string) => {
+    setSelectedConnectorId(connectorId);
+    // Clear profile if it's no longer compatible
+    const currentProfile = form.getFieldValue('profileId');
+    if (currentProfile) {
+      const stillValid = compatibleProfiles.some(p => p.profileId === currentProfile);
+      if (!stillValid) {
+        form.setFieldValue('profileId', undefined);
+      }
+    }
+  };
+
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
@@ -58,6 +94,12 @@ export function ManualIngestTab({ repositoryId }: Props) {
 
       const authService = AuthService.getInstance();
       const headers = authService.getAuthHeaders();
+
+      // Build metadata from archetype-specific fields
+      const metadata: Record<string, string> = {};
+      if (values.channelId) metadata.channelId = values.channelId;
+      if (values.mailboxId) metadata.mailboxId = values.mailboxId;
+      if (values.messageStableId) metadata.messageStableId = values.messageStableId;
 
       const formData = new FormData();
       const requestJson = JSON.stringify({
@@ -68,6 +110,7 @@ export function ManualIngestTab({ repositoryId }: Props) {
         sourceUrl: values.sourceUrl,
         dryRun: values.dryRun || false,
         executionMode: 'manual',
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       });
       formData.append('request', new Blob([requestJson], { type: 'application/json' }), 'request.json');
 
@@ -109,6 +152,7 @@ export function ManualIngestTab({ repositoryId }: Props) {
         <Form.Item name="connectorId" label={t('manualIngest.form.connector')}
           rules={[{ required: true }]}>
           <Select placeholder={t('manualIngest.form.selectConnector')}
+            onChange={handleConnectorChange}
             options={connectors.map(c => ({
               value: c.connectorId,
               label: `${c.displayName || c.connectorId} (${c.sourceSystem})`,
@@ -118,7 +162,7 @@ export function ManualIngestTab({ repositoryId }: Props) {
         <Form.Item name="profileId" label={t('manualIngest.form.profile')}
           rules={[{ required: true }]}>
           <Select placeholder={t('manualIngest.form.selectProfile')}
-            options={profiles.map(p => ({
+            options={compatibleProfiles.map(p => ({
               value: p.profileId,
               label: `${p.displayName || p.profileId}`,
             }))} />
@@ -130,12 +174,32 @@ export function ManualIngestTab({ repositoryId }: Props) {
         </Form.Item>
 
         <Form.Item name="sourceObjectType" label={t('manualIngest.form.sourceObjectType')}>
-          <Input placeholder="file, page, record, ..." />
+          <Input placeholder={t('manualIngest.form.sourceObjectTypeHint')} />
         </Form.Item>
 
         <Form.Item name="sourceUrl" label={t('manualIngest.form.sourceUrl')}>
-          <Input placeholder="https://..." />
+          <Input placeholder={t('manualIngest.form.sourceUrlHint')} />
         </Form.Item>
+
+        {/* Archetype-specific fields */}
+        {selectedArchetype === 'CHAT_CONTEXT' && (
+          <Form.Item name="channelId" label={t('manualIngest.form.channelId')}
+            rules={[{ required: true, message: t('manualIngest.form.channelIdRequired') }]}>
+            <Input placeholder={t('manualIngest.form.channelIdHint')} />
+          </Form.Item>
+        )}
+
+        {selectedArchetype === 'MESSAGE_CONTEXT' && (
+          <>
+            <Form.Item name="mailboxId" label={t('manualIngest.form.mailboxId')}
+              rules={[{ required: true, message: t('manualIngest.form.mailboxIdRequired') }]}>
+              <Input placeholder={t('manualIngest.form.mailboxIdHint')} />
+            </Form.Item>
+            <Form.Item name="messageStableId" label={t('manualIngest.form.messageStableId')}>
+              <Input placeholder={t('manualIngest.form.messageStableIdHint')} />
+            </Form.Item>
+          </>
+        )}
 
         <Form.Item name="file" label={t('manualIngest.form.file')} valuePropName="fileList"
           getValueFromEvent={(e) => Array.isArray(e) ? e : e?.fileList}>
@@ -176,9 +240,9 @@ export function ManualIngestTab({ repositoryId }: Props) {
               message={t('manualIngest.resultSuccess')}
               description={
                 <Space direction="vertical">
-                  <Text><strong>Object ID:</strong> {result.objectId}</Text>
+                  <Text><strong>{t('manualIngest.resultObjectId')}:</strong> {result.objectId}</Text>
                   {result.isNewVersion && <Text>{t('manualIngest.newVersion')}</Text>}
-                  {result.lineageEventId && <Text><strong>Lineage:</strong> {result.lineageEventId}</Text>}
+                  {result.lineageEventId && <Text><strong>{t('manualIngest.resultLineage')}:</strong> {result.lineageEventId}</Text>}
                 </Space>
               } />
           )}
