@@ -13,12 +13,12 @@ import java.util.List;
  * {@link ConnectorDefinition}. The same profile can be used with multiple
  * connectors via {@code allowedConnectorIds}.
  *
- * <p><b>Phase 1 scope:</b> Only {@code targetFolderId}, {@code defaultObjectTypeId},
- * {@code allowedArchetypes}, {@code allowedConnectorIds}, and {@code enabled}
- * are enforced at runtime. The following fields are persisted but not yet
- * enforced by {@link CanonicalImportService} (planned for Phase 2):
- * {@code secondaryTypeIds}, {@code dedupePolicy}, {@code updatePolicy},
- * {@code versioningPolicy}, {@code relationshipPolicy}, {@code defaultClassification},
+ * <p><b>Enforced at runtime:</b> {@code targetFolderId}, {@code targetFolderPath},
+ * {@code defaultObjectTypeId}, {@code allowedArchetypes}, {@code allowedConnectorIds},
+ * {@code enabled}, {@code dedupePolicy}, {@code versioningPolicy}, {@code secondaryTypeIds}.
+ *
+ * <p><b>Persisted but not yet enforced (Phase 2):</b>
+ * {@code updatePolicy}, {@code relationshipPolicy}, {@code defaultClassification},
  * {@code retentionDays}, {@code aclSyncPolicy}, {@code schedulerEnabled}.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

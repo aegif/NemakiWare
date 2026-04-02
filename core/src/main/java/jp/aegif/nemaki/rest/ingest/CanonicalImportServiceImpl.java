@@ -229,8 +229,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 versioningService.checkOut(callContext, repositoryId, objectIdHolder, contentCopied, null);
                 String pwcId = objectIdHolder.getValue();
 
+                boolean isMajor = !"minor".equalsIgnoreCase(profile.getVersioningPolicy());
                 Holder<String> checkinHolder = new Holder<>(pwcId);
-                versioningService.checkIn(callContext, repositoryId, checkinHolder, Boolean.TRUE,
+                versioningService.checkIn(callContext, repositoryId, checkinHolder, isMajor,
                         null, contentStream, "Imported from " + connector.getSourceSystem(),
                         null, null, null, null);
                 objectId = checkinHolder.getValue();
@@ -241,13 +242,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 PropertiesImpl properties = new PropertiesImpl();
                 properties.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, objectTypeId));
                 properties.addProperty(new PropertyStringImpl(PropertyIds.NAME, fileName));
+                VersioningState vs = "minor".equalsIgnoreCase(profile.getVersioningPolicy())
+                        ? VersioningState.MINOR
+                        : "none".equalsIgnoreCase(profile.getVersioningPolicy())
+                                ? VersioningState.NONE
+                                : VersioningState.MAJOR;
                 objectId = objectService.createDocument(callContext, repositoryId, properties,
-                        targetFolderId, contentStream, VersioningState.MAJOR, null, null, null, null);
+                        targetFolderId, contentStream, vs, null, null, null, null);
             }
 
             // 6. Apply secondary types
             List<String> warnings = new ArrayList<>();
-            String metadataError = applySourceMetadata(repositoryId, objectId, callContext, connector, request);
+            String metadataError = applySourceMetadata(repositoryId, objectId, callContext, connector, request, profile);
             if (metadataError != null) {
                 warnings.add(metadataError);
             }
@@ -271,7 +277,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * @return error message if metadata application failed, null on success
      */
     private String applySourceMetadata(String repositoryId, String objectId, CallContext callContext,
-                                       ConnectorDefinition connector, ExternalIngestRequest request) {
+                                       ConnectorDefinition connector, ExternalIngestRequest request,
+                                       ImportProfileDefinition profile) {
         try {
             Content content = contentService.getContent(repositoryId, objectId);
             if (content == null) {
@@ -346,6 +353,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
             if (!secondaryIds.contains("nemaki:externalIntegration")) {
                 secondaryIds.add("nemaki:externalIntegration");
+            }
+            // Apply profile-defined secondary types
+            if (profile != null && profile.getSecondaryTypeIds() != null) {
+                for (String secTypeId : profile.getSecondaryTypeIds()) {
+                    if (secTypeId != null && !secTypeId.isBlank() && !secondaryIds.contains(secTypeId)) {
+                        secondaryIds.add(secTypeId);
+                    }
+                }
             }
             content.setSecondaryIds(secondaryIds);
             content.setAspects(aspects);

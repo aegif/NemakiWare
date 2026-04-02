@@ -96,20 +96,11 @@ public class ImportProfileDefinitionController {
      */
     private List<String> getPhase2Warnings(ImportProfileDefinition def) {
         List<String> warnings = new ArrayList<>();
-        if (def.getDedupePolicy() != null && !"skip_if_same_version".equals(def.getDedupePolicy())) {
-            warnings.add("dedupePolicy '" + def.getDedupePolicy() + "' is configured but not yet enforced (Phase 2)");
-        }
         if (def.getUpdatePolicy() != null && !"version_up_on_content_change".equals(def.getUpdatePolicy())) {
             warnings.add("updatePolicy '" + def.getUpdatePolicy() + "' is configured but not yet enforced (Phase 2)");
         }
-        if (def.getVersioningPolicy() != null && !"major".equals(def.getVersioningPolicy())) {
-            warnings.add("versioningPolicy '" + def.getVersioningPolicy() + "' is configured but not yet enforced (Phase 2)");
-        }
         if (def.getRelationshipPolicy() != null) {
             warnings.add("relationshipPolicy is configured but not yet enforced (Phase 2)");
-        }
-        if (def.getSecondaryTypeIds() != null && !def.getSecondaryTypeIds().isEmpty()) {
-            warnings.add("secondaryTypeIds is configured but not yet auto-applied (Phase 2)");
         }
         if (def.getRetentionDays() != null) {
             warnings.add("retentionDays is configured but not yet enforced (Phase 2)");
