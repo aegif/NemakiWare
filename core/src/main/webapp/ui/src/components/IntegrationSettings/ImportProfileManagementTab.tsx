@@ -67,11 +67,17 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
     setModalOpen(true);
   };
 
-  const openEdit = (record: ImportProfileDefinition) => {
+  const openEdit = async (record: ImportProfileDefinition) => {
     setEditing(record);
-    setWarnings([]);
     form.setFieldsValue(record);
     setModalOpen(true);
+    // Fetch warnings from backend
+    try {
+      const { warnings: w } = await import('../../services/externalIngest').then(m => m.getProfile(record.profileId));
+      setWarnings(w || []);
+    } catch {
+      setWarnings([]);
+    }
   };
 
   const handleSubmit = async () => {
@@ -198,9 +204,12 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
           <Form.Item name="displayName" label={t('importProfileManagement.form.displayName')}>
             <Input />
           </Form.Item>
-          <Form.Item name="targetFolderId" label={t('importProfileManagement.form.targetFolderId')}
-            rules={[{ required: true, message: t('importProfileManagement.form.targetFolderRequired') }]}>
-            <Input placeholder="folder-id or /path/to/folder" />
+          <Form.Item name="targetFolderId" label={t('importProfileManagement.form.targetFolderId')}>
+            <Input placeholder="e.g. abc123def456" />
+          </Form.Item>
+          <Form.Item name="targetFolderPath" label={t('importProfileManagement.form.targetFolderPath')}
+            extra={t('importProfileManagement.form.targetFolderHint')}>
+            <Input placeholder="e.g. /Sites/Invoices" />
           </Form.Item>
           <Form.Item name="defaultObjectTypeId" label={t('importProfileManagement.form.objectType')}>
             <Input placeholder="cmis:document" />
@@ -208,6 +217,10 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
           <Form.Item name="allowedArchetypes" label={t('importProfileManagement.form.allowedArchetypes')}>
             <Select mode="multiple" allowClear
               options={ARCHETYPE_OPTIONS.map(a => ({ value: a, label: a }))} />
+          </Form.Item>
+          <Form.Item name="secondaryTypeIds" label={t('importProfileManagement.form.secondaryTypeIds')}
+            extra={t('importProfileManagement.form.secondaryTypeIdsHint')}>
+            <Select mode="tags" allowClear placeholder="e.g. nemaki:cloudDriveMetadata" />
           </Form.Item>
           <Form.Item name="dedupePolicy" label={t('importProfileManagement.form.dedupePolicy')}>
             <Select options={DEDUPE_OPTIONS} />

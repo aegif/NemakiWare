@@ -2865,6 +2865,10 @@
       "targetFolderRequired": "Target folder is required",
       "objectType": "Default Object Type",
       "allowedArchetypes": "Allowed Archetypes",
+      "targetFolderPath": "Target Folder Path",
+      "targetFolderHint": "Either folder ID or folder path is required. Path is resolved at import time.",
+      "secondaryTypeIds": "Secondary Types",
+      "secondaryTypeIdsHint": "Additional secondary types to attach to imported documents",
       "dedupePolicy": "Dedupe Policy",
       "versioningPolicy": "Versioning Policy",
       "enabled": "Enabled"

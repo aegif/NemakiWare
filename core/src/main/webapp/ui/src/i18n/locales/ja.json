@@ -2865,6 +2865,10 @@
       "targetFolderRequired": "ターゲットフォルダは必須です",
       "objectType": "デフォルトオブジェクトタイプ",
       "allowedArchetypes": "許可する類型",
+      "targetFolderPath": "ターゲットフォルダパス",
+      "targetFolderHint": "フォルダIDまたはフォルダパスのいずれかが必要です。パスはインポート時に解決されます。",
+      "secondaryTypeIds": "セカンダリタイプ",
+      "secondaryTypeIdsHint": "インポートされたドキュメントに自動的に付与する追加のセカンダリタイプ",
       "dedupePolicy": "重複排除ポリシー",
       "versioningPolicy": "バージョニングポリシー",
       "enabled": "有効"
