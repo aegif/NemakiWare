@@ -1,0 +1,194 @@
+import { useState, useEffect, useCallback } from 'react';
+import { Card, Form, Select, Input, Upload, Button, Alert, Space, Typography, App, Switch } from 'antd';
+import { UploadOutlined, SendOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import { AuthService } from '../../services/auth';
+import {
+  ConnectorDefinition,
+  ImportProfileDefinition,
+  listConnectors,
+  listProfiles,
+} from '../../services/externalIngest';
+
+const { Text } = Typography;
+
+interface Props {
+  repositoryId: string;
+}
+
+interface IngestResult {
+  requestId?: string;
+  objectId?: string;
+  versionLabel?: string;
+  isNewVersion?: boolean;
+  skipped?: boolean;
+  skipReason?: string;
+  lineageEventId?: string;
+  errors?: string[];
+  warnings?: string[];
+  dryRun?: boolean;
+}
+
+export function ManualIngestTab({ repositoryId }: Props) {
+  const { t } = useTranslation();
+  const { message } = App.useApp();
+  const [connectors, setConnectors] = useState<ConnectorDefinition[]>([]);
+  const [profiles, setProfiles] = useState<ImportProfileDefinition[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<IngestResult | null>(null);
+  const [form] = Form.useForm();
+
+  const load = useCallback(async () => {
+    try {
+      const [c, p] = await Promise.all([listConnectors(), listProfiles(repositoryId)]);
+      setConnectors(c.filter(x => x.enabled));
+      setProfiles(p.filter(x => x.enabled));
+    } catch {
+      message.error(t('manualIngest.loadError'));
+    }
+  }, [repositoryId, message, t]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      setSubmitting(true);
+      setResult(null);
+
+      const authService = AuthService.getInstance();
+      const headers = authService.getAuthHeaders();
+
+      const formData = new FormData();
+      const requestJson = JSON.stringify({
+        profileId: values.profileId,
+        connectorId: values.connectorId,
+        sourceObjectId: values.sourceObjectId,
+        sourceObjectType: values.sourceObjectType || 'file',
+        sourceUrl: values.sourceUrl,
+        dryRun: values.dryRun || false,
+        executionMode: 'manual',
+      });
+      formData.append('request', new Blob([requestJson], { type: 'application/json' }), 'request.json');
+
+      if (values.file && values.file.length > 0) {
+        formData.append('content', values.file[0].originFileObj);
+      }
+
+      const res = await fetch(`/core/api/v1/repo/${encodeURIComponent(repositoryId)}/ingest`, {
+        method: 'POST',
+        headers: { ...headers },
+        body: formData,
+      });
+
+      const body = await res.json();
+      setResult(body);
+
+      if (res.ok && !body.errors?.length) {
+        if (body.skipped) {
+          message.info(t('manualIngest.skipped'));
+        } else if (body.dryRun) {
+          message.info(t('manualIngest.dryRunComplete'));
+        } else {
+          message.success(t('manualIngest.success'));
+        }
+      } else {
+        message.error(body.errors?.[0] || t('manualIngest.error'));
+      }
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : '';
+      message.error(detail || t('manualIngest.error'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Card title={t('manualIngest.title')}>
+      <Form form={form} layout="vertical" style={{ maxWidth: 600 }}>
+        <Form.Item name="connectorId" label={t('manualIngest.form.connector')}
+          rules={[{ required: true }]}>
+          <Select placeholder={t('manualIngest.form.selectConnector')}
+            options={connectors.map(c => ({
+              value: c.connectorId,
+              label: `${c.displayName || c.connectorId} (${c.sourceSystem})`,
+            }))} />
+        </Form.Item>
+
+        <Form.Item name="profileId" label={t('manualIngest.form.profile')}
+          rules={[{ required: true }]}>
+          <Select placeholder={t('manualIngest.form.selectProfile')}
+            options={profiles.map(p => ({
+              value: p.profileId,
+              label: `${p.displayName || p.profileId}`,
+            }))} />
+        </Form.Item>
+
+        <Form.Item name="sourceObjectId" label={t('manualIngest.form.sourceObjectId')}
+          rules={[{ required: true }]}>
+          <Input placeholder={t('manualIngest.form.sourceObjectIdHint')} />
+        </Form.Item>
+
+        <Form.Item name="sourceObjectType" label={t('manualIngest.form.sourceObjectType')}>
+          <Input placeholder="file, page, record, ..." />
+        </Form.Item>
+
+        <Form.Item name="sourceUrl" label={t('manualIngest.form.sourceUrl')}>
+          <Input placeholder="https://..." />
+        </Form.Item>
+
+        <Form.Item name="file" label={t('manualIngest.form.file')} valuePropName="fileList"
+          getValueFromEvent={(e) => Array.isArray(e) ? e : e?.fileList}>
+          <Upload beforeUpload={() => false} maxCount={1}>
+            <Button icon={<UploadOutlined />}>{t('manualIngest.form.selectFile')}</Button>
+          </Upload>
+        </Form.Item>
+
+        <Form.Item name="dryRun" label={t('manualIngest.form.dryRun')} valuePropName="checked">
+          <Switch />
+        </Form.Item>
+
+        <Form.Item>
+          <Button type="primary" icon={<SendOutlined />} onClick={handleSubmit}
+            loading={submitting}>
+            {t('manualIngest.form.execute')}
+          </Button>
+        </Form.Item>
+      </Form>
+
+      {result && (
+        <Space direction="vertical" style={{ width: '100%', marginTop: 16 }}>
+          {result.errors && result.errors.length > 0 && (
+            <Alert type="error" showIcon
+              message={t('manualIngest.resultError')}
+              description={result.errors.join('\n')} />
+          )}
+          {result.skipped && (
+            <Alert type="info" showIcon
+              message={t('manualIngest.resultSkipped')}
+              description={result.skipReason} />
+          )}
+          {result.dryRun && !result.errors?.length && (
+            <Alert type="info" showIcon message={t('manualIngest.resultDryRun')} />
+          )}
+          {result.objectId && !result.dryRun && (
+            <Alert type="success" showIcon
+              message={t('manualIngest.resultSuccess')}
+              description={
+                <Space direction="vertical">
+                  <Text><strong>Object ID:</strong> {result.objectId}</Text>
+                  {result.isNewVersion && <Text>{t('manualIngest.newVersion')}</Text>}
+                  {result.lineageEventId && <Text><strong>Lineage:</strong> {result.lineageEventId}</Text>}
+                </Space>
+              } />
+          )}
+          {result.warnings && result.warnings.length > 0 && (
+            <Alert type="warning" showIcon
+              message={t('manualIngest.resultWarnings')}
+              description={result.warnings.join('\n')} />
+          )}
+        </Space>
+      )}
+    </Card>
+  );
+}

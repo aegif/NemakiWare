@@ -2620,7 +2620,8 @@
       "lineageJournalTitle": "Lineage Journal",
       "propertyMapping": "Property Mapping",
       "connectors": "Connectors",
-      "importProfiles": "Import Profiles"
+      "importProfiles": "Import Profiles",
+      "manualIngest": "Manual Import"
     },
     "save": "Save",
     "testConnection": "Test Connection",
@@ -2890,6 +2891,34 @@
       "dedupePolicy": "Dedupe Policy",
       "versioningPolicy": "Versioning Policy",
       "enabled": "Enabled"
+    }
+  },
+  "manualIngest": {
+    "title": "Manual Import",
+    "loadError": "Failed to load connectors/profiles",
+    "success": "Import completed successfully",
+    "skipped": "Import skipped (duplicate detected)",
+    "dryRunComplete": "Dry run completed",
+    "error": "Import failed",
+    "resultError": "Import Error",
+    "resultSkipped": "Skipped",
+    "resultDryRun": "Dry run — no changes were made",
+    "resultSuccess": "Import Successful",
+    "resultWarnings": "Warnings",
+    "newVersion": "Created as new version of existing document",
+    "form": {
+      "connector": "Connector",
+      "selectConnector": "Select a connector",
+      "profile": "Import Profile",
+      "selectProfile": "Select an import profile",
+      "sourceObjectId": "Source Object ID",
+      "sourceObjectIdHint": "External system object identifier",
+      "sourceObjectType": "Source Object Type",
+      "sourceUrl": "Source URL",
+      "file": "File",
+      "selectFile": "Select file",
+      "dryRun": "Dry Run",
+      "execute": "Execute Import"
     }
   }
 }

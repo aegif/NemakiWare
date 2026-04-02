@@ -2620,7 +2620,8 @@
       "lineageJournalTitle": "Lineage ジャーナル",
       "propertyMapping": "プロパティマッピング",
       "connectors": "コネクタ",
-      "importProfiles": "インポートプロファイル"
+      "importProfiles": "インポートプロファイル",
+      "manualIngest": "手動インポート"
     },
     "save": "保存",
     "testConnection": "接続テスト",
@@ -2890,6 +2891,34 @@
       "dedupePolicy": "重複排除ポリシー",
       "versioningPolicy": "バージョニングポリシー",
       "enabled": "有効"
+    }
+  },
+  "manualIngest": {
+    "title": "手動インポート",
+    "loadError": "コネクタ/プロファイルの読み込みに失敗しました",
+    "success": "インポートが完了しました",
+    "skipped": "インポートがスキップされました（重複検出）",
+    "dryRunComplete": "ドライラン完了",
+    "error": "インポートに失敗しました",
+    "resultError": "インポートエラー",
+    "resultSkipped": "スキップ",
+    "resultDryRun": "ドライラン — 変更は行われませんでした",
+    "resultSuccess": "インポート成功",
+    "resultWarnings": "警告",
+    "newVersion": "既存ドキュメントの新バージョンとして作成されました",
+    "form": {
+      "connector": "コネクタ",
+      "selectConnector": "コネクタを選択",
+      "profile": "インポートプロファイル",
+      "selectProfile": "インポートプロファイルを選択",
+      "sourceObjectId": "ソースオブジェクトID",
+      "sourceObjectIdHint": "外部システムのオブジェクト識別子",
+      "sourceObjectType": "ソースオブジェクトタイプ",
+      "sourceUrl": "ソースURL",
+      "file": "ファイル",
+      "selectFile": "ファイルを選択",
+      "dryRun": "ドライラン",
+      "execute": "インポート実行"
     }
   }
 }

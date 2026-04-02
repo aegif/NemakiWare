@@ -12,6 +12,7 @@ import { LineageSettingsTab } from './LineageSettingsTab';
 import PropertyMappingSection from './PropertyMappingSection';
 import { ConnectorManagementTab } from './ConnectorManagementTab';
 import { ImportProfileManagementTab } from './ImportProfileManagementTab';
+import { ManualIngestTab } from './ManualIngestTab';
 
 const { Title } = Typography;
 
@@ -82,6 +83,11 @@ export function IntegrationSettings({ repositoryId }: IntegrationSettingsProps) 
       key: 'import-profiles',
       label: <Space size={4}>{t('integrationSettings.tabs.importProfiles')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
       children: <ImportProfileManagementTab repositoryId={repositoryId} />,
+    },
+    {
+      key: 'manual-ingest',
+      label: <Space size={4}>{t('integrationSettings.tabs.manualIngest')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
+      children: <ManualIngestTab repositoryId={repositoryId} />,
     },
   ];
 
