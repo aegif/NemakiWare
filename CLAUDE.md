@@ -233,7 +233,24 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ## 現在のバージョン
 
-**3.1.1** (2026-04-01)
+**3.1.1** (2026-04-02)
+
+### RC11 (2026-04-02)
+- External Ingestion Phase 1: connector/profile/canonical import パイプライン
+  - SourceArchetype (FILE_SHARE, COMPOUND_NOTE, CHAT_CONTEXT, BUSINESS_RECORD, MESSAGE_CONTEXT)
+  - ConnectorDefinition / ImportProfileDefinition (CouchDB CRUD + admin REST API)
+  - CanonicalImportService: profile/connector バリデーション → dedupe → 作成/版更新 → メタデータ付与 → lineage emit
+  - ExternalIngestController: JSON + multipart/form-data 対応、HTTP ステータス分類
+  - Patch_ExternalIntegrationSourceFields: sourceArchetype/sourceSystem/sourceObjectId 等6プロパティ追加
+  - LineageProcessType: 8新値 (FILE_SHARE_SYNC_*, EXTERNAL_*_IMPORT, MAIL_*_IMPORT)
+  - ExternalSourceUri: archetype別URI構築 + URI エンコーディング
+  - PurviewLineageSink: 新プロセスタイプ/URI スキーム対応
+- file_share 一般化: CloudDriveResource.importFromCloud → CanonicalImportService 経由
+  - auto-resolve (sourceSystem+archetype → connector/profile 自動検索)
+  - source-identity dedupe (sourceObjectId 優先、filename フォールバック)
+  - caller folderId 優先 (targetFolderOverride)
+  - レガシーフォールバック (connector/profile 未設定時は既存パス維持)
+  - 安全なフォールバック境界 (canonical import 成功後は重複回避)
 
 ### RC10 (2026-04-01)
 - マルチカタログバックエンド: MetadataCatalogConnectionResolver, CatalogBackendKind enum, Atlas/Dataplex 設定タブ
