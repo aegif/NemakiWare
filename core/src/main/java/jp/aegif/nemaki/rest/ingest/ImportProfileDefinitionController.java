@@ -52,11 +52,15 @@ public class ImportProfileDefinitionController {
     }
 
     @GetMapping("/{profileId}")
-    public ResponseEntity<ImportProfileDefinition> get(@PathVariable String profileId) {
+    public ResponseEntity<Map<String, Object>> get(@PathVariable String profileId) {
         if (!isAdmin()) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         ImportProfileDefinition def = importProfileDefinitionService.get(profileId);
-        if (def == null) return ResponseEntity.notFound().build();
-        return ResponseEntity.ok(def);
+        if (def == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("profile", def);
+        List<String> warnings = getPhase2Warnings(def);
+        if (!warnings.isEmpty()) response.put("warnings", warnings);
+        return ResponseEntity.ok(response);
     }
 
     @PutMapping("/{profileId}")
