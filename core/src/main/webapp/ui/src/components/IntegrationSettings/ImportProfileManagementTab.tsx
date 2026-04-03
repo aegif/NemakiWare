@@ -88,7 +88,8 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
       values.repositoryId = repositoryId;
       let result;
       if (editing) {
-        result = await updateProfile(editing.profileId, values);
+        const merged = { ...editing, ...values };
+        result = await updateProfile(editing.profileId, merged);
         message.success(t('importProfileManagement.updateSuccess'));
       } else {
         result = await createProfile(values);
@@ -219,6 +220,13 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
           <Form.Item name="allowedArchetypes" label={t('importProfileManagement.form.allowedArchetypes')}>
             <Select mode="multiple" allowClear
               options={ARCHETYPE_OPTIONS.map(a => ({ value: a, label: a }))} />
+          </Form.Item>
+          <Form.Item name="allowedConnectorIds" label={t('importProfileManagement.form.allowedConnectorIds')}
+            extra={t('importProfileManagement.form.allowedConnectorIdsHint')}>
+            <Select mode="tags" allowClear placeholder={t('importProfileManagement.form.allowedConnectorIdsHint')} />
+          </Form.Item>
+          <Form.Item name="defaultConnectorId" label={t('importProfileManagement.form.defaultConnectorId')}>
+            <Input />
           </Form.Item>
           <Form.Item name="secondaryTypeIds" label={t('importProfileManagement.form.secondaryTypeIds')}
             extra={t('importProfileManagement.form.secondaryTypeIdsHint')}>

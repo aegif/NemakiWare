@@ -29,6 +29,17 @@ interface IngestResult {
   dryRun?: boolean;
 }
 
+function defaultObjectType(archetype?: string): string {
+  switch (archetype) {
+    case 'FILE_SHARE': return 'file';
+    case 'COMPOUND_NOTE': return 'page';
+    case 'BUSINESS_RECORD': return 'record';
+    case 'CHAT_CONTEXT': return 'message';
+    case 'MESSAGE_CONTEXT': return 'message';
+    default: return 'file';
+  }
+}
+
 export function ManualIngestTab({ repositoryId }: Props) {
   const { t } = useTranslation();
   const { message } = App.useApp();
@@ -106,7 +117,7 @@ export function ManualIngestTab({ repositoryId }: Props) {
         profileId: values.profileId,
         connectorId: values.connectorId,
         sourceObjectId: values.sourceObjectId,
-        sourceObjectType: values.sourceObjectType || 'file',
+        sourceObjectType: values.sourceObjectType || defaultObjectType(selectedArchetype),
         sourceUrl: values.sourceUrl,
         dryRun: values.dryRun || false,
         executionMode: 'manual',
@@ -195,7 +206,8 @@ export function ManualIngestTab({ repositoryId }: Props) {
               rules={[{ required: true, message: t('manualIngest.form.mailboxIdRequired') }]}>
               <Input placeholder={t('manualIngest.form.mailboxIdHint')} />
             </Form.Item>
-            <Form.Item name="messageStableId" label={t('manualIngest.form.messageStableId')}>
+            <Form.Item name="messageStableId" label={t('manualIngest.form.messageStableId')}
+              rules={[{ required: true, message: t('manualIngest.form.messageStableIdRequired') }]}>
               <Input placeholder={t('manualIngest.form.messageStableIdHint')} />
             </Form.Item>
           </>

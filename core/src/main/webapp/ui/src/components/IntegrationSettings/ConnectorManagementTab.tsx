@@ -53,7 +53,9 @@ export function ConnectorManagementTab() {
     try {
       const values = await form.validateFields();
       if (editing) {
-        await updateConnector(editing.connectorId, values);
+        // Merge form values with existing fields to preserve API-only properties
+        const merged = { ...editing, ...values };
+        await updateConnector(editing.connectorId, merged);
         message.success(t('connectorManagement.updateSuccess'));
       } else {
         await createConnector(values);

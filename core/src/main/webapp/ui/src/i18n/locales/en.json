@@ -2888,6 +2888,9 @@
       "targetFolderHint": "Either folder ID or folder path is required. Path is resolved at import time.",
       "secondaryTypeIds": "Secondary Types",
       "secondaryTypeIdsHint": "Additional secondary types to attach to imported documents",
+      "allowedConnectorIds": "Allowed Connectors",
+      "allowedConnectorIdsHint": "Leave empty to allow any connector",
+      "defaultConnectorId": "Default Connector",
       "dedupePolicy": "Dedupe Policy",
       "versioningPolicy": "Versioning Policy",
       "enabled": "Enabled"
@@ -2926,6 +2929,7 @@
       "mailboxIdRequired": "Mailbox ID is required for mail connectors",
       "mailboxIdHint": "e.g. INBOX, Sent",
       "messageStableId": "Message Stable ID",
+      "messageStableIdRequired": "Message Stable ID is required for mail imports",
       "messageStableIdHint": "Provider-specific stable message identifier",
       "file": "File",
       "selectFile": "Select file",

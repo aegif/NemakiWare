@@ -2888,6 +2888,9 @@
       "targetFolderHint": "フォルダIDまたはフォルダパスのいずれかが必要です。パスはインポート時に解決されます。",
       "secondaryTypeIds": "セカンダリタイプ",
       "secondaryTypeIdsHint": "インポートされたドキュメントに自動的に付与する追加のセカンダリタイプ",
+      "allowedConnectorIds": "許可するコネクタ",
+      "allowedConnectorIdsHint": "空の場合はすべてのコネクタを許可",
+      "defaultConnectorId": "デフォルトコネクタ",
       "dedupePolicy": "重複排除ポリシー",
       "versioningPolicy": "バージョニングポリシー",
       "enabled": "有効"
@@ -2926,6 +2929,7 @@
       "mailboxIdRequired": "メールコネクタにはメールボックスIDが必要です",
       "mailboxIdHint": "例: INBOX, Sent",
       "messageStableId": "メッセージ安定ID",
+      "messageStableIdRequired": "メールインポートにはメッセージ安定IDが必要です",
       "messageStableIdHint": "プロバイダ固有のメッセージ識別子",
       "file": "ファイル",
       "selectFile": "ファイルを選択",
