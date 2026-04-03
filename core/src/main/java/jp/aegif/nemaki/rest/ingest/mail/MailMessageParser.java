@@ -107,14 +107,15 @@ public class MailMessageParser {
 
             if (Part.ATTACHMENT.equalsIgnoreCase(disposition) ||
                     (disposition == null && part.getFileName() != null)) {
-                // Attachment
+                // Attachment — use global index (attachments.size()) to avoid nested collisions
+                int globalIndex = attachments.size();
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 part.getInputStream().transferTo(baos);
                 attachments.add(new ParsedAttachment(
-                        part.getFileName() != null ? part.getFileName() : "attachment-" + i,
+                        part.getFileName() != null ? part.getFileName() : "attachment-" + globalIndex,
                         part.getContentType().split(";")[0].trim(),
                         baos.toByteArray(),
-                        i));
+                        globalIndex));
             } else if (part.getContent() instanceof Multipart nested) {
                 extractParts(nested, attachments, textBuf, htmlBuf, depth + 1);
             }

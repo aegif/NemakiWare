@@ -204,6 +204,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     ExternalIngestResult attResult = execute(callContext, attReq);
                     if (attResult.isSuccess()) {
                         attachmentCount++;
+                        // Create relationship directly (not dependent on profile policy)
+                        String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                                messageObjectId, attResult.objectId());
+                        if (relErr != null) warnings.add(relErr);
                     } else {
                         warnings.add("Attachment '" + att.filename() + "' import failed: "
                                 + String.join(", ", attResult.errors()));
@@ -248,7 +252,45 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         String metaError = applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
         if (metaError != null) warnings.add(metaError);
 
-        logger.info("Note import completed: objectId={}, profile={}", pageObjectId, request.getProfileId());
+        // Import attachments from metadata if provided
+        int attachmentCount = 0;
+        if (request.getMetadata() != null && request.getMetadata().get("attachments") instanceof List<?> attList) {
+            for (Object attObj : attList) {
+                if (!(attObj instanceof Map<?, ?> attMap)) continue;
+                try {
+                    ExternalIngestRequest attReq = new ExternalIngestRequest();
+                    attReq.setProfileId(request.getProfileId());
+                    attReq.setConnectorId(request.getConnectorId());
+                    attReq.setRepositoryId(request.getRepositoryId());
+                    Object attId = attMap.get("attachmentId");
+                    attReq.setSourceObjectId(request.getSourceObjectId() + "/att-" + (attId != null ? attId : attachmentCount));
+                    attReq.setSourceObjectType("attachment");
+                    Object fn = attMap.get("filename");
+                    attReq.setFileName(fn instanceof String s ? s : "attachment-" + attachmentCount);
+                    Object mt = attMap.get("mimeType");
+                    attReq.setMimeType(mt instanceof String s ? s : "application/octet-stream");
+                    attReq.setExecutionMode(request.getExecutionMode());
+                    Map<String, Object> attMeta = new LinkedHashMap<>();
+                    attMeta.put("parentObjectId", pageObjectId);
+                    attReq.setMetadata(attMeta);
+                    // Content must be provided by caller via separate multipart or base64 in metadata
+                    ExternalIngestResult attResult = execute(callContext, attReq);
+                    if (attResult.isSuccess()) {
+                        attachmentCount++;
+                        String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                                pageObjectId, attResult.objectId());
+                        if (relErr != null) warnings.add(relErr);
+                    } else {
+                        warnings.add("Attachment import failed: " + String.join(", ", attResult.errors()));
+                    }
+                } catch (Exception e) {
+                    warnings.add("Attachment failed: " + e.getMessage());
+                }
+            }
+        }
+
+        logger.info("Note import completed: objectId={}, attachments={}, profile={}",
+                pageObjectId, attachmentCount, request.getProfileId());
 
         return new ExternalIngestResult(requestId, pageObjectId, pageResult.versionLabel(),
                 pageResult.isNewVersion(), false, false, null, pageResult.lineageEventId(),
@@ -279,7 +321,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
 
             if (!noteProps.isEmpty()) {
-                aspects.add(new Aspect("nemaki:noteMetadata", noteProps));
+                Aspect existingNote = aspects.stream()
+                        .filter(a -> "nemaki:noteMetadata".equals(a.getName())).findFirst().orElse(null);
+                if (existingNote != null) {
+                    Map<String, Property> m = new LinkedHashMap<>();
+                    if (existingNote.getProperties() != null) for (Property p : existingNote.getProperties()) m.put(p.getKey(), p);
+                    for (Property p : noteProps) m.put(p.getKey(), p);
+                    existingNote.setProperties(new ArrayList<>(m.values()));
+                } else {
+                    aspects.add(new Aspect("nemaki:noteMetadata", noteProps));
+                }
                 List<String> secondaryIds = content.getSecondaryIds();
                 if (secondaryIds == null) secondaryIds = new ArrayList<>();
                 if (!secondaryIds.contains("nemaki:noteMetadata")) {
@@ -366,7 +417,21 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 }
             }
             if (!props.isEmpty()) {
-                aspects.add(new Aspect(secondaryTypeId, props));
+                // Update existing aspect or add new one
+                Aspect existingAspect = aspects.stream()
+                        .filter(a -> secondaryTypeId.equals(a.getName()))
+                        .findFirst().orElse(null);
+                if (existingAspect != null) {
+                    // Merge: preserve existing, overwrite with new
+                    Map<String, Property> merged = new LinkedHashMap<>();
+                    if (existingAspect.getProperties() != null) {
+                        for (Property p : existingAspect.getProperties()) merged.put(p.getKey(), p);
+                    }
+                    for (Property p : props) merged.put(p.getKey(), p);
+                    existingAspect.setProperties(new ArrayList<>(merged.values()));
+                } else {
+                    aspects.add(new Aspect(secondaryTypeId, props));
+                }
                 List<String> secondaryIds = content.getSecondaryIds();
                 if (secondaryIds == null) secondaryIds = new ArrayList<>();
                 if (!secondaryIds.contains(secondaryTypeId)) secondaryIds.add(secondaryTypeId);
@@ -382,6 +447,26 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         } catch (Exception e) {
             logger.warn("Failed to apply {} to {}: {}", secondaryTypeId, objectId, e.getMessage());
             return secondaryTypeId + " metadata failed: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Creates a CMIS relationship unconditionally (not dependent on profile policy).
+     * Used by specialized import flows (mail, note) where parent-child relationships
+     * are inherent to the archetype.
+     */
+    private String createDirectRelationship(CallContext callContext, String repositoryId,
+                                            String sourceId, String targetId) {
+        try {
+            PropertiesImpl relProps = new PropertiesImpl();
+            relProps.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:relationship"));
+            relProps.addProperty(new PropertyIdImpl(PropertyIds.SOURCE_ID, sourceId));
+            relProps.addProperty(new PropertyIdImpl(PropertyIds.TARGET_ID, targetId));
+            objectService.createRelationship(callContext, repositoryId, relProps, null, null, null, null);
+            return null;
+        } catch (Exception e) {
+            logger.warn("Relationship {} → {} failed: {}", sourceId, targetId, e.getMessage());
+            return "Relationship failed: " + e.getMessage();
         }
     }
 
@@ -431,7 +516,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             String messageStableId = resolveMetadataString(request, "messageStableId");
             if (messageStableId != null) msgProps.add(new Property("nemaki:messageStableId", messageStableId));
 
-            aspects.add(new Aspect("nemaki:messageMetadata", msgProps));
+            Aspect existingMsg = aspects.stream()
+                    .filter(a -> "nemaki:messageMetadata".equals(a.getName())).findFirst().orElse(null);
+            if (existingMsg != null) {
+                Map<String, Property> m = new LinkedHashMap<>();
+                if (existingMsg.getProperties() != null) for (Property p : existingMsg.getProperties()) m.put(p.getKey(), p);
+                for (Property p : msgProps) m.put(p.getKey(), p);
+                existingMsg.setProperties(new ArrayList<>(m.values()));
+            } else {
+                aspects.add(new Aspect("nemaki:messageMetadata", msgProps));
+            }
 
             List<String> secondaryIds = content.getSecondaryIds();
             if (secondaryIds == null) secondaryIds = new ArrayList<>();
@@ -868,12 +962,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
         }
 
-        // Fallback: match by filename (backward compat with legacy cloud import)
-        Content byName = contentDaoService.getChildByName(repositoryId, targetFolderId, fileName);
-        if (byName != null && byName.isDocument()) {
-            logger.debug("Dedupe: found existing document {} by filename={}", byName.getId(), fileName);
-            return byName;
-        }
+        // No source-identity match found — return null (new document will be created).
+        // Filename-based fallback was removed to prevent conflating distinct external
+        // objects that happen to share the same name.
         return null;
     }
 
