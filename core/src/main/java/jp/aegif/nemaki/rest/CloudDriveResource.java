@@ -734,6 +734,10 @@ public class CloudDriveResource extends ResourceBase {
 			}
 
 			// Legacy path: direct import (connector/profile not configured)
+			// DEPRECATION: This path will be removed in a future release.
+			// Create connector/profile definitions to use the canonical pipeline.
+			log.warn("DEPRECATED: Cloud import using legacy path for provider '" + provider
+					+ "'. Create connector and import profile definitions to use the canonical pipeline.");
 			// Create document using ObjectService
 			jp.aegif.nemaki.cmis.service.ObjectService objectService =
 				SpringContext.getApplicationContext().getBean("objectService",

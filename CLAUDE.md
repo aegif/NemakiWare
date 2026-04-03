@@ -235,22 +235,30 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 **3.1.1** (2026-04-02)
 
-### RC11 (2026-04-02)
-- External Ingestion Phase 1: connector/profile/canonical import パイプライン
-  - SourceArchetype (FILE_SHARE, COMPOUND_NOTE, CHAT_CONTEXT, BUSINESS_RECORD, MESSAGE_CONTEXT)
+### RC11 (2026-04-03)
+- External Ingestion 完全実装:
+  - SourceArchetype 5類型 (FILE_SHARE, COMPOUND_NOTE, CHAT_CONTEXT, BUSINESS_RECORD, MESSAGE_CONTEXT)
   - ConnectorDefinition / ImportProfileDefinition (CouchDB CRUD + admin REST API)
-  - CanonicalImportService: profile/connector バリデーション → dedupe → 作成/版更新 → メタデータ付与 → lineage emit
-  - ExternalIngestController: JSON + multipart/form-data 対応、HTTP ステータス分類
-  - Patch_ExternalIntegrationSourceFields: sourceArchetype/sourceSystem/sourceObjectId 等6プロパティ追加
-  - LineageProcessType: 8新値 (FILE_SHARE_SYNC_*, EXTERNAL_*_IMPORT, MAIL_*_IMPORT)
-  - ExternalSourceUri: archetype別URI構築 + URI エンコーディング
-  - PurviewLineageSink: 新プロセスタイプ/URI スキーム対応
-- file_share 一般化: CloudDriveResource.importFromCloud → CanonicalImportService 経由
-  - auto-resolve (sourceSystem+archetype → connector/profile 自動検索)
-  - source-identity dedupe (sourceObjectId 優先、filename フォールバック)
-  - caller folderId 優先 (targetFolderOverride)
-  - レガシーフォールバック (connector/profile 未設定時は既存パス維持)
-  - 安全なフォールバック境界 (canonical import 成功後は重複回避)
+  - CanonicalImportService: profile/connector バリデーション → source-identity dedupe → 作成/版更新 → メタデータ付与 → lineage emit
+  - ExternalIngestController: JSON + multipart/form-data 対応、archetype auto-detect、HTTP ステータス分類
+  - 全 Profile フィールド runtime enforce (dedupePolicy, updatePolicy, versioningPolicy, secondaryTypeIds, retentionDays, relationshipPolicy, aclSyncPolicy, schedulerEnabled)
+- Secondary Types (5種):
+  - nemaki:externalIntegration + sourceFields (sourceArchetype/sourceSystem/sourceObjectId等)
+  - nemaki:messageMetadata (internetMessageId, mailSubject, mailFrom, mailTo, mailSentAt等 11プロパティ)
+  - nemaki:noteMetadata (notePageId, notePageUrl, noteWorkspaceId, noteAuthor等 8プロパティ)
+  - nemaki:businessRecordMetadata (recordType, recordId, recordStatus, processInstanceId等 8プロパティ)
+  - nemaki:chatContextMetadata (chatChannelId, chatThreadId, chatParticipants等 8プロパティ)
+- Archetype 別 Import Flow:
+  - FILE_SHARE: execute() (標準パイプライン)
+  - MESSAGE_CONTEXT: executeMailImport() (.eml MIME パース → 本文+添付分離 → messageMetadata → direct relationship)
+  - COMPOUND_NOTE: executeNoteImport() (ページ本文 → noteMetadata → 添付個別取込 → direct relationship)
+  - BUSINESS_RECORD: executeBusinessRecordImport() (businessRecordMetadata 自動付与)
+  - CHAT_CONTEXT: executeChatContextImport() (chatContextMetadata 自動付与)
+- IMAP Adapter: MailMessageParser (.eml パーサー) + ImapConnectorAdapter (IMAP/IMAPS接続)
+- file_share 一般化: CloudDriveResource → CanonicalImportService 経由 (レガシーフォールバック deprecation warning付き)
+- 管理 UI: コネクタ管理 + インポートプロファイル管理 + 手動インポート実行タブ (全 i18n ja/en)
+- IngestSchedulerService: 定期同期スケジューラ基盤 + admin API (/v1/admin/ingest-scheduler/status)
+- デフォルト connector/profile 自動作成パッチ (Google Drive + OneDrive)
 
 ### RC10 (2026-04-01)
 - マルチカタログバックエンド: MetadataCatalogConnectionResolver, CatalogBackendKind enum, Atlas/Dataplex 設定タブ
