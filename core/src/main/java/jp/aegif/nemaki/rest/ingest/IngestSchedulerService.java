@@ -143,18 +143,35 @@ public class IngestSchedulerService {
             imap.connect();
             List<MessageSummary> messages = imap.listMessages(mailboxFolder, null, limit);
 
-            // Filter out already-imported messages using checkpoint
-            long lastImportedUid = loadCheckpoint(profile.getProfileId(), mailboxFolder);
-            if (lastImportedUid > 0) {
-                messages = messages.stream()
-                        .filter(m -> m.uid() > lastImportedUid)
-                        .toList();
+            // Load checkpoint including uidValidity
+            long[] checkpoint = loadCheckpointWithValidity(profile.getProfileId(), mailboxFolder);
+            long lastUidValidity = checkpoint[0];
+            long lastImportedUid = checkpoint[1];
+
+            // If uidValidity changed, reset checkpoint (mailbox was recreated/compacted)
+            long currentUidValidity = messages.isEmpty() ? 0 : messages.get(0).uidValidity();
+            if (lastUidValidity > 0 && currentUidValidity > 0 && lastUidValidity != currentUidValidity) {
+                logger.warn("UIDVALIDITY changed ({} → {}), resetting checkpoint for {}/{}",
+                        lastUidValidity, currentUidValidity, profile.getProfileId(), mailboxFolder);
+                lastImportedUid = 0;
+            }
+
+            // Filter out already-imported messages
+            final long filterUid = lastImportedUid;
+            if (filterUid > 0) {
+                messages = messages.stream().filter(m -> m.uid() > filterUid).toList();
             }
             fetched = messages.size();
-            logger.info("IMAP fetch: {} new messages from {}:{} (after checkpoint UID {})",
-                    fetched, connector.getEndpoint(), mailboxFolder, lastImportedUid);
+            logger.info("IMAP fetch: {} new messages from {}:{} (checkpoint UID {}, validity {})",
+                    fetched, connector.getEndpoint(), mailboxFolder, lastImportedUid, currentUidValidity);
 
-            for (MessageSummary msg : messages) {
+            // Process oldest-first to ensure checkpoint advances monotonically
+            List<MessageSummary> oldestFirst = new ArrayList<>(messages);
+            oldestFirst.sort((a, b) -> Long.compare(a.uid(), b.uid()));
+
+            long highWaterMark = lastImportedUid;
+
+            for (MessageSummary msg : oldestFirst) {
                 try {
                     InputStream eml = imap.fetchMessage(mailboxFolder, msg.uid());
 
@@ -178,9 +195,19 @@ public class IngestSchedulerService {
 
                     ExternalIngestResult result = canonicalImportService.executeMailImport(callContext, req);
                     if (result.isSuccess()) {
-                        imported++;
-                        saveCheckpoint(profile.getProfileId(), mailboxFolder, msg.uid());
+                        // Only advance checkpoint if no attachment failures in warnings
+                        boolean hasAttachmentFailure = result.warnings().stream()
+                                .anyMatch(w -> w.contains("Attachment") && w.contains("failed"));
+                        if (hasAttachmentFailure) {
+                            logger.warn("Message UID {} imported with attachment failures, not checkpointing", msg.uid());
+                            errors.add("Message UID " + msg.uid() + " partial: " + String.join(", ", result.warnings()));
+                        } else {
+                            imported++;
+                            highWaterMark = Math.max(highWaterMark, msg.uid());
+                        }
                     } else if (result.skipped()) {
+                        // Advance past skipped messages to avoid re-fetching
+                        highWaterMark = Math.max(highWaterMark, msg.uid());
                         logger.debug("IMAP message {} skipped: {}", msg.uid(), result.skipReason());
                     } else {
                         errors.add("Message UID " + msg.uid() + ": " + String.join(", ", result.errors()));
@@ -188,6 +215,11 @@ public class IngestSchedulerService {
                 } catch (Exception e) {
                     errors.add("Message UID " + msg.uid() + ": " + e.getMessage());
                 }
+            }
+
+            // Save checkpoint once after batch completes
+            if (highWaterMark > lastImportedUid) {
+                saveCheckpointWithValidity(profile.getProfileId(), mailboxFolder, currentUidValidity, highWaterMark);
             }
         } catch (Exception e) {
             errors.add("IMAP connection failed: " + e.getMessage());
@@ -200,18 +232,32 @@ public class IngestSchedulerService {
         return new ImapFetchResult(fetched, imported, errors);
     }
 
-    private long loadCheckpoint(String profileId, String mailboxFolder) {
-        if (settingsService == null) return 0;
-        String key = "ingest.checkpoint." + profileId + "." + mailboxFolder + ".lastUid";
+    /**
+     * Load checkpoint as [uidValidity, lastUid].
+     */
+    private long[] loadCheckpointWithValidity(String profileId, String mailboxFolder) {
+        if (settingsService == null) return new long[]{0, 0};
+        String key = "ingest.checkpoint." + profileId + "." + mailboxFolder;
         String value = settingsService.readSetting(key);
-        if (value == null || value.isBlank()) return 0;
-        try { return Long.parseLong(value); } catch (NumberFormatException e) { return 0; }
+        if (value == null || value.isBlank()) return new long[]{0, 0};
+        try {
+            String[] parts = value.split(":");
+            if (parts.length == 2) {
+                return new long[]{Long.parseLong(parts[0]), Long.parseLong(parts[1])};
+            }
+            // Legacy format: uid only
+            return new long[]{0, Long.parseLong(value)};
+        } catch (NumberFormatException e) {
+            return new long[]{0, 0};
+        }
     }
 
-    private void saveCheckpoint(String profileId, String mailboxFolder, long uid) {
+    private void saveCheckpointWithValidity(String profileId, String mailboxFolder,
+                                            long uidValidity, long uid) {
         if (settingsService == null) return;
-        String key = "ingest.checkpoint." + profileId + "." + mailboxFolder + ".lastUid";
-        settingsService.writeSetting(key, String.valueOf(uid));
+        String key = "ingest.checkpoint." + profileId + "." + mailboxFolder;
+        settingsService.writeSetting(key, uidValidity + ":" + uid);
+        logger.debug("Checkpoint saved: {}/{} → {}:{}", profileId, mailboxFolder, uidValidity, uid);
     }
 
     private String resolvePassword(ConnectorDefinition connector) {
