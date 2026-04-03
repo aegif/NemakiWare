@@ -3,12 +3,13 @@ package jp.aegif.nemaki.rest.ingest;
 import jakarta.servlet.http.HttpServletRequest;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import jp.aegif.nemaki.rest.ingest.IngestSchedulerService.ImapFetchResult;
+import jp.aegif.nemaki.rest.ingest.IngestSchedulerService.FetchResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -79,30 +80,25 @@ public class IngestSchedulerController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
         }
 
-        // Execute IMAP fetch if MESSAGE_CONTEXT connector
-        if (connector.getSourceArchetype() == SourceArchetype.MESSAGE_CONTEXT) {
-            CallContext callContext = getCallContext();
-            if (callContext == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-            }
-            String mailbox = "INBOX";
-            int limit = 50;
-            IngestSchedulerService.ImapFetchResult fetchResult =
-                    schedulerService.executeImapFetch(callContext, profile, connector, mailbox, limit);
-            response.put("status", fetchResult.hasErrors() ? "partial" : "success");
-            response.put("fetched", fetchResult.fetched());
-            response.put("imported", fetchResult.imported());
-            if (fetchResult.hasErrors()) {
-                response.put("errors", fetchResult.errors());
-            }
-        } else {
-            response.put("status", "accepted");
-            response.put("message", "Connector archetype " + connector.getSourceArchetype()
-                    + " does not have a concrete fetch adapter yet.");
+        CallContext callContext = getCallContext();
+        if (callContext == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        // Dispatch to appropriate adapter via unified method
+        IngestSchedulerService.FetchResult fetchResult =
+                schedulerService.executeFetch(callContext, profile, connector, Map.of());
+
+        response.put("status", fetchResult.hasErrors() ? "partial" : "success");
+        response.put("fetched", fetchResult.fetched());
+        response.put("imported", fetchResult.imported());
+        if (fetchResult.hasErrors()) {
+            response.put("errors", fetchResult.errors());
         }
         response.put("profileId", profileId);
         response.put("connectorId", connector.getConnectorId());
         response.put("sourceSystem", connector.getSourceSystem());
+        response.put("archetype", connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : null);
         return ResponseEntity.ok(response);
     }
 
