@@ -326,6 +326,20 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testExecuteMailImportRequiresContentStream() {
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("msg-1");
+        // No content stream
+
+        ExternalIngestResult result = service.executeMailImport(mock(CallContext.class), req);
+        assertFalse(result.isSuccess());
+        assertTrue(result.errors().get(0).contains("Content stream"));
+    }
+
+    @Test
     void testExecuteHappyPath() {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");

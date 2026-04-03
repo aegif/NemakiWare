@@ -30,10 +30,15 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import jp.aegif.nemaki.rest.ingest.mail.MailMessageParser;
+import jp.aegif.nemaki.rest.ingest.mail.MailMessageParser.ParsedMailMessage;
+import jp.aegif.nemaki.rest.ingest.mail.MailMessageParser.ParsedAttachment;
+import java.io.ByteArrayInputStream;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.GregorianCalendar;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -117,6 +122,170 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
 
         return execute(callContext, request);
+    }
+
+    @Override
+    public ExternalIngestResult executeMailImport(CallContext callContext, ExternalIngestRequest request) {
+        String requestId = request.getRequestId();
+
+        if (request.getContentStream() == null) {
+            return ExternalIngestResult.error(requestId, "Content stream (.eml file) is required for mail import");
+        }
+
+        try {
+            // 1. Parse .eml
+            MailMessageParser parser = new MailMessageParser();
+            ParsedMailMessage parsed = parser.parse(request.getContentStream());
+
+            // 2. Build metadata from parsed envelope
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            if (parsed.messageId() != null) metadata.put("internetMessageId", parsed.messageId());
+            if (parsed.subject() != null) metadata.put("subject", parsed.subject());
+            if (parsed.from() != null) metadata.put("from", parsed.from());
+            if (parsed.to() != null) metadata.put("to", parsed.to());
+            if (parsed.cc() != null) metadata.put("cc", parsed.cc());
+            if (parsed.inReplyTo() != null) metadata.put("inReplyTo", parsed.inReplyTo());
+            if (parsed.references() != null) metadata.put("references", parsed.references());
+            // Preserve caller metadata (mailboxId, messageStableId, etc.)
+            if (request.getMetadata() != null) {
+                for (Map.Entry<String, Object> entry : request.getMetadata().entrySet()) {
+                    metadata.putIfAbsent(entry.getKey(), entry.getValue());
+                }
+            }
+            request.setMetadata(metadata);
+
+            // 3. Import message body as main document
+            String bodyText = parsed.textBody() != null ? parsed.textBody()
+                    : (parsed.htmlBody() != null ? parsed.htmlBody() : "");
+            String bodyMimeType = parsed.htmlBody() != null && parsed.textBody() == null
+                    ? "text/html" : "text/plain";
+            String subject = parsed.subject() != null ? parsed.subject() : "Untitled Message";
+
+            request.setFileName(sanitizeFilename(subject) + (bodyMimeType.contains("html") ? ".html" : ".txt"));
+            request.setMimeType(bodyMimeType);
+            request.setContentStream(new ByteArrayInputStream(bodyText.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            if (request.getSourceObjectType() == null || request.getSourceObjectType().isBlank()) {
+                request.setSourceObjectType("message");
+            }
+
+            ExternalIngestResult messageResult = execute(callContext, request);
+            if (!messageResult.isSuccess()) {
+                return messageResult;
+            }
+
+            String messageObjectId = messageResult.objectId();
+
+            // 4. Apply nemaki:messageMetadata secondary type
+            List<String> warnings = new ArrayList<>(messageResult.warnings());
+            String metaError = applyMessageMetadata(request.getRepositoryId(), messageObjectId, callContext, parsed, request);
+            if (metaError != null) warnings.add(metaError);
+
+            // 5. Import attachments as separate documents with relationship
+            int attachmentCount = 0;
+            for (ParsedAttachment att : parsed.attachments()) {
+                try {
+                    ExternalIngestRequest attReq = new ExternalIngestRequest();
+                    attReq.setProfileId(request.getProfileId());
+                    attReq.setConnectorId(request.getConnectorId());
+                    attReq.setRepositoryId(request.getRepositoryId());
+                    attReq.setSourceObjectId(request.getSourceObjectId() + "/att-" + att.partIndex());
+                    attReq.setSourceObjectType("attachment");
+                    attReq.setFileName(att.filename());
+                    attReq.setMimeType(att.mimeType());
+                    attReq.setContentStream(new ByteArrayInputStream(att.content()));
+                    attReq.setExecutionMode(request.getExecutionMode());
+                    // Set parentObjectId for relationship creation
+                    Map<String, Object> attMeta = new LinkedHashMap<>();
+                    attMeta.put("parentObjectId", messageObjectId);
+                    attMeta.put("mailboxId", metadata.get("mailboxId"));
+                    attMeta.put("messageStableId", request.getSourceObjectId());
+                    attReq.setMetadata(attMeta);
+
+                    ExternalIngestResult attResult = execute(callContext, attReq);
+                    if (attResult.isSuccess()) {
+                        attachmentCount++;
+                    } else {
+                        warnings.add("Attachment '" + att.filename() + "' import failed: "
+                                + String.join(", ", attResult.errors()));
+                    }
+                } catch (Exception e) {
+                    warnings.add("Attachment '" + att.filename() + "' failed: " + e.getMessage());
+                }
+            }
+
+            logger.info("Mail import completed: messageId={}, objectId={}, attachments={}",
+                    parsed.messageId(), messageObjectId, attachmentCount);
+
+            return new ExternalIngestResult(requestId, messageObjectId, messageResult.versionLabel(),
+                    messageResult.isNewVersion(), false, false, null, messageResult.lineageEventId(),
+                    List.of(), warnings);
+
+        } catch (Exception e) {
+            logger.error("Mail import failed: {}", e.getMessage(), e);
+            return ExternalIngestResult.error(requestId, "Mail import failed: " + e.getMessage());
+        }
+    }
+
+    private String sanitizeFilename(String name) {
+        if (name == null) return "untitled";
+        return name.replaceAll("[/\\\\:*?\"<>|]", "_").trim();
+    }
+
+    /**
+     * Apply nemaki:messageMetadata secondary type to a message document.
+     */
+    private String applyMessageMetadata(String repositoryId, String objectId, CallContext callContext,
+                                        ParsedMailMessage parsed, ExternalIngestRequest request) {
+        try {
+            Content content = contentService.getContent(repositoryId, objectId);
+            if (content == null) return "Content not found: " + objectId;
+
+            List<Aspect> aspects = content.getAspects();
+            if (aspects == null) aspects = new ArrayList<>();
+
+            List<Property> msgProps = new ArrayList<>();
+            if (parsed.messageId() != null) msgProps.add(new Property("nemaki:internetMessageId", parsed.messageId()));
+            if (parsed.subject() != null) msgProps.add(new Property("nemaki:mailSubject", parsed.subject()));
+            if (parsed.from() != null) msgProps.add(new Property("nemaki:mailFrom", parsed.from()));
+            if (parsed.to() != null) msgProps.add(new Property("nemaki:mailTo", parsed.to()));
+            if (parsed.cc() != null) msgProps.add(new Property("nemaki:mailCc", parsed.cc()));
+            if (parsed.inReplyTo() != null) msgProps.add(new Property("nemaki:mailInReplyTo", parsed.inReplyTo()));
+            if (parsed.references() != null) msgProps.add(new Property("nemaki:mailReferences", parsed.references()));
+            if (parsed.sentDate() != null) {
+                GregorianCalendar cal = new GregorianCalendar();
+                cal.setTime(parsed.sentDate());
+                msgProps.add(new Property("nemaki:mailSentAt", cal));
+            }
+            if (parsed.receivedDate() != null) {
+                GregorianCalendar cal = new GregorianCalendar();
+                cal.setTime(parsed.receivedDate());
+                msgProps.add(new Property("nemaki:mailReceivedAt", cal));
+            }
+            String mailboxId = resolveMetadataString(request, "mailboxId");
+            if (mailboxId != null) msgProps.add(new Property("nemaki:mailboxId", mailboxId));
+            String messageStableId = resolveMetadataString(request, "messageStableId");
+            if (messageStableId != null) msgProps.add(new Property("nemaki:messageStableId", messageStableId));
+
+            aspects.add(new Aspect("nemaki:messageMetadata", msgProps));
+
+            List<String> secondaryIds = content.getSecondaryIds();
+            if (secondaryIds == null) secondaryIds = new ArrayList<>();
+            if (!secondaryIds.contains("nemaki:messageMetadata")) {
+                secondaryIds.add("nemaki:messageMetadata");
+            }
+            content.setSecondaryIds(secondaryIds);
+            content.setAspects(aspects);
+            contentService.update(callContext, repositoryId, content);
+
+            if (nemakiCachePool != null) {
+                try { nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId); }
+                catch (Exception e) { logger.debug("Cache invalidation: {}", e.getMessage()); }
+            }
+            return null;
+        } catch (Exception e) {
+            logger.warn("Failed to apply messageMetadata to {}: {}", objectId, e.getMessage());
+            return "Message metadata failed: " + e.getMessage();
+        }
     }
 
     @Override

@@ -75,7 +75,19 @@ public class ExternalIngestController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         request.setRepositoryId(repositoryId);
-        ExternalIngestResult result = canonicalImportService.execute(callContext, request);
+
+        // Auto-detect mail import: .eml file or MESSAGE_CONTEXT sourceObjectType
+        boolean isMailImport = false;
+        if (request.getFileName() != null && request.getFileName().toLowerCase().endsWith(".eml")) {
+            isMailImport = true;
+        }
+        if ("message".equals(request.getSourceObjectType()) && request.getContentStream() != null) {
+            isMailImport = true;
+        }
+
+        ExternalIngestResult result = isMailImport
+                ? canonicalImportService.executeMailImport(callContext, request)
+                : canonicalImportService.execute(callContext, request);
         if (result.isSuccess() || result.skipped() || result.dryRun()) {
             return ResponseEntity.ok(result);
         }

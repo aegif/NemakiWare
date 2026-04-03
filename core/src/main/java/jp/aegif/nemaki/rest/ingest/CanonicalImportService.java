@@ -40,4 +40,14 @@ public interface CanonicalImportService {
      */
     ExternalIngestResult executeWithAutoResolve(CallContext callContext, ExternalIngestRequest request,
                                                 String sourceSystem, SourceArchetype archetype);
+
+    /**
+     * Import an .eml file: parse MIME, create message document + attachment documents,
+     * apply nemaki:messageMetadata, create relationships.
+     *
+     * @param callContext CMIS context
+     * @param request     ingest request with .eml contentStream
+     * @return result for the message document (attachments imported as side effects)
+     */
+    ExternalIngestResult executeMailImport(CallContext callContext, ExternalIngestRequest request);
 }
