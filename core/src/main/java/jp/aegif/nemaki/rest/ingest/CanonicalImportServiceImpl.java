@@ -610,13 +610,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
         }
 
-        // 4. Dry-run check
-        if (request.isDryRun()) {
-            // TODO Phase 2: actual dedupe check
-            return ExternalIngestResult.dryRun(requestId, null, true);
-        }
-
-        // 5. Resolve target folder (caller override takes precedence over profile)
+        // 4. Resolve target folder
+        // (needed for both dry-run and real execution)
         String targetFolderId = (request.getTargetFolderOverride() != null && !request.getTargetFolderOverride().isBlank())
                 ? request.getTargetFolderOverride()
                 : resolveTargetFolderId(profile, repositoryId, callContext);
@@ -642,10 +637,28 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(-1), mimeType, request.getContentStream());
             }
 
-            // 5a. Dedupe: check for existing document by sourceObjectId or filename
+            // 5a. Dedupe: check for existing document by source identity
             String dedupePolicy = profile.getDedupePolicy() != null ? profile.getDedupePolicy() : "create_new_version";
             Content existingDoc = findExistingDocument(repositoryId, targetFolderId, fileName,
                     connector.getSourceSystem(), request.getSourceObjectId(), request.getSourceObjectType());
+
+            // 5b. Idempotency check: skip if same key already succeeded
+            if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
+                // Check source-identity as proxy for idempotency
+                // If an existing document with matching sourceObjectId exists and dedupePolicy=skip,
+                // this is effectively idempotent
+                if (existingDoc != null && "skip_if_same_version".equals(dedupePolicy)) {
+                    return ExternalIngestResult.skipped(requestId,
+                            "Idempotent: document already exists for key '" + request.getIdempotencyKey() + "'");
+                }
+            }
+
+            // 5c. Dry-run: return preview without making changes
+            if (request.isDryRun()) {
+                boolean wouldBeNewVersion = existingDoc != null && existingDoc.isDocument();
+                String existingId = wouldBeNewVersion ? existingDoc.getId() : null;
+                return ExternalIngestResult.dryRun(requestId, existingId, wouldBeNewVersion);
+            }
 
             String objectId;
             boolean isNewVersion = false;
@@ -655,7 +668,17 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 // Existing document found — apply dedupe policy
                 if ("skip_if_same_version".equals(dedupePolicy)) {
                     return ExternalIngestResult.skipped(requestId,
-                            "Document with name '" + fileName + "' already exists in target folder");
+                            "Document already exists with same source identity");
+                }
+                if ("replace".equals(dedupePolicy)) {
+                    // Delete existing and create fresh
+                    try {
+                        objectService.deleteObject(callContext, repositoryId, existingDoc.getId(), true, null);
+                        logger.info("Dedupe replace: deleted existing document {}", existingDoc.getId());
+                    } catch (Exception e) {
+                        logger.warn("Dedupe replace: failed to delete {}: {}", existingDoc.getId(), e.getMessage());
+                    }
+                    existingDoc = null; // Fall through to create new
                 }
 
                 String updatePolicy = profile.getUpdatePolicy() != null ? profile.getUpdatePolicy() : "version_up_on_content_change";

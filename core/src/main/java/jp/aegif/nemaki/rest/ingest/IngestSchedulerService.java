@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.rest.ingest;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.rest.controller.IntegrationSettingsService;
 import jp.aegif.nemaki.rest.ingest.mail.ImapConnectorAdapter;
 import jp.aegif.nemaki.rest.ingest.mail.ImapConnectorAdapter.MessageSummary;
 import jp.aegif.nemaki.util.PropertyManager;
@@ -32,6 +33,7 @@ public class IngestSchedulerService {
     private ImportProfileDefinitionService profileService;
     private ConnectorDefinitionService connectorService;
     private CanonicalImportService canonicalImportService;
+    private IntegrationSettingsService settingsService;
     private PropertyManager propertyManager;
     private RepositoryInfoMap repositoryInfoMap;
 
@@ -45,6 +47,10 @@ public class IngestSchedulerService {
 
     public void setCanonicalImportService(CanonicalImportService canonicalImportService) {
         this.canonicalImportService = canonicalImportService;
+    }
+
+    public void setSettingsService(IntegrationSettingsService settingsService) {
+        this.settingsService = settingsService;
     }
 
     public void setPropertyManager(PropertyManager propertyManager) {
@@ -136,8 +142,17 @@ public class IngestSchedulerService {
         try {
             imap.connect();
             List<MessageSummary> messages = imap.listMessages(mailboxFolder, null, limit);
+
+            // Filter out already-imported messages using checkpoint
+            long lastImportedUid = loadCheckpoint(profile.getProfileId(), mailboxFolder);
+            if (lastImportedUid > 0) {
+                messages = messages.stream()
+                        .filter(m -> m.uid() > lastImportedUid)
+                        .toList();
+            }
             fetched = messages.size();
-            logger.info("IMAP fetch: {} messages from {}:{}", fetched, connector.getEndpoint(), mailboxFolder);
+            logger.info("IMAP fetch: {} new messages from {}:{} (after checkpoint UID {})",
+                    fetched, connector.getEndpoint(), mailboxFolder, lastImportedUid);
 
             for (MessageSummary msg : messages) {
                 try {
@@ -147,7 +162,7 @@ public class IngestSchedulerService {
                     req.setProfileId(profile.getProfileId());
                     req.setConnectorId(connector.getConnectorId());
                     req.setRepositoryId(profile.getRepositoryId());
-                    req.setSourceObjectId(String.valueOf(msg.uid()));
+                    req.setSourceObjectId(msg.stableKey());
                     req.setSourceObjectType("message");
                     req.setFileName(sanitizeSubject(msg.subject()) + ".eml");
                     req.setMimeType("message/rfc822");
@@ -156,13 +171,15 @@ public class IngestSchedulerService {
 
                     Map<String, Object> metadata = new LinkedHashMap<>();
                     metadata.put("mailboxId", mailboxFolder);
-                    metadata.put("messageStableId", String.valueOf(msg.uid()));
+                    metadata.put("messageStableId", msg.stableKey());
+                    metadata.put("uidValidity", String.valueOf(msg.uidValidity()));
                     if (msg.messageId() != null) metadata.put("internetMessageId", msg.messageId());
                     req.setMetadata(metadata);
 
                     ExternalIngestResult result = canonicalImportService.executeMailImport(callContext, req);
                     if (result.isSuccess()) {
                         imported++;
+                        saveCheckpoint(profile.getProfileId(), mailboxFolder, msg.uid());
                     } else if (result.skipped()) {
                         logger.debug("IMAP message {} skipped: {}", msg.uid(), result.skipReason());
                     } else {
@@ -181,6 +198,20 @@ public class IngestSchedulerService {
 
         logger.info("IMAP fetch complete: fetched={}, imported={}, errors={}", fetched, imported, errors.size());
         return new ImapFetchResult(fetched, imported, errors);
+    }
+
+    private long loadCheckpoint(String profileId, String mailboxFolder) {
+        if (settingsService == null) return 0;
+        String key = "ingest.checkpoint." + profileId + "." + mailboxFolder + ".lastUid";
+        String value = settingsService.readSetting(key);
+        if (value == null || value.isBlank()) return 0;
+        try { return Long.parseLong(value); } catch (NumberFormatException e) { return 0; }
+    }
+
+    private void saveCheckpoint(String profileId, String mailboxFolder, long uid) {
+        if (settingsService == null) return;
+        String key = "ingest.checkpoint." + profileId + "." + mailboxFolder + ".lastUid";
+        settingsService.writeSetting(key, String.valueOf(uid));
     }
 
     private String resolvePassword(ConnectorDefinition connector) {

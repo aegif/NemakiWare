@@ -160,6 +160,8 @@ class CanonicalImportServiceTest {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
         profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
         when(profileService.get("p1")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();

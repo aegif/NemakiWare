@@ -819,6 +819,7 @@
         <property name="profileService" ref="importProfileDefinitionService" />
         <property name="connectorService" ref="connectorDefinitionService" />
         <property name="canonicalImportService" ref="canonicalImportService" />
+        <property name="settingsService" ref="integrationSettingsService" />
         <property name="propertyManager" ref="propertyManager" />
         <property name="repositoryInfoMap" ref="repositoryInfoMap" />
     </bean>

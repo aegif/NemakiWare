@@ -44,11 +44,21 @@ public class ImapConnectorAdapter {
      */
     public record MessageSummary(
             long uid,
+            long uidValidity,
             String messageId,
             String subject,
             String from,
             Date sentDate,
-            int size) {}
+            int size) {
+
+        /**
+         * Builds a stable key that survives mailbox compaction.
+         * Format: {uidValidity}:{uid}
+         */
+        public String stableKey() {
+            return uidValidity + ":" + uid;
+        }
+    }
 
     /**
      * Connect to the IMAP server.
@@ -99,15 +109,15 @@ public class ImapConnectorAdapter {
         Folder folder = store.getFolder(folderName);
         folder.open(Folder.READ_ONLY);
         try {
+            long uidValidity = folder instanceof UIDFolder uf ? uf.getUIDValidity() : 0;
             Message[] messages = folder.getMessages();
             List<MessageSummary> summaries = new ArrayList<>();
-            // Iterate in reverse (newest first)
             int count = 0;
             for (int i = messages.length - 1; i >= 0 && count < limit; i--) {
                 Message msg = messages[i];
                 Date sentDate = msg.getSentDate();
                 if (since != null && sentDate != null && sentDate.before(since)) {
-                    break; // Messages are chronologically ordered
+                    break;
                 }
                 String messageId = null;
                 if (msg instanceof MimeMessage mm) {
@@ -115,8 +125,8 @@ public class ImapConnectorAdapter {
                 }
                 String from = msg.getFrom() != null && msg.getFrom().length > 0
                         ? msg.getFrom()[0].toString() : null;
-                long uid = folder instanceof UIDFolder uf ? uf.getUID(msg) : i;
-                summaries.add(new MessageSummary(uid, messageId, msg.getSubject(), from, sentDate, msg.getSize()));
+                long uid = folder instanceof UIDFolder uf2 ? uf2.getUID(msg) : i;
+                summaries.add(new MessageSummary(uid, uidValidity, messageId, msg.getSubject(), from, sentDate, msg.getSize()));
                 count++;
             }
             return summaries;
