@@ -201,6 +201,12 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Message metadata secondary type for email envelope properties -->
+				<bean class="jp.aegif.nemaki.patch.Patch_MessageMetadataSecondaryType">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- Default cloud drive connector/profile definitions -->
 				<bean class="jp.aegif.nemaki.patch.Patch_DefaultCloudDriveConnectorProfile">
 					<property name="patchUtil">
