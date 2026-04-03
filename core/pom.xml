@@ -803,6 +803,13 @@
 			<version>2.1.2</version>
 		</dependency>
 
+		<!-- Google Gmail API -->
+		<dependency>
+			<groupId>com.google.apis</groupId>
+			<artifactId>google-api-services-gmail</artifactId>
+			<version>v1-rev20240520-2.0.0</version>
+		</dependency>
+
 		<!-- Jakarta Mail (Angus-Mail: Jakarta EE 10 compatible IMAP/SMTP) -->
 		<dependency>
 			<groupId>org.eclipse.angus</groupId>
