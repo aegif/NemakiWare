@@ -96,14 +96,8 @@ public class ImportProfileDefinitionController {
      */
     private List<String> getPhase2Warnings(ImportProfileDefinition def) {
         List<String> warnings = new ArrayList<>();
-        if (def.getUpdatePolicy() != null && !"version_up_on_content_change".equals(def.getUpdatePolicy())) {
-            warnings.add("updatePolicy '" + def.getUpdatePolicy() + "' is configured but not yet enforced (Phase 2)");
-        }
         if (def.getRelationshipPolicy() != null) {
             warnings.add("relationshipPolicy is configured but not yet enforced (Phase 2)");
-        }
-        if (def.getRetentionDays() != null) {
-            warnings.add("retentionDays is configured but not yet enforced (Phase 2)");
         }
         return warnings;
     }

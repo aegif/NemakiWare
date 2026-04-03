@@ -221,22 +221,31 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     return ExternalIngestResult.skipped(requestId,
                             "Document with name '" + fileName + "' already exists in target folder");
                 }
-                // Default: create_new_version — CheckOut + CheckIn
-                objectId = existingDoc.getId();
-                isNewVersion = true;
-                Holder<String> objectIdHolder = new Holder<>(objectId);
-                Holder<Boolean> contentCopied = new Holder<>(Boolean.FALSE);
-                versioningService.checkOut(callContext, repositoryId, objectIdHolder, contentCopied, null);
-                String pwcId = objectIdHolder.getValue();
 
-                boolean isMajor = !"minor".equalsIgnoreCase(profile.getVersioningPolicy());
-                Holder<String> checkinHolder = new Holder<>(pwcId);
-                versioningService.checkIn(callContext, repositoryId, checkinHolder, isMajor,
-                        null, contentStream, "Imported from " + connector.getSourceSystem(),
-                        null, null, null, null);
-                objectId = checkinHolder.getValue();
-                versionLabel = "new version";
-                logger.info("Dedupe: updated existing document {} with new version", objectId);
+                String updatePolicy = profile.getUpdatePolicy() != null ? profile.getUpdatePolicy() : "version_up_on_content_change";
+                objectId = existingDoc.getId();
+
+                if ("update_metadata_only".equals(updatePolicy)) {
+                    // Update metadata only — no version change, no content update
+                    versionLabel = "metadata-only";
+                    logger.info("Dedupe: metadata-only update for existing document {}", objectId);
+                } else {
+                    // Default: version_up_on_content_change — CheckOut + CheckIn
+                    isNewVersion = true;
+                    Holder<String> objectIdHolder = new Holder<>(objectId);
+                    Holder<Boolean> contentCopied = new Holder<>(Boolean.FALSE);
+                    versioningService.checkOut(callContext, repositoryId, objectIdHolder, contentCopied, null);
+                    String pwcId = objectIdHolder.getValue();
+
+                    boolean isMajor = !"minor".equalsIgnoreCase(profile.getVersioningPolicy());
+                    Holder<String> checkinHolder = new Holder<>(pwcId);
+                    versioningService.checkIn(callContext, repositoryId, checkinHolder, isMajor,
+                            null, contentStream, "Imported from " + connector.getSourceSystem(),
+                            null, null, null, null);
+                    objectId = checkinHolder.getValue();
+                    versionLabel = "new version";
+                    logger.info("Dedupe: updated existing document {} with new version", objectId);
+                }
             } else {
                 // New document
                 PropertiesImpl properties = new PropertiesImpl();
@@ -362,6 +371,25 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     }
                 }
             }
+            // Apply retention if configured
+            if (profile != null && profile.getRetentionDays() != null && profile.getRetentionDays() > 0) {
+                if (!secondaryIds.contains("cmis:rm_clientMgtRetention")) {
+                    secondaryIds.add("cmis:rm_clientMgtRetention");
+                }
+                GregorianCalendar expiration = new GregorianCalendar();
+                expiration.add(java.util.Calendar.DAY_OF_MONTH, profile.getRetentionDays());
+                List<Property> retProps = new ArrayList<>();
+                retProps.add(new Property("cmis:rm_expirationDate", expiration));
+                Aspect retAspect = aspects.stream()
+                        .filter(a -> "cmis:rm_clientMgtRetention".equals(a.getName()))
+                        .findFirst().orElse(null);
+                if (retAspect != null) {
+                    retAspect.setProperties(retProps);
+                } else {
+                    aspects.add(new Aspect("cmis:rm_clientMgtRetention", retProps));
+                }
+            }
+
             content.setSecondaryIds(secondaryIds);
             content.setAspects(aspects);
 

@@ -15,11 +15,12 @@ import java.util.List;
  *
  * <p><b>Enforced at runtime:</b> {@code targetFolderId}, {@code targetFolderPath},
  * {@code defaultObjectTypeId}, {@code allowedArchetypes}, {@code allowedConnectorIds},
- * {@code enabled}, {@code dedupePolicy}, {@code versioningPolicy}, {@code secondaryTypeIds}.
+ * {@code enabled}, {@code dedupePolicy}, {@code updatePolicy}, {@code versioningPolicy},
+ * {@code secondaryTypeIds}, {@code retentionDays}.
  *
- * <p><b>Persisted but not yet enforced (Phase 2):</b>
- * {@code updatePolicy}, {@code relationshipPolicy}, {@code defaultClassification},
- * {@code retentionDays}, {@code aclSyncPolicy}, {@code schedulerEnabled}.
+ * <p><b>Persisted but not yet enforced:</b>
+ * {@code relationshipPolicy}, {@code defaultClassification},
+ * {@code aclSyncPolicy}, {@code schedulerEnabled}.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
