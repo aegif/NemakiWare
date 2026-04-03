@@ -622,6 +622,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 return ExternalIngestResult.error(requestId,
                         "metadata.mailboxId is required for MESSAGE_CONTEXT archetype");
             }
+            // Require messageStableId for attachment imports to prevent non-canonical URIs
+            if (isAttachmentObjectType(request.getSourceObjectType())) {
+                String msgStableId = resolveMetadataString(request, "messageStableId");
+                if (msgStableId == null) {
+                    return ExternalIngestResult.error(requestId,
+                            "metadata.messageStableId is required for MESSAGE_CONTEXT attachment imports");
+                }
+            }
         }
 
         // 4. Resolve target folder

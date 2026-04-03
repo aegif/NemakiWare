@@ -15,6 +15,12 @@ import jp.aegif.nemaki.rest.ingest.record.SalesforceConnectorAdapter;
 import jp.aegif.nemaki.rest.ingest.chat.SlackConnectorAdapter;
 import jp.aegif.nemaki.rest.ingest.chat.SlackConnectorAdapter.SlackMessage;
 import jp.aegif.nemaki.rest.ingest.chat.SlackConnectorAdapter.SlackFile;
+import jp.aegif.nemaki.rest.ingest.chat.TeamsConnectorAdapter;
+import jp.aegif.nemaki.rest.ingest.chat.TeamsConnectorAdapter.TeamsMessage;
+import jp.aegif.nemaki.rest.ingest.chat.TeamsConnectorAdapter.TeamsFile;
+import jp.aegif.nemaki.rest.ingest.chat.MattermostConnectorAdapter;
+import jp.aegif.nemaki.rest.ingest.chat.MattermostConnectorAdapter.MattermostPost;
+import jp.aegif.nemaki.rest.ingest.chat.MattermostConnectorAdapter.MattermostFile;
 import jp.aegif.nemaki.util.PropertyManager;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.slf4j.Logger;
@@ -592,6 +598,102 @@ public class IngestSchedulerService {
         return new FetchResult(fetched, imported, errors);
     }
 
+    // ── Teams fetch ────────────────────────────────────────────────
+
+    public FetchResult executeTeamsFetch(CallContext callContext, ImportProfileDefinition profile,
+                                         ConnectorDefinition connector, String teamId, String channelId, int limit) {
+        String token = resolvePassword(connector);
+        if (token == null) return new FetchResult(0, 0, List.of("No token for Teams connector"));
+
+        List<String> errors = new ArrayList<>();
+        int fetched = 0, imported = 0;
+        try {
+            TeamsConnectorAdapter teams = new TeamsConnectorAdapter(token);
+            List<TeamsMessage> messages = teams.getMessages(teamId, channelId, limit);
+            fetched = messages.size();
+
+            for (TeamsMessage msg : messages) {
+                for (TeamsFile file : msg.attachments()) {
+                    if (file.contentUrl() == null) continue;
+                    try {
+                        InputStream content = teams.downloadFile(file.contentUrl());
+                        ExternalIngestRequest req = new ExternalIngestRequest();
+                        req.setProfileId(profile.getProfileId());
+                        req.setConnectorId(connector.getConnectorId());
+                        req.setRepositoryId(profile.getRepositoryId());
+                        req.setSourceObjectId(file.id());
+                        req.setSourceObjectType("attachment");
+                        req.setFileName(file.name());
+                        req.setMimeType(file.contentType());
+                        req.setContentStream(content);
+                        req.setExecutionMode("scheduled");
+                        Map<String, Object> metadata = new LinkedHashMap<>();
+                        metadata.put("channelId", channelId);
+                        metadata.put("messageId", msg.id());
+                        metadata.put("workspaceId", teamId);
+                        req.setMetadata(metadata);
+                        ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
+                        if (result.isSuccess()) imported++;
+                        else if (!result.skipped()) errors.add("Teams " + file.id() + ": " + String.join(", ", result.errors()));
+                    } catch (Exception e) {
+                        errors.add("Teams file " + file.id() + ": " + e.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            errors.add("Teams connection failed: " + e.getMessage());
+        }
+        return new FetchResult(fetched, imported, errors);
+    }
+
+    // ── Mattermost fetch ─────────────────────────────────────────────
+
+    public FetchResult executeMattermostFetch(CallContext callContext, ImportProfileDefinition profile,
+                                              ConnectorDefinition connector, String channelId, int limit) {
+        String token = resolvePassword(connector);
+        if (token == null) return new FetchResult(0, 0, List.of("No token for Mattermost connector"));
+
+        List<String> errors = new ArrayList<>();
+        int fetched = 0, imported = 0;
+        try {
+            MattermostConnectorAdapter mm = new MattermostConnectorAdapter(connector.getEndpoint(), token);
+            List<MattermostPost> posts = mm.getPosts(channelId, limit);
+            fetched = posts.size();
+
+            for (MattermostPost post : posts) {
+                for (String fileId : post.fileIds()) {
+                    try {
+                        MattermostFile fileInfo = mm.getFileInfo(fileId);
+                        InputStream content = mm.downloadFile(fileId);
+                        ExternalIngestRequest req = new ExternalIngestRequest();
+                        req.setProfileId(profile.getProfileId());
+                        req.setConnectorId(connector.getConnectorId());
+                        req.setRepositoryId(profile.getRepositoryId());
+                        req.setSourceObjectId(fileId);
+                        req.setSourceObjectType("attachment");
+                        req.setFileName(fileInfo.name());
+                        req.setMimeType(fileInfo.mimeType());
+                        req.setContentStream(content);
+                        req.setExecutionMode("scheduled");
+                        Map<String, Object> metadata = new LinkedHashMap<>();
+                        metadata.put("channelId", channelId);
+                        metadata.put("messageId", post.id());
+                        metadata.put("workspaceId", connector.getTenantId());
+                        req.setMetadata(metadata);
+                        ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
+                        if (result.isSuccess()) imported++;
+                        else if (!result.skipped()) errors.add("MM " + fileId + ": " + String.join(", ", result.errors()));
+                    } catch (Exception e) {
+                        errors.add("MM file " + fileId + ": " + e.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            errors.add("Mattermost connection failed: " + e.getMessage());
+        }
+        return new FetchResult(fetched, imported, errors);
+    }
+
     // ── Unified dispatch ────────────────────────────────────────────
 
     /**
@@ -616,8 +718,14 @@ public class IngestSchedulerService {
                     params.getOrDefault("query", null), limit);
             case BUSINESS_RECORD -> executeSalesforceFetch(callContext, profile, connector,
                     params.getOrDefault("soql", "SELECT Id, Name FROM Account LIMIT " + limit));
-            case CHAT_CONTEXT -> executeSlackFetch(callContext, profile, connector,
-                    params.getOrDefault("channelId", ""), limit);
+            case CHAT_CONTEXT -> switch (system != null ? system : "") {
+                case "teams" -> executeTeamsFetch(callContext, profile, connector,
+                        params.getOrDefault("teamId", ""), params.getOrDefault("channelId", ""), limit);
+                case "mattermost" -> executeMattermostFetch(callContext, profile, connector,
+                        params.getOrDefault("channelId", ""), limit);
+                default -> executeSlackFetch(callContext, profile, connector,
+                        params.getOrDefault("channelId", ""), limit);
+            };
             case FILE_SHARE -> new FetchResult(0, 0, List.of(
                     "FILE_SHARE uses cloud drive sync (push/pull), not scheduled fetch"));
         };

@@ -257,7 +257,20 @@ curl -u admin:password http://localhost:5984/_all_dbs
 - IMAP Adapter: MailMessageParser (.eml パーサー) + ImapConnectorAdapter (IMAP/IMAPS接続)
 - file_share 一般化: CloudDriveResource → CanonicalImportService 経由 (レガシーフォールバック deprecation warning付き)
 - 管理 UI: コネクタ管理 + インポートプロファイル管理 + 手動インポート実行タブ (全 i18n ja/en)
-- IngestSchedulerService: 定期同期スケジューラ基盤 + admin API (/v1/admin/ingest-scheduler/status)
+- IngestSchedulerService: 定期同期スケジューラ基盤 + admin API (/v1/admin/ingest-scheduler/status, /trigger)
+- 統一ディスパッチ: executeFetch() が archetype + sourceSystem で全 adapter に自動ルーティング
+- Concrete Adapters (8種):
+  - IMAP (ImapConnectorAdapter) — IMAP/IMAPS + UIDVALIDITY checkpoint
+  - Gmail (GmailConnectorAdapter) — Gmail API + base64url .eml
+  - M365 Mail (M365MailConnectorAdapter) — Graph API /messages/$value
+  - Notion (NotionConnectorAdapter) — blocks→HTML変換 + ページネーション + ファイル抽出
+  - Salesforce (SalesforceConnectorAdapter) — SOQL + レコード取得
+  - Slack (SlackConnectorAdapter) — conversations.history + ファイルDL
+  - Teams (TeamsConnectorAdapter) — Graph API channels/messages + ファイルDL
+  - Mattermost (MattermostConnectorAdapter) — REST API v4 posts + ファイルDL
+- 定期ポーリング: ScheduledExecutorService (5分間隔, daemon thread)
+- Content hash 比較: version_up_on_content_change で SHA-256 ハッシュ検証
+- Persisted idempotency: CouchDB に完了記録永続化
 - デフォルト connector/profile 自動作成パッチ (Google Drive + OneDrive)
 
 ### RC10 (2026-04-01)
