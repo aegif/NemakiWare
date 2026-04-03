@@ -815,6 +815,12 @@
         <property name="nemakiCachePool" ref="nemakiCachePool" />
     </bean>
 
+    <bean id="ingestSchedulerService" class="jp.aegif.nemaki.rest.ingest.IngestSchedulerService">
+        <property name="profileService" ref="importProfileDefinitionService" />
+        <property name="connectorService" ref="connectorDefinitionService" />
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+    </bean>
+
     <!-- Password Policy Service -->
     <bean id="passwordPolicyService" class="jp.aegif.nemaki.util.PasswordPolicyService">
         <property name="propertyManager" ref="propertyManager" />

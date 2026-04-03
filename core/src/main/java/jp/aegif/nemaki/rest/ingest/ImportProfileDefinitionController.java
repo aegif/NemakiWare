@@ -96,8 +96,8 @@ public class ImportProfileDefinitionController {
      */
     private List<String> getPhase2Warnings(ImportProfileDefinition def) {
         List<String> warnings = new ArrayList<>();
-        if (def.getRelationshipPolicy() != null) {
-            warnings.add("relationshipPolicy is configured but not yet enforced (Phase 2)");
+        if (def.getDefaultClassification() != null && !def.getDefaultClassification().isBlank()) {
+            warnings.add("defaultClassification is configured but not yet enforced");
         }
         return warnings;
     }

@@ -267,6 +267,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 warnings.add(metadataError);
             }
 
+            // 6b. Create relationship if parentObjectId is provided and policy allows
+            String relError = applyRelationship(callContext, repositoryId, objectId, profile, request);
+            if (relError != null) {
+                warnings.add(relError);
+            }
+
             // 7. Emit lineage event
             String lineageEventId = emitLineageEvent(repositoryId, objectId, targetFolderId, connector, request);
 
@@ -461,6 +467,37 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
         } catch (Exception e) {
             logger.warn("Lineage event emission failed (non-fatal): {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Creates a CMIS relationship from parentObjectId to the imported document
+     * if the profile's relationshipPolicy is set and metadata contains parentObjectId.
+     *
+     * @return error message if failed, null on success or no-op
+     */
+    private String applyRelationship(CallContext callContext, String repositoryId, String objectId,
+                                     ImportProfileDefinition profile, ExternalIngestRequest request) {
+        String relPolicy = profile.getRelationshipPolicy();
+        if (relPolicy == null || "none".equalsIgnoreCase(relPolicy)) {
+            return null;
+        }
+        String parentObjectId = resolveMetadataString(request, "parentObjectId");
+        if (parentObjectId == null) {
+            return null; // No parent specified — skip silently
+        }
+        try {
+            PropertiesImpl relProps = new PropertiesImpl();
+            relProps.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:relationship"));
+            relProps.addProperty(new PropertyIdImpl(PropertyIds.SOURCE_ID, parentObjectId));
+            relProps.addProperty(new PropertyIdImpl(PropertyIds.TARGET_ID, objectId));
+
+            objectService.createRelationship(callContext, repositoryId, relProps, null, null, null, null);
+            logger.info("Created relationship: {} → {}", parentObjectId, objectId);
+            return null;
+        } catch (Exception e) {
+            logger.warn("Failed to create relationship {} → {}: {}", parentObjectId, objectId, e.getMessage());
+            return "Relationship creation failed: " + e.getMessage();
         }
     }
 
