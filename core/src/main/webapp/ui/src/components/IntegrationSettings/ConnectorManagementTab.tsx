@@ -53,8 +53,11 @@ export function ConnectorManagementTab() {
     try {
       const values = await form.validateFields();
       if (editing) {
-        // Merge form values with existing fields to preserve API-only properties
-        const merged = { ...editing, ...values };
+        // Filter out undefined to preserve API-only properties (credentialRef, adapterKind, rateLimitRpm)
+        const definedValues = Object.fromEntries(
+          Object.entries(values).filter(([, v]) => v !== undefined)
+        );
+        const merged = { ...editing, ...definedValues };
         await updateConnector(editing.connectorId, merged);
         message.success(t('connectorManagement.updateSuccess'));
       } else {

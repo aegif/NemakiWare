@@ -88,7 +88,11 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
       values.repositoryId = repositoryId;
       let result;
       if (editing) {
-        const merged = { ...editing, ...values };
+        // Filter out undefined values to avoid overwriting existing fields
+        const definedValues = Object.fromEntries(
+          Object.entries(values).filter(([, v]) => v !== undefined)
+        );
+        const merged = { ...editing, ...definedValues };
         result = await updateProfile(editing.profileId, merged);
         message.success(t('importProfileManagement.updateSuccess'));
       } else {

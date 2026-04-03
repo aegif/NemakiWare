@@ -209,7 +209,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // 5a. Dedupe: check for existing document by sourceObjectId or filename
             String dedupePolicy = profile.getDedupePolicy() != null ? profile.getDedupePolicy() : "create_new_version";
             Content existingDoc = findExistingDocument(repositoryId, targetFolderId, fileName,
-                    connector.getSourceSystem(), request.getSourceObjectId());
+                    connector.getSourceSystem(), request.getSourceObjectId(), request.getSourceObjectType());
 
             String objectId;
             boolean isNewVersion = false;
@@ -507,7 +507,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * Only considers documents (not folders) in the target folder.
      */
     private Content findExistingDocument(String repositoryId, String targetFolderId,
-                                         String fileName, String sourceSystem, String sourceObjectId) {
+                                         String fileName, String sourceSystem, String sourceObjectId,
+                                         String sourceObjectType) {
         if (contentDaoService == null) return null;
 
         // First pass: search by sourceObjectId in target folder children
@@ -519,8 +520,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         if (child == null || !child.isDocument()) continue;
                         String existingSourceId = getAspectProperty(child, "nemaki:externalIntegration", "nemaki:sourceObjectId");
                         String existingSourceSystem = getAspectProperty(child, "nemaki:externalIntegration", "nemaki:sourceSystem");
+                        String existingSourceType = getAspectProperty(child, "nemaki:externalIntegration", "nemaki:sourceObjectType");
                         if (sourceObjectId.equals(existingSourceId)
-                                && (sourceSystem == null || sourceSystem.equals(existingSourceSystem))) {
+                                && (sourceSystem == null || sourceSystem.equals(existingSourceSystem))
+                                && (sourceObjectType == null || sourceObjectType.equals(existingSourceType))) {
                             logger.debug("Dedupe: found existing document {} by sourceObjectId={}", child.getId(), sourceObjectId);
                             return child;
                         }
