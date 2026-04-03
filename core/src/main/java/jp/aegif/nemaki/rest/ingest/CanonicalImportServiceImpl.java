@@ -194,9 +194,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     attReq.setMimeType(att.mimeType());
                     attReq.setContentStream(new ByteArrayInputStream(att.content()));
                     attReq.setExecutionMode(request.getExecutionMode());
-                    // Set parentObjectId for relationship creation
+                    // Do NOT set parentObjectId here — relationship is created directly
+                    // via createDirectRelationship after execute() to avoid duplicates.
                     Map<String, Object> attMeta = new LinkedHashMap<>();
-                    attMeta.put("parentObjectId", messageObjectId);
                     attMeta.put("mailboxId", metadata.get("mailboxId"));
                     attMeta.put("messageStableId", request.getSourceObjectId());
                     attReq.setMetadata(attMeta);
@@ -270,10 +270,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     Object mt = attMap.get("mimeType");
                     attReq.setMimeType(mt instanceof String s ? s : "application/octet-stream");
                     attReq.setExecutionMode(request.getExecutionMode());
-                    Map<String, Object> attMeta = new LinkedHashMap<>();
-                    attMeta.put("parentObjectId", pageObjectId);
-                    attReq.setMetadata(attMeta);
-                    // Content must be provided by caller via separate multipart or base64 in metadata
+                    // Do NOT set parentObjectId — relationship created via createDirectRelationship
+                    attReq.setMetadata(new LinkedHashMap<>());
+                    // Decode attachment content from base64 in metadata if provided
+                    Object contentB64 = attMap.get("contentBase64");
+                    if (contentB64 instanceof String b64 && !b64.isBlank()) {
+                        byte[] bytes = java.util.Base64.getDecoder().decode(b64);
+                        attReq.setContentStream(new ByteArrayInputStream(bytes));
+                    } else {
+                        // No content available — skip this attachment with warning
+                        warnings.add("Attachment '" + attReq.getFileName() + "' has no content (provide contentBase64 in metadata)");
+                        continue;
+                    }
                     ExternalIngestResult attResult = execute(callContext, attReq);
                     if (attResult.isSuccess()) {
                         attachmentCount++;
