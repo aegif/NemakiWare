@@ -201,6 +201,12 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Note metadata secondary type for compound note page properties -->
+				<bean class="jp.aegif.nemaki.patch.Patch_NoteMetadataSecondaryType">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- Message metadata secondary type for email envelope properties -->
 				<bean class="jp.aegif.nemaki.patch.Patch_MessageMetadataSecondaryType">
 					<property name="patchUtil">

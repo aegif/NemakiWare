@@ -226,6 +226,87 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
     }
 
+    @Override
+    public ExternalIngestResult executeNoteImport(CallContext callContext, ExternalIngestRequest request) {
+        String requestId = request.getRequestId();
+
+        // Set sourceObjectType to "page" if not specified
+        if (request.getSourceObjectType() == null || request.getSourceObjectType().isBlank()) {
+            request.setSourceObjectType("page");
+        }
+
+        // Import page body as main document
+        ExternalIngestResult pageResult = execute(callContext, request);
+        if (!pageResult.isSuccess()) {
+            return pageResult;
+        }
+
+        String pageObjectId = pageResult.objectId();
+        List<String> warnings = new ArrayList<>(pageResult.warnings());
+
+        // Apply nemaki:noteMetadata
+        String metaError = applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
+        if (metaError != null) warnings.add(metaError);
+
+        logger.info("Note import completed: objectId={}, profile={}", pageObjectId, request.getProfileId());
+
+        return new ExternalIngestResult(requestId, pageObjectId, pageResult.versionLabel(),
+                pageResult.isNewVersion(), false, false, null, pageResult.lineageEventId(),
+                List.of(), warnings);
+    }
+
+    /**
+     * Apply nemaki:noteMetadata secondary type from request metadata.
+     */
+    private String applyNoteMetadata(String repositoryId, String objectId, CallContext callContext,
+                                     ExternalIngestRequest request) {
+        try {
+            Content content = contentService.getContent(repositoryId, objectId);
+            if (content == null) return "Content not found: " + objectId;
+
+            List<Aspect> aspects = content.getAspects();
+            if (aspects == null) aspects = new ArrayList<>();
+
+            List<Property> noteProps = new ArrayList<>();
+            Map<String, Object> meta = request.getMetadata();
+            if (meta != null) {
+                addStringProp(noteProps, "nemaki:notePageId", meta.get("pageId"));
+                addStringProp(noteProps, "nemaki:notePageUrl", meta.get("pageUrl"));
+                addStringProp(noteProps, "nemaki:noteParentPageId", meta.get("parentPageId"));
+                addStringProp(noteProps, "nemaki:noteWorkspaceId", meta.get("workspaceId"));
+                addStringProp(noteProps, "nemaki:noteAuthor", meta.get("author"));
+                addStringProp(noteProps, "nemaki:noteLastEditedBy", meta.get("lastEditedBy"));
+            }
+
+            if (!noteProps.isEmpty()) {
+                aspects.add(new Aspect("nemaki:noteMetadata", noteProps));
+                List<String> secondaryIds = content.getSecondaryIds();
+                if (secondaryIds == null) secondaryIds = new ArrayList<>();
+                if (!secondaryIds.contains("nemaki:noteMetadata")) {
+                    secondaryIds.add("nemaki:noteMetadata");
+                }
+                content.setSecondaryIds(secondaryIds);
+                content.setAspects(aspects);
+                contentService.update(callContext, repositoryId, content);
+
+                if (nemakiCachePool != null) {
+                    try { nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId); }
+                    catch (Exception e) { /* ignore */ }
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            logger.warn("Failed to apply noteMetadata to {}: {}", objectId, e.getMessage());
+            return "Note metadata failed: " + e.getMessage();
+        }
+    }
+
+    private static void addStringProp(List<Property> props, String key, Object value) {
+        if (value instanceof String s && !s.isBlank()) {
+            props.add(new Property(key, s));
+        }
+    }
+
     private String sanitizeFilename(String name) {
         if (name == null) return "untitled";
         return name.replaceAll("[/\\\\:*?\"<>|]", "_").trim();

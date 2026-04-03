@@ -76,18 +76,19 @@ public class ExternalIngestController {
         }
         request.setRepositoryId(repositoryId);
 
-        // Auto-detect mail import: .eml file or MESSAGE_CONTEXT sourceObjectType
-        boolean isMailImport = false;
-        if (request.getFileName() != null && request.getFileName().toLowerCase().endsWith(".eml")) {
-            isMailImport = true;
-        }
-        if ("message".equals(request.getSourceObjectType()) && request.getContentStream() != null) {
-            isMailImport = true;
-        }
+        // Auto-detect specialized import flows
+        ExternalIngestResult result;
+        String sourceObjectType = request.getSourceObjectType();
+        boolean hasContent = request.getContentStream() != null;
+        boolean isEml = request.getFileName() != null && request.getFileName().toLowerCase().endsWith(".eml");
 
-        ExternalIngestResult result = isMailImport
-                ? canonicalImportService.executeMailImport(callContext, request)
-                : canonicalImportService.execute(callContext, request);
+        if (isEml || ("message".equals(sourceObjectType) && hasContent)) {
+            result = canonicalImportService.executeMailImport(callContext, request);
+        } else if ("page".equals(sourceObjectType)) {
+            result = canonicalImportService.executeNoteImport(callContext, request);
+        } else {
+            result = canonicalImportService.execute(callContext, request);
+        }
         if (result.isSuccess() || result.skipped() || result.dryRun()) {
             return ResponseEntity.ok(result);
         }

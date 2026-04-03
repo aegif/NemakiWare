@@ -50,4 +50,15 @@ public interface CanonicalImportService {
      * @return result for the message document (attachments imported as side effects)
      */
     ExternalIngestResult executeMailImport(CallContext callContext, ExternalIngestRequest request);
+
+    /**
+     * Import a compound note (page + attachments): create page document,
+     * apply nemaki:noteMetadata, import attachments with relationships.
+     *
+     * <p>The request's metadata should contain note-specific fields:
+     * pageId, pageUrl, parentPageId, workspaceId, author, lastEditedBy.
+     * Attachments are passed in metadata as a JSON array under key "attachments",
+     * or as separate ingest requests after the page import.
+     */
+    ExternalIngestResult executeNoteImport(CallContext callContext, ExternalIngestRequest request);
 }
