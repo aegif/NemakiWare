@@ -86,6 +86,10 @@ public class ExternalIngestController {
             result = canonicalImportService.executeMailImport(callContext, request);
         } else if ("page".equals(sourceObjectType)) {
             result = canonicalImportService.executeNoteImport(callContext, request);
+        } else if ("record".equals(sourceObjectType)) {
+            result = canonicalImportService.executeBusinessRecordImport(callContext, request);
+        } else if ("chat_message".equals(sourceObjectType) || "thread".equals(sourceObjectType)) {
+            result = canonicalImportService.executeChatContextImport(callContext, request);
         } else {
             result = canonicalImportService.execute(callContext, request);
         }

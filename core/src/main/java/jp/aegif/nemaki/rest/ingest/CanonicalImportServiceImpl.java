@@ -301,6 +301,90 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
     }
 
+    @Override
+    public ExternalIngestResult executeBusinessRecordImport(CallContext callContext, ExternalIngestRequest request) {
+        if (request.getSourceObjectType() == null || request.getSourceObjectType().isBlank()) {
+            request.setSourceObjectType("record");
+        }
+        ExternalIngestResult result = execute(callContext, request);
+        if (!result.isSuccess()) return result;
+
+        List<String> warnings = new ArrayList<>(result.warnings());
+        String metaError = applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
+                "nemaki:businessRecordMetadata", request, new String[][]{
+                        {"nemaki:recordType", "recordType"}, {"nemaki:recordId", "recordId"},
+                        {"nemaki:recordUrl", "recordUrl"}, {"nemaki:recordStatus", "recordStatus"},
+                        {"nemaki:recordOwner", "recordOwner"}, {"nemaki:processInstanceId", "processInstanceId"},
+                });
+        if (metaError != null) warnings.add(metaError);
+
+        return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
+                result.isNewVersion(), false, false, null, result.lineageEventId(), List.of(), warnings);
+    }
+
+    @Override
+    public ExternalIngestResult executeChatContextImport(CallContext callContext, ExternalIngestRequest request) {
+        if (request.getSourceObjectType() == null || request.getSourceObjectType().isBlank()) {
+            request.setSourceObjectType("message");
+        }
+        ExternalIngestResult result = execute(callContext, request);
+        if (!result.isSuccess()) return result;
+
+        List<String> warnings = new ArrayList<>(result.warnings());
+        String metaError = applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
+                "nemaki:chatContextMetadata", request, new String[][]{
+                        {"nemaki:chatWorkspaceId", "workspaceId"}, {"nemaki:chatChannelId", "channelId"},
+                        {"nemaki:chatChannelName", "channelName"}, {"nemaki:chatThreadId", "threadId"},
+                        {"nemaki:chatMessageId", "messageId"}, {"nemaki:chatParticipants", "participants"},
+                        {"nemaki:chatSelectionReason", "selectionReason"},
+                });
+        if (metaError != null) warnings.add(metaError);
+
+        return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
+                result.isNewVersion(), false, false, null, result.lineageEventId(), List.of(), warnings);
+    }
+
+    /**
+     * Generic archetype metadata applicator — attaches a secondary type with
+     * properties read from request metadata.
+     */
+    private String applyArchetypeMetadata(String repositoryId, String objectId, CallContext callContext,
+                                          String secondaryTypeId, ExternalIngestRequest request,
+                                          String[][] fieldMappings) {
+        try {
+            Content content = contentService.getContent(repositoryId, objectId);
+            if (content == null) return "Content not found: " + objectId;
+
+            List<Aspect> aspects = content.getAspects();
+            if (aspects == null) aspects = new ArrayList<>();
+
+            List<Property> props = new ArrayList<>();
+            Map<String, Object> meta = request.getMetadata();
+            if (meta != null) {
+                for (String[] mapping : fieldMappings) {
+                    addStringProp(props, mapping[0], meta.get(mapping[1]));
+                }
+            }
+            if (!props.isEmpty()) {
+                aspects.add(new Aspect(secondaryTypeId, props));
+                List<String> secondaryIds = content.getSecondaryIds();
+                if (secondaryIds == null) secondaryIds = new ArrayList<>();
+                if (!secondaryIds.contains(secondaryTypeId)) secondaryIds.add(secondaryTypeId);
+                content.setSecondaryIds(secondaryIds);
+                content.setAspects(aspects);
+                contentService.update(callContext, repositoryId, content);
+                if (nemakiCachePool != null) {
+                    try { nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId); }
+                    catch (Exception e) { /* */ }
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            logger.warn("Failed to apply {} to {}: {}", secondaryTypeId, objectId, e.getMessage());
+            return secondaryTypeId + " metadata failed: " + e.getMessage();
+        }
+    }
+
     private static void addStringProp(List<Property> props, String key, Object value) {
         if (value instanceof String s && !s.isBlank()) {
             props.add(new Property(key, s));

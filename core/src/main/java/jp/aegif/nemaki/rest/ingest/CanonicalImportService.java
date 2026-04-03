@@ -61,4 +61,14 @@ public interface CanonicalImportService {
      * or as separate ingest requests after the page import.
      */
     ExternalIngestResult executeNoteImport(CallContext callContext, ExternalIngestRequest request);
+
+    /**
+     * Import a business record: create document, apply nemaki:businessRecordMetadata.
+     */
+    ExternalIngestResult executeBusinessRecordImport(CallContext callContext, ExternalIngestRequest request);
+
+    /**
+     * Import chat context: create document, apply nemaki:chatContextMetadata.
+     */
+    ExternalIngestResult executeChatContextImport(CallContext callContext, ExternalIngestRequest request);
 }
