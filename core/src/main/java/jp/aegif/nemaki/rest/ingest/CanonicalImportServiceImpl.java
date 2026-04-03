@@ -34,6 +34,7 @@ import jp.aegif.nemaki.rest.ingest.mail.MailMessageParser;
 import jp.aegif.nemaki.rest.ingest.mail.MailMessageParser.ParsedMailMessage;
 import jp.aegif.nemaki.rest.ingest.mail.MailMessageParser.ParsedAttachment;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -479,18 +480,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
-     * Computes SHA-256 hash of a content stream. Note: consumes the stream.
+     * Computes SHA-256 hash of content bytes.
      */
-    private static String computeContentHash(ContentStream contentStream) {
-        if (contentStream == null || contentStream.getStream() == null) return null;
+    private static String computeContentHash(byte[] content) {
+        if (content == null || content.length == 0) return null;
         try {
             java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = contentStream.getStream().read(buffer)) != -1) {
-                digest.update(buffer, 0, read);
-            }
-            return java.util.HexFormat.of().formatHex(digest.digest());
+            return java.util.HexFormat.of().formatHex(digest.digest(content));
         } catch (Exception e) {
             return null;
         }
@@ -662,12 +658,20 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             // 5b. Idempotency check: skip if same key already succeeded
             if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
-                // Check source-identity as proxy for idempotency
-                // If an existing document with matching sourceObjectId exists and dedupePolicy=skip,
-                // this is effectively idempotent
-                if (existingDoc != null && "skip_if_same_version".equals(dedupePolicy)) {
-                    return ExternalIngestResult.skipped(requestId,
-                            "Idempotent: document already exists for key '" + request.getIdempotencyKey() + "'");
+                // Check persisted idempotency record (works for all dedupe modes)
+                String idempKey = "ingest.idempotency." + request.getIdempotencyKey();
+                try {
+                    var ctx = jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
+                    if (ctx != null) {
+                        var settings = ctx.getBean(jp.aegif.nemaki.rest.controller.IntegrationSettingsService.class);
+                        String existing = settings.readSetting(idempKey);
+                        if (existing != null && !existing.isBlank()) {
+                            return ExternalIngestResult.skipped(requestId,
+                                    "Idempotent: request '" + request.getIdempotencyKey() + "' already completed (objectId=" + existing + ")");
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.debug("Idempotency check failed: {}", e.getMessage());
                 }
             }
 
@@ -707,8 +711,32 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     versionLabel = "metadata-only";
                     logger.info("Dedupe: metadata-only update for existing document {}", objectId);
                 } else {
-                    // version_up_on_content_change (default): always create new version
-                    isNewVersion = true;
+                    // version_up_on_content_change: compare content hash before versioning
+                    boolean contentChanged = true;
+                    if (contentStream != null && contentStream.getStream() != null) {
+                        try {
+                            // Buffer the stream so we can hash and reuse
+                            ByteArrayOutputStream buf = new ByteArrayOutputStream();
+                            contentStream.getStream().transferTo(buf);
+                            byte[] contentBytes = buf.toByteArray();
+                            String newHash = computeContentHash(contentBytes);
+                            String existingHash = getAspectProperty(existingDoc, "nemaki:externalIntegration", "nemaki:contentHash");
+                            if (newHash != null && newHash.equals(existingHash)) {
+                                contentChanged = false;
+                                versionLabel = "metadata-only (content unchanged)";
+                                logger.info("Dedupe: content unchanged for {} (hash={}), metadata-only", objectId, newHash);
+                            } else {
+                                // Rebuild stream from buffer for checkin
+                                contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(contentBytes.length),
+                                        request.getMimeType() != null ? request.getMimeType() : "application/octet-stream",
+                                        new ByteArrayInputStream(contentBytes));
+                            }
+                        } catch (Exception e) {
+                            logger.debug("Content hash comparison failed, will version up: {}", e.getMessage());
+                        }
+                    }
+                    if (contentChanged) {
+                        isNewVersion = true;
                     Holder<String> objectIdHolder = new Holder<>(objectId);
                     Holder<Boolean> contentCopied = new Holder<>(Boolean.FALSE);
                     versioningService.checkOut(callContext, repositoryId, objectIdHolder, contentCopied, null);
@@ -722,6 +750,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     objectId = checkinHolder.getValue();
                     versionLabel = "new version";
                     logger.info("Dedupe: updated existing document {} with new version", objectId);
+                    }
                 }
             } else {
                 // New document
@@ -755,6 +784,19 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             logger.info("Canonical import completed: requestId={}, objectId={}, profile={}, connector={}",
                     requestId, objectId, profile.getProfileId(), connector.getConnectorId());
+
+            // Save idempotency record if key was provided
+            if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
+                try {
+                    var ctx = jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
+                    if (ctx != null) {
+                        var settings = ctx.getBean(jp.aegif.nemaki.rest.controller.IntegrationSettingsService.class);
+                        settings.writeSetting("ingest.idempotency." + request.getIdempotencyKey(), objectId);
+                    }
+                } catch (Exception e) {
+                    logger.debug("Idempotency save failed: {}", e.getMessage());
+                }
+            }
 
             return new ExternalIngestResult(requestId, objectId, versionLabel, isNewVersion,
                     false, false, null, lineageEventId, List.of(), warnings);

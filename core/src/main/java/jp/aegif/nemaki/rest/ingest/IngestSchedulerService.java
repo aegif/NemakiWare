@@ -619,7 +619,7 @@ public class IngestSchedulerService {
             case CHAT_CONTEXT -> executeSlackFetch(callContext, profile, connector,
                     params.getOrDefault("channelId", ""), limit);
             case FILE_SHARE -> new FetchResult(0, 0, List.of(
-                    "FILE_SHARE scheduled fetch not implemented (use cloud drive import instead)"));
+                    "FILE_SHARE uses cloud drive sync (push/pull), not scheduled fetch"));
         };
     }
 

@@ -78,55 +78,24 @@ public class NotionConnectorAdapter {
     }
 
     /**
-     * Fetch page blocks and convert to HTML.
+     * Fetch all page blocks (with pagination) and convert to HTML.
      */
     public String fetchPageAsHtml(String pageId) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(NOTION_API + "/blocks/" + pageId + "/children?page_size=100"))
-                .header("Authorization", "Bearer " + token)
-                .header("Notion-Version", NOTION_VERSION)
-                .timeout(Duration.ofSeconds(30))
-                .GET()
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("Notion blocks API error " + response.statusCode());
-        }
-
-        JsonNode root = MAPPER.readTree(response.body());
-        JsonNode blocks = root.get("results");
-        if (blocks == null || !blocks.isArray()) return "";
-
+        List<JsonNode> allBlocks = fetchAllBlocks(pageId);
         StringBuilder html = new StringBuilder();
-        for (JsonNode block : blocks) {
-            String type = block.path("type").asText();
-            html.append(blockToHtml(block, type));
+        for (JsonNode block : allBlocks) {
+            html.append(blockToHtml(block, block.path("type").asText()));
         }
         return html.toString();
     }
 
     /**
-     * Extract file attachments from page blocks.
+     * Extract file attachments from all page blocks (with pagination).
      */
     public List<NotionFile> extractFiles(String pageId) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(NOTION_API + "/blocks/" + pageId + "/children?page_size=100"))
-                .header("Authorization", "Bearer " + token)
-                .header("Notion-Version", NOTION_VERSION)
-                .timeout(Duration.ofSeconds(30))
-                .GET()
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 200) return List.of();
-
-        JsonNode root = MAPPER.readTree(response.body());
-        JsonNode blocks = root.get("results");
-        if (blocks == null) return List.of();
-
+        List<JsonNode> allBlocks = fetchAllBlocks(pageId);
         List<NotionFile> files = new ArrayList<>();
-        for (JsonNode block : blocks) {
+        for (JsonNode block : allBlocks) {
             String type = block.path("type").asText();
             if ("file".equals(type) || "image".equals(type) || "pdf".equals(type) || "video".equals(type)) {
                 JsonNode fileNode = block.path(type);
@@ -139,6 +108,37 @@ public class NotionConnectorAdapter {
             }
         }
         return files;
+    }
+
+    /**
+     * Fetch all child blocks with pagination (follows has_more/next_cursor).
+     */
+    private List<JsonNode> fetchAllBlocks(String pageId) throws Exception {
+        List<JsonNode> allBlocks = new ArrayList<>();
+        String cursor = null;
+        do {
+            String url = NOTION_API + "/blocks/" + pageId + "/children?page_size=100";
+            if (cursor != null) url += "&start_cursor=" + cursor;
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Bearer " + token)
+                    .header("Notion-Version", NOTION_VERSION)
+                    .timeout(Duration.ofSeconds(30))
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) break;
+
+            JsonNode root = MAPPER.readTree(response.body());
+            JsonNode results = root.get("results");
+            if (results != null && results.isArray()) {
+                for (JsonNode block : results) allBlocks.add(block);
+            }
+            cursor = root.path("has_more").asBoolean(false) ? root.path("next_cursor").asText(null) : null;
+        } while (cursor != null);
+        return allBlocks;
     }
 
     /**
