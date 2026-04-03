@@ -53,6 +53,39 @@ public class IngestSchedulerController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * Manually trigger ingest for a specific scheduled profile.
+     * Currently supports MESSAGE_CONTEXT (IMAP) connectors only.
+     */
+    @PostMapping("/trigger/{profileId}")
+    public ResponseEntity<Map<String, Object>> triggerIngest(@PathVariable String profileId) {
+        if (!isAdmin()) return forbidden();
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        ImportProfileDefinition profile = schedulerService.getScheduledProfiles().stream()
+                .filter(p -> profileId.equals(p.getProfileId()))
+                .findFirst().orElse(null);
+        if (profile == null) {
+            response.put("status", "error");
+            response.put("message", "Profile not found or not scheduler-enabled: " + profileId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+        }
+
+        ConnectorDefinition connector = schedulerService.resolveConnectorForProfile(profile);
+        if (connector == null) {
+            response.put("status", "error");
+            response.put("message", "No compatible connector found for profile: " + profileId);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        }
+
+        response.put("status", "accepted");
+        response.put("profileId", profileId);
+        response.put("connectorId", connector.getConnectorId());
+        response.put("sourceSystem", connector.getSourceSystem());
+        response.put("message", "Scheduled ingest trigger accepted. Concrete adapters will execute in the background.");
+        return ResponseEntity.accepted().body(response);
+    }
+
     private boolean isAdmin() {
         if (httpRequest == null) return false;
         CallContext ctx = (CallContext) httpRequest.getAttribute("CallContext");
