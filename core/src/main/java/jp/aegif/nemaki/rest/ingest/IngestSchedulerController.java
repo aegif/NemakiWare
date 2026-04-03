@@ -3,6 +3,7 @@ package jp.aegif.nemaki.rest.ingest;
 import jakarta.servlet.http.HttpServletRequest;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import jp.aegif.nemaki.rest.ingest.IngestSchedulerService.ImapFetchResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -78,12 +79,36 @@ public class IngestSchedulerController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
         }
 
-        response.put("status", "accepted");
+        // Execute IMAP fetch if MESSAGE_CONTEXT connector
+        if (connector.getSourceArchetype() == SourceArchetype.MESSAGE_CONTEXT) {
+            CallContext callContext = getCallContext();
+            if (callContext == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+            String mailbox = "INBOX";
+            int limit = 50;
+            IngestSchedulerService.ImapFetchResult fetchResult =
+                    schedulerService.executeImapFetch(callContext, profile, connector, mailbox, limit);
+            response.put("status", fetchResult.hasErrors() ? "partial" : "success");
+            response.put("fetched", fetchResult.fetched());
+            response.put("imported", fetchResult.imported());
+            if (fetchResult.hasErrors()) {
+                response.put("errors", fetchResult.errors());
+            }
+        } else {
+            response.put("status", "accepted");
+            response.put("message", "Connector archetype " + connector.getSourceArchetype()
+                    + " does not have a concrete fetch adapter yet.");
+        }
         response.put("profileId", profileId);
         response.put("connectorId", connector.getConnectorId());
         response.put("sourceSystem", connector.getSourceSystem());
-        response.put("message", "Scheduled ingest trigger accepted. Concrete adapters will execute in the background.");
-        return ResponseEntity.accepted().body(response);
+        return ResponseEntity.ok(response);
+    }
+
+    private CallContext getCallContext() {
+        if (httpRequest == null) return null;
+        return (CallContext) httpRequest.getAttribute("CallContext");
     }
 
     private boolean isAdmin() {
