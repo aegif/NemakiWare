@@ -478,6 +478,24 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
     }
 
+    /**
+     * Computes SHA-256 hash of a content stream. Note: consumes the stream.
+     */
+    private static String computeContentHash(ContentStream contentStream) {
+        if (contentStream == null || contentStream.getStream() == null) return null;
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = contentStream.getStream().read(buffer)) != -1) {
+                digest.update(buffer, 0, read);
+            }
+            return java.util.HexFormat.of().formatHex(digest.digest());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private static void addStringProp(List<Property> props, String key, Object value) {
         if (value instanceof String s && !s.isBlank()) {
             props.add(new Property(key, s));
@@ -689,7 +707,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     versionLabel = "metadata-only";
                     logger.info("Dedupe: metadata-only update for existing document {}", objectId);
                 } else {
-                    // Default: version_up_on_content_change — CheckOut + CheckIn
+                    // version_up_on_content_change (default): always create new version
                     isNewVersion = true;
                     Holder<String> objectIdHolder = new Holder<>(objectId);
                     Holder<Boolean> contentCopied = new Holder<>(Boolean.FALSE);
