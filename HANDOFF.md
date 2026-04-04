@@ -37,18 +37,20 @@
 | `executeBusinessRecordImport()` | record | businessRecordMetadata 自動付与 |
 | `executeChatContextImport()` | chat_message / thread | chatContextMetadata 自動付与 |
 
-### 2.4 Concrete Adapters (8種)
+### 2.4 Concrete Adapters (10種)
 
 | Adapter | sourceSystem | API | スケジューラ |
 |---|---|---|---|
-| IMAP | `imap` | Jakarta Mail IMAP/IMAPS | ✅ UIDVALIDITY checkpoint |
-| Gmail | `gmail_mail` | Gmail API v1 | ✅ |
-| M365 Mail | `m365_mail` | Graph API | ✅ |
-| Notion | `notion` | Notion API v2022-06-28 | ✅ ページネーション対応 |
-| Salesforce | `salesforce` | REST v59.0 | ✅ |
-| Slack | `slack` | Web API | ✅ |
-| Teams | `teams` | Graph API v1.0 | ✅ |
-| Mattermost | `mattermost` | REST v4 | ✅ |
+| IMAP | `imap` | Jakarta Mail IMAP/IMAPS | ✅ UIDVALIDITY checkpoint + IDLE |
+| Gmail | `gmail_mail` | Gmail API v1 | ✅ date checkpoint |
+| M365 Mail | `m365_mail` | Graph API | ✅ receivedDateTime checkpoint |
+| Notion | `notion` | Notion API v2022-06-28 | ✅ last_edited_time checkpoint |
+| Salesforce | `salesforce` | REST v59.0 | ✅ LastModifiedDate checkpoint |
+| Slack | `slack` | Web API | ✅ ts checkpoint |
+| Teams | `teams` | Graph API v1.0 | ✅ createdDateTime checkpoint |
+| Mattermost | `mattermost` | REST v4 | ✅ createAt checkpoint |
+| Box | `box` | Box Content API v2.0 | ✅ modified_at checkpoint |
+| Dropbox | `dropbox` | Dropbox API v2 | ✅ server_modified checkpoint |
 
 ### 2.5 Profile フィールド Runtime Enforce
 
@@ -57,7 +59,7 @@
 | targetFolderId / targetFolderPath | ✅ (path は getObjectByPath で解決) |
 | defaultObjectTypeId | ✅ |
 | allowedArchetypes / allowedConnectorIds | ✅ |
-| dedupePolicy (skip/new_version/replace) | ✅ (source-identity dedupe) |
+| dedupePolicy (skip/new_version/replace/parent_context_changed/replace_relationships) | ✅ (source-identity dedupe + content hash + context 比較) |
 | updatePolicy (version_up_on_content_change / update_metadata_only) | ✅ (SHA-256 content hash 比較) |
 | versioningPolicy (major/minor/none) | ✅ |
 | secondaryTypeIds | ✅ (profile 定義の型を自動付与) |
@@ -65,7 +67,7 @@
 | relationshipPolicy | ✅ (parentObjectId → cmis:relationship) |
 | aclSyncPolicy | ✅ (CMIS inherit_from_folder がデフォルト) |
 | schedulerEnabled | ✅ (IngestSchedulerService) |
-| defaultClassification | ⚠️ (分類スキーマ定義待ち) |
+| defaultClassification | ✅ (nemaki:classificationInfo 自動付与) |
 
 ### 2.6 管理 UI
 
@@ -84,8 +86,44 @@
 ### 2.8 Scheduler
 
 - IngestSchedulerService: 定期ポーリング (5分間隔) + 手動 trigger API
-- executeFetch(): archetype + sourceSystem で全 8 adapter に自動ルーティング
-- IMAP checkpoint (UIDVALIDITY + UID, partial failure aware)
+- executeFetch(): archetype + sourceSystem で全 10 adapter に自動ルーティング
+- 全 adapter にチェックポイント永続化 + per-request スロットル (rateLimitRpm)
+- IMAP checkpoint (UIDVALIDITY + UID, partial failure aware) + IMAP IDLE 監視
+
+### 2.9 Webhook / Event-Driven
+
+- IngestWebhookController: `POST /v1/ingest-webhook/{connectorId}`
+- Slack Events API (url_verification + event_callback, HMAC-SHA256 署名検証)
+- Microsoft Graph changeNotification (validationToken + clientState 検証)
+- Generic webhook (X-Webhook-Signature HMAC 検証)
+- Graph subscription 作成/削除 API (`POST/DELETE /subscribe`)
+- 複数プロファイル同時フェッチ対応 (many-to-many connector/profile)
+
+### 2.10 Job History / Dead-Letter Queue
+
+- IngestJobRecord: スケジューラ各実行のジョブ履歴 (RUNNING/COMPLETED/FAILED/PARTIAL, skipped 集計)
+- IngestDeadLetterRecord: 失敗リクエストの CouchDB attachment 付き永続化
+- DLQ リトライ: archetype 別フロー自動ルーティング + skipped 結果での自動解除
+- admin REST API: `GET /v1/admin/ingest/jobs`, `/dlq`, `POST /dlq/{id}/retry`, `DELETE /dlq/{id}`
+- IngestJobsTab UI: ジョブ履歴テーブル + DLQ 管理 (リトライ/削除)
+- SchedulerStatusTab UI: scheduler-enabled プロファイル一覧 + 手動トリガー + IDLE 開始/停止
+
+### 2.11 Typed Relationships
+
+- `nemaki:hasAttachment` — メッセージ/ページと抽出添付ファイルのリンク
+- `nemaki:attachedToRecord` — 添付ファイルとビジネスレコードのリンク
+- `nemaki:derivedFromContext` — ドキュメントと会話/スレッドコンテキストのリンク
+- Patch_IngestRelationshipTypes で cmis:relationship サブタイプとして定義
+- フォールバック: カスタム type 未登録時は汎用 cmis:relationship を使用
+
+### 2.12 追加の Runtime Enforce
+
+- defaultClassification: nemaki:classificationInfo 自動付与
+- aclSyncPolicy: inherit_from_folder (デフォルト) / none (継承切断) / copy_from_source (sourceAcl からの ACL 適用)
+- preserveOriginalEml: 本文抽出 + raw .eml 原本を別ドキュメントとして保存
+- content hash (SHA-256): 初回取込み時に計算・永続化、再インポート時の変更検出
+- defaultProfile: auto-resolve 時の決定論的プロファイル選択
+- Audit event: EXTERNAL_INGEST / EXTERNAL_INGEST_FAILED 操作ログ
 
 ## 3. 設計書の未決定事項の解決状態
 
@@ -97,7 +135,7 @@
 | chat context を別文書化するか | ✅ 添付は別文書 + chatContextMetadata |
 | mail 原本を .eml として保存するか | 本文抽出 + 添付分離 (.eml 原本保持は将来拡張) |
 | mail stable key | UIDVALIDITY:UID (IMAP), Gmail message ID, Graph message ID |
-| ImportProfileDefinition の persisted-only 項目 | ✅ 全フィールド runtime enforce (defaultClassification 除く) |
+| ImportProfileDefinition の persisted-only 項目 | ✅ 全フィールド runtime enforce |
 
 ## 4. テスト
 
@@ -125,13 +163,23 @@
 - `core/src/main/java/jp/aegif/nemaki/rest/ingest/chat/SlackConnectorAdapter.java`
 - `core/src/main/java/jp/aegif/nemaki/rest/ingest/chat/TeamsConnectorAdapter.java`
 - `core/src/main/java/jp/aegif/nemaki/rest/ingest/chat/MattermostConnectorAdapter.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/fileshare/BoxConnectorAdapter.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/fileshare/DropboxConnectorAdapter.java`
 
-### Scheduler
+### Scheduler / Webhook / DLQ
 - `core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java`
 - `core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java`
+
+### Patches
+- `core/src/main/java/jp/aegif/nemaki/patch/Patch_IngestRelationshipTypes.java`
 
 ### UI
 - `core/src/main/webapp/ui/src/components/IntegrationSettings/ConnectorManagementTab.tsx`
 - `core/src/main/webapp/ui/src/components/IntegrationSettings/ImportProfileManagementTab.tsx`
 - `core/src/main/webapp/ui/src/components/IntegrationSettings/ManualIngestTab.tsx`
+- `core/src/main/webapp/ui/src/components/IntegrationSettings/IngestJobsTab.tsx`
+- `core/src/main/webapp/ui/src/components/IntegrationSettings/SchedulerStatusTab.tsx`
 - `core/src/main/webapp/ui/src/services/externalIngest.ts`

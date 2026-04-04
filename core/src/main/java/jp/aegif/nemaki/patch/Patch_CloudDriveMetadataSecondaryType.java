@@ -48,17 +48,17 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 
 	@Override
 	protected void applySystemPatch() {
-		log.error("No system-wide configuration needed for cloudDriveMetadata secondary type");
+		log.info("No system-wide configuration needed for cloudDriveMetadata secondary type");
 	}
 
 	@Override
 	protected void applyPerRepositoryPatch(String repositoryId) {
-		log.error("=== CLOUD DRIVE METADATA SECONDARY TYPE PATCH STARTED for repository: " + repositoryId + " ===");
+		log.info("=== CLOUD DRIVE METADATA SECONDARY TYPE PATCH STARTED for repository: " + repositoryId + " ===");
 
 		try {
 			TypeService typeService = patchUtil.getTypeService();
 			if (typeService == null) {
-				log.error("TypeService not available, cannot apply cloudDriveMetadata secondary type patch");
+				log.warn("TypeService not available, cannot apply cloudDriveMetadata secondary type patch");
 				return;
 			}
 
@@ -66,19 +66,19 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 
 			if (patchUtil.getTypeManager() != null) {
 				patchUtil.getTypeManager().invalidateTypeCache(repositoryId);
-				log.error("Type cache invalidated for repository: " + repositoryId);
+				log.info("Type cache invalidated for repository: " + repositoryId);
 
 				// CRITICAL: Force type cache rebuild after invalidation
 				// Without this, the newly created type won't be available via CMIS API
 				try {
 					patchUtil.getTypeManager().refreshTypes();
-					log.error("Type cache refreshed for repository: " + repositoryId);
+					log.info("Type cache refreshed for repository: " + repositoryId);
 				} catch (Exception e) {
-					log.error("Failed to refresh type cache: " + e.getMessage());
+					log.warn("Failed to refresh type cache: " + e.getMessage());
 				}
 			}
 
-			log.error("=== CLOUD DRIVE METADATA SECONDARY TYPE PATCH COMPLETED for repository: " + repositoryId + " ===");
+			log.info("=== CLOUD DRIVE METADATA SECONDARY TYPE PATCH COMPLETED for repository: " + repositoryId + " ===");
 
 		} catch (Exception e) {
 			log.error("=== ERROR DURING CLOUD DRIVE METADATA SECONDARY TYPE PATCH for repository: " + repositoryId + " ===", e);
@@ -90,9 +90,9 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 		boolean typeExists = existing != null;
 
 		if (typeExists) {
-			log.error("Type '" + TYPE_ID + "' already exists (ID: " + existing.getId() + ") - checking for missing properties");
+			log.info("Type '" + TYPE_ID + "' already exists (ID: " + existing.getId() + ") - checking for missing properties");
 		} else {
-			log.error("Creating secondary type: " + TYPE_ID);
+			log.info("Creating secondary type: " + TYPE_ID);
 		}
 
 		try {
@@ -149,15 +149,15 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 					if (!existingProps.contains(propId)) {
 						existingProps.add(propId);
 						updated = true;
-						log.error("Adding new property ID '" + propId + "' to existing type");
+						log.info("Adding new property ID '" + propId + "' to existing type");
 					}
 				}
 				if (updated) {
 					existing.setProperties(existingProps);
 					typeService.updateTypeDefinition(repositoryId, existing);
-					log.error("Type '" + TYPE_ID + "' updated with new properties");
+					log.info("Type '" + TYPE_ID + "' updated with new properties");
 				} else {
-					log.error("Type '" + TYPE_ID + "' already has all required properties");
+					log.info("Type '" + TYPE_ID + "' already has all required properties");
 				}
 			} else {
 				// Create new type
@@ -187,7 +187,7 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 
 				try {
 					NemakiTypeDefinition created = typeService.createTypeDefinition(repositoryId, typeDef);
-					log.error("Type '" + TYPE_ID + "' created successfully with ID: " + created.getId());
+					log.info("Type '" + TYPE_ID + "' created successfully with ID: " + created.getId());
 				} catch (Exception createEx) {
 					// Check if this is a conflict exception (type already exists)
 					String message = createEx.getMessage() != null ? createEx.getMessage().toLowerCase() : "";
@@ -199,7 +199,7 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 						(cause != null && cause.getClass().getSimpleName().contains("Conflict"))) {
 						// Type already exists in CouchDB (possibly from a previous patch run in this startup)
 						// This is expected behavior - log and continue
-						log.error("Type '" + TYPE_ID + "' already exists in CouchDB (Conflict detected) - this is OK");
+						log.info("Type '" + TYPE_ID + "' already exists in CouchDB (Conflict detected) - this is OK");
 					} else {
 						// Re-throw other exceptions
 						throw createEx;
@@ -218,14 +218,14 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 
 		var existingCore = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
 		if (existingCore != null) {
-			log.error("Property '" + propertyId + "' core already exists - reusing");
+			log.info("Property '" + propertyId + "' core already exists - reusing");
 			var existingDetails = typeService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, existingCore.getId());
 			if (existingDetails != null && !existingDetails.isEmpty()) {
 				return existingDetails.get(0).getId();
 			}
 		}
 
-		log.error("Creating property: " + propertyId);
+		log.info("Creating property: " + propertyId);
 
 		NemakiPropertyDefinition propDef = new NemakiPropertyDefinition();
 		propDef.setPropertyId(propertyId);
@@ -242,7 +242,7 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 		propDef.setOrderable(orderable);
 
 		NemakiPropertyDefinitionDetail detail = typeService.createPropertyDefinition(repositoryId, propDef);
-		log.error("Property '" + propertyId + "' created with detail ID: " + detail.getId());
+		log.info("Property '" + propertyId + "' created with detail ID: " + detail.getId());
 		return detail.getId();
 	}
 
@@ -251,14 +251,14 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 
 		var existingCore = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
 		if (existingCore != null) {
-			log.error("Property '" + propertyId + "' core already exists - reusing");
+			log.info("Property '" + propertyId + "' core already exists - reusing");
 			var existingDetails = typeService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, existingCore.getId());
 			if (existingDetails != null && !existingDetails.isEmpty()) {
 				return existingDetails.get(0).getId();
 			}
 		}
 
-		log.error("Creating property: " + propertyId);
+		log.info("Creating property: " + propertyId);
 
 		NemakiPropertyDefinition propDef = new NemakiPropertyDefinition();
 		propDef.setPropertyId(propertyId);
@@ -275,7 +275,7 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 		propDef.setOrderable(true);
 
 		NemakiPropertyDefinitionDetail detail = typeService.createPropertyDefinition(repositoryId, propDef);
-		log.error("Property '" + propertyId + "' created with detail ID: " + detail.getId());
+		log.info("Property '" + propertyId + "' created with detail ID: " + detail.getId());
 		return detail.getId();
 	}
 }

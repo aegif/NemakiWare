@@ -2621,7 +2621,9 @@
       "propertyMapping": "Property Mapping",
       "connectors": "Connectors",
       "importProfiles": "Import Profiles",
-      "manualIngest": "Manual Import"
+      "manualIngest": "Manual Import",
+      "ingestJobs": "Job History",
+      "schedulerStatus": "Scheduler"
     },
     "save": "Save",
     "testConnection": "Test Connection",
@@ -2833,6 +2835,7 @@
       "displayName": "Display Name",
       "archetype": "Archetype",
       "sourceSystem": "Source System",
+      "webhookUrl": "Webhook URL",
       "enabled": "Enabled",
       "actions": "Actions"
     },
@@ -2844,6 +2847,9 @@
       "authType": "Auth Type",
       "endpoint": "Endpoint",
       "tenantId": "Tenant / Workspace ID",
+      "webhookSecret": "Webhook Secret",
+      "webhookSecretHint": "Secret for verifying inbound webhook signatures (Slack signing secret, Graph clientState, etc.)",
+      "webhookSecretPlaceholder": "Signing secret or client state",
       "enabled": "Enabled",
       "sourceSystemHint": "google_drive, notion, imap, slack, teams, ..."
     }
@@ -2862,7 +2868,9 @@
     "dedupePolicies": {
       "skip": "Skip if same version",
       "newVersion": "Create new version",
-      "replace": "Replace"
+      "replace": "Replace",
+      "parentContextChanged": "New document if parent context changed",
+      "replaceRelationships": "Replace relationships on resync"
     },
     "versioningPolicies": {
       "major": "Major",
@@ -2896,8 +2904,40 @@
       "allowedConnectorIdsHint": "Leave empty to allow any connector",
       "defaultConnectorId": "Default Connector",
       "dedupePolicy": "Dedupe Policy",
+      "updatePolicy": "Update Policy",
+      "relationshipPolicy": "Relationship Policy",
+      "retentionDays": "Retention Days",
+      "retentionDaysHint": "Auto-delete imported documents after this many days (leave empty for no expiry)",
+      "aclSyncPolicy": "ACL Sync Policy",
       "versioningPolicy": "Versioning Policy",
+      "schedulerEnabled": "Scheduler Enabled",
+      "schedulerEnabledHint": "Enable periodic automatic imports for this profile",
+      "schedulerParams": "Scheduler Parameters",
+      "defaultClassification": "Default Classification",
+      "defaultClassificationHint": "Classification label automatically applied to imported documents",
+      "defaultClassificationPlaceholder": "e.g. Confidential, Internal, Public",
+      "defaultProfile": "Default Profile",
+      "defaultProfileHint": "Mark as the default profile for auto-resolution when multiple profiles match",
+      "preserveOriginalEml": "Preserve Original .eml",
+      "preserveOriginalEmlHint": "Store the raw .eml MIME message alongside extracted body for audit/compliance",
+      "schedulerParamsHint": "Source-scope parameters for scheduled fetches (JSON key-value pairs, e.g. channelId, query, folderId)",
       "enabled": "Enabled"
+    },
+    "schedulerParamsInvalid": "Scheduler parameters must be valid JSON (e.g. {\"channelId\": \"C12345\"})",
+    "updatePolicies": {
+      "versionUp": "Version up on content change",
+      "alwaysVersionUp": "Always version up",
+      "overwrite": "Overwrite in place"
+    },
+    "relationshipPolicies": {
+      "none": "None",
+      "direct": "Direct relationship",
+      "parent": "Parent-child"
+    },
+    "aclSyncPolicies": {
+      "inheritFromFolder": "Inherit from folder",
+      "copyFromSource": "Copy from source",
+      "none": "None"
     }
   },
   "manualIngest": {
@@ -2939,6 +2979,61 @@
       "selectFile": "Select file",
       "dryRun": "Dry Run",
       "execute": "Execute Import"
+    }
+  },
+  "ingestJobs": {
+    "title": "Ingest Job History & Dead-Letter Queue",
+    "tabs": {
+      "history": "Job History",
+      "dlq": "Dead-Letter Queue"
+    },
+    "retrySuccess": "Retry succeeded",
+    "retryFailed": "Retry failed",
+    "deleteSuccess": "DLQ entry deleted",
+    "deleteFailed": "Failed to delete DLQ entry",
+    "columns": {
+      "jobId": "Job ID",
+      "profileId": "Profile",
+      "status": "Status",
+      "fetched": "Fetched",
+      "imported": "Imported",
+      "skipped": "Skipped",
+      "failed": "Failed",
+      "startedAt": "Started",
+      "completedAt": "Completed"
+    },
+    "dlq": {
+      "columns": {
+        "dlqId": "DLQ ID",
+        "sourceObjectId": "Source Object",
+        "sourceObjectType": "Type",
+        "error": "Error",
+        "retryCount": "Retries",
+        "failedAt": "Failed At",
+        "actions": "Actions"
+      },
+      "retry": "Retry",
+      "deleteConfirm": "Delete this dead-letter entry?",
+      "empty": "No dead-letter entries"
+    }
+  },
+  "schedulerStatus": {
+    "title": "Scheduler & IMAP IDLE Status",
+    "noProfiles": "No scheduler-enabled profiles configured",
+    "trigger": "Trigger",
+    "triggerSuccess": "Fetch triggered successfully",
+    "triggerFailed": "Fetch trigger failed",
+    "stopIdle": "Stop",
+    "idleStarted": "IMAP IDLE monitoring started",
+    "idleStopped": "IMAP IDLE monitoring stopped",
+    "idleFailed": "IMAP IDLE operation failed",
+    "columns": {
+      "profileId": "Profile",
+      "displayName": "Name",
+      "connector": "Connector",
+      "ready": "Ready",
+      "idle": "IDLE",
+      "actions": "Actions"
     }
   }
 }

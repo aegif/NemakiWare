@@ -29,6 +29,7 @@ export interface ConnectorDefinition {
   tenantId?: string;
   adapterKind?: string;
   rateLimitRpm?: number;
+  webhookSecret?: string;
   enabled: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -54,7 +55,10 @@ export interface ImportProfileDefinition {
   retentionDays?: number;
   aclSyncPolicy?: string;
   enabled: boolean;
+  defaultProfile?: boolean;
   schedulerEnabled?: boolean;
+  schedulerParams?: Record<string, string>;
+  preserveOriginalEml?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -164,4 +168,92 @@ export async function deleteProfile(profileId: string): Promise<void> {
     method: 'DELETE',
   });
   if (!res.ok) throw new Error(`Failed to delete profile: ${res.status}`);
+}
+
+// ── Ingest Jobs & DLQ ─────────────────────────────────────────────
+
+const INGEST_URL = '/core/api/v1/admin/ingest';
+const SCHEDULER_URL = '/core/api/v1/admin/ingest-scheduler';
+
+export async function listIngestJobs(limit = 50): Promise<IngestJobRecord[]> {
+  const res = await fetchWithAuth(`${INGEST_URL}/jobs?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to list jobs: ${res.status}`);
+  return res.json();
+}
+
+export async function listDlqEntries(limit = 100): Promise<{ count: number; entries: DlqEntry[] }> {
+  const res = await fetchWithAuth(`${INGEST_URL}/dlq?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to list DLQ: ${res.status}`);
+  return res.json();
+}
+
+export async function retryDlqEntry(dlqId: string): Promise<{ status: string; objectId?: string; errors?: string[] }> {
+  const res = await fetchWithAuth(`${INGEST_URL}/dlq/${encodeURIComponent(dlqId)}/retry`, { method: 'POST' });
+  return res.json();
+}
+
+export async function deleteDlqEntry(dlqId: string): Promise<void> {
+  const res = await fetchWithAuth(`${INGEST_URL}/dlq/${encodeURIComponent(dlqId)}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Failed to delete DLQ entry: ${res.status}`);
+}
+
+// ── Scheduler ─────────────────────────────────────────────────────
+
+export async function getSchedulerStatus(): Promise<{ scheduledProfiles: unknown[]; count: number; idleProfiles: string[] }> {
+  const res = await fetchWithAuth(`${SCHEDULER_URL}/status`);
+  if (!res.ok) throw new Error(`Failed to get scheduler status: ${res.status}`);
+  return res.json();
+}
+
+export async function triggerProfile(profileId: string): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth(`${SCHEDULER_URL}/trigger/${encodeURIComponent(profileId)}`, { method: 'POST' });
+  return res.json();
+}
+
+export async function startIdleMonitoring(profileId: string): Promise<{ status: string; message: string }> {
+  const res = await fetchWithAuth(`${SCHEDULER_URL}/idle/start/${encodeURIComponent(profileId)}`, { method: 'POST' });
+  return res.json();
+}
+
+export async function stopIdleMonitoring(profileId: string): Promise<{ status: string; message: string }> {
+  const res = await fetchWithAuth(`${SCHEDULER_URL}/idle/stop/${encodeURIComponent(profileId)}`, { method: 'POST' });
+  return res.json();
+}
+
+export async function getIdleStatus(): Promise<{ idleProfiles: string[] }> {
+  const res = await fetchWithAuth(`${SCHEDULER_URL}/idle/status`);
+  if (!res.ok) throw new Error(`Failed to get IDLE status: ${res.status}`);
+  return res.json();
+}
+
+// ── Types ─────────────────────────────────────────────────────────
+
+export interface IngestJobRecord {
+  jobId: string;
+  profileId: string;
+  connectorId: string;
+  repositoryId: string;
+  startedAt: string;
+  completedAt?: string;
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'PARTIAL';
+  fetched: number;
+  imported: number;
+  skipped: number;
+  failed: number;
+  errors?: string[];
+}
+
+export interface DlqEntry {
+  dlqId: string;
+  profileId: string;
+  connectorId: string;
+  repositoryId: string;
+  sourceObjectId: string;
+  sourceObjectType: string;
+  fileName?: string;
+  failedAt: string;
+  errorMessage: string;
+  retryCount: number;
+  lastRetryAt?: string;
+  hasContent: boolean;
 }

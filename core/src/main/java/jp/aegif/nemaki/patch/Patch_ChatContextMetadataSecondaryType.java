@@ -36,9 +36,12 @@ public class Patch_ChatContextMetadataSecondaryType extends AbstractNemakiPatch 
                 {"nemaki:chatMessageId", "chatMessageId", "Message ID", "Anchor message identifier"},
                 {"nemaki:chatParticipants", "chatParticipants", "Participants", "Comma-separated participant names/IDs"},
                 {"nemaki:chatSelectionReason", "chatSelectionReason", "Selection Reason", "Why this conversation was captured"},
+                {"nemaki:chatEvidenceScope", "chatEvidenceScope", "Evidence Scope", "Scope of captured evidence: message, thread, channel_window"},
             };
             String[][] dp = {
                 {"nemaki:chatCapturedAt", "chatCapturedAt", "Captured At", "When the conversation was captured"},
+                {"nemaki:chatCaptureWindowStart", "chatCaptureWindowStart", "Capture Window Start", "Start of evidence capture time window"},
+                {"nemaki:chatCaptureWindowEnd", "chatCaptureWindowEnd", "Capture Window End", "End of evidence capture time window"},
             };
 
             for (String[] p : sp) { String id = mkStr(ts, repositoryId, p); if (id != null) pids.add(id); }

@@ -87,10 +87,16 @@ export function ManualIngestTab({ repositoryId }: Props) {
 
   const handleConnectorChange = (connectorId: string) => {
     setSelectedConnectorId(connectorId);
-    // Clear profile if it's no longer compatible
+    // Recompute compatibility against the NEW connector (not the stale memo)
+    const newConnector = connectors.find(c => c.connectorId === connectorId);
     const currentProfile = form.getFieldValue('profileId');
-    if (currentProfile) {
-      const stillValid = compatibleProfiles.some(p => p.profileId === currentProfile);
+    if (currentProfile && newConnector) {
+      const stillValid = profiles.some(p => {
+        if (p.profileId !== currentProfile) return false;
+        if (p.allowedConnectorIds?.length && !p.allowedConnectorIds.includes(connectorId)) return false;
+        if (p.allowedArchetypes?.length && !p.allowedArchetypes.includes(newConnector.sourceArchetype)) return false;
+        return true;
+      });
       if (!stillValid) {
         form.setFieldValue('profileId', undefined);
       }
@@ -126,7 +132,8 @@ export function ManualIngestTab({ repositoryId }: Props) {
       formData.append('request', new Blob([requestJson], { type: 'application/json' }), 'request.json');
 
       if (values.file && values.file.length > 0) {
-        formData.append('content', values.file[0].originFileObj);
+        const fileObj = values.file[0]?.originFileObj ?? values.file[0];
+        if (fileObj) formData.append('content', fileObj);
       }
 
       const res = await fetch(`/core/api/v1/repo/${encodeURIComponent(repositoryId)}/ingest`, {
@@ -135,7 +142,14 @@ export function ManualIngestTab({ repositoryId }: Props) {
         body: formData,
       });
 
-      const body = await res.json();
+      let body: IngestResult;
+      try {
+        body = await res.json();
+      } catch {
+        setResult({ errors: [`HTTP ${res.status}: ${res.statusText}`] });
+        message.error(t('manualIngest.error'));
+        return;
+      }
       setResult(body);
 
       if (res.ok && !body.errors?.length) {

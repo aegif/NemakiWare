@@ -804,6 +804,7 @@
     </bean>
     <bean id="importProfileDefinitionService" class="jp.aegif.nemaki.rest.ingest.ImportProfileDefinitionServiceImpl">
         <property name="connectorPool" ref="connectorPool" />
+        <property name="connectorDefinitionService" ref="connectorDefinitionService" />
     </bean>
     <bean id="canonicalImportService" class="jp.aegif.nemaki.rest.ingest.CanonicalImportServiceImpl">
         <property name="connectorDefinitionService" ref="connectorDefinitionService" />
@@ -813,8 +814,13 @@
         <property name="objectService" ref="objectService" />
         <property name="versioningService" ref="VersioningService" />
         <property name="nemakiCachePool" ref="nemakiCachePool" />
+        <property name="ingestJobService" ref="ingestJobService" />
+        <property name="relationshipService" ref="RelationshipService" />
     </bean>
 
+    <bean id="ingestJobService" class="jp.aegif.nemaki.rest.ingest.IngestJobService">
+        <property name="connectorPool" ref="connectorPool" />
+    </bean>
     <bean id="ingestSchedulerService" class="jp.aegif.nemaki.rest.ingest.IngestSchedulerService">
         <property name="profileService" ref="importProfileDefinitionService" />
         <property name="connectorService" ref="connectorDefinitionService" />
@@ -822,6 +828,7 @@
         <property name="settingsService" ref="integrationSettingsService" />
         <property name="propertyManager" ref="propertyManager" />
         <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+        <property name="ingestJobService" ref="ingestJobService" />
     </bean>
 
     <!-- Password Policy Service -->

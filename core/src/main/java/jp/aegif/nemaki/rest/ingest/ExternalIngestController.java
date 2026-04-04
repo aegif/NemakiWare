@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import jp.aegif.nemaki.util.spring.SpringContext;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -76,13 +77,26 @@ public class ExternalIngestController {
         }
         request.setRepositoryId(repositoryId);
 
-        // Auto-detect specialized import flows
+        // Dispatch to specialized import flow based on connector archetype first,
+        // then sourceObjectType, with .eml extension as a hint only for MESSAGE_CONTEXT
         ExternalIngestResult result;
         String sourceObjectType = request.getSourceObjectType();
-        boolean hasContent = request.getContentStream() != null;
         boolean isEml = request.getFileName() != null && request.getFileName().toLowerCase().endsWith(".eml");
 
-        if (isEml || ("message".equals(sourceObjectType) && hasContent)) {
+        // Check connector archetype first — it takes precedence over filename
+        SourceArchetype connectorArchetype = resolveConnectorArchetype(request.getConnectorId());
+
+        if (connectorArchetype != null) {
+            // Connector archetype is known — dispatch by archetype, not filename
+            result = switch (connectorArchetype) {
+                case MESSAGE_CONTEXT -> canonicalImportService.executeMailImport(callContext, request);
+                case CHAT_CONTEXT -> canonicalImportService.executeChatContextImport(callContext, request);
+                case COMPOUND_NOTE -> canonicalImportService.executeNoteImport(callContext, request);
+                case BUSINESS_RECORD -> canonicalImportService.executeBusinessRecordImport(callContext, request);
+                case FILE_SHARE -> canonicalImportService.execute(callContext, request);
+            };
+        } else if (isEml && !"file".equals(sourceObjectType)) {
+            // No connector context + .eml extension + not explicitly typed as "file" → mail parser
             result = canonicalImportService.executeMailImport(callContext, request);
         } else if ("page".equals(sourceObjectType)) {
             result = canonicalImportService.executeNoteImport(callContext, request);
@@ -90,6 +104,10 @@ public class ExternalIngestController {
             result = canonicalImportService.executeBusinessRecordImport(callContext, request);
         } else if ("chat_message".equals(sourceObjectType) || "thread".equals(sourceObjectType)) {
             result = canonicalImportService.executeChatContextImport(callContext, request);
+        } else if ("message".equals(sourceObjectType)) {
+            // "message" could be mail or chat — check connector archetype to decide
+            // Only route to mail parser if we can confirm MESSAGE_CONTEXT archetype
+            result = resolveMessageImport(callContext, request);
         } else {
             result = canonicalImportService.execute(callContext, request);
         }
@@ -101,11 +119,42 @@ public class ExternalIngestController {
         return ResponseEntity.status(errorStatus).body(result);
     }
 
+    /**
+     * Fallback dispatch for "message" sourceObjectType when connector archetype
+     * was not resolved by the primary dispatch (connectorId absent or lookup failed).
+     * Defaults to mail parser since "message" without archetype context is most
+     * likely an email.
+     */
+    private ExternalIngestResult resolveMessageImport(CallContext callContext, ExternalIngestRequest request) {
+        // connectorArchetype was already checked in doIngest() and returned null,
+        // so no point re-looking up — default to mail
+        return canonicalImportService.executeMailImport(callContext, request);
+    }
+
+    /** Look up the connector's archetype, returning null if unavailable. */
+    private SourceArchetype resolveConnectorArchetype(String connectorId) {
+        if (connectorId == null) return null;
+        try {
+            var ctx = jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
+            if (ctx != null) {
+                ConnectorDefinitionService connSvc = ctx.getBean(ConnectorDefinitionService.class);
+                ConnectorDefinition connector = connSvc.get(connectorId);
+                if (connector != null) return connector.getSourceArchetype();
+            }
+        } catch (Exception e) {
+            org.slf4j.LoggerFactory.getLogger(ExternalIngestController.class)
+                    .warn("Connector lookup failed for {}: {}", connectorId, e.getMessage());
+        }
+        return null;
+    }
+
     private static HttpStatus classifyErrorStatus(ExternalIngestResult result) {
         if (result.errors() == null || result.errors().isEmpty()) {
             return HttpStatus.INTERNAL_SERVER_ERROR;
         }
-        String firstError = result.errors().get(0).toLowerCase();
+        String firstError = result.errors().get(0);
+        if (firstError == null) return HttpStatus.INTERNAL_SERVER_ERROR;
+        firstError = firstError.toLowerCase();
         if (firstError.contains("not found")) return HttpStatus.NOT_FOUND;
         if (firstError.contains("not allowed") || firstError.contains("scoped to repository")) return HttpStatus.FORBIDDEN;
         if (firstError.contains("disabled") || firstError.contains("is required")

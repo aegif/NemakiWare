@@ -235,6 +235,42 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 **3.1.1** (2026-04-02)
 
+### RC12 (2026-04-05)
+- External Ingestion Phase 4 完成:
+  - Concrete Adapters 10種 (+Box, Dropbox)
+  - 全 adapter にチェックポイント永続化 (Gmail date, M365 receivedDateTime, Notion last_edited_time, Salesforce LastModifiedDate, Slack ts, Teams createdDateTime, Mattermost createAt, Box modified_at, Dropbox server_modified)
+  - Per-request adapter throttling (rateLimitRpm → ms/request 変換)
+  - IMAP IDLE リアルタイム監視 (angus-mail IMAPFolder.idle + MessageCountListener)
+  - Webhook/Event-Driven Ingest:
+    - IngestWebhookController: Slack Events API + Microsoft Graph changeNotification + Generic HMAC
+    - Graph subscription 作成/削除 API
+    - Slack/Graph/Generic 署名検証 (webhookSecret)
+    - 複数プロファイル同時フェッチ (many-to-many connector/profile)
+  - Job History + Dead-Letter Queue:
+    - IngestJobRecord (CouchDB 永続化, RUNNING/COMPLETED/FAILED/PARTIAL, skipped 集計)
+    - IngestDeadLetterRecord (CouchDB attachment 付き content 保存)
+    - DLQ リトライ: archetype 別フロー自動ルーティング + skipped 自動解除
+    - admin REST API + IngestJobsTab UI + SchedulerStatusTab UI
+  - Typed Relationships:
+    - nemaki:hasAttachment, nemaki:attachedToRecord, nemaki:derivedFromContext (Patch_IngestRelationshipTypes)
+    - mail/note attachment は nemaki:hasAttachment を使用 (フォールバック: cmis:relationship)
+  - 追加 Runtime Enforce:
+    - defaultClassification → nemaki:classificationInfo 自動付与
+    - aclSyncPolicy: none (継承切断) + copy_from_source (sourceAcl → local ACE)
+    - preserveOriginalEml: raw .eml を別ドキュメントとして保存 + relationship リンク
+    - content hash (SHA-256) 永続化 + 再インポート時の変更検出
+    - defaultProfile: auto-resolve 時の決定論的プロファイル選択
+  - 高度 Dedupe ポリシー:
+    - create_new_if_parent_context_changed: externalContext の parent context 比較
+    - replace_relationships_on_resync: 既存 relationship 削除 → 再作成
+  - Evidence Boundary:
+    - chatCaptureWindowStart/End (DATETIME), chatEvidenceScope (STRING) を chatContextMetadata に追加
+  - Audit: EXTERNAL_INGEST / EXTERNAL_INGEST_FAILED 操作ログ
+  - Connector secret masking: GET 応答で credentialRef/webhookSecret を [configured] にマスク
+  - Scheduler validation: adapter 別必須 schedulerParams チェック (Slack channelId, Teams teamId+channelId 等)
+  - Webhook URL 表示: ConnectorManagementTab にコピー可能な URL カラム
+  - UI: defaultProfile トグル, defaultClassification 入力, webhookSecret パスワード入力
+
 ### RC11 (2026-04-03)
 - External Ingestion 完全実装:
   - SourceArchetype 5類型 (FILE_SHARE, COMPOUND_NOTE, CHAT_CONTEXT, BUSINESS_RECORD, MESSAGE_CONTEXT)

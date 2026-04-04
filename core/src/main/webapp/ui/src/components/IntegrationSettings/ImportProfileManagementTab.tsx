@@ -8,6 +8,7 @@ import {
   createProfile,
   updateProfile,
   deleteProfile,
+  getProfile,
 } from '../../services/externalIngest';
 
 const ARCHETYPE_OPTIONS = [
@@ -29,11 +30,28 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
     { value: 'skip_if_same_version', label: t('importProfileManagement.dedupePolicies.skip') },
     { value: 'create_new_version', label: t('importProfileManagement.dedupePolicies.newVersion') },
     { value: 'replace', label: t('importProfileManagement.dedupePolicies.replace') },
+    { value: 'create_new_if_parent_context_changed', label: t('importProfileManagement.dedupePolicies.parentContextChanged') },
+    { value: 'replace_relationships_on_resync', label: t('importProfileManagement.dedupePolicies.replaceRelationships') },
   ];
   const VERSIONING_OPTIONS = [
     { value: 'major', label: t('importProfileManagement.versioningPolicies.major') },
     { value: 'minor', label: t('importProfileManagement.versioningPolicies.minor') },
     { value: 'none', label: t('importProfileManagement.versioningPolicies.none') },
+  ];
+  const UPDATE_POLICY_OPTIONS = [
+    { value: 'version_up_on_content_change', label: t('importProfileManagement.updatePolicies.versionUp') },
+    { value: 'always_version_up', label: t('importProfileManagement.updatePolicies.alwaysVersionUp') },
+    { value: 'overwrite', label: t('importProfileManagement.updatePolicies.overwrite') },
+  ];
+  const RELATIONSHIP_POLICY_OPTIONS = [
+    { value: '', label: t('importProfileManagement.relationshipPolicies.none') },
+    { value: 'direct', label: t('importProfileManagement.relationshipPolicies.direct') },
+    { value: 'parent_child', label: t('importProfileManagement.relationshipPolicies.parent') },
+  ];
+  const ACL_SYNC_OPTIONS = [
+    { value: 'inherit_from_folder', label: t('importProfileManagement.aclSyncPolicies.inheritFromFolder') },
+    { value: 'copy_from_source', label: t('importProfileManagement.aclSyncPolicies.copyFromSource') },
+    { value: 'none', label: t('importProfileManagement.aclSyncPolicies.none') },
   ];
   const [profiles, setProfiles] = useState<ImportProfileDefinition[]>([]);
   const [loading, setLoading] = useState(false);
@@ -71,11 +89,15 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
 
   const openEdit = async (record: ImportProfileDefinition) => {
     setEditing(record);
-    form.setFieldsValue(record);
+    const formValues = {
+      ...record,
+      schedulerParams: record.schedulerParams ? JSON.stringify(record.schedulerParams, null, 2) : '',
+    };
+    form.setFieldsValue(formValues);
     setModalOpen(true);
     // Fetch warnings from backend
     try {
-      const { warnings: w } = await import('../../services/externalIngest').then(m => m.getProfile(record.profileId));
+      const { warnings: w } = await getProfile(record.profileId);
       setWarnings(w || []);
     } catch {
       setWarnings([]);
@@ -86,6 +108,23 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
     try {
       const values = await form.validateFields();
       values.repositoryId = repositoryId;
+      // Parse schedulerParams from JSON string to object
+      if (typeof values.schedulerParams === 'string' && values.schedulerParams.trim()) {
+        try {
+          values.schedulerParams = JSON.parse(values.schedulerParams);
+        } catch {
+          message.error(t('importProfileManagement.schedulerParamsInvalid'));
+          return;
+        }
+      } else {
+        values.schedulerParams = undefined;
+      }
+      // Parse retentionDays from string to number
+      if (values.retentionDays != null && values.retentionDays !== '') {
+        values.retentionDays = Number(values.retentionDays);
+      } else {
+        values.retentionDays = undefined;
+      }
       let result;
       if (editing) {
         // Filter out undefined values to avoid overwriting existing fields
@@ -159,7 +198,9 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
       render: (_: unknown, record: ImportProfileDefinition) => (
         <Space size="small">
           <Button icon={<EditOutlined />} size="small" onClick={() => openEdit(record)} />
-          <Popconfirm title={t('importProfileManagement.deleteConfirm')} onConfirm={() => handleDelete(record.profileId)}>
+          <Popconfirm title={t('importProfileManagement.deleteConfirm')}
+            okText={t('common.delete')} cancelText={t('common.cancel')}
+            onConfirm={() => handleDelete(record.profileId)}>
             <Button icon={<DeleteOutlined />} size="small" danger />
           </Popconfirm>
         </Space>
@@ -241,6 +282,39 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
           </Form.Item>
           <Form.Item name="versioningPolicy" label={t('importProfileManagement.form.versioningPolicy')}>
             <Select options={VERSIONING_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="updatePolicy" label={t('importProfileManagement.form.updatePolicy')}>
+            <Select allowClear options={UPDATE_POLICY_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="relationshipPolicy" label={t('importProfileManagement.form.relationshipPolicy')}>
+            <Select allowClear options={RELATIONSHIP_POLICY_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="retentionDays" label={t('importProfileManagement.form.retentionDays')}
+            extra={t('importProfileManagement.form.retentionDaysHint')}>
+            <Input type="number" min={1} />
+          </Form.Item>
+          <Form.Item name="aclSyncPolicy" label={t('importProfileManagement.form.aclSyncPolicy')}>
+            <Select options={ACL_SYNC_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="schedulerEnabled" label={t('importProfileManagement.form.schedulerEnabled')}
+            valuePropName="checked" extra={t('importProfileManagement.form.schedulerEnabledHint')}>
+            <Switch />
+          </Form.Item>
+          <Form.Item name="schedulerParams" label={t('importProfileManagement.form.schedulerParams')}
+            extra={t('importProfileManagement.form.schedulerParamsHint')}>
+            <Input.TextArea rows={3} placeholder='{"channelId": "C12345", "query": "in:inbox"}' />
+          </Form.Item>
+          <Form.Item name="defaultClassification" label={t('importProfileManagement.form.defaultClassification')}
+            extra={t('importProfileManagement.form.defaultClassificationHint')}>
+            <Input placeholder={t('importProfileManagement.form.defaultClassificationPlaceholder')} />
+          </Form.Item>
+          <Form.Item name="preserveOriginalEml" label={t('importProfileManagement.form.preserveOriginalEml')}
+            valuePropName="checked" extra={t('importProfileManagement.form.preserveOriginalEmlHint')}>
+            <Switch />
+          </Form.Item>
+          <Form.Item name="defaultProfile" label={t('importProfileManagement.form.defaultProfile')}
+            valuePropName="checked" extra={t('importProfileManagement.form.defaultProfileHint')}>
+            <Switch />
           </Form.Item>
           <Form.Item name="enabled" label={t('importProfileManagement.form.enabled')} valuePropName="checked">
             <Switch />

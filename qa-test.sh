@@ -106,7 +106,7 @@ run_test "Solr Container Running" "docker ps --filter 'name=solr' --filter 'stat
 echo
 echo "=== 2. DATABASE INITIALIZATION TESTS ==="
 run_test "CouchDB Connectivity" "curl -s -u admin:password http://localhost:5984/ | jq -r .version" ""
-run_test "Required Databases Created" "curl -s -u admin:password http://localhost:5984/_all_dbs | jq -r 'length'" "5"
+run_test "Required Databases Created" "curl -s -u admin:password http://localhost:5984/_all_dbs | jq -r 'length'" "7"
 run_test "Bedroom Database Exists" "curl -s -u admin:password http://localhost:5984/bedroom | jq -r .db_name" "bedroom"
 run_test "Canopy Database Exists" "curl -s -u admin:password http://localhost:5984/canopy | jq -r .db_name" "canopy"
 

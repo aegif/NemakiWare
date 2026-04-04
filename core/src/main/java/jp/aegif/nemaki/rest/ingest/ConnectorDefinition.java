@@ -28,6 +28,8 @@ public class ConnectorDefinition {
     private String tenantId;
     private String adapterKind;
     private Integer rateLimitRpm;
+    /** Secret for verifying inbound webhook signatures (Slack signing secret, Graph clientState, etc.). */
+    private String webhookSecret;
     private boolean enabled = true;
     private String createdAt;
     private String updatedAt;
@@ -65,6 +67,9 @@ public class ConnectorDefinition {
 
     public Integer getRateLimitRpm() { return rateLimitRpm; }
     public void setRateLimitRpm(Integer rateLimitRpm) { this.rateLimitRpm = rateLimitRpm; }
+
+    public String getWebhookSecret() { return webhookSecret; }
+    public void setWebhookSecret(String webhookSecret) { this.webhookSecret = webhookSecret; }
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }

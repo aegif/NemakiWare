@@ -24,9 +24,14 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private CloudantClientPool connectorPool;
+    private ConnectorDefinitionService connectorDefinitionService;
 
     public void setConnectorPool(CloudantClientPool connectorPool) {
         this.connectorPool = connectorPool;
+    }
+
+    public void setConnectorDefinitionService(ConnectorDefinitionService connectorDefinitionService) {
+        this.connectorDefinitionService = connectorDefinitionService;
     }
 
     @Override
@@ -96,10 +101,33 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
     public ImportProfileDefinition findDefaultForRepository(String repositoryId, SourceArchetype archetype, String connectorId) {
         if (repositoryId == null) return null;
         List<ImportProfileDefinition> candidates = listByRepository(repositoryId);
+        // First pass: prefer profiles where this connector is the explicit default
         for (ImportProfileDefinition p : candidates) {
-            if (p.isEnabled() && p.isArchetypeAllowed(archetype) && p.isConnectorAllowed(connectorId)) {
+            if (p.isEnabled() && p.isArchetypeAllowed(archetype) && p.isConnectorAllowed(connectorId)
+                    && connectorId != null && connectorId.equals(p.getDefaultConnectorId())) {
                 return p;
             }
+        }
+        // Second pass: prefer profiles marked as defaultProfile
+        for (ImportProfileDefinition p : candidates) {
+            if (p.isEnabled() && p.isDefaultProfile()
+                    && p.isArchetypeAllowed(archetype) && p.isConnectorAllowed(connectorId)) {
+                return p;
+            }
+        }
+        // Third pass: any compatible profile — require exactly one match for determinism
+        List<ImportProfileDefinition> fallbacks = candidates.stream()
+                .filter(p -> p.isEnabled() && p.isArchetypeAllowed(archetype) && p.isConnectorAllowed(connectorId))
+                .toList();
+        if (fallbacks.size() == 1) {
+            return fallbacks.get(0);
+        }
+        if (fallbacks.size() > 1) {
+            throw new IllegalStateException(
+                    "Ambiguous auto-resolve: " + fallbacks.size() + " profiles ("
+                    + fallbacks.stream().map(ImportProfileDefinition::getProfileId).toList()
+                    + ") match connector " + connectorId + " in repository " + repositoryId
+                    + " — set defaultProfile=true or defaultConnectorId on exactly one profile");
         }
         return null;
     }
@@ -116,6 +144,98 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         if (!hasFolderId && !hasFolderPath) {
             throw new IllegalArgumentException("Either targetFolderId or targetFolderPath is required");
         }
+        // Validate scheduler-enabled profiles have required source-scope parameters
+        if (def.isSchedulerEnabled()) {
+            validateSchedulerParams(def);
+        }
+    }
+
+    /**
+     * Validates that scheduler-enabled profiles reference a usable connector
+     * and that adapter-specific required parameters are present in schedulerParams.
+     */
+    private void validateSchedulerParams(ImportProfileDefinition def) {
+        String defaultConnectorId = def.getDefaultConnectorId();
+        if (defaultConnectorId == null || defaultConnectorId.isBlank()) {
+            throw new IllegalArgumentException(
+                    "schedulerEnabled profiles require a defaultConnectorId to determine the fetch adapter");
+        }
+        if (connectorDefinitionService != null) {
+            ConnectorDefinition connector = connectorDefinitionService.get(defaultConnectorId);
+            if (connector == null) {
+                throw new IllegalArgumentException(
+                        "defaultConnectorId '" + defaultConnectorId + "' does not exist");
+            }
+            if (!connector.isEnabled()) {
+                throw new IllegalArgumentException(
+                        "defaultConnectorId '" + defaultConnectorId + "' is disabled");
+            }
+            if (!def.isConnectorAllowed(connector.getConnectorId())) {
+                throw new IllegalArgumentException(
+                        "defaultConnectorId '" + defaultConnectorId + "' is not in allowedConnectorIds");
+            }
+            if (!def.isArchetypeAllowed(connector.getSourceArchetype())) {
+                throw new IllegalArgumentException(
+                        "Connector archetype '" + connector.getSourceArchetype()
+                                + "' is not in profile's allowedArchetypes");
+            }
+            // Adapter-specific required parameters
+            validateAdapterRequiredParams(connector.getSourceSystem(), def.getSchedulerParams());
+        }
+    }
+
+    /**
+     * Validates adapter-specific required schedulerParams based on sourceSystem.
+     * Only checks params that have no meaningful default — adapters like IMAP, Gmail,
+     * M365, Notion, Salesforce work with built-in defaults.
+     */
+    private void validateAdapterRequiredParams(String sourceSystem, Map<String, String> params) {
+        if (sourceSystem == null) return;
+        Map<String, String> p = params != null ? params : Map.of();
+        switch (sourceSystem) {
+            case "slack" -> {
+                if (isBlank(p.get("channelId"))) {
+                    throw new IllegalArgumentException(
+                            "schedulerParams.channelId is required for Slack adapter");
+                }
+            }
+            case "teams" -> {
+                if (isBlank(p.get("teamId"))) {
+                    throw new IllegalArgumentException(
+                            "schedulerParams.teamId is required for Teams adapter");
+                }
+                if (isBlank(p.get("channelId"))) {
+                    throw new IllegalArgumentException(
+                            "schedulerParams.channelId is required for Teams adapter");
+                }
+            }
+            case "mattermost" -> {
+                if (isBlank(p.get("channelId"))) {
+                    throw new IllegalArgumentException(
+                            "schedulerParams.channelId is required for Mattermost adapter");
+                }
+            }
+            // imap, gmail_mail, m365_mail, notion, salesforce: all have usable defaults
+            default -> { /* no required params */ }
+        }
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    /**
+     * Collects non-fatal configuration warnings for a profile (exposed via REST API).
+     */
+    public List<String> collectWarnings(ImportProfileDefinition def) {
+        List<String> warnings = new ArrayList<>();
+        if (def.isSchedulerEnabled()) {
+            Map<String, String> params = def.getSchedulerParams();
+            if (params == null || params.isEmpty()) {
+                warnings.add("schedulerEnabled is on but schedulerParams is empty — adapters will use default scope");
+            }
+        }
+        return warnings;
     }
 
     // --- Internal ---

@@ -231,6 +231,12 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Semantic relationship subtypes for external ingestion -->
+				<bean class="jp.aegif.nemaki.patch.Patch_IngestRelationshipTypes">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- CMIS 1.1 Retention Management secondary type (cmis:rm_clientMgtRetention) -->
 				<bean class="jp.aegif.nemaki.patch.Patch_RetentionSecondaryTypes">
 					<property name="patchUtil">

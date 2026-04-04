@@ -2621,7 +2621,9 @@
       "propertyMapping": "プロパティマッピング",
       "connectors": "コネクタ",
       "importProfiles": "インポートプロファイル",
-      "manualIngest": "手動インポート"
+      "manualIngest": "手動インポート",
+      "ingestJobs": "ジョブ履歴",
+      "schedulerStatus": "スケジューラ"
     },
     "save": "保存",
     "testConnection": "接続テスト",
@@ -2833,6 +2835,7 @@
       "displayName": "表示名",
       "archetype": "類型",
       "sourceSystem": "ソースシステム",
+      "webhookUrl": "Webhook URL",
       "enabled": "有効",
       "actions": "操作"
     },
@@ -2844,6 +2847,9 @@
       "authType": "認証タイプ",
       "endpoint": "エンドポイント",
       "tenantId": "テナント / ワークスペースID",
+      "webhookSecret": "Webhook シークレット",
+      "webhookSecretHint": "受信 Webhook 署名検証用シークレット（Slack signing secret、Graph clientState など）",
+      "webhookSecretPlaceholder": "署名シークレットまたはクライアント状態",
       "enabled": "有効",
       "sourceSystemHint": "google_drive, notion, imap, slack, teams, ..."
     }
@@ -2862,7 +2868,9 @@
     "dedupePolicies": {
       "skip": "同一バージョンならスキップ",
       "newVersion": "新バージョン作成",
-      "replace": "置換"
+      "replace": "置換",
+      "parentContextChanged": "親コンテキスト変更時に新規作成",
+      "replaceRelationships": "再同期時にリレーションシップ置換"
     },
     "versioningPolicies": {
       "major": "メジャー",
@@ -2896,8 +2904,40 @@
       "allowedConnectorIdsHint": "空の場合はすべてのコネクタを許可",
       "defaultConnectorId": "デフォルトコネクタ",
       "dedupePolicy": "重複排除ポリシー",
+      "updatePolicy": "更新ポリシー",
+      "relationshipPolicy": "リレーションシップポリシー",
+      "retentionDays": "保持日数",
+      "retentionDaysHint": "指定日数後にインポートされたドキュメントを自動削除（空の場合は無期限）",
+      "aclSyncPolicy": "ACL同期ポリシー",
       "versioningPolicy": "バージョニングポリシー",
+      "schedulerEnabled": "スケジューラ有効",
+      "schedulerEnabledHint": "このプロファイルの定期自動インポートを有効にする",
+      "schedulerParams": "スケジューラパラメータ",
+      "defaultClassification": "デフォルト分類",
+      "defaultClassificationHint": "インポートされたドキュメントに自動付与する分類ラベル",
+      "defaultClassificationPlaceholder": "例: 社外秘, 社内, 公開",
+      "defaultProfile": "デフォルトプロファイル",
+      "defaultProfileHint": "複数プロファイルが一致する場合の自動解決で優先するプロファイルとしてマーク",
+      "preserveOriginalEml": "メール原本 (.eml) 保存",
+      "preserveOriginalEmlHint": "抽出済み本文に加え、監査・コンプライアンス用に生の .eml MIMEメッセージを保存",
+      "schedulerParamsHint": "定期フェッチのソーススコープパラメータ（JSONキー値ペア、例: channelId, query, folderId）",
       "enabled": "有効"
+    },
+    "schedulerParamsInvalid": "スケジューラパラメータは有効なJSONである必要があります（例: {\"channelId\": \"C12345\"}）",
+    "updatePolicies": {
+      "versionUp": "コンテンツ変更時にバージョンアップ",
+      "alwaysVersionUp": "常にバージョンアップ",
+      "overwrite": "上書き"
+    },
+    "relationshipPolicies": {
+      "none": "なし",
+      "direct": "直接リレーションシップ",
+      "parent": "親子"
+    },
+    "aclSyncPolicies": {
+      "inheritFromFolder": "フォルダから継承",
+      "copyFromSource": "ソースからコピー",
+      "none": "なし"
     }
   },
   "manualIngest": {
@@ -2939,6 +2979,61 @@
       "selectFile": "ファイルを選択",
       "dryRun": "ドライラン",
       "execute": "インポート実行"
+    }
+  },
+  "ingestJobs": {
+    "title": "インジェストジョブ履歴 & デッドレターキュー",
+    "tabs": {
+      "history": "ジョブ履歴",
+      "dlq": "デッドレターキュー"
+    },
+    "retrySuccess": "リトライ成功",
+    "retryFailed": "リトライ失敗",
+    "deleteSuccess": "DLQエントリを削除しました",
+    "deleteFailed": "DLQエントリの削除に失敗しました",
+    "columns": {
+      "jobId": "ジョブID",
+      "profileId": "プロファイル",
+      "status": "ステータス",
+      "fetched": "取得",
+      "imported": "インポート",
+      "skipped": "スキップ",
+      "failed": "失敗",
+      "startedAt": "開始",
+      "completedAt": "完了"
+    },
+    "dlq": {
+      "columns": {
+        "dlqId": "DLQ ID",
+        "sourceObjectId": "ソースオブジェクト",
+        "sourceObjectType": "タイプ",
+        "error": "エラー",
+        "retryCount": "リトライ回数",
+        "failedAt": "失敗日時",
+        "actions": "操作"
+      },
+      "retry": "リトライ",
+      "deleteConfirm": "このデッドレターエントリを削除しますか？",
+      "empty": "デッドレターエントリはありません"
+    }
+  },
+  "schedulerStatus": {
+    "title": "スケジューラ & IMAP IDLE ステータス",
+    "noProfiles": "スケジューラ有効なプロファイルがありません",
+    "trigger": "実行",
+    "triggerSuccess": "フェッチをトリガーしました",
+    "triggerFailed": "フェッチのトリガーに失敗しました",
+    "stopIdle": "停止",
+    "idleStarted": "IMAP IDLE監視を開始しました",
+    "idleStopped": "IMAP IDLE監視を停止しました",
+    "idleFailed": "IMAP IDLE操作に失敗しました",
+    "columns": {
+      "profileId": "プロファイル",
+      "displayName": "名前",
+      "connector": "コネクタ",
+      "ready": "準備完了",
+      "idle": "IDLE",
+      "actions": "操作"
     }
   }
 }

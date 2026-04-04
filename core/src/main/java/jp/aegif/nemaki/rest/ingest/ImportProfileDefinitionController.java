@@ -92,14 +92,14 @@ public class ImportProfileDefinitionController {
     }
 
     /**
-     * Returns warnings for profile fields that are persisted but not yet enforced at runtime.
+     * Returns warnings for profile configuration issues (surfaced to admin via API/UI).
      */
     private List<String> getPhase2Warnings(ImportProfileDefinition def) {
-        List<String> warnings = new ArrayList<>();
-        if (def.getDefaultClassification() != null && !def.getDefaultClassification().isBlank()) {
-            warnings.add("defaultClassification is configured but not yet enforced");
+        if (importProfileDefinitionService instanceof ImportProfileDefinitionServiceImpl impl) {
+            return impl.collectWarnings(def);
         }
-        return warnings;
+        // Fallback if interface-only injection
+        return new ArrayList<>();
     }
 
     private boolean isAdmin() {

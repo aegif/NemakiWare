@@ -110,7 +110,9 @@ public class MailMessageParser {
                 // Attachment — use global index (attachments.size()) to avoid nested collisions
                 int globalIndex = attachments.size();
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                part.getInputStream().transferTo(baos);
+                try (InputStream partStream = part.getInputStream()) {
+                    partStream.transferTo(baos);
+                }
                 attachments.add(new ParsedAttachment(
                         part.getFileName() != null ? part.getFileName() : "attachment-" + globalIndex,
                         part.getContentType().split(";")[0].trim(),

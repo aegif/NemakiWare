@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Named import profile — defines WHERE and HOW imported content is stored
@@ -18,10 +19,8 @@ import java.util.List;
  * {@code enabled}, {@code dedupePolicy}, {@code updatePolicy}, {@code versioningPolicy},
  * {@code secondaryTypeIds}, {@code retentionDays}, {@code relationshipPolicy},
  * {@code aclSyncPolicy} (inherit_from_folder is CMIS default), {@code schedulerEnabled}
- * (scheduling infrastructure via {@code IngestSchedulerService}).
- *
- * <p><b>Persisted but not yet enforced:</b>
- * {@code defaultClassification}.
+ * (scheduling infrastructure via {@code IngestSchedulerService}),
+ * {@code defaultClassification} (applied as {@code nemaki:classificationInfo} on import).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -49,6 +48,11 @@ public class ImportProfileDefinition {
     private String aclSyncPolicy = "inherit_from_folder";
     private boolean enabled = true;
     private boolean schedulerEnabled;
+    private boolean preserveOriginalEml;
+    /** Marks this profile as the default for its repository when multiple profiles match. */
+    private boolean defaultProfile;
+    /** Source-scope parameters for scheduled fetches (e.g. channelId, teamId, query, soql, folderId). */
+    private Map<String, String> schedulerParams;
     private String createdAt;
     private String updatedAt;
 
@@ -112,6 +116,15 @@ public class ImportProfileDefinition {
 
     public boolean isSchedulerEnabled() { return schedulerEnabled; }
     public void setSchedulerEnabled(boolean schedulerEnabled) { this.schedulerEnabled = schedulerEnabled; }
+
+    public boolean isPreserveOriginalEml() { return preserveOriginalEml; }
+    public void setPreserveOriginalEml(boolean preserveOriginalEml) { this.preserveOriginalEml = preserveOriginalEml; }
+
+    public boolean isDefaultProfile() { return defaultProfile; }
+    public void setDefaultProfile(boolean defaultProfile) { this.defaultProfile = defaultProfile; }
+
+    public Map<String, String> getSchedulerParams() { return schedulerParams; }
+    public void setSchedulerParams(Map<String, String> schedulerParams) { this.schedulerParams = schedulerParams; }
 
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }

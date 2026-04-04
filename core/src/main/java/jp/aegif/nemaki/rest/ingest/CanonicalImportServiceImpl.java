@@ -62,6 +62,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private ObjectService objectService;
     private VersioningService versioningService;
     private NemakiCachePool nemakiCachePool;
+    private IngestJobService ingestJobService;
+    private jp.aegif.nemaki.cmis.service.RelationshipService relationshipService;
 
     // --- DI setters ---
 
@@ -93,6 +95,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         this.nemakiCachePool = nemakiCachePool;
     }
 
+    public void setIngestJobService(IngestJobService ingestJobService) {
+        this.ingestJobService = ingestJobService;
+    }
+
+    public void setRelationshipService(jp.aegif.nemaki.cmis.service.RelationshipService relationshipService) {
+        this.relationshipService = relationshipService;
+    }
+
     @Override
     public ExternalIngestResult executeWithAutoResolve(CallContext callContext, ExternalIngestRequest request,
                                                        String sourceSystem, SourceArchetype archetype) {
@@ -111,8 +121,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
         // Auto-resolve profile if not explicitly set
         if (request.getProfileId() == null || request.getProfileId().isBlank()) {
-            ImportProfileDefinition autoProfile = importProfileDefinitionService
-                    .findDefaultForRepository(request.getRepositoryId(), archetype, request.getConnectorId());
+            ImportProfileDefinition autoProfile;
+            try {
+                autoProfile = importProfileDefinitionService
+                        .findDefaultForRepository(request.getRepositoryId(), archetype, request.getConnectorId());
+            } catch (IllegalStateException e) {
+                // Ambiguous: multiple profiles match — fail closed, do NOT fall through
+                return ExternalIngestResult.error(requestId, e.getMessage());
+            }
             if (autoProfile == null) {
                 return ExternalIngestResult.error(requestId,
                         "No enabled import profile found for repository='" + request.getRepositoryId()
@@ -134,9 +150,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
 
         try {
-            // 1. Parse .eml
+            // 1. Buffer raw .eml bytes before parsing (for optional original preservation)
+            ByteArrayOutputStream rawEmlBuffer = new ByteArrayOutputStream();
+            request.getContentStream().transferTo(rawEmlBuffer);
+            byte[] rawEmlBytes = rawEmlBuffer.toByteArray();
+
+            // 1b. Parse .eml from buffered bytes
             MailMessageParser parser = new MailMessageParser();
-            ParsedMailMessage parsed = parser.parse(request.getContentStream());
+            ParsedMailMessage parsed = parser.parse(new ByteArrayInputStream(rawEmlBytes));
 
             // 2. Build metadata from parsed envelope
             Map<String, Object> metadata = new LinkedHashMap<>();
@@ -181,6 +202,36 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             String metaError = applyMessageMetadata(request.getRepositoryId(), messageObjectId, callContext, parsed, request);
             if (metaError != null) warnings.add(metaError);
 
+            // 4b. Preserve raw .eml as a separate document if profile requests it
+            ImportProfileDefinition mailProfile = request.getProfileId() != null
+                    ? importProfileDefinitionService.get(request.getProfileId()) : null;
+            if (mailProfile != null && mailProfile.isPreserveOriginalEml() && rawEmlBytes.length > 0) {
+                try {
+                    ExternalIngestRequest emlReq = new ExternalIngestRequest();
+                    emlReq.setProfileId(request.getProfileId());
+                    emlReq.setConnectorId(request.getConnectorId());
+                    emlReq.setRepositoryId(request.getRepositoryId());
+                    emlReq.setSourceObjectId(request.getSourceObjectId());
+                    emlReq.setSourceObjectType("eml_original");
+                    emlReq.setFileName(sanitizeFilename(subject) + ".eml");
+                    emlReq.setMimeType("message/rfc822");
+                    emlReq.setContentStream(new ByteArrayInputStream(rawEmlBytes));
+                    emlReq.setExecutionMode(request.getExecutionMode());
+                    emlReq.setMetadata(new LinkedHashMap<>(metadata));
+
+                    ExternalIngestResult emlResult = execute(callContext, emlReq);
+                    if (emlResult.isSuccess()) {
+                        String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                                messageObjectId, emlResult.objectId(), "nemaki:hasAttachment");
+                        if (relErr != null) warnings.add(relErr);
+                    } else if (!emlResult.skipped()) {
+                        warnings.add("Raw .eml preservation failed: " + String.join(", ", emlResult.errors()));
+                    }
+                } catch (Exception e) {
+                    warnings.add("Raw .eml preservation failed: " + e.getMessage());
+                }
+            }
+
             // 5. Import attachments as separate documents with relationship
             int attachmentCount = 0;
             for (ParsedAttachment att : parsed.attachments()) {
@@ -205,9 +256,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     ExternalIngestResult attResult = execute(callContext, attReq);
                     if (attResult.isSuccess()) {
                         attachmentCount++;
-                        // Create relationship directly (not dependent on profile policy)
+                        // Create typed relationship (not dependent on profile policy)
                         String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
-                                messageObjectId, attResult.objectId());
+                                messageObjectId, attResult.objectId(), "nemaki:hasAttachment");
                         if (relErr != null) warnings.add(relErr);
                     } else {
                         warnings.add("Attachment '" + att.filename() + "' import failed: "
@@ -287,7 +338,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     if (attResult.isSuccess()) {
                         attachmentCount++;
                         String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
-                                pageObjectId, attResult.objectId());
+                                pageObjectId, attResult.objectId(), "nemaki:hasAttachment");
                         if (relErr != null) warnings.add(relErr);
                     } else {
                         warnings.add("Attachment import failed: " + String.join(", ", attResult.errors()));
@@ -378,6 +429,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 });
         if (metaError != null) warnings.add(metaError);
 
+        // Create attachedToRecord relationship if parentRecordId is provided
+        if (request.getMetadata() != null) {
+            String parentRecordId = resolveMetadataString(request, "parentRecordId");
+            if (parentRecordId != null) {
+                String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                        parentRecordId, result.objectId(), "nemaki:attachedToRecord");
+                if (relErr != null) warnings.add(relErr);
+            }
+        }
+
         return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
                 result.isNewVersion(), false, false, null, result.lineageEventId(), List.of(), warnings);
     }
@@ -397,8 +458,53 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         {"nemaki:chatChannelName", "channelName"}, {"nemaki:chatThreadId", "threadId"},
                         {"nemaki:chatMessageId", "messageId"}, {"nemaki:chatParticipants", "participants"},
                         {"nemaki:chatSelectionReason", "selectionReason"},
+                        {"nemaki:chatEvidenceScope", "evidenceScope"},
                 });
         if (metaError != null) warnings.add(metaError);
+
+        // Apply capture window datetime properties if provided in metadata
+        if (request.getMetadata() != null) {
+            String windowStart = resolveMetadataString(request, "captureWindowStart");
+            String windowEnd = resolveMetadataString(request, "captureWindowEnd");
+            if (windowStart != null || windowEnd != null) {
+                try {
+                    Content chatContent = contentService.getContent(request.getRepositoryId(), result.objectId());
+                    if (chatContent != null) {
+                        List<Aspect> chatAspects = chatContent.getAspects() != null ? chatContent.getAspects() : new ArrayList<>();
+                        Aspect chatAspect = chatAspects.stream()
+                                .filter(a -> "nemaki:chatContextMetadata".equals(a.getName())).findFirst().orElse(null);
+                        if (chatAspect != null && chatAspect.getProperties() != null) {
+                            Map<String, Property> propMap = new java.util.LinkedHashMap<>();
+                            for (Property p : chatAspect.getProperties()) propMap.put(p.getKey(), p);
+                            if (windowStart != null) {
+                                GregorianCalendar gc = new GregorianCalendar();
+                                gc.setTimeInMillis(java.time.Instant.parse(windowStart).toEpochMilli());
+                                propMap.put("nemaki:chatCaptureWindowStart", new Property("nemaki:chatCaptureWindowStart", gc));
+                            }
+                            if (windowEnd != null) {
+                                GregorianCalendar gc = new GregorianCalendar();
+                                gc.setTimeInMillis(java.time.Instant.parse(windowEnd).toEpochMilli());
+                                propMap.put("nemaki:chatCaptureWindowEnd", new Property("nemaki:chatCaptureWindowEnd", gc));
+                            }
+                            chatAspect.setProperties(new ArrayList<>(propMap.values()));
+                            contentService.update(callContext, request.getRepositoryId(), chatContent);
+                        }
+                    }
+                } catch (Exception e) {
+                    warnings.add("Capture window metadata failed: " + e.getMessage());
+                }
+            }
+        }
+
+        // Create derivedFromContext relationship if parentContextId is provided
+        if (request.getMetadata() != null) {
+            String parentContextId = resolveMetadataString(request, "parentContextId");
+            if (parentContextId != null) {
+                String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                        parentContextId, result.objectId(), "nemaki:derivedFromContext");
+                if (relErr != null) warnings.add(relErr);
+            }
+        }
 
         return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
                 result.isNewVersion(), false, false, null, result.lineageEventId(), List.of(), warnings);
@@ -464,16 +570,30 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * Used by specialized import flows (mail, note) where parent-child relationships
      * are inherent to the archetype.
      */
-    private String createDirectRelationship(CallContext callContext, String repositoryId,
+    String createDirectRelationship(CallContext callContext, String repositoryId,
                                             String sourceId, String targetId) {
+        return createDirectRelationship(callContext, repositoryId, sourceId, targetId, "cmis:relationship");
+    }
+
+    /**
+     * Creates a typed CMIS relationship.
+     * Falls back to generic cmis:relationship if the custom type is not available.
+     */
+    String createDirectRelationship(CallContext callContext, String repositoryId,
+                                            String sourceId, String targetId, String relationshipTypeId) {
         try {
             PropertiesImpl relProps = new PropertiesImpl();
-            relProps.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:relationship"));
+            relProps.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, relationshipTypeId));
             relProps.addProperty(new PropertyIdImpl(PropertyIds.SOURCE_ID, sourceId));
             relProps.addProperty(new PropertyIdImpl(PropertyIds.TARGET_ID, targetId));
             objectService.createRelationship(callContext, repositoryId, relProps, null, null, null, null);
             return null;
         } catch (Exception e) {
+            // Fallback to generic cmis:relationship if custom type fails
+            if (!"cmis:relationship".equals(relationshipTypeId)) {
+                logger.debug("Custom relationship type {} failed, falling back to cmis:relationship", relationshipTypeId);
+                return createDirectRelationship(callContext, repositoryId, sourceId, targetId, "cmis:relationship");
+            }
             logger.warn("Relationship {} → {} failed: {}", sourceId, targetId, e.getMessage());
             return "Relationship failed: " + e.getMessage();
         }
@@ -498,9 +618,199 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
     }
 
+    /** Emit audit event for external ingest operations. */
+    private void emitAuditEvent(String repositoryId, String objectId,
+                                CallContext callContext, boolean success, String error) {
+        try {
+            var ctx = jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
+            if (ctx == null) return;
+            var audit = ctx.getBean("auditLogger", jp.aegif.nemaki.audit.AuditLogger.class);
+            if (audit == null) return;
+            String userId = callContext != null ? callContext.getUsername() : "system";
+            jp.aegif.nemaki.audit.AuditOperation op = success
+                    ? jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST
+                    : jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST_FAILED;
+            audit.logOperation(op, repositoryId, userId, objectId, success, error);
+        } catch (Exception e) {
+            logger.debug("Audit event emission failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Apply ACL sync policy after document creation/update.
+     * - inherit_from_folder: no-op (CMIS default)
+     * - none: break ACL inheritance, leaving only admin ACL
+     * - copy_from_source: reserved for future adapter integration
+     */
+    private void applyAclSyncPolicy(CallContext callContext, String repositoryId,
+                                     String objectId, String policy,
+                                     Content content) {
+        if ("inherit_from_folder".equals(policy) || policy.isBlank()) {
+            return; // CMIS default — nothing to do
+        }
+        if ("none".equals(policy)) {
+            // Break inheritance: set the content to not inherit parent ACL
+            try {
+                content.setAclInherited(false);
+                contentService.update(callContext, repositoryId, content);
+                logger.info("ACL inheritance disabled for imported document {}", objectId);
+            } catch (Exception e) {
+                logger.warn("Failed to break ACL inheritance for {}: {}", objectId, e.getMessage());
+            }
+        }
+        if ("copy_from_source".equals(policy)) {
+            applySourceAcl(callContext, repositoryId, objectId, content);
+        }
+    }
+
+    /**
+     * Apply ACL from source system metadata.
+     * Expects metadata key "sourceAcl" as a List of maps with "principalId" and "permissions" keys.
+     * Example: [{"principalId": "user1", "permissions": ["cmis:read"]}, ...]
+     */
+    @SuppressWarnings("unchecked")
+    private void applySourceAcl(CallContext callContext, String repositoryId,
+                                 String objectId, Content content) {
+        try {
+            // Read sourceAcl from the persisted externalContext
+            String contextJson = null;
+            if (content.getAspects() != null) {
+                for (var aspect : content.getAspects()) {
+                    if ("nemaki:externalIntegration".equals(aspect.getName()) && aspect.getProperties() != null) {
+                        for (var prop : aspect.getProperties()) {
+                            if ("nemaki:externalContext".equals(prop.getKey()) && prop.getValue() instanceof String s) {
+                                contextJson = s;
+                            }
+                        }
+                    }
+                }
+            }
+            if (contextJson == null) return;
+
+            Map<String, Object> context = JSON_MAPPER.readValue(contextJson,
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+            Object sourceAclObj = context.get("sourceAcl");
+            if (!(sourceAclObj instanceof List<?> sourceAclList) || sourceAclList.isEmpty()) return;
+
+            // Break inheritance first
+            content.setAclInherited(false);
+
+            // Build ACL from source
+            List<jp.aegif.nemaki.model.Ace> localAces = new ArrayList<>();
+            for (Object entry : sourceAclList) {
+                if (!(entry instanceof Map<?, ?> aceMap)) continue;
+                String principalId = aceMap.get("principalId") instanceof String s ? s : null;
+                Object permsObj = aceMap.get("permissions");
+                if (principalId == null || permsObj == null) continue;
+
+                List<String> permissions;
+                if (permsObj instanceof List<?> permList) {
+                    permissions = permList.stream()
+                            .filter(p -> p instanceof String)
+                            .map(p -> (String) p)
+                            .toList();
+                } else if (permsObj instanceof String s) {
+                    permissions = List.of(s);
+                } else {
+                    continue;
+                }
+
+                localAces.add(new jp.aegif.nemaki.model.Ace(principalId, permissions, true));
+            }
+
+            if (!localAces.isEmpty()) {
+                jp.aegif.nemaki.model.Acl acl = content.getAcl() != null ? content.getAcl()
+                        : new jp.aegif.nemaki.model.Acl();
+                acl.setLocalAces(localAces);
+                content.setAcl(acl);
+                contentService.update(callContext, repositoryId, content);
+                logger.info("Applied {} source ACEs to imported document {}", localAces.size(), objectId);
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to apply source ACL for {}: {}", objectId, e.getMessage());
+        }
+    }
+
+    /**
+     * Check if the parent context has changed between the existing document and the incoming request.
+     * Compares archetype-specific context fields stored in nemaki:externalContext.
+     */
+    private boolean hasParentContextChanged(Content existingDoc, ExternalIngestRequest request) {
+        if (request.getMetadata() == null) return false;
+        try {
+            String existingContextJson = getAspectProperty(existingDoc, "nemaki:externalIntegration", "nemaki:externalContext");
+            if (existingContextJson == null) return false;
+            Map<String, Object> existingContext = JSON_MAPPER.readValue(existingContextJson,
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+            // Compare parent-context fields: channelId, threadId, parentPageId, mailboxId
+            for (String key : List.of("channelId", "threadId", "parentPageId", "workspaceId", "mailboxId")) {
+                Object existing = existingContext.get(key);
+                Object incoming = request.getMetadata().get(key);
+                if (existing != null && incoming != null && !existing.toString().equals(incoming.toString())) {
+                    logger.info("Parent context changed: {}={} → {}", key, existing, incoming);
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Parent context comparison failed: {}", e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Remove all existing CMIS relationships where the given object is the source.
+     * Used by replace_relationships_on_resync policy.
+     */
+    private void removeExistingRelationships(CallContext callContext, String repositoryId, String objectId) {
+        if (relationshipService == null) return;
+        try {
+            org.apache.chemistry.opencmis.commons.data.ObjectList rels = relationshipService.getObjectRelationships(
+                    callContext, repositoryId, objectId, true,
+                    org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.SOURCE,
+                    null, null, false, null, null, null);
+            if (rels != null && rels.getObjects() != null) {
+                for (var relData : rels.getObjects()) {
+                    try {
+                        objectService.deleteObject(callContext, repositoryId,
+                                relData.getId(), true, null);
+                        logger.debug("Removed relationship {} for resync", relData.getId());
+                    } catch (Exception e) {
+                        logger.warn("Failed to remove relationship {}: {}", relData.getId(), e.getMessage());
+                    }
+                }
+                logger.info("Resync: removed {} relationships from {}", rels.getObjects().size(), objectId);
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to query relationships for {}: {}", objectId, e.getMessage());
+        }
+    }
+
     private String sanitizeFilename(String name) {
         if (name == null) return "untitled";
         return name.replaceAll("[/\\\\:*?\"<>|]", "_").trim();
+    }
+
+    /**
+     * Deep-copy metadata map, stripping {@code contentBase64} keys from nested
+     * attachment entries to prevent multi-MB binary blobs from being persisted
+     * into {@code nemaki:externalContext}.
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> stripBinaryContent(Map<String, Object> metadata) {
+        Map<String, Object> result = new LinkedHashMap<>(metadata);
+        Object attachments = result.get("attachments");
+        if (attachments instanceof List<?> attList) {
+            List<Map<String, Object>> cleaned = new ArrayList<>();
+            for (Object item : attList) {
+                if (item instanceof Map<?, ?> attMap) {
+                    Map<String, Object> copy = new LinkedHashMap<>((Map<String, Object>) attMap);
+                    copy.remove("contentBase64");
+                    cleaned.add(copy);
+                }
+            }
+            result.put("attachments", cleaned);
+        }
+        return result;
     }
 
     /**
@@ -642,6 +952,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     "Profile has no resolvable target folder (neither targetFolderId nor targetFolderPath)");
         }
 
+        byte[] bufferedContent = null; // retained for DLQ on failure
         try {
             String objectTypeId = profile.getDefaultObjectTypeId();
             if (objectTypeId == null || objectTypeId.isBlank()) {
@@ -654,9 +965,17 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
 
             ContentStream contentStream = null;
+            String computedHash = null;
             if (request.getContentStream() != null) {
                 String mimeType = request.getMimeType() != null ? request.getMimeType() : "application/octet-stream";
-                contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(-1), mimeType, request.getContentStream());
+                // Buffer content to compute hash for dedupe and persistence
+                ByteArrayOutputStream contentBuf = new ByteArrayOutputStream();
+                request.getContentStream().transferTo(contentBuf);
+                byte[] contentBytes = contentBuf.toByteArray();
+                bufferedContent = contentBytes; // retain for DLQ if this import fails
+                computedHash = computeContentHash(contentBytes);
+                contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(contentBytes.length),
+                        mimeType, new ByteArrayInputStream(contentBytes));
             }
 
             // 5a. Dedupe: check for existing document by source identity
@@ -710,6 +1029,17 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     }
                     existingDoc = null; // Fall through to create new
                 }
+                if ("create_new_if_parent_context_changed".equals(dedupePolicy)) {
+                    // Compare parent context fields — if changed, create new document
+                    if (hasParentContextChanged(existingDoc, request)) {
+                        logger.info("Dedupe: parent context changed for {}, creating new document", existingDoc.getId());
+                        existingDoc = null; // Fall through to create new
+                    }
+                }
+                if ("replace_relationships_on_resync".equals(dedupePolicy) && existingDoc != null) {
+                    // Delete existing relationships before re-import
+                    removeExistingRelationships(callContext, repositoryId, existingDoc.getId());
+                }
 
                 String updatePolicy = profile.getUpdatePolicy() != null ? profile.getUpdatePolicy() : "version_up_on_content_change";
                 objectId = existingDoc.getId();
@@ -721,43 +1051,29 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 } else {
                     // version_up_on_content_change: compare content hash before versioning
                     boolean contentChanged = true;
-                    if (contentStream != null && contentStream.getStream() != null) {
-                        try {
-                            // Buffer the stream so we can hash and reuse
-                            ByteArrayOutputStream buf = new ByteArrayOutputStream();
-                            contentStream.getStream().transferTo(buf);
-                            byte[] contentBytes = buf.toByteArray();
-                            String newHash = computeContentHash(contentBytes);
-                            String existingHash = getAspectProperty(existingDoc, "nemaki:externalIntegration", "nemaki:contentHash");
-                            if (newHash != null && newHash.equals(existingHash)) {
-                                contentChanged = false;
-                                versionLabel = "metadata-only (content unchanged)";
-                                logger.info("Dedupe: content unchanged for {} (hash={}), metadata-only", objectId, newHash);
-                            } else {
-                                // Rebuild stream from buffer for checkin
-                                contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(contentBytes.length),
-                                        request.getMimeType() != null ? request.getMimeType() : "application/octet-stream",
-                                        new ByteArrayInputStream(contentBytes));
-                            }
-                        } catch (Exception e) {
-                            logger.debug("Content hash comparison failed, will version up: {}", e.getMessage());
+                    if (computedHash != null) {
+                        String existingHash = getAspectProperty(existingDoc, "nemaki:externalIntegration", "nemaki:contentHash");
+                        if (computedHash.equals(existingHash)) {
+                            contentChanged = false;
+                            versionLabel = "metadata-only (content unchanged)";
+                            logger.info("Dedupe: content unchanged for {} (hash={}), metadata-only", objectId, computedHash);
                         }
                     }
                     if (contentChanged) {
                         isNewVersion = true;
-                    Holder<String> objectIdHolder = new Holder<>(objectId);
-                    Holder<Boolean> contentCopied = new Holder<>(Boolean.FALSE);
-                    versioningService.checkOut(callContext, repositoryId, objectIdHolder, contentCopied, null);
-                    String pwcId = objectIdHolder.getValue();
+                        Holder<String> objectIdHolder = new Holder<>(objectId);
+                        Holder<Boolean> contentCopied = new Holder<>(Boolean.FALSE);
+                        versioningService.checkOut(callContext, repositoryId, objectIdHolder, contentCopied, null);
+                        String pwcId = objectIdHolder.getValue();
 
-                    boolean isMajor = !"minor".equalsIgnoreCase(profile.getVersioningPolicy());
-                    Holder<String> checkinHolder = new Holder<>(pwcId);
-                    versioningService.checkIn(callContext, repositoryId, checkinHolder, isMajor,
-                            null, contentStream, "Imported from " + connector.getSourceSystem(),
-                            null, null, null, null);
-                    objectId = checkinHolder.getValue();
-                    versionLabel = "new version";
-                    logger.info("Dedupe: updated existing document {} with new version", objectId);
+                        boolean isMajor = !"minor".equalsIgnoreCase(profile.getVersioningPolicy());
+                        Holder<String> checkinHolder = new Holder<>(pwcId);
+                        versioningService.checkIn(callContext, repositoryId, checkinHolder, isMajor,
+                                null, contentStream, "Imported from " + connector.getSourceSystem(),
+                                null, null, null, null);
+                        objectId = checkinHolder.getValue();
+                        versionLabel = "new version";
+                        logger.info("Dedupe: updated existing document {} with new version", objectId);
                     }
                 }
             } else {
@@ -776,7 +1092,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             // 6. Apply secondary types
             List<String> warnings = new ArrayList<>();
-            String metadataError = applySourceMetadata(repositoryId, objectId, callContext, connector, request, profile);
+            String metadataError = applySourceMetadata(repositoryId, objectId, callContext, connector, request, profile, computedHash);
             if (metadataError != null) {
                 warnings.add(metadataError);
             }
@@ -806,11 +1122,23 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 }
             }
 
+            // Audit log
+            emitAuditEvent(request.getRepositoryId(), objectId, callContext, true, null);
+
             return new ExternalIngestResult(requestId, objectId, versionLabel, isNewVersion,
                     false, false, null, lineageEventId, List.of(), warnings);
 
         } catch (Exception e) {
             logger.error("Canonical import failed: requestId={}, error={}", requestId, e.getMessage(), e);
+            emitAuditEvent(request.getRepositoryId(), null, callContext, false, e.getMessage());
+            // Save to dead-letter queue for retry (with buffered content if available)
+            if (ingestJobService != null && !"manual".equals(request.getExecutionMode())) {
+                try {
+                    ingestJobService.saveToDlq(request, e.getMessage(), bufferedContent);
+                } catch (Exception dlqErr) {
+                    logger.debug("Failed to save to DLQ: {}", dlqErr.getMessage());
+                }
+            }
             return ExternalIngestResult.error(requestId, e.getMessage());
         }
     }
@@ -820,7 +1148,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      */
     private String applySourceMetadata(String repositoryId, String objectId, CallContext callContext,
                                        ConnectorDefinition connector, ExternalIngestRequest request,
-                                       ImportProfileDefinition profile) {
+                                       ImportProfileDefinition profile, String contentHash) {
         try {
             Content content = contentService.getContent(repositoryId, objectId);
             if (content == null) {
@@ -859,9 +1187,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             newProps.put("nemaki:externalContextUpdatedAt", new GregorianCalendar());
 
             // Persist externalContext from request metadata if provided
+            // Strip binary content (contentBase64) to avoid bloating CouchDB documents
             if (request.getMetadata() != null && !request.getMetadata().isEmpty()) {
-                String contextJson = JSON_MAPPER.writeValueAsString(request.getMetadata());
+                Map<String, Object> sanitized = stripBinaryContent(request.getMetadata());
+                String contextJson = JSON_MAPPER.writeValueAsString(sanitized);
                 newProps.put("nemaki:externalContext", contextJson);
+            }
+
+            // Store content hash for future dedupe comparisons
+            if (contentHash != null && !contentHash.isBlank()) {
+                newProps.put("nemaki:contentHash", contentHash);
             }
 
             // Merge: preserve existing properties, overwrite with new values
@@ -923,10 +1258,40 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 }
             }
 
+            // Apply default classification if configured
+            if (profile != null && profile.getDefaultClassification() != null
+                    && !profile.getDefaultClassification().isBlank()) {
+                if (!secondaryIds.contains("nemaki:classificationInfo")) {
+                    secondaryIds.add("nemaki:classificationInfo");
+                }
+                List<Property> classProps = new ArrayList<>();
+                classProps.add(new Property("nemaki:classification",
+                        List.of(profile.getDefaultClassification())));
+                Aspect classAspect = aspects.stream()
+                        .filter(a -> "nemaki:classificationInfo".equals(a.getName()))
+                        .findFirst().orElse(null);
+                if (classAspect != null) {
+                    // Merge: preserve existing properties, overwrite classification
+                    Map<String, Property> propMap = new java.util.LinkedHashMap<>();
+                    if (classAspect.getProperties() != null) {
+                        for (Property p : classAspect.getProperties()) propMap.put(p.getKey(), p);
+                    }
+                    for (Property p : classProps) propMap.put(p.getKey(), p);
+                    classAspect.setProperties(new ArrayList<>(propMap.values()));
+                } else {
+                    aspects.add(new Aspect("nemaki:classificationInfo", classProps));
+                }
+            }
+
             content.setSecondaryIds(secondaryIds);
             content.setAspects(aspects);
 
             contentService.update(callContext, repositoryId, content);
+
+            // Apply ACL sync policy
+            if (profile != null && profile.getAclSyncPolicy() != null) {
+                applyAclSyncPolicy(callContext, repositoryId, objectId, profile.getAclSyncPolicy(), content);
+            }
 
             // Invalidate cache
             if (nemakiCachePool != null) {

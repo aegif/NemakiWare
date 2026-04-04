@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Switch, Space, Tag, App, Popconfirm } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, Switch, Space, Tag, App, Popconfirm, Typography } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import {
@@ -45,7 +45,11 @@ export function ConnectorManagementTab() {
 
   const openEdit = (record: ConnectorDefinition) => {
     setEditing(record);
-    form.setFieldsValue(record);
+    // Clear masked secret placeholders so the form shows empty (not "[configured]")
+    const formValues = { ...record };
+    if (formValues.credentialRef === '[configured]') formValues.credentialRef = undefined;
+    if (formValues.webhookSecret === '[configured]') formValues.webhookSecret = undefined;
+    form.setFieldsValue(formValues);
     setModalOpen(true);
   };
 
@@ -53,9 +57,14 @@ export function ConnectorManagementTab() {
     try {
       const values = await form.validateFields();
       if (editing) {
-        // Filter out undefined to preserve API-only properties (credentialRef, adapterKind, rateLimitRpm)
+        // Filter out undefined AND empty strings for secret fields to avoid overwriting
         const definedValues = Object.fromEntries(
-          Object.entries(values).filter(([, v]) => v !== undefined)
+          Object.entries(values).filter(([k, v]) => {
+            if (v === undefined) return false;
+            // Don't send empty secret fields — backend preserves existing values
+            if ((k === 'credentialRef' || k === 'webhookSecret') && v === '') return false;
+            return true;
+          })
         );
         const merged = { ...editing, ...definedValues };
         await updateConnector(editing.connectorId, merged);
@@ -105,6 +114,15 @@ export function ConnectorManagementTab() {
       key: 'sourceSystem',
     },
     {
+      title: t('connectorManagement.columns.webhookUrl'),
+      key: 'webhookUrl',
+      ellipsis: true,
+      render: (_: unknown, record: ConnectorDefinition) => {
+        const url = `${window.location.origin}/core/api/v1/ingest-webhook/${record.connectorId}`;
+        return <Typography.Text copyable={{ text: url }} style={{ fontSize: 11 }}>{url}</Typography.Text>;
+      },
+    },
+    {
       title: t('connectorManagement.columns.enabled'),
       dataIndex: 'enabled',
       key: 'enabled',
@@ -118,7 +136,9 @@ export function ConnectorManagementTab() {
       render: (_: unknown, record: ConnectorDefinition) => (
         <Space size="small">
           <Button icon={<EditOutlined />} size="small" onClick={() => openEdit(record)} />
-          <Popconfirm title={t('connectorManagement.deleteConfirm')} onConfirm={() => handleDelete(record.connectorId)}>
+          <Popconfirm title={t('connectorManagement.deleteConfirm')}
+            okText={t('common.delete')} cancelText={t('common.cancel')}
+            onConfirm={() => handleDelete(record.connectorId)}>
             <Button icon={<DeleteOutlined />} size="small" danger />
           </Popconfirm>
         </Space>
@@ -181,6 +201,10 @@ export function ConnectorManagementTab() {
           </Form.Item>
           <Form.Item name="tenantId" label={t('connectorManagement.form.tenantId')}>
             <Input />
+          </Form.Item>
+          <Form.Item name="webhookSecret" label={t('connectorManagement.form.webhookSecret')}
+            extra={t('connectorManagement.form.webhookSecretHint')}>
+            <Input.Password placeholder={t('connectorManagement.form.webhookSecretPlaceholder')} />
           </Form.Item>
           <Form.Item name="enabled" label={t('connectorManagement.form.enabled')} valuePropName="checked">
             <Switch />

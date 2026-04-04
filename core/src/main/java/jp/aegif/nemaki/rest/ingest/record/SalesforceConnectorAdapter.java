@@ -93,8 +93,14 @@ public class SalesforceConnectorAdapter {
      * List attachments for a record.
      */
     public List<SalesforceRecord> getAttachments(String parentId) throws Exception {
-        String soql = "SELECT Id, Name, ContentType, BodyLength FROM Attachment WHERE ParentId = '" + parentId + "'";
+        String soql = "SELECT Id, Name, ContentType, BodyLength FROM Attachment WHERE ParentId = '" + escapeSoql(parentId) + "'";
         return query(soql);
+    }
+
+    /** Escape single quotes in SOQL string literals to prevent injection. */
+    private static String escapeSoql(String value) {
+        if (value == null) return "";
+        return value.replace("\\", "\\\\").replace("'", "\\'");
     }
 
     private HttpResponse<String> get(String url) throws Exception {

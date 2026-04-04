@@ -76,6 +76,92 @@ public class IngestSchedulerService {
         }
     }
 
+    // ── IMAP IDLE monitoring ──────────────────────────────────────
+
+    private final Map<String, ImapConnectorAdapter> idleAdapters = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Start IMAP IDLE monitoring for a specific profile.
+     * Runs on a virtual thread and processes new messages as they arrive.
+     */
+    public String startIdle(String profileId) {
+        if (idleAdapters.containsKey(profileId)) {
+            return "IDLE already running for profile: " + profileId;
+        }
+
+        ImportProfileDefinition profile = profileService != null
+                ? profileService.get(profileId) : null;
+        if (profile == null) return "Profile not found: " + profileId;
+
+        ConnectorDefinition connector = resolveConnectorForProfile(profile);
+        if (connector == null) return "No connector for profile: " + profileId;
+        if (!"imap".equals(connector.getSourceSystem())) {
+            return "IDLE is only supported for IMAP connectors (system=" + connector.getSourceSystem() + ")";
+        }
+
+        String password = resolvePassword(connector);
+        if (password == null) return "No password for IMAP connector";
+
+        String mailbox = profile.getSchedulerParams() != null
+                ? profile.getSchedulerParams().getOrDefault("mailbox", "INBOX") : "INBOX";
+
+        ImapConnectorAdapter imap = new ImapConnectorAdapter(connector, password);
+        idleAdapters.put(profileId, imap);
+
+        Thread.ofVirtual().name("imap-idle-" + profileId).start(() -> {
+            try {
+                imap.connect();
+                imap.startIdle(mailbox, msg -> {
+                    try {
+                        java.io.InputStream eml = imap.fetchMessage(mailbox, msg.uid());
+                        ExternalIngestRequest req = new ExternalIngestRequest();
+                        req.setProfileId(profileId);
+                        req.setConnectorId(connector.getConnectorId());
+                        req.setRepositoryId(profile.getRepositoryId());
+                        req.setSourceObjectId(msg.stableKey());
+                        req.setSourceObjectType("message");
+                        req.setFileName(sanitizeSubject(msg.subject()) + ".eml");
+                        req.setMimeType("message/rfc822");
+                        req.setContentStream(eml);
+                        req.setExecutionMode("idle");
+                        Map<String, Object> metadata = new LinkedHashMap<>();
+                        metadata.put("mailboxId", mailbox);
+                        metadata.put("messageStableId", msg.stableKey());
+                        if (msg.messageId() != null) metadata.put("internetMessageId", msg.messageId());
+                        req.setMetadata(metadata);
+                        canonicalImportService.executeMailImport(null, req);
+                        logger.info("IDLE: imported message {} from {}", msg.stableKey(), mailbox);
+                    } catch (Exception e) {
+                        logger.error("IDLE: failed to import message {}: {}", msg.uid(), e.getMessage());
+                    }
+                });
+            } catch (Exception e) {
+                logger.error("IDLE monitoring failed for {}: {}", profileId, e.getMessage());
+            } finally {
+                imap.disconnect();
+                idleAdapters.remove(profileId);
+            }
+        });
+
+        logger.info("IMAP IDLE monitoring started for profile {}", profileId);
+        return null; // success
+    }
+
+    /** Stop IDLE monitoring for a specific profile. */
+    public String stopIdle(String profileId) {
+        ImapConnectorAdapter imap = idleAdapters.remove(profileId);
+        if (imap == null) return "No IDLE session running for profile: " + profileId;
+        imap.stopIdle();
+        imap.disconnect();
+        logger.info("IMAP IDLE monitoring stopped for profile {}", profileId);
+        return null;
+    }
+
+    /** Get the list of profiles currently running IMAP IDLE. */
+    public List<String> getIdleProfiles() {
+        return List.copyOf(idleAdapters.keySet());
+    }
+
     private void pollScheduledProfiles() {
         try {
             List<ImportProfileDefinition> profiles = getScheduledProfiles();
@@ -85,10 +171,32 @@ public class IngestSchedulerService {
             for (ImportProfileDefinition profile : profiles) {
                 ConnectorDefinition connector = resolveConnectorForProfile(profile);
                 if (connector == null) continue;
+
+                // Create job record
+                IngestJobRecord job = null;
+                if (ingestJobService != null) {
+                    try {
+                        job = ingestJobService.createJob(profile.getProfileId(),
+                                connector.getConnectorId(), profile.getRepositoryId());
+                    } catch (Exception e) {
+                        logger.debug("Failed to create job record: {}", e.getMessage());
+                    }
+                }
+
                 try {
-                    // Use a system-level CallContext for scheduled operations
-                    // In production, this would use a service account context
-                    FetchResult result = executeFetch(null, profile, connector, Map.of());
+                    Map<String, String> params = profile.getSchedulerParams() != null
+                            ? profile.getSchedulerParams() : Map.of();
+                    FetchResult result = executeFetch(null, profile, connector, params);
+
+                    // Complete job record
+                    if (job != null && ingestJobService != null) {
+                        try {
+                            ingestJobService.completeJob(job, result);
+                        } catch (Exception e) {
+                            logger.debug("Failed to update job record: {}", e.getMessage());
+                        }
+                    }
+
                     if (result.imported() > 0) {
                         logger.info("Scheduled fetch for {}: imported {} of {} fetched",
                                 profile.getProfileId(), result.imported(), result.fetched());
@@ -99,6 +207,15 @@ public class IngestSchedulerService {
                     }
                 } catch (Exception e) {
                     logger.error("Scheduled fetch failed for {}: {}", profile.getProfileId(), e.getMessage());
+                    // Record failed job
+                    if (job != null && ingestJobService != null) {
+                        try {
+                            ingestJobService.completeJob(job,
+                                    new FetchResult(0, 0, List.of(e.getMessage())));
+                        } catch (Exception je) {
+                            logger.debug("Failed to record job failure: {}", je.getMessage());
+                        }
+                    }
                 }
             }
         } catch (Exception e) {
@@ -112,6 +229,7 @@ public class IngestSchedulerService {
     private IntegrationSettingsService settingsService;
     private PropertyManager propertyManager;
     private RepositoryInfoMap repositoryInfoMap;
+    private IngestJobService ingestJobService;
 
     public void setProfileService(ImportProfileDefinitionService profileService) {
         this.profileService = profileService;
@@ -135,6 +253,10 @@ public class IngestSchedulerService {
 
     public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
         this.repositoryInfoMap = repositoryInfoMap;
+    }
+
+    public void setIngestJobService(IngestJobService ingestJobService) {
+        this.ingestJobService = ingestJobService;
     }
 
     /**
@@ -163,16 +285,32 @@ public class IngestSchedulerService {
     public ConnectorDefinition resolveConnectorForProfile(ImportProfileDefinition profile) {
         if (connectorService == null) return null;
 
-        // Prefer defaultConnectorId
+        // Prefer defaultConnectorId — but still enforce profile's own restrictions
         String defaultId = profile.getDefaultConnectorId();
         if (defaultId != null && !defaultId.isBlank()) {
             ConnectorDefinition connector = connectorService.get(defaultId);
-            if (connector != null && connector.isEnabled()) {
+            if (connector != null && connector.isEnabled()
+                    && profile.isConnectorAllowed(connector.getConnectorId())
+                    && profile.isArchetypeAllowed(connector.getSourceArchetype())) {
                 return connector;
+            }
+            if (connector != null) {
+                logger.warn("Default connector {} for profile {} is not usable " +
+                        "(enabled={}, connectorAllowed={}, archetypeAllowed={})",
+                        defaultId, profile.getProfileId(), connector.isEnabled(),
+                        profile.isConnectorAllowed(connector.getConnectorId()),
+                        profile.isArchetypeAllowed(connector.getSourceArchetype()));
+            } else {
+                logger.warn("Default connector {} for profile {} does not exist", defaultId, profile.getProfileId());
+            }
+            // Scheduler-enabled profiles must NOT fall back to a different connector —
+            // doing so would silently switch the data source being polled
+            if (profile.isSchedulerEnabled()) {
+                return null;
             }
         }
 
-        // Fallback: find first allowed connector by archetype
+        // Fallback for non-scheduled profiles only: find first allowed connector by archetype
         if (profile.getAllowedArchetypes() != null && !profile.getAllowedArchetypes().isEmpty()) {
             for (SourceArchetype archetype : profile.getAllowedArchetypes()) {
                 List<ConnectorDefinition> candidates = connectorService.listByArchetype(archetype);
@@ -246,8 +384,10 @@ public class IngestSchedulerService {
             oldestFirst.sort((a, b) -> Long.compare(a.uid(), b.uid()));
 
             long highWaterMark = lastImportedUid;
+            long throttleMs = calculateThrottleDelayMs(connector);
 
             for (MessageSummary msg : oldestFirst) {
+                throttle(throttleMs);
                 try {
                     InputStream eml = imap.fetchMessage(mailboxFolder, msg.uid());
 
@@ -352,6 +492,58 @@ public class IngestSchedulerService {
     }
 
     /**
+     * Calculate per-request throttle delay in milliseconds based on connector rateLimitRpm.
+     * Returns 0 if no rate limit is configured.
+     */
+    static long calculateThrottleDelayMs(ConnectorDefinition connector) {
+        if (connector.getRateLimitRpm() == null || connector.getRateLimitRpm() <= 0) return 0;
+        // Convert RPM to milliseconds between requests
+        return 60_000L / connector.getRateLimitRpm();
+    }
+
+    /** Sleep for the throttle delay, if configured. Swallows InterruptedException. */
+    static void throttle(long delayMs) {
+        if (delayMs > 0) {
+            try { Thread.sleep(delayMs); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        }
+    }
+
+    /** Truncate text to a reasonable size for externalContext storage (max 2000 chars). */
+    private static String truncateForContext(String text) {
+        if (text == null) return "";
+        return text.length() > 2000 ? text.substring(0, 2000) + "…" : text;
+    }
+
+    /** Create a direct relationship, logging errors instead of throwing. */
+    private void createRelationshipSafe(CallContext callContext, String repositoryId,
+                                        String sourceId, String targetId, List<String> errors) {
+        try {
+            if (canonicalImportService instanceof CanonicalImportServiceImpl impl) {
+                String err = impl.createDirectRelationship(callContext, repositoryId, sourceId, targetId);
+                if (err != null) errors.add(err);
+            }
+        } catch (Exception e) {
+            errors.add("Relationship " + sourceId + " → " + targetId + ": " + e.getMessage());
+        }
+    }
+
+    /** Load a simple string checkpoint for non-IMAP adapters. */
+    private String loadSimpleCheckpoint(String profileId, String scope) {
+        if (settingsService == null) return null;
+        String key = "ingest.checkpoint." + profileId + "." + scope;
+        String value = settingsService.readSetting(key);
+        return (value != null && !value.isBlank()) ? value : null;
+    }
+
+    /** Save a simple string checkpoint for non-IMAP adapters. */
+    private void saveSimpleCheckpoint(String profileId, String scope, String value) {
+        if (settingsService == null || value == null) return;
+        String key = "ingest.checkpoint." + profileId + "." + scope;
+        settingsService.writeSetting(key, value);
+        logger.debug("Checkpoint saved: {} → {}", key, value);
+    }
+
+    /**
      * Result of a fetch run (any adapter).
      */
     public record FetchResult(int fetched, int imported, List<String> errors) {
@@ -369,13 +561,22 @@ public class IngestSchedulerService {
         int fetched = 0, imported = 0;
         try {
             GmailConnectorAdapter gmail = new GmailConnectorAdapter(token);
-            List<GmailMessageSummary> messages = gmail.listMessages(query, limit);
+            // Append checkpoint date to query to avoid re-fetching old messages
+            // Gmail `after:` uses YYYY/MM/DD format
+            String lastDate = loadSimpleCheckpoint(profile.getProfileId(), "gmail");
+            String effectiveQuery = query;
+            if (lastDate != null) {
+                effectiveQuery = query + " after:" + lastDate;
+            }
+            List<GmailMessageSummary> messages = gmail.listMessages(effectiveQuery, limit);
             fetched = messages.size();
+            long throttleMs = calculateThrottleDelayMs(connector);
 
             for (GmailMessageSummary msg : messages) {
+                throttle(throttleMs);
                 try {
                     InputStream eml = gmail.fetchRawMessage(msg.id());
-                    ExternalIngestRequest req = buildMailRequest(profile, connector, msg.id(), msg.subject(), eml);
+                    ExternalIngestRequest req = buildMailRequest(profile, connector, msg.id(), msg.subject(), eml, "inbox");
                     req.getMetadata().put("internetMessageId", msg.id());
                     req.getMetadata().put("gmailThreadId", msg.threadId());
 
@@ -385,6 +586,11 @@ public class IngestSchedulerService {
                 } catch (Exception e) {
                     errors.add("Gmail " + msg.id() + ": " + e.getMessage());
                 }
+            }
+            // Save current date as checkpoint (Gmail after: uses YYYY/MM/DD)
+            if (fetched > 0) {
+                saveSimpleCheckpoint(profile.getProfileId(), "gmail",
+                        java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd")));
             }
         } catch (Exception e) {
             errors.add("Gmail connection failed: " + e.getMessage());
@@ -403,14 +609,20 @@ public class IngestSchedulerService {
         int fetched = 0, imported = 0;
         try {
             M365MailConnectorAdapter m365 = new M365MailConnectorAdapter(token);
-            List<M365MessageSummary> messages = m365.listMessages(
-                    folderId != null ? folderId : "inbox", limit, null);
+            String mailboxScope = folderId != null ? folderId : "inbox";
+            // Use checkpoint to filter by receivedDateTime
+            String lastDateTime = loadSimpleCheckpoint(profile.getProfileId(), "m365mail." + mailboxScope);
+            String filter = lastDateTime != null ? "receivedDateTime gt " + lastDateTime : null;
+            List<M365MessageSummary> messages = m365.listMessages(mailboxScope, limit, filter);
             fetched = messages.size();
+            long throttleMs = calculateThrottleDelayMs(connector);
 
             for (M365MessageSummary msg : messages) {
+                throttle(throttleMs);
                 try {
                     InputStream eml = m365.fetchMimeMessage(msg.id());
-                    ExternalIngestRequest req = buildMailRequest(profile, connector, msg.id(), msg.subject(), eml);
+                    String mailbox = folderId != null ? folderId : "inbox";
+                    ExternalIngestRequest req = buildMailRequest(profile, connector, msg.id(), msg.subject(), eml, mailbox);
                     if (msg.internetMessageId() != null) req.getMetadata().put("internetMessageId", msg.internetMessageId());
 
                     ExternalIngestResult result = canonicalImportService.executeMailImport(callContext, req);
@@ -419,6 +631,11 @@ public class IngestSchedulerService {
                 } catch (Exception e) {
                     errors.add("M365 " + msg.id() + ": " + e.getMessage());
                 }
+            }
+            // Save current ISO timestamp as checkpoint
+            if (fetched > 0) {
+                saveSimpleCheckpoint(profile.getProfileId(), "m365mail." + mailboxScope,
+                        java.time.Instant.now().toString());
             }
         } catch (Exception e) {
             errors.add("M365 Mail connection failed: " + e.getMessage());
@@ -437,10 +654,19 @@ public class IngestSchedulerService {
         int fetched = 0, imported = 0;
         try {
             NotionConnectorAdapter notion = new NotionConnectorAdapter(token);
+            String lastEditedCheckpoint = loadSimpleCheckpoint(profile.getProfileId(), "notion");
             List<NotionPageSummary> pages = notion.searchPages(query, limit);
             fetched = pages.size();
+            String highWaterEditedTime = lastEditedCheckpoint;
+            long throttleMs = calculateThrottleDelayMs(connector);
 
             for (NotionPageSummary page : pages) {
+                throttle(throttleMs);
+                // Skip pages not modified since last checkpoint
+                if (lastEditedCheckpoint != null && page.lastEditedTime() != null
+                        && page.lastEditedTime().compareTo(lastEditedCheckpoint) <= 0) {
+                    continue;
+                }
                 try {
                     String html = notion.fetchPageAsHtml(page.id());
 
@@ -461,8 +687,10 @@ public class IngestSchedulerService {
                     metadata.put("parentPageId", page.parentId());
                     metadata.put("workspaceId", connector.getTenantId());
 
-                    // Fetch file attachments
+                    // Fetch file attachments — separate binary data from persisted metadata
+                    // to prevent multi-MB base64 blobs from leaking into externalContext
                     List<NotionFile> files = notion.extractFiles(page.id());
+                    List<byte[]> attachmentBinaries = new ArrayList<>();
                     if (!files.isEmpty()) {
                         List<Map<String, Object>> attachments = new ArrayList<>();
                         for (NotionFile f : files) {
@@ -473,8 +701,9 @@ public class IngestSchedulerService {
                                 att.put("attachmentId", f.blockId());
                                 att.put("filename", f.name());
                                 att.put("mimeType", f.type().equals("image") ? "image/png" : "application/octet-stream");
-                                att.put("contentBase64", java.util.Base64.getEncoder().encodeToString(baos.toByteArray()));
+                                // Binary kept in separate list; NOT in the metadata map
                                 attachments.add(att);
+                                attachmentBinaries.add(baos.toByteArray());
                             } catch (Exception e) {
                                 errors.add("Notion file " + f.name() + ": " + e.getMessage());
                             }
@@ -483,12 +712,43 @@ public class IngestSchedulerService {
                     }
                     req.setMetadata(metadata);
 
+                    // Inject contentBase64 transiently for executeNoteImport to consume,
+                    // then strip it so it is never persisted to externalContext
+                    if (!attachmentBinaries.isEmpty()) {
+                        @SuppressWarnings("unchecked")
+                        List<Map<String, Object>> attList = (List<Map<String, Object>>) metadata.get("attachments");
+                        for (int ai = 0; ai < attList.size() && ai < attachmentBinaries.size(); ai++) {
+                            attList.get(ai).put("contentBase64",
+                                    java.util.Base64.getEncoder().encodeToString(attachmentBinaries.get(ai)));
+                        }
+                    }
+
                     ExternalIngestResult result = canonicalImportService.executeNoteImport(callContext, req);
+
+                    // Strip contentBase64 after import (defense in depth — CanonicalImportServiceImpl
+                    // also strips via stripBinaryContent, but this ensures the scheduler's reference is clean)
+                    if (!attachmentBinaries.isEmpty()) {
+                        @SuppressWarnings("unchecked")
+                        List<Map<String, Object>> attList = (List<Map<String, Object>>) metadata.get("attachments");
+                        for (Map<String, Object> att : attList) {
+                            att.remove("contentBase64");
+                        }
+                    }
+
+                    if (result.isSuccess() || result.skipped()) {
+                        if (page.lastEditedTime() != null
+                                && (highWaterEditedTime == null || page.lastEditedTime().compareTo(highWaterEditedTime) > 0)) {
+                            highWaterEditedTime = page.lastEditedTime();
+                        }
+                    }
                     if (result.isSuccess()) imported++;
                     else if (!result.skipped()) errors.add("Notion " + page.id() + ": " + String.join(", ", result.errors()));
                 } catch (Exception e) {
                     errors.add("Notion page " + page.id() + ": " + e.getMessage());
                 }
+            }
+            if (highWaterEditedTime != null && !highWaterEditedTime.equals(lastEditedCheckpoint)) {
+                saveSimpleCheckpoint(profile.getProfileId(), "notion", highWaterEditedTime);
             }
         } catch (Exception e) {
             errors.add("Notion connection failed: " + e.getMessage());
@@ -507,10 +767,31 @@ public class IngestSchedulerService {
         int fetched = 0, imported = 0;
         try {
             SalesforceConnectorAdapter sf = new SalesforceConnectorAdapter(connector.getEndpoint(), token);
-            List<SalesforceConnectorAdapter.SalesforceRecord> records = sf.query(soql);
+            // Inject checkpoint filter into SOQL — only when query has no WHERE clause
+            String lastModified = loadSimpleCheckpoint(profile.getProfileId(), "salesforce");
+            String effectiveSoql = soql;
+            if (lastModified != null) {
+                String lower = soql.toLowerCase();
+                if (!lower.contains("where")) {
+                    // Find LIMIT/ORDER BY/GROUP BY insertion point (case-insensitive)
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                            "\\b(limit|order\\s+by|group\\s+by)\\b", java.util.regex.Pattern.CASE_INSENSITIVE)
+                            .matcher(soql);
+                    String whereClause = " WHERE LastModifiedDate > " + lastModified;
+                    if (m.find()) {
+                        effectiveSoql = soql.substring(0, m.start()) + whereClause + " " + soql.substring(m.start());
+                    } else {
+                        effectiveSoql = soql + whereClause;
+                    }
+                }
+                // If user already has WHERE, trust their query — dedupe handles the rest
+            }
+            List<SalesforceConnectorAdapter.SalesforceRecord> records = sf.query(effectiveSoql);
             fetched = records.size();
+            long throttleMs = calculateThrottleDelayMs(connector);
 
             for (var rec : records) {
+                throttle(throttleMs);
                 try {
                     String json = new com.fasterxml.jackson.databind.ObjectMapper()
                             .writerWithDefaultPrettyPrinter().writeValueAsString(rec.fields());
@@ -539,6 +820,10 @@ public class IngestSchedulerService {
                     errors.add("SF record " + rec.id() + ": " + e.getMessage());
                 }
             }
+            if (fetched > 0) {
+                saveSimpleCheckpoint(profile.getProfileId(), "salesforce",
+                        java.time.Instant.now().toString());
+            }
         } catch (Exception e) {
             errors.add("Salesforce connection failed: " + e.getMessage());
         }
@@ -556,41 +841,92 @@ public class IngestSchedulerService {
         int fetched = 0, imported = 0;
         try {
             SlackConnectorAdapter slack = new SlackConnectorAdapter(token);
-            List<SlackMessage> messages = slack.getHistory(channelId, null, limit);
+            String lastTs = loadSimpleCheckpoint(profile.getProfileId(), "slack." + channelId);
+            List<SlackMessage> messages = slack.getHistory(channelId, lastTs, limit);
             fetched = messages.size();
+            String highWaterTs = lastTs;
+            long throttleMs = calculateThrottleDelayMs(connector);
 
             for (SlackMessage msg : messages) {
-                // Import each file attachment from the message
-                for (SlackFile file : msg.files()) {
-                    if (file.urlPrivateDownload() == null) continue;
-                    try {
-                        InputStream content = slack.downloadFile(file.urlPrivateDownload());
+                throttle(throttleMs);
+                try {
+                    // Import message itself as a chat_message document
+                    String messageText = msg.text() != null ? msg.text() : "";
+                    ExternalIngestRequest msgReq = new ExternalIngestRequest();
+                    msgReq.setProfileId(profile.getProfileId());
+                    msgReq.setConnectorId(connector.getConnectorId());
+                    msgReq.setRepositoryId(profile.getRepositoryId());
+                    msgReq.setSourceObjectId(channelId + "/" + msg.ts());
+                    msgReq.setSourceObjectType("chat_message");
+                    msgReq.setFileName("slack-" + msg.ts().replace(".", "-") + ".txt");
+                    msgReq.setMimeType("text/plain");
+                    msgReq.setContentStream(new ByteArrayInputStream(messageText.getBytes(StandardCharsets.UTF_8)));
+                    msgReq.setExecutionMode("scheduled");
+                    Map<String, Object> msgMeta = new LinkedHashMap<>();
+                    msgMeta.put("channelId", channelId);
+                    msgMeta.put("threadId", msg.threadTs());
+                    msgMeta.put("messageId", msg.ts());
+                    msgMeta.put("senderId", msg.userId());
+                    msgMeta.put("messageText", truncateForContext(messageText));
+                    msgMeta.put("workspaceId", connector.getTenantId());
+                    msgReq.setMetadata(msgMeta);
 
-                        ExternalIngestRequest req = new ExternalIngestRequest();
-                        req.setProfileId(profile.getProfileId());
-                        req.setConnectorId(connector.getConnectorId());
-                        req.setRepositoryId(profile.getRepositoryId());
-                        req.setSourceObjectId(file.id());
-                        req.setSourceObjectType("attachment");
-                        req.setFileName(file.name());
-                        req.setMimeType(file.mimeType());
-                        req.setContentStream(content);
-                        req.setExecutionMode("scheduled");
-
-                        Map<String, Object> metadata = new LinkedHashMap<>();
-                        metadata.put("channelId", channelId);
-                        metadata.put("threadId", msg.threadTs());
-                        metadata.put("messageId", msg.ts());
-                        metadata.put("workspaceId", connector.getTenantId());
-                        req.setMetadata(metadata);
-
-                        ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
-                        if (result.isSuccess()) imported++;
-                        else if (!result.skipped()) errors.add("Slack file " + file.id() + ": " + String.join(", ", result.errors()));
-                    } catch (Exception e) {
-                        errors.add("Slack file " + file.id() + ": " + e.getMessage());
+                    ExternalIngestResult msgResult = canonicalImportService.executeChatContextImport(callContext, msgReq);
+                    String parentObjectId = msgResult.isSuccess() ? msgResult.objectId() : null;
+                    if (msgResult.isSuccess() || msgResult.skipped()) {
+                        if (highWaterTs == null || msg.ts().compareTo(highWaterTs) > 0) {
+                            highWaterTs = msg.ts();
+                        }
                     }
+                    if (msgResult.isSuccess()) imported++;
+                    else if (!msgResult.skipped()) errors.add("Slack msg " + msg.ts() + ": " + String.join(", ", msgResult.errors()));
+
+                    // Import file attachments as children
+                    for (SlackFile file : msg.files()) {
+                        if (file.urlPrivateDownload() == null) continue;
+                        try {
+                            InputStream content = slack.downloadFile(file.urlPrivateDownload());
+                            ExternalIngestRequest req = new ExternalIngestRequest();
+                            req.setProfileId(profile.getProfileId());
+                            req.setConnectorId(connector.getConnectorId());
+                            req.setRepositoryId(profile.getRepositoryId());
+                            req.setSourceObjectId(file.id());
+                            req.setSourceObjectType("attachment");
+                            req.setFileName(file.name());
+                            req.setMimeType(file.mimeType());
+                            req.setContentStream(content);
+                            req.setExecutionMode("scheduled");
+                            Map<String, Object> fileMeta = new LinkedHashMap<>();
+                            fileMeta.put("channelId", channelId);
+                            fileMeta.put("threadId", msg.threadTs());
+                            fileMeta.put("messageId", msg.ts());
+                            fileMeta.put("senderId", msg.userId());
+                            fileMeta.put("messageText", truncateForContext(messageText));
+                            fileMeta.put("workspaceId", connector.getTenantId());
+                            req.setMetadata(fileMeta);
+
+                            ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
+                            if (result.isSuccess()) {
+                                imported++;
+                                // Link file to parent message
+                                if (parentObjectId != null) {
+                                    createRelationshipSafe(callContext, profile.getRepositoryId(),
+                                            parentObjectId, result.objectId(), errors);
+                                }
+                            } else if (!result.skipped()) {
+                                errors.add("Slack file " + file.id() + ": " + String.join(", ", result.errors()));
+                            }
+                        } catch (Exception e) {
+                            errors.add("Slack file " + file.id() + ": " + e.getMessage());
+                        }
+                    }
+                } catch (Exception e) {
+                    errors.add("Slack msg " + msg.ts() + ": " + e.getMessage());
                 }
+            }
+            // Save checkpoint after batch
+            if (highWaterTs != null && !highWaterTs.equals(lastTs)) {
+                saveSimpleCheckpoint(profile.getProfileId(), "slack." + channelId, highWaterTs);
             }
         } catch (Exception e) {
             errors.add("Slack connection failed: " + e.getMessage());
@@ -611,34 +947,92 @@ public class IngestSchedulerService {
             TeamsConnectorAdapter teams = new TeamsConnectorAdapter(token);
             List<TeamsMessage> messages = teams.getMessages(teamId, channelId, limit);
             fetched = messages.size();
+            String lastDateTime = loadSimpleCheckpoint(profile.getProfileId(), "teams." + teamId + "." + channelId);
+            String highWaterDateTime = lastDateTime;
+            long throttleMs = calculateThrottleDelayMs(connector);
 
             for (TeamsMessage msg : messages) {
-                for (TeamsFile file : msg.attachments()) {
-                    if (file.contentUrl() == null) continue;
-                    try {
-                        InputStream content = teams.downloadFile(file.contentUrl());
-                        ExternalIngestRequest req = new ExternalIngestRequest();
-                        req.setProfileId(profile.getProfileId());
-                        req.setConnectorId(connector.getConnectorId());
-                        req.setRepositoryId(profile.getRepositoryId());
-                        req.setSourceObjectId(file.id());
-                        req.setSourceObjectType("attachment");
-                        req.setFileName(file.name());
-                        req.setMimeType(file.contentType());
-                        req.setContentStream(content);
-                        req.setExecutionMode("scheduled");
-                        Map<String, Object> metadata = new LinkedHashMap<>();
-                        metadata.put("channelId", channelId);
-                        metadata.put("messageId", msg.id());
-                        metadata.put("workspaceId", teamId);
-                        req.setMetadata(metadata);
-                        ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
-                        if (result.isSuccess()) imported++;
-                        else if (!result.skipped()) errors.add("Teams " + file.id() + ": " + String.join(", ", result.errors()));
-                    } catch (Exception e) {
-                        errors.add("Teams file " + file.id() + ": " + e.getMessage());
-                    }
+                throttle(throttleMs);
+                // Skip messages older than checkpoint
+                if (lastDateTime != null && msg.createdDateTime() != null
+                        && msg.createdDateTime().compareTo(lastDateTime) <= 0) {
+                    continue;
                 }
+                try {
+                    // Import message itself as a chat_message document
+                    String messageBody = msg.body() != null ? msg.body() : "";
+                    ExternalIngestRequest msgReq = new ExternalIngestRequest();
+                    msgReq.setProfileId(profile.getProfileId());
+                    msgReq.setConnectorId(connector.getConnectorId());
+                    msgReq.setRepositoryId(profile.getRepositoryId());
+                    msgReq.setSourceObjectId(channelId + "/" + msg.id());
+                    msgReq.setSourceObjectType("chat_message");
+                    msgReq.setFileName("teams-" + msg.id() + ".html");
+                    msgReq.setMimeType("text/html");
+                    msgReq.setContentStream(new ByteArrayInputStream(messageBody.getBytes(StandardCharsets.UTF_8)));
+                    msgReq.setExecutionMode("scheduled");
+                    Map<String, Object> msgMeta = new LinkedHashMap<>();
+                    msgMeta.put("channelId", channelId);
+                    msgMeta.put("messageId", msg.id());
+                    msgMeta.put("senderId", msg.from());
+                    msgMeta.put("messageText", truncateForContext(messageBody));
+                    msgMeta.put("workspaceId", teamId);
+                    if (msg.replyToId() != null) msgMeta.put("threadId", msg.replyToId());
+                    msgReq.setMetadata(msgMeta);
+
+                    ExternalIngestResult msgResult = canonicalImportService.executeChatContextImport(callContext, msgReq);
+                    String parentObjectId = msgResult.isSuccess() ? msgResult.objectId() : null;
+                    if (msgResult.isSuccess() || msgResult.skipped()) {
+                        if (msg.createdDateTime() != null && (highWaterDateTime == null || msg.createdDateTime().compareTo(highWaterDateTime) > 0)) {
+                            highWaterDateTime = msg.createdDateTime();
+                        }
+                    }
+                    if (msgResult.isSuccess()) imported++;
+                    else if (!msgResult.skipped()) errors.add("Teams msg " + msg.id() + ": " + String.join(", ", msgResult.errors()));
+
+                    // Import file attachments as children
+                    for (TeamsFile file : msg.attachments()) {
+                        if (file.contentUrl() == null) continue;
+                        try {
+                            InputStream content = teams.downloadFile(file.contentUrl());
+                            ExternalIngestRequest req = new ExternalIngestRequest();
+                            req.setProfileId(profile.getProfileId());
+                            req.setConnectorId(connector.getConnectorId());
+                            req.setRepositoryId(profile.getRepositoryId());
+                            req.setSourceObjectId(file.id());
+                            req.setSourceObjectType("attachment");
+                            req.setFileName(file.name());
+                            req.setMimeType(file.contentType());
+                            req.setContentStream(content);
+                            req.setExecutionMode("scheduled");
+                            Map<String, Object> fileMeta = new LinkedHashMap<>();
+                            fileMeta.put("channelId", channelId);
+                            fileMeta.put("messageId", msg.id());
+                            fileMeta.put("senderId", msg.from());
+                            fileMeta.put("messageText", truncateForContext(messageBody));
+                            fileMeta.put("workspaceId", teamId);
+                            if (msg.replyToId() != null) fileMeta.put("threadId", msg.replyToId());
+                            req.setMetadata(fileMeta);
+                            ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
+                            if (result.isSuccess()) {
+                                imported++;
+                                if (parentObjectId != null) {
+                                    createRelationshipSafe(callContext, profile.getRepositoryId(),
+                                            parentObjectId, result.objectId(), errors);
+                                }
+                            } else if (!result.skipped()) {
+                                errors.add("Teams " + file.id() + ": " + String.join(", ", result.errors()));
+                            }
+                        } catch (Exception e) {
+                            errors.add("Teams file " + file.id() + ": " + e.getMessage());
+                        }
+                    }
+                } catch (Exception e) {
+                    errors.add("Teams msg " + msg.id() + ": " + e.getMessage());
+                }
+            }
+            if (highWaterDateTime != null && !highWaterDateTime.equals(lastDateTime)) {
+                saveSimpleCheckpoint(profile.getProfileId(), "teams." + teamId + "." + channelId, highWaterDateTime);
             }
         } catch (Exception e) {
             errors.add("Teams connection failed: " + e.getMessage());
@@ -657,39 +1051,224 @@ public class IngestSchedulerService {
         int fetched = 0, imported = 0;
         try {
             MattermostConnectorAdapter mm = new MattermostConnectorAdapter(connector.getEndpoint(), token);
+            String lastCreateAt = loadSimpleCheckpoint(profile.getProfileId(), "mattermost." + channelId);
             List<MattermostPost> posts = mm.getPosts(channelId, limit);
             fetched = posts.size();
+            long highWaterCreateAt = 0;
+            try {
+                if (lastCreateAt != null) highWaterCreateAt = Long.parseLong(lastCreateAt);
+            } catch (NumberFormatException e) {
+                logger.warn("Invalid Mattermost checkpoint '{}', resetting", lastCreateAt);
+            }
+            long throttleMs = calculateThrottleDelayMs(connector);
 
             for (MattermostPost post : posts) {
-                for (String fileId : post.fileIds()) {
-                    try {
-                        MattermostFile fileInfo = mm.getFileInfo(fileId);
-                        InputStream content = mm.downloadFile(fileId);
-                        ExternalIngestRequest req = new ExternalIngestRequest();
-                        req.setProfileId(profile.getProfileId());
-                        req.setConnectorId(connector.getConnectorId());
-                        req.setRepositoryId(profile.getRepositoryId());
-                        req.setSourceObjectId(fileId);
-                        req.setSourceObjectType("attachment");
-                        req.setFileName(fileInfo.name());
-                        req.setMimeType(fileInfo.mimeType());
-                        req.setContentStream(content);
-                        req.setExecutionMode("scheduled");
-                        Map<String, Object> metadata = new LinkedHashMap<>();
-                        metadata.put("channelId", channelId);
-                        metadata.put("messageId", post.id());
-                        metadata.put("workspaceId", connector.getTenantId());
-                        req.setMetadata(metadata);
-                        ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
-                        if (result.isSuccess()) imported++;
-                        else if (!result.skipped()) errors.add("MM " + fileId + ": " + String.join(", ", result.errors()));
-                    } catch (Exception e) {
-                        errors.add("MM file " + fileId + ": " + e.getMessage());
+                throttle(throttleMs);
+                // Skip posts older than checkpoint
+                if (post.createAt() > 0 && post.createAt() <= highWaterCreateAt) continue;
+                try {
+                    // Import message itself as a chat_message document
+                    String postText = post.message() != null ? post.message() : "";
+                    ExternalIngestRequest msgReq = new ExternalIngestRequest();
+                    msgReq.setProfileId(profile.getProfileId());
+                    msgReq.setConnectorId(connector.getConnectorId());
+                    msgReq.setRepositoryId(profile.getRepositoryId());
+                    msgReq.setSourceObjectId(channelId + "/" + post.id());
+                    msgReq.setSourceObjectType("chat_message");
+                    msgReq.setFileName("mm-" + post.id() + ".txt");
+                    msgReq.setMimeType("text/plain");
+                    msgReq.setContentStream(new ByteArrayInputStream(postText.getBytes(StandardCharsets.UTF_8)));
+                    msgReq.setExecutionMode("scheduled");
+                    Map<String, Object> msgMeta = new LinkedHashMap<>();
+                    msgMeta.put("channelId", channelId);
+                    msgMeta.put("messageId", post.id());
+                    msgMeta.put("senderId", post.userId());
+                    msgMeta.put("messageText", truncateForContext(postText));
+                    msgMeta.put("workspaceId", connector.getTenantId());
+                    if (post.rootId() != null && !post.rootId().isEmpty()) msgMeta.put("threadId", post.rootId());
+                    msgReq.setMetadata(msgMeta);
+
+                    ExternalIngestResult msgResult = canonicalImportService.executeChatContextImport(callContext, msgReq);
+                    String parentObjectId = msgResult.isSuccess() ? msgResult.objectId() : null;
+                    if (msgResult.isSuccess() || msgResult.skipped()) {
+                        if (post.createAt() > highWaterCreateAt) highWaterCreateAt = post.createAt();
                     }
+                    if (msgResult.isSuccess()) imported++;
+                    else if (!msgResult.skipped()) errors.add("MM msg " + post.id() + ": " + String.join(", ", msgResult.errors()));
+
+                    // Import file attachments as children
+                    for (String fileId : post.fileIds()) {
+                        try {
+                            MattermostFile fileInfo = mm.getFileInfo(fileId);
+                            InputStream content = mm.downloadFile(fileId);
+                            ExternalIngestRequest req = new ExternalIngestRequest();
+                            req.setProfileId(profile.getProfileId());
+                            req.setConnectorId(connector.getConnectorId());
+                            req.setRepositoryId(profile.getRepositoryId());
+                            req.setSourceObjectId(fileId);
+                            req.setSourceObjectType("attachment");
+                            req.setFileName(fileInfo.name());
+                            req.setMimeType(fileInfo.mimeType());
+                            req.setContentStream(content);
+                            req.setExecutionMode("scheduled");
+                            Map<String, Object> fileMeta = new LinkedHashMap<>();
+                            fileMeta.put("channelId", channelId);
+                            fileMeta.put("messageId", post.id());
+                            fileMeta.put("senderId", post.userId());
+                            fileMeta.put("messageText", truncateForContext(postText));
+                            fileMeta.put("workspaceId", connector.getTenantId());
+                            if (post.rootId() != null && !post.rootId().isEmpty()) fileMeta.put("threadId", post.rootId());
+                            req.setMetadata(fileMeta);
+                            ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
+                            if (result.isSuccess()) {
+                                imported++;
+                                if (parentObjectId != null) {
+                                    createRelationshipSafe(callContext, profile.getRepositoryId(),
+                                            parentObjectId, result.objectId(), errors);
+                                }
+                            } else if (!result.skipped()) {
+                                errors.add("MM " + fileId + ": " + String.join(", ", result.errors()));
+                            }
+                        } catch (Exception e) {
+                            errors.add("MM file " + fileId + ": " + e.getMessage());
+                        }
+                    }
+                } catch (Exception e) {
+                    errors.add("MM post " + post.id() + ": " + e.getMessage());
                 }
+            }
+            long initialHighWater = 0;
+            try {
+                if (lastCreateAt != null) initialHighWater = Long.parseLong(lastCreateAt);
+            } catch (NumberFormatException ignored) { /* already warned above */ }
+            if (highWaterCreateAt > initialHighWater) {
+                saveSimpleCheckpoint(profile.getProfileId(), "mattermost." + channelId, String.valueOf(highWaterCreateAt));
             }
         } catch (Exception e) {
             errors.add("Mattermost connection failed: " + e.getMessage());
+        }
+        return new FetchResult(fetched, imported, errors);
+    }
+
+    // ── Box fetch ─────────────────────────────────────────────────
+
+    public FetchResult executeBoxFetch(CallContext callContext, ImportProfileDefinition profile,
+                                       ConnectorDefinition connector, String folderId, int limit) {
+        String token = resolvePassword(connector);
+        if (token == null) return new FetchResult(0, 0, List.of("No token for Box connector"));
+
+        List<String> errors = new ArrayList<>();
+        int fetched = 0, imported = 0;
+        try {
+            var box = new jp.aegif.nemaki.rest.ingest.fileshare.BoxConnectorAdapter(token);
+            String lastModified = loadSimpleCheckpoint(profile.getProfileId(), "box." + folderId);
+            var files = box.listFiles(folderId, limit);
+            fetched = files.size();
+            long throttleMs = calculateThrottleDelayMs(connector);
+            String highWaterModified = lastModified;
+
+            for (var file : files) {
+                throttle(throttleMs);
+                // Skip files not modified since checkpoint
+                if (lastModified != null && file.modifiedAt() != null
+                        && file.modifiedAt().compareTo(lastModified) <= 0) continue;
+
+                try {
+                    InputStream content = box.downloadFile(file.id());
+                    ExternalIngestRequest req = new ExternalIngestRequest();
+                    req.setProfileId(profile.getProfileId());
+                    req.setConnectorId(connector.getConnectorId());
+                    req.setRepositoryId(profile.getRepositoryId());
+                    req.setSourceObjectId(file.id());
+                    req.setSourceObjectType("file");
+                    req.setFileName(file.name());
+                    req.setContentStream(content);
+                    req.setExecutionMode("scheduled");
+                    Map<String, Object> metadata = new LinkedHashMap<>();
+                    metadata.put("boxFileId", file.id());
+                    metadata.put("boxParentId", file.parentId());
+                    req.setMetadata(metadata);
+
+                    ExternalIngestResult result = canonicalImportService.execute(callContext, req);
+                    if (result.isSuccess()) {
+                        imported++;
+                        if (file.modifiedAt() != null
+                                && (highWaterModified == null || file.modifiedAt().compareTo(highWaterModified) > 0)) {
+                            highWaterModified = file.modifiedAt();
+                        }
+                    } else if (!result.skipped()) {
+                        errors.add("Box " + file.id() + ": " + String.join(", ", result.errors()));
+                    }
+                } catch (Exception e) {
+                    errors.add("Box file " + file.id() + ": " + e.getMessage());
+                }
+            }
+            if (highWaterModified != null && !highWaterModified.equals(lastModified)) {
+                saveSimpleCheckpoint(profile.getProfileId(), "box." + folderId, highWaterModified);
+            }
+        } catch (Exception e) {
+            errors.add("Box connection failed: " + e.getMessage());
+        }
+        return new FetchResult(fetched, imported, errors);
+    }
+
+    // ── Dropbox fetch ────────────────────────────────────────────────
+
+    public FetchResult executeDropboxFetch(CallContext callContext, ImportProfileDefinition profile,
+                                            ConnectorDefinition connector, String folderPath, int limit) {
+        String token = resolvePassword(connector);
+        if (token == null) return new FetchResult(0, 0, List.of("No token for Dropbox connector"));
+
+        List<String> errors = new ArrayList<>();
+        int fetched = 0, imported = 0;
+        try {
+            var dropbox = new jp.aegif.nemaki.rest.ingest.fileshare.DropboxConnectorAdapter(token);
+            String lastModified = loadSimpleCheckpoint(profile.getProfileId(), "dropbox");
+            var files = dropbox.listFiles(folderPath, limit);
+            fetched = files.size();
+            long throttleMs = calculateThrottleDelayMs(connector);
+            String highWaterModified = lastModified;
+
+            for (var file : files) {
+                throttle(throttleMs);
+                if (lastModified != null && file.serverModified() != null
+                        && file.serverModified().compareTo(lastModified) <= 0) continue;
+
+                try {
+                    InputStream content = dropbox.downloadFile(file.pathDisplay());
+                    ExternalIngestRequest req = new ExternalIngestRequest();
+                    req.setProfileId(profile.getProfileId());
+                    req.setConnectorId(connector.getConnectorId());
+                    req.setRepositoryId(profile.getRepositoryId());
+                    req.setSourceObjectId(file.id());
+                    req.setSourceObjectType("file");
+                    req.setFileName(file.name());
+                    req.setContentStream(content);
+                    req.setExecutionMode("scheduled");
+                    Map<String, Object> metadata = new LinkedHashMap<>();
+                    metadata.put("dropboxPath", file.pathDisplay());
+                    metadata.put("dropboxFileId", file.id());
+                    req.setMetadata(metadata);
+
+                    ExternalIngestResult result = canonicalImportService.execute(callContext, req);
+                    if (result.isSuccess()) {
+                        imported++;
+                        if (file.serverModified() != null
+                                && (highWaterModified == null || file.serverModified().compareTo(highWaterModified) > 0)) {
+                            highWaterModified = file.serverModified();
+                        }
+                    } else if (!result.skipped()) {
+                        errors.add("Dropbox " + file.id() + ": " + String.join(", ", result.errors()));
+                    }
+                } catch (Exception e) {
+                    errors.add("Dropbox file " + file.id() + ": " + e.getMessage());
+                }
+            }
+            if (highWaterModified != null && !highWaterModified.equals(lastModified)) {
+                saveSimpleCheckpoint(profile.getProfileId(), "dropbox", highWaterModified);
+            }
+        } catch (Exception e) {
+            errors.add("Dropbox connection failed: " + e.getMessage());
         }
         return new FetchResult(fetched, imported, errors);
     }
@@ -703,7 +1282,24 @@ public class IngestSchedulerService {
                                     ConnectorDefinition connector, Map<String, String> params) {
         SourceArchetype archetype = connector.getSourceArchetype();
         String system = connector.getSourceSystem();
-        int limit = params.containsKey("limit") ? Integer.parseInt(params.get("limit")) : 50;
+        int limit = 50;
+        try {
+            if (params.containsKey("limit")) {
+                limit = Math.max(1, Math.min(500, Integer.parseInt(params.get("limit"))));
+            }
+        } catch (NumberFormatException e) {
+            logger.warn("Invalid limit parameter '{}', using default 50", params.get("limit"));
+        }
+        // Enforce rateLimitRpm: cap limit to avoid exceeding the connector's rate limit
+        // in a single fetch cycle. Each fetched item typically requires 1-2 API calls.
+        if (connector.getRateLimitRpm() != null && connector.getRateLimitRpm() > 0) {
+            int maxPerCycle = connector.getRateLimitRpm() / 2; // conservative: ~2 API calls per item
+            if (limit > maxPerCycle) {
+                logger.debug("Rate limit: capping fetch limit from {} to {} for connector {}",
+                        limit, maxPerCycle, connector.getConnectorId());
+                limit = Math.max(1, maxPerCycle);
+            }
+        }
 
         return switch (archetype) {
             case MESSAGE_CONTEXT -> switch (system != null ? system : "") {
@@ -711,28 +1307,49 @@ public class IngestSchedulerService {
                         params.getOrDefault("query", "in:inbox is:unread"), limit);
                 case "m365_mail" -> executeM365MailFetch(callContext, profile, connector,
                         params.getOrDefault("folderId", "inbox"), limit);
-                default -> executeImapFetch(callContext, profile, connector,
+                case "imap" -> executeImapFetch(callContext, profile, connector,
                         params.getOrDefault("mailbox", "INBOX"), limit);
+                default -> new FetchResult(0, 0, List.of(
+                        "Unknown sourceSystem '" + system + "' for MESSAGE_CONTEXT. Supported: imap, gmail_mail, m365_mail"));
             };
-            case COMPOUND_NOTE -> executeNotionFetch(callContext, profile, connector,
-                    params.getOrDefault("query", null), limit);
-            case BUSINESS_RECORD -> executeSalesforceFetch(callContext, profile, connector,
-                    params.getOrDefault("soql", "SELECT Id, Name FROM Account LIMIT " + limit));
+            case COMPOUND_NOTE -> switch (system != null ? system : "") {
+                case "notion" -> executeNotionFetch(callContext, profile, connector,
+                        params.getOrDefault("query", null), limit);
+                default -> new FetchResult(0, 0, List.of(
+                        "Unknown sourceSystem '" + system + "' for COMPOUND_NOTE. Supported: notion"));
+            };
+            case BUSINESS_RECORD -> switch (system != null ? system : "") {
+                case "salesforce" -> executeSalesforceFetch(callContext, profile, connector,
+                        params.getOrDefault("soql", "SELECT Id, Name FROM Account LIMIT " + limit));
+                default -> new FetchResult(0, 0, List.of(
+                        "Unknown sourceSystem '" + system + "' for BUSINESS_RECORD. Supported: salesforce"));
+            };
             case CHAT_CONTEXT -> switch (system != null ? system : "") {
+                case "slack" -> executeSlackFetch(callContext, profile, connector,
+                        params.getOrDefault("channelId", ""), limit);
                 case "teams" -> executeTeamsFetch(callContext, profile, connector,
                         params.getOrDefault("teamId", ""), params.getOrDefault("channelId", ""), limit);
                 case "mattermost" -> executeMattermostFetch(callContext, profile, connector,
                         params.getOrDefault("channelId", ""), limit);
-                default -> executeSlackFetch(callContext, profile, connector,
-                        params.getOrDefault("channelId", ""), limit);
+                default -> new FetchResult(0, 0, List.of(
+                        "Unknown sourceSystem '" + system + "' for CHAT_CONTEXT. Supported: slack, teams, mattermost"));
             };
-            case FILE_SHARE -> new FetchResult(0, 0, List.of(
-                    "FILE_SHARE uses cloud drive sync (push/pull), not scheduled fetch"));
+            case FILE_SHARE -> switch (system != null ? system : "") {
+                case "box" -> executeBoxFetch(callContext, profile, connector,
+                        params.getOrDefault("folderId", "0"), limit);
+                case "dropbox" -> executeDropboxFetch(callContext, profile, connector,
+                        params.getOrDefault("folderPath", ""), limit);
+                case "google_drive", "onedrive" -> new FetchResult(0, 0, List.of(
+                        system + " uses cloud drive sync (push/pull), not scheduled fetch"));
+                default -> new FetchResult(0, 0, List.of(
+                        "Unknown sourceSystem '" + system + "' for FILE_SHARE. Supported: box, dropbox, google_drive, onedrive"));
+            };
         };
     }
 
     private ExternalIngestRequest buildMailRequest(ImportProfileDefinition profile, ConnectorDefinition connector,
-                                                   String sourceId, String subject, InputStream eml) {
+                                                   String sourceId, String subject, InputStream eml,
+                                                   String mailboxId) {
         ExternalIngestRequest req = new ExternalIngestRequest();
         req.setProfileId(profile.getProfileId());
         req.setConnectorId(connector.getConnectorId());
@@ -744,7 +1361,7 @@ public class IngestSchedulerService {
         req.setContentStream(eml);
         req.setExecutionMode("scheduled");
         Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("mailboxId", "inbox");
+        metadata.put("mailboxId", mailboxId != null ? mailboxId : "inbox");
         metadata.put("messageStableId", sourceId);
         req.setMetadata(metadata);
         return req;

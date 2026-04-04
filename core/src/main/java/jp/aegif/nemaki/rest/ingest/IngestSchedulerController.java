@@ -52,6 +52,7 @@ public class IngestSchedulerController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("scheduledProfiles", entries);
         response.put("count", entries.size());
+        response.put("idleProfiles", schedulerService.getIdleProfiles());
         return ResponseEntity.ok(response);
     }
 
@@ -111,9 +112,11 @@ public class IngestSchedulerController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        // Dispatch to appropriate adapter via unified method
+        // Dispatch to appropriate adapter via unified method, using persisted scope params
+        Map<String, String> params = profile.getSchedulerParams() != null
+                ? profile.getSchedulerParams() : Map.of();
         IngestSchedulerService.FetchResult fetchResult =
-                schedulerService.executeFetch(callContext, profile, connector, Map.of());
+                schedulerService.executeFetch(callContext, profile, connector, params);
 
         response.put("status", fetchResult.hasErrors() ? "partial" : "success");
         response.put("fetched", fetchResult.fetched());
@@ -125,6 +128,46 @@ public class IngestSchedulerController {
         response.put("connectorId", connector.getConnectorId());
         response.put("sourceSystem", connector.getSourceSystem());
         response.put("archetype", connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : null);
+        return ResponseEntity.ok(response);
+    }
+
+    // ── IMAP IDLE endpoints ─────────────────────────────────────────
+
+    @PostMapping("/idle/start/{profileId}")
+    public ResponseEntity<Map<String, Object>> startIdle(@PathVariable String profileId) {
+        if (!isAdmin()) return forbidden();
+        String error = schedulerService.startIdle(profileId);
+        Map<String, Object> response = new LinkedHashMap<>();
+        if (error != null) {
+            response.put("status", "error");
+            response.put("message", error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        }
+        response.put("status", "success");
+        response.put("message", "IMAP IDLE started for " + profileId);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/idle/stop/{profileId}")
+    public ResponseEntity<Map<String, Object>> stopIdle(@PathVariable String profileId) {
+        if (!isAdmin()) return forbidden();
+        String error = schedulerService.stopIdle(profileId);
+        Map<String, Object> response = new LinkedHashMap<>();
+        if (error != null) {
+            response.put("status", "error");
+            response.put("message", error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        }
+        response.put("status", "success");
+        response.put("message", "IMAP IDLE stopped for " + profileId);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/idle/status")
+    public ResponseEntity<Map<String, Object>> getIdleStatus() {
+        if (!isAdmin()) return forbidden();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("idleProfiles", schedulerService.getIdleProfiles());
         return ResponseEntity.ok(response);
     }
 

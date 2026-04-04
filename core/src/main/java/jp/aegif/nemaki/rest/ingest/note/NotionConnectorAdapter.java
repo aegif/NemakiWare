@@ -43,9 +43,14 @@ public class NotionConnectorAdapter {
      * Search for pages in the workspace.
      */
     public List<NotionPageSummary> searchPages(String query, int limit) throws Exception {
-        String body = query != null && !query.isBlank()
-                ? "{\"query\":\"" + query + "\",\"filter\":{\"value\":\"page\",\"property\":\"object\"},\"page_size\":" + limit + "}"
-                : "{\"filter\":{\"value\":\"page\",\"property\":\"object\"},\"page_size\":" + limit + "}";
+        // Build JSON body safely using ObjectMapper to prevent injection
+        var bodyNode = MAPPER.createObjectNode();
+        if (query != null && !query.isBlank()) {
+            bodyNode.put("query", query);
+        }
+        bodyNode.putObject("filter").put("value", "page").put("property", "object");
+        bodyNode.put("page_size", limit);
+        String body = MAPPER.writeValueAsString(bodyNode);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(NOTION_API + "/search"))
@@ -202,7 +207,7 @@ public class NotionConnectorAdapter {
             case "image" -> {
                 String url = block.path("image").path("file").path("url").asText(
                         block.path("image").path("external").path("url").asText(""));
-                yield "<img src=\"" + url + "\"/>\n";
+                yield "<img src=\"" + escapeHtmlAttr(url) + "\"/>\n";
             }
             default -> "<!-- unsupported block: " + type + " -->\n";
         };
@@ -212,7 +217,7 @@ public class NotionConnectorAdapter {
         if (richTextArray == null || !richTextArray.isArray()) return "";
         StringBuilder sb = new StringBuilder();
         for (JsonNode rt : richTextArray) {
-            String text = rt.path("plain_text").asText("");
+            String text = escapeHtml(rt.path("plain_text").asText(""));
             JsonNode annotations = rt.get("annotations");
             if (annotations != null) {
                 if (annotations.path("bold").asBoolean()) text = "<strong>" + text + "</strong>";
@@ -221,9 +226,22 @@ public class NotionConnectorAdapter {
                 if (annotations.path("strikethrough").asBoolean()) text = "<del>" + text + "</del>";
             }
             String href = rt.path("href").asText(null);
-            if (href != null) text = "<a href=\"" + href + "\">" + text + "</a>";
+            if (href != null) text = "<a href=\"" + escapeHtmlAttr(href) + "\">" + text + "</a>";
             sb.append(text);
         }
         return sb.toString();
+    }
+
+    /** Escape HTML text content. */
+    private static String escapeHtml(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /** Escape HTML attribute values (quotes + standard entities). */
+    private static String escapeHtmlAttr(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                .replace("\"", "&quot;").replace("'", "&#39;");
     }
 }

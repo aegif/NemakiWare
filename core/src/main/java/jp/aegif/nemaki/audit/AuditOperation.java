@@ -151,6 +151,10 @@ public enum AuditOperation {
     IMPORT_EXECUTE("importExecute", "Repository import executed"),
     EXPORT_EXECUTE("exportExecute", "Repository export executed"),
 
+    // External Ingest operations
+    EXTERNAL_INGEST("externalIngest", "External content ingested"),
+    EXTERNAL_INGEST_FAILED("externalIngestFailed", "External content ingest failed"),
+
     // Unknown operation (fallback)
     UNKNOWN("unknown", "Unknown operation");
 

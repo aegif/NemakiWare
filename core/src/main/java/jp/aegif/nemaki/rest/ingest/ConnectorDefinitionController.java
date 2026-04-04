@@ -46,12 +46,14 @@ public class ConnectorDefinitionController {
         if (archetype != null && !archetype.isBlank()) {
             try {
                 return ResponseEntity.ok(connectorDefinitionService.listByArchetype(
-                        SourceArchetype.valueOf(archetype.toUpperCase())));
+                        SourceArchetype.valueOf(archetype.toUpperCase())).stream()
+                        .map(ConnectorDefinitionController::maskSecrets).toList());
             } catch (IllegalArgumentException e) {
                 return ResponseEntity.badRequest().build();
             }
         }
-        return ResponseEntity.ok(connectorDefinitionService.list());
+        return ResponseEntity.ok(connectorDefinitionService.list().stream()
+                .map(ConnectorDefinitionController::maskSecrets).toList());
     }
 
     @GetMapping("/{connectorId}")
@@ -59,7 +61,7 @@ public class ConnectorDefinitionController {
         if (!isAdmin()) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         ConnectorDefinition def = connectorDefinitionService.get(connectorId);
         if (def == null) return ResponseEntity.notFound().build();
-        return ResponseEntity.ok(def);
+        return ResponseEntity.ok(maskSecrets(def));
     }
 
     @PutMapping("/{connectorId}")
@@ -68,6 +70,16 @@ public class ConnectorDefinitionController {
         ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
         if (forbidden != null) return forbidden;
         def.setConnectorId(connectorId);
+        // Preserve real secrets when client sends back the masked placeholder
+        ConnectorDefinition existing = connectorDefinitionService.get(connectorId);
+        if (existing != null) {
+            if ("[configured]".equals(def.getCredentialRef())) {
+                def.setCredentialRef(existing.getCredentialRef());
+            }
+            if ("[configured]".equals(def.getWebhookSecret())) {
+                def.setWebhookSecret(existing.getWebhookSecret());
+            }
+        }
         try {
             connectorDefinitionService.update(def);
             Map<String, Object> response = new LinkedHashMap<>();
@@ -105,6 +117,29 @@ public class ConnectorDefinitionController {
     private <T> ResponseEntity<T> requireAdminList() {
         if (!isAdmin()) return (ResponseEntity<T>) ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         return null;
+    }
+
+    /** Mask sensitive fields before returning to client (creates a shallow copy to avoid mutating cache). */
+    private static ConnectorDefinition maskSecrets(ConnectorDefinition src) {
+        ConnectorDefinition copy = new ConnectorDefinition();
+        copy.setConnectorId(src.getConnectorId());
+        copy.setDisplayName(src.getDisplayName());
+        copy.setSourceArchetype(src.getSourceArchetype());
+        copy.setSourceSystem(src.getSourceSystem());
+        copy.setAuthType(src.getAuthType());
+        copy.setEndpoint(src.getEndpoint());
+        copy.setTenantId(src.getTenantId());
+        copy.setAdapterKind(src.getAdapterKind());
+        copy.setRateLimitRpm(src.getRateLimitRpm());
+        copy.setEnabled(src.isEnabled());
+        copy.setCreatedAt(src.getCreatedAt());
+        copy.setUpdatedAt(src.getUpdatedAt());
+        // Mask secrets: show "[configured]" instead of actual value
+        copy.setCredentialRef(src.getCredentialRef() != null && !src.getCredentialRef().isBlank()
+                ? "[configured]" : null);
+        copy.setWebhookSecret(src.getWebhookSecret() != null && !src.getWebhookSecret().isBlank()
+                ? "[configured]" : null);
+        return copy;
     }
 
     private ResponseEntity<Map<String, Object>> errorResponse(HttpStatus status, String message) {

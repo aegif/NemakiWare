@@ -1,6 +1,8 @@
 package jp.aegif.nemaki.rest.ingest.mail;
 
 import jakarta.mail.*;
+import jakarta.mail.event.MessageCountAdapter;
+import jakarta.mail.event.MessageCountEvent;
 import jakarta.mail.internet.MimeMessage;
 import jp.aegif.nemaki.rest.ingest.ConnectorDefinition;
 import org.slf4j.Logger;
@@ -176,4 +178,91 @@ public class ImapConnectorAdapter {
     public boolean isConnected() {
         return store != null && store.isConnected();
     }
+
+    /**
+     * IMAP IDLE listener — monitors a folder for new messages using
+     * the IDLE extension (RFC 2177). Calls the provided callback when
+     * new messages arrive.
+     *
+     * <p>This method blocks the calling thread. It should be run on a
+     * dedicated daemon thread. To stop, call {@link #stopIdle()}.
+     *
+     * @param folderName folder to monitor (e.g. "INBOX")
+     * @param onNewMessage callback invoked with each new MessageSummary
+     */
+    public void startIdle(String folderName, java.util.function.Consumer<MessageSummary> onNewMessage)
+            throws MessagingException {
+        if (store == null || !store.isConnected()) {
+            throw new MessagingException("Not connected — call connect() first");
+        }
+
+        idleRunning = true;
+        Folder folder = store.getFolder(folderName);
+        folder.open(Folder.READ_ONLY);
+        idleFolder = folder;
+
+        long uidValidity = folder instanceof UIDFolder uf ? uf.getUIDValidity() : 0;
+        final long uidV = uidValidity;
+
+        folder.addMessageCountListener(new MessageCountAdapter() {
+            @Override
+            public void messagesAdded(MessageCountEvent e) {
+                for (Message msg : e.getMessages()) {
+                    try {
+                        String messageId = msg instanceof MimeMessage mm ? mm.getMessageID() : null;
+                        String from = msg.getFrom() != null && msg.getFrom().length > 0
+                                ? msg.getFrom()[0].toString() : null;
+                        long uid = folder instanceof UIDFolder uf2 ? uf2.getUID(msg) : -1;
+                        MessageSummary summary = new MessageSummary(
+                                uid, uidV, messageId, msg.getSubject(), from, msg.getSentDate(), msg.getSize());
+                        onNewMessage.accept(summary);
+                    } catch (Exception ex) {
+                        logger.warn("IDLE: Error processing new message: {}", ex.getMessage());
+                    }
+                }
+            }
+        });
+
+        logger.info("IMAP IDLE started for {}:{}", connector.getEndpoint(), folderName);
+
+        // IDLE loop — re-enters IDLE after each server notification or timeout
+        while (idleRunning && store.isConnected()) {
+            try {
+                if (folder instanceof org.eclipse.angus.mail.imap.IMAPFolder imapFolder) {
+                    imapFolder.idle();
+                } else {
+                    // Fallback: poll every 30 seconds if IDLE is not supported
+                    Thread.sleep(30_000);
+                    folder.getMessageCount(); // triggers NOOP to check for new messages
+                }
+            } catch (jakarta.mail.FolderClosedException e) {
+                logger.info("IDLE folder closed, stopping");
+                break;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                if (idleRunning) {
+                    logger.warn("IDLE error, retrying in 10s: {}", e.getMessage());
+                    try { Thread.sleep(10_000); } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt(); break;
+                    }
+                }
+            }
+        }
+
+        try { folder.close(false); } catch (Exception e) { /* ignore */ }
+        logger.info("IMAP IDLE stopped for {}:{}", connector.getEndpoint(), folderName);
+    }
+
+    /** Stop the IDLE loop. */
+    public void stopIdle() {
+        idleRunning = false;
+        if (idleFolder != null && idleFolder.isOpen()) {
+            try { idleFolder.close(false); } catch (Exception e) { /* triggers FolderClosedException in idle loop */ }
+        }
+    }
+
+    private volatile boolean idleRunning;
+    private Folder idleFolder;
 }
