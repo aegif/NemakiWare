@@ -93,12 +93,16 @@ public class IngestDlqController {
             ingestJobService.updateDlqRetry(dlq);
 
             Map<String, Object> response = new LinkedHashMap<>();
-            if (result.isSuccess() || result.skipped()) {
-                // Remove from DLQ on success or idempotent skip (object already exists)
+            if (result.skipped()) {
+                // Idempotent outcome — object already exists, remove from DLQ
                 ingestJobService.deleteDlqEntry(dlqId);
-                response.put("status", result.isSuccess() ? "success" : "resolved");
+                response.put("status", "resolved");
                 if (result.objectId() != null) response.put("objectId", result.objectId());
-                if (result.skipped()) response.put("skipReason", result.skipReason());
+                response.put("skipReason", result.skipReason());
+            } else if (result.isSuccess()) {
+                ingestJobService.deleteDlqEntry(dlqId);
+                response.put("status", "success");
+                response.put("objectId", result.objectId());
             } else {
                 response.put("status", "failed");
                 response.put("errors", result.errors());

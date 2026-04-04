@@ -1150,6 +1150,109 @@ public class IngestSchedulerService {
         return new FetchResult(fetched, imported, errors);
     }
 
+    // ── Chatwork fetch ─────────────────────────────────────────────
+
+    public FetchResult executeChatworkFetch(CallContext callContext, ImportProfileDefinition profile,
+                                            ConnectorDefinition connector, String roomId, int limit) {
+        String token = resolvePassword(connector);
+        if (token == null) return new FetchResult(0, 0, List.of("No token for Chatwork connector"));
+        if (roomId == null || roomId.isBlank()) return new FetchResult(0, 0, List.of("roomId is required for Chatwork"));
+
+        List<String> errors = new ArrayList<>();
+        int fetched = 0, imported = 0;
+        try {
+            var chatwork = new jp.aegif.nemaki.rest.ingest.chat.ChatworkConnectorAdapter(token);
+            // Use force=0 for differential fetch (new messages since last API call)
+            // On first run or when checkpoint is absent, use force=1 (latest 100)
+            String lastMsgId = loadSimpleCheckpoint(profile.getProfileId(), "chatwork." + roomId);
+            boolean isInitialFetch = lastMsgId == null;
+            var messages = chatwork.getMessages(roomId, isInitialFetch);
+            fetched = messages.size();
+            long throttleMs = calculateThrottleDelayMs(connector);
+            String highWaterMsgId = lastMsgId;
+
+            for (var msg : messages) {
+                throttle(throttleMs);
+                // Skip messages already processed (by message ID comparison)
+                if (lastMsgId != null && msg.messageId().compareTo(lastMsgId) <= 0) continue;
+
+                try {
+                    String messageText = msg.body() != null ? msg.body() : "";
+                    ExternalIngestRequest msgReq = new ExternalIngestRequest();
+                    msgReq.setProfileId(profile.getProfileId());
+                    msgReq.setConnectorId(connector.getConnectorId());
+                    msgReq.setRepositoryId(profile.getRepositoryId());
+                    msgReq.setSourceObjectId(roomId + "/" + msg.messageId());
+                    msgReq.setSourceObjectType("chat_message");
+                    msgReq.setFileName("chatwork-" + msg.messageId() + ".txt");
+                    msgReq.setMimeType("text/plain");
+                    msgReq.setContentStream(new ByteArrayInputStream(messageText.getBytes(StandardCharsets.UTF_8)));
+                    msgReq.setExecutionMode("scheduled");
+                    Map<String, Object> msgMeta = new LinkedHashMap<>();
+                    msgMeta.put("channelId", roomId);
+                    msgMeta.put("messageId", msg.messageId());
+                    msgMeta.put("senderId", msg.accountId());
+                    msgMeta.put("senderName", msg.accountName());
+                    msgMeta.put("messageText", truncateForContext(messageText));
+                    msgMeta.put("workspaceId", connector.getTenantId());
+                    msgReq.setMetadata(msgMeta);
+
+                    ExternalIngestResult msgResult = canonicalImportService.executeChatContextImport(callContext, msgReq);
+                    if (msgResult.isSuccess() || msgResult.skipped()) {
+                        if (highWaterMsgId == null || msg.messageId().compareTo(highWaterMsgId) > 0) {
+                            highWaterMsgId = msg.messageId();
+                        }
+                    }
+                    if (msgResult.isSuccess()) imported++;
+                    else if (!msgResult.skipped()) errors.add("Chatwork msg " + msg.messageId() + ": " + String.join(", ", msgResult.errors()));
+                } catch (Exception e) {
+                    errors.add("Chatwork msg " + msg.messageId() + ": " + e.getMessage());
+                }
+            }
+
+            // Also import files from the room
+            try {
+                var files = chatwork.listFiles(roomId);
+                for (var file : files) {
+                    throttle(throttleMs);
+                    try {
+                        String dlUrl = chatwork.getFileDownloadUrl(roomId, file.fileId());
+                        if (dlUrl == null) continue;
+                        InputStream content = chatwork.downloadFile(dlUrl);
+                        ExternalIngestRequest fileReq = new ExternalIngestRequest();
+                        fileReq.setProfileId(profile.getProfileId());
+                        fileReq.setConnectorId(connector.getConnectorId());
+                        fileReq.setRepositoryId(profile.getRepositoryId());
+                        fileReq.setSourceObjectId("file-" + file.fileId());
+                        fileReq.setSourceObjectType("attachment");
+                        fileReq.setFileName(file.name());
+                        fileReq.setContentStream(content);
+                        fileReq.setExecutionMode("scheduled");
+                        Map<String, Object> fileMeta = new LinkedHashMap<>();
+                        fileMeta.put("channelId", roomId);
+                        fileMeta.put("workspaceId", connector.getTenantId());
+                        fileReq.setMetadata(fileMeta);
+
+                        ExternalIngestResult fileResult = canonicalImportService.executeChatContextImport(callContext, fileReq);
+                        if (fileResult.isSuccess()) imported++;
+                        else if (!fileResult.skipped()) errors.add("Chatwork file " + file.fileId() + ": " + String.join(", ", fileResult.errors()));
+                    } catch (Exception e) {
+                        errors.add("Chatwork file " + file.fileId() + ": " + e.getMessage());
+                    }
+                }
+            } catch (Exception e) {
+                errors.add("Chatwork file list failed: " + e.getMessage());
+            }
+
+            if (highWaterMsgId != null && !highWaterMsgId.equals(lastMsgId)) {
+                saveSimpleCheckpoint(profile.getProfileId(), "chatwork." + roomId, highWaterMsgId);
+            }
+        } catch (Exception e) {
+            errors.add("Chatwork connection failed: " + e.getMessage());
+        }
+        return new FetchResult(fetched, imported, errors);
+    }
+
     // ── Box fetch ─────────────────────────────────────────────────
 
     public FetchResult executeBoxFetch(CallContext callContext, ImportProfileDefinition profile,
@@ -1331,8 +1434,10 @@ public class IngestSchedulerService {
                         params.getOrDefault("teamId", ""), params.getOrDefault("channelId", ""), limit);
                 case "mattermost" -> executeMattermostFetch(callContext, profile, connector,
                         params.getOrDefault("channelId", ""), limit);
+                case "chatwork" -> executeChatworkFetch(callContext, profile, connector,
+                        params.getOrDefault("roomId", ""), limit);
                 default -> new FetchResult(0, 0, List.of(
-                        "Unknown sourceSystem '" + system + "' for CHAT_CONTEXT. Supported: slack, teams, mattermost"));
+                        "Unknown sourceSystem '" + system + "' for CHAT_CONTEXT. Supported: slack, teams, mattermost, chatwork"));
             };
             case FILE_SHARE -> switch (system != null ? system : "") {
                 case "box" -> executeBoxFetch(callContext, profile, connector,

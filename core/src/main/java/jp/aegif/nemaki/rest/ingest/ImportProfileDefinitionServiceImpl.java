@@ -215,6 +215,12 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                             "schedulerParams.channelId is required for Mattermost adapter");
                 }
             }
+            case "chatwork" -> {
+                if (isBlank(p.get("roomId"))) {
+                    throw new IllegalArgumentException(
+                            "schedulerParams.roomId is required for Chatwork adapter");
+                }
+            }
             // imap, gmail_mail, m365_mail, notion, salesforce: all have usable defaults
             default -> { /* no required params */ }
         }

@@ -106,6 +106,7 @@ public class IngestWebhookController {
             return switch (system != null ? system : "") {
                 case "slack" -> handleSlackEvent(connector, payload);
                 case "teams", "m365_mail" -> handleGraphNotification(connector, payload);
+                case "chatwork" -> handleChatworkEvent(connector, payload);
                 default -> handleGenericWebhook(connector, payload);
             };
 
@@ -184,6 +185,35 @@ public class IngestWebhookController {
     /**
      * Handle generic webhook — log and trigger fetch with default params.
      */
+    /**
+     * Handle Chatwork webhook — message_created / message_updated events.
+     */
+    private ResponseEntity<?> handleChatworkEvent(ConnectorDefinition connector, JsonNode payload) {
+        String eventType = payload.path("webhook_event_type").asText("");
+        if (!"message_created".equals(eventType) && !"message_updated".equals(eventType)) {
+            return ResponseEntity.ok(Map.of("status", "ignored", "eventType", eventType));
+        }
+
+        String roomId = String.valueOf(payload.path("webhook_event").path("room_id").asLong(0));
+        if ("0".equals(roomId)) {
+            return ResponseEntity.ok(Map.of("status", "ignored", "reason", "no room_id"));
+        }
+
+        List<ImportProfileDefinition> profiles = findAllProfilesForConnector(connector);
+        if (profiles.isEmpty()) {
+            return ResponseEntity.ok(Map.of("status", "no_profile"));
+        }
+
+        for (ImportProfileDefinition profile : profiles) {
+            Map<String, String> params = new LinkedHashMap<>();
+            params.put("roomId", roomId);
+            params.put("limit", "10");
+            triggerFetchAsync(profile, connector, params);
+        }
+
+        return ResponseEntity.ok(Map.of("status", "accepted", "room", roomId, "profiles", profiles.size()));
+    }
+
     private ResponseEntity<?> handleGenericWebhook(ConnectorDefinition connector, JsonNode payload) {
         List<ImportProfileDefinition> profiles = findAllProfilesForConnector(connector);
         if (profiles.isEmpty()) {
@@ -254,8 +284,10 @@ public class IngestWebhookController {
             return verifySlackSignature(secret, rawBody);
         }
         if ("teams".equals(system) || "m365_mail".equals(system)) {
-            // Graph sends clientState in each notification — verify it matches webhookSecret
             return verifyGraphClientState(secret, rawBody);
+        }
+        if ("chatwork".equals(system)) {
+            return verifyChatworkSignature(secret, rawBody);
         }
 
         // Generic HMAC-SHA256 verification — require signature when secret is configured
@@ -283,6 +315,26 @@ public class IngestWebhookController {
             return true;
         } catch (Exception e) {
             logger.warn("Graph clientState verification failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean verifyChatworkSignature(String token, String rawBody) {
+        // Chatwork uses Base64-encoded HMAC-SHA256 with the webhook token as key
+        String headerSig = httpRequest.getHeader("X-ChatWorkWebhookSignature");
+        if (headerSig == null) {
+            logger.warn("Chatwork signature header missing");
+            return false;
+        }
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(
+                    java.util.Base64.getDecoder().decode(token), "HmacSHA256"));
+            String computed = java.util.Base64.getEncoder().encodeToString(
+                    mac.doFinal(rawBody.getBytes(StandardCharsets.UTF_8)));
+            return computed.equals(headerSig);
+        } catch (Exception e) {
+            logger.warn("Chatwork signature verification failed: {}", e.getMessage());
             return false;
         }
     }
