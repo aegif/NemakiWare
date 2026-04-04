@@ -56,6 +56,32 @@ public class IngestSchedulerController {
     }
 
     /**
+     * Start the periodic polling scheduler.
+     */
+    @PostMapping("/start")
+    public ResponseEntity<Map<String, Object>> startScheduler() {
+        if (!isAdmin()) return forbidden();
+        schedulerService.startPolling();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", "success");
+        response.put("message", "Ingest scheduler started");
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Stop the periodic polling scheduler.
+     */
+    @PostMapping("/stop")
+    public ResponseEntity<Map<String, Object>> stopScheduler() {
+        if (!isAdmin()) return forbidden();
+        schedulerService.stopPolling();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", "success");
+        response.put("message", "Ingest scheduler stopped");
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * Manually trigger ingest for a specific scheduled profile.
      * Currently supports MESSAGE_CONTEXT (IMAP) connectors only.
      */

@@ -1,124 +1,137 @@
-# Purview Connector Handoff
+# External Ingestion / Lineage — 実装完了状態
 
-最終更新: 2026-03-20
-対象ブランチ: `codex/purview-connector`
+最終更新: 2026-04-04
+対象ブランチ: `release/3.1.1-RC2`
 
-## 1. 今回のコミット範囲
+## 1. 実装状態サマリ
 
-Purview 連携の read-only governance 機能を、実 tenant なしでも次のエージェントが続けられる状態まで整理した。
+設計書 `docs/design/external-ingestion-lineage-design.md` の Phase 1-6 および全 concrete adapter の実装が完了した。
 
-- backend:
-  - object 単位 read API
-  - bulk read API
-  - unique attribute による entity lookup
-- frontend:
-  - `DocumentViewer` の Purview タブ
-  - Purview 管理 UI の bulk governance lookup
-  - SearchResults の governance summary
-- docs:
-  - Purview 設計書の現状反映
+## 2. 実装済みコンポーネント
 
-## 2. 実装済み
+### 2.1 抽象レイヤ
 
-### backend
+- `SourceArchetype` enum (5類型: FILE_SHARE, COMPOUND_NOTE, CHAT_CONTEXT, BUSINESS_RECORD, MESSAGE_CONTEXT)
+- `ConnectorDefinition` / `ImportProfileDefinition` (CouchDB CRUD + admin REST API)
+- `ExternalIngestRequest` / `ExternalIngestResult` (canonical DTO)
+- `CanonicalImportService` (パイプライン: バリデーション → dedupe → 作成/版更新 → メタデータ → lineage)
+- `ExternalSourceUri` (archetype 別 URI 構築 + URI エンコーディング)
 
-- `GET /v1/repo/{repositoryId}/purview/governance/{objectId}`
-- `POST /v1/repo/{repositoryId}/purview/governance/bulk`
-- `PurviewGovernanceService` で object / bulk lookup を提供
-- documents / folders を `qualifiedName` ベースで Purview entity に解決
-- Purview response から classification / glossary term / labels / business metadata を正規化
+### 2.2 Secondary Types
 
-主なファイル:
+| Type ID | Properties | 用途 |
+|---|---|---|
+| `nemaki:externalIntegration` + sourceFields | sourceArchetype, sourceSystem, sourceObjectId 等 11 | 共通 source tracking |
+| `nemaki:messageMetadata` | internetMessageId, mailSubject, mailFrom, mailTo 等 11 | メール envelope |
+| `nemaki:noteMetadata` | notePageId, notePageUrl, noteWorkspaceId 等 8 | ノート/ページ |
+| `nemaki:businessRecordMetadata` | recordType, recordId, recordStatus 等 8 | CRM/ERP レコード |
+| `nemaki:chatContextMetadata` | chatChannelId, chatThreadId, chatParticipants 等 8 | チャット会話 |
 
-- `core/src/main/java/jp/aegif/nemaki/rest/controller/PurviewGovernanceController.java`
-- `core/src/main/java/jp/aegif/nemaki/rest/purview/PurviewGovernanceService.java`
-- `core/src/main/java/jp/aegif/nemaki/rest/purview/PurviewGovernanceServiceImpl.java`
-- `core/src/main/java/jp/aegif/nemaki/rest/purview/PurviewGovernanceView.java`
-- `core/src/main/java/jp/aegif/nemaki/rest/purview/PurviewGovernanceBulkItemView.java`
-- `core/src/main/java/jp/aegif/nemaki/rest/purview/HttpPurviewEntityRegistryClient.java`
-- `core/src/main/java/jp/aegif/nemaki/rest/purview/PurviewEntityRegistryClient.java`
+### 2.3 Import Flows
 
-### frontend
+| Flow | sourceObjectType 自動検出 | 特徴 |
+|---|---|---|
+| `execute()` | default | 標準パイプライン |
+| `executeMailImport()` | .eml / message | MIME パース → 本文 + 添付分離 → messageMetadata → direct relationship |
+| `executeNoteImport()` | page | noteMetadata → 添付 base64 デコード → direct relationship |
+| `executeBusinessRecordImport()` | record | businessRecordMetadata 自動付与 |
+| `executeChatContextImport()` | chat_message / thread | chatContextMetadata 自動付与 |
 
-- `DocumentViewer` に Purview タブを追加
-- Purview 管理 UIから object ID 複数指定で governance lookup 可能
-- SearchResults で document / folder 群の governance summary を表示
+### 2.4 Concrete Adapters (8種)
 
-主なファイル:
+| Adapter | sourceSystem | API | スケジューラ |
+|---|---|---|---|
+| IMAP | `imap` | Jakarta Mail IMAP/IMAPS | ✅ UIDVALIDITY checkpoint |
+| Gmail | `gmail_mail` | Gmail API v1 | ✅ |
+| M365 Mail | `m365_mail` | Graph API | ✅ |
+| Notion | `notion` | Notion API v2022-06-28 | ✅ ページネーション対応 |
+| Salesforce | `salesforce` | REST v59.0 | ✅ |
+| Slack | `slack` | Web API | ✅ |
+| Teams | `teams` | Graph API v1.0 | ✅ |
+| Mattermost | `mattermost` | REST v4 | ✅ |
 
-- `core/src/main/webapp/ui/src/components/DocumentViewer/DocumentViewer.tsx`
-- `core/src/main/webapp/ui/src/components/PurviewManagement/PurviewManagement.tsx`
-- `core/src/main/webapp/ui/src/components/PurviewGovernance/PurviewGovernancePanel.tsx`
-- `core/src/main/webapp/ui/src/components/PurviewGovernance/PurviewGovernanceSearchSummary.tsx`
-- `core/src/main/webapp/ui/src/components/SearchBar/SearchResults.tsx`
-- `core/src/main/webapp/ui/src/services/purviewAdmin.ts`
-- `core/src/main/webapp/ui/src/services/purviewGovernance.ts`
+### 2.5 Profile フィールド Runtime Enforce
 
-### docs
+| フィールド | 状態 |
+|---|---|
+| targetFolderId / targetFolderPath | ✅ (path は getObjectByPath で解決) |
+| defaultObjectTypeId | ✅ |
+| allowedArchetypes / allowedConnectorIds | ✅ |
+| dedupePolicy (skip/new_version/replace) | ✅ (source-identity dedupe) |
+| updatePolicy (version_up_on_content_change / update_metadata_only) | ✅ (SHA-256 content hash 比較) |
+| versioningPolicy (major/minor/none) | ✅ |
+| secondaryTypeIds | ✅ (profile 定義の型を自動付与) |
+| retentionDays | ✅ (cmis:rm_clientMgtRetention 付与) |
+| relationshipPolicy | ✅ (parentObjectId → cmis:relationship) |
+| aclSyncPolicy | ✅ (CMIS inherit_from_folder がデフォルト) |
+| schedulerEnabled | ✅ (IngestSchedulerService) |
+| defaultClassification | ⚠️ (分類スキーマ定義待ち) |
 
-- `docs/design/purview-connector-design.md`
-  - governance bulk API
-  - 管理 UI bulk lookup
-  - SearchResults summary
-  を反映済み
+### 2.6 管理 UI
 
-## 3. テスト状況
+| タブ | 機能 |
+|---|---|
+| コネクタ | CRUD (sourceArchetype, sourceSystem, authType, endpoint, tenantId) |
+| インポートプロファイル | CRUD (targetFolder, dedupePolicy, versioningPolicy, secondaryTypeIds, allowedConnectorIds) |
+| 手動インポート | connector/profile 選択 → ファイルアップロード → archetype 別フィールド → dry-run → 実行結果 |
 
-実行済み:
+### 2.7 Lineage
 
-- `mvn -pl core -Dtest=PurviewGovernanceServiceImplTest,PurviewGovernanceControllerTest test`
-  - 9 tests green
-- `npm run test:unit -- src/components/PurviewManagement/PurviewManagement.test.tsx src/components/PurviewGovernance/PurviewGovernancePanel.test.tsx src/components/PurviewGovernance/PurviewGovernanceSearchSummary.test.tsx`
-  - 7 tests green
-- `npm run type-check`
-  - green
+- 17 LineageProcessType 値
+- ExternalSourceUri (全 archetype + UIDVALIDITY)
+- PurviewLineageSink 全対応
 
-補足:
+### 2.8 Scheduler
 
-- `mvn -pl core ... test` 実行時に frontend build も通っている
-- Ant Design の React 19 warning と jsdom の `getComputedStyle()` warning は既知で、今回の失敗要因ではない
+- IngestSchedulerService: 定期ポーリング (5分間隔) + 手動 trigger API
+- executeFetch(): archetype + sourceSystem で全 8 adapter に自動ルーティング
+- IMAP checkpoint (UIDVALIDITY + UID, partial failure aware)
 
-## 4. 既知の前提
+## 3. 設計書の未決定事項の解決状態
 
-- 実 Purview tenant はまだ使っていない
-- いまの実装は read-only governance 参照が中心
-- glossary / classification / labels の同期拡張は未着手
-- 実 tenant での auth / permission / throttle / UI見え方の確認は未実施
+| 未決定事項 | 解決 |
+|---|---|
+| connector/profile を UI から管理するか | ✅ UI タブで管理 |
+| page 本文の保存形式 | HTML (Notion adapter の blockToHtml) |
+| externalIntegration を拡張するか | ✅ archetype 別 secondary type を追加 |
+| chat context を別文書化するか | ✅ 添付は別文書 + chatContextMetadata |
+| mail 原本を .eml として保存するか | 本文抽出 + 添付分離 (.eml 原本保持は将来拡張) |
+| mail stable key | UIDVALIDITY:UID (IMAP), Gmail message ID, Graph message ID |
+| ImportProfileDefinition の persisted-only 項目 | ✅ 全フィールド runtime enforce (defaultClassification 除く) |
 
-## 5. 次の候補
+## 4. テスト
 
-優先順はこの順が自然。
+- ユニットテスト: 2,523 件 / 0 failures
+- TCK: 38/38
+- E2E: 864+ passed
 
-1. 実 tenant が用意できたら read API の実接続確認
-2. glossary / classification / labels の read model を NemakiWare 側にどう見せるか整理
-3. `DocumentList` に軽量な governance summary を追加するか再検討
-4. その後に同期拡張へ進む
+## 5. 参照すべきファイル
 
-## 6. Glossary / Classification で決めること
+### 抽象レイヤ
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/SourceArchetype.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinition.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinition.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestRequest.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalSourceUri.java`
 
-現時点の推奨方針:
+### Adapters
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapConnectorAdapter.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/GmailConnectorAdapter.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/M365MailConnectorAdapter.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/MailMessageParser.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/note/NotionConnectorAdapter.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/record/SalesforceConnectorAdapter.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/chat/SlackConnectorAdapter.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/chat/TeamsConnectorAdapter.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/chat/MattermostConnectorAdapter.java`
 
-- glossary の source of truth は Purview
-- enterprise classification も Purview
-- NemakiWare はまず read-only 参照
-- 双方向同期は後回し
+### Scheduler
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java`
 
-未決定で残っている論点:
-
-- glossary / classification / business metadata の責務分担
-- NemakiWare UI でどこまで表示するか
-- conflict rule をどうするか
-- 将来 write-back を許すか
-
-## 7. 今回コミットに含めないもの
-
-次の未追跡ファイルは Purview と無関係なので触らないこと。
-
-- `core/src/test/java/jp/aegif/nemaki/cmis/tck/tests/InheritedFlagTest.java`
-- `core/src/test/java/jp/aegif/nemaki/test/`
-
-## 8. 作業時の注意
-
-- `.gitignore` は以前 `*Test.java` を隠していたが、現在は修正済み
-- テスト追加時は `git status` に出る前提で作業してよい
-- Purview 変更をコミットするときは、上記 2 つの無関係な未追跡 test を巻き込まないこと
+### UI
+- `core/src/main/webapp/ui/src/components/IntegrationSettings/ConnectorManagementTab.tsx`
+- `core/src/main/webapp/ui/src/components/IntegrationSettings/ImportProfileManagementTab.tsx`
+- `core/src/main/webapp/ui/src/components/IntegrationSettings/ManualIngestTab.tsx`
+- `core/src/main/webapp/ui/src/services/externalIngest.ts`
