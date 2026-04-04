@@ -764,21 +764,31 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private void removeExistingRelationships(CallContext callContext, String repositoryId, String objectId) {
         if (relationshipService == null) return;
         try {
-            org.apache.chemistry.opencmis.commons.data.ObjectList rels = relationshipService.getObjectRelationships(
-                    callContext, repositoryId, objectId, true,
-                    org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.SOURCE,
-                    null, null, false, null, null, null);
-            if (rels != null && rels.getObjects() != null) {
+            int totalRemoved = 0;
+            java.math.BigInteger batchSize = java.math.BigInteger.valueOf(100);
+            java.math.BigInteger skipCount = java.math.BigInteger.ZERO;
+            // Paginate to handle documents with many relationships
+            while (true) {
+                org.apache.chemistry.opencmis.commons.data.ObjectList rels = relationshipService.getObjectRelationships(
+                        callContext, repositoryId, objectId, true,
+                        org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.SOURCE,
+                        null, null, false, batchSize, skipCount, null);
+                if (rels == null || rels.getObjects() == null || rels.getObjects().isEmpty()) break;
+
                 for (var relData : rels.getObjects()) {
                     try {
                         objectService.deleteObject(callContext, repositoryId,
                                 relData.getId(), true, null);
-                        logger.debug("Removed relationship {} for resync", relData.getId());
+                        totalRemoved++;
                     } catch (Exception e) {
                         logger.warn("Failed to remove relationship {}: {}", relData.getId(), e.getMessage());
                     }
                 }
-                logger.info("Resync: removed {} relationships from {}", rels.getObjects().size(), objectId);
+                // After deleting, re-fetch from start (indices shift after deletion)
+                if (!Boolean.TRUE.equals(rels.hasMoreItems())) break;
+            }
+            if (totalRemoved > 0) {
+                logger.info("Resync: removed {} relationships from {}", totalRemoved, objectId);
             }
         } catch (Exception e) {
             logger.warn("Failed to query relationships for {}: {}", objectId, e.getMessage());

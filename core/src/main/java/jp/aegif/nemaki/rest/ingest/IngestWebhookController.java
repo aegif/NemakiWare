@@ -84,22 +84,22 @@ public class IngestWebhookController {
                     .body(validationToken);
         }
 
-        // 3. Parse payload
+        // 3. Verify signature FIRST (before processing any payload)
+        if (!verifySignature(connector, rawBody)) {
+            logger.warn("Webhook signature verification failed for connector {}", connectorId);
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Signature verification failed"));
+        }
+
+        // 4. Parse and dispatch payload
         try {
             JsonNode payload = MAPPER.readTree(rawBody);
 
-            // 3a. Slack: url_verification challenge
+            // 4a. Slack: url_verification challenge (after signature verified)
             if (payload.has("type") && "url_verification".equals(payload.get("type").asText())) {
                 String challenge = payload.path("challenge").asText();
                 logger.info("Slack url_verification for connector {}", connectorId);
                 return ResponseEntity.ok(Map.of("challenge", challenge));
-            }
-
-            // 3b. Verify webhook signature
-            if (!verifySignature(connector, rawBody)) {
-                logger.warn("Webhook signature verification failed for connector {}", connectorId);
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Signature verification failed"));
             }
 
             // 4. Dispatch based on source system

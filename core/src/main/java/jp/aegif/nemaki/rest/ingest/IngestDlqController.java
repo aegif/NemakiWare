@@ -127,11 +127,16 @@ public class IngestDlqController {
      * matching the behavior of ExternalIngestController's primary dispatch.
      */
     private ExternalIngestResult dispatchByArchetype(CallContext callContext, ExternalIngestRequest request) {
-        SourceArchetype archetype = null;
-        if (request.getConnectorId() != null) {
-            ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
-            if (connector != null) archetype = connector.getSourceArchetype();
+        if (request.getConnectorId() == null) {
+            return ExternalIngestResult.error(request.getRequestId(),
+                    "DLQ retry requires connectorId to determine the import flow");
         }
+        ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
+        if (connector == null) {
+            return ExternalIngestResult.error(request.getRequestId(),
+                    "Connector '" + request.getConnectorId() + "' not found — cannot determine import flow for retry");
+        }
+        SourceArchetype archetype = connector.getSourceArchetype();
         if (archetype != null) {
             return switch (archetype) {
                 case MESSAGE_CONTEXT -> canonicalImportService.executeMailImport(callContext, request);
