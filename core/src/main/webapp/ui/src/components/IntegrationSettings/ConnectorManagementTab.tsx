@@ -166,7 +166,7 @@ export function ConnectorManagementTab() {
           </Form.Item>
           <Form.Item name="sourceSystem" label={t('connectorManagement.form.sourceSystem')}
             rules={[{ required: true }]}>
-            <Input placeholder="google_drive, notion, imap, ..." />
+            <Input placeholder={t('connectorManagement.form.sourceSystemHint')} />
           </Form.Item>
           <Form.Item name="authType" label={t('connectorManagement.form.authType')}>
             <Select allowClear options={[

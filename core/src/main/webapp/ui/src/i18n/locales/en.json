@@ -2844,7 +2844,8 @@
       "authType": "Auth Type",
       "endpoint": "Endpoint",
       "tenantId": "Tenant / Workspace ID",
-      "enabled": "Enabled"
+      "enabled": "Enabled",
+      "sourceSystemHint": "google_drive, notion, imap, slack, teams, ..."
     }
   },
   "importProfileManagement": {
@@ -2888,6 +2889,9 @@
       "targetFolderHint": "Either folder ID or folder path is required. Path is resolved at import time.",
       "secondaryTypeIds": "Secondary Types",
       "secondaryTypeIdsHint": "Additional secondary types to attach to imported documents",
+      "secondaryTypeIdsPlaceholder": "e.g. nemaki:cloudDriveMetadata",
+      "targetFolderIdHint": "CouchDB folder object ID",
+      "targetFolderPathHint": "/Sites/Invoices",
       "allowedConnectorIds": "Allowed Connectors",
       "allowedConnectorIdsHint": "Leave empty to allow any connector",
       "defaultConnectorId": "Default Connector",

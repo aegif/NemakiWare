@@ -2844,7 +2844,8 @@
       "authType": "認証タイプ",
       "endpoint": "エンドポイント",
       "tenantId": "テナント / ワークスペースID",
-      "enabled": "有効"
+      "enabled": "有効",
+      "sourceSystemHint": "google_drive, notion, imap, slack, teams, ..."
     }
   },
   "importProfileManagement": {
@@ -2888,6 +2889,9 @@
       "targetFolderHint": "フォルダIDまたはフォルダパスのいずれかが必要です。パスはインポート時に解決されます。",
       "secondaryTypeIds": "セカンダリタイプ",
       "secondaryTypeIdsHint": "インポートされたドキュメントに自動的に付与する追加のセカンダリタイプ",
+      "secondaryTypeIdsPlaceholder": "例: nemaki:cloudDriveMetadata",
+      "targetFolderIdHint": "CouchDB フォルダオブジェクトID",
+      "targetFolderPathHint": "/Sites/Invoices",
       "allowedConnectorIds": "許可するコネクタ",
       "allowedConnectorIdsHint": "空の場合はすべてのコネクタを許可",
       "defaultConnectorId": "デフォルトコネクタ",

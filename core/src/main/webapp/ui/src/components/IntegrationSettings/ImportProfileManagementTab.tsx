@@ -212,11 +212,11 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
             <Input />
           </Form.Item>
           <Form.Item name="targetFolderId" label={t('importProfileManagement.form.targetFolderId')}>
-            <Input placeholder="e.g. abc123def456" />
+            <Input placeholder={t('importProfileManagement.form.targetFolderIdHint')} />
           </Form.Item>
           <Form.Item name="targetFolderPath" label={t('importProfileManagement.form.targetFolderPath')}
             extra={t('importProfileManagement.form.targetFolderHint')}>
-            <Input placeholder="e.g. /Sites/Invoices" />
+            <Input placeholder={t('importProfileManagement.form.targetFolderPathHint')} />
           </Form.Item>
           <Form.Item name="defaultObjectTypeId" label={t('importProfileManagement.form.objectType')}>
             <Input placeholder="cmis:document" />
@@ -234,7 +234,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
           </Form.Item>
           <Form.Item name="secondaryTypeIds" label={t('importProfileManagement.form.secondaryTypeIds')}
             extra={t('importProfileManagement.form.secondaryTypeIdsHint')}>
-            <Select mode="tags" allowClear placeholder="e.g. nemaki:cloudDriveMetadata" />
+            <Select mode="tags" allowClear placeholder={t('importProfileManagement.form.secondaryTypeIdsPlaceholder')} />
           </Form.Item>
           <Form.Item name="dedupePolicy" label={t('importProfileManagement.form.dedupePolicy')}>
             <Select options={DEDUPE_OPTIONS} />
