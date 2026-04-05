@@ -68,6 +68,43 @@ class TeamsConnectorAdapterTest {
     }
 
     @Test
+    void testGetMessagesWithAttachments() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels/C1/messages"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                            {"value": [{
+                                "id": "msg-2",
+                                "body": {"content": "<p>See attached</p>"},
+                                "from": {"user": {"displayName": "User1"}},
+                                "createdDateTime": "2024-01-15T11:00:00Z",
+                                "attachments": [{
+                                    "id": "att-1", "name": "doc.pdf",
+                                    "contentUrl": "http://localhost:%d/files/doc.pdf",
+                                    "contentType": "file"
+                                }]
+                            }]}
+                            """.formatted(wireMock.port()))));
+
+        var msgs = adapter.getMessages("T1", "C1", 50);
+        assertEquals(1, msgs.size());
+        assertEquals(1, msgs.get(0).attachments().size());
+        assertEquals("att-1", msgs.get(0).attachments().get(0).id());
+        assertEquals("doc.pdf", msgs.get(0).attachments().get(0).name());
+    }
+
+    @Test
+    void testDownloadFile() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/files/doc.pdf"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/pdf")
+                        .withBody("fake pdf bytes")));
+
+        var stream = adapter.downloadFile("http://localhost:" + wireMock.port() + "/files/doc.pdf");
+        assertEquals("fake pdf bytes", new String(stream.readAllBytes()));
+    }
+
+    @Test
     void testApiErrorThrows() {
         wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels"))
                 .willReturn(aResponse().withStatus(403)));

@@ -58,7 +58,8 @@ test.describe('External Ingest API', () => {
       expect(body.webhookSecret).toBe('[configured]');
     });
 
-    test('PUT /connectors — [configured] placeholder preserves real secret', async ({ request }) => {
+    test('PUT /connectors — [configured] placeholder preserves webhookSecret (behavioral)', async ({ request }) => {
+      // Tests webhookSecret only — credentialRef preservation requires JVM-side test
       // Step 1: Set a known webhookSecret
       await request.put(`${BASE}/v1/admin/connectors/${connectorId}`, {
         headers: JSON_HEADERS,

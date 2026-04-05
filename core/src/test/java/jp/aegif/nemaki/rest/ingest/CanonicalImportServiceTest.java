@@ -25,6 +25,7 @@ class CanonicalImportServiceTest {
     private ImportProfileDefinitionService profileService;
     private ObjectService objectService;
     private ContentService contentService;
+    private jp.aegif.nemaki.cmis.service.VersioningService versioningService;
 
     @BeforeEach
     void setUp() {
@@ -33,10 +34,12 @@ class CanonicalImportServiceTest {
         profileService = mock(ImportProfileDefinitionService.class);
         objectService = mock(ObjectService.class);
         contentService = mock(ContentService.class);
+        versioningService = mock(jp.aegif.nemaki.cmis.service.VersioningService.class);
         service.setConnectorDefinitionService(connectorService);
         service.setImportProfileDefinitionService(profileService);
         service.setObjectService(objectService);
         service.setContentService(contentService);
+        service.setVersioningService(versioningService);
     }
 
     @Test
@@ -185,7 +188,12 @@ class CanonicalImportServiceTest {
 
         ExternalIngestResult result = service.execute(mock(CallContext.class), req);
         assertTrue(result.dryRun());
+        // Verify NO repository side effects
         verify(objectService, never()).createDocument(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(objectService, never()).createRelationship(any(), any(), any(), any(), any(), any(), any());
+        verify(versioningService, never()).checkOut(any(), any(), any(), any(), any());
+        verify(versioningService, never()).checkIn(any(), any(), any(), anyBoolean(), any(), any(), any(), any(), any(), any(), any());
+        verify(contentService, never()).update(any(), any(), any());
     }
 
     @Test
@@ -270,7 +278,7 @@ class CanonicalImportServiceTest {
     }
 
     @Test
-    void testAttachmentSourceObjectTypeUsesAttachmentProcessType() {
+    void testAttachmentSourceObjectTypeImportsSuccessfully() {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
         profile.setEnabled(true);
@@ -301,7 +309,7 @@ class CanonicalImportServiceTest {
     }
 
     @Test
-    void testMessageContextAttachmentUsesMailAttachmentProcessType() {
+    void testMessageContextAttachmentImportsSuccessfully() {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
         profile.setEnabled(true);

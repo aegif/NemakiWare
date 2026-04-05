@@ -117,6 +117,30 @@ class ChatworkConnectorAdapterTest {
     }
 
     @Test
+    void testDownloadFile() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/dl/test-file"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/octet-stream")
+                        .withBody("chatwork file content")));
+
+        var stream = adapter.downloadFile("http://localhost:" + wireMock.port() + "/dl/test-file");
+        assertEquals("chatwork file content", new String(stream.readAllBytes()));
+    }
+
+    @Test
+    void testGetMessagesForce0() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/rooms/123/messages"))
+                .withQueryParam("force", equalTo("0"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("[{\"message_id\":\"999\",\"account\":{\"account_id\":\"a1\",\"name\":\"N\"},\"body\":\"delta\",\"send_time\":0,\"update_time\":0}]")));
+
+        var msgs = adapter.getMessages("123", false);
+        assertEquals(1, msgs.size());
+        assertEquals("999", msgs.get(0).messageId());
+    }
+
+    @Test
     void testApiErrorThrows() {
         wireMock.stubFor(get(urlPathEqualTo("/rooms"))
                 .willReturn(aResponse().withStatus(401).withBody("Unauthorized")));

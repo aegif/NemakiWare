@@ -148,17 +148,18 @@ test.describe('Webhook API Tests', () => {
       expect(Array.isArray(data.error)).toBeTruthy();
     });
 
-    test('W5: Test webhook with secret generates proper response', async ({ request }) => {
-      const testSecret = 'test-secret-key-12345';
+    test('W5: Webhook test API accepts secret parameter (smoke)', async ({ request }) => {
+      // Smoke: verifies the test-webhook API accepts a secret field without error.
+      // Does NOT verify that the secret is used for HMAC signing — that requires
+      // a controllable stub server to assert the X-Webhook-Signature header value.
       const res = await restPost(request, '/webhook/test', {
-        url: INVALID_URL, // Use invalid URL to avoid SSRF issues
-        secret: testSecret,
+        url: INVALID_URL,
+        secret: 'test-secret-key-12345',
       });
 
       expect(res.ok()).toBeTruthy();
       const data = await res.json();
-      expect(data.status).toBe('success'); // API call structure is correct
-      // The actual webhook will fail but the API processed the request correctly
+      expect(data.status).toBe('success');
     });
   });
 
