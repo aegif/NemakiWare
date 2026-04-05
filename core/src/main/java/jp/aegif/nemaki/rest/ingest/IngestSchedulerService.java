@@ -352,6 +352,7 @@ public class IngestSchedulerService {
         List<String> errors = new ArrayList<>();
         int fetched = 0;
         int imported = 0;
+        int skipped = 0;
 
         try {
             imap.connect();
@@ -422,6 +423,7 @@ public class IngestSchedulerService {
                             highWaterMark = Math.max(highWaterMark, msg.uid());
                         }
                     } else if (result.skipped()) {
+                        skipped++;
                         // Advance past skipped messages to avoid re-fetching
                         highWaterMark = Math.max(highWaterMark, msg.uid());
                         logger.debug("IMAP message {} skipped: {}", msg.uid(), result.skipReason());
@@ -445,7 +447,7 @@ public class IngestSchedulerService {
         }
 
         logger.info("IMAP fetch complete: fetched={}, imported={}, errors={}", fetched, imported, errors.size());
-        return new FetchResult(fetched, imported, errors);
+        return new FetchResult(fetched, imported, skipped, errors);
     }
 
     /**
@@ -562,7 +564,7 @@ public class IngestSchedulerService {
         if (token == null) return new FetchResult(0, 0, List.of("No access token for Gmail connector"));
 
         List<String> errors = new ArrayList<>();
-        int fetched = 0, imported = 0;
+        int fetched = 0, imported = 0, skipped = 0;
         try {
             GmailConnectorAdapter gmail = new GmailConnectorAdapter(token);
             // Append checkpoint date to query to avoid re-fetching old messages
@@ -586,7 +588,8 @@ public class IngestSchedulerService {
 
                     ExternalIngestResult result = canonicalImportService.executeMailImport(callContext, req);
                     if (result.isSuccess()) imported++;
-                    else if (!result.skipped()) errors.add("Gmail " + msg.id() + ": " + String.join(", ", result.errors()));
+                    else if (result.skipped()) skipped++;
+                    else errors.add("Gmail " + msg.id() + ": " + String.join(", ", result.errors()));
                 } catch (Exception e) {
                     errors.add("Gmail " + msg.id() + ": " + e.getMessage());
                 }
@@ -599,7 +602,7 @@ public class IngestSchedulerService {
         } catch (Exception e) {
             errors.add("Gmail connection failed: " + e.getMessage());
         }
-        return new FetchResult(fetched, imported, errors);
+        return new FetchResult(fetched, imported, skipped, errors);
     }
 
     // ── M365 Mail fetch ─────────────────────────────────────────────
@@ -610,7 +613,7 @@ public class IngestSchedulerService {
         if (token == null) return new FetchResult(0, 0, List.of("No access token for M365 Mail connector"));
 
         List<String> errors = new ArrayList<>();
-        int fetched = 0, imported = 0;
+        int fetched = 0, imported = 0, skipped = 0;
         try {
             M365MailConnectorAdapter m365 = new M365MailConnectorAdapter(token);
             String mailboxScope = folderId != null ? folderId : "inbox";
@@ -640,6 +643,7 @@ public class IngestSchedulerService {
                             highWaterDateTime = msg.receivedDateTime();
                         }
                         if (result.isSuccess()) imported++;
+                        else skipped++;
                     } else {
                         errors.add("M365 " + msg.id() + ": " + String.join(", ", result.errors()));
                     }
@@ -654,7 +658,7 @@ public class IngestSchedulerService {
         } catch (Exception e) {
             errors.add("M365 Mail connection failed: " + e.getMessage());
         }
-        return new FetchResult(fetched, imported, errors);
+        return new FetchResult(fetched, imported, skipped, errors);
     }
 
     // ── Notion fetch ─────────────────────────────────────────────────
@@ -665,7 +669,7 @@ public class IngestSchedulerService {
         if (token == null) return new FetchResult(0, 0, List.of("No token for Notion connector"));
 
         List<String> errors = new ArrayList<>();
-        int fetched = 0, imported = 0;
+        int fetched = 0, imported = 0, skipped = 0;
         try {
             NotionConnectorAdapter notion = new NotionConnectorAdapter(token);
             String lastEditedCheckpoint = loadSimpleCheckpoint(profile.getProfileId(), "notion");
@@ -756,7 +760,8 @@ public class IngestSchedulerService {
                         }
                     }
                     if (result.isSuccess()) imported++;
-                    else if (!result.skipped()) errors.add("Notion " + page.id() + ": " + String.join(", ", result.errors()));
+                    else if (result.skipped()) skipped++;
+                    else errors.add("Notion " + page.id() + ": " + String.join(", ", result.errors()));
                 } catch (Exception e) {
                     errors.add("Notion page " + page.id() + ": " + e.getMessage());
                 }
@@ -767,7 +772,7 @@ public class IngestSchedulerService {
         } catch (Exception e) {
             errors.add("Notion connection failed: " + e.getMessage());
         }
-        return new FetchResult(fetched, imported, errors);
+        return new FetchResult(fetched, imported, skipped, errors);
     }
 
     // ── Salesforce fetch ─────────────────────────────────────────────
@@ -778,7 +783,7 @@ public class IngestSchedulerService {
         if (token == null) return new FetchResult(0, 0, List.of("No token for Salesforce connector"));
 
         List<String> errors = new ArrayList<>();
-        int fetched = 0, imported = 0;
+        int fetched = 0, imported = 0, skipped = 0;
         try {
             SalesforceConnectorAdapter sf = new SalesforceConnectorAdapter(connector.getEndpoint(), token);
             // Inject checkpoint filter into SOQL — only when query has no WHERE clause
@@ -829,7 +834,8 @@ public class IngestSchedulerService {
 
                     ExternalIngestResult result = canonicalImportService.executeBusinessRecordImport(callContext, req);
                     if (result.isSuccess()) imported++;
-                    else if (!result.skipped()) errors.add("SF " + rec.id() + ": " + String.join(", ", result.errors()));
+                    else if (result.skipped()) skipped++;
+                    else errors.add("SF " + rec.id() + ": " + String.join(", ", result.errors()));
                 } catch (Exception e) {
                     errors.add("SF record " + rec.id() + ": " + e.getMessage());
                 }
@@ -841,7 +847,7 @@ public class IngestSchedulerService {
         } catch (Exception e) {
             errors.add("Salesforce connection failed: " + e.getMessage());
         }
-        return new FetchResult(fetched, imported, errors);
+        return new FetchResult(fetched, imported, skipped, errors);
     }
 
     // ── Slack fetch ───────────────────────────────────────────────────
@@ -852,7 +858,7 @@ public class IngestSchedulerService {
         if (token == null) return new FetchResult(0, 0, List.of("No token for Slack connector"));
 
         List<String> errors = new ArrayList<>();
-        int fetched = 0, imported = 0;
+        int fetched = 0, imported = 0, skipped = 0;
         try {
             SlackConnectorAdapter slack = new SlackConnectorAdapter(token);
             String lastTs = loadSimpleCheckpoint(profile.getProfileId(), "slack." + channelId);
@@ -894,7 +900,8 @@ public class IngestSchedulerService {
                         }
                     }
                     if (msgResult.isSuccess()) imported++;
-                    else if (!msgResult.skipped()) errors.add("Slack msg " + msg.ts() + ": " + String.join(", ", msgResult.errors()));
+                    else if (msgResult.skipped()) skipped++;
+                    else errors.add("Slack msg " + msg.ts() + ": " + String.join(", ", msgResult.errors()));
 
                     // Import file attachments as children
                     for (SlackFile file : msg.files()) {
@@ -928,7 +935,9 @@ public class IngestSchedulerService {
                                     createRelationshipSafe(callContext, profile.getRepositoryId(),
                                             parentObjectId, result.objectId(), errors);
                                 }
-                            } else if (!result.skipped()) {
+                            } else if (result.skipped()) {
+                                skipped++;
+                            } else {
                                 errors.add("Slack file " + file.id() + ": " + String.join(", ", result.errors()));
                             }
                         } catch (Exception e) {
@@ -946,7 +955,7 @@ public class IngestSchedulerService {
         } catch (Exception e) {
             errors.add("Slack connection failed: " + e.getMessage());
         }
-        return new FetchResult(fetched, imported, errors);
+        return new FetchResult(fetched, imported, skipped, errors);
     }
 
     // ── Teams fetch ────────────────────────────────────────────────
@@ -957,7 +966,7 @@ public class IngestSchedulerService {
         if (token == null) return new FetchResult(0, 0, List.of("No token for Teams connector"));
 
         List<String> errors = new ArrayList<>();
-        int fetched = 0, imported = 0;
+        int fetched = 0, imported = 0, skipped = 0;
         try {
             TeamsConnectorAdapter teams = new TeamsConnectorAdapter(token);
             List<TeamsMessage> messages = teams.getMessages(teamId, channelId, limit);
@@ -1003,7 +1012,8 @@ public class IngestSchedulerService {
                         }
                     }
                     if (msgResult.isSuccess()) imported++;
-                    else if (!msgResult.skipped()) errors.add("Teams msg " + msg.id() + ": " + String.join(", ", msgResult.errors()));
+                    else if (msgResult.skipped()) skipped++;
+                    else errors.add("Teams msg " + msg.id() + ": " + String.join(", ", msgResult.errors()));
 
                     // Import file attachments as children
                     for (TeamsFile file : msg.attachments()) {
@@ -1035,7 +1045,9 @@ public class IngestSchedulerService {
                                     createRelationshipSafe(callContext, profile.getRepositoryId(),
                                             parentObjectId, result.objectId(), errors);
                                 }
-                            } else if (!result.skipped()) {
+                            } else if (result.skipped()) {
+                                skipped++;
+                            } else {
                                 errors.add("Teams " + file.id() + ": " + String.join(", ", result.errors()));
                             }
                         } catch (Exception e) {
@@ -1052,7 +1064,7 @@ public class IngestSchedulerService {
         } catch (Exception e) {
             errors.add("Teams connection failed: " + e.getMessage());
         }
-        return new FetchResult(fetched, imported, errors);
+        return new FetchResult(fetched, imported, skipped, errors);
     }
 
     // ── Mattermost fetch ─────────────────────────────────────────────
@@ -1063,7 +1075,7 @@ public class IngestSchedulerService {
         if (token == null) return new FetchResult(0, 0, List.of("No token for Mattermost connector"));
 
         List<String> errors = new ArrayList<>();
-        int fetched = 0, imported = 0;
+        int fetched = 0, imported = 0, skipped = 0;
         try {
             MattermostConnectorAdapter mm = new MattermostConnectorAdapter(connector.getEndpoint(), token);
             String lastCreateAt = loadSimpleCheckpoint(profile.getProfileId(), "mattermost." + channelId);
@@ -1109,7 +1121,8 @@ public class IngestSchedulerService {
                         if (post.createAt() > highWaterCreateAt) highWaterCreateAt = post.createAt();
                     }
                     if (msgResult.isSuccess()) imported++;
-                    else if (!msgResult.skipped()) errors.add("MM msg " + post.id() + ": " + String.join(", ", msgResult.errors()));
+                    else if (msgResult.skipped()) skipped++;
+                    else errors.add("MM msg " + post.id() + ": " + String.join(", ", msgResult.errors()));
 
                     // Import file attachments as children
                     for (String fileId : post.fileIds()) {
@@ -1141,7 +1154,9 @@ public class IngestSchedulerService {
                                     createRelationshipSafe(callContext, profile.getRepositoryId(),
                                             parentObjectId, result.objectId(), errors);
                                 }
-                            } else if (!result.skipped()) {
+                            } else if (result.skipped()) {
+                                skipped++;
+                            } else {
                                 errors.add("MM " + fileId + ": " + String.join(", ", result.errors()));
                             }
                         } catch (Exception e) {
@@ -1162,7 +1177,7 @@ public class IngestSchedulerService {
         } catch (Exception e) {
             errors.add("Mattermost connection failed: " + e.getMessage());
         }
-        return new FetchResult(fetched, imported, errors);
+        return new FetchResult(fetched, imported, skipped, errors);
     }
 
     // ── Chatwork fetch ─────────────────────────────────────────────
@@ -1174,7 +1189,7 @@ public class IngestSchedulerService {
         if (roomId == null || roomId.isBlank()) return new FetchResult(0, 0, List.of("roomId is required for Chatwork"));
 
         List<String> errors = new ArrayList<>();
-        int fetched = 0, imported = 0;
+        int fetched = 0, imported = 0, skipped = 0;
         try {
             var chatwork = new jp.aegif.nemaki.rest.ingest.chat.ChatworkConnectorAdapter(token);
             // Always use force=1 (latest 100 messages) to avoid depending on
@@ -1221,7 +1236,8 @@ public class IngestSchedulerService {
                         }
                     }
                     if (msgResult.isSuccess()) imported++;
-                    else if (!msgResult.skipped()) errors.add("Chatwork msg " + msg.messageId() + ": " + String.join(", ", msgResult.errors()));
+                    else if (msgResult.skipped()) skipped++;
+                    else errors.add("Chatwork msg " + msg.messageId() + ": " + String.join(", ", msgResult.errors()));
                 } catch (Exception e) {
                     errors.add("Chatwork msg " + msg.messageId() + ": " + e.getMessage());
                 }
@@ -1252,7 +1268,8 @@ public class IngestSchedulerService {
 
                         ExternalIngestResult fileResult = canonicalImportService.executeChatContextImport(callContext, fileReq);
                         if (fileResult.isSuccess()) imported++;
-                        else if (!fileResult.skipped()) errors.add("Chatwork file " + file.fileId() + ": " + String.join(", ", fileResult.errors()));
+                        else if (fileResult.skipped()) skipped++;
+                        else errors.add("Chatwork file " + file.fileId() + ": " + String.join(", ", fileResult.errors()));
                     } catch (Exception e) {
                         errors.add("Chatwork file " + file.fileId() + ": " + e.getMessage());
                     }
@@ -1267,7 +1284,7 @@ public class IngestSchedulerService {
         } catch (Exception e) {
             errors.add("Chatwork connection failed: " + e.getMessage());
         }
-        return new FetchResult(fetched, imported, errors);
+        return new FetchResult(fetched, imported, skipped, errors);
     }
 
     // ── Box fetch ─────────────────────────────────────────────────
@@ -1278,7 +1295,7 @@ public class IngestSchedulerService {
         if (token == null) return new FetchResult(0, 0, List.of("No token for Box connector"));
 
         List<String> errors = new ArrayList<>();
-        int fetched = 0, imported = 0;
+        int fetched = 0, imported = 0, skipped = 0;
         try {
             var box = new jp.aegif.nemaki.rest.ingest.fileshare.BoxConnectorAdapter(token);
             String lastModified = loadSimpleCheckpoint(profile.getProfileId(), "box." + folderId);
@@ -1316,7 +1333,9 @@ public class IngestSchedulerService {
                                 && (highWaterModified == null || file.modifiedAt().compareTo(highWaterModified) > 0)) {
                             highWaterModified = file.modifiedAt();
                         }
-                    } else if (!result.skipped()) {
+                    } else if (result.skipped()) {
+                        skipped++;
+                    } else {
                         errors.add("Box " + file.id() + ": " + String.join(", ", result.errors()));
                     }
                 } catch (Exception e) {
@@ -1329,7 +1348,7 @@ public class IngestSchedulerService {
         } catch (Exception e) {
             errors.add("Box connection failed: " + e.getMessage());
         }
-        return new FetchResult(fetched, imported, errors);
+        return new FetchResult(fetched, imported, skipped, errors);
     }
 
     // ── Dropbox fetch ────────────────────────────────────────────────
@@ -1340,7 +1359,7 @@ public class IngestSchedulerService {
         if (token == null) return new FetchResult(0, 0, List.of("No token for Dropbox connector"));
 
         List<String> errors = new ArrayList<>();
-        int fetched = 0, imported = 0;
+        int fetched = 0, imported = 0, skipped = 0;
         try {
             var dropbox = new jp.aegif.nemaki.rest.ingest.fileshare.DropboxConnectorAdapter(token);
             String lastModified = loadSimpleCheckpoint(profile.getProfileId(), "dropbox");
@@ -1377,7 +1396,9 @@ public class IngestSchedulerService {
                                 && (highWaterModified == null || file.serverModified().compareTo(highWaterModified) > 0)) {
                             highWaterModified = file.serverModified();
                         }
-                    } else if (!result.skipped()) {
+                    } else if (result.skipped()) {
+                        skipped++;
+                    } else {
                         errors.add("Dropbox " + file.id() + ": " + String.join(", ", result.errors()));
                     }
                 } catch (Exception e) {
@@ -1390,7 +1411,7 @@ public class IngestSchedulerService {
         } catch (Exception e) {
             errors.add("Dropbox connection failed: " + e.getMessage());
         }
-        return new FetchResult(fetched, imported, errors);
+        return new FetchResult(fetched, imported, skipped, errors);
     }
 
     // ── Unified dispatch ────────────────────────────────────────────
