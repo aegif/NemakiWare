@@ -77,7 +77,14 @@ public class IngestWebhookController {
         String system = connector.getSourceSystem();
 
         // 2. Microsoft Graph: subscription validation
+        // This is a safe response (returns the token, no side effects) but requires
+        // webhookSecret to be configured to prevent unauthorized subscription setup
         if (validationToken != null && !validationToken.isBlank()) {
+            if (connector.getWebhookSecret() == null || connector.getWebhookSecret().isBlank()) {
+                logger.warn("Graph validation rejected for connector {} — webhookSecret not configured", connectorId);
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "webhookSecret required for Graph subscriptions"));
+            }
             logger.info("Graph subscription validation for connector {}", connectorId);
             return ResponseEntity.ok()
                     .contentType(MediaType.TEXT_PLAIN)

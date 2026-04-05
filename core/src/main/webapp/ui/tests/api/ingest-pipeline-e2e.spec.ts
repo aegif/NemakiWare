@@ -319,7 +319,11 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
     }
   });
 
-  // ── Admin endpoint smoke ──────────────────────────────────────
+  // ── Admin endpoint smoke + negative-path assertions ────────────
+  // These verify endpoint availability and basic rejection behavior.
+  // Positive-path scheduler/DLQ/job behavioral E2E (trigger→import→
+  // checkpoint→job record→DLQ→retry) requires JVM-side integration
+  // tests with WireMock stub adapters.
 
   test('scheduler status includes idleProfiles', async ({ request }) => {
     const res = await request.get(`${BASE}/v1/admin/ingest-scheduler/status`, { headers: AUTH });
@@ -345,7 +349,9 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
     }
   });
 
-  test('webhook rejects unsigned request', async ({ request }) => {
+  // Smoke: webhook endpoint is behind auth filter (/api/* path).
+  // Signature verification (webhookSecret) is tested in WireMock adapter tests.
+  test('webhook endpoint rejects unauthenticated requests', async ({ request }) => {
     const ts = Date.now();
     const connId = `e2e-wh-${ts}`;
     await request.post(`${BASE}/v1/admin/connectors`, {
@@ -353,11 +359,12 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
       data: { connectorId: connId, sourceArchetype: 'CHAT_CONTEXT', sourceSystem: 'slack', enabled: true },
     });
     try {
+      // Without auth header → rejected by auth filter (401)
       const res = await request.post(`${BASE}/v1/ingest-webhook/${connId}`, {
         headers: { 'Content-Type': 'application/json' },
         data: { type: 'test' },
       });
-      expect(res.ok()).toBeFalsy();
+      expect(res.status()).toBe(401);
     } finally {
       await request.delete(`${BASE}/v1/admin/connectors/${connId}`, { headers: AUTH });
     }
