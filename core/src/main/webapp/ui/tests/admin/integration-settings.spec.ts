@@ -49,7 +49,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     await expect(title).toBeVisible({ timeout: 10000 });
   });
 
-  test('should display all thirteen tabs', async ({ page }) => {
+  test('should display all fifteen tabs', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
     await page.waitForTimeout(3000);
 
@@ -57,7 +57,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     const tabs = page.locator('[role="tab"]');
     const tabCount = await tabs.count();
     console.log(`Found ${tabCount} tabs`);
-    expect(tabCount).toBe(13);
+    expect(tabCount).toBe(15);
 
     // Verify tab labels by role (i18n-safe: match English or Japanese)
     const expectedTabs = [
@@ -74,6 +74,8 @@ test.describe('Integration Settings - Page Rendering', () => {
       /Connector|コネクタ/i,
       /Import Profile|インポートプロファイル/i,
       /Manual Import|手動インポート/i,
+      /Job History|ジョブ履歴/i,
+      /Scheduler|スケジューラ/i,
     ];
     for (const tabPattern of expectedTabs) {
       const tab = tabs.filter({ hasText: tabPattern });
