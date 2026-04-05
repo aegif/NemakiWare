@@ -2927,7 +2927,7 @@
     "updatePolicies": {
       "versionUp": "コンテンツ変更時にバージョンアップ",
       "alwaysVersionUp": "常にバージョンアップ",
-      "overwrite": "上書き"
+      "metadataOnly": "メタデータのみ更新（バージョンアップなし）"
     },
     "relationshipPolicies": {
       "none": "なし",

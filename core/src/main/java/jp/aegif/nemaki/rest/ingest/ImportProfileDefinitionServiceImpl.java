@@ -157,6 +157,42 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         if (def.isSchedulerEnabled()) {
             validateSchedulerParams(def);
         }
+        // Validate auto-resolve uniqueness invariants at save time
+        validateAutoResolveUniqueness(def);
+    }
+
+    /**
+     * Prevents saving profiles that would cause ambiguous auto-resolve at runtime.
+     */
+    private void validateAutoResolveUniqueness(ImportProfileDefinition def) {
+        String repoId = def.getRepositoryId();
+        if (repoId == null) return;
+        List<ImportProfileDefinition> existing = listByRepository(repoId);
+
+        // Check defaultConnectorId uniqueness
+        if (def.getDefaultConnectorId() != null && !def.getDefaultConnectorId().isBlank()) {
+            for (ImportProfileDefinition other : existing) {
+                if (other.getProfileId().equals(def.getProfileId())) continue;
+                if (def.getDefaultConnectorId().equals(other.getDefaultConnectorId())
+                        && other.isEnabled()) {
+                    throw new IllegalArgumentException(
+                            "Profile '" + other.getProfileId() + "' already claims defaultConnectorId='"
+                            + def.getDefaultConnectorId() + "' in repository '" + repoId
+                            + "'. Only one enabled profile per defaultConnectorId is allowed.");
+                }
+            }
+        }
+        // Check defaultProfile uniqueness
+        if (def.isDefaultProfile()) {
+            for (ImportProfileDefinition other : existing) {
+                if (other.getProfileId().equals(def.getProfileId())) continue;
+                if (other.isDefaultProfile() && other.isEnabled()) {
+                    throw new IllegalArgumentException(
+                            "Profile '" + other.getProfileId() + "' already has defaultProfile=true in repository '"
+                            + repoId + "'. Only one enabled default profile per repository is allowed.");
+                }
+            }
+        }
     }
 
     /**

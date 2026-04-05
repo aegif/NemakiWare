@@ -2927,7 +2927,7 @@
     "updatePolicies": {
       "versionUp": "Version up on content change",
       "alwaysVersionUp": "Always version up",
-      "overwrite": "Overwrite in place"
+      "metadataOnly": "Update metadata only (no versioning)"
     },
     "relationshipPolicies": {
       "none": "None",

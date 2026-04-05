@@ -1235,15 +1235,24 @@ public class IngestSchedulerService {
             // API consumers or webhook-triggered fetches, causing message loss.
             // Dedupe is handled by the persisted message ID checkpoint below.
             String lastMsgId = loadSimpleCheckpoint(profile.getProfileId(), "chatwork." + roomId);
+            long lastMsgIdNum = 0;
+            try { if (lastMsgId != null) lastMsgIdNum = Long.parseLong(lastMsgId); }
+            catch (NumberFormatException e) { logger.warn("Invalid Chatwork checkpoint '{}', resetting", lastMsgId); }
+
             var messages = chatwork.getMessages(roomId, true);
             fetched = messages.size();
             long throttleMs = calculateThrottleDelayMs(connector);
-            String highWaterMsgId = lastMsgId;
+            long highWaterMsgIdNum = lastMsgIdNum;
+            int processed = 0;
 
             for (var msg : messages) {
+                // Respect limit
+                if (processed >= limit) break;
                 throttle(throttleMs);
-                // Skip messages already processed (by message ID comparison)
-                if (lastMsgId != null && msg.messageId().compareTo(lastMsgId) <= 0) continue;
+                // Skip messages already processed (numeric comparison for Chatwork IDs)
+                long msgIdNum = 0;
+                try { msgIdNum = Long.parseLong(msg.messageId()); } catch (NumberFormatException e) { /* use 0 */ }
+                if (lastMsgIdNum > 0 && msgIdNum <= lastMsgIdNum) continue;
 
                 try {
                     String messageText = msg.body() != null ? msg.body() : "";
@@ -1269,8 +1278,8 @@ public class IngestSchedulerService {
 
                     ExternalIngestResult msgResult = canonicalImportService.executeChatContextImport(callContext, msgReq);
                     if (msgResult.isSuccess() || msgResult.skipped()) {
-                        if (highWaterMsgId == null || msg.messageId().compareTo(highWaterMsgId) > 0) {
-                            highWaterMsgId = msg.messageId();
+                        if (msgIdNum > highWaterMsgIdNum) {
+                            highWaterMsgIdNum = msgIdNum;
                         }
                     }
                     if (msgResult.isSuccess()) imported++;
@@ -1279,6 +1288,7 @@ public class IngestSchedulerService {
                 } catch (Exception e) {
                     errors.add("Chatwork msg " + msg.messageId() + ": " + e.getMessage());
                 }
+                processed++;
             }
 
             // Also import files from the room
@@ -1316,8 +1326,8 @@ public class IngestSchedulerService {
                 errors.add("Chatwork file list failed: " + e.getMessage());
             }
 
-            if (highWaterMsgId != null && !highWaterMsgId.equals(lastMsgId)) {
-                saveSimpleCheckpoint(profile.getProfileId(), "chatwork." + roomId, highWaterMsgId);
+            if (highWaterMsgIdNum > lastMsgIdNum) {
+                saveSimpleCheckpoint(profile.getProfileId(), "chatwork." + roomId, String.valueOf(highWaterMsgIdNum));
             }
         } catch (Exception e) {
             errors.add("Chatwork connection failed: " + e.getMessage());

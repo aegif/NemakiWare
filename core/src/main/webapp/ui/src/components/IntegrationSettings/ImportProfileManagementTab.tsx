@@ -41,12 +41,11 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
   const UPDATE_POLICY_OPTIONS = [
     { value: 'version_up_on_content_change', label: t('importProfileManagement.updatePolicies.versionUp') },
     { value: 'always_version_up', label: t('importProfileManagement.updatePolicies.alwaysVersionUp') },
-    { value: 'overwrite', label: t('importProfileManagement.updatePolicies.overwrite') },
+    { value: 'update_metadata_only', label: t('importProfileManagement.updatePolicies.metadataOnly') },
   ];
   const RELATIONSHIP_POLICY_OPTIONS = [
     { value: '', label: t('importProfileManagement.relationshipPolicies.none') },
     { value: 'direct', label: t('importProfileManagement.relationshipPolicies.direct') },
-    { value: 'parent_child', label: t('importProfileManagement.relationshipPolicies.parent') },
   ];
   const ACL_SYNC_OPTIONS = [
     { value: 'inherit_from_folder', label: t('importProfileManagement.aclSyncPolicies.inheritFromFolder') },

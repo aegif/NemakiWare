@@ -1050,6 +1050,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     // Delete existing relationships before re-import
                     removeExistingRelationships(callContext, repositoryId, existingDoc.getId());
                 }
+                // "create_new_version" (default): no special dedupe action — falls through
+                // to updatePolicy which governs whether a new version is actually created
+                // (depends on content hash comparison, always_version_up, or metadata_only)
 
                 String updatePolicy = profile.getUpdatePolicy() != null ? profile.getUpdatePolicy() : "version_up_on_content_change";
                 objectId = existingDoc.getId();
@@ -1058,15 +1061,36 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     // Update metadata only — no version change, no content update
                     versionLabel = "metadata-only";
                     logger.info("Dedupe: metadata-only update for existing document {}", objectId);
+                } else if ("always_version_up".equals(updatePolicy)) {
+                    // Always create a new version regardless of content changes
+                    isNewVersion = true;
+                    Holder<String> objectIdHolder = new Holder<>(objectId);
+                    Holder<Boolean> contentCopied = new Holder<>(Boolean.FALSE);
+                    versioningService.checkOut(callContext, repositoryId, objectIdHolder, contentCopied, null);
+                    String pwcId = objectIdHolder.getValue();
+                    boolean isMajor = !"minor".equalsIgnoreCase(profile.getVersioningPolicy());
+                    Holder<String> checkinHolder = new Holder<>(pwcId);
+                    versioningService.checkIn(callContext, repositoryId, checkinHolder, isMajor,
+                            null, contentStream, "Imported from " + connector.getSourceSystem(),
+                            null, null, null, null);
+                    objectId = checkinHolder.getValue();
+                    versionLabel = "new version (always)";
                 } else {
-                    // version_up_on_content_change: compare content hash before versioning
-                    boolean contentChanged = true;
-                    if (computedHash != null) {
+                    // version_up_on_content_change (default): compare content hash before versioning
+                    boolean contentChanged;
+                    if (computedHash == null) {
+                        // No content stream provided — treat as metadata-only update, not version-up
+                        contentChanged = false;
+                        versionLabel = "metadata-only (no content provided)";
+                        logger.info("Dedupe: no content stream for {}, metadata-only update", objectId);
+                    } else {
                         String existingHash = getAspectProperty(existingDoc, "nemaki:externalIntegration", "nemaki:contentHash");
                         if (computedHash.equals(existingHash)) {
                             contentChanged = false;
                             versionLabel = "metadata-only (content unchanged)";
                             logger.info("Dedupe: content unchanged for {} (hash={}), metadata-only", objectId, computedHash);
+                        } else {
+                            contentChanged = true;
                         }
                     }
                     if (contentChanged) {
