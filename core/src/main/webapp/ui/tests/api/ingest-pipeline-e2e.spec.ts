@@ -65,11 +65,70 @@ async function countRootChildren(request: APIRequestContext): Promise<number> {
 
 test.describe('Ingest Pipeline — API Smoke Tests', () => {
 
-  // ── Document creation + CMIS property verification ─────────────
-  // Note: These tests use JSON-only imports (no multipart content upload).
-  // Multipart content upload coverage is a gap — the /api/ path currently
-  // lacks Spring multipart configuration, so content-upload regression
-  // testing requires JVM-side integration tests with embedded Tomcat.
+  // ── Content upload + download round-trip ───────────────────────
+
+  test('should upload content via multipart and verify download round-trip', async ({ request }) => {
+    const ts = Date.now();
+    const { connId, profId } = await createStub(request, `upload-${ts}`);
+    const fileContent = `E2E content round-trip test ${ts}`;
+
+    try {
+      const res = await request.post(`${BASE}/v1/repo/bedroom/ingest`, {
+        headers: AUTH,
+        multipart: {
+          request: { name: 'request.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
+            profileId: profId, connectorId: connId,
+            sourceObjectId: `rt-${ts}`, sourceObjectType: 'file', executionMode: 'manual',
+          })) },
+          content: { name: `roundtrip-${ts}.txt`, mimeType: 'text/plain', buffer: Buffer.from(fileContent) },
+        },
+      });
+
+      const body = await res.json();
+      expect(body.errors ?? []).toHaveLength(0);
+      expect(body.objectId).toBeDefined();
+
+      // Verify content download round-trip via CMIS
+      const dlRes = await request.get(
+        `${CMIS}/root?objectId=${encodeURIComponent(body.objectId)}&cmisselector=content`,
+        { headers: AUTH },
+      );
+      expect(dlRes.ok()).toBeTruthy();
+      const downloaded = await dlRes.text();
+      expect(downloaded).toBe(fileContent);
+    } finally {
+      await deleteStub(request, connId, profId);
+    }
+  });
+
+  // ── Content hash: identical re-upload → no new version ────────
+
+  test('should skip version-up when re-uploaded content hash matches', async ({ request }) => {
+    const ts = Date.now();
+    const { connId, profId } = await createStub(request, `hash-${ts}`);
+    const content = `identical content for hash test ${ts}`;
+
+    try {
+      const mkMultipart = () => ({
+        request: { name: 'req.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
+          profileId: profId, connectorId: connId,
+          sourceObjectId: `hash-${ts}`, sourceObjectType: 'file', executionMode: 'manual',
+        })) },
+        content: { name: `hash-${ts}.txt`, mimeType: 'text/plain', buffer: Buffer.from(content) },
+      });
+
+      const r1 = await request.post(`${BASE}/v1/repo/bedroom/ingest`, { headers: AUTH, multipart: mkMultipart() });
+      expect((await r1.json()).errors ?? []).toHaveLength(0);
+
+      const r2 = await request.post(`${BASE}/v1/repo/bedroom/ingest`, { headers: AUTH, multipart: mkMultipart() });
+      const b2 = await r2.json();
+      expect(b2.errors ?? []).toHaveLength(0);
+      // Identical content → hash match → metadata-only update, no new version
+      expect(b2.isNewVersion).toBeFalsy();
+    } finally {
+      await deleteStub(request, connId, profId);
+    }
+  });
 
   // ── JSON-only import (metadata only) ──────────────────────────
 

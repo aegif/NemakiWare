@@ -292,6 +292,12 @@
 			<param-value>classpath:spring-mvc-context.xml</param-value>
 		</init-param>
 		<load-on-startup>5</load-on-startup>
+		<!-- Multipart configuration for External Ingest file uploads -->
+		<multipart-config>
+			<max-file-size>104857600</max-file-size>          <!-- 100MB -->
+			<max-request-size>104857600</max-request-size>     <!-- 100MB -->
+			<file-size-threshold>1048576</file-size-threshold>  <!-- 1MB -->
+		</multipart-config>
 	</servlet>
 
 	<servlet-mapping>
