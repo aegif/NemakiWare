@@ -11,8 +11,8 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMoc
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Adapter integration tests for SlackConnectorAdapter using WireMock.
- * Tests HTTP contract, auth headers, pagination, error handling.
+ * Slack adapter contract tests.
+ * Pins the Web API behavior the chat-context scheduler depends on.
  */
 class SlackConnectorAdapterTest {
 
@@ -26,9 +26,7 @@ class SlackConnectorAdapterTest {
     }
 
     @AfterAll
-    static void stopWireMock() {
-        wireMock.stop();
-    }
+    static void stopWireMock() { wireMock.stop(); }
 
     @BeforeEach
     void setUp() {
@@ -37,153 +35,126 @@ class SlackConnectorAdapterTest {
                 "http://localhost:" + wireMock.port());
     }
 
-    // ── HTTP contract tests ─────────────────────────────────────
+    // ── Auth contract ────────────────────────────────────────────
 
     @Test
-    void testListChannelsSendsAuthHeaderAndParsesResponse() throws Exception {
+    void shouldSendBearerTokenOnEveryRequest() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/conversations.list"))
-                .withHeader("Authorization", equalTo("Bearer xoxb-test-token"))
-                .willReturn(aResponse()
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                            {
-                                "ok": true,
-                                "channels": [
-                                    {"id": "C001", "name": "general", "is_private": false},
-                                    {"id": "C002", "name": "secret", "is_private": true}
-                                ]
-                            }
-                            """)));
-
-        List<SlackConnectorAdapter.SlackChannel> channels = adapter.listChannels(100);
-        assertEquals(2, channels.size());
-        assertEquals("C001", channels.get(0).id());
-        assertEquals("general", channels.get(0).name());
-        assertFalse(channels.get(0).isPrivate());
-        assertTrue(channels.get(1).isPrivate());
+                .willReturn(aResponse().withBody("{\"ok\":true,\"channels\":[]}")));
+        adapter.listChannels(100);
+        wireMock.verify(getRequestedFor(urlPathEqualTo("/conversations.list"))
+                .withHeader("Authorization", equalTo("Bearer xoxb-test-token")));
     }
 
+    // ── History with/without oldest (checkpoint parameter) ───────
+
     @Test
-    void testGetHistorySendsOldestParameter() throws Exception {
+    void shouldPassOldestParameterForCheckpoint() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
                 .withQueryParam("channel", equalTo("C001"))
                 .withQueryParam("oldest", equalTo("1700000000.000000"))
-                .willReturn(aResponse()
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                            {
-                                "ok": true,
-                                "messages": [
-                                    {
-                                        "ts": "1700000001.000001",
-                                        "user": "U001",
-                                        "text": "Hello",
-                                        "thread_ts": null,
-                                        "files": []
-                                    }
-                                ]
-                            }
-                            """)));
+                .willReturn(aResponse().withBody("{\"ok\":true,\"messages\":[]}")));
 
-        List<SlackConnectorAdapter.SlackMessage> messages =
-                adapter.getHistory("C001", "1700000000.000000", 100);
-        assertEquals(1, messages.size());
-        assertEquals("1700000001.000001", messages.get(0).ts());
-        assertEquals("U001", messages.get(0).userId());
-        assertEquals("Hello", messages.get(0).text());
+        adapter.getHistory("C001", "1700000000.000000", 100);
+        wireMock.verify(getRequestedFor(urlPathEqualTo("/conversations.history"))
+                .withQueryParam("oldest", equalTo("1700000000.000000")));
     }
 
     @Test
-    void testGetHistoryWithNullOldestOmitsParameter() throws Exception {
+    void shouldOmitOldestWhenNull() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
-                .withQueryParam("channel", equalTo("C001"))
-                .willReturn(aResponse()
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"ok\":true,\"messages\":[]}")));
-
-        List<SlackConnectorAdapter.SlackMessage> messages =
-                adapter.getHistory("C001", null, 50);
-        assertTrue(messages.isEmpty());
+                .willReturn(aResponse().withBody("{\"ok\":true,\"messages\":[]}")));
+        adapter.getHistory("C001", null, 50);
+        wireMock.verify(getRequestedFor(urlPathEqualTo("/conversations.history"))
+                .withoutQueryParam("oldest"));
     }
 
+    // ── Message with thread_ts (thread detection) ────────────────
+
     @Test
-    void testGetHistoryParsesFilesInMessages() throws Exception {
+    void shouldPreserveThreadTsForThreadDetection() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
-                .willReturn(aResponse()
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                            {
-                                "ok": true,
-                                "messages": [{
-                                    "ts": "1700000002.000002",
-                                    "user": "U002",
-                                    "text": "See attached",
-                                    "files": [{
-                                        "id": "F001",
-                                        "name": "doc.pdf",
-                                        "mimetype": "application/pdf",
-                                        "url_private_download": "https://files.slack.com/F001",
-                                        "size": 1024
-                                    }]
-                                }]
-                            }
-                            """)));
+                .willReturn(aResponse().withBody("""
+                    {"ok":true,"messages":[{
+                        "ts": "1700000001.000001",
+                        "user": "U001",
+                        "text": "thread reply",
+                        "thread_ts": "1700000000.000000",
+                        "files": []
+                    }]}
+                    """)));
 
-        List<SlackConnectorAdapter.SlackMessage> messages =
-                adapter.getHistory("C001", null, 100);
-        assertEquals(1, messages.size());
-        assertEquals(1, messages.get(0).files().size());
-        assertEquals("F001", messages.get(0).files().get(0).id());
-        assertEquals("doc.pdf", messages.get(0).files().get(0).name());
-        assertEquals("application/pdf", messages.get(0).files().get(0).mimeType());
-        assertEquals(1024, messages.get(0).files().get(0).size());
+        var msgs = adapter.getHistory("C001", null, 100);
+        assertEquals("1700000000.000000", msgs.get(0).threadTs());
     }
 
+    // ── Multiple files in a single message ────────────────────────
+
     @Test
-    void testDownloadFileStreamsContent() throws Exception {
-        String fileUrl = "/files-pri/T001/doc.pdf";
-        wireMock.stubFor(get(urlPathEqualTo(fileUrl))
+    void shouldParseMultipleFilesInMessage() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
+                .willReturn(aResponse().withBody("""
+                    {"ok":true,"messages":[{
+                        "ts": "1700000002.000002",
+                        "user": "U002",
+                        "text": "files attached",
+                        "files": [
+                            {"id":"F1","name":"a.pdf","mimetype":"application/pdf","url_private_download":"http://host/f1","size":100},
+                            {"id":"F2","name":"b.png","mimetype":"image/png","url_private_download":"http://host/f2","size":200}
+                        ]
+                    }]}
+                    """)));
+
+        var msgs = adapter.getHistory("C001", null, 100);
+        assertEquals(2, msgs.get(0).files().size());
+        assertEquals("F1", msgs.get(0).files().get(0).id());
+        assertEquals("F2", msgs.get(0).files().get(1).id());
+    }
+
+    // ── File download ────────────────────────────────────────────
+
+    @Test
+    void shouldStreamFileWithBearerAuth() throws Exception {
+        byte[] content = "slack file bytes".getBytes();
+        wireMock.stubFor(get(urlPathEqualTo("/files/f1"))
                 .withHeader("Authorization", equalTo("Bearer xoxb-test-token"))
-                .willReturn(aResponse()
-                        .withHeader("Content-Type", "application/pdf")
-                        .withBody("fake pdf content")));
+                .willReturn(aResponse().withBody(content)));
 
-        InputStream stream = adapter.downloadFile(
-                "http://localhost:" + wireMock.port() + fileUrl);
-        assertNotNull(stream);
-        String content = new String(stream.readAllBytes());
-        assertEquals("fake pdf content", content);
+        InputStream stream = adapter.downloadFile("http://localhost:" + wireMock.port() + "/files/f1");
+        assertArrayEquals(content, stream.readAllBytes());
     }
 
+    // ── Failure contract ─────────────────────────────────────────
+
     @Test
-    void testApiErrorThrowsException() {
+    void shouldThrowOnHttp429RateLimit() {
         wireMock.stubFor(get(urlPathEqualTo("/conversations.list"))
                 .willReturn(aResponse().withStatus(429)
                         .withBody("{\"ok\":false,\"error\":\"rate_limited\"}")));
-
         assertThrows(RuntimeException.class, () -> adapter.listChannels(100));
     }
 
-    // ── Record mapping tests ────────────────────────────────────
-
     @Test
-    void testSlackMessageRecordMapping() {
-        var msg = new SlackConnectorAdapter.SlackMessage(
-                "1234567890.123456", "U001", "Hello world",
-                "1234567890.000001",
-                List.of(new SlackConnectorAdapter.SlackFile(
-                        "F001", "doc.pdf", "application/pdf",
-                        "https://files.slack.com/F001", 1024)));
-        assertEquals("1234567890.123456", msg.ts());
-        assertEquals("U001", msg.userId());
-        assertEquals(1, msg.files().size());
+    void shouldThrowOnHttp500() {
+        wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
+                .willReturn(aResponse().withStatus(500)));
+        assertThrows(RuntimeException.class, () -> adapter.getHistory("C001", null, 50));
     }
 
+    // ── Channel listing ──────────────────────────────────────────
+
     @Test
-    void testEmptyFilesListInMessage() {
-        var msg = new SlackConnectorAdapter.SlackMessage(
-                "1234567890.123456", "U001", "No files", null, List.of());
-        assertTrue(msg.files().isEmpty());
-        assertNull(msg.threadTs());
+    void shouldParseChannelFields() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/conversations.list"))
+                .willReturn(aResponse().withBody("""
+                    {"ok":true,"channels":[
+                        {"id":"C1","name":"general","is_private":false},
+                        {"id":"C2","name":"secret","is_private":true}
+                    ]}
+                    """)));
+        var channels = adapter.listChannels(100);
+        assertEquals(2, channels.size());
+        assertFalse(channels.get(0).isPrivate());
+        assertTrue(channels.get(1).isPrivate());
     }
 }

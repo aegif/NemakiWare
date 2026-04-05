@@ -2,13 +2,16 @@ package jp.aegif.nemaki.rest.ingest.record;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import org.junit.jupiter.api.*;
-
 import java.util.List;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * Salesforce adapter contract tests.
+ * Pins the REST API behavior the business-record scheduler depends on.
+ */
 class SalesforceConnectorAdapterTest {
 
     private static WireMockServer wireMock;
@@ -30,82 +33,121 @@ class SalesforceConnectorAdapterTest {
                 "http://localhost:" + wireMock.port(), "test-sf-token");
     }
 
-    @Test
-    void testQuerySendsAuthAndParsesRecords() throws Exception {
-        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
-                .withHeader("Authorization", equalTo("Bearer test-sf-token"))
-                .willReturn(aResponse()
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                            {
-                                "records": [{
-                                    "attributes": {"type": "Account"},
-                                    "Id": "001XX0001",
-                                    "Name": "Acme Corp",
-                                    "Industry": "Technology"
-                                }]
-                            }
-                            """)));
+    // ── Auth contract ────────────────────────────────────────────
 
-        List<SalesforceConnectorAdapter.SalesforceRecord> records =
-                adapter.query("SELECT Id, Name FROM Account LIMIT 10");
+    @Test
+    void shouldSendBearerTokenOnQuery() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
+                .willReturn(aResponse().withBody("{\"records\":[]}")));
+        adapter.query("SELECT Id FROM Account");
+        wireMock.verify(getRequestedFor(urlPathEqualTo("/services/data/v59.0/query"))
+                .withHeader("Authorization", equalTo("Bearer test-sf-token")));
+    }
+
+    // ── SOQL query URL encoding ──────────────────────────────────
+
+    @Test
+    void shouldUrlEncodeSoqlQuery() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
+                .willReturn(aResponse().withBody("{\"records\":[]}")));
+        adapter.query("SELECT Id, Name FROM Account WHERE Name = 'Acme'");
+        wireMock.verify(getRequestedFor(urlPathEqualTo("/services/data/v59.0/query"))
+                .withQueryParam("q", equalTo("SELECT Id, Name FROM Account WHERE Name = 'Acme'")));
+    }
+
+    // ── Record parsing with fields ───────────────────────────────
+
+    @Test
+    void shouldParseRecordFieldsExcludingAttributes() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
+                .willReturn(aResponse().withBody("""
+                    {"records": [{
+                        "attributes": {"type": "Account", "url": "/services/data/v59.0/sobjects/Account/001"},
+                        "Id": "001XX0001",
+                        "Name": "Acme",
+                        "Industry": "Technology",
+                        "AnnualRevenue": "1000000"
+                    }]}
+                    """)));
+
+        var records = adapter.query("SELECT Id, Name, Industry FROM Account");
         assertEquals(1, records.size());
         assertEquals("001XX0001", records.get(0).id());
         assertEquals("Account", records.get(0).type());
-        assertEquals("Acme Corp", records.get(0).name());
+        assertEquals("Acme", records.get(0).name());
         assertEquals("Technology", records.get(0).fields().get("Industry"));
+        // "attributes" key should NOT appear in fields map
+        assertFalse(records.get(0).fields().containsKey("attributes"));
     }
 
+    // ── getRecord by type and ID ─────────────────────────────────
+
     @Test
-    void testGetRecordByTypeAndId() throws Exception {
+    void shouldFetchSingleRecordByTypeAndId() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/sobjects/Contact/003XX0001"))
-                .willReturn(aResponse()
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                            {
-                                "attributes": {"type": "Contact"},
-                                "Id": "003XX0001",
-                                "Name": "John Doe",
-                                "Email": "john@example.com"
-                            }
-                            """)));
-
-        SalesforceConnectorAdapter.SalesforceRecord rec = adapter.getRecord("Contact", "003XX0001");
+                .willReturn(aResponse().withBody("""
+                    {"attributes":{"type":"Contact"}, "Id":"003XX0001", "Name":"John", "Email":"j@test.com"}
+                    """)));
+        var rec = adapter.getRecord("Contact", "003XX0001");
         assertEquals("003XX0001", rec.id());
-        assertEquals("John Doe", rec.name());
-        assertEquals("john@example.com", rec.fields().get("Email"));
+        assertEquals("Contact", rec.type());
+        assertEquals("j@test.com", rec.fields().get("Email"));
     }
 
-    @Test
-    void testGetAttachmentsEscapesSingleQuoteInParentId() throws Exception {
-        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
-                .willReturn(aResponse()
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"records\":[]}")));
+    // ── SOQL injection prevention ────────────────────────────────
 
-        // Input with single quote — must be escaped to prevent SOQL injection
+    @Test
+    void shouldEscapeSingleQuoteInAttachmentParentId() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
+                .willReturn(aResponse().withBody("{\"records\":[]}")));
+
         adapter.getAttachments("001'XX--inject");
 
-        // Verify the single quote was escaped to \' in the SOQL
-        // WireMock matches against decoded query param values
+        // The single quote must be escaped as \' in the SOQL
         wireMock.verify(getRequestedFor(urlPathEqualTo("/services/data/v59.0/query"))
                 .withQueryParam("q", containing("001\\'XX--inject")));
     }
 
     @Test
-    void testApiErrorThrows() {
+    void shouldEscapeBackslashInParentId() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
-                .willReturn(aResponse().withStatus(401).withBody("Unauthorized")));
-        assertThrows(RuntimeException.class,
-                () -> adapter.query("SELECT Id FROM Account"));
+                .willReturn(aResponse().withBody("{\"records\":[]}")));
+
+        adapter.getAttachments("001\\XX");
+
+        wireMock.verify(getRequestedFor(urlPathEqualTo("/services/data/v59.0/query"))
+                .withQueryParam("q", containing("001\\\\XX")));
+    }
+
+    // ── Empty results ────────────────────────────────────────────
+
+    @Test
+    void shouldReturnEmptyListForNoRecords() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
+                .willReturn(aResponse().withBody("{\"records\":[]}")));
+        assertTrue(adapter.query("SELECT Id FROM Account").isEmpty());
+    }
+
+    // ── Failure contract ─────────────────────────────────────────
+
+    @Test
+    void shouldThrowOn401() {
+        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
+                .willReturn(aResponse().withStatus(401)));
+        assertThrows(RuntimeException.class, () -> adapter.query("SELECT Id FROM Account"));
     }
 
     @Test
-    void testEmptyResults() throws Exception {
+    void shouldThrowOn400BadRequest() {
         wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
-                .willReturn(aResponse()
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"records\":[]}")));
-        assertTrue(adapter.query("SELECT Id FROM Account").isEmpty());
+                .willReturn(aResponse().withStatus(400).withBody("[{\"errorCode\":\"MALFORMED_QUERY\"}]")));
+        assertThrows(RuntimeException.class, () -> adapter.query("INVALID SOQL"));
+    }
+
+    @Test
+    void shouldThrowOn500() {
+        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/sobjects/Account/001"))
+                .willReturn(aResponse().withStatus(500)));
+        assertThrows(RuntimeException.class, () -> adapter.getRecord("Account", "001"));
     }
 }
