@@ -547,6 +547,16 @@ public class IngestSchedulerService {
 
     /**
      * Result of a fetch run (any adapter).
+     *
+     * <p><b>Counter semantics:</b>
+     * <ul>
+     *   <li>{@code fetched} — top-level source records retrieved from the external API</li>
+     *   <li>{@code imported} — documents successfully created/versioned (includes child
+     *       attachments in chat/mail/note adapters, so may exceed fetched)</li>
+     *   <li>{@code skipped} — dedupe-skipped items (source-identity match, same-version etc.;
+     *       includes both parent records and child attachments)</li>
+     *   <li>{@code errors} — per-item error messages for failed imports</li>
+     * </ul>
      */
     public record FetchResult(int fetched, int imported, int skipped, List<String> errors) {
         /** Convenience constructor without skipped (defaults to 0). */
@@ -577,6 +587,15 @@ public class IngestSchedulerService {
             List<GmailMessageSummary> messages = gmail.listMessages(effectiveQuery, limit);
             fetched = messages.size();
             long throttleMs = calculateThrottleDelayMs(connector);
+            long highWaterEpochMs = 0;
+            // Parse existing checkpoint date to epoch for comparison
+            if (lastDate != null) {
+                try {
+                    highWaterEpochMs = java.time.LocalDate.parse(lastDate,
+                            java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"))
+                            .atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli();
+                } catch (Exception e) { /* reset to 0 */ }
+            }
 
             for (GmailMessageSummary msg : messages) {
                 throttle(throttleMs);
@@ -587,17 +606,28 @@ public class IngestSchedulerService {
                     req.getMetadata().put("gmailThreadId", msg.threadId());
 
                     ExternalIngestResult result = canonicalImportService.executeMailImport(callContext, req);
-                    if (result.isSuccess()) imported++;
-                    else if (result.skipped()) skipped++;
-                    else errors.add("Gmail " + msg.id() + ": " + String.join(", ", result.errors()));
+                    if (result.isSuccess() || result.skipped()) {
+                        // Track highest successfully handled message date
+                        if (msg.internalDate() > highWaterEpochMs) {
+                            highWaterEpochMs = msg.internalDate();
+                        }
+                        if (result.isSuccess()) imported++;
+                        else skipped++;
+                    } else {
+                        errors.add("Gmail " + msg.id() + ": " + String.join(", ", result.errors()));
+                    }
                 } catch (Exception e) {
                     errors.add("Gmail " + msg.id() + ": " + e.getMessage());
                 }
             }
-            // Save current date as checkpoint (Gmail after: uses YYYY/MM/DD)
-            if (fetched > 0) {
-                saveSimpleCheckpoint(profile.getProfileId(), "gmail",
-                        java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd")));
+            // Save checkpoint from highest successful message date (not wall-clock)
+            if (highWaterEpochMs > 0) {
+                String newDate = java.time.Instant.ofEpochMilli(highWaterEpochMs)
+                        .atZone(java.time.ZoneOffset.UTC).toLocalDate()
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+                if (lastDate == null || !newDate.equals(lastDate)) {
+                    saveSimpleCheckpoint(profile.getProfileId(), "gmail", newDate);
+                }
             }
         } catch (Exception e) {
             errors.add("Gmail connection failed: " + e.getMessage());
@@ -808,6 +838,7 @@ public class IngestSchedulerService {
             List<SalesforceConnectorAdapter.SalesforceRecord> records = sf.query(effectiveSoql);
             fetched = records.size();
             long throttleMs = calculateThrottleDelayMs(connector);
+            String highWaterModified = lastModified;
 
             for (var rec : records) {
                 throttle(throttleMs);
@@ -833,16 +864,23 @@ public class IngestSchedulerService {
                     req.setMetadata(metadata);
 
                     ExternalIngestResult result = canonicalImportService.executeBusinessRecordImport(callContext, req);
-                    if (result.isSuccess()) imported++;
-                    else if (result.skipped()) skipped++;
-                    else errors.add("SF " + rec.id() + ": " + String.join(", ", result.errors()));
+                    if (result.isSuccess() || result.skipped()) {
+                        // Advance checkpoint from record's LastModifiedDate if available
+                        Object lmd = rec.fields().get("LastModifiedDate");
+                        if (lmd instanceof String ts && (highWaterModified == null || ts.compareTo(highWaterModified) > 0)) {
+                            highWaterModified = ts;
+                        }
+                        if (result.isSuccess()) imported++;
+                        else skipped++;
+                    } else {
+                        errors.add("SF " + rec.id() + ": " + String.join(", ", result.errors()));
+                    }
                 } catch (Exception e) {
                     errors.add("SF record " + rec.id() + ": " + e.getMessage());
                 }
             }
-            if (fetched > 0) {
-                saveSimpleCheckpoint(profile.getProfileId(), "salesforce",
-                        java.time.Instant.now().toString());
+            if (highWaterModified != null && !highWaterModified.equals(lastModified)) {
+                saveSimpleCheckpoint(profile.getProfileId(), "salesforce", highWaterModified);
             }
         } catch (Exception e) {
             errors.add("Salesforce connection failed: " + e.getMessage());
