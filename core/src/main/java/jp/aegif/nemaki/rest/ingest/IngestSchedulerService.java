@@ -1277,7 +1277,24 @@ public class IngestSchedulerService {
             catch (NumberFormatException e) { logger.warn("Invalid Chatwork checkpoint '{}', resetting", lastMsgId); }
 
             var messages = chatwork.getMessages(roomId, true);
-            // Apply limit: only examine the first `limit` messages
+
+            // Detect potential message loss: if we have a checkpoint and the oldest
+            // returned message is newer than checkpoint+1, messages may have been lost
+            // (Chatwork API returns only the latest 100 messages)
+            if (lastMsgIdNum > 0 && !messages.isEmpty()) {
+                long oldestReturnedId = 0;
+                try { oldestReturnedId = Long.parseLong(messages.get(0).messageId()); }
+                catch (NumberFormatException e) { /* ignore */ }
+                if (oldestReturnedId > lastMsgIdNum + 1) {
+                    String gap = "Chatwork message gap detected for room " + roomId
+                            + ": checkpoint=" + lastMsgIdNum + ", oldest returned=" + oldestReturnedId
+                            + ". Messages between these IDs may have been lost (Chatwork API limit: 100).";
+                    logger.warn(gap);
+                    errors.add(gap);
+                }
+            }
+
+            // Apply limit: only examine up to `limit` messages
             if (messages.size() > limit) {
                 messages = messages.subList(0, limit);
             }
@@ -1329,8 +1346,9 @@ public class IngestSchedulerService {
                 }
             }
 
-            // Also import files from the room
-            try {
+            // Import files only during scheduled runs (not webhook-triggered small fetches)
+            // Webhook triggers use limit=10 to scope to recent messages only
+            if (limit > 10) try {
                 var files = chatwork.listFiles(roomId);
                 for (var file : files) {
                     throttle(throttleMs);
