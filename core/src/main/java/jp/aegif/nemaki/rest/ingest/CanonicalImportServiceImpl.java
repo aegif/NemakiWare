@@ -1050,10 +1050,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     // Delete existing relationships before re-import
                     removeExistingRelationships(callContext, repositoryId, existingDoc.getId());
                 }
+
                 // "create_new_version" (default): no special dedupe action — falls through
                 // to updatePolicy which governs whether a new version is actually created
-                // (depends on content hash comparison, always_version_up, or metadata_only)
+            }
 
+            // Re-check existingDoc: dedupe policies (replace, parent_context_changed)
+            // may have nullified it, requiring new-document creation instead
+            if (existingDoc != null && existingDoc.isDocument()) {
                 String updatePolicy = profile.getUpdatePolicy() != null ? profile.getUpdatePolicy() : "version_up_on_content_change";
                 objectId = existingDoc.getId();
 
