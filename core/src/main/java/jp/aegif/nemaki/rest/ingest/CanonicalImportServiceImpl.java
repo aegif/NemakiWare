@@ -1499,7 +1499,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (folderPath != null && !folderPath.isBlank()) {
             try {
                 var objectData = objectService.getObjectByPath(callContext, repositoryId,
-                        folderPath, null, Boolean.FALSE, null, null, Boolean.FALSE, Boolean.FALSE, null);
+                        folderPath, null, Boolean.FALSE,
+                        org.apache.chemistry.opencmis.commons.enums.IncludeRelationships.NONE,
+                        null, Boolean.FALSE, Boolean.FALSE, null);
                 if (objectData != null && objectData.getId() != null) {
                     // Verify it's actually a folder, not a document
                     Object baseTypeId = objectData.getProperties() != null
