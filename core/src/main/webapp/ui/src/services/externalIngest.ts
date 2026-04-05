@@ -205,6 +205,20 @@ export async function getSchedulerStatus(): Promise<{ scheduledProfiles: unknown
   return res.json();
 }
 
+export async function getCheckpoints(profileId: string): Promise<{ profileId: string; checkpoints: Record<string, string> }> {
+  const res = await fetchWithAuth(`${SCHEDULER_URL}/checkpoint/${encodeURIComponent(profileId)}`);
+  if (!res.ok) throw new Error(`Failed to get checkpoints: ${res.status}`);
+  return res.json();
+}
+
+export async function resetCheckpoint(profileId: string, scope?: string): Promise<{ status: string; message: string }> {
+  const url = scope
+    ? `${SCHEDULER_URL}/checkpoint/${encodeURIComponent(profileId)}?scope=${encodeURIComponent(scope)}`
+    : `${SCHEDULER_URL}/checkpoint/${encodeURIComponent(profileId)}`;
+  const res = await fetchWithAuth(url, { method: 'DELETE' });
+  return res.json();
+}
+
 export async function triggerProfile(profileId: string): Promise<Record<string, unknown>> {
   const res = await fetchWithAuth(`${SCHEDULER_URL}/trigger/${encodeURIComponent(profileId)}`, { method: 'POST' });
   return res.json();

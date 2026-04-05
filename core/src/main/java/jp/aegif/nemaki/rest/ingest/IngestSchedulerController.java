@@ -171,6 +171,32 @@ public class IngestSchedulerController {
         return ResponseEntity.ok(response);
     }
 
+    // ── Checkpoint management ───────────────────────────────────────
+
+    @GetMapping("/checkpoint/{profileId}")
+    public ResponseEntity<Map<String, Object>> getCheckpoints(@PathVariable String profileId) {
+        if (!isAdmin()) return forbidden();
+        Map<String, Object> checkpoints = schedulerService.getCheckpoints(profileId);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("profileId", profileId);
+        response.put("checkpoints", checkpoints);
+        return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/checkpoint/{profileId}")
+    public ResponseEntity<Map<String, Object>> resetCheckpoints(
+            @PathVariable String profileId,
+            @RequestParam(required = false) String scope) {
+        if (!isAdmin()) return forbidden();
+        schedulerService.resetCheckpoint(profileId, scope);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", "success");
+        response.put("message", scope != null
+                ? "Checkpoint reset for " + profileId + "/" + scope
+                : "All checkpoints reset for " + profileId);
+        return ResponseEntity.ok(response);
+    }
+
     private CallContext getCallContext() {
         if (httpRequest == null) return null;
         return (CallContext) httpRequest.getAttribute("CallContext");

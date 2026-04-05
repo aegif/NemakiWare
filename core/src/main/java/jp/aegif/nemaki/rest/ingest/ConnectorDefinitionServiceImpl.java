@@ -108,10 +108,12 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             throw new IllegalArgumentException("connectorId is required");
         }
         if (def.getSourceArchetype() == null) {
-            throw new IllegalArgumentException("sourceArchetype is required");
+            throw new IllegalArgumentException("sourceArchetype is required. Valid values: "
+                    + java.util.Arrays.toString(SourceArchetype.values()));
         }
         if (def.getSourceSystem() == null || def.getSourceSystem().isBlank()) {
-            throw new IllegalArgumentException("sourceSystem is required");
+            throw new IllegalArgumentException("sourceSystem is required (e.g. imap, gmail_mail, m365_mail, "
+                    + "slack, teams, mattermost, chatwork, notion, salesforce, box, dropbox, google, microsoft)");
         }
     }
 

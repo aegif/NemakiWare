@@ -78,9 +78,10 @@ export function IngestJobsTab() {
   ];
 
   const dlqColumns = [
-    { title: t('ingestJobs.dlq.columns.dlqId'), dataIndex: 'dlqId', key: 'dlqId', width: 120 },
+    { title: t('ingestJobs.dlq.columns.dlqId'), dataIndex: 'dlqId', key: 'dlqId', width: 100 },
+    { title: t('ingestJobs.columns.profileId'), dataIndex: 'profileId', key: 'profileId', width: 120 },
     { title: t('ingestJobs.dlq.columns.sourceObjectId'), dataIndex: 'sourceObjectId', key: 'sourceObjectId' },
-    { title: t('ingestJobs.dlq.columns.sourceObjectType'), dataIndex: 'sourceObjectType', key: 'sourceObjectType', width: 100 },
+    { title: t('ingestJobs.dlq.columns.sourceObjectType'), dataIndex: 'sourceObjectType', key: 'sourceObjectType', width: 80 },
     { title: t('ingestJobs.dlq.columns.error'), dataIndex: 'errorMessage', key: 'errorMessage',
       ellipsis: true },
     { title: t('ingestJobs.dlq.columns.retryCount'), dataIndex: 'retryCount', key: 'retryCount', width: 80 },

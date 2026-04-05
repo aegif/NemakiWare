@@ -530,6 +530,43 @@ public class IngestSchedulerService {
     }
 
     /** Load a simple string checkpoint for non-IMAP adapters. */
+    /** Get all checkpoints for a profile (admin diagnostic). */
+    public Map<String, Object> getCheckpoints(String profileId) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (settingsService == null) return result;
+        // Check known checkpoint scopes
+        for (String scope : List.of("gmail", "notion", "salesforce",
+                "slack.", "teams.", "mattermost.", "chatwork.", "box.", "dropbox.", "m365mail.")) {
+            // For scoped checkpoints, we can't enumerate keys — show the prefix
+            String key = "ingest.checkpoint." + profileId + "." + scope;
+            String value = settingsService.readSetting(key);
+            if (value != null && !value.isBlank()) {
+                result.put(scope, value);
+            }
+        }
+        // IMAP checkpoints use different format
+        String imapKey = "ingest.checkpoint." + profileId + ".INBOX";
+        String imapValue = settingsService.readSetting(imapKey);
+        if (imapValue != null) result.put("imap.INBOX", imapValue);
+        return result;
+    }
+
+    /** Reset checkpoint for a profile (admin operation). */
+    public void resetCheckpoint(String profileId, String scope) {
+        if (settingsService == null) return;
+        if (scope != null && !scope.isBlank()) {
+            String key = "ingest.checkpoint." + profileId + "." + scope;
+            settingsService.writeSetting(key, "");
+            logger.info("Checkpoint reset: {}", key);
+        } else {
+            // Reset all known checkpoints for this profile
+            for (String s : List.of("gmail", "notion", "salesforce", "INBOX")) {
+                settingsService.writeSetting("ingest.checkpoint." + profileId + "." + s, "");
+            }
+            logger.info("All checkpoints reset for profile {}", profileId);
+        }
+    }
+
     private String loadSimpleCheckpoint(String profileId, String scope) {
         if (settingsService == null) return null;
         String key = "ingest.checkpoint." + profileId + "." + scope;
