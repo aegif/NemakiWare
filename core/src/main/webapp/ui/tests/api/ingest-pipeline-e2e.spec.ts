@@ -184,10 +184,11 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
 
   // ── Re-import without content: version-up behavior ─────────────
   // When re-importing the same sourceObjectId without a content stream,
-  // there is no content hash to compare, so the dedupePolicy applies
-  // as-is. With dedupePolicy=create_new_version, a new version is created.
+  // computedHash is null → version_up_on_content_change (the default
+  // updatePolicy) treats content as "changed" (can't prove otherwise)
+  // → checkOut/checkIn creates a new version.
 
-  test('re-import without content creates new version per dedupePolicy', async ({ request }) => {
+  test('re-import without content creates new version (updatePolicy: null hash = content changed)', async ({ request }) => {
     const ts = Date.now();
     const { connId, profId } = await createStub(request, `nocont-${ts}`);
 
@@ -203,7 +204,7 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
       const r2 = await request.post(`${BASE}/v1/repo/bedroom/ingest`, { headers: JSON_H, data });
       const b2 = await r2.json();
       expect(b2.errors ?? []).toHaveLength(0);
-      // No content stream → no hash comparison → dedupePolicy creates new version
+      // No content stream → computedHash is null → contentChanged=true → new version
       expect(b2.isNewVersion).toBe(true);
     } finally {
       await deleteStub(request, connId, profId);
