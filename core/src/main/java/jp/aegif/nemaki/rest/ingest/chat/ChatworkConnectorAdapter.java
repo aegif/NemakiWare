@@ -33,14 +33,20 @@ import java.util.List;
 public class ChatworkConnectorAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(ChatworkConnectorAdapter.class);
-    private static final String CHATWORK_API = "https://api.chatwork.com/v2";
+    private static final String DEFAULT_API = "https://api.chatwork.com/v2";
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final String apiToken;
+    private final String apiBase;
     private final HttpClient httpClient;
 
     public ChatworkConnectorAdapter(String apiToken) {
+        this(apiToken, DEFAULT_API);
+    }
+
+    public ChatworkConnectorAdapter(String apiToken, String apiBase) {
         this.apiToken = apiToken;
+        this.apiBase = apiBase;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
@@ -167,7 +173,7 @@ public class ChatworkConnectorAdapter {
 
     private HttpResponse<String> get(String path) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(CHATWORK_API + path))
+                .uri(URI.create(apiBase + path))
                 .header("X-ChatWorkToken", apiToken)
                 .header("Accept", "application/json")
                 .timeout(Duration.ofSeconds(30))

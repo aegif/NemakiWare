@@ -23,15 +23,21 @@ import java.util.List;
 public class NotionConnectorAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(NotionConnectorAdapter.class);
-    private static final String NOTION_API = "https://api.notion.com/v1";
+    private static final String DEFAULT_API = "https://api.notion.com/v1";
     private static final String NOTION_VERSION = "2022-06-28";
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final String token;
+    private final String apiBase;
     private final HttpClient httpClient;
 
     public NotionConnectorAdapter(String token) {
+        this(token, DEFAULT_API);
+    }
+
+    public NotionConnectorAdapter(String token, String apiBase) {
         this.token = token;
+        this.apiBase = apiBase;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
@@ -53,7 +59,7 @@ public class NotionConnectorAdapter {
         String body = MAPPER.writeValueAsString(bodyNode);
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(NOTION_API + "/search"))
+                .uri(URI.create(apiBase + "/search"))
                 .header("Authorization", "Bearer " + token)
                 .header("Notion-Version", NOTION_VERSION)
                 .header("Content-Type", "application/json")
@@ -122,7 +128,7 @@ public class NotionConnectorAdapter {
         List<JsonNode> allBlocks = new ArrayList<>();
         String cursor = null;
         do {
-            String url = NOTION_API + "/blocks/" + pageId + "/children?page_size=100";
+            String url = apiBase + "/blocks/" + pageId + "/children?page_size=100";
             if (cursor != null) url += "&start_cursor=" + cursor;
 
             HttpRequest request = HttpRequest.newBuilder()

@@ -21,11 +21,9 @@ const REPOSITORY_ID = 'bedroom';
 const BASE_URL = 'http://localhost:8080/core';
 const AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 
-// Test URLs for webhook testing
-// Note: SSRF protection may block some external URLs depending on DNS resolution
-const HTTPBIN_POST_URL = 'https://httpbin.org/post';
-const HTTPBIN_STATUS_200 = 'https://httpbin.org/status/200';
-const HTTPBIN_STATUS_500 = 'https://httpbin.org/status/500';
+// Test URLs: use local NemakiWare server endpoints instead of external services
+// This avoids live internet dependency and SSRF nondeterminism
+const LOCAL_200_URL = 'http://localhost:8080/core/atom/bedroom'; // always returns 200
 const INVALID_URL = 'https://invalid.nonexistent.domain.test/webhook';
 
 /**
@@ -131,7 +129,7 @@ test.describe('Webhook API Tests', () => {
       // This test documents the SSRF protection behavior
       // External URLs may be blocked depending on DNS resolution
       const res = await restPost(request, '/webhook/test', {
-        url: HTTPBIN_STATUS_200,
+        url: LOCAL_200_URL,
       });
 
       expect(res.ok()).toBeTruthy();
@@ -290,7 +288,7 @@ test.describe('Webhook API Tests', () => {
         `${BASE_URL}/rest/repo/${REPOSITORY_ID}/webhook/test`,
         {
           headers: { 'Authorization': testUserAuth, 'Content-Type': 'application/json' },
-          data: { url: HTTPBIN_STATUS_200 },
+          data: { url: LOCAL_200_URL },
         }
       );
 
