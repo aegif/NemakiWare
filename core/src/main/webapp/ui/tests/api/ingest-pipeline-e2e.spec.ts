@@ -162,18 +162,36 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
     }
   });
 
-  // ── Dedupe: re-import creates new version ─────────────────────
+  // ── Dedupe: re-import with changed content creates new version ──
 
-  test('should create new version on re-import of same sourceObjectId', async ({ request }) => {
+  test('should create new version on re-import with different content', async ({ request }) => {
     const ts = Date.now();
     const { connId, profId } = await createStub(request, `dedup-${ts}`);
+    const srcId = `dup-${ts}`;
 
     try {
-      const data = { profileId: profId, connectorId: connId, sourceObjectId: `dup-${ts}`, sourceObjectType: 'file', fileName: `dup-${ts}.txt`, executionMode: 'manual' };
-      const r1 = await request.post(`${BASE}/v1/repo/bedroom/ingest`, { headers: JSON_H, data });
+      // First import with content
+      const r1 = await request.post(`${BASE}/v1/repo/bedroom/ingest`, {
+        headers: AUTH,
+        multipart: {
+          request: { name: 'req.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
+            profileId: profId, connectorId: connId, sourceObjectId: srcId, sourceObjectType: 'file', executionMode: 'manual',
+          })) },
+          content: { name: `dup-${ts}.txt`, mimeType: 'text/plain', buffer: Buffer.from(`content v1 ${ts}`) },
+        },
+      });
       expect((await r1.json()).errors ?? []).toHaveLength(0);
 
-      const r2 = await request.post(`${BASE}/v1/repo/bedroom/ingest`, { headers: JSON_H, data });
+      // Second import with DIFFERENT content → new version
+      const r2 = await request.post(`${BASE}/v1/repo/bedroom/ingest`, {
+        headers: AUTH,
+        multipart: {
+          request: { name: 'req.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
+            profileId: profId, connectorId: connId, sourceObjectId: srcId, sourceObjectType: 'file', executionMode: 'manual',
+          })) },
+          content: { name: `dup-${ts}.txt`, mimeType: 'text/plain', buffer: Buffer.from(`content v2 ${ts}`) },
+        },
+      });
       const b2 = await r2.json();
       expect(b2.errors ?? []).toHaveLength(0);
       expect(b2.isNewVersion).toBe(true);
@@ -182,13 +200,12 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
     }
   });
 
-  // ── Re-import without content: version-up behavior ─────────────
+  // ── Re-import without content: metadata-only update ────────────
   // When re-importing the same sourceObjectId without a content stream,
-  // computedHash is null → version_up_on_content_change (the default
-  // updatePolicy) treats content as "changed" (can't prove otherwise)
-  // → checkOut/checkIn creates a new version.
+  // computedHash is null → version_up_on_content_change treats this as
+  // "no content provided" → metadata-only update, no new version.
 
-  test('re-import without content creates new version (updatePolicy: null hash = content changed)', async ({ request }) => {
+  test('re-import without content does metadata-only update (no version-up)', async ({ request }) => {
     const ts = Date.now();
     const { connId, profId } = await createStub(request, `nocont-${ts}`);
 
@@ -204,8 +221,8 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
       const r2 = await request.post(`${BASE}/v1/repo/bedroom/ingest`, { headers: JSON_H, data });
       const b2 = await r2.json();
       expect(b2.errors ?? []).toHaveLength(0);
-      // No content stream → computedHash is null → contentChanged=true → new version
-      expect(b2.isNewVersion).toBe(true);
+      // No content stream → computedHash null → metadata-only, no new version
+      expect(b2.isNewVersion).toBeFalsy();
     } finally {
       await deleteStub(request, connId, profId);
     }
