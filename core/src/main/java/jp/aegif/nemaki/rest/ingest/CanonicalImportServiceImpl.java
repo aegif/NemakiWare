@@ -1293,6 +1293,35 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 }
             }
 
+            // Apply nemaki:cloudDriveMetadata if cloud metadata present in request
+            String cloudProvider = resolveMetadataString(request, "cloudProvider");
+            if (cloudProvider != null && connector.getSourceArchetype() == SourceArchetype.FILE_SHARE) {
+                if (!secondaryIds.contains("nemaki:cloudDriveMetadata")) {
+                    secondaryIds.add("nemaki:cloudDriveMetadata");
+                }
+                List<Property> cloudProps = new ArrayList<>();
+                cloudProps.add(new Property("nemaki:cloudProvider", cloudProvider));
+                String cloudFileId = resolveMetadataString(request, "cloudFileId");
+                if (cloudFileId != null) cloudProps.add(new Property("nemaki:cloudFileId", cloudFileId));
+                String cloudFileUrl = resolveMetadataString(request, "cloudFileUrl");
+                if (cloudFileUrl != null) cloudProps.add(new Property("nemaki:cloudFileUrl", cloudFileUrl));
+                cloudProps.add(new Property("nemaki:cloudLastSyncedAt", new GregorianCalendar()));
+
+                Aspect existingCloud = aspects.stream()
+                        .filter(a -> "nemaki:cloudDriveMetadata".equals(a.getName()))
+                        .findFirst().orElse(null);
+                if (existingCloud != null) {
+                    Map<String, Property> merged = new java.util.LinkedHashMap<>();
+                    if (existingCloud.getProperties() != null) {
+                        for (Property p : existingCloud.getProperties()) merged.put(p.getKey(), p);
+                    }
+                    for (Property p : cloudProps) merged.put(p.getKey(), p);
+                    existingCloud.setProperties(new ArrayList<>(merged.values()));
+                } else {
+                    aspects.add(new Aspect("nemaki:cloudDriveMetadata", cloudProps));
+                }
+            }
+
             content.setSecondaryIds(secondaryIds);
             content.setAspects(aspects);
 

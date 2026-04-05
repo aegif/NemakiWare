@@ -1162,11 +1162,12 @@ public class IngestSchedulerService {
         int fetched = 0, imported = 0;
         try {
             var chatwork = new jp.aegif.nemaki.rest.ingest.chat.ChatworkConnectorAdapter(token);
-            // Use force=0 for differential fetch (new messages since last API call)
-            // On first run or when checkpoint is absent, use force=1 (latest 100)
+            // Always use force=1 (latest 100 messages) to avoid depending on
+            // Chatwork's server-side delta cursor which can be advanced by other
+            // API consumers or webhook-triggered fetches, causing message loss.
+            // Dedupe is handled by the persisted message ID checkpoint below.
             String lastMsgId = loadSimpleCheckpoint(profile.getProfileId(), "chatwork." + roomId);
-            boolean isInitialFetch = lastMsgId == null;
-            var messages = chatwork.getMessages(roomId, isInitialFetch);
+            var messages = chatwork.getMessages(roomId, true);
             fetched = messages.size();
             long throttleMs = calculateThrottleDelayMs(connector);
             String highWaterMsgId = lastMsgId;
@@ -1182,7 +1183,8 @@ public class IngestSchedulerService {
                     msgReq.setProfileId(profile.getProfileId());
                     msgReq.setConnectorId(connector.getConnectorId());
                     msgReq.setRepositoryId(profile.getRepositoryId());
-                    msgReq.setSourceObjectId(roomId + "/" + msg.messageId());
+                    // Use plain messageId — channelId is already in metadata and canonical URI builder
+                    msgReq.setSourceObjectId(msg.messageId());
                     msgReq.setSourceObjectType("chat_message");
                     msgReq.setFileName("chatwork-" + msg.messageId() + ".txt");
                     msgReq.setMimeType("text/plain");

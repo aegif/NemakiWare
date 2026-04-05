@@ -1091,10 +1091,23 @@ public class CloudDriveResource extends ResourceBase {
 			req.setContentStream(content);
 			req.setExecutionMode("manual");
 
-			// Pass cloud context as metadata
+			// Pass cloud context as metadata — canonical pipeline applies cloudDriveMetadata
 			java.util.Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+			metadata.put("cloudProvider", provider);
+			metadata.put("cloudFileId", cloudFileId);
+			// Resolve cloudFileUrl: prefer client-provided, fallback to server-generated
+			String resolvedCloudUrl = null;
 			if (clientCloudFileUrl != null && !clientCloudFileUrl.isEmpty()) {
-				metadata.put("cloudFileUrl", clientCloudFileUrl);
+				resolvedCloudUrl = clientCloudFileUrl;
+			} else {
+				CloudDriveService svc = getCloudDriveService();
+				if (svc != null) {
+					try { resolvedCloudUrl = svc.getCloudFileUrl(provider, cloudFileId); }
+					catch (Exception e) { /* best effort */ }
+				}
+			}
+			if (resolvedCloudUrl != null) {
+				metadata.put("cloudFileUrl", resolvedCloudUrl);
 			}
 			// Fetch comments if access token available
 			CloudDriveService service = getCloudDriveService();
@@ -1146,44 +1159,20 @@ public class CloudDriveResource extends ResourceBase {
 				return result.toJSONString();
 			}
 
-			// Canonical import succeeded — save provider-specific metadata
-			// Any exception here must NOT fall back to legacy (document already created)
+			// Canonical import succeeded — cloudDriveMetadata was applied by the pipeline
 			String newObjectId = ingestResult.objectId();
-			try {
-				String cloudFileUrl;
-				if (clientCloudFileUrl != null && !clientCloudFileUrl.isEmpty()
-						&& isAllowedCloudUrl(provider, clientCloudFileUrl)) {
-					cloudFileUrl = clientCloudFileUrl;
-				} else {
-					cloudFileUrl = (service != null) ? service.getCloudFileUrl(provider, cloudFileId) : null;
-				}
-				saveCloudMetadata(callContext, repositoryId, newObjectId, provider, cloudFileId, cloudFileUrl);
-
-				result.put("status", "success");
-				result.put("objectId", newObjectId);
-				result.put("name", fileName);
-				result.put("cloudFileId", cloudFileId);
-				result.put("cloudFileUrl", cloudFileUrl);
-				result.put("provider", provider);
-				result.put("isNewVersion", ingestResult.isNewVersion());
-				result.put("canonicalImport", true);
-				if (ingestResult.lineageEventId() != null) {
-					result.put("lineageEventId", ingestResult.lineageEventId());
-				}
-				return result.toJSONString();
-			} catch (Exception e) {
-				// Document was created but cloudDriveMetadata failed — report partial success
-				log.warn("Canonical import succeeded but cloudDriveMetadata failed: " + e.getMessage());
-				result.put("status", "success");
-				result.put("objectId", newObjectId);
-				result.put("name", fileName);
-				result.put("cloudFileId", cloudFileId);
-				result.put("provider", provider);
-				result.put("isNewVersion", ingestResult.isNewVersion());
-				result.put("canonicalImport", true);
-				result.put("warning", "Document imported but cloud metadata attachment failed: " + e.getMessage());
-				return result.toJSONString();
+			result.put("status", "success");
+			result.put("objectId", newObjectId);
+			result.put("name", fileName);
+			result.put("cloudFileId", cloudFileId);
+			result.put("cloudFileUrl", resolvedCloudUrl);
+			result.put("provider", provider);
+			result.put("isNewVersion", ingestResult.isNewVersion());
+			result.put("canonicalImport", true);
+			if (ingestResult.lineageEventId() != null) {
+				result.put("lineageEventId", ingestResult.lineageEventId());
 			}
+			return result.toJSONString();
 
 		} catch (Exception e) {
 			// Only pre-execute failures (bean lookup, request construction) should fall back

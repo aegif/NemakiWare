@@ -204,14 +204,25 @@ public class IngestWebhookController {
             return ResponseEntity.ok(Map.of("status", "no_profile"));
         }
 
+        // Filter profiles by room scope — only trigger profiles whose schedulerParams.roomId
+        // matches the event's room, or profiles with no roomId restriction
+        int triggered = 0;
         for (ImportProfileDefinition profile : profiles) {
+            String profileRoomId = profile.getSchedulerParams() != null
+                    ? profile.getSchedulerParams().get("roomId") : null;
+            if (profileRoomId != null && !profileRoomId.equals(roomId)) continue;
+
             Map<String, String> params = new LinkedHashMap<>();
             params.put("roomId", roomId);
             params.put("limit", "10");
             triggerFetchAsync(profile, connector, params);
+            triggered++;
         }
 
-        return ResponseEntity.ok(Map.of("status", "accepted", "room", roomId, "profiles", profiles.size()));
+        if (triggered == 0) {
+            return ResponseEntity.ok(Map.of("status", "no_matching_profile", "room", roomId));
+        }
+        return ResponseEntity.ok(Map.of("status", "accepted", "room", roomId, "profiles", triggered));
     }
 
     private ResponseEntity<?> handleGenericWebhook(ConnectorDefinition connector, JsonNode payload) {
