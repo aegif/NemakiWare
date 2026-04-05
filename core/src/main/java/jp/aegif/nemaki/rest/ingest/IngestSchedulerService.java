@@ -713,7 +713,7 @@ public class IngestSchedulerService {
                 // Skip pages not modified since last checkpoint
                 if (lastEditedCheckpoint != null && page.lastEditedTime() != null
                         && page.lastEditedTime().compareTo(lastEditedCheckpoint) <= 0) {
-                    continue;
+                    skipped++; continue;
                 }
                 try {
                     String html = notion.fetchPageAsHtml(page.id());
@@ -1018,7 +1018,7 @@ public class IngestSchedulerService {
                 // Skip messages older than checkpoint
                 if (lastDateTime != null && msg.createdDateTime() != null
                         && msg.createdDateTime().compareTo(lastDateTime) <= 0) {
-                    continue;
+                    skipped++; continue;
                 }
                 try {
                     // Import message itself as a chat_message document
@@ -1130,7 +1130,7 @@ public class IngestSchedulerService {
             for (MattermostPost post : posts) {
                 throttle(throttleMs);
                 // Skip posts older than checkpoint
-                if (post.createAt() > 0 && post.createAt() <= highWaterCreateAt) continue;
+                if (post.createAt() > 0 && post.createAt() <= highWaterCreateAt) { skipped++; continue; }
                 try {
                     // Import message itself as a chat_message document
                     String postText = post.message() != null ? post.message() : "";
@@ -1240,19 +1240,21 @@ public class IngestSchedulerService {
             catch (NumberFormatException e) { logger.warn("Invalid Chatwork checkpoint '{}', resetting", lastMsgId); }
 
             var messages = chatwork.getMessages(roomId, true);
+            // Apply limit: only examine the first `limit` messages
+            if (messages.size() > limit) {
+                messages = messages.subList(0, limit);
+            }
             fetched = messages.size();
             long throttleMs = calculateThrottleDelayMs(connector);
             long highWaterMsgIdNum = lastMsgIdNum;
-            int processed = 0;
 
             for (var msg : messages) {
                 // Respect limit
-                if (processed >= limit) break;
                 throttle(throttleMs);
                 // Skip messages already processed (numeric comparison for Chatwork IDs)
                 long msgIdNum = 0;
                 try { msgIdNum = Long.parseLong(msg.messageId()); } catch (NumberFormatException e) { /* use 0 */ }
-                if (lastMsgIdNum > 0 && msgIdNum <= lastMsgIdNum) continue;
+                if (lastMsgIdNum > 0 && msgIdNum <= lastMsgIdNum) { skipped++; continue; }
 
                 try {
                     String messageText = msg.body() != null ? msg.body() : "";
@@ -1288,7 +1290,6 @@ public class IngestSchedulerService {
                 } catch (Exception e) {
                     errors.add("Chatwork msg " + msg.messageId() + ": " + e.getMessage());
                 }
-                processed++;
             }
 
             // Also import files from the room
@@ -1356,7 +1357,7 @@ public class IngestSchedulerService {
                 throttle(throttleMs);
                 // Skip files not modified since checkpoint
                 if (lastModified != null && file.modifiedAt() != null
-                        && file.modifiedAt().compareTo(lastModified) <= 0) continue;
+                        && file.modifiedAt().compareTo(lastModified) <= 0) { skipped++; continue; }
 
                 try {
                     InputStream content = box.downloadFile(file.id());
@@ -1419,7 +1420,7 @@ public class IngestSchedulerService {
             for (var file : files) {
                 throttle(throttleMs);
                 if (lastModified != null && file.serverModified() != null
-                        && file.serverModified().compareTo(lastModified) <= 0) continue;
+                        && file.serverModified().compareTo(lastModified) <= 0) { skipped++; continue; }
 
                 try {
                     InputStream content = dropbox.downloadFile(file.pathDisplay());
