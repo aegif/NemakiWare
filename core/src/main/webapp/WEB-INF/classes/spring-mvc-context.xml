@@ -33,6 +33,10 @@
 	<context:component-scan base-package="jp.aegif.nemaki.rest.controller" />
 	<context:component-scan base-package="jp.aegif.nemaki.rest.ingest" />
 
+	<!-- Multipart resolver for file upload via /api/v1/repo/{repoId}/ingest -->
+	<bean id="multipartResolver"
+		  class="org.springframework.web.multipart.support.StandardServletMultipartResolver" />
+
 	<!-- Exception handler for REST API -->
 	<bean class="jp.aegif.nemaki.rest.controller.GlobalExceptionHandler" />
 

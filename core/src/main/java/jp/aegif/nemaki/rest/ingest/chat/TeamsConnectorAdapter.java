@@ -24,14 +24,20 @@ import java.util.List;
 public class TeamsConnectorAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(TeamsConnectorAdapter.class);
-    private static final String GRAPH_BASE = "https://graph.microsoft.com/v1.0";
+    private static final String DEFAULT_BASE = "https://graph.microsoft.com/v1.0";
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final String accessToken;
+    private final String apiBase;
     private final HttpClient httpClient;
 
     public TeamsConnectorAdapter(String accessToken) {
+        this(accessToken, DEFAULT_BASE);
+    }
+
+    public TeamsConnectorAdapter(String accessToken, String apiBase) {
         this.accessToken = accessToken;
+        this.apiBase = apiBase;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
@@ -46,7 +52,7 @@ public class TeamsConnectorAdapter {
      * List channels in a team.
      */
     public List<TeamsChannel> listChannels(String teamId) throws Exception {
-        String url = GRAPH_BASE + "/teams/" + teamId + "/channels?$select=id,displayName";
+        String url = apiBase + "/teams/" + teamId + "/channels?$select=id,displayName";
         JsonNode root = graphGet(url);
         JsonNode values = root.get("value");
         if (values == null || !values.isArray()) return List.of();
@@ -66,7 +72,7 @@ public class TeamsConnectorAdapter {
      * @param top       max messages
      */
     public List<TeamsMessage> getMessages(String teamId, String channelId, int top) throws Exception {
-        String url = GRAPH_BASE + "/teams/" + teamId + "/channels/" + channelId
+        String url = apiBase + "/teams/" + teamId + "/channels/" + channelId
                 + "/messages?$top=" + top;
         JsonNode root = graphGet(url);
         JsonNode values = root.get("value");
@@ -102,7 +108,7 @@ public class TeamsConnectorAdapter {
      * Fetch replies to a message.
      */
     public List<TeamsMessage> getReplies(String teamId, String channelId, String messageId) throws Exception {
-        String url = GRAPH_BASE + "/teams/" + teamId + "/channels/" + channelId
+        String url = apiBase + "/teams/" + teamId + "/channels/" + channelId
                 + "/messages/" + messageId + "/replies";
         JsonNode root = graphGet(url);
         JsonNode values = root.get("value");
