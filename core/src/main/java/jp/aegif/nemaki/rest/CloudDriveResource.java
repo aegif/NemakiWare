@@ -1095,9 +1095,10 @@ public class CloudDriveResource extends ResourceBase {
 			java.util.Map<String, Object> metadata = new java.util.LinkedHashMap<>();
 			metadata.put("cloudProvider", provider);
 			metadata.put("cloudFileId", cloudFileId);
-			// Resolve cloudFileUrl: prefer client-provided, fallback to server-generated
+			// Resolve cloudFileUrl: prefer validated client-provided, fallback to server-generated
 			String resolvedCloudUrl = null;
-			if (clientCloudFileUrl != null && !clientCloudFileUrl.isEmpty()) {
+			if (clientCloudFileUrl != null && !clientCloudFileUrl.isEmpty()
+					&& isAllowedCloudUrl(provider, clientCloudFileUrl)) {
 				resolvedCloudUrl = clientCloudFileUrl;
 			} else {
 				CloudDriveService svc = getCloudDriveService();
@@ -1139,6 +1140,14 @@ public class CloudDriveResource extends ResourceBase {
 				// Check if auto-resolve failed (no connector/profile) → fall back to legacy
 				if (ingestResult.errors() != null && !ingestResult.errors().isEmpty()) {
 					String firstError = ingestResult.errors().get(0);
+					if (firstError.contains("Ambiguous auto-resolve")) {
+						// Config error: multiple profiles match — fail closed, do NOT fall back
+						for (String err : ingestResult.errors()) {
+							addErrMsg(errMsg, "import", err);
+						}
+						result = makeResult(false, result, errMsg);
+						return result.toJSONString();
+					}
 					if (firstError.contains("No enabled connector") || firstError.contains("No enabled import profile")) {
 						log.debug("Canonical import not available (" + firstError + "), falling back to legacy path");
 						return null; // Fall back to legacy

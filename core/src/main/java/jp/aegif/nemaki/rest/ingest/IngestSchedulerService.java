@@ -617,6 +617,9 @@ public class IngestSchedulerService {
             fetched = messages.size();
             long throttleMs = calculateThrottleDelayMs(connector);
 
+            // Track high-water mark based on successful/skipped messages only
+            String highWaterDateTime = lastDateTime;
+
             for (M365MessageSummary msg : messages) {
                 throttle(throttleMs);
                 try {
@@ -626,16 +629,23 @@ public class IngestSchedulerService {
                     if (msg.internetMessageId() != null) req.getMetadata().put("internetMessageId", msg.internetMessageId());
 
                     ExternalIngestResult result = canonicalImportService.executeMailImport(callContext, req);
-                    if (result.isSuccess()) imported++;
-                    else if (!result.skipped()) errors.add("M365 " + msg.id() + ": " + String.join(", ", result.errors()));
+                    if (result.isSuccess() || result.skipped()) {
+                        // Advance checkpoint only for handled messages
+                        String now = java.time.Instant.now().toString();
+                        if (highWaterDateTime == null || now.compareTo(highWaterDateTime) > 0) {
+                            highWaterDateTime = now;
+                        }
+                        if (result.isSuccess()) imported++;
+                    } else {
+                        errors.add("M365 " + msg.id() + ": " + String.join(", ", result.errors()));
+                    }
                 } catch (Exception e) {
                     errors.add("M365 " + msg.id() + ": " + e.getMessage());
                 }
             }
-            // Save current ISO timestamp as checkpoint
-            if (fetched > 0) {
-                saveSimpleCheckpoint(profile.getProfileId(), "m365mail." + mailboxScope,
-                        java.time.Instant.now().toString());
+            // Save checkpoint only if it advanced (failed messages are NOT checkpointed past)
+            if (highWaterDateTime != null && !highWaterDateTime.equals(lastDateTime)) {
+                saveSimpleCheckpoint(profile.getProfileId(), "m365mail." + mailboxScope, highWaterDateTime);
             }
         } catch (Exception e) {
             errors.add("M365 Mail connection failed: " + e.getMessage());
