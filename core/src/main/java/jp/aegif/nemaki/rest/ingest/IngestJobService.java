@@ -53,11 +53,7 @@ public class IngestJobService {
         job.setImported(result.imported());
         int errorCount = result.errors() != null ? result.errors().size() : 0;
         job.setFailed(errorCount);
-        // Skipped = fetched items that were neither imported nor failed.
-        // Note: imported can exceed fetched when child documents (attachments) are
-        // counted alongside parent records (chat messages), so clamp to zero.
-        int handledCount = Math.min(result.imported() + errorCount, result.fetched());
-        job.setSkipped(Math.max(0, result.fetched() - handledCount));
+        job.setSkipped(result.skipped());
         job.setErrors(result.errors());
         if (result.hasErrors() && result.imported() > 0) {
             job.setStatus(IngestJobRecord.Status.PARTIAL);

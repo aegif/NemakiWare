@@ -546,7 +546,11 @@ public class IngestSchedulerService {
     /**
      * Result of a fetch run (any adapter).
      */
-    public record FetchResult(int fetched, int imported, List<String> errors) {
+    public record FetchResult(int fetched, int imported, int skipped, List<String> errors) {
+        /** Convenience constructor without skipped (defaults to 0). */
+        public FetchResult(int fetched, int imported, List<String> errors) {
+            this(fetched, imported, 0, errors);
+        }
         public boolean hasErrors() { return errors != null && !errors.isEmpty(); }
     }
 
@@ -630,10 +634,10 @@ public class IngestSchedulerService {
 
                     ExternalIngestResult result = canonicalImportService.executeMailImport(callContext, req);
                     if (result.isSuccess() || result.skipped()) {
-                        // Advance checkpoint only for handled messages
-                        String now = java.time.Instant.now().toString();
-                        if (highWaterDateTime == null || now.compareTo(highWaterDateTime) > 0) {
-                            highWaterDateTime = now;
+                        // Advance checkpoint to this message's receivedDateTime (not wall-clock)
+                        if (msg.receivedDateTime() != null
+                                && (highWaterDateTime == null || msg.receivedDateTime().compareTo(highWaterDateTime) > 0)) {
+                            highWaterDateTime = msg.receivedDateTime();
                         }
                         if (result.isSuccess()) imported++;
                     } else {
@@ -866,7 +870,8 @@ public class IngestSchedulerService {
                     msgReq.setProfileId(profile.getProfileId());
                     msgReq.setConnectorId(connector.getConnectorId());
                     msgReq.setRepositoryId(profile.getRepositoryId());
-                    msgReq.setSourceObjectId(channelId + "/" + msg.ts());
+                    // Use plain message ID — channelId is in metadata and canonical URI builder
+                    msgReq.setSourceObjectId(msg.ts());
                     msgReq.setSourceObjectType("chat_message");
                     msgReq.setFileName("slack-" + msg.ts().replace(".", "-") + ".txt");
                     msgReq.setMimeType("text/plain");
@@ -975,7 +980,7 @@ public class IngestSchedulerService {
                     msgReq.setProfileId(profile.getProfileId());
                     msgReq.setConnectorId(connector.getConnectorId());
                     msgReq.setRepositoryId(profile.getRepositoryId());
-                    msgReq.setSourceObjectId(channelId + "/" + msg.id());
+                    msgReq.setSourceObjectId(msg.id());
                     msgReq.setSourceObjectType("chat_message");
                     msgReq.setFileName("teams-" + msg.id() + ".html");
                     msgReq.setMimeType("text/html");
@@ -1083,7 +1088,7 @@ public class IngestSchedulerService {
                     msgReq.setProfileId(profile.getProfileId());
                     msgReq.setConnectorId(connector.getConnectorId());
                     msgReq.setRepositoryId(profile.getRepositoryId());
-                    msgReq.setSourceObjectId(channelId + "/" + post.id());
+                    msgReq.setSourceObjectId(post.id());
                     msgReq.setSourceObjectType("chat_message");
                     msgReq.setFileName("mm-" + post.id() + ".txt");
                     msgReq.setMimeType("text/plain");
