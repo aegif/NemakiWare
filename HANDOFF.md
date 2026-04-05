@@ -37,7 +37,7 @@
 | `executeBusinessRecordImport()` | record | businessRecordMetadata 自動付与 |
 | `executeChatContextImport()` | chat_message / thread | chatContextMetadata 自動付与 |
 
-### 2.4 Concrete Adapters (10種)
+### 2.4 Concrete Adapters (11種)
 
 | Adapter | sourceSystem | API | スケジューラ |
 |---|---|---|---|
@@ -49,6 +49,7 @@
 | Slack | `slack` | Web API | ✅ ts checkpoint |
 | Teams | `teams` | Graph API v1.0 | ✅ createdDateTime checkpoint |
 | Mattermost | `mattermost` | REST v4 | ✅ createAt checkpoint |
+| Chatwork | `chatwork` | Chatwork API v2 | ✅ messageId checkpoint |
 | Box | `box` | Box Content API v2.0 | ✅ modified_at checkpoint |
 | Dropbox | `dropbox` | Dropbox API v2 | ✅ server_modified checkpoint |
 
@@ -163,6 +164,7 @@
 - `core/src/main/java/jp/aegif/nemaki/rest/ingest/chat/SlackConnectorAdapter.java`
 - `core/src/main/java/jp/aegif/nemaki/rest/ingest/chat/TeamsConnectorAdapter.java`
 - `core/src/main/java/jp/aegif/nemaki/rest/ingest/chat/MattermostConnectorAdapter.java`
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/chat/ChatworkConnectorAdapter.java`
 - `core/src/main/java/jp/aegif/nemaki/rest/ingest/fileshare/BoxConnectorAdapter.java`
 - `core/src/main/java/jp/aegif/nemaki/rest/ingest/fileshare/DropboxConnectorAdapter.java`
 

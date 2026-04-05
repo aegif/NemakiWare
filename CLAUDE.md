@@ -237,7 +237,7 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ### RC12 (2026-04-05)
 - External Ingestion Phase 4 完成:
-  - Concrete Adapters 10種 (+Box, Dropbox)
+  - Concrete Adapters 11種 (+Box, Dropbox, Chatwork)
   - 全 adapter にチェックポイント永続化 (Gmail date, M365 receivedDateTime, Notion last_edited_time, Salesforce LastModifiedDate, Slack ts, Teams createdDateTime, Mattermost createAt, Box modified_at, Dropbox server_modified)
   - Per-request adapter throttling (rateLimitRpm → ms/request 変換)
   - IMAP IDLE リアルタイム監視 (angus-mail IMAPFolder.idle + MessageCountListener)
