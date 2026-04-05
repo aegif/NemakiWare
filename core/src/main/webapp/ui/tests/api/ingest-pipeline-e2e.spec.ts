@@ -66,8 +66,10 @@ async function countRootChildren(request: APIRequestContext): Promise<number> {
 test.describe('Ingest Pipeline — API Smoke Tests', () => {
 
   // ── Document creation + CMIS property verification ─────────────
-  // Note: multipart content upload is tested via ManualIngestTab UI tests.
-  // API smoke tests use JSON-only imports to verify pipeline logic.
+  // Note: These tests use JSON-only imports (no multipart content upload).
+  // Multipart content upload coverage is a gap — the /api/ path currently
+  // lacks Spring multipart configuration, so content-upload regression
+  // testing requires JVM-side integration tests with embedded Tomcat.
 
   // ── JSON-only import (metadata only) ──────────────────────────
 
@@ -121,12 +123,12 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
     }
   });
 
-  // ── Content hash: no-content re-import → metadata-only update ──
-  // Note: full content-hash comparison requires multipart upload which is
-  // tested via JVM integration tests. This verifies the dedupe path for
-  // no-content re-imports (metadata-only update, not new version).
+  // ── Re-import without content: version-up behavior ─────────────
+  // When re-importing the same sourceObjectId without a content stream,
+  // there is no content hash to compare, so the dedupePolicy applies
+  // as-is. With dedupePolicy=create_new_version, a new version is created.
 
-  test('should do metadata-only update on no-content re-import', async ({ request }) => {
+  test('re-import without content creates new version per dedupePolicy', async ({ request }) => {
     const ts = Date.now();
     const { connId, profId } = await createStub(request, `nocont-${ts}`);
 
@@ -139,11 +141,10 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
       const r1 = await request.post(`${BASE}/v1/repo/bedroom/ingest`, { headers: JSON_H, data });
       expect((await r1.json()).errors ?? []).toHaveLength(0);
 
-      // Re-import same sourceObjectId without content → should update metadata only
       const r2 = await request.post(`${BASE}/v1/repo/bedroom/ingest`, { headers: JSON_H, data });
       const b2 = await r2.json();
       expect(b2.errors ?? []).toHaveLength(0);
-      // No content stream → no hash to compare → creates new version (profile policy)
+      // No content stream → no hash comparison → dedupePolicy creates new version
       expect(b2.isNewVersion).toBe(true);
     } finally {
       await deleteStub(request, connId, profId);

@@ -139,6 +139,14 @@
 			<scope>test</scope>
 		</dependency>
 
+		<!-- WireMock for adapter integration tests -->
+		<dependency>
+			<groupId>org.wiremock</groupId>
+			<artifactId>wiremock-standalone</artifactId>
+			<version>3.12.1</version>
+			<scope>test</scope>
+		</dependency>
+
 		<!-- JSON library for test classes -->
 		<dependency>
 			<groupId>org.json</groupId>
