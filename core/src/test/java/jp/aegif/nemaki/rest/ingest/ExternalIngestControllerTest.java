@@ -40,4 +40,16 @@ public class ExternalIngestControllerTest {
     public void testSanitizeFilename_empty() {
         assertEquals("", ExternalIngestController.sanitizeFilename(""));
     }
+
+    @Test
+    public void testSanitizeFilename_nullBytes() {
+        assertEquals("test.txt", ExternalIngestController.sanitizeFilename("test\u0000.txt"));
+        assertEquals("safe.pdf", ExternalIngestController.sanitizeFilename("safe\u0000.pdf"));
+    }
+
+    @Test
+    public void testSanitizeFilename_controlChars() {
+        assertEquals("clean.doc", ExternalIngestController.sanitizeFilename("clean\t.doc"));
+        assertEquals("no-newline.xls", ExternalIngestController.sanitizeFilename("no-newline\n.xls"));
+    }
 }

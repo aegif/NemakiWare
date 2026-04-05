@@ -286,8 +286,9 @@ public class IngestWebhookController {
     private boolean verifySignature(ConnectorDefinition connector, String rawBody) {
         String secret = connector.getWebhookSecret();
         if (secret == null || secret.isBlank()) {
-            // No secret configured — accept all (for development/testing)
-            return true;
+            // No secret configured — reject for security
+            logger.warn("Webhook rejected for connector {} — webhookSecret not configured", connector.getConnectorId());
+            return false;
         }
 
         String system = connector.getSourceSystem();
@@ -308,7 +309,9 @@ public class IngestWebhookController {
             return false; // Secret is set but no signature provided — reject
         }
         String computed = hmacSha256(secret, rawBody);
-        return headerSig.equals(computed);
+        return java.security.MessageDigest.isEqual(
+                headerSig.getBytes(StandardCharsets.UTF_8),
+                computed.getBytes(StandardCharsets.UTF_8));
     }
 
     private boolean verifyGraphClientState(String expectedSecret, String rawBody) {
@@ -318,7 +321,9 @@ public class IngestWebhookController {
             if (!notifications.isArray()) return false;
             for (JsonNode notification : notifications) {
                 String clientState = notification.path("clientState").asText(null);
-                if (clientState == null || !clientState.equals(expectedSecret)) {
+                if (clientState == null || !java.security.MessageDigest.isEqual(
+                        clientState.getBytes(StandardCharsets.UTF_8),
+                        expectedSecret.getBytes(StandardCharsets.UTF_8))) {
                     logger.warn("Graph clientState mismatch: expected={}, got={}", expectedSecret, clientState);
                     return false;
                 }
@@ -343,7 +348,9 @@ public class IngestWebhookController {
                     java.util.Base64.getDecoder().decode(token), "HmacSHA256"));
             String computed = java.util.Base64.getEncoder().encodeToString(
                     mac.doFinal(rawBody.getBytes(StandardCharsets.UTF_8)));
-            return computed.equals(headerSig);
+            return java.security.MessageDigest.isEqual(
+                    computed.getBytes(StandardCharsets.UTF_8),
+                    headerSig.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
             logger.warn("Chatwork signature verification failed: {}", e.getMessage());
             return false;
@@ -365,7 +372,9 @@ public class IngestWebhookController {
 
         String baseString = "v0:" + timestamp + ":" + rawBody;
         String computed = "v0=" + hmacSha256(signingSecret, baseString);
-        return computed.equals(signature);
+        return java.security.MessageDigest.isEqual(
+                computed.getBytes(StandardCharsets.UTF_8),
+                signature.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String hmacSha256(String secret, String data) {

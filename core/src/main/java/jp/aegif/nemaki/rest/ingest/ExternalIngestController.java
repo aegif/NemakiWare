@@ -162,9 +162,11 @@ public class ExternalIngestController {
         return HttpStatus.INTERNAL_SERVER_ERROR;
     }
 
-    /** Strip path separators and parent-directory traversal from uploaded filenames. */
+    /** Strip path separators, control characters, and parent-directory traversal from uploaded filenames. */
     static String sanitizeFilename(String name) {
         if (name == null || name.isBlank()) return name;
+        // Remove null bytes and control characters (prevent injection)
+        name = name.replaceAll("[\\x00-\\x1f\\x7f]", "");
         // Extract basename (after last / or \)
         int lastSlash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
         if (lastSlash >= 0) {
