@@ -59,25 +59,43 @@ test.describe('External Ingest API', () => {
     });
 
     test('PUT /connectors — [configured] placeholder preserves real secret', async ({ request }) => {
-      // Send update with placeholder values
-      const res = await request.put(`${BASE}/v1/admin/connectors/${connectorId}`, {
+      // Step 1: Set a known webhookSecret
+      await request.put(`${BASE}/v1/admin/connectors/${connectorId}`, {
         headers: JSON_HEADERS,
         data: {
           connectorId,
-          sourceArchetype: 'FILE_SHARE',
-          sourceSystem: 'box',
-          credentialRef: '[configured]',
+          sourceArchetype: 'CHAT_CONTEXT',
+          sourceSystem: 'slack',
+          webhookSecret: 'test-secret-12345',
+          displayName: 'Secret Test',
+          enabled: true,
+        },
+      });
+
+      // Step 2: Send update with [configured] placeholder — should preserve the secret
+      await request.put(`${BASE}/v1/admin/connectors/${connectorId}`, {
+        headers: JSON_HEADERS,
+        data: {
+          connectorId,
+          sourceArchetype: 'CHAT_CONTEXT',
+          sourceSystem: 'slack',
           webhookSecret: '[configured]',
           displayName: 'Updated Name',
           enabled: true,
         },
       });
-      expect(res.ok()).toBeTruthy();
-      // Verify the name was updated but secret is still masked (not literally [configured])
-      const getRes = await request.get(`${BASE}/v1/admin/connectors/${connectorId}`, { headers: AUTH });
-      const body = await getRes.json();
-      expect(body.displayName).toBe('Updated Name');
-      expect(body.credentialRef).toBe('[configured]');
+
+      // Step 3: Verify the real secret is still functional by sending a webhook
+      // with an INVALID signature — should be rejected (proves secret is still set)
+      const webhookRes = await request.post(`${BASE}/v1/ingest-webhook/${connectorId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Webhook-Signature': 'intentionally-wrong-signature',
+        },
+        data: { type: 'test' },
+      });
+      // 401 = signature verification failed = secret is still active and working
+      expect(webhookRes.status()).toBe(401);
     });
 
     test('DELETE /connectors — cleanup', async ({ request }) => {

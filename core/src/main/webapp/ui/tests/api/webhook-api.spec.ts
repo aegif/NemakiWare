@@ -125,21 +125,18 @@ test.describe('Webhook API Tests', () => {
       expect(data.success).toBe(false); // Webhook delivery failed (unresolvable host)
     });
 
-    test('W3: Test webhook with external URL (may fail due to SSRF protection)', async ({ request }) => {
-      // This test documents the SSRF protection behavior
-      // External URLs may be blocked depending on DNS resolution
+    test('W3: Test webhook delivery blocked by SSRF protection for localhost', async ({ request }) => {
+      // Localhost URLs are blocked by SSRF protection — this documents that behavior
       const res = await restPost(request, '/webhook/test', {
         url: LOCAL_200_URL,
       });
 
       expect(res.ok()).toBeTruthy();
       const data = await res.json();
-      expect(data.status).toBe('success'); // API call succeeded
-
-      // The webhook may succeed or fail depending on SSRF protection
-      // Just verify the response structure is correct
-      expect(typeof data.success).toBe('boolean');
-      expect(typeof data.statusCode).toBe('number');
+      expect(data.status).toBe('success'); // API call itself succeeded
+      // Delivery is blocked by SSRF protection for localhost
+      expect(data.success).toBe(false);
+      expect(data.responseBody).toContain('SSRF');
     });
 
     test('W4: Test webhook without URL returns validation error', async ({ request }) => {

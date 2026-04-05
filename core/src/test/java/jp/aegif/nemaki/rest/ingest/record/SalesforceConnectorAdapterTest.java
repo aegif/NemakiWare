@@ -77,20 +77,19 @@ class SalesforceConnectorAdapterTest {
     }
 
     @Test
-    void testGetAttachmentsUsesSoqlEscaping() throws Exception {
+    void testGetAttachmentsEscapesSingleQuoteInParentId() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
                 .willReturn(aResponse()
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"records\":[]}")));
 
-        // This should not throw even with special characters
-        List<SalesforceConnectorAdapter.SalesforceRecord> atts =
-                adapter.getAttachments("001'XX--inject");
-        assertTrue(atts.isEmpty());
+        // Input with single quote — must be escaped to prevent SOQL injection
+        adapter.getAttachments("001'XX--inject");
 
-        // Verify the SOQL was URL-encoded (no raw single quote in query param)
+        // Verify the single quote was escaped to \' in the SOQL
+        // WireMock matches against decoded query param values
         wireMock.verify(getRequestedFor(urlPathEqualTo("/services/data/v59.0/query"))
-                .withQueryParam("q", containing("ParentId")));
+                .withQueryParam("q", containing("001\\'XX--inject")));
     }
 
     @Test

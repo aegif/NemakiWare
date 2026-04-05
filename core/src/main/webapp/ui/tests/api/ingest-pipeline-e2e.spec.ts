@@ -212,7 +212,10 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
 
   // ── Dry-run: verify no side effects ───────────────────────────
 
-  test('dry-run should not create any document', async ({ request }) => {
+  // Smoke: verifies dry-run returns dryRun=true and does not create a new
+  // document in the target folder. Does NOT verify absence of job/DLQ/lineage
+  // side effects — those require JVM-level integration tests.
+  test('dry-run returns preview and does not create a new document in target folder', async ({ request }) => {
     const ts = Date.now();
     const { connId, profId } = await createStub(request, `dry-${ts}`);
 
@@ -229,8 +232,10 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
       });
       const body = await res.json();
       expect(body.dryRun).toBe(true);
+      // objectId should be null for new documents in dry-run
+      expect(body.objectId).toBeNull();
 
-      // Verify no document was created
+      // Verify no new document appeared in target folder
       const afterCount = await countRootChildren(request);
       expect(afterCount).toBe(beforeCount);
     } finally {
