@@ -1,7 +1,6 @@
 package jp.aegif.nemaki.rest.ingest.chat;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
-import com.github.tomakehurst.wiremock.client.WireMock;
 import org.junit.jupiter.api.*;
 
 import java.io.InputStream;
@@ -13,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Adapter integration tests for SlackConnectorAdapter using WireMock.
- * Tests HTTP contract, pagination, auth headers, error handling.
+ * Tests HTTP contract, auth headers, pagination, error handling.
  */
 class SlackConnectorAdapterTest {
 
@@ -34,15 +33,15 @@ class SlackConnectorAdapterTest {
     @BeforeEach
     void setUp() {
         wireMock.resetAll();
-        // Create adapter pointing to WireMock instead of real Slack API
-        adapter = new SlackConnectorAdapter("xoxb-test-token") {
-            // Override the API base URL for testing
-        };
+        adapter = new SlackConnectorAdapter("xoxb-test-token",
+                "http://localhost:" + wireMock.port());
     }
 
+    // ── HTTP contract tests ─────────────────────────────────────
+
     @Test
-    void testListChannels() throws Exception {
-        wireMock.stubFor(get(urlPathEqualTo("/api/conversations.list"))
+    void testListChannelsSendsAuthHeaderAndParsesResponse() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/conversations.list"))
                 .withHeader("Authorization", equalTo("Bearer xoxb-test-token"))
                 .willReturn(aResponse()
                         .withHeader("Content-Type", "application/json")
@@ -51,55 +50,133 @@ class SlackConnectorAdapterTest {
                                 "ok": true,
                                 "channels": [
                                     {"id": "C001", "name": "general", "is_private": false},
-                                    {"id": "C002", "name": "random", "is_private": false},
-                                    {"id": "C003", "name": "secret", "is_private": true}
+                                    {"id": "C002", "name": "secret", "is_private": true}
                                 ]
                             }
                             """)));
 
-        // Note: SlackConnectorAdapter uses hardcoded SLACK_API URL
-        // This test validates the adapter's JSON parsing and record mapping
-        // For full integration, the adapter would need a configurable base URL
+        List<SlackConnectorAdapter.SlackChannel> channels = adapter.listChannels(100);
+        assertEquals(2, channels.size());
+        assertEquals("C001", channels.get(0).id());
+        assertEquals("general", channels.get(0).name());
+        assertFalse(channels.get(0).isPrivate());
+        assertTrue(channels.get(1).isPrivate());
     }
 
     @Test
+    void testGetHistorySendsOldestParameter() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
+                .withQueryParam("channel", equalTo("C001"))
+                .withQueryParam("oldest", equalTo("1700000000.000000"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                            {
+                                "ok": true,
+                                "messages": [
+                                    {
+                                        "ts": "1700000001.000001",
+                                        "user": "U001",
+                                        "text": "Hello",
+                                        "thread_ts": null,
+                                        "files": []
+                                    }
+                                ]
+                            }
+                            """)));
+
+        List<SlackConnectorAdapter.SlackMessage> messages =
+                adapter.getHistory("C001", "1700000000.000000", 100);
+        assertEquals(1, messages.size());
+        assertEquals("1700000001.000001", messages.get(0).ts());
+        assertEquals("U001", messages.get(0).userId());
+        assertEquals("Hello", messages.get(0).text());
+    }
+
+    @Test
+    void testGetHistoryWithNullOldestOmitsParameter() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
+                .withQueryParam("channel", equalTo("C001"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"ok\":true,\"messages\":[]}")));
+
+        List<SlackConnectorAdapter.SlackMessage> messages =
+                adapter.getHistory("C001", null, 50);
+        assertTrue(messages.isEmpty());
+    }
+
+    @Test
+    void testGetHistoryParsesFilesInMessages() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                            {
+                                "ok": true,
+                                "messages": [{
+                                    "ts": "1700000002.000002",
+                                    "user": "U002",
+                                    "text": "See attached",
+                                    "files": [{
+                                        "id": "F001",
+                                        "name": "doc.pdf",
+                                        "mimetype": "application/pdf",
+                                        "url_private_download": "https://files.slack.com/F001",
+                                        "size": 1024
+                                    }]
+                                }]
+                            }
+                            """)));
+
+        List<SlackConnectorAdapter.SlackMessage> messages =
+                adapter.getHistory("C001", null, 100);
+        assertEquals(1, messages.size());
+        assertEquals(1, messages.get(0).files().size());
+        assertEquals("F001", messages.get(0).files().get(0).id());
+        assertEquals("doc.pdf", messages.get(0).files().get(0).name());
+        assertEquals("application/pdf", messages.get(0).files().get(0).mimeType());
+        assertEquals(1024, messages.get(0).files().get(0).size());
+    }
+
+    @Test
+    void testDownloadFileStreamsContent() throws Exception {
+        String fileUrl = "/files-pri/T001/doc.pdf";
+        wireMock.stubFor(get(urlPathEqualTo(fileUrl))
+                .withHeader("Authorization", equalTo("Bearer xoxb-test-token"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/pdf")
+                        .withBody("fake pdf content")));
+
+        InputStream stream = adapter.downloadFile(
+                "http://localhost:" + wireMock.port() + fileUrl);
+        assertNotNull(stream);
+        String content = new String(stream.readAllBytes());
+        assertEquals("fake pdf content", content);
+    }
+
+    @Test
+    void testApiErrorThrowsException() {
+        wireMock.stubFor(get(urlPathEqualTo("/conversations.list"))
+                .willReturn(aResponse().withStatus(429)
+                        .withBody("{\"ok\":false,\"error\":\"rate_limited\"}")));
+
+        assertThrows(RuntimeException.class, () -> adapter.listChannels(100));
+    }
+
+    // ── Record mapping tests ────────────────────────────────────
+
+    @Test
     void testSlackMessageRecordMapping() {
-        // Test that SlackMessage record correctly holds all fields
         var msg = new SlackConnectorAdapter.SlackMessage(
                 "1234567890.123456", "U001", "Hello world",
                 "1234567890.000001",
                 List.of(new SlackConnectorAdapter.SlackFile(
                         "F001", "doc.pdf", "application/pdf",
-                        "https://files.slack.com/files-pri/T001/doc.pdf", 1024)));
-
+                        "https://files.slack.com/F001", 1024)));
         assertEquals("1234567890.123456", msg.ts());
         assertEquals("U001", msg.userId());
-        assertEquals("Hello world", msg.text());
-        assertEquals("1234567890.000001", msg.threadTs());
         assertEquals(1, msg.files().size());
-        assertEquals("doc.pdf", msg.files().get(0).name());
-        assertEquals("application/pdf", msg.files().get(0).mimeType());
-    }
-
-    @Test
-    void testSlackFileRecordMapping() {
-        var file = new SlackConnectorAdapter.SlackFile(
-                "F001", "image.png", "image/png",
-                "https://files.slack.com/files-pri/T001/image.png", 2048);
-
-        assertEquals("F001", file.id());
-        assertEquals("image.png", file.name());
-        assertEquals("image/png", file.mimeType());
-        assertEquals(2048, file.size());
-        assertNotNull(file.urlPrivateDownload());
-    }
-
-    @Test
-    void testSlackChannelRecordMapping() {
-        var channel = new SlackConnectorAdapter.SlackChannel("C001", "general", false);
-        assertEquals("C001", channel.id());
-        assertEquals("general", channel.name());
-        assertFalse(channel.isPrivate());
     }
 
     @Test

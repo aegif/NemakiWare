@@ -22,14 +22,21 @@ import java.util.List;
 public class SlackConnectorAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(SlackConnectorAdapter.class);
-    private static final String SLACK_API = "https://slack.com/api";
+    private static final String DEFAULT_API = "https://slack.com/api";
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final String token;
+    private final String apiBase;
     private final HttpClient httpClient;
 
     public SlackConnectorAdapter(String token) {
+        this(token, DEFAULT_API);
+    }
+
+    /** Constructor with configurable API base URL (for testing with WireMock). */
+    public SlackConnectorAdapter(String token, String apiBase) {
         this.token = token;
+        this.apiBase = apiBase;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
@@ -43,7 +50,7 @@ public class SlackConnectorAdapter {
      * List channels the bot has access to.
      */
     public List<SlackChannel> listChannels(int limit) throws Exception {
-        String url = SLACK_API + "/conversations.list?limit=" + limit + "&types=public_channel,private_channel";
+        String url = apiBase + "/conversations.list?limit=" + limit + "&types=public_channel,private_channel";
         JsonNode root = slackGet(url);
         JsonNode channels = root.get("channels");
         if (channels == null || !channels.isArray()) return List.of();
@@ -66,7 +73,7 @@ public class SlackConnectorAdapter {
      * @param limit     max messages
      */
     public List<SlackMessage> getHistory(String channelId, String oldest, int limit) throws Exception {
-        String url = SLACK_API + "/conversations.history?channel=" + channelId + "&limit=" + limit;
+        String url = apiBase + "/conversations.history?channel=" + channelId + "&limit=" + limit;
         if (oldest != null && !oldest.isBlank()) url += "&oldest=" + oldest;
 
         JsonNode root = slackGet(url);
@@ -100,7 +107,7 @@ public class SlackConnectorAdapter {
      * Fetch thread replies.
      */
     public List<SlackMessage> getThreadReplies(String channelId, String threadTs) throws Exception {
-        String url = SLACK_API + "/conversations.replies?channel=" + channelId + "&ts=" + threadTs;
+        String url = apiBase + "/conversations.replies?channel=" + channelId + "&ts=" + threadTs;
         JsonNode root = slackGet(url);
         JsonNode messages = root.get("messages");
         if (messages == null) return List.of();
