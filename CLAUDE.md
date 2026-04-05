@@ -270,6 +270,13 @@ curl -u admin:password http://localhost:5984/_all_dbs
   - Scheduler validation: adapter 別必須 schedulerParams チェック (Slack channelId, Teams teamId+channelId 等)
   - Webhook URL 表示: ConnectorManagementTab にコピー可能な URL カラム
   - UI: defaultProfile トグル, defaultClassification 入力, webhookSecret パスワード入力
+  - Cloud Drive 統合: canonical pipeline で nemaki:cloudDriveMetadata 自動付与 (saveCloudMetadata 後付け廃止)
+  - Chatwork Adapter: Chatwork API v2, message + file 取込, messageId checkpoint, webhook 対応
+  - Security: webhook secret 必須化, constant-time HMAC (MessageDigest.isEqual), filename null byte 除去
+  - M365 checkpoint: receivedDateTime ベース (wall-clock 依存排除)
+  - Chat canonical ID: Slack/Teams/Mattermost/Chatwork の sourceObjectId から channelId プレフィックス除去
+  - 曖昧 auto-resolve: CloudDriveResource でレガシーフォールバックを明示的にバイパス
+  - FetchResult.skipped: first-class カウンタとして追加 (derived 計算から脱却)
 
 ### RC11 (2026-04-03)
 - External Ingestion 完全実装:

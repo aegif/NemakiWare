@@ -102,18 +102,27 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         if (repositoryId == null) return null;
         List<ImportProfileDefinition> candidates = listByRepository(repositoryId);
         // First pass: prefer profiles where this connector is the explicit default
-        for (ImportProfileDefinition p : candidates) {
-            if (p.isEnabled() && p.isArchetypeAllowed(archetype) && p.isConnectorAllowed(connectorId)
-                    && connectorId != null && connectorId.equals(p.getDefaultConnectorId())) {
-                return p;
-            }
+        List<ImportProfileDefinition> byConnector = candidates.stream()
+                .filter(p -> p.isEnabled() && p.isArchetypeAllowed(archetype) && p.isConnectorAllowed(connectorId)
+                        && connectorId != null && connectorId.equals(p.getDefaultConnectorId()))
+                .toList();
+        if (byConnector.size() == 1) return byConnector.get(0);
+        if (byConnector.size() > 1) {
+            throw new IllegalStateException("Ambiguous auto-resolve: " + byConnector.size()
+                    + " profiles claim defaultConnectorId=" + connectorId + " in repository " + repositoryId
+                    + " — set defaultConnectorId on exactly one profile");
         }
+
         // Second pass: prefer profiles marked as defaultProfile
-        for (ImportProfileDefinition p : candidates) {
-            if (p.isEnabled() && p.isDefaultProfile()
-                    && p.isArchetypeAllowed(archetype) && p.isConnectorAllowed(connectorId)) {
-                return p;
-            }
+        List<ImportProfileDefinition> byDefault = candidates.stream()
+                .filter(p -> p.isEnabled() && p.isDefaultProfile()
+                        && p.isArchetypeAllowed(archetype) && p.isConnectorAllowed(connectorId))
+                .toList();
+        if (byDefault.size() == 1) return byDefault.get(0);
+        if (byDefault.size() > 1) {
+            throw new IllegalStateException("Ambiguous auto-resolve: " + byDefault.size()
+                    + " profiles have defaultProfile=true in repository " + repositoryId
+                    + " — set defaultProfile on exactly one profile");
         }
         // Third pass: any compatible profile — require exactly one match for determinism
         List<ImportProfileDefinition> fallbacks = candidates.stream()
