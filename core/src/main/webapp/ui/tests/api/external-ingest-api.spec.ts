@@ -87,16 +87,20 @@ test.describe('External Ingest API', () => {
       });
 
       // Step 3: Verify the real secret is still functional by sending a webhook
-      // with an INVALID signature — should be rejected (proves secret is still set)
+      // with valid API auth BUT an INVALID signature — this passes the auth filter
+      // and reaches verifySignature() in the controller, which should reject it
       const webhookRes = await request.post(`${BASE}/v1/ingest-webhook/${connectorId}`, {
         headers: {
+          ...AUTH,
           'Content-Type': 'application/json',
           'X-Webhook-Signature': 'intentionally-wrong-signature',
         },
         data: { type: 'test' },
       });
-      // 401 = signature verification failed = secret is still active and working
       expect(webhookRes.status()).toBe(401);
+      const webhookBody = await webhookRes.json();
+      // Assert the CONTROLLER's specific error — not the auth filter's generic 401
+      expect(webhookBody.error).toBe('Signature verification failed');
     });
 
     test('DELETE /connectors — cleanup', async ({ request }) => {

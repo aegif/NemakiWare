@@ -367,23 +367,26 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
     }
   });
 
-  // Smoke: webhook endpoint is behind auth filter (/api/* path).
-  // Signature verification (webhookSecret) is tested in external-ingest-api.spec.ts
-  // via behavioral test (invalid X-Webhook-Signature → 401 after [configured] update).
-  test('webhook endpoint rejects unauthenticated requests', async ({ request }) => {
+  // Webhook endpoint bypasses auth filter (external push notifications).
+  // Security is enforced by webhookSecret signature verification in the controller.
+  test('webhook rejects request when webhookSecret is not configured', async ({ request }) => {
     const ts = Date.now();
     const connId = `e2e-wh-${ts}`;
     await request.post(`${BASE}/v1/admin/connectors`, {
       headers: JSON_H,
       data: { connectorId: connId, sourceArchetype: 'CHAT_CONTEXT', sourceSystem: 'slack', enabled: true },
+      // No webhookSecret configured
     });
     try {
-      // Without auth header → rejected by auth filter (401)
+      // Webhook endpoint is auth-filter exempt, so this reaches the controller.
+      // Without webhookSecret, verifySignature returns false → 401 from controller.
       const res = await request.post(`${BASE}/v1/ingest-webhook/${connId}`, {
         headers: { 'Content-Type': 'application/json' },
         data: { type: 'test' },
       });
       expect(res.status()).toBe(401);
+      const body = await res.json();
+      expect(body.error).toBe('Signature verification failed');
     } finally {
       await request.delete(`${BASE}/v1/admin/connectors/${connId}`, { headers: AUTH });
     }

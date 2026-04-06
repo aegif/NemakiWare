@@ -120,6 +120,14 @@ public class AuthenticationFilter implements Filter {
 				return;
 			}
 
+			// Bypass authentication for ingest webhook endpoints (external push notifications)
+			// Security is enforced via webhookSecret signature verification in IngestWebhookController
+			if (requestURI != null && requestURI.contains("/ingest-webhook/")) {
+				log.debug("Bypassing authentication for ingest webhook endpoint: " + requestURI);
+				chain.doFilter(req, res);
+				return;
+			}
+
 			// Bypass authentication for WebAuthn authentication endpoints (passkey login)
 			if (requestURI != null && (requestURI.contains("/webauthn/authenticate/begin")
 					|| requestURI.contains("/webauthn/authenticate/complete"))) {
