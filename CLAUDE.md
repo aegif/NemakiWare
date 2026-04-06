@@ -277,6 +277,15 @@ curl -u admin:password http://localhost:5984/_all_dbs
   - Chat canonical ID: Slack/Teams/Mattermost/Chatwork の sourceObjectId から channelId プレフィックス除去
   - 曖昧 auto-resolve: CloudDriveResource でレガシーフォールバックを明示的にバイパス
   - FetchResult.skipped: first-class カウンタとして追加 (derived 計算から脱却)
+  - updatePolicy 実装: always_version_up (明示的 checkOut/checkIn), update_metadata_only, version_up_on_content_change (null hash → metadata-only)
+  - Profile save-time validation: defaultConnectorId / defaultProfile 一意性を create/update 時に強制
+  - Chatwork 100件ギャップ検出: checkpoint と最古返却 ID の乖離を WARN + errors に報告
+  - Checkpoint 管理 API: GET/DELETE /checkpoint/{profileId} (admin 用)
+  - Salesforce/Gmail checkpoint: source timestamp ベース (wall-clock 廃止)
+  - resolveTargetFolderId NPE 修正: IncludeRelationships.NONE 明示
+  - Spring MVC multipart: DispatcherServlet に multipart-config + StandardServletMultipartResolver 追加
+  - WireMock 契約テスト: 6 adapter × auth/pagination/attachment/download/failure = 80 テスト
+  - Playwright API smoke: multipart content round-trip, content hash, dry-run 副作用検証
 
 ### RC11 (2026-04-03)
 - External Ingestion 完全実装:

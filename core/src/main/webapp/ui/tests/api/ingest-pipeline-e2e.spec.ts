@@ -368,7 +368,8 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
   });
 
   // Smoke: webhook endpoint is behind auth filter (/api/* path).
-  // Signature verification (webhookSecret) is tested in WireMock adapter tests.
+  // Signature verification (webhookSecret) is tested in external-ingest-api.spec.ts
+  // via behavioral test (invalid X-Webhook-Signature → 401 after [configured] update).
   test('webhook endpoint rejects unauthenticated requests', async ({ request }) => {
     const ts = Date.now();
     const connId = `e2e-wh-${ts}`;

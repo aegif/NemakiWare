@@ -134,15 +134,22 @@
 | page 本文の保存形式 | HTML (Notion adapter の blockToHtml) |
 | externalIntegration を拡張するか | ✅ archetype 別 secondary type を追加 |
 | chat context を別文書化するか | ✅ 添付は別文書 + chatContextMetadata |
-| mail 原本を .eml として保存するか | 本文抽出 + 添付分離 (.eml 原本保持は将来拡張) |
+| mail 原本を .eml として保存するか | ✅ preserveOriginalEml プロファイルオプション (raw .eml を別ドキュメント保存) |
 | mail stable key | UIDVALIDITY:UID (IMAP), Gmail message ID, Graph message ID |
 | ImportProfileDefinition の persisted-only 項目 | ✅ 全フィールド runtime enforce |
 
 ## 4. テスト
 
-- ユニットテスト: 2,523 件 / 0 failures
+### Ingest パイプライン テスト
+- Java ユニット + WireMock 契約テスト: 97 件 / 0 failures
+  - Adapter 契約テスト: 80 件 (Chatwork 14, Teams 10, Mattermost 10, Slack 10, Notion 9, Salesforce 10, Box/Dropbox 4, MailMessageParser 3)
+  - パイプラインロジック: 17 件 (CanonicalImportServiceTest 17)
+- Playwright API smoke: 46 件 (ingest-pipeline 13, external-ingest-api 16, webhook-api 17)
+
+### 全体テスト
 - TCK: 38/38
-- E2E: 864+ passed
+- QA: 94/94
+- Playwright E2E: 879+ passed
 
 ## 5. 参照すべきファイル
 
