@@ -189,6 +189,25 @@ public class CloudDriveResource extends ResourceBase {
 	 * Validate that a client-provided cloud file URL belongs to an allowed host for the given provider.
 	 * Only HTTPS URLs from known cloud provider domains are accepted.
 	 */
+	/** Infer MIME type from filename extension for cloud imports. */
+	private static String inferMimeType(String fileName) {
+		if (fileName == null) return "application/octet-stream";
+		String lower = fileName.toLowerCase();
+		if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+		if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+		if (lower.endsWith(".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+		if (lower.endsWith(".pdf")) return "application/pdf";
+		if (lower.endsWith(".txt")) return "text/plain";
+		if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html";
+		if (lower.endsWith(".csv")) return "text/csv";
+		if (lower.endsWith(".json")) return "application/json";
+		if (lower.endsWith(".png")) return "image/png";
+		if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+		if (lower.endsWith(".gif")) return "image/gif";
+		if (lower.endsWith(".svg")) return "image/svg+xml";
+		return "application/octet-stream";
+	}
+
 	private static boolean isAllowedCloudUrl(String provider, String url) {
 		if (url == null || url.isEmpty()) return false;
 		try {
@@ -1088,6 +1107,7 @@ public class CloudDriveResource extends ResourceBase {
 			req.setSourceObjectId(cloudFileId);
 			req.setSourceObjectType("file");
 			req.setFileName(fileName);
+			req.setMimeType(inferMimeType(fileName));
 			req.setContentStream(content);
 			req.setExecutionMode("manual");
 
