@@ -63,7 +63,33 @@ async function countRootChildren(request: APIRequestContext): Promise<number> {
   return body.objects?.length ?? 0;
 }
 
+/** Clean up any orphaned e2e- test connectors/profiles from previous failed runs. */
+async function cleanupOrphans(request: APIRequestContext) {
+  try {
+    const profRes = await request.get(`${BASE}/v1/admin/import-profiles?repositoryId=bedroom`, { headers: AUTH });
+    if (profRes.ok()) {
+      for (const p of await profRes.json()) {
+        if (p.profileId?.startsWith('e2e-')) {
+          await request.delete(`${BASE}/v1/admin/import-profiles/${p.profileId}`, { headers: AUTH }).catch(() => {});
+        }
+      }
+    }
+    const connRes = await request.get(`${BASE}/v1/admin/connectors`, { headers: AUTH });
+    if (connRes.ok()) {
+      for (const c of await connRes.json()) {
+        if (c.connectorId?.startsWith('e2e-')) {
+          await request.delete(`${BASE}/v1/admin/connectors/${c.connectorId}`, { headers: AUTH }).catch(() => {});
+        }
+      }
+    }
+  } catch { /* best effort */ }
+}
+
 test.describe('Ingest Pipeline — API Smoke Tests', () => {
+
+  test.beforeAll(async ({ request }) => {
+    await cleanupOrphans(request);
+  });
 
   // ── Content upload + download round-trip ───────────────────────
 

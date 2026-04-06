@@ -1132,9 +1132,13 @@ public class CloudDriveResource extends ResourceBase {
 				ingestResult = importService.executeWithAutoResolve(
 						callContext, req, provider, SourceArchetype.FILE_SHARE);
 			} catch (Exception e) {
-				log.debug("Canonical import auto-resolve failed, falling back to legacy: " + e.getMessage());
+				log.info("Canonical import auto-resolve failed, falling back to legacy: " + e.getMessage(), e);
 				return null; // Fall back to legacy — no side effects yet
 			}
+
+			log.info("Canonical import result: success=" + ingestResult.isSuccess()
+					+ ", skipped=" + ingestResult.skipped() + ", objectId=" + ingestResult.objectId()
+					+ ", errors=" + ingestResult.errors());
 
 			if (!ingestResult.isSuccess() && !ingestResult.skipped()) {
 				// Check if auto-resolve failed (no connector/profile) → fall back to legacy
