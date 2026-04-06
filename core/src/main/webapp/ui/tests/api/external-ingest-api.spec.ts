@@ -246,12 +246,12 @@ test.describe('External Ingest API', () => {
   // ── Webhook Endpoint ────────────────────────────────────────────
 
   test.describe('Webhook Endpoint', () => {
-    test('POST /ingest-webhook/{connectorId} — unknown connector', async ({ request }) => {
+    test('POST /ingest-webhook/{connectorId} — unknown connector returns uniform 401', async ({ request }) => {
       const res = await request.post(`${BASE}/v1/ingest-webhook/nonexistent`, {
         headers: { 'Content-Type': 'application/json' },
         data: { type: 'test' },
       });
-      // Returns 401 (auth filter) or 404 (connector not found) depending on filter chain
+      // Returns 401 for both not-found and disabled connectors (prevents enumeration)
       expect([401, 404]).toContain(res.status());
     });
   });

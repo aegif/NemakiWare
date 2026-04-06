@@ -63,15 +63,12 @@ public class IngestWebhookController {
             @RequestParam(value = "validationToken", required = false) String validationToken,
             @RequestBody String rawBody) {
 
-        // 1. Resolve connector
+        // 1. Resolve connector — return uniform 401 for not-found/disabled to prevent
+        // connector ID enumeration via status code differences
         ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
-        if (connector == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("error", "Connector not found: " + connectorId));
-        }
-        if (!connector.isEnabled()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("error", "Connector is disabled"));
+        if (connector == null || !connector.isEnabled()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Signature verification failed"));
         }
 
         String system = connector.getSourceSystem();
