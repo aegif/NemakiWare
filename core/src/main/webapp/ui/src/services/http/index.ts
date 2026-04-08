@@ -13,3 +13,6 @@ export {
   type HeaderProvider,
   type ResponseType
 } from './CmisHttpClient';
+
+export { parseJsonResponseBody, tryParseJsonResponseBody } from './jsonFetch';
+export { getResourceBaseErrorMessage, isResourceBaseSuccess } from './restResult';
