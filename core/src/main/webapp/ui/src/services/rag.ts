@@ -6,6 +6,7 @@
  */
 
 import { AuthService } from './auth';
+import { parseJsonResponseBody } from './http/jsonFetch';
 
 // Helper to get auth headers from singleton AuthService
 const getAuthHeaders = () => AuthService.getInstance().getAuthHeaders();
@@ -98,7 +99,7 @@ export class RAGService {
       throw new Error(`RAG health check failed: ${response.status}`);
     }
 
-    return response.json();
+    return (await parseJsonResponseBody(response, 'RAG.getHealth')) as unknown as RAGHealthStatus;
   }
 
   /**
@@ -128,12 +129,12 @@ export class RAGService {
       })
     });
 
+    const data = await parseJsonResponseBody(response, 'RAG.search');
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || `RAG search failed: ${response.status}`);
+      throw new Error((data.detail as string) || `RAG search failed: ${response.status}`);
     }
 
-    return response.json();
+    return data as unknown as RAGSearchResponse;
   }
 
   /**
@@ -165,12 +166,12 @@ export class RAGService {
       }
     });
 
+    const data = await parseJsonResponseBody(response, 'RAG.searchGet');
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || `RAG search failed: ${response.status}`);
+      throw new Error((data.detail as string) || `RAG search failed: ${response.status}`);
     }
 
-    return response.json();
+    return data as unknown as RAGSearchResponse;
   }
 
   /**
@@ -201,12 +202,12 @@ export class RAGService {
       }
     });
 
+    const data = await parseJsonResponseBody(response, 'RAG.findSimilarDocuments');
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || `Find similar documents failed: ${response.status}`);
+      throw new Error((data.detail as string) || `Find similar documents failed: ${response.status}`);
     }
 
-    return response.json();
+    return data as unknown as SimilarDocumentsResponse;
   }
 }
 

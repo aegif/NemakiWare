@@ -219,7 +219,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
           const typeId = type.typeId || type.id;
           try {
             const deleteResponse = await request.delete(`${baseUrl}/delete/${encodeURIComponent(typeId)}`, {
-              headers: { 'Authorization': authHeader }
+              headers: { 'Authorization': authHeader, 'X-Requested-With': 'XMLHttpRequest' }
             });
             if (deleteResponse.ok()) {
               console.log(`  ✓ Deleted: ${typeId}`);

@@ -45,6 +45,25 @@ class ResourceBaseCsrfProtectionTest {
         assertEquals("missing origin verification headers", result);
     }
 
+    /**
+     * Browser Basic auth + explicit X-Requested-With (typical SPA / API test client pattern).
+     */
+    @Test
+    void basicAuthorizationWithXmlHttpRequestPassesCsrfCheck() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getHeader("Authorization")).thenReturn("Basic dXNlcjpwYXNz");
+        when(request.getHeader(CallContextKey.AUTH_TOKEN)).thenReturn(null);
+        when(request.getHeader("AUTH_TOKEN")).thenReturn(null);
+        when(request.getHeader("X-API-Key")).thenReturn(null);
+        when(request.getHeader("Origin")).thenReturn(null);
+        when(request.getHeader("Referer")).thenReturn(null);
+        when(request.getHeader("X-Requested-With")).thenReturn("XMLHttpRequest");
+
+        String result = resource.validate(request);
+
+        assertNull(result);
+    }
+
     @Test
     void explicitAuthTokenHeaderBypassesCsrfOriginCheck() {
         HttpServletRequest request = mock(HttpServletRequest.class);

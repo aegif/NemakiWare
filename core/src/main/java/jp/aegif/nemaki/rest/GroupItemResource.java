@@ -291,6 +291,11 @@ public class GroupItemResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		// Admin check
 		status = checkAdmin(errMsg, httpRequest);
@@ -395,6 +400,11 @@ public class GroupItemResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		// Admin check
 		status = checkAdmin(errMsg, httpRequest);
@@ -450,6 +460,11 @@ public class GroupItemResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		// Admin check
 		status = checkAdmin(errMsg, httpRequest);
@@ -496,6 +511,11 @@ public class GroupItemResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		// Admin check
 		status = checkAdmin(errMsg, httpRequest);

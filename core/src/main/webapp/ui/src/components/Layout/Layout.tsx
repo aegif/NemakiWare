@@ -235,6 +235,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import LanguageSwitcher from '../LanguageSwitcher';
+import { parseJsonResponseBody } from '../../services/http/jsonFetch';
+import { AuthService } from '../../services/auth';
 
 // Build-time constants from vite.config.ts
 declare const __UI_BUILD_TIME__: string;
@@ -302,9 +304,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
       try {
         const response = await fetch('/core/rest/all/build-info', { credentials: 'include' });
         if (response.ok) {
-          const data = await response.json();
+          const data = await parseJsonResponseBody(response, 'build-info');
           if (data.core) {
-            setCoreBuildInfo(data.core);
+            setCoreBuildInfo(data.core as CoreBuildInfo);
           }
         }
       } catch (error) {
@@ -319,7 +321,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
     const fetchFeatureToggles = async () => {
       if (!repositoryId || !authToken) return;
       try {
-        const headers: Record<string, string> = {};
+        const headers: Record<string, string> = {
+          ...AuthService.getInstance().getAuthHeaders(),
+        };
         if (authToken?.token) {
           headers['AUTH_TOKEN'] = authToken.token;
         }
@@ -328,11 +332,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           { headers, credentials: 'include' }
         );
         if (response.ok) {
-          const data = await response.json();
+          const data = await parseJsonResponseBody(response, 'Layout/config/properties');
           if (data.properties) {
             const toggleKeys = Object.keys(featureToggles);
             const updates: Record<string, boolean> = {};
-            for (const prop of data.properties) {
+            const propsList = data.properties as { key: string; value: string }[];
+            for (const prop of propsList) {
               if (toggleKeys.includes(prop.key)) {
                 updates[prop.key] = prop.value !== 'false';
               }

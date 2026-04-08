@@ -45,6 +45,7 @@ public class CloudDriveResourceIT {
 				.setAccept(ContentType.JSON)
 				.addHeader("Authorization", "Basic "
 						+ java.util.Base64.getEncoder().encodeToString("admin:admin".getBytes()))
+				.addHeader("X-Requested-With", "XMLHttpRequest")
 				.build();
 	}
 
@@ -73,6 +74,7 @@ public class CloudDriveResourceIT {
 		.when()
 				.post(cloudDrivePath() + "/push/test-object-id")
 		.then()
+				.statusCode(not(403))
 				.statusCode(200)
 				.body("status", is("failure"));
 	}
@@ -86,6 +88,7 @@ public class CloudDriveResourceIT {
 		.when()
 				.post(cloudDrivePath() + "/push/test-object-id")
 		.then()
+				.statusCode(not(403))
 				.statusCode(200)
 				.body("status", is("failure"));
 	}
@@ -99,6 +102,7 @@ public class CloudDriveResourceIT {
 		.when()
 				.post(cloudDrivePath() + "/pull/test-object-id")
 		.then()
+				.statusCode(not(403))
 				.statusCode(200)
 				.body("status", is("failure"));
 	}
@@ -114,6 +118,7 @@ public class CloudDriveResourceIT {
 		.when()
 				.post(cloudDrivePath() + "/pull/test-object-id")
 		.then()
+				.statusCode(not(403))
 				.statusCode(200)
 				.body("status", anyOf(is("failure"), is("success")));
 	}
@@ -127,6 +132,7 @@ public class CloudDriveResourceIT {
 		.when()
 				.post(cloudDrivePath() + "/pull/test-object-id")
 		.then()
+				.statusCode(not(403))
 				.statusCode(200)
 				.body("status", is("failure"));
 	}
@@ -140,6 +146,7 @@ public class CloudDriveResourceIT {
 		.when()
 				.post(cloudDrivePath() + "/push/test-object-id")
 		.then()
+				.statusCode(not(403))
 				.statusCode(200)
 				.body("status", is("failure"));
 	}
@@ -153,6 +160,7 @@ public class CloudDriveResourceIT {
 		.when()
 				.post(cloudDrivePath() + "/push/test-object-id")
 		.then()
+				.statusCode(not(403))
 				.statusCode(200)
 				.body("status", is("failure"));
 	}
@@ -166,6 +174,7 @@ public class CloudDriveResourceIT {
 		.when()
 				.post(cloudDrivePath() + "/pull/test-object-id")
 		.then()
+				.statusCode(not(403))
 				.statusCode(200)
 				.body("status", is("failure"));
 	}

@@ -194,6 +194,8 @@
 import { AuthToken } from './auth';
 import pako from 'pako';
 import { DEFAULT_REPOSITORY_ID } from '../config/app';
+import { parseJsonResponseBody } from './http/jsonFetch';
+import { getResourceBaseErrorMessage, isResourceBaseSuccess } from './http/restResult';
 
 export interface SAMLConfig {
   sso_url: string;
@@ -267,7 +269,8 @@ export class SAMLService {
     const response = await fetch(`/core/rest/repo/${repositoryId}/authtoken/saml/convert`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
       },
       body: JSON.stringify({
         saml_response: samlResponse,
@@ -279,11 +282,18 @@ export class SAMLService {
       throw new Error('Failed to convert SAML response');
     }
 
-    const result = await response.json();
+    const result = await parseJsonResponseBody(response, 'handleSAMLResponse');
+    const value = result.value as { token?: string; userName?: string } | undefined;
+    if (!isResourceBaseSuccess(result) || !value || typeof value !== 'object') {
+      throw new Error(`SAML conversion failed: ${getResourceBaseErrorMessage(result)}`);
+    }
+    if (!value.token || !value.userName) {
+      throw new Error(`SAML conversion failed: ${getResourceBaseErrorMessage(result, 'missing token or userName')}`);
+    }
     return {
-      token: result.value.token,
+      token: value.token,
       repositoryId: repositoryId,
-      username: result.value.userName
+      username: value.userName
     };
   }
 
@@ -298,7 +308,8 @@ export class SAMLService {
     const response = await fetch(`/core/rest/repo/${repositoryId}/authtoken/saml/convert`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
       },
       body: JSON.stringify({
         saml_response: samlResponseData.saml_response,
@@ -311,11 +322,18 @@ export class SAMLService {
       throw new Error('Failed to convert SAML response');
     }
 
-    const result = await response.json();
+    const result = await parseJsonResponseBody(response, 'convertSAMLResponse');
+    const value = result.value as { token?: string; userName?: string } | undefined;
+    if (!isResourceBaseSuccess(result) || !value || typeof value !== 'object') {
+      throw new Error(`SAML conversion failed: ${getResourceBaseErrorMessage(result)}`);
+    }
+    if (!value.token || !value.userName) {
+      throw new Error(`SAML conversion failed: ${getResourceBaseErrorMessage(result, 'missing token or userName')}`);
+    }
     return {
-      token: result.value.token,
+      token: value.token,
       repositoryId: repositoryId,
-      username: result.value.userName
+      username: value.userName
     };
   }
 

@@ -26,6 +26,8 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { getCmisAuthHeaders } from '../../services/auth/CmisAuthHeaderProvider';
+import { parseJsonResponseBody } from '../../services/http/jsonFetch';
+import { getResourceBaseErrorMessage } from '../../services/http/restResult';
 
 interface WebhookManagementProps {
   repositoryId: string;
@@ -85,15 +87,15 @@ async function resolveObjectPath(
   repositoryId: string,
   objectId: string,
   headers: Record<string, string>
-): Promise<{ name: string; path: string } | null> {
+): Promise<{ name: string; path: string | null } | null> {
   try {
     const resp = await fetch(
       `/core/browser/${repositoryId}/root?objectId=${encodeURIComponent(objectId)}&cmisselector=object&succinct=true`,
       { headers, credentials: 'include' }
     );
     if (!resp.ok) return null;
-    const data = await resp.json();
-    const props = data.succinctProperties || {};
+    const data = await parseJsonResponseBody(resp, 'webhook.resolveObjectPath');
+    const props = (data.succinctProperties as Record<string, string> | undefined) || {};
     return {
       name: props['cmis:name'] || objectId,
       path: props['cmis:path'] || props['nk:parentPath'] || null,
@@ -131,6 +133,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
   const getAuthHeaders = useCallback((): Record<string, string> => {
     return {
       'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
       ...getCmisAuthHeaders()
     };
   }, []);
@@ -149,12 +152,13 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
         handleAuthError(null);
         return;
       }
-      const data = await response.json();
+      const data = await parseJsonResponseBody(response, 'webhook.loadDeliveryLogs');
       if (isStale()) return;
       if (data.status === 'success' && data.deliveries) {
-        setDeliveryLogs(data.deliveries);
+        const deliveries = (data.deliveries as DeliveryLog[] | undefined) || [];
+        setDeliveryLogs(deliveries);
         // Resolve paths only for objectIds not already cached
-        const allObjectIds = [...new Set((data.deliveries as DeliveryLog[]).map(d => d.objectId))];
+        const allObjectIds = [...new Set(deliveries.map(d => d.objectId))];
         const uncachedIds = allObjectIds.filter(oid => !(oid in pathCacheRef.current));
         if (uncachedIds.length > 0) {
           const headers = getAuthHeaders();
@@ -173,7 +177,9 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
           setPathCache(prev => ({ ...prev, ...newEntries }));
         }
       } else if (data.status === 'failure') {
-        message.error(t('webhookManagement.messages.loadError'));
+        message.error(
+          getResourceBaseErrorMessage(data as Record<string, unknown>, t('webhookManagement.messages.loadError'))
+        );
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
@@ -200,7 +206,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
         handleAuthError(null);
         return;
       }
-      const data = await response.json();
+      const data = await parseJsonResponseBody(response, 'webhook.loadConfigs');
       if (isStale()) return;
       if (data.status === 'success' && data.objects) {
         const rows: ConfigRow[] = [];
@@ -217,7 +223,9 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
         }
         setConfigRows(rows);
       } else {
-        message.error(t('webhookManagement.configsLoadError'));
+        message.error(
+          getResourceBaseErrorMessage(data as Record<string, unknown>, t('webhookManagement.configsLoadError'))
+        );
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
@@ -250,12 +258,14 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
         handleAuthError(null);
         return;
       }
-      const data = await response.json();
+      const data = await parseJsonResponseBody(response, 'webhook.retry');
       if (data.status === 'success') {
         message.success(t('webhookManagement.messages.retryQueued'));
         loadDeliveryLogs();
       } else {
-        message.error(t('webhookManagement.messages.retryError'));
+        message.error(
+          getResourceBaseErrorMessage(data as Record<string, unknown>, t('webhookManagement.messages.retryError'))
+        );
       }
     } catch {
       message.error(t('webhookManagement.messages.retryError'));
@@ -279,16 +289,18 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
         handleAuthError(null);
         return;
       }
-      const data = await response.json();
+      const data = await parseJsonResponseBody(response, 'webhook.test');
       if (data.status === 'success') {
         setTestResult({
-          success: data.success,
-          statusCode: data.statusCode,
-          responseTime: data.responseTime,
-          responseBody: data.responseBody || null
+          success: data.success === true,
+          statusCode: typeof data.statusCode === 'number' ? data.statusCode : 0,
+          responseTime: typeof data.responseTime === 'number' ? data.responseTime : 0,
+          responseBody: typeof data.responseBody === 'string' ? data.responseBody : null
         });
       } else {
-        message.error(t('webhookManagement.messages.testError'));
+        message.error(
+          getResourceBaseErrorMessage(data as Record<string, unknown>, t('webhookManagement.messages.testError'))
+        );
       }
     } catch {
       message.error(t('webhookManagement.messages.testError'));

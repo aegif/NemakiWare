@@ -15,6 +15,14 @@ import { AuthHelper } from '../utils/auth-helper';
 
 const BASE_URL = 'http://localhost:8080';
 const AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+const AUTH_HEADERS = {
+  'Authorization': AUTH_HEADER,
+  'X-Requested-With': 'XMLHttpRequest'
+};
+const AUTH_JSON_HEADERS = {
+  ...AUTH_HEADERS,
+  'Content-Type': 'application/json'
+};
 
 test.describe.serial('Import/Export Feature', () => {
   let authHelper: AuthHelper;
@@ -148,7 +156,7 @@ test.describe.serial('Import/Export Feature', () => {
       const importRes = await page.request.post(
         `${BASE_URL}/core/rest/repo/bedroom/importexport/import/${exportTestFolderId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER },
+          headers: AUTH_HEADERS,
           multipart: {
             file: {
               name: 'test-import.zip',
@@ -162,6 +170,9 @@ test.describe.serial('Import/Export Feature', () => {
       // Minimal ZIP without .meta.json files is treated as unknown format → 400
       const status = importRes.status();
       console.log(`Import response status: ${status}`);
+      // Authenticated request should reach import validation path (not CSRF/auth rejection)
+      expect(status).not.toBe(403);
+      expect(status).not.toBe(401);
       // The server rejects ZIPs without recognized format (ACP XML or NemakiWare .meta.json)
       expect([200, 400]).toContain(status);
       if (status === 400) {
@@ -203,7 +214,7 @@ test.describe.serial('Import/Export Feature', () => {
       const importRes = await page.request.post(
         `${BASE_URL}/core/rest/repo/bedroom/importexport/import/nonexistent-folder-12345`,
         {
-          headers: { 'Authorization': AUTH_HEADER },
+          headers: AUTH_HEADERS,
           multipart: {
             file: {
               name: 'test.zip',
@@ -214,6 +225,8 @@ test.describe.serial('Import/Export Feature', () => {
         }
       );
       // Should return error
+      expect(importRes.status()).not.toBe(403);
+      expect(importRes.status()).not.toBe(401);
       expect([400, 404, 500]).toContain(importRes.status());
     });
 
@@ -348,7 +361,7 @@ test.describe.serial('Import/Export Feature', () => {
       const importRes = await page.request.post(
         `${BASE_URL}/core/rest/repo/bedroom/importexport/import/${importTargetFolderId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER },
+          headers: AUTH_HEADERS,
           multipart: {
             file: {
               name: 'roundtrip.zip',
@@ -601,10 +614,7 @@ test.describe.serial('Import/Export Feature', () => {
       const importRes = await page.request.post(
         `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/import/${rootId}`,
         {
-          headers: {
-            'Authorization': AUTH_HEADER,
-            'Content-Type': 'application/json'
-          },
+          headers: AUTH_JSON_HEADERS,
           data: { sourcePath: '/nonexistent/path/for/testing' }
         }
       );
@@ -613,8 +623,11 @@ test.describe.serial('Import/Export Feature', () => {
       const status = importRes.status();
       console.log(`Filesystem import endpoint status: ${status}`);
       // Endpoint exists if we don't get 404 for the endpoint itself
-      // May get 400/401/500 for invalid path or auth issues, which is expected
-      expect([200, 400, 401, 403, 500]).toContain(status);
+      // With explicit auth + CSRF header, should not fail at auth/CSRF layer
+      expect(status).not.toBe(401);
+      expect(status).not.toBe(403);
+      // May get 200/400/500 depending on path validation/runtime environment
+      expect([200, 400, 500]).toContain(status);
     });
 
     test('should have filesystem export endpoint', async ({ page }) => {
@@ -629,17 +642,16 @@ test.describe.serial('Import/Export Feature', () => {
       const exportRes = await page.request.post(
         `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/export/${rootId}`,
         {
-          headers: {
-            'Authorization': AUTH_HEADER,
-            'Content-Type': 'application/json'
-          },
+          headers: AUTH_JSON_HEADERS,
           data: { targetPath: '/nonexistent/path/for/testing', allowOverwrite: false }
         }
       );
 
       const status = exportRes.status();
       console.log(`Filesystem export endpoint status: ${status}`);
-      expect([200, 400, 401, 403, 500]).toContain(status);
+      expect(status).not.toBe(401);
+      expect(status).not.toBe(403);
+      expect([200, 400, 500]).toContain(status);
     });
   });
 
@@ -659,7 +671,7 @@ test.describe.serial('Import/Export Feature', () => {
       const exportRes = await page.request.post(
         `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/export/${rootId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          headers: AUTH_JSON_HEADERS,
           data: { targetPath: EXPORT_PATH, allowOverwrite: true }
         }
       );
@@ -715,7 +727,7 @@ test.describe.serial('Import/Export Feature', () => {
       const exportRes = await page.request.post(
         `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/export/${folderId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          headers: AUTH_JSON_HEADERS,
           data: { targetPath: subExportPath, allowOverwrite: true }
         }
       );
@@ -736,7 +748,7 @@ test.describe.serial('Import/Export Feature', () => {
       const exportRes = await page.request.post(
         `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/export/${rootId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          headers: AUTH_JSON_HEADERS,
           data: { targetPath: '/root/not-allowed-path', allowOverwrite: false }
         }
       );
@@ -750,7 +762,7 @@ test.describe.serial('Import/Export Feature', () => {
       const exportRes = await page.request.post(
         `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/export/nonexistent-id-99999`,
         {
-          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          headers: AUTH_JSON_HEADERS,
           data: { targetPath: '/tmp/nemakiware-export/e2e-bad', allowOverwrite: true }
         }
       );
@@ -845,7 +857,7 @@ test.describe.serial('Import/Export Feature', () => {
         await pg.request.post(
           `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/export/${sourceFolderId}`,
           {
-            headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+            headers: AUTH_JSON_HEADERS,
             data: { targetPath: EXPORT_PATH, allowOverwrite: true }
           }
         );
@@ -863,7 +875,7 @@ test.describe.serial('Import/Export Feature', () => {
       const importRes = await page.request.post(
         `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/import/${importTargetFolderId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          headers: AUTH_JSON_HEADERS,
           data: { sourcePath: EXPORT_PATH }
         }
       );
@@ -902,7 +914,7 @@ test.describe.serial('Import/Export Feature', () => {
       const importRes = await page.request.post(
         `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/import/${importTargetFolderId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          headers: AUTH_JSON_HEADERS,
           data: { sourcePath: '/tmp/nemakiware-import/no-such-dir-12345' }
         }
       );

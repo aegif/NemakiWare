@@ -4,6 +4,8 @@
  * All requests include X-Setup-Token header for authentication.
  */
 
+import { parseJsonResponseBody } from './http/jsonFetch';
+
 const BASE_URL = '/core/api/v1/setup';
 
 export interface SetupState {
@@ -132,14 +134,14 @@ class SetupApiClient {
       let errorMessage: string;
       try {
         const json = JSON.parse(body);
-        errorMessage = json.error || `HTTP ${response.status}`;
+        errorMessage = (json as { error?: string }).error || `HTTP ${response.status}`;
       } catch {
         errorMessage = `HTTP ${response.status}`;
       }
       throw new Error(errorMessage);
     }
 
-    return response.json();
+    return (await parseJsonResponseBody(response, `setupApi${path}`)) as T;
   }
 
   /** GET /state -- no token required */
@@ -148,7 +150,7 @@ class SetupApiClient {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    return response.json();
+    return (await parseJsonResponseBody(response, 'setupApi/getState')) as unknown as SetupState;
   }
 
   /** POST /couchdb/test-connection */

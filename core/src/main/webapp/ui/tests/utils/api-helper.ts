@@ -26,6 +26,11 @@ import { Page } from '@playwright/test';
 const BASE_URL = 'http://localhost:8080';
 const REPOSITORY_ID = 'bedroom';
 
+/**
+ * ResourceBase CSRF contract: mutating /core/rest/repo/ requests with Basic auth must not rely on ambient cookies.
+ */
+export const REST_REPO_CSRF_HEADERS = { 'X-Requested-With': 'XMLHttpRequest' as const };
+
 export interface CreateFolderOptions {
   parentId?: string;
   name: string;
@@ -336,7 +341,8 @@ export class ApiHelper {
         {
           headers: {
             'Authorization': this.authHeader,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            ...REST_REPO_CSRF_HEADERS,
           },
           data: {
             name: userId,
@@ -366,7 +372,7 @@ export class ApiHelper {
     try {
       const response = await this.page.request.delete(
         `${BASE_URL}/core/rest/repo/${this.repositoryId}/user/delete/${encodeURIComponent(userId)}`,
-        { headers: { 'Authorization': this.authHeader } }
+        { headers: { 'Authorization': this.authHeader, ...REST_REPO_CSRF_HEADERS } }
       );
       if (!response.ok()) {
         const errorBody = (await response.text().catch(() => '')).slice(0, 200);
@@ -387,7 +393,7 @@ export class ApiHelper {
     try {
       const response = await this.page.request.delete(
         `${BASE_URL}/core/rest/repo/${this.repositoryId}/group/delete/${encodeURIComponent(groupId)}`,
-        { headers: { 'Authorization': this.authHeader } }
+        { headers: { 'Authorization': this.authHeader, ...REST_REPO_CSRF_HEADERS } }
       );
       if (!response.ok()) {
         const errorBody = (await response.text().catch(() => '')).slice(0, 200);
@@ -408,7 +414,7 @@ export class ApiHelper {
     try {
       const response = await this.page.request.delete(
         `${BASE_URL}/core/rest/repo/${this.repositoryId}/type/delete/${encodeURIComponent(typeId)}`,
-        { headers: { 'Authorization': this.authHeader } }
+        { headers: { 'Authorization': this.authHeader, ...REST_REPO_CSRF_HEADERS } }
       );
       if (!response.ok()) {
         const errorBody = (await response.text().catch(() => '')).slice(0, 200);

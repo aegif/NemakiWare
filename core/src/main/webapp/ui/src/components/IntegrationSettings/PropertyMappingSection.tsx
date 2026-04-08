@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Alert, Card, Table, Switch, Input, Button, Select, Space, Typography, message, Spin, Empty, Tag } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { AuthService } from '../../services/auth';
+import { parseJsonResponseBody } from '../../services/http/jsonFetch';
 import {
   getPropertyMappings,
   updatePropertyMappings,
@@ -63,7 +64,7 @@ const PropertyMappingSection: React.FC<Props> = ({ repositoryId }) => {
         headers: { Accept: 'application/json', ...headers },
       });
       if (!res.ok) return;
-      const data = await res.json();
+      const data = await parseJsonResponseBody(res, 'propertyMapping.loadCustomTypes');
       const types: TypeInfo[] = [];
       if (Array.isArray(data)) {
         for (const td of data) {

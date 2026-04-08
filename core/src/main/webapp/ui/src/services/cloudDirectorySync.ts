@@ -10,6 +10,8 @@
  */
 
 import { AuthService } from './auth';
+import { parseJsonResponseBody } from './http/jsonFetch';
+import { getResourceBaseErrorMessage } from './http/restResult';
 
 export interface CloudSyncStatus {
   syncId: string;
@@ -56,16 +58,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
 
 function parseResponse(json: Record<string, unknown>): CloudSyncStatus {
   if (json.status === 'failure') {
-    // makeResult puts errors under the "error" key (ITEM_ERROR = "error" in ResourceBase)
-    // Each element can be a plain string or an object like {"errorCode": "message"}
-    const errArr = json.error;
-    if (Array.isArray(errArr) && errArr.length > 0) {
-      const messages = (errArr as unknown[]).map((e: unknown) =>
-        typeof e === 'string' ? e : Object.values(e as Record<string, string>).join(': ')
-      );
-      throw new Error(messages.join('; '));
-    }
-    throw new Error('Cloud sync operation failed');
+    throw new Error(getResourceBaseErrorMessage(json, 'Cloud sync operation failed'));
   }
   // Map syncStatus (actual sync state) to status field for CloudSyncStatus interface
   const syncStatus = (json.syncStatus as string) || 'IDLE';
@@ -79,7 +72,7 @@ export async function startDeltaSync(repositoryId: string, provider: string): Pr
     method: 'POST',
     body,
   });
-  const json = await response.json();
+  const json = await parseJsonResponseBody(response, 'startDeltaSync');
   return parseResponse(json);
 }
 
@@ -90,7 +83,7 @@ export async function startFullReconciliation(repositoryId: string, provider: st
     method: 'POST',
     body,
   });
-  const json = await response.json();
+  const json = await parseJsonResponseBody(response, 'startFullReconciliation');
   return parseResponse(json);
 }
 
@@ -98,7 +91,7 @@ export async function getSyncStatus(repositoryId: string, provider: string): Pro
   const response = await fetchWithAuth(
     `${getBaseUrl(repositoryId)}/status?provider=${encodeURIComponent(provider)}`
   );
-  const json = await response.json();
+  const json = await parseJsonResponseBody(response, 'getSyncStatus');
   return parseResponse(json);
 }
 
@@ -115,8 +108,8 @@ export async function testConnection(repositoryId: string, provider: string): Pr
   const response = await fetchWithAuth(
     `${getBaseUrl(repositoryId)}/test-connection?provider=${encodeURIComponent(provider)}`
   );
-  const json = await response.json();
-  return json.connected ?? false;
+  const json = await parseJsonResponseBody(response, 'testConnection');
+  return typeof json.connected === 'boolean' ? json.connected : false;
 }
 
 // ---- LDAP Directory Sync API ----
@@ -136,16 +129,8 @@ function getLdapBaseUrl(repositoryId: string): string {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseLdapResponse(json: Record<string, any>): CloudSyncStatus {
-  // makeResult puts errors under the "error" key (ITEM_ERROR = "error" in ResourceBase)
   if (json.status === 'failure') {
-    const errArr = json.error;
-    if (Array.isArray(errArr) && errArr.length > 0) {
-      const messages = (errArr as unknown[]).map((e: unknown) =>
-        typeof e === 'string' ? e : Object.values(e as Record<string, string>).join(': ')
-      );
-      throw new Error(messages.join('; '));
-    }
-    throw new Error('LDAP sync operation failed');
+    throw new Error(getResourceBaseErrorMessage(json, 'LDAP sync operation failed'));
   }
   // Map LDAP API field names to CloudSyncStatus
   // triggerSync puts the result under "syncResult", getStatus puts it under "lastSyncResult"
@@ -204,31 +189,31 @@ export async function startLdapSync(repositoryId: string, dryRun: boolean = fals
     `${getLdapBaseUrl(repositoryId)}/trigger?dryRun=${dryRun}`,
     { method: 'POST' }
   );
-  const json = await response.json();
+  const json = await parseJsonResponseBody(response, 'startLdapSync');
   return parseLdapResponse(json);
 }
 
 export async function getLdapSyncStatus(repositoryId: string): Promise<CloudSyncStatus> {
   const response = await fetchWithAuth(`${getLdapBaseUrl(repositoryId)}/status`);
-  const json = await response.json();
+  const json = await parseJsonResponseBody(response, 'getLdapSyncStatus');
   return parseLdapResponse(json);
 }
 
 export async function testLdapConnection(repositoryId: string): Promise<boolean> {
   const response = await fetchWithAuth(`${getLdapBaseUrl(repositoryId)}/test-connection`);
-  const json = await response.json();
+  const json = await parseJsonResponseBody(response, 'testLdapConnection');
   return json.status === 'success';
 }
 
 export async function getLdapConfig(repositoryId: string): Promise<LdapConfig> {
   const response = await fetchWithAuth(`${getLdapBaseUrl(repositoryId)}/config`);
-  const json = await response.json();
-  const config = json.config ?? json;
+  const json = await parseJsonResponseBody(response, 'getLdapConfig');
+  const raw = (json.config as Record<string, unknown> | undefined) ?? json;
   return {
-    enabled: config.enabled ?? false,
-    ldapUrl: config.ldapUrl ?? '',
-    baseDn: config.baseDn ?? '',
-    userSearchBase: config.userSearchBase ?? '',
-    groupSearchBase: config.groupSearchBase ?? '',
+    enabled: raw.enabled === true,
+    ldapUrl: typeof raw.ldapUrl === 'string' ? raw.ldapUrl : '',
+    baseDn: typeof raw.baseDn === 'string' ? raw.baseDn : '',
+    userSearchBase: typeof raw.userSearchBase === 'string' ? raw.userSearchBase : '',
+    groupSearchBase: typeof raw.groupSearchBase === 'string' ? raw.groupSearchBase : '',
   };
 }

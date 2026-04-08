@@ -427,7 +427,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		log.debug("permissionDenied called for user=" + userId + ", key=" + key + ", content=" + content.getId());
 		
 		UserItem u = contentService.getUserItemById(repositoryId, userId);
-		if (u != null && u.isAdmin()) {
+		if (u != null && Boolean.TRUE.equals(u.isAdmin())) {
 			log.info("ExceptionServiceImpl.permissionDenied: user " + userId + " is admin, granting access");
 			return;
 		}
@@ -465,7 +465,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 
 		UserItem userItem = contentService.getUserItemById(repositoryId, context.getUsername());
-		if(!userItem.isAdmin()){
+		if (userItem == null || !Boolean.TRUE.equals(userItem.isAdmin())) {
 			String msg = "This operation is permitted only for administrator";
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
@@ -1328,7 +1328,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 		String userId = callContext.getUsername();
 		UserItem u = contentService.getUserItemById(callContext.getRepositoryId(), userId);
 		
-		if (!doc.isLatestVersion() && !doc.isPrivateWorkingCopy() && !u.isAdmin()) {
+		boolean isAdmin = (u != null && Boolean.TRUE.equals(u.isAdmin()));
+		if (!doc.isLatestVersion() && !doc.isPrivateWorkingCopy() && !isAdmin) {
 			String msg = "The operation is not allowed on a non-current version of a document";
 			throw new CmisVersioningException(buildMsgWithId(msg, doc.getId()),
 					HTTP_STATUS_CODE_409);

@@ -441,11 +441,14 @@ public final class ImportExportUtils {
 
     /**
      * Check whether the current user (from CallContext) has read permission on the given content.
-     * Returns true if permission check is unavailable (fail-open for robustness).
+     * Fails closed on null/invalid inputs or permission-check errors.
      */
     public static boolean hasReadPermission(ContentService cs, String repositoryId,
                                             org.apache.chemistry.opencmis.commons.server.CallContext callContext,
                                             jp.aegif.nemaki.model.Content content) {
+        if (cs == null || callContext == null || content == null) {
+            return false;
+        }
         try {
             jp.aegif.nemaki.cmis.aspect.PermissionService permService = getPermissionService();
             if (permService == null) {
@@ -472,6 +475,9 @@ public final class ImportExportUtils {
     public static boolean hasCreateChildrenPermission(ContentService cs, String repositoryId,
                                             org.apache.chemistry.opencmis.commons.server.CallContext callContext,
                                             jp.aegif.nemaki.model.Content folder) {
+        if (cs == null || callContext == null || folder == null) {
+            return false;
+        }
         try {
             jp.aegif.nemaki.cmis.aspect.PermissionService permService = getPermissionService();
             if (permService == null) {
@@ -496,6 +502,9 @@ public final class ImportExportUtils {
     public static boolean hasAclPermission(ContentService cs, String repositoryId,
                                            org.apache.chemistry.opencmis.commons.server.CallContext callContext,
                                            jp.aegif.nemaki.model.Content content) {
+        if (cs == null || callContext == null || content == null) {
+            return false;
+        }
         try {
             jp.aegif.nemaki.cmis.aspect.PermissionService permService = getPermissionService();
             if (permService == null) {
@@ -521,7 +530,7 @@ public final class ImportExportUtils {
             ContentService cs = getContentService();
             if (cs != null) {
                 jp.aegif.nemaki.model.UserItem user = cs.getUserItemById(repositoryId, username);
-                return user != null && user.isAdmin();
+                return user != null && Boolean.TRUE.equals(user.isAdmin());
             }
         } catch (Exception e) {
             log.debug("Admin check failed: " + e.getMessage());

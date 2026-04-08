@@ -61,6 +61,13 @@ public class McpAuthResource extends ResourceBase {
 
         logger.info("MCP cloud login completion requested for repository: {}", repositoryId);
 
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            addErrMsg(errMsg, "csrf", csrfError);
+            logger.warn("MCP cloud login completion failed: CSRF validation error={}", csrfError);
+            return makeResult(false, result, errMsg).toString();
+        }
+
         // Check if MCP authentication handler is available
         if (mcpAuthHandler == null) {
             addErrMsg(errMsg, "mcpAuthHandler", "notAvailable");

@@ -29,7 +29,8 @@ import java.util.Map;
  * <p>Supported webhook protocols:
  * <ul>
  *   <li>Slack Events API (url_verification + event_callback)</li>
- *   <li>Microsoft Graph change notifications (validationToken + changeNotification)</li>
+ *   <li>Microsoft Graph change notifications (validationToken + changeNotification; validation
+ *       handshake uses {@code Content-Type: text/plain} per Microsoft)</li>
  *   <li>Generic JSON payload (other systems)</li>
  * </ul>
  */
@@ -40,6 +41,17 @@ public class IngestWebhookController {
 
     private static final Logger logger = LoggerFactory.getLogger(IngestWebhookController.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /**
+     * Microsoft Graph subscription handshake echoes {@code validationToken} without signature verification.
+     * Only {@code teams} and {@code m365_mail} connectors must use this; other source systems must not.
+     */
+    static boolean isMicrosoftGraphSubscriptionValidation(String sourceSystem, String validationToken) {
+        if (validationToken == null || validationToken.isBlank()) {
+            return false;
+        }
+        return "teams".equals(sourceSystem) || "m365_mail".equals(sourceSystem);
+    }
 
     @Autowired
     private ConnectorDefinitionService connectorDefinitionService;
@@ -57,11 +69,17 @@ public class IngestWebhookController {
      * Receive webhook from external source.
      * Handles Slack url_verification, Graph validationToken, and actual event payloads.
      */
-    @PostMapping(value = "/{connectorId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = "/{connectorId}", consumes = {
+            MediaType.APPLICATION_JSON_VALUE,
+            MediaType.TEXT_PLAIN_VALUE
+    })
     public ResponseEntity<?> receiveWebhook(
             @PathVariable String connectorId,
             @RequestParam(value = "validationToken", required = false) String validationToken,
-            @RequestBody String rawBody) {
+            @RequestBody(required = false) String rawBody) {
+        if (rawBody == null) {
+            rawBody = "";
+        }
 
         // 1. Resolve connector — return uniform 401 for not-found/disabled to prevent
         // connector ID enumeration via status code differences
@@ -73,11 +91,10 @@ public class IngestWebhookController {
 
         String system = connector.getSourceSystem();
 
-        // 2. Microsoft Graph: subscription validation
+        // 2. Microsoft Graph: subscription validation (Teams / M365 Mail only)
         // Graph sends validationToken during subscription creation — server must echo it back.
-        // This is idempotent (no side effects), so no webhookSecret check needed here.
-        // Actual notification security is enforced via clientState in verifySignature().
-        if (validationToken != null && !validationToken.isBlank()) {
+        // Only Graph-backed connectors use this handshake; Slack/Chatwork/generic must not bypass verifySignature.
+        if (isMicrosoftGraphSubscriptionValidation(system, validationToken)) {
             logger.info("Graph subscription validation for connector {}", connectorId);
             return ResponseEntity.ok()
                     .contentType(MediaType.TEXT_PLAIN)

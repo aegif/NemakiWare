@@ -169,6 +169,11 @@ public class BulkCheckInResource extends ResourceBase {
 	public String execute(MultivaluedMap<String,String> form, @Context HttpServletRequest httpRequest) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 		String repositoryId = form.get("repositoryId").get(0);
 		String comment = form.get("comment").get(0);
 		Boolean force = form.get("force").get(0).equals("true");
@@ -292,6 +297,12 @@ public class BulkCheckInResource extends ResourceBase {
 			) throws Exception {
 
 		JSONArray resultArray = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("error", "csrf:" + csrfError);
+			return errorResult.toString();
+		}
 
 		try {
 			// Admin check using ResourceBase.checkAdmin (CallContextKey.IS_ADMIN)

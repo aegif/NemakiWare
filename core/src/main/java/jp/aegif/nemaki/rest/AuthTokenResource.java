@@ -130,6 +130,11 @@ public class AuthTokenResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		// SECURITY FIX: Only allow registering own tokens (or admin)
 		CallContext callContext = (CallContext) request.getAttribute("CallContext");
@@ -192,8 +197,13 @@ public class AuthTokenResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
-		logger.info("=== AuthTokenResource.logout() called for user: {} in repository: {} ===",
+		logger.debug("AuthTokenResource.logout called for user: {} in repository: {}",
 		           userName, repositoryId);
 
 		// SECURITY FIX: Only allow logout of own session (or admin)
@@ -213,7 +223,7 @@ public class AuthTokenResource extends ResourceBase{
 			if (tokenService != null) {
 				String app = ""; // Default app for React UI
 				tokenService.invalidateToken(app, repositoryId, userName);
-				logger.info("Token invalidated for user: {} in repository: {}", userName, repositoryId);
+				logger.debug("Token invalidated for user: {} in repository: {}", userName, repositoryId);
 			} else {
 				logger.warn("TokenService not available, token not invalidated for user: {}", userName);
 			}
@@ -228,7 +238,7 @@ public class AuthTokenResource extends ResourceBase{
 		obj.put("message", "Logged out successfully");
 		result.put("value", obj);
 
-		logger.info("=== Logout successful for user: {} ===", userName);
+		logger.debug("Logout successful for user: {}", userName);
 
 		return makeResult(status, result, errMsg).toString();
 	}
@@ -243,8 +253,13 @@ public class AuthTokenResource extends ResourceBase{
 		boolean status = false; // Default to failed
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
-		logger.info("=== AuthTokenResource.login() called for user: {} in repository: {} ===", 
+		logger.debug("AuthTokenResource.login called for user: {} in repository: {}", 
 		           userName, repositoryId);
 
 		//Validation
@@ -341,7 +356,7 @@ public class AuthTokenResource extends ResourceBase{
 			result.put("value", obj);
 			
 			status = true; // Only set to true after successful token generation
-			logger.info("=== Login successful for user: {} ===", userName);
+			logger.debug("Login successful for user: {}", userName);
 			
 		} catch (Exception e) {
 			logger.error("Login failed for user: " + userName, e);
@@ -360,8 +375,13 @@ public class AuthTokenResource extends ResourceBase{
 		boolean status = false;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
-		logger.info("=== SAML token conversion requested for repository: {} ===", repositoryId);
+		logger.debug("SAML token conversion requested for repository: {}", repositoryId);
 
 		if (StringUtils.isBlank(repositoryId)) {
 			addErrMsg(errMsg, "repositoryId", "isNull");
@@ -402,7 +422,7 @@ public class AuthTokenResource extends ResourceBase{
 				idpCert = SamlSignatureVerifier.parseCertificate(idpCertPem);
 			} catch (Exception e) {
 				logger.error("Failed to parse IdP certificate", e);
-				addErrMsg(errMsg, "saml", "Invalid IdP certificate: " + e.getMessage());
+				addErrMsg(errMsg, "saml", "Invalid IdP certificate");
 				return makeResult(false, result, errMsg).toString();
 			}
 
@@ -455,7 +475,7 @@ public class AuthTokenResource extends ResourceBase{
 					SamlSignatureVerifier.verify(document, idpCert, spEntityId);
 			if (!verifyResult.isValid()) {
 				logger.warn("SAML signature verification failed: {}", verifyResult.getError());
-				addErrMsg(errMsg, "saml", verifyResult.getError());
+				addErrMsg(errMsg, "saml", "SAML signature verification failed");
 				return makeResult(false, result, errMsg).toString();
 			}
 
@@ -468,7 +488,7 @@ public class AuthTokenResource extends ResourceBase{
 				return makeResult(false, result, errMsg).toString();
 			}
 
-			logger.info("SAML authentication successful for user: {}", userName);
+			logger.debug("SAML authentication successful for user: {}", userName);
 
 			UserItem userItem = getOrCreateUser(repositoryId, userName);
 			if (userItem == null) {
@@ -479,7 +499,7 @@ public class AuthTokenResource extends ResourceBase{
 			// Check if SAML/cloud authentication is allowed for this user
 			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
 			if (authService != null && !authService.isAuthMethodAllowed(userItem, "cloud")) {
-				logger.info("SAML authentication denied for user {} (not in allowedAuthMethods)", userName);
+				logger.debug("SAML authentication denied for user {} (not in allowedAuthMethods)", userName);
 				addErrMsg(errMsg, "auth", "methodNotAllowed");
 				return makeResult(false, result, errMsg).toString();
 			}
@@ -503,7 +523,7 @@ public class AuthTokenResource extends ResourceBase{
 			result.put("value", obj);
 
 			status = true;
-			logger.info("=== SAML token conversion successful for user: {} ===", userName);
+			logger.debug("SAML token conversion successful for user: {}", userName);
 
 		} catch (ParseException e) {
 			logger.error("Failed to parse SAML request body", e);
@@ -540,8 +560,13 @@ public class AuthTokenResource extends ResourceBase{
 		boolean status = false;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
-		logger.info("=== OIDC token conversion requested for repository: {} ===", repositoryId);
+		logger.debug("OIDC token conversion requested for repository: {}", repositoryId);
 
 		if (StringUtils.isBlank(repositoryId)) {
 			addErrMsg(errMsg, "repositoryId", "isNull");
@@ -567,21 +592,21 @@ public class AuthTokenResource extends ResourceBase{
 					if (StringUtils.isNotBlank(issuerUrl)) {
 						userinfoEndpoint = discoverUserInfoEndpoint(issuerUrl);
 						if (userinfoEndpoint != null) {
-							logger.info("Discovered userinfo_endpoint via OIDC Discovery: {}", userinfoEndpoint);
+							logger.debug("Discovered userinfo_endpoint via OIDC Discovery: {}", userinfoEndpoint);
 						}
 					}
 				}
 			}
 
 			if (StringUtils.isBlank(accessToken) || StringUtils.isBlank(userinfoEndpoint)) {
-				addErrMsg(errMsg, "access_token", "access_token and userinfo_endpoint are required (or configure oidc.issuer)");
+				addErrMsg(errMsg, "access_token", "access_token and userinfo_endpoint are required");
 				return makeResult(false, result, errMsg).toString();
 			}
 
 			// Server-side validation: call the provider's UserInfo endpoint with the access token
 			JSONObject verifiedUserInfo = fetchUserInfoFromProvider(userinfoEndpoint, accessToken, repositoryId);
 			if (verifiedUserInfo == null) {
-				addErrMsg(errMsg, "access_token", "invalidOrExpired - UserInfo endpoint returned error");
+				addErrMsg(errMsg, "access_token", "invalidOrExpired");
 				return makeResult(false, result, errMsg).toString();
 			}
 
@@ -593,7 +618,7 @@ public class AuthTokenResource extends ResourceBase{
 				return makeResult(false, result, errMsg).toString();
 			}
 
-			logger.info("OIDC authentication successful for user: {}", userName);
+			logger.debug("OIDC authentication successful for user: {}", userName);
 
 			UserItem userItem = getOrCreateUser(repositoryId, userName);
 			if (userItem == null) {
@@ -604,7 +629,7 @@ public class AuthTokenResource extends ResourceBase{
 			// Check if cloud/OIDC authentication is allowed for this user
 			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
 			if (authService != null && !authService.isAuthMethodAllowed(userItem, "cloud")) {
-				logger.info("OIDC authentication denied for user {} (not in allowedAuthMethods)", userName);
+				logger.debug("OIDC authentication denied for user {} (not in allowedAuthMethods)", userName);
 				addErrMsg(errMsg, "auth", "methodNotAllowed");
 				return makeResult(false, result, errMsg).toString();
 			}
@@ -630,7 +655,7 @@ public class AuthTokenResource extends ResourceBase{
 			result.put("value", obj);
 
 			status = true;
-			logger.info("=== OIDC token conversion successful for user: {} ===", userName);
+			logger.debug("OIDC token conversion successful for user: {}", userName);
 
 		} catch (ParseException e) {
 			logger.error("Failed to parse OIDC request body", e);
@@ -655,8 +680,13 @@ public class AuthTokenResource extends ResourceBase{
 		boolean status = false;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
-		logger.info("=== Google token conversion requested for repository: {} ===", repositoryId);
+		logger.debug("Google token conversion requested for repository: {}", repositoryId);
 
 		if (StringUtils.isBlank(repositoryId)) {
 			addErrMsg(errMsg, "repositoryId", "isNull");
@@ -697,7 +727,7 @@ public class AuthTokenResource extends ResourceBase{
 			String email = payload.getEmail();
 			String userName = email != null ? email : payload.getSubject();
 
-			logger.info("Google authentication successful for user: {}", userName);
+			logger.debug("Google authentication successful for user: {}", userName);
 
 			UserItem userItem = getOrCreateUser(repositoryId, userName);
 			if (userItem == null) {
@@ -708,7 +738,7 @@ public class AuthTokenResource extends ResourceBase{
 			// Check if cloud/Google authentication is allowed for this user
 			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
 			if (authService != null && !authService.isAuthMethodAllowed(userItem, "cloud")) {
-				logger.info("Google authentication denied for user {} (not in allowedAuthMethods)", userName);
+				logger.debug("Google authentication denied for user {} (not in allowedAuthMethods)", userName);
 				addErrMsg(errMsg, "auth", "methodNotAllowed");
 				return makeResult(false, result, errMsg).toString();
 			}
@@ -732,7 +762,7 @@ public class AuthTokenResource extends ResourceBase{
 			result.put("value", obj);
 
 			status = true;
-			logger.info("=== Google token conversion successful for user: {} ===", userName);
+			logger.debug("Google token conversion successful for user: {}", userName);
 
 		} catch (ParseException e) {
 			logger.error("Failed to parse Google request body", e);
@@ -758,8 +788,13 @@ public class AuthTokenResource extends ResourceBase{
 		boolean status = false;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
-		logger.info("=== Microsoft token conversion requested for repository: {} ===", repositoryId);
+		logger.debug("Microsoft token conversion requested for repository: {}", repositoryId);
 
 		if (StringUtils.isBlank(repositoryId)) {
 			addErrMsg(errMsg, "repositoryId", "isNull");
@@ -823,7 +858,7 @@ public class AuthTokenResource extends ResourceBase{
 
 			// Verify audience
 			if (!claims.getAudience().contains(clientId)) {
-				addErrMsg(errMsg, "id_token", "audienceMismatch");
+				addErrMsg(errMsg, "id_token", "invalidOrExpired");
 				return makeResult(false, result, errMsg).toString();
 			}
 
@@ -839,7 +874,7 @@ public class AuthTokenResource extends ResourceBase{
 				return makeResult(false, result, errMsg).toString();
 			}
 
-			logger.info("Microsoft authentication successful for user: {}", userName);
+			logger.debug("Microsoft authentication successful for user: {}", userName);
 
 			UserItem userItem = getOrCreateUser(repositoryId, userName);
 			if (userItem == null) {
@@ -850,7 +885,7 @@ public class AuthTokenResource extends ResourceBase{
 			// Check if cloud/Microsoft authentication is allowed for this user
 			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
 			if (authService != null && !authService.isAuthMethodAllowed(userItem, "cloud")) {
-				logger.info("Microsoft authentication denied for user {} (not in allowedAuthMethods)", userName);
+				logger.debug("Microsoft authentication denied for user {} (not in allowedAuthMethods)", userName);
 				addErrMsg(errMsg, "auth", "methodNotAllowed");
 				return makeResult(false, result, errMsg).toString();
 			}
@@ -874,7 +909,7 @@ public class AuthTokenResource extends ResourceBase{
 			result.put("value", obj);
 
 			status = true;
-			logger.info("=== Microsoft token conversion successful for user: {} ===", userName);
+			logger.debug("Microsoft token conversion successful for user: {}", userName);
 
 		} catch (ParseException e) {
 			logger.error("Failed to parse Microsoft request body", e);
@@ -1153,14 +1188,14 @@ public class AuthTokenResource extends ResourceBase{
 			}
 
 			if (allowedEndpoints.contains(normalizedEndpoint)) {
-				logger.info("Endpoint allowed via OIDC Discovery: {}", endpointUri);
+				logger.debug("Endpoint allowed via OIDC Discovery: {}", endpointUri);
 				return true;
 			}
 
 			// Also allow the Discovery endpoint itself
 			String discoveryUrl = issuerUrl + "/.well-known/openid-configuration";
 			if (normalizedEndpoint.equals(discoveryUrl)) {
-				logger.info("Endpoint allowed: OIDC Discovery URL");
+				logger.debug("Endpoint allowed: OIDC Discovery URL");
 				return true;
 			}
 
@@ -1172,8 +1207,8 @@ public class AuthTokenResource extends ResourceBase{
 	}
 
 	/**
-	 * Fetch and cache allowed OIDC endpoints from the Discovery document.
-	 * Returns a set of normalized endpoint URLs (userinfo_endpoint, token_endpoint, etc.).
+	 * Fetch and cache allowed OIDC UserInfo endpoints from the Discovery document.
+	 * Returns a set of normalized userinfo endpoint URLs only.
 	 */
 	private java.util.Set<String> getDiscoveredEndpoints(String issuerUrl) {
 		Long cachedTime = oidcDiscoveryCacheTime.get(issuerUrl);
@@ -1205,15 +1240,14 @@ public class AuthTokenResource extends ResourceBase{
 					@SuppressWarnings("unchecked")
 					java.util.Map<String, Object> discovery = mapper.readValue(sb.toString(), java.util.Map.class);
 
-					// Extract standard OIDC endpoints
-					for (String key : new String[]{"userinfo_endpoint", "token_endpoint", "authorization_endpoint",
-							"jwks_uri", "revocation_endpoint", "introspection_endpoint", "end_session_endpoint"}) {
-						Object val = discovery.get(key);
-						if (val instanceof String) {
-							String ep = ((String) val).trim();
-							if (ep.endsWith("/")) ep = ep.substring(0, ep.length() - 1);
-							endpoints.add(ep);
-						}
+					// Only allow userinfo endpoint here. This validator is used only for
+					// fetchUserInfoFromProvider(), so permitting token/jwks/revocation/etc.
+					// endpoints would unnecessarily widen the allowlist.
+					Object userInfoVal = discovery.get("userinfo_endpoint");
+					if (userInfoVal instanceof String) {
+						String ep = ((String) userInfoVal).trim();
+						if (ep.endsWith("/")) ep = ep.substring(0, ep.length() - 1);
+						endpoints.add(ep);
 					}
 				}
 			}
@@ -1221,7 +1255,7 @@ public class AuthTokenResource extends ResourceBase{
 			logger.debug("Failed to fetch OIDC Discovery for {}: {}", issuerUrl, e.getMessage());
 		}
 
-		// Fallback: if Discovery failed, allow common OIDC paths under the issuer
+		// Fallback: if Discovery failed, allow only common UserInfo paths under the issuer
 		if (endpoints.isEmpty()) {
 			String issuerPath = java.net.URI.create(issuerUrl).getPath();
 			if (issuerPath == null) issuerPath = "";
@@ -1230,13 +1264,10 @@ public class AuthTokenResource extends ResourceBase{
 			String base = issuerUrl.substring(0, issuerUrl.length() - (issuerPath.isEmpty() ? 0 : issuerPath.length()));
 			// Keycloak
 			endpoints.add(base + issuerPath + "/protocol/openid-connect/userinfo");
-			endpoints.add(base + issuerPath + "/protocol/openid-connect/token");
 			// Standard OIDC (Okta, Auth0, etc.)
 			endpoints.add(base + "/userinfo");
-			endpoints.add(base + "/oauth/token");
 			endpoints.add(base + "/oauth2/v1/userinfo");
-			endpoints.add(base + "/oauth2/v1/token");
-			logger.info("OIDC Discovery unavailable for {}, using fallback endpoint list", issuerUrl);
+			logger.debug("OIDC Discovery unavailable for {}, using fallback endpoint list", issuerUrl);
 		}
 
 		oidcDiscoveryCache.put(issuerUrl, endpoints);
@@ -1339,7 +1370,7 @@ public class AuthTokenResource extends ResourceBase{
 					JSONObject config = (JSONObject) parser.parse(reader);
 					String userinfoEndpoint = (String) config.get("userinfo_endpoint");
 					if (StringUtils.isNotBlank(userinfoEndpoint)) {
-						logger.info("Discovered userinfo_endpoint via OIDC Discovery: {}", userinfoEndpoint);
+						logger.debug("Discovered userinfo_endpoint via OIDC Discovery: {}", userinfoEndpoint);
 						return userinfoEndpoint;
 					}
 				}
@@ -1352,7 +1383,7 @@ public class AuthTokenResource extends ResourceBase{
 
 		// Fallback: Keycloak-specific URL pattern
 		String fallback = normalized + "/protocol/openid-connect/userinfo";
-		logger.info("Falling back to Keycloak-specific userinfo_endpoint: {}", fallback);
+		logger.debug("Falling back to Keycloak-specific userinfo_endpoint: {}", fallback);
 		return fallback;
 	}
 
@@ -1384,12 +1415,12 @@ public class AuthTokenResource extends ResourceBase{
 			// Check if user already exists
 			UserItem userItem = contentService.getUserItemById(repositoryId, userName);
 			if (userItem != null) {
-				logger.info("Found existing user: {}", userName);
+				logger.debug("Found existing user: {}", userName);
 				return userItem;
 			}
 
 			// User not found - create new user for SSO
-			logger.info("User {} not found, creating new user for SSO auto-provisioning", userName);
+			logger.debug("User {} not found, creating new user for SSO auto-provisioning", userName);
 
 			// Get users folder
 			Folder usersFolder = getOrCreateUsersFolder(repositoryId, contentService);
@@ -1432,7 +1463,7 @@ public class AuthTokenResource extends ResourceBase{
 			);
 
 			if (createdUser != null) {
-				logger.info("Successfully created SSO user: {} (id: {}, allowedAuthMethods: cloud)", userName, createdUser.getId());
+				logger.debug("Successfully created SSO user: {} (id: {}, allowedAuthMethods: cloud)", userName, createdUser.getId());
 				return createdUser;
 			} else {
 				logger.error("Failed to create SSO user: {} - createUserItem returned null", userName);
@@ -1464,7 +1495,7 @@ public class AuthTokenResource extends ResourceBase{
 						for (jp.aegif.nemaki.model.Content child : rootChildren) {
 							if (".system".equals(child.getName()) && child instanceof Folder) {
 								systemFolder = (Folder) child;
-								logger.info("Found .system folder via root scan: {}", systemFolder.getId());
+								logger.debug("Found .system folder via root scan: {}", systemFolder.getId());
 								break;
 							}
 						}
@@ -1489,7 +1520,7 @@ public class AuthTokenResource extends ResourceBase{
 			}
 
 			// Create users folder
-			logger.info("Creating users folder under system folder for repository: {}", repositoryId);
+			logger.debug("Creating users folder under system folder for repository: {}", repositoryId);
 			org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl properties =
 				new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
 			properties.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl("cmis:name", "users"));
@@ -1690,7 +1721,7 @@ public class AuthTokenResource extends ResourceBase{
 				request.getServletContext());
 			if (context != null) {
 				tokenService = context.getBean("TokenService", TokenService.class);
-				logger.info("TokenService retrieved from Spring context via fallback mechanism");
+				logger.debug("TokenService retrieved from Spring context via fallback mechanism");
 				return tokenService;
 			}
 		} catch (Exception e) {
@@ -1718,7 +1749,7 @@ public class AuthTokenResource extends ResourceBase{
 			return true;
 		}
 		// Allow if admin
-		Boolean isAdmin = (Boolean) callContext.get("is_admin");
+		Boolean isAdmin = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
 		return isAdmin != null && isAdmin;
 	}
 

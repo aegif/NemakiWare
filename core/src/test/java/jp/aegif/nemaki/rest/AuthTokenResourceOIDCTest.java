@@ -26,7 +26,7 @@ public class AuthTokenResourceOIDCTest {
 		resource = new AuthTokenResource();
 
 		isAllowedMethod = AuthTokenResource.class.getDeclaredMethod(
-				"isAllowedUserInfoEndpoint", String.class);
+				"isAllowedUserInfoEndpoint", String.class, String.class);
 		isAllowedMethod.setAccessible(true);
 
 		extractUsernameMethod = AuthTokenResource.class.getDeclaredMethod(
@@ -35,7 +35,7 @@ public class AuthTokenResourceOIDCTest {
 	}
 
 	private boolean isAllowed(String url) throws Exception {
-		return (boolean) isAllowedMethod.invoke(resource, url);
+		return (boolean) isAllowedMethod.invoke(resource, url, "bedroom");
 	}
 
 	private String extractUsername(JSONObject userInfo, boolean isMicrosoft) throws Exception {

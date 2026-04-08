@@ -129,6 +129,14 @@ public class AuditMetricsResource extends ResourceBase {
     @SuppressWarnings("unchecked")
     public Response resetMetrics(@Context HttpServletRequest httpRequest) {
         JSONArray errMsg = new JSONArray();
+        String csrfError = validateCsrfProtection(httpRequest);
+        if (csrfError != null) {
+            JSONObject error = new JSONObject();
+            error.put("status", "error");
+            error.put("message", "CSRF validation failed: " + csrfError);
+            error.put("errors", errMsg);
+            return Response.status(403).entity(error.toJSONString()).build();
+        }
 
         // Check admin permission
         if (!checkAdmin(errMsg, httpRequest)) {

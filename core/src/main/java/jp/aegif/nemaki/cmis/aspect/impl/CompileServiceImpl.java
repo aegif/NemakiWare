@@ -905,7 +905,7 @@ public class CompileServiceImpl implements CompileService {
 		
 		// CRITICAL CMIS FIX: Admin users still need type-aware action filtering to maintain CMIS spec compliance
 		UserItem u = contentService.getUserItemById(repositoryId, userName);
-		boolean isAdmin = (u != null && u.isAdmin());
+		boolean isAdmin = (u != null && Boolean.TRUE.equals(u.isAdmin()));
 
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap.entrySet()) {
 			String key = mappingEntry.getValue().getKey();

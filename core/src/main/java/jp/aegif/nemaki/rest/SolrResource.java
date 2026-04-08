@@ -218,6 +218,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		// Check admin
 		if (!checkAdmin(errMsg, request)) {
@@ -272,6 +277,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		// Check admin
 		if (!checkAdmin(errMsg, request)) {
@@ -303,6 +313,13 @@ public class SolrResource extends ResourceBase {
 	public String changeAdminPassword(@FormParam("repositoryId") String repositoryId,
 			@FormParam("password") String password, @FormParam("currentPassword") String currentPassword,
 			@Context HttpServletRequest request) {
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			JSONObject result = new JSONObject();
+			JSONArray errMsg = new JSONArray();
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 		JSONObject result = changeAdminPasswordImpl(repositoryId, password, currentPassword, request);
 		return result.toString();
 	}
@@ -407,6 +424,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return makeResult(status, result, errMsg).toString();
@@ -484,6 +506,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return makeResult(status, result, errMsg).toString();
@@ -561,6 +588,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return makeResult(status, result, errMsg).toString();
@@ -695,6 +727,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return makeResult(status, result, errMsg).toString();
@@ -727,6 +764,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return makeResult(status, result, errMsg).toString();
@@ -758,6 +800,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return makeResult(status, result, errMsg).toString();
@@ -788,6 +835,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return makeResult(status, result, errMsg).toString();
@@ -822,6 +874,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return makeResult(status, result, errMsg).toString();
@@ -855,6 +912,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return makeResult(status, result, errMsg).toString();
@@ -963,6 +1025,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return makeResult(status, result, errMsg).toString();
@@ -988,6 +1055,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return makeResult(status, result, errMsg).toString();
@@ -1019,6 +1091,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return makeResult(status, result, errMsg).toString();
@@ -1071,6 +1148,11 @@ public class SolrResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			errMsg.add("csrf:" + csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return makeResult(status, result, errMsg).toString();

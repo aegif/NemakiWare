@@ -95,6 +95,11 @@ public class LogResource extends ResourceBase{
 		boolean status = true;
 		ObjectNode result = getMapper().createObjectNode();
 		ArrayNode errMsg = getMapper().createArrayNode();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		//check admin
 		if(!checkAdmin(errMsg, request)){
@@ -120,6 +125,11 @@ public class LogResource extends ResourceBase{
 		boolean status = true;
 		ObjectNode result = getMapper().createObjectNode();
 		ArrayNode errMsg = getMapper().createArrayNode();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		//check admin
 		if(!checkAdmin(errMsg, request)){

@@ -89,6 +89,7 @@ async function ensureTestUser(baseURL: string, userId: string, password: string)
           headers: {
             'Authorization': adminAuth,
             'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest',
           },
           body: new URLSearchParams({ newPassword: password }).toString(),
           signal: AbortSignal.timeout(10000),
@@ -110,6 +111,7 @@ async function ensureTestUser(baseURL: string, userId: string, password: string)
       headers: {
         'Authorization': adminAuth,
         'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Requested-With': 'XMLHttpRequest',
       },
       body: new URLSearchParams({ name: userId, password }).toString(),
       signal: AbortSignal.timeout(10000),
@@ -587,6 +589,7 @@ async function ensureCustomTypesExist(baseURL: string): Promise<void> {
         headers: {
           'Authorization': authHeader,
           'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
         },
         body: JSON.stringify({
           id: typeDef.id,

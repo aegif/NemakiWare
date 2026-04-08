@@ -15,7 +15,7 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
 @Path("/test")
-public class SimpleTestResource {
+public class SimpleTestResource extends ResourceBase {
 
 	private boolean isAdmin(HttpServletRequest request) {
 		CallContext callContext = (CallContext) request.getAttribute("CallContext");
@@ -53,6 +53,12 @@ public class SimpleTestResource {
     @Path("/types")
     @Produces(MediaType.APPLICATION_JSON)
     public Response invalidateTypeCache(@Context HttpServletRequest httpRequest) {
+        String csrfError = validateCsrfProtection(httpRequest);
+        if (csrfError != null) {
+            return Response.status(Response.Status.FORBIDDEN)
+                .entity("{\"error\":\"csrf: " + csrfError + "\"}").build();
+        }
+
         // Admin check
         if (!isAdmin(httpRequest)) {
             return Response.status(Response.Status.FORBIDDEN)

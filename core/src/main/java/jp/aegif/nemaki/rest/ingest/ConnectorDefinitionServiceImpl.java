@@ -113,7 +113,8 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         }
         if (def.getSourceSystem() == null || def.getSourceSystem().isBlank()) {
             throw new IllegalArgumentException("sourceSystem is required (e.g. imap, gmail_mail, m365_mail, "
-                    + "slack, teams, mattermost, chatwork, notion, salesforce, box, dropbox, google, microsoft)");
+                    + "slack, teams, mattermost, chatwork, notion, salesforce, box, dropbox, "
+                    + "google, google_drive, microsoft, onedrive)");
         }
     }
 

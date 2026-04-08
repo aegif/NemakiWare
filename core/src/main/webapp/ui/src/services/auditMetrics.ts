@@ -9,6 +9,8 @@
  * Uses REST API endpoints which support Basic authentication.
  */
 
+import { parseJsonResponseBody } from './http/jsonFetch';
+
 /** Audit event metrics data */
 export interface AuditMetrics {
   'audit.events.total': number;
@@ -134,12 +136,12 @@ export class AuditMetricsService {
       throw new Error('Authentication required');
     }
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: 'Unknown error' })) as AuditMetricsErrorResponse;
-      throw new Error(errorData.message || `Failed to fetch metrics: ${response.status}`);
-    }
+    const data = (await parseJsonResponseBody(response, 'auditMetrics.getMetrics')) as unknown as AuditMetricsApiResponse;
 
-    const data = await response.json() as AuditMetricsApiResponse;
+    if (!response.ok) {
+      const err = data as AuditMetricsErrorResponse;
+      throw new Error(err.message || `Failed to fetch metrics: ${response.status}`);
+    }
 
     if (isErrorResponse(data)) {
       throw new Error(data.message);
@@ -166,12 +168,12 @@ export class AuditMetricsService {
       throw new Error('Authentication required');
     }
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: 'Unknown error' })) as AuditMetricsErrorResponse;
-      throw new Error(errorData.message || `Failed to reset metrics: ${response.status}`);
-    }
+    const data = (await parseJsonResponseBody(response, 'auditMetrics.resetMetrics')) as unknown as AuditMetricsResetApiResponse;
 
-    const data = await response.json() as AuditMetricsResetApiResponse;
+    if (!response.ok) {
+      const err = data as AuditMetricsErrorResponse;
+      throw new Error(err.message || `Failed to reset metrics: ${response.status}`);
+    }
 
     if (isErrorResponse(data)) {
       throw new Error(data.message);
@@ -223,6 +225,6 @@ export class AuditMetricsService {
       throw new Error(`Failed to fetch audit entries: ${response.status}`);
     }
 
-    return response.json();
+    return (await parseJsonResponseBody(response, 'auditMetrics.getRecentEntries')) as unknown as AuditEntriesResponse;
   }
 }

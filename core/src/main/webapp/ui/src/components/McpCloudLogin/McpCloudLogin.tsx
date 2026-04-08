@@ -29,6 +29,8 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchCloudAuthConfig } from '../../services/cloud-auth';
+import { parseJsonResponseBody } from '../../services/http/jsonFetch';
+import { getResourceBaseErrorMessage } from '../../services/http/restResult';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -108,6 +110,7 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
         },
         body: JSON.stringify({
           requestId: requestId,
@@ -117,7 +120,7 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
         credentials: 'include'
       });
 
-      const result = await response.json();
+      const result = await parseJsonResponseBody(response, 'mcpCloudLogin.complete');
 
       if (result.status === 'success') {
         // Clear stored pending login data on success
@@ -126,7 +129,9 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
         setStatus('success');
       } else {
         setStatus('error');
-        setErrorMessage(result.errMsg?.[0]?.message || t('mcpCloudLogin.errors.completionFailed'));
+        setErrorMessage(
+          getResourceBaseErrorMessage(result, t('mcpCloudLogin.errors.completionFailed'))
+        );
       }
     } catch (error: any) {
       setStatus('error');

@@ -58,6 +58,7 @@ test.describe('Type REST API - Basic Health', () => {
     const response = await request.get(`${REST_API_BASE}/test`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -75,6 +76,7 @@ test.describe('Type REST API - List Operations', () => {
     const response = await request.get(`${REST_API_BASE}/list`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -102,6 +104,7 @@ test.describe('Type REST API - List Operations', () => {
     const response = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(typeId)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -121,6 +124,7 @@ test.describe('Type REST API - List Operations', () => {
     const response = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(typeId)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -137,6 +141,7 @@ test.describe('Type REST API - List Operations', () => {
     const response = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(typeId)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -157,6 +162,7 @@ test.describe('Type REST API - CRUD Operations', () => {
     const response = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -172,6 +178,7 @@ test.describe('Type REST API - CRUD Operations', () => {
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeDefinition.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -185,6 +192,7 @@ test.describe('Type REST API - CRUD Operations', () => {
     const createResponse = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -206,6 +214,7 @@ test.describe('Type REST API - CRUD Operations', () => {
     const updateResponse = await request.put(`${REST_API_BASE}/update/${encodeURIComponent(typeDefinition.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -221,6 +230,7 @@ test.describe('Type REST API - CRUD Operations', () => {
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeDefinition.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -240,6 +250,7 @@ test.describe('Type REST API - CRUD Operations', () => {
     const createResponse = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -256,6 +267,7 @@ test.describe('Type REST API - CRUD Operations', () => {
     const verifyBeforeResponse = await request.get(`${REST_API_BASE}/list`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -268,6 +280,7 @@ test.describe('Type REST API - CRUD Operations', () => {
     const deleteResponse = await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeDefinition.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -284,6 +297,7 @@ test.describe('Type REST API - CRUD Operations', () => {
     const verifyAfterResponse = await request.get(`${REST_API_BASE}/list`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -306,6 +320,7 @@ test.describe('Type REST API - Base Type Protection', () => {
     const response = await request.put(`${REST_API_BASE}/update/${encodeURIComponent('cmis:document')}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -323,6 +338,7 @@ test.describe('Type REST API - Base Type Protection', () => {
     const response = await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent('cmis:document')}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -338,6 +354,7 @@ test.describe('Type REST API - Base Type Protection', () => {
     const response = await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent('cmis:folder')}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -355,6 +372,7 @@ test.describe('Type REST API - Input Validation', () => {
     const response = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -374,6 +392,7 @@ test.describe('Type REST API - Input Validation', () => {
     const response = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -397,6 +416,7 @@ test.describe('Type REST API - Input Validation', () => {
     const response = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -511,6 +531,7 @@ test.describe('Type REST API - Custom Type with Properties', () => {
     const response = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -526,6 +547,7 @@ test.describe('Type REST API - Custom Type with Properties', () => {
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithProps.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -544,6 +566,7 @@ test.describe('Type REST API - NemakiWare Custom Types', () => {
     const listResponse = await request.get(`${REST_API_BASE}/list`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -560,6 +583,7 @@ test.describe('Type REST API - NemakiWare Custom Types', () => {
       const showResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent('nemaki:parentChildRelationship')}`, {
         headers: {
           'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
           'Accept': 'application/json'
         }
       });
@@ -582,6 +606,7 @@ test.describe('Type REST API - NemakiWare Custom Types', () => {
     const listResponse = await request.get(`${REST_API_BASE}/list`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -607,6 +632,7 @@ test.describe('Type REST API - NemakiWare Custom Types', () => {
     const updateResponse = await request.put(`${REST_API_BASE}/update/${encodeURIComponent('nemaki:parentChildRelationship')}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -633,6 +659,7 @@ test.describe('Type REST API - NemakiWare Custom Types', () => {
       await request.put(`${REST_API_BASE}/update/${encodeURIComponent('nemaki:parentChildRelationship')}`, {
         headers: {
           'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
@@ -687,6 +714,7 @@ test.describe('Type REST API - Secondary Types', () => {
     const response = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -702,6 +730,7 @@ test.describe('Type REST API - Secondary Types', () => {
     const verifyResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(secondaryType.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -711,6 +740,7 @@ test.describe('Type REST API - Secondary Types', () => {
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(secondaryType.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -751,6 +781,7 @@ test.describe('Type REST API - Folder Types', () => {
     const response = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -766,6 +797,7 @@ test.describe('Type REST API - Folder Types', () => {
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(folderType.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -867,6 +899,7 @@ test.describe('Type REST API - All Property Types', () => {
     const response = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -882,6 +915,7 @@ test.describe('Type REST API - All Property Types', () => {
     const verifyResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(typeWithAllProps.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -897,6 +931,7 @@ test.describe('Type REST API - All Property Types', () => {
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithAllProps.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -951,6 +986,7 @@ test.describe('Type REST API - All Property Types', () => {
     const response = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -966,6 +1002,7 @@ test.describe('Type REST API - All Property Types', () => {
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithMultiProps.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -998,6 +1035,7 @@ test.describe('Type REST API - Full CRUD Lifecycle', () => {
     const createResponse = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': authHeader,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1011,6 +1049,7 @@ test.describe('Type REST API - Full CRUD Lifecycle', () => {
     const readResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(typeId)}`, {
       headers: {
         'Authorization': authHeader,
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -1031,6 +1070,7 @@ test.describe('Type REST API - Full CRUD Lifecycle', () => {
     const updateResponse = await request.put(`${REST_API_BASE}/update/${encodeURIComponent(typeId)}`, {
       headers: {
         'Authorization': authHeader,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1049,6 +1089,7 @@ test.describe('Type REST API - Full CRUD Lifecycle', () => {
     const verifyUpdateResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(typeId)}`, {
       headers: {
         'Authorization': authHeader,
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -1063,6 +1104,7 @@ test.describe('Type REST API - Full CRUD Lifecycle', () => {
     const deleteResponse = await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeId)}`, {
       headers: {
         'Authorization': authHeader,
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -1074,6 +1116,7 @@ test.describe('Type REST API - Full CRUD Lifecycle', () => {
     const verifyDeleteResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(typeId)}`, {
       headers: {
         'Authorization': authHeader,
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -1107,6 +1150,7 @@ test.describe('Type REST API - Edge Cases', () => {
     const response = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json; charset=utf-8',
         'Accept': 'application/json'
       },
@@ -1122,6 +1166,7 @@ test.describe('Type REST API - Edge Cases', () => {
     const verifyResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(typeWithSpecialChars.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -1135,6 +1180,7 @@ test.describe('Type REST API - Edge Cases', () => {
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithSpecialChars.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -1163,6 +1209,7 @@ test.describe('Type REST API - Edge Cases', () => {
     const response = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1178,6 +1225,7 @@ test.describe('Type REST API - Edge Cases', () => {
       await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithLongDesc.id)}`, {
         headers: {
           'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
           'Accept': 'application/json'
         }
       });
@@ -1205,6 +1253,7 @@ test.describe('Type REST API - Edge Cases', () => {
     const response = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1220,6 +1269,7 @@ test.describe('Type REST API - Edge Cases', () => {
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithEmptyProps.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -1249,6 +1299,7 @@ test.describe('Type REST API - Edge Cases', () => {
     const createResponse = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': authHeader,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1280,6 +1331,7 @@ test.describe('Type REST API - Edge Cases', () => {
     const updateResponse = await request.put(`${REST_API_BASE}/update/${encodeURIComponent(initialType.id)}`, {
       headers: {
         'Authorization': authHeader,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1293,6 +1345,7 @@ test.describe('Type REST API - Edge Cases', () => {
     const verifyResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(initialType.id)}`, {
       headers: {
         'Authorization': authHeader,
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -1308,6 +1361,7 @@ test.describe('Type REST API - Edge Cases', () => {
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(initialType.id)}`, {
       headers: {
         'Authorization': authHeader,
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -1341,6 +1395,7 @@ test.describe('Type REST API - Concurrent Operations', () => {
       return request.post(`${REST_API_BASE}/create`, {
         headers: {
           'Authorization': authHeader,
+          'X-Requested-With': 'XMLHttpRequest',
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
@@ -1373,6 +1428,7 @@ test.describe('Type REST API - Concurrent Operations', () => {
       return request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(`test:concurrent${timestamp}_${i}`)}`, {
         headers: {
           'Authorization': authHeader,
+          'X-Requested-With': 'XMLHttpRequest',
           'Accept': 'application/json'
         }
       }).catch(() => { /* ignore cleanup errors */ });
@@ -1438,6 +1494,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
     const createResponse = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': BASE_AUTH,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1456,6 +1513,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
       {
         headers: {
           'Authorization': BASE_AUTH,
+        'X-Requested-With': 'XMLHttpRequest',
           'Accept': 'application/json'
         }
       }
@@ -1492,7 +1550,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
 
     // Cleanup
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(customType.id)}`, {
-      headers: { 'Authorization': BASE_AUTH, 'Accept': 'application/json' }
+      headers: { 'Authorization': BASE_AUTH, 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
     });
 
     console.log('✅ Cleanup completed');
@@ -1520,6 +1578,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
     const createResponse = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': BASE_AUTH,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1537,6 +1596,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
       {
         headers: {
           'Authorization': BASE_AUTH,
+        'X-Requested-With': 'XMLHttpRequest',
           'Accept': 'application/json'
         }
       }
@@ -1582,7 +1642,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
 
     // Cleanup
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(customType.id)}`, {
-      headers: { 'Authorization': BASE_AUTH, 'Accept': 'application/json' }
+      headers: { 'Authorization': BASE_AUTH, 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
     });
   });
 
@@ -1609,6 +1669,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
     const createResponse = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': BASE_AUTH,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1626,6 +1687,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
       {
         headers: {
           'Authorization': BASE_AUTH,
+        'X-Requested-With': 'XMLHttpRequest',
           'Accept': 'application/json'
         }
       }
@@ -1661,7 +1723,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
 
     // Cleanup
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(folderType.id)}`, {
-      headers: { 'Authorization': BASE_AUTH, 'Accept': 'application/json' }
+      headers: { 'Authorization': BASE_AUTH, 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
     });
   });
 
@@ -1687,6 +1749,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
     const createResponse = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': BASE_AUTH,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1704,6 +1767,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
       {
         headers: {
           'Authorization': BASE_AUTH,
+        'X-Requested-With': 'XMLHttpRequest',
           'Accept': 'application/json'
         }
       }
@@ -1740,7 +1804,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
 
     // Cleanup
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(relationshipType.id)}`, {
-      headers: { 'Authorization': BASE_AUTH, 'Accept': 'application/json' }
+      headers: { 'Authorization': BASE_AUTH, 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
     });
   });
 
@@ -1752,6 +1816,7 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
       {
         headers: {
           'Authorization': BASE_AUTH,
+        'X-Requested-With': 'XMLHttpRequest',
           'Accept': 'application/json'
         }
       }
@@ -1826,6 +1891,7 @@ test.describe('Type REST API - Property Constraints', () => {
     const response = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1841,6 +1907,7 @@ test.describe('Type REST API - Property Constraints', () => {
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithRequiredProp.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });
@@ -1879,6 +1946,7 @@ test.describe('Type REST API - Property Constraints', () => {
     const response = await request.post(`${REST_API_BASE}/create`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1894,6 +1962,7 @@ test.describe('Type REST API - Property Constraints', () => {
     await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithDefaultValue.id)}`, {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
       }
     });

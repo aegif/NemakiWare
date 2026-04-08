@@ -34,7 +34,8 @@ public interface CanonicalImportService {
      *
      * @param callContext CMIS call context
      * @param request     the ingest request (profileId and connectorId may be null)
-     * @param sourceSystem canonical source system name (e.g. "google", "microsoft")
+     * @param sourceSystem source system name; for {@link SourceArchetype#FILE_SHARE}, {@code google}/{@code google_drive}
+     *                     and {@code microsoft}/{@code onedrive} are interchangeable for connector lookup
      * @param archetype    source archetype for auto-resolution
      * @return result with created objectId, or error if auto-resolution fails
      */

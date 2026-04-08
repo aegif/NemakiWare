@@ -17,6 +17,8 @@ import {
 import { PlusOutlined, EditOutlined, DeleteOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
+import { parseJsonResponseBody } from '../../services/http/jsonFetch';
+import { getResourceBaseErrorMessage } from '../../services/http/restResult';
 
 interface WebhookConfigTabProps {
   repositoryId: string;
@@ -67,7 +69,10 @@ export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId
   const [form] = Form.useForm<WebhookFormValues>();
 
   const getHeaders = useCallback(() => {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+    };
     if (authToken?.token) {
       headers['AUTH_TOKEN'] = authToken.token;
     }
@@ -79,13 +84,15 @@ export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId
     try {
       const response = await fetch(
         `/core/rest/repo/${repositoryId}/webhook/config/${objectId}`,
-        { headers: getHeaders() }
+        { headers: getHeaders(), credentials: 'include' }
       );
-      const data = await response.json();
+      const data = await parseJsonResponseBody(response, 'documentViewer.webhooks.load');
       if (data.status === 'success') {
-        setConfigs(data.webhookConfigs || []);
+        setConfigs((data.webhookConfigs as WebhookConfigData[] | undefined) || []);
       } else {
-        message.error(t('documentViewer.webhooks.loadError'));
+        message.error(
+          getResourceBaseErrorMessage(data as Record<string, unknown>, t('documentViewer.webhooks.loadError'))
+        );
       }
     } catch {
       message.error(t('documentViewer.webhooks.loadError'));
@@ -129,14 +136,16 @@ export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId
     try {
       const response = await fetch(
         `/core/rest/repo/${repositoryId}/webhook/config/${objectId}/${webhookId}`,
-        { method: 'DELETE', headers: getHeaders() }
+        { method: 'DELETE', headers: getHeaders(), credentials: 'include' }
       );
-      const data = await response.json();
+      const data = await parseJsonResponseBody(response, 'documentViewer.webhooks.delete');
       if (data.status === 'success') {
         message.success(t('documentViewer.webhooks.deleteSuccess'));
         loadConfigs();
       } else {
-        message.error(t('documentViewer.webhooks.deleteError'));
+        message.error(
+          getResourceBaseErrorMessage(data as Record<string, unknown>, t('documentViewer.webhooks.deleteError'))
+        );
       }
     } catch {
       message.error(t('documentViewer.webhooks.deleteError'));
@@ -202,15 +211,18 @@ export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId
       const response = await fetch(url, {
         method,
         headers: getHeaders(),
+        credentials: 'include',
         body: JSON.stringify(body),
       });
-      const data = await response.json();
+      const data = await parseJsonResponseBody(response, 'documentViewer.webhooks.save');
       if (data.status === 'success') {
         message.success(t('documentViewer.webhooks.saveSuccess'));
         setModalVisible(false);
         loadConfigs();
       } else {
-        message.error(t('documentViewer.webhooks.saveError'));
+        message.error(
+          getResourceBaseErrorMessage(data as Record<string, unknown>, t('documentViewer.webhooks.saveError'))
+        );
       }
     } catch {
       // Form validation error - ignore

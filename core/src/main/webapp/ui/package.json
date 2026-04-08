@@ -39,6 +39,7 @@
     "test": "SKIP_KEYCLOAK=true playwright test --project=chromium",
     "test:all": "playwright test --project=chromium",
     "test:standard": "SKIP_KEYCLOAK=true playwright test --project=chromium",
+    "test:g5": "SKIP_KEYCLOAK=true playwright test tests/basic-connectivity.spec.ts tests/auth/login.spec.ts tests/documents/document-management.spec.ts tests/admin/initial-content-setup.spec.ts tests/api/webhook-api.spec.ts tests/api/session-management.spec.ts tests/components/layout-navigation.spec.ts --project=chromium --workers=1",
     "test:external-auth": "playwright test tests/auth/ldap-oidc-integration.spec.ts tests/auth/oidc-login.spec.ts tests/auth/saml-login.spec.ts --project=chromium",
     "test:unit": "vitest run",
     "test:ui": "playwright test --ui",

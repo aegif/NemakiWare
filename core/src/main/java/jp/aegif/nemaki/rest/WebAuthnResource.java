@@ -153,6 +153,11 @@ public class WebAuthnResource extends ResourceBase {
 	public String registerBegin(@PathParam("repositoryId") String repositoryId) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		try {
 			// Get authenticated user from CallContext
@@ -243,6 +248,11 @@ public class WebAuthnResource extends ResourceBase {
 	public String registerComplete(@PathParam("repositoryId") String repositoryId, String requestBody) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		try {
 			String userId = getCallContextUsername(request);
@@ -348,6 +358,11 @@ public class WebAuthnResource extends ResourceBase {
 	public String authenticateBegin(@PathParam("repositoryId") String repositoryId) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		try {
 			RelyingParty rp = createRelyingParty(repositoryId);
@@ -384,6 +399,11 @@ public class WebAuthnResource extends ResourceBase {
 	public String authenticateComplete(@PathParam("repositoryId") String repositoryId, String requestBody) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		try {
 			// Parse client response
@@ -559,6 +579,11 @@ public class WebAuthnResource extends ResourceBase {
 	                               @PathParam("id") String id) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toString();
+		}
 
 		try {
 			String userId = getCallContextUsername(request);

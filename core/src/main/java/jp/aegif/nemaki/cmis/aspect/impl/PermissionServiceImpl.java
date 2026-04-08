@@ -144,7 +144,7 @@ public class PermissionServiceImpl implements PermissionService {
 		Acl acl, String baseType, Content content, String userName, Set<String> groups) {
 	// DEBUG LOGGING for non-admin users permission issues
 	UserItem u = contentService.getUserItemById(repositoryId, userName);
-	boolean isAdmin = (u != null && u.isAdmin());
+	boolean isAdmin = (u != null && Boolean.TRUE.equals(u.isAdmin()));
 	
 	if (!isAdmin) {
 		// Debug logging for non-admin users (use debug level for performance)
@@ -583,7 +583,7 @@ public class PermissionServiceImpl implements PermissionService {
 				//Check top level or not
 				if(folderChecked == null || rootId.equals(folderChecked.getId())){
 					UserItem user = contentService.getUserItemById(repositoryId, context.getUsername());
-					if(!user.isAdmin()){
+					if (user == null || !Boolean.TRUE.equals(user.isAdmin())) {
 						return false;
 					}
 				}
@@ -632,7 +632,7 @@ public class PermissionServiceImpl implements PermissionService {
 
 		// Get user info once for all checks
 		UserItem userItem = contentService.getUserItemById(repositoryId, userName);
-		boolean isAdmin = (userItem != null && userItem.isAdmin());
+		boolean isAdmin = (userItem != null && Boolean.TRUE.equals(userItem.isAdmin()));
 
 		// Admin always passes all permission checks
 		if (isAdmin) {

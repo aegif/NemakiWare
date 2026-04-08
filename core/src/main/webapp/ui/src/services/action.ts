@@ -53,19 +53,10 @@
  *    - Advantage: Consistent with modern JavaScript ecosystem, less boilerplate than fetch()
  *    - Trade-off: Adds external dependency (axios), but widely used and well-maintained
  *
- * 2. Direct localStorage Access Pattern (Lines 17, 34, 57):
- *    - Directly accesses localStorage.getItem('authToken') instead of using AuthService
- *    - Rationale: Avoids circular dependency (AuthService might depend on action results)
- *    - Implementation: Each method reads token from localStorage independently
- *    - Advantage: Simple, no service coupling, no singleton dependency
- *    - Trade-off: Duplicated localStorage access code, no token validation
- *
- * 3. Bearer Token Authentication (Lines 17, 34, 57):
- *    - Uses Authorization: Bearer <token> header format
- *    - Rationale: REST API standard for token-based authentication
- *    - Implementation: Consistent header format across all action endpoints
- *    - Advantage: Standard OAuth 2.0 pattern, compatible with API gateways
- *    - Security: Token transmitted in headers (not URL), HTTPS recommended
+ * 2. AuthService + credentials (same-origin session):
+ *    - AuthService.getAuthHeaders() supplies X-Requested-With for ResourceBase CSRF checks
+ *    - axios withCredentials: true sends HttpOnly auth cookies (no JS-readable token)
+ *    - Legacy localStorage key `authToken` was never valid for NemakiWare; do not use Bearer from storage
  *
  * 4. REST API Endpoint Structure (Lines 14, 31, 53):
  *    - Pattern: /core/rest/repo/{repositoryId}/actions/{actionId}/{operation}/{objectId}
@@ -144,32 +135,33 @@
  * - No retry logic on network failures
  * - No request cancellation support (long-running actions cannot be aborted)
  * - No progress reporting for long-running actions
- * - Direct localStorage access duplicated across methods (no DRY principle)
+ * - Relies on same-origin cookie session (not suitable for cross-origin without extra config)
  * - No validation of formData before sending to server
  * - Error messages not localized (English only from server)
  * - No offline support (requires network connection)
  * - No request queuing (concurrent action executions may conflict)
  *
  * Relationships to Other Services:
- * - Independent of AuthService (direct localStorage access)
+ * - Uses AuthService for CSRF-safe headers; cookies carry authentication
  * - Used by DocumentActions component for context menu actions
  * - Complementary to CMISService (actions extend CMIS base operations)
  * - Server-side: Depends on NemakiWare action plugin framework
  * - UI Integration: Action results may trigger document list refresh
  *
  * Common Failure Scenarios:
- * - discoverActions() fails: 401 Unauthorized (expired token in localStorage)
+ * - discoverActions() fails: 401 Unauthorized (expired or missing session cookie)
  * - discoverActions() fails: 404 Not Found (object doesn't exist)
  * - getActionForm() fails: 404 Not Found (action plugin not installed)
  * - executeAction() fails: 400 Bad Request (invalid formData parameters)
  * - executeAction() fails: 500 Internal Server Error (plugin execution error)
  * - All methods fail: Network error (server unreachable, CORS issues)
- * - All methods fail: TypeError (localStorage returns null, no token)
+ * - All methods fail: 403 if CSRF header missing (should not happen with getAuthHeaders())
  * - executeAction() timeout: Long-running action exceeds client patience
  */
 
 import axios from 'axios';
 import { ActionDefinition, ActionForm, ActionExecutionResult } from '../types/cmis';
+import { AuthService } from './auth';
 
 export class ActionService {
   private baseUrl: string;
@@ -178,15 +170,22 @@ export class ActionService {
     this.baseUrl = '/core/rest';
   }
 
+  /** CSRF header + session cookie for same-origin REST (ResourceBase contract). */
+  private getSessionAxiosConfig(extraHeaders?: Record<string, string>) {
+    return {
+      headers: {
+        ...AuthService.getInstance().getAuthHeaders(),
+        ...extraHeaders,
+      },
+      withCredentials: true,
+    };
+  }
+
   async discoverActions(repositoryId: string, objectId: string): Promise<ActionDefinition[]> {
     try {
       const response = await axios.get(
         `${this.baseUrl}/repo/${repositoryId}/actions/discover/${objectId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-          }
-        }
+        this.getSessionAxiosConfig()
       );
       return response.data;
     } catch (error) {
@@ -199,11 +198,7 @@ export class ActionService {
     try {
       const response = await axios.get(
         `${this.baseUrl}/repo/${repositoryId}/actions/${actionId}/form/${objectId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-          }
-        }
+        this.getSessionAxiosConfig()
       );
       return response.data;
     } catch (error) {
@@ -222,12 +217,7 @@ export class ActionService {
       const response = await axios.post(
         `${this.baseUrl}/repo/${repositoryId}/actions/${actionId}/execute/${objectId}`,
         formData,
-        {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-            'Content-Type': 'application/json'
-          }
-        }
+        this.getSessionAxiosConfig({ 'Content-Type': 'application/json' })
       );
       return response.data;
     } catch (error) {

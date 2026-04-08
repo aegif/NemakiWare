@@ -204,6 +204,7 @@ test.describe('LDAP User Sync + OIDC Token Conversion', () => {
     const response = await request.post(`${NEMAKIWARE_URL}/core/rest/repo/bedroom/authtoken/oidc/convert`, {
       headers: {
         'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
       },
       data: {
         access_token: tokenResult.access_token,
@@ -245,6 +246,7 @@ test.describe('LDAP User Sync + OIDC Token Conversion', () => {
     const response = await request.post(`${NEMAKIWARE_URL}/core/rest/repo/bedroom/authtoken/oidc/convert`, {
       headers: {
         'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
       },
       data: {
         access_token: tokenResult.access_token,
@@ -265,7 +267,8 @@ test.describe('LDAP Group Membership via Keycloak', () => {
     // Trigger LDAP directory sync before checking groups
     const syncResponse = await request.post(`${NEMAKIWARE_URL}/core/rest/repo/bedroom/sync/trigger`, {
       headers: {
-        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64')
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'X-Requested-With': 'XMLHttpRequest',
       }
     });
     expect(syncResponse.ok()).toBeTruthy();

@@ -710,7 +710,7 @@ test.describe('Archive Management - REST API Edge Cases', () => {
       const nonAdminAuth = 'Basic ' + Buffer.from(`${testUserId}:${testPassword}`).toString('base64');
       const response = await page.request.post(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/archive/force-archive/dummy-id`,
-        { headers: { 'Authorization': nonAdminAuth } }
+        { headers: { 'Authorization': nonAdminAuth, 'X-Requested-With': 'XMLHttpRequest' } }
       );
 
       console.log(`Force archive as non-admin: ${response.status()}`);
@@ -747,7 +747,7 @@ test.describe('Archive Management - REST API Edge Cases', () => {
       const nonAdminAuth = 'Basic ' + Buffer.from(`${testUserId}:${testPassword}`).toString('base64');
       const response = await page.request.put(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/archive/extend-expiration/dummy-id?newExpirationDate=2030-01-01T00:00:00Z`,
-        { headers: { 'Authorization': nonAdminAuth } }
+        { headers: { 'Authorization': nonAdminAuth, 'X-Requested-With': 'XMLHttpRequest' } }
       );
 
       console.log(`Extend expiration as non-admin: ${response.status()}`);
@@ -771,7 +771,7 @@ test.describe('Archive Management - REST API Edge Cases', () => {
 
     const response = await page.request.post(
       `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/archive/force-archive/nonexistent-object-id-12345`,
-      { headers: { 'Authorization': authHeader } }
+      { headers: { 'Authorization': authHeader, 'X-Requested-With': 'XMLHttpRequest' } }
     );
 
     console.log(`Force archive non-existent object: ${response.status()}`);
@@ -787,7 +787,7 @@ test.describe('Archive Management - REST API Edge Cases', () => {
 
     const response = await page.request.put(
       `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/archive/extend-expiration/dummy-id?newExpirationDate=not-a-date`,
-      { headers: { 'Authorization': authHeader } }
+      { headers: { 'Authorization': authHeader, 'X-Requested-With': 'XMLHttpRequest' } }
     );
 
     console.log(`Extend expiration with invalid date: ${response.status()}`);
@@ -803,7 +803,7 @@ test.describe('Archive Management - REST API Edge Cases', () => {
 
     const response = await page.request.put(
       `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/archive/extend-expiration/dummy-id`,
-      { headers: { 'Authorization': authHeader } }
+      { headers: { 'Authorization': authHeader, 'X-Requested-With': 'XMLHttpRequest' } }
     );
 
     console.log(`Extend expiration without date: ${response.status()}`);

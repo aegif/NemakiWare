@@ -23,6 +23,7 @@ const BASE_URL = 'http://localhost:8080';
 const UI_URL = `${BASE_URL}/core/ui`;
 const REST_BASE = `${BASE_URL}/core/rest/repo/bedroom`;
 const ADMIN_AUTH = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+const REST_CSRF = { 'X-Requested-With': 'XMLHttpRequest' as const };
 const TEST_USER_ID = 'api-e2e-admintest';
 const TEST_USER_AUTH = 'Basic ' + Buffer.from(`${TEST_USER_ID}:testtest`).toString('base64');
 
@@ -65,6 +66,7 @@ test.describe('Admin Privilege Management', () => {
       headers: {
         'Authorization': ADMIN_AUTH,
         'Content-Type': 'application/x-www-form-urlencoded',
+        ...REST_CSRF,
       },
       data: formData.toString(),
     });
@@ -273,6 +275,7 @@ test.describe('Admin Privilege Management', () => {
       headers: {
         'Authorization': ADMIN_AUTH,
         'Content-Type': 'application/x-www-form-urlencoded',
+        ...REST_CSRF,
       },
       data: formData.toString(),
     });

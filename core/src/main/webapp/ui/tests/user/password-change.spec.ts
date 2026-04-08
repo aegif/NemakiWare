@@ -24,6 +24,7 @@ const BASE_URL = 'http://localhost:8080';
 const UI_URL = `${BASE_URL}/core/ui`;
 const REST_BASE = `${BASE_URL}/core/rest/repo/bedroom`;
 const ADMIN_AUTH = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+const REST_CSRF = { 'X-Requested-With': 'XMLHttpRequest' as const };
 const TEST_USER_ID = 'api-e2e-admintest';
 
 async function loginAsUser(page: any, username: string, password: string) {
@@ -53,6 +54,7 @@ test.describe('Password Change', () => {
         headers: {
           'Authorization': ADMIN_AUTH,
           'Content-Type': 'application/x-www-form-urlencoded',
+          ...REST_CSRF,
         },
         data: new URLSearchParams({ name: TEST_USER_ID, password: 'testtest' }).toString(),
       });
@@ -70,6 +72,7 @@ test.describe('Password Change', () => {
       headers: {
         'Authorization': ADMIN_AUTH,
         'Content-Type': 'application/x-www-form-urlencoded',
+        ...REST_CSRF,
       },
       data: formData.toString(),
     });

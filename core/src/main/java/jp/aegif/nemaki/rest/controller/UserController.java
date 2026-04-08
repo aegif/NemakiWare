@@ -398,7 +398,7 @@ public class UserController {
         userMap.put("type", user.getType());
         userMap.put("creator", user.getCreator());
         userMap.put("modifier", user.getModifier());
-        userMap.put("isAdmin", user.isAdmin() != null ? user.isAdmin() : false);
+        userMap.put("isAdmin", Boolean.TRUE.equals(user.isAdmin()));
         
         // Format dates
         if (user.getCreated() != null) {

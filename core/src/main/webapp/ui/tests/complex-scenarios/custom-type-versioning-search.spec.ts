@@ -130,7 +130,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
             console.log(`[Pre-cleanup] Deleting leftover type: ${typeId}`);
             try {
               await page.request.delete(`${restUrl}/type/${encodeURIComponent(typeId)}`, {
-                headers: { 'Authorization': authHeader }
+                headers: { 'Authorization': authHeader, 'X-Requested-With': 'XMLHttpRequest' }
               });
               console.log(`[Pre-cleanup] Successfully deleted type: ${typeId}`);
             } catch (e) {

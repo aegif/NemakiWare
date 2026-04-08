@@ -43,7 +43,7 @@ async function traditionalLogin(request: any, username: string, password: string
   const response = await request.post(
     `${BASE_URL}/rest/repo/${REPOSITORY_ID}/authtoken/${username}/login`,
     {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
       form: { password },
     }
   );
@@ -143,6 +143,7 @@ async function logout(request: any, username: string, token: string): Promise<bo
     {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Requested-With': 'XMLHttpRequest',
         AUTH_TOKEN: token,
       },
     }

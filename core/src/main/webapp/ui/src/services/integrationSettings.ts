@@ -1,4 +1,5 @@
 import { AuthService } from './auth';
+import { parseJsonResponseBody } from './http/jsonFetch';
 
 const BASE_URL = '/core/api/v1/admin/integration-settings';
 
@@ -45,7 +46,7 @@ async function getSettings(group: string): Promise<IntegrationSettingsResponse> 
   if (!response.ok) {
     throw new Error(`Failed to fetch ${group} settings: ${response.status}`);
   }
-  return response.json();
+  return (await parseJsonResponseBody(response, `getSettings(${group})`)) as unknown as IntegrationSettingsResponse;
 }
 
 async function updateSettings(group: string, settings: Record<string, string>): Promise<UpdateResult> {
@@ -54,11 +55,13 @@ async function updateSettings(group: string, settings: Record<string, string>): 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(settings),
   });
+  const data = await parseJsonResponseBody(response, `updateSettings(${group})`);
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Failed to update ${group} settings: ${response.status}`);
+    throw new Error(
+      (typeof data.message === 'string' ? data.message : null) || `Failed to update ${group} settings: ${response.status}`
+    );
   }
-  return response.json();
+  return data as unknown as UpdateResult;
 }
 
 async function testConnection(group: string, body?: Record<string, string>): Promise<ConnectionTestResult> {
@@ -73,7 +76,7 @@ async function testConnection(group: string, body?: Record<string, string>): Pro
   if (!response.ok) {
     throw new Error(`Connection test failed: ${response.status}`);
   }
-  return response.json();
+  return (await parseJsonResponseBody(response, `testConnection(${group})`)) as unknown as ConnectionTestResult;
 }
 
 // OIDC
@@ -134,7 +137,7 @@ export async function getPropertyMappings(repositoryId: string): Promise<Propert
   if (!response.ok) {
     throw new Error(`Failed to fetch property mappings: ${response.status}`);
   }
-  return response.json();
+  return (await parseJsonResponseBody(response, 'getPropertyMappings')) as unknown as PropertyMappingsResponse;
 }
 
 export async function updatePropertyMappings(
@@ -146,9 +149,11 @@ export async function updatePropertyMappings(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mappings }),
   });
+  const data = await parseJsonResponseBody(response, 'updatePropertyMappings');
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Failed to update property mappings: ${response.status}`);
+    throw new Error(
+      (typeof data.message === 'string' ? data.message : null) || `Failed to update property mappings: ${response.status}`
+    );
   }
-  return response.json();
+  return data as unknown as UpdateResult;
 }

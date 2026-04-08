@@ -40,6 +40,7 @@ async function restPost(request: any, path: string, body: any, authHeader: strin
     headers: {
       'Authorization': authHeader,
       'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
     },
     data: body,
   });
@@ -256,7 +257,13 @@ test.describe('Webhook API Tests', () => {
     test('W14: Retry requires authentication', async ({ request }) => {
       const noAuthRes = await request.post(
         `${BASE_URL}/rest/repo/${REPOSITORY_ID}/webhook/deliveries/test-id/retry`,
-        { headers: { 'Content-Type': 'application/json' }, data: {} }
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          data: {},
+        }
       );
       const noAuthData = await noAuthRes.json().catch(() => ({}));
       expect(noAuthRes.status() === 401 || noAuthData.status === 'failure').toBeTruthy();
@@ -285,7 +292,11 @@ test.describe('Webhook API Tests', () => {
       const res = await request.post(
         `${BASE_URL}/rest/repo/${REPOSITORY_ID}/webhook/test`,
         {
-          headers: { 'Authorization': testUserAuth, 'Content-Type': 'application/json' },
+          headers: {
+            'Authorization': testUserAuth,
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
           data: { url: LOCAL_200_URL },
         }
       );

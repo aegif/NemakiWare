@@ -103,6 +103,27 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         this.relationshipService = relationshipService;
     }
 
+    /**
+     * Cloud Drive UI and REST use short provider ids ({@code google}, {@code microsoft}) while
+     * scheduler docs and some deployments register FILE_SHARE connectors as {@code google_drive} /
+     * {@code onedrive}. Try aliases so canonical cloud import auto-resolves either way.
+     */
+    static List<String> connectorLookupKeysForAutoResolve(String sourceSystem, SourceArchetype archetype) {
+        if (sourceSystem == null || sourceSystem.isBlank()) {
+            return List.of();
+        }
+        if (archetype == SourceArchetype.FILE_SHARE) {
+            return switch (sourceSystem) {
+                case "google" -> List.of("google", "google_drive");
+                case "google_drive" -> List.of("google_drive", "google");
+                case "microsoft" -> List.of("microsoft", "onedrive");
+                case "onedrive" -> List.of("onedrive", "microsoft");
+                default -> List.of(sourceSystem);
+            };
+        }
+        return List.of(sourceSystem);
+    }
+
     @Override
     public ExternalIngestResult executeWithAutoResolve(CallContext callContext, ExternalIngestRequest request,
                                                        String sourceSystem, SourceArchetype archetype) {
@@ -110,10 +131,20 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
         // Auto-resolve connector if not explicitly set
         if (request.getConnectorId() == null || request.getConnectorId().isBlank()) {
-            ConnectorDefinition autoConnector = connectorDefinitionService.findBySystemAndArchetype(sourceSystem, archetype);
+            ConnectorDefinition autoConnector = null;
+            List<String> keysTried = connectorLookupKeysForAutoResolve(sourceSystem, archetype);
+            for (String key : keysTried) {
+                autoConnector = connectorDefinitionService.findBySystemAndArchetype(key, archetype);
+                if (autoConnector != null) {
+                    break;
+                }
+            }
             if (autoConnector == null) {
+                String hint = keysTried.size() > 1
+                        ? " (looked up as: " + String.join(", ", keysTried) + ")"
+                        : "";
                 return ExternalIngestResult.error(requestId,
-                        "No enabled connector found for sourceSystem='" + sourceSystem + "', archetype=" + archetype
+                        "No enabled connector found for sourceSystem='" + sourceSystem + "'" + hint + ", archetype=" + archetype
                         + ". Create a connector definition via /v1/admin/connectors first.");
             }
             request.setConnectorId(autoConnector.getConnectorId());

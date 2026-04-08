@@ -21,6 +21,8 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { ObjectPicker } from '../ObjectPicker/ObjectPicker';
 import { getCmisAuthHeaders } from '../../services/auth/CmisAuthHeaderProvider';
+import { parseJsonResponseBody } from '../../services/http/jsonFetch';
+import { getResourceBaseErrorMessage } from '../../services/http/restResult';
 import type { CMISObject } from '../../types/cmis';
 
 const { Paragraph, Text } = Typography;
@@ -73,8 +75,8 @@ async function resolveObjectPath(
       { headers, credentials: 'include' }
     );
     if (!resp.ok) return null;
-    const data = await resp.json();
-    const props = data.succinctProperties || {};
+    const data = await parseJsonResponseBody(resp, 'rss.resolveObjectPath');
+    const props = (data.succinctProperties as Record<string, string> | undefined) || {};
     return {
       name: props['cmis:name'] || objectId,
       path: props['cmis:path'] || null,
@@ -108,7 +110,10 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
   repositoryIdRef.current = repositoryId;
 
   const getHeaders = useCallback(() => {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+    };
     if (authToken?.token) {
       headers['AUTH_TOKEN'] = authToken.token;
     }
@@ -125,10 +130,10 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         { headers: getHeaders(), signal }
       );
       if (isStale()) return;
-      const data = await response.json();
+      const data = await parseJsonResponseBody(response, 'rss.loadTokens');
       if (isStale()) return;
       if (data.status === 'success') {
-        const tokenList: RssTokenData[] = data.tokens || [];
+        const tokenList = (data.tokens as RssTokenData[] | undefined) || [];
         setTokens(tokenList);
 
         // Resolve folder paths for all unique folderIds
@@ -164,7 +169,9 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
           setFolderCacheVersion(v => v + 1);
         }
       } else {
-        message.error(t('rssManagement.loadError'));
+        message.error(
+          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.loadError'))
+        );
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
@@ -213,17 +220,19 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
           body: JSON.stringify(body),
         }
       );
-      const data = await response.json();
+      const data = await parseJsonResponseBody(response, 'rss.createToken');
       if (data.status === 'success') {
         message.success(t('rssManagement.createSuccess'));
-        if (data.token) {
+        if (typeof data.token === 'string') {
           setNewToken(data.token);
           setNewTokenFolders([...selectedFolders]);
         }
         setModalVisible(false);
         loadTokens();
       } else {
-        message.error(t('rssManagement.createError'));
+        message.error(
+          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.createError'))
+        );
       }
     } catch {
       // Form validation error
@@ -236,9 +245,13 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         `/core/rest/repo/${repositoryId}/rss/tokens/${tokenId}/disable`,
         { method: 'PUT', headers: getHeaders() }
       );
-      const data = await response.json();
+      const data = await parseJsonResponseBody(response, 'rss.disableToken');
       if (data.status === 'success') {
         loadTokens();
+      } else {
+        message.error(
+          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.loadError'))
+        );
       }
     } catch {
       message.error(t('rssManagement.loadError'));
@@ -251,10 +264,14 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         `/core/rest/repo/${repositoryId}/rss/tokens/${tokenId}/refresh`,
         { method: 'PUT', headers: getHeaders() }
       );
-      const data = await response.json();
+      const data = await parseJsonResponseBody(response, 'rss.refreshToken');
       if (data.status === 'success') {
         message.success(t('rssManagement.refreshSuccess'));
         loadTokens();
+      } else {
+        message.error(
+          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.loadError'))
+        );
       }
     } catch {
       message.error(t('rssManagement.loadError'));
@@ -267,12 +284,14 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         `/core/rest/repo/${repositoryId}/rss/tokens/${tokenId}`,
         { method: 'DELETE', headers: getHeaders() }
       );
-      const data = await response.json();
+      const data = await parseJsonResponseBody(response, 'rss.deleteToken');
       if (data.status === 'success') {
         message.success(t('rssManagement.deleteSuccess'));
         loadTokens();
       } else {
-        message.error(t('rssManagement.deleteError'));
+        message.error(
+          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.deleteError'))
+        );
       }
     } catch {
       message.error(t('rssManagement.deleteError'));

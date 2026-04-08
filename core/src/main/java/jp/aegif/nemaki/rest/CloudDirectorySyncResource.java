@@ -54,6 +54,12 @@ public class CloudDirectorySyncResource extends ResourceBase {
 			@Context HttpServletRequest request) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return Response.status(Response.Status.FORBIDDEN)
+					.entity(makeResult(false, result, errMsg).toString()).build();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return Response.status(Response.Status.FORBIDDEN)
@@ -87,6 +93,12 @@ public class CloudDirectorySyncResource extends ResourceBase {
 			@Context HttpServletRequest request) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return Response.status(Response.Status.FORBIDDEN)
+					.entity(makeResult(false, result, errMsg).toString()).build();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return Response.status(Response.Status.FORBIDDEN)
@@ -153,6 +165,12 @@ public class CloudDirectorySyncResource extends ResourceBase {
 			@Context HttpServletRequest request) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(request);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return Response.status(Response.Status.FORBIDDEN)
+					.entity(makeResult(false, result, errMsg).toString()).build();
+		}
 
 		if (!checkAdmin(errMsg, request)) {
 			return Response.status(Response.Status.FORBIDDEN)

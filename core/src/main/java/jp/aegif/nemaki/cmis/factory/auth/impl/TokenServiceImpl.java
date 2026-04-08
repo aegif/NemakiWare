@@ -6,6 +6,7 @@ import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 import org.apache.commons.collections4.CollectionUtils;
@@ -14,6 +15,7 @@ import org.apache.commons.logging.LogFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -95,6 +97,9 @@ public class TokenServiceImpl implements TokenService{
 		}
 		
 		private String validate(String app, String repositoryId, String tokenString){
+			if (tokenString == null) {
+				return null;
+			}
 			Map<String, Map<String, Token>> appMap = map.get(app);
 			if(appMap == null){
 				return null;
@@ -104,15 +109,18 @@ public class TokenServiceImpl implements TokenService{
 				return null;
 			}
 			long currentTime = System.currentTimeMillis();
-			for(Map.Entry<String, Token> entry : repoMap.entrySet()){
+			// Prune expired tokens opportunistically during validation to avoid
+			// unbounded in-memory growth in long-running processes.
+			Iterator<Map.Entry<String, Token>> it = repoMap.entrySet().iterator();
+			while (it.hasNext()) {
+				Map.Entry<String, Token> entry = it.next();
 				Token token = entry.getValue();
+				if (token != null && token.getExpiration() <= currentTime) {
+					it.remove();
+					continue;
+				}
 				if(token != null && tokenString.equals(token.getToken())){
-					if(token.getExpiration() > currentTime){
-						return entry.getKey();
-					} else {
-						log.info("Token expired for user: " + entry.getKey());
-						return null;
-					}
+					return entry.getKey();
 				}
 			}
 			return null;
@@ -156,7 +164,10 @@ public class TokenServiceImpl implements TokenService{
 	
 	@Override
 	public boolean isAdmin(String repositoryId, String userId){
-		return admins.get(repositoryId).contains(userId);
+		// Evaluate current privilege at request time so admin grant/revoke is reflected
+		// immediately without requiring service restart.
+		UserItem user = contentService.getUserItemById(repositoryId, userId);
+		return user != null && Boolean.TRUE.equals(user.isAdmin());
 	}
 	
 	public void setPropertyManager(PropertyManager propertyManager) {

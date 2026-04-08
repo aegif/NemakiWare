@@ -331,6 +331,16 @@ public class ImportExportResource extends ResourceBase {
         int importedDocuments = 0;
         File tempFile = null;
 
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            result.put("status", "error");
+            result.put("message", "CSRF validation failed: " + csrfError);
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(result.toJSONString())
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
         try {
             ContentService cs = getContentService();
             if (cs == null) {
@@ -625,6 +635,14 @@ public class ImportExportResource extends ResourceBase {
 
         log.info("Export selected objects request for repository: " + repositoryId);
 
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("{\"status\":\"error\",\"message\":\"CSRF validation failed: " + csrfError + "\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
         try {
             JSONParser parser = new JSONParser();
             JSONObject json = (JSONObject) parser.parse(body);
@@ -785,6 +803,15 @@ public class ImportExportResource extends ResourceBase {
 
         JSONObject response = new JSONObject();
 
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            response.put("status", "error");
+            response.put("message", "CSRF validation failed: " + csrfError);
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(response.toJSONString())
+                    .build();
+        }
+
         try {
             JSONArray adminErrMsg = new JSONArray();
             if (!checkAdmin(adminErrMsg, request)) {
@@ -926,6 +953,15 @@ public class ImportExportResource extends ResourceBase {
             @Context HttpServletRequest request) {
 
         JSONObject response = new JSONObject();
+
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            response.put("status", "error");
+            response.put("message", "CSRF validation failed: " + csrfError);
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(response.toJSONString())
+                    .build();
+        }
 
         try {
             JSONArray adminErrMsg = new JSONArray();

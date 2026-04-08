@@ -33,6 +33,7 @@ public class CloudDirectorySyncResourceIT {
 				.setAccept(ContentType.JSON)
 				.addHeader("Authorization", "Basic "
 						+ java.util.Base64.getEncoder().encodeToString("admin:admin".getBytes()))
+				.addHeader("X-Requested-With", "XMLHttpRequest")
 				.build();
 	}
 
@@ -80,6 +81,7 @@ public class CloudDirectorySyncResourceIT {
 		.when()
 				.post(cloudSyncPath() + "/trigger")
 		.then()
+				.statusCode(not(403))
 				.statusCode(anyOf(is(400), is(500)));
 	}
 
@@ -92,6 +94,7 @@ public class CloudDirectorySyncResourceIT {
 		.when()
 				.post(cloudSyncPath() + "/trigger")
 		.then()
+				.statusCode(not(403))
 				.statusCode(200);
 	}
 
@@ -104,6 +107,7 @@ public class CloudDirectorySyncResourceIT {
 		.when()
 				.post(cloudSyncPath() + "/full-reconciliation")
 		.then()
+				.statusCode(not(403))
 				.statusCode(200);
 	}
 
@@ -116,6 +120,7 @@ public class CloudDirectorySyncResourceIT {
 		.when()
 				.post(cloudSyncPath() + "/cancel")
 		.then()
+				.statusCode(not(403))
 				.statusCode(200);
 	}
 }

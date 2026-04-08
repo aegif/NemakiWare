@@ -7,6 +7,7 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
   const UI_URL = `${BASE_URL}/core/ui`;
   const REST_BASE = `${BASE_URL}/core/rest/repo/bedroom`;
   const ADMIN_AUTH = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+  const REST_CSRF = { 'X-Requested-With': 'XMLHttpRequest' as const };
   let cdpSession: CDPSession;
   let authenticatorId: string;
 
@@ -56,7 +57,7 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
     const res = await request.post(
       `${REST_BASE}/webauthn/register/begin`,
       {
-        headers: { Authorization: ADMIN_AUTH },
+        headers: { Authorization: ADMIN_AUTH, ...REST_CSRF },
       }
     );
     const data = await res.json();
@@ -69,7 +70,8 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
 
   test('Authentication challenge API responds', async ({ request }) => {
     const res = await request.post(
-      `${REST_BASE}/webauthn/authenticate/begin`
+      `${REST_BASE}/webauthn/authenticate/begin`,
+      { headers: { ...REST_CSRF } }
     );
     const data = await res.json();
     expect(data.status).toBe('success');
@@ -201,7 +203,7 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
     // Verify API endpoints respond correctly with Basic Auth
     const registerBeginRes = await request.post(
       `${REST_BASE}/webauthn/register/begin`,
-      { headers: { Authorization: ADMIN_AUTH } }
+      { headers: { Authorization: ADMIN_AUTH, ...REST_CSRF } }
     );
     const registerBeginData = await registerBeginRes.json();
     expect(registerBeginData.status).toBe('success');
@@ -220,7 +222,7 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
     // Verify register/begin returns proper WebAuthn options
     const res = await request.post(
       `${REST_BASE}/webauthn/register/begin`,
-      { headers: { Authorization: ADMIN_AUTH } }
+      { headers: { Authorization: ADMIN_AUTH, ...REST_CSRF } }
     );
     const data = await res.json();
     expect(data.status).toBe('success');
@@ -233,7 +235,7 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
     const loginRes = await request.post(
       `${REST_BASE}/authtoken/admin/login`,
       {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...REST_CSRF },
         data: 'password=admin',
       }
     );
@@ -255,7 +257,7 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
         for (const cred of listData.credentials) {
           await request.delete(
             `${REST_BASE}/webauthn/credentials/${cred.id}`,
-            { headers: { Authorization: ADMIN_AUTH } }
+            { headers: { Authorization: ADMIN_AUTH, ...REST_CSRF } }
           );
         }
       }

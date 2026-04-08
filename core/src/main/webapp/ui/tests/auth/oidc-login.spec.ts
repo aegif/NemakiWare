@@ -139,6 +139,7 @@ test.describe('NemakiWare OIDC Authentication', () => {
     const response = await request.post('/core/rest/repo/bedroom/authtoken/oidc/convert', {
       headers: {
         'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
       },
       data: {
         access_token: tokenResult.access_token,
@@ -160,6 +161,7 @@ test.describe('NemakiWare OIDC Authentication', () => {
     const response = await request.post('/core/rest/repo/bedroom/authtoken/oidc/convert', {
       headers: {
         'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
       },
       data: {}
     });

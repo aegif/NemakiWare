@@ -91,14 +91,8 @@
  *    - Implementation: Type checking with fallback chains
  *    - Advantage: Compatible with both current and legacy CMIS server responses
  *
- * 3. Authentication Integration with AuthService Singleton (Lines 177-210):
- *    - getAuthHeaders() reads localStorage directly, doesn't use AuthService.getAuthHeaders()
- *    - Returns both Basic auth header + nemaki_auth_token custom header
- *    - Basic auth format: `Basic ${btoa(username:dummy)}` using username from token
- *    - Rationale: Provides username context while using token-based authentication
- *    - Implementation: Reads nemakiware_auth from localStorage, parses JSON
- *    - Comprehensive debug logging: localStorage presence, auth data structure, token length
- *    - Advantage: Works even if AuthService not initialized, detailed troubleshooting logs
+ * 3. Authentication headers (private getAuthHeaders):
+ *    - Delegates to getCmisAuthHeaders() (HttpOnly cookie session + X-Requested-With for CSRF on REST).
  *
  * 4. Authentication Error Handling with Callback Pattern (Lines 212-245):
  *    - handleHttpError() only handles 401/403 as authentication errors
@@ -276,6 +270,8 @@
 // AuthService is no longer needed - authentication handled by HttpOnly cookie
 import { getCmisAuthHeaders } from './auth/CmisAuthHeaderProvider';
 import { CmisHttpClient } from './http';
+import { parseJsonResponseBody } from './http/jsonFetch';
+import { getResourceBaseErrorMessage } from './http/restResult';
 import { AtomPubClient } from './clients';
 import { ParsedAtomEntry } from './parsers';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions, CoercionWarning, RetentionSettings, MigrationLog, PendingArchive } from '../types/cmis';
@@ -631,10 +627,7 @@ export class CMISService {
   }
 
   private getAuthHeaders(): Record<string, string> {
-    // Authentication is handled by HttpOnly cookie (nemaki_auth_token)
-    // which is automatically sent by the browser for same-origin requests.
-    // No explicit auth headers needed.
-    return {};
+    return getCmisAuthHeaders();
   }
 
   private normalizeMigrationPropertyDefinition(rawPropDef: unknown, fallbackId?: string): MigrationPropertyDefinition {
@@ -1764,7 +1757,9 @@ export class CMISService {
           allowedAuthMethods: user.allowedAuthMethods != null ? user.allowedAuthMethods : null,
         };
       }
-      throw new Error('Failed to get current user');
+      throw new Error(
+        getResourceBaseErrorMessage(data as Record<string, unknown>, 'Failed to get current user')
+      );
     }
 
     const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
@@ -1794,13 +1789,9 @@ export class CMISService {
     });
 
     if (response.status === 200) {
-      const data = JSON.parse(response.responseText);
+      const data = JSON.parse(response.responseText) as Record<string, unknown>;
       if (data.status === false || data.status === 'failure' || data.status === 'error') {
-        const errMessages = data.errMsg || data.error || [];
-        const errText = Array.isArray(errMessages)
-          ? errMessages.map((e: any) => typeof e === 'string' ? e : JSON.stringify(e)).join(', ')
-          : String(errMessages);
-        throw new Error(errText || 'Password change failed');
+        throw new Error(getResourceBaseErrorMessage(data, 'Password change failed'));
       }
       return;
     }
@@ -2978,11 +2969,13 @@ export class CMISService {
       const response = await this.httpClient.getJson(url);
 
       if (response.status === 200) {
-        const data = JSON.parse(response.responseText);
-        if (data.status && data.settings) {
+        const data = JSON.parse(response.responseText) as Record<string, unknown>;
+        if (data.status === 'success' && data.settings) {
           return data.settings as RetentionSettings;
         }
-        throw new Error(data.errMsg?.[0]?.message || 'Failed to get retention settings');
+        throw new Error(
+          getResourceBaseErrorMessage(data, 'Failed to get retention settings')
+        );
       }
 
       const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
@@ -3001,11 +2994,13 @@ export class CMISService {
       const response = await this.httpClient.getJson(url);
 
       if (response.status === 200) {
-        const data = JSON.parse(response.responseText);
-        if (data.status) {
+        const data = JSON.parse(response.responseText) as Record<string, unknown>;
+        if (data.status === 'success') {
           return (data.logs || []) as MigrationLog[];
         }
-        throw new Error(data.errMsg?.[0]?.message || 'Failed to get migration logs');
+        throw new Error(
+          getResourceBaseErrorMessage(data, 'Failed to get migration logs')
+        );
       }
 
       const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
@@ -3545,14 +3540,14 @@ export class CMISService {
       }
     );
 
+    const data = await parseJsonResponseBody(response, 'getCompatibleTypesForMigration');
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `Failed to get compatible types: ${response.status}`);
+      throw new Error(
+        (data.message as string) || `Failed to get compatible types: ${response.status}`
+      );
     }
-
-    const data = await response.json();
     if (data.status === 'error') {
-      throw new Error(data.message || 'Failed to get compatible types');
+      throw new Error((data.message as string) || 'Failed to get compatible types');
     }
 
     const rawCompatibleTypes = (data.compatibleTypes ?? {}) as Record<string, unknown>;
@@ -3632,17 +3627,20 @@ export class CMISService {
       }
     );
 
+    const data = await parseJsonResponseBody(response, 'migrateObjectType');
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `Type migration failed: ${response.status}`);
+      throw new Error((data.message as string) || `Type migration failed: ${response.status}`);
     }
-
-    const data = await response.json();
     if (data.status === 'error') {
-      throw new Error(data.message || 'Type migration failed');
+      throw new Error((data.message as string) || 'Type migration failed');
     }
 
-    return data;
+    return data as {
+      objectId: string;
+      previousType: string;
+      newType: string;
+      changeToken: string;
+    };
   }
 
   /**

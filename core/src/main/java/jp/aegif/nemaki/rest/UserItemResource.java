@@ -516,6 +516,11 @@ private ContentService getContentServiceSafe() {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		// Admin check
 		status = checkAdmin(errMsg, httpRequest);
@@ -592,6 +597,11 @@ private ContentService getContentServiceSafe() {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		// Admin check
 		status = checkAdmin(errMsg, httpRequest);
@@ -693,6 +703,11 @@ private ContentService getContentServiceSafe() {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		try {
 			// Parse JSON input
@@ -959,6 +974,11 @@ private ContentService getContentServiceSafe() {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		// SECURITY FIX: Check that the caller is the user themselves or an admin
 		status = checkAuthorityForUser(status, errMsg, httpRequest, userId, repositoryId);
@@ -1073,6 +1093,11 @@ private ContentService getContentServiceSafe() {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		// Existing user
 		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
@@ -1093,7 +1118,7 @@ private ContentService getContentServiceSafe() {
 			if (isAdminStr != null) {
 				CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
 				Boolean callerIsAdminFlag = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
-				boolean callerIsAdmin = callerIsAdminFlag != null && callerIsAdminFlag;
+				boolean callerIsAdmin = Boolean.TRUE.equals(callerIsAdminFlag);
 
 				if (!callerIsAdmin) {
 					status = false;
@@ -1103,7 +1128,7 @@ private ContentService getContentServiceSafe() {
 				}
 
 				boolean newIsAdmin = "true".equalsIgnoreCase(isAdminStr);
-				boolean currentIsAdmin = user.isAdmin() != null && user.isAdmin();
+				boolean currentIsAdmin = Boolean.TRUE.equals(user.isAdmin());
 
 				// Prevent removing own admin privilege
 				if (!newIsAdmin && currentIsAdmin && userId.equals(callContext.getUsername())) {
@@ -1213,6 +1238,11 @@ private ContentService getContentServiceSafe() {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		// Admin check - only admins can delete users
 		status = checkAdmin(errMsg, httpRequest);
@@ -1395,7 +1425,7 @@ private ContentService getContentServiceSafe() {
 		userJSON.put("favorites", MapUtils.getObject(kvMap, "nemaki:favorites", new JSONArray()));
 		userJSON.put("allowedAuthMethods", kvMap.get("nemaki:allowedAuthMethods"));
 
-		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
+		boolean isAdmin = Boolean.TRUE.equals(user.isAdmin());
 		userJSON.put(ITEM_IS_ADMIN, isAdmin);
 
 		// Add user's groups
@@ -1458,7 +1488,7 @@ private ContentService getContentServiceSafe() {
 		userJSON.put("favorites", MapUtils.getObject(kvMap, "nemaki:favorites", new JSONArray()));
 		userJSON.put("allowedAuthMethods", kvMap.get("nemaki:allowedAuthMethods"));
 
-		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
+		boolean isAdmin = Boolean.TRUE.equals(user.isAdmin());
 		userJSON.put(ITEM_IS_ADMIN, isAdmin);
 
 		// Add user's groups using pre-fetched list (no additional DB query)
@@ -1485,7 +1515,7 @@ private ContentService getContentServiceSafe() {
 
 		// Check if user is admin via CallContext flag (set by AuthenticationFilter for both Basic and Bearer auth)
 		Boolean isAdminFlag = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
-		boolean isAdmin = (isAdminFlag != null && isAdminFlag);
+		boolean isAdmin = Boolean.TRUE.equals(isAdminFlag);
 
 		// System users (admin, solr) can only be modified by admins
 		if (isSystemUser(repositoryId, resoureId) && !isAdmin) {
@@ -1508,7 +1538,7 @@ private ContentService getContentServiceSafe() {
 			return false;
 		}
 
-		if (user.isAdmin() != null && user.isAdmin()) {
+		if (Boolean.TRUE.equals(user.isAdmin())) {
 			return true;
 		}
 
@@ -1529,7 +1559,7 @@ private ContentService getContentServiceSafe() {
 		if (user == null) {
 			return false;
 		}
-		boolean isAdmin = user.isAdmin() != null && user.isAdmin();
+		boolean isAdmin = Boolean.TRUE.equals(user.isAdmin());
 		if (isAdmin) {
 			// password check
 			String storedPassword = user.getPassowrd();

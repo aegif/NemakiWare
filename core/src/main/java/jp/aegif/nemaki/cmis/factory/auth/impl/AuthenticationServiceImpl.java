@@ -114,7 +114,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 					log.info("External/cloud authentication denied for user " + proxyUserId + " (not in allowedAuthMethods)");
 					return false;
 				}
-				boolean isAdmin = userItem.isAdmin() == null ? false : true;
+				boolean isAdmin = Boolean.TRUE.equals(userItem.isAdmin());
 				setAdminFlagInContext(callContext, isAdmin);
 			}
 			log.debug("Header Authenticated. UserId=" + userItem.getUserId());
@@ -174,7 +174,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		UserItem user = getAuthenticatedUserItem(callContext.getRepositoryId(), callContext.getUsername(), callContext.getPassword());
 		if (user == null) return false;
 
-		boolean isAdmin = user.isAdmin() == null ? false : true;
+		boolean isAdmin = Boolean.TRUE.equals(user.isAdmin());
 		setAdminFlagInContext(callContext, isAdmin);
 		return true;
 	}
@@ -214,7 +214,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		// Get user info and set admin flag
 		UserItem user = contentService.getUserItemById(repositoryId, userId);
 		if (user != null) {
-			boolean isAdmin = user.isAdmin() != null && user.isAdmin();
+			boolean isAdmin = Boolean.TRUE.equals(user.isAdmin());
 			setAdminFlagInContext(callContext, isAdmin);
 		}
 
@@ -233,7 +233,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			if (user == null)
 				return false;
 
-			boolean isAdmin = user.isAdmin() == null ? false : true;
+			boolean isAdmin = Boolean.TRUE.equals(user.isAdmin());
 			return isAdmin;
 		}
 
@@ -253,24 +253,22 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			long expiration = registeredToken.getExpiration();
 			long currentTime = System.currentTimeMillis();
 
-			// TOKEN DEBUG: Log token validation details
-			log.info("=== TOKEN VALIDATION DEBUG ===");
-			log.info("User: " + userName + ", Repository: " + repositoryId + ", App: " + app);
-			log.info("Current time: " + currentTime + " (" + new java.util.Date(currentTime) + ")");
-			log.info("Expiration time: " + expiration + " (" + new java.util.Date(expiration) + ")");
-			log.info("Time until expiration: " + ((expiration - currentTime) / 1000) + " seconds");
-			log.info("Token provided: " + (token != null ? token.substring(0, Math.min(8, token.length())) + "..." : "null"));
-			log.info("Token registered: " + (registeredToken.getToken() != null ? registeredToken.getToken().substring(0, Math.min(8, registeredToken.getToken().length())) + "..." : "null"));
+			// Keep token-validation logs minimal and never output token material.
+			if (log.isDebugEnabled()) {
+				log.debug("Token validation for user={}, repository={}, app={}, expiresInSec={}",
+						userName, repositoryId, app, (expiration - currentTime) / 1000);
+			}
 
 			if (currentTime > expiration) {
 				log.warn("[TOKEN VALIDATION] Token EXPIRED for user: " + userName + " (expired " + ((currentTime - expiration) / 1000) + " seconds ago)");
-				log.info("===========================");
 				return false;
 			} else {
 				String _registeredToken = registeredToken.getToken();
 				boolean isValid = StringUtils.isNotEmpty(_registeredToken) && _registeredToken.equals(token);
-				log.info("[TOKEN VALIDATION] Token valid: " + isValid);
-				log.info("===========================");
+				if (log.isDebugEnabled()) {
+					log.debug("Token validation result for user={} in repository={}: {}",
+							userName, repositoryId, isValid);
+				}
 				return isValid;
 			}
 		}

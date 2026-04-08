@@ -9,7 +9,7 @@
  * Key design:
  * - login() sends credentials via XHR; server sets HttpOnly cookie in response
  * - logout() calls server to clear the cookie; clears local UI state
- * - getAuthHeaders() returns empty headers; cookie is sent automatically by browser
+ * - getAuthHeaders() adds X-Requested-With for CSRF; cookie is sent automatically by browser
  * - saveAuth() stores non-sensitive data for UI state restoration after page refresh
  * - 'authStateChanged' custom event bridges service state to React AuthContext
  */
@@ -75,6 +75,7 @@ export class AuthService {
       xhr.open('POST', `/core/rest/repo/${repositoryId}/authtoken/${username}/login`, true);
       xhr.setRequestHeader('Accept', 'application/json');
       xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
       xhr.withCredentials = true; // Receive and store HttpOnly cookie from server
       
       xhr.onreadystatechange = () => {
@@ -114,6 +115,7 @@ export class AuthService {
       // Call server-side logout endpoint to clear HttpOnly cookie
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `/core/rest/repo/${this.currentAuth.repositoryId}/authtoken/${this.currentAuth.username}/logout`, true);
+      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
       xhr.withCredentials = true;
       xhr.onerror = () => {
         console.error('Logout request failed (network error)');
@@ -159,9 +161,9 @@ export class AuthService {
    * - Cross-origin requests where cookies may not be sent
    * - Non-browser clients
    */
-  /** Returns auth headers. HttpOnly cookie handles authentication automatically. */
+  /** Returns auth headers. HttpOnly cookie handles authentication; CSRF header for fetch callers. */
   getAuthHeaders(): Record<string, string> {
-    return {};
+    return { 'X-Requested-With': 'XMLHttpRequest' };
   }
 
   isAuthenticated(): boolean {

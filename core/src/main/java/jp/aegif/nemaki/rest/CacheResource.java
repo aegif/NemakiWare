@@ -51,6 +51,12 @@ public class CacheResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
 
 		// Admin check
 		status = checkAdmin(errMsg, httpRequest);
@@ -108,6 +114,12 @@ public class CacheResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
 
 		// Admin check
 		status = checkAdmin(errMsg, httpRequest);
@@ -183,6 +195,12 @@ public class CacheResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
 
 		// Admin check
 		status = checkAdmin(errMsg, httpRequest);

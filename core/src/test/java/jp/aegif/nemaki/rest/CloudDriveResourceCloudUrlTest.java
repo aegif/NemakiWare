@@ -1,9 +1,14 @@
 package jp.aegif.nemaki.rest;
 
+import jakarta.ws.rs.core.MediaType;
+import org.glassfish.jersey.media.multipart.FormDataBodyPart;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Static checks for client-supplied cloud deep links ({@link CloudDriveResource#isAllowedCloudUrl}).
@@ -44,5 +49,50 @@ class CloudDriveResourceCloudUrlTest {
     void rejectsHttpAndBlank() {
         assertFalse(CloudDriveResource.isAllowedCloudUrl("google", "http://docs.google.com/doc"));
         assertFalse(CloudDriveResource.isAllowedCloudUrl("google", ""));
+    }
+
+    /** Aligns with {@link jp.aegif.nemaki.rest.importexport.ImportExportUtils#guessMimeType} + csv/svg fallbacks. */
+    @Test
+    void inferMimeType_legacyOfficeAndOoxml() {
+        assertEquals("application/msword", CloudDriveResource.inferMimeType("Report.doc"));
+        assertEquals("application/vnd.ms-excel", CloudDriveResource.inferMimeType("sheet.xls"));
+        assertEquals("application/vnd.ms-powerpoint", CloudDriveResource.inferMimeType("slides.ppt"));
+        assertEquals(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                CloudDriveResource.inferMimeType("new.docx"));
+    }
+
+    @Test
+    void inferMimeType_csvAndSvgFallbacks() {
+        assertEquals("text/csv", CloudDriveResource.inferMimeType("data.csv"));
+        assertEquals("image/svg+xml", CloudDriveResource.inferMimeType("icon.svg"));
+    }
+
+    @Test
+    void inferMimeType_unknownUsesOctetStream() {
+        assertEquals("application/octet-stream", CloudDriveResource.inferMimeType("binary.bin"));
+        assertEquals("application/octet-stream", CloudDriveResource.inferMimeType(null));
+    }
+
+    /** Legacy import path must use the same rules as {@link CloudDriveResource#inferMimeType} (not a hardcoded OOXML-only map). */
+    @Test
+    void resolveLegacyCloudImportMimeType_matchesInferMimeForLegacyOffice() {
+        assertEquals("application/msword", CloudDriveResource.resolveLegacyCloudImportMimeType("Report.doc", null));
+        assertEquals("application/vnd.ms-excel", CloudDriveResource.resolveLegacyCloudImportMimeType("sheet.xls", null));
+        assertEquals("application/vnd.ms-powerpoint", CloudDriveResource.resolveLegacyCloudImportMimeType("slides.ppt", null));
+    }
+
+    @Test
+    void resolveLegacyCloudImportMimeType_usesPartContentTypeWhenFilenameUnknown() {
+        FormDataBodyPart part = mock(FormDataBodyPart.class);
+        when(part.getMediaType()).thenReturn(new MediaType("application", "pdf"));
+        assertEquals("application/pdf", CloudDriveResource.resolveLegacyCloudImportMimeType("blob", part));
+    }
+
+    @Test
+    void resolveLegacyCloudImportMimeType_keepsOctetStreamWhenPartAlsoGeneric() {
+        FormDataBodyPart part = mock(FormDataBodyPart.class);
+        when(part.getMediaType()).thenReturn(MediaType.APPLICATION_OCTET_STREAM_TYPE);
+        assertEquals("application/octet-stream", CloudDriveResource.resolveLegacyCloudImportMimeType("unknown.bin", part));
     }
 }

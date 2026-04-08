@@ -124,6 +124,7 @@ test.describe('NemakiWare SAML Authentication', () => {
     const response = await request.post('/core/rest/repo/bedroom/authtoken/saml/convert', {
       headers: {
         'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
       },
       data: {
         saml_response: samlResponse,
@@ -143,6 +144,7 @@ test.describe('NemakiWare SAML Authentication', () => {
     const response = await request.post('/core/rest/repo/bedroom/authtoken/saml/convert', {
       headers: {
         'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
       },
       data: {}
     });
@@ -169,6 +171,7 @@ test.describe('NemakiWare SAML Authentication', () => {
     const response = await request.post('/core/rest/repo/bedroom/authtoken/saml/convert', {
       headers: {
         'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
       },
       data: {
         saml_response: samlResponse
@@ -198,6 +201,7 @@ test.describe('NemakiWare SAML Authentication', () => {
     const response = await request.post('/core/rest/repo/bedroom/authtoken/saml/convert', {
       headers: {
         'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
       },
       data: {
         saml_response: samlResponse

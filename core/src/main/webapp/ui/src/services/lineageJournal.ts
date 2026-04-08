@@ -1,4 +1,5 @@
 import { AuthService } from './auth';
+import { parseJsonResponseBody } from './http/jsonFetch';
 
 const BASE_URL = '/core/api/v1/admin/lineage-journal';
 
@@ -81,25 +82,25 @@ export async function getEvents(params: {
 
   const res = await fetchWithAuth(`${BASE_URL}/events?${query}`);
   ensureOk(res, 'getEvents');
-  return res.json();
+  return (await parseJsonResponseBody(res, 'getEvents')) as unknown as { events: LineageEventSummary[]; total: number };
 }
 
 export async function getEvent(eventId: string): Promise<LineageEventSummary> {
   const res = await fetchWithAuth(`${BASE_URL}/events/${encodeURIComponent(eventId)}`);
   ensureOk(res, 'getEvent');
-  return res.json();
+  return (await parseJsonResponseBody(res, 'getEvent')) as unknown as LineageEventSummary;
 }
 
 export async function getStats(): Promise<LineageStatsData> {
   const res = await fetchWithAuth(`${BASE_URL}/stats`);
   ensureOk(res, 'getStats');
-  return res.json();
+  return (await parseJsonResponseBody(res, 'getStats')) as unknown as LineageStatsData;
 }
 
 export async function getMetrics(): Promise<LineageMetricsData> {
   const res = await fetchWithAuth(`${BASE_URL}/metrics`);
   ensureOk(res, 'getMetrics');
-  return res.json();
+  return (await parseJsonResponseBody(res, 'getMetrics')) as unknown as LineageMetricsData;
 }
 
 // ==================== Dead-letter ====================
@@ -116,13 +117,13 @@ export async function getDeadLetters(params: {
 
   const res = await fetchWithAuth(`${BASE_URL}/dead-letters?${query}`);
   ensureOk(res, 'getDeadLetters');
-  return res.json();
+  return (await parseJsonResponseBody(res, 'getDeadLetters')) as unknown as { deadLetters: DeadLetterRecord[]; total: number };
 }
 
 export async function getDeadLetter(eventId: string): Promise<DeadLetterRecord> {
   const res = await fetchWithAuth(`${BASE_URL}/dead-letters/${encodeURIComponent(eventId)}`);
   ensureOk(res, 'getDeadLetter');
-  return res.json();
+  return (await parseJsonResponseBody(res, 'getDeadLetter')) as unknown as DeadLetterRecord;
 }
 
 export async function replayDeadLetter(eventId: string): Promise<{ status: string; message: string }> {
@@ -130,7 +131,7 @@ export async function replayDeadLetter(eventId: string): Promise<{ status: strin
     method: 'POST',
   });
   ensureOk(res, 'replayDeadLetter');
-  return res.json();
+  return (await parseJsonResponseBody(res, 'replayDeadLetter')) as unknown as { status: string; message: string };
 }
 
 export async function replayAllDeadLetters(): Promise<{ status: string; replayed: number }> {
@@ -138,7 +139,7 @@ export async function replayAllDeadLetters(): Promise<{ status: string; replayed
     method: 'POST',
   });
   ensureOk(res, 'replayAllDeadLetters');
-  return res.json();
+  return (await parseJsonResponseBody(res, 'replayAllDeadLetters')) as unknown as { status: string; replayed: number };
 }
 
 export async function getDeadLetterCount(replayed?: boolean): Promise<{ count: number }> {
@@ -147,5 +148,5 @@ export async function getDeadLetterCount(replayed?: boolean): Promise<{ count: n
 
   const res = await fetchWithAuth(`${BASE_URL}/dead-letters/count?${query}`);
   ensureOk(res, 'getDeadLetterCount');
-  return res.json();
+  return (await parseJsonResponseBody(res, 'getDeadLetterCount')) as unknown as { count: number };
 }

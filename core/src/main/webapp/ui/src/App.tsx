@@ -229,6 +229,8 @@ import { Login } from './components/Login/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute/AdminRoute';
+import { parseJsonResponseBody } from './services/http/jsonFetch';
+import { AuthService } from './services/auth';
 
 const customTheme = {
   token: {
@@ -270,9 +272,9 @@ function AppRoutes() {
     const MAX_RETRIES = 5;
     const checkSetup = () => {
       fetch('/core/api/v1/setup/state')
-        .then(r => {
+        .then(async r => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.json();
+          return parseJsonResponseBody(r, 'setup/state');
         })
         .then(data => setSetupRequired(data.setupRequired === true))
         .catch(() => {
@@ -293,18 +295,25 @@ function AppRoutes() {
   }, []);
 
   const fetchToggles = useCallback(async () => {
-    if (!authToken?.token || !authToken?.repositoryId) return;
+    if (!authToken?.repositoryId) return;
     try {
+      const headers: Record<string, string> = {
+        ...AuthService.getInstance().getAuthHeaders(),
+      };
+      if (authToken.token) {
+        headers['AUTH_TOKEN'] = authToken.token;
+      }
       const response = await fetch(
         `/core/rest/repo/${authToken.repositoryId}/config/properties`,
-        { headers: { 'AUTH_TOKEN': authToken.token }, credentials: 'include' }
+        { headers, credentials: 'include' }
       );
       if (response.ok) {
-        const data = await response.json();
+        const data = await parseJsonResponseBody(response, 'config/properties');
         if (data.properties) {
           const toggleKeys = Object.values(ROUTE_FEATURE_MAP);
           const updates: Record<string, boolean> = {};
-          for (const prop of data.properties) {
+          const propsList = data.properties as { key: string; value: string }[];
+          for (const prop of propsList) {
             if (toggleKeys.includes(prop.key)) {
               updates[prop.key] = prop.value !== 'false';
             }

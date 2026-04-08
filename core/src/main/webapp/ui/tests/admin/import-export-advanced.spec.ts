@@ -17,6 +17,14 @@ import * as zlib from 'zlib';
 
 const BASE_URL = 'http://localhost:8080';
 const AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+const REST_HEADERS = {
+  'Authorization': AUTH_HEADER,
+  'X-Requested-With': 'XMLHttpRequest',
+};
+const REST_JSON_HEADERS = {
+  ...REST_HEADERS,
+  'Content-Type': 'application/json',
+};
 const BROWSER_URL = `${BASE_URL}/core/browser/bedroom`;
 const REST_URL = `${BASE_URL}/core/rest/repo/bedroom`;
 const TIMEOUT = 30000;
@@ -166,7 +174,7 @@ async function deleteTree(request: any, objectId: string): Promise<void> {
 async function deleteCustomType(request: any, typeId: string): Promise<void> {
   try {
     await request.delete(`${REST_URL}/type/delete/${typeId}`, {
-      headers: { 'Authorization': AUTH_HEADER },
+      headers: REST_HEADERS,
       timeout: TIMEOUT,
     });
   } catch (e) {
@@ -303,7 +311,7 @@ test.describe('Import/Export Advanced Scenarios', () => {
 
     test('A1. Create custom type with properties', async ({ page }) => {
       const typeRes = await page.request.post(`${REST_URL}/type/create`, {
-        headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+        headers: REST_JSON_HEADERS,
         data: {
           id: CUSTOM_TYPE_ID,
           localName: CUSTOM_TYPE_ID,
@@ -434,7 +442,7 @@ test.describe('Import/Export Advanced Scenarios', () => {
       const importRes = await page.request.post(
         `${REST_URL}/importexport/import/${importFolderId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER },
+          headers: REST_HEADERS,
           multipart: {
             file: { name: 'export.zip', mimeType: 'application/zip', buffer: zipBuffer },
           },
@@ -756,7 +764,7 @@ test.describe('Import/Export Advanced Scenarios', () => {
       const importRes = await page.request.post(
         `${REST_URL}/importexport/import/${importFolderId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER },
+          headers: REST_HEADERS,
           multipart: {
             file: { name: 'export.zip', mimeType: 'application/zip', buffer: zipBuffer },
           },
@@ -845,7 +853,7 @@ test.describe('Import/Export Advanced Scenarios', () => {
       const importRes = await page.request.post(
         `${REST_URL}/importexport/import/${importFolderId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER },
+          headers: REST_HEADERS,
           multipart: {
             file: { name: 'export.zip', mimeType: 'application/zip', buffer: zipBuffer },
           },
@@ -914,7 +922,7 @@ test.describe('Import/Export Advanced Scenarios', () => {
         });
         if (!typeCheck.ok()) {
           await page.request.post(`${REST_URL}/type/create`, {
-            headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+            headers: REST_JSON_HEADERS,
             data: {
               id: CUSTOM_TYPE_ID, localName: CUSTOM_TYPE_ID, displayName: 'IE Advanced Test Doc',
               baseId: 'cmis:document', parentId: 'cmis:document', creatable: true, queryable: true,
@@ -1023,7 +1031,7 @@ test.describe('Import/Export Advanced Scenarios', () => {
       const importRes = await page.request.post(
         `${REST_URL}/importexport/import/${importFolderId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER },
+          headers: REST_HEADERS,
           multipart: {
             file: { name: 'export.zip', mimeType: 'application/zip', buffer: zipBuffer },
           },

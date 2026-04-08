@@ -17,6 +17,7 @@ import { test, expect } from '@playwright/test';
 const BASE_URL = 'http://localhost:8080';
 const REPO_ID = 'bedroom';
 const ADMIN_AUTH = 'admin:admin';
+const REST_CSRF = { 'X-Requested-With': 'XMLHttpRequest' as const };
 
 // Test user for auth method tests
 const TEST_USER_ID = 'auth-method-test-user';
@@ -32,6 +33,7 @@ async function createTestUser(request: any): Promise<void> {
       headers: {
         'Authorization': `Basic ${Buffer.from(ADMIN_AUTH).toString('base64')}`,
         'Content-Type': 'application/x-www-form-urlencoded',
+        ...REST_CSRF,
       },
       data: `name=Auth Method Test User&firstName=Auth&lastName=Test&email=${TEST_USER_ID}@example.com&password=${TEST_USER_PASSWORD}`,
     }
@@ -54,6 +56,7 @@ async function deleteTestUser(request: any): Promise<void> {
     {
       headers: {
         'Authorization': `Basic ${Buffer.from(ADMIN_AUTH).toString('base64')}`,
+        ...REST_CSRF,
       },
     }
   );
@@ -69,6 +72,7 @@ async function setAllowedAuthMethods(request: any, value: string): Promise<void>
       headers: {
         'Authorization': `Basic ${Buffer.from(ADMIN_AUTH).toString('base64')}`,
         'Content-Type': 'application/x-www-form-urlencoded',
+        ...REST_CSRF,
       },
       data: `allowedAuthMethods=${encodeURIComponent(value)}`,
     }
@@ -123,6 +127,7 @@ async function attemptTokenAuth(request: any): Promise<{ success: boolean; error
     {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
+        ...REST_CSRF,
       },
       data: `password=${encodeURIComponent(TEST_USER_PASSWORD)}`,
     }

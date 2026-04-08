@@ -164,7 +164,8 @@ test.describe('Version Property Inheritance', () => {
         {
           headers: {
             'Authorization': AUTH_HEADER,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
           },
           data: JSON.stringify(typeDefinition)
         }

@@ -146,7 +146,7 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
                 return;
             }
 
-            logger.fine("ApiAuthenticationFilter: Token validated for user: " + userName);
+            logger.fine("ApiAuthenticationFilter: Token validated");
             callContext.put(CallContext.USERNAME, userName);
             callContext.put(CallContextKey.AUTH_TOKEN, authToken);
             callContext.put(CallContextKey.AUTH_TOKEN_APP, authTokenApp);
@@ -174,7 +174,7 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
                     String password = decodedStr.substring(colonIndex + 1);
                     callContext.put(CallContext.USERNAME, userName);
                     callContext.put(CallContext.PASSWORD, password);
-                    logger.fine("ApiAuthenticationFilter: Basic auth extracted for user: " + userName);
+                    logger.fine("ApiAuthenticationFilter: Basic auth header parsed");
                 } catch (IllegalArgumentException e) {
                     abortWithUnauthorized(requestContext, "Invalid Basic authentication encoding");
                     return;
@@ -200,7 +200,7 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
                     return;
                 }
 
-                logger.fine("ApiAuthenticationFilter: Bearer token validated for user: " + userName);
+                logger.fine("ApiAuthenticationFilter: Bearer token validated");
                 callContext.put(CallContext.USERNAME, userName);
                 callContext.put(CallContextKey.AUTH_TOKEN, token);
             } else {
@@ -220,7 +220,7 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
                 }
                 logger.fine("ApiAuthenticationFilter: Authentication successful");
             } catch (Exception e) {
-                logger.warning("ApiAuthenticationFilter: Authentication error: " + e.getMessage());
+                logger.warning("ApiAuthenticationFilter: Authentication error");
                 abortWithUnauthorized(requestContext, "Authentication failed: " + e.getMessage());
                 return;
             }
@@ -244,13 +244,13 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
                 callContext.put(CallContextKey.IS_ADMIN, isAdmin);
                 logger.fine("ApiAuthenticationFilter: User admin status: " + isAdmin);
             } catch (Exception e) {
-                logger.warning("ApiAuthenticationFilter: Failed to check admin status: " + e.getMessage());
+                logger.warning("ApiAuthenticationFilter: Failed to check admin status");
             }
         }
 
         // Set CallContext as request attribute
         httpServletRequest.setAttribute("CallContext", callContext);
-        logger.fine("ApiAuthenticationFilter: CallContext set for user: " + callContext.getUsername());
+        logger.fine("ApiAuthenticationFilter: CallContext set");
     }
 
     private String extractRepositoryId(String path) {

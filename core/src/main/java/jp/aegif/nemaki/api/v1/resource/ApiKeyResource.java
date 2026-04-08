@@ -292,7 +292,7 @@ public class ApiKeyResource {
         }
         try {
             UserItem user = contentService.getUserItemById(repositoryId, userId);
-            return user != null && user.isAdmin() != null && user.isAdmin();
+            return user != null && Boolean.TRUE.equals(user.isAdmin());
         } catch (Exception e) {
             log.warn("Error checking admin status for user " + userId, e);
             return false;

@@ -138,6 +138,7 @@ test.describe('Cloud Drive Import', () => {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json',
+						'X-Requested-With': 'XMLHttpRequest',
 					},
 					body: JSON.stringify({
 						provider: 'google',
@@ -163,6 +164,7 @@ test.describe('Cloud Drive Import', () => {
 					headers: {
 						'Content-Type': 'application/json',
 						'Authorization': authHeader,
+						'X-Requested-With': 'XMLHttpRequest',
 					},
 					body: JSON.stringify({
 						// Missing required fields: provider, accessToken, cloudFileId
@@ -174,6 +176,7 @@ test.describe('Cloud Drive Import', () => {
 				};
 			});
 
+			expect(response.status).not.toBe(403);
 			expect(response.status).toBe(200);
 			// Should return failure due to missing parameters
 			if (response.data) {

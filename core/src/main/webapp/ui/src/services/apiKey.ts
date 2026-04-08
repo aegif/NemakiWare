@@ -20,6 +20,7 @@
  */
 
 import { AuthService } from './auth';
+import { parseJsonResponseBody } from './http/jsonFetch';
 
 export interface ApiKey {
   id: string;
@@ -70,13 +71,11 @@ export async function listApiKeys(repositoryId: string, userId: string): Promise
     }
   });
 
+  const data = (await parseJsonResponseBody(response, 'listApiKeys')) as Record<string, unknown>;
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Failed to list API keys: ${response.status}`);
+    throw new Error((data.error as string) || `Failed to list API keys: ${response.status}`);
   }
-
-  const data: ApiKeyListResponse = await response.json();
-  return data.apiKeys || [];
+  return ((data as unknown) as ApiKeyListResponse).apiKeys || [];
 }
 
 /**
@@ -114,12 +113,11 @@ export async function createApiKey(
     body: JSON.stringify(body)
   });
 
+  const data = (await parseJsonResponseBody(response, 'createApiKey')) as Record<string, unknown>;
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Failed to create API key: ${response.status}`);
+    throw new Error((data.error as string) || `Failed to create API key: ${response.status}`);
   }
-
-  return await response.json();
+  return data as unknown as ApiKeyCreationResult;
 }
 
 /**
@@ -138,9 +136,9 @@ export async function revokeApiKey(repositoryId: string, keyId: string): Promise
     }
   });
 
+  const data = await parseJsonResponseBody(response, 'revokeApiKey');
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Failed to revoke API key: ${response.status}`);
+    throw new Error((data.error as string) || `Failed to revoke API key: ${response.status}`);
   }
 }
 

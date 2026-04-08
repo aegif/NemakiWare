@@ -713,6 +713,23 @@ public class TypeResourceTests {
                 if ("getMethod".equals(method.getName())) {
                     return "POST";
                 }
+                // ResourceBase.validateCsrfProtection → getEffectiveOriginFromRequest needs these
+                if ("getScheme".equals(method.getName())) {
+                    return "http";
+                }
+                if ("getServerName".equals(method.getName())) {
+                    return "localhost";
+                }
+                if ("getServerPort".equals(method.getName())) {
+                    return 8080;
+                }
+                if ("getHeader".equals(method.getName()) && args != null && args.length > 0) {
+                    String name = (String) args[0];
+                    if ("X-Requested-With".equalsIgnoreCase(name)) {
+                        return "XMLHttpRequest";
+                    }
+                    return null;
+                }
                 return null;
             }
         );

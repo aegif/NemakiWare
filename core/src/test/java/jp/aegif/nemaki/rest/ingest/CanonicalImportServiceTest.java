@@ -553,4 +553,90 @@ class CanonicalImportServiceTest {
         assertTrue(result.isSuccess(), "Auto-resolve should succeed: " + result.errors());
         assertEquals("auto-resolved-doc-id", result.objectId());
     }
+
+    /**
+     * Cloud UI sends provider {@code google} while some deployments register connectors as {@code google_drive}.
+     */
+    @Test
+    void testExecuteWithAutoResolveGoogleAliasFindsGoogleDriveConnector() {
+        ConnectorDefinition googleDriveConn = new ConnectorDefinition();
+        googleDriveConn.setConnectorId("gd-conn");
+        googleDriveConn.setEnabled(true);
+        googleDriveConn.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        googleDriveConn.setSourceSystem("google_drive");
+        when(connectorService.findBySystemAndArchetype("google", SourceArchetype.FILE_SHARE)).thenReturn(null);
+        when(connectorService.findBySystemAndArchetype("google_drive", SourceArchetype.FILE_SHARE)).thenReturn(googleDriveConn);
+        when(connectorService.get("gd-conn")).thenReturn(googleDriveConn);
+
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p-gd");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        when(profileService.get("p-gd")).thenReturn(profile);
+        when(profileService.findDefaultForRepository("bedroom", SourceArchetype.FILE_SHARE, "gd-conn"))
+                .thenReturn(profile);
+
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn("doc-alias");
+
+        Content mockContent = createMockContent("doc-alias");
+        when(contentService.getContent("bedroom", "doc-alias")).thenReturn(mockContent);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("file-1");
+        req.setSourceObjectType("file");
+        req.setFileName("a.txt");
+        req.setMetadata(Map.of("cloudProvider", "google", "cloudFileId", "file-1"));
+
+        ExternalIngestResult result = service.executeWithAutoResolve(
+                mock(CallContext.class), req, "google", SourceArchetype.FILE_SHARE);
+        assertTrue(result.isSuccess(), () -> String.valueOf(result.errors()));
+        verify(connectorService).findBySystemAndArchetype("google_drive", SourceArchetype.FILE_SHARE);
+    }
+
+    /**
+     * Cloud UI sends provider {@code microsoft} while scheduler-oriented configs use {@code onedrive}.
+     */
+    @Test
+    void testExecuteWithAutoResolveMicrosoftAliasFindsOnedriveConnector() {
+        ConnectorDefinition odConn = new ConnectorDefinition();
+        odConn.setConnectorId("od-conn");
+        odConn.setEnabled(true);
+        odConn.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        odConn.setSourceSystem("onedrive");
+        when(connectorService.findBySystemAndArchetype("microsoft", SourceArchetype.FILE_SHARE)).thenReturn(null);
+        when(connectorService.findBySystemAndArchetype("onedrive", SourceArchetype.FILE_SHARE)).thenReturn(odConn);
+        when(connectorService.get("od-conn")).thenReturn(odConn);
+
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p-od");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        when(profileService.get("p-od")).thenReturn(profile);
+        when(profileService.findDefaultForRepository("bedroom", SourceArchetype.FILE_SHARE, "od-conn"))
+                .thenReturn(profile);
+
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn("doc-od");
+
+        Content mockContent = createMockContent("doc-od");
+        when(contentService.getContent("bedroom", "doc-od")).thenReturn(mockContent);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("item-1");
+        req.setSourceObjectType("file");
+        req.setFileName("b.txt");
+        req.setMetadata(Map.of("cloudProvider", "microsoft", "cloudFileId", "item-1"));
+
+        ExternalIngestResult result = service.executeWithAutoResolve(
+                mock(CallContext.class), req, "microsoft", SourceArchetype.FILE_SHARE);
+        assertTrue(result.isSuccess(), () -> String.valueOf(result.errors()));
+        verify(connectorService).findBySystemAndArchetype("onedrive", SourceArchetype.FILE_SHARE);
+    }
 }

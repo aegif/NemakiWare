@@ -291,6 +291,12 @@ public class RssFeedResource extends ResourceBase {
         boolean status = true;
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            addErrMsg(errMsg, "csrf", csrfError);
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
         
         if (!enabled) {
             status = false;
@@ -484,6 +490,12 @@ public class RssFeedResource extends ResourceBase {
         boolean status = true;
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            addErrMsg(errMsg, "csrf", csrfError);
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
         
         if (!enabled) {
             status = false;
@@ -548,6 +560,12 @@ public class RssFeedResource extends ResourceBase {
         boolean status = true;
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            addErrMsg(errMsg, "csrf", csrfError);
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
         
         if (!enabled) {
             status = false;
@@ -621,6 +639,12 @@ public class RssFeedResource extends ResourceBase {
         boolean status = true;
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            addErrMsg(errMsg, "csrf", csrfError);
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
         
         if (!enabled) {
             status = false;

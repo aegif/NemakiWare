@@ -192,6 +192,8 @@
 
 import { UserManager, UserManagerSettings, User, WebStorageStateStore } from 'oidc-client-ts';
 import { AuthToken } from './auth';
+import { parseJsonResponseBody } from './http/jsonFetch';
+import { getResourceBaseErrorMessage, isResourceBaseSuccess } from './http/restResult';
 
 export interface OIDCConfig {
   authority: string;
@@ -249,6 +251,7 @@ export class OIDCService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
         'Authorization': `Bearer ${oidcUser.access_token}`
       },
       body: JSON.stringify({
@@ -261,15 +264,18 @@ export class OIDCService {
       throw new Error('Failed to convert OIDC token');
     }
 
-    const result = await response.json();
-    if (result.status !== 'success' || !result.value) {
-      const errorDetail = result.errMsg?.[0]?.access_token || result.errMsg?.[0]?.oidc || 'unknown error';
-      throw new Error(`OIDC token conversion failed: ${errorDetail}`);
+    const result = await parseJsonResponseBody(response, 'convertOIDCToken');
+    const value = result.value as { token?: string; userName?: string } | undefined;
+    if (!isResourceBaseSuccess(result) || !value || typeof value !== 'object') {
+      throw new Error(`OIDC token conversion failed: ${getResourceBaseErrorMessage(result)}`);
+    }
+    if (!value.token || !value.userName) {
+      throw new Error(`OIDC token conversion failed: ${getResourceBaseErrorMessage(result, 'missing token or userName')}`);
     }
     return {
-      token: result.value.token,
+      token: value.token,
       repositoryId: repositoryId,
-      username: result.value.userName
+      username: value.userName
     };
   }
 

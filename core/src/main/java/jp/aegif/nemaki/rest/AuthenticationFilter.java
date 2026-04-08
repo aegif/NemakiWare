@@ -120,11 +120,13 @@ public class AuthenticationFilter implements Filter {
 				return;
 			}
 
-			// Bypass authentication for ingest webhook endpoints (external push notifications)
-			// Security is enforced via webhookSecret signature verification in IngestWebhookController
-			// SECURITY: Use servletPath + pathInfo (not requestURI) to prevent path traversal bypass
-			if (pathInfo != null && pathInfo.startsWith("/v1/ingest-webhook/")
-					&& !pathInfo.contains("/subscribe") && !pathInfo.contains("/subscription")) {
+			// Bypass authentication for ingest webhook receivers (external push notifications).
+			// Security is enforced via webhookSecret signature verification in IngestWebhookController.
+			// SECURITY: Use pathInfo (not requestURI) to prevent path traversal bypass.
+			// Do NOT use substring checks on "subscription" / "subscribe" — connector IDs may be
+			// e.g. subscription-teams or subscribe-slack. Admin-only routes are exactly
+			// POST|DELETE /v1/ingest-webhook/{connectorId}/subscribe (see IngestWebhookController).
+			if (pathInfo != null && pathInfo.startsWith("/v1/ingest-webhook/") && !pathInfo.endsWith("/subscribe")) {
 				log.debug("Bypassing authentication for ingest webhook endpoint: " + pathInfo);
 				chain.doFilter(req, res);
 				return;
@@ -267,16 +269,16 @@ public class AuthenticationFilter implements Filter {
 			if (tokenService != null) {
 				String userName = tokenService.validateToken(app, repositoryId, authToken);
 				if (userName != null) {
-					log.debug("=== AUTH: Token validated successfully for user: " + userName + " ===");
+					log.debug("=== AUTH: Token validated successfully ===");
 					ctxt.put(CallContext.USERNAME, userName);
 					ctxt.put(CallContextKey.AUTH_TOKEN, authToken);
 					ctxt.put(CallContextKey.AUTH_TOKEN_APP, authTokenApp);
 				} else {
-					log.info("=== AUTH: Invalid or expired AUTH_TOKEN for repository: " + repositoryId + ", app: " + app + " ===");
+					log.debug("=== AUTH: Invalid or expired AUTH_TOKEN for repository: " + repositoryId + ", app: " + app + " ===");
 					return false;
 				}
 			} else {
-				log.info("=== AUTH: TokenService not available for token validation ===");
+				log.warn("=== AUTH: TokenService not available for token validation ===");
 				return false;
 			}
 		} else {
@@ -308,11 +310,11 @@ public class AuthenticationFilter implements Filter {
 					if (tokenService != null) {
 						String userName = tokenService.validateToken(app, repositoryId, token);
 						if (userName != null) {
-							log.debug("=== AUTH: Bearer token validated successfully for user: " + userName + " ===");
+							log.debug("=== AUTH: Bearer token validated successfully ===");
 							ctxt.put(CallContext.USERNAME, userName);
 							ctxt.put(CallContextKey.AUTH_TOKEN, token);
 						} else {
-							log.info("=== AUTH: Invalid or expired Bearer token for repository: " + repositoryId + " ===");
+							log.debug("=== AUTH: Invalid or expired Bearer token for repository: " + repositoryId + " ===");
 							return false;
 						}
 					} else {
@@ -328,7 +330,7 @@ public class AuthenticationFilter implements Filter {
 						if (values.length == 2) {
 							ctxt.put(CallContext.USERNAME, values[0]);
 							ctxt.put(CallContext.PASSWORD, values[1]);
-							log.debug("=== AUTH: Basic auth extracted - username=" + values[0] + " ===");
+							log.debug("=== AUTH: Basic auth header parsed ===");
 						}
 					} catch (Exception e) {
 						log.error("Failed to parse Basic auth header", e);

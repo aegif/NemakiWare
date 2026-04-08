@@ -219,6 +219,7 @@ import { DEFAULT_REPOSITORY_ID } from '../../config/app';
 import { fetchAuthConfig } from '../../services/authConfig';
 import { CloudAuthConfig, fetchCloudAuthConfig, signInWithGoogle, signInWithMicrosoft } from '../../services/cloud-auth';
 import { WebAuthnService } from '../../services/webauthn';
+import { parseJsonResponseBody } from '../../services/http/jsonFetch';
 
 interface LoginProps {
   onLogin: (auth: AuthToken) => void;
@@ -321,10 +322,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     loadRepositories();
     // Load Core build info
     fetch('/core/rest/all/build-info')
-      .then(res => res.json())
+      .then(res => parseJsonResponseBody(res, 'login.buildInfo'))
       .then(data => {
         if (data.core) {
-          setCoreBuildInfo(data.core);
+          setCoreBuildInfo(data.core as { version: string; buildTime: string });
         }
       })
       .catch(err => console.error('Failed to load build info:', err));

@@ -200,6 +200,11 @@ public class PermissionResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		try {
 			// Parse JSON input

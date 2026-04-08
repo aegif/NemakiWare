@@ -5,6 +5,7 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 
+import org.glassfish.jersey.media.multipart.FormDataBodyPart;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
 
@@ -28,6 +29,7 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
+import jp.aegif.nemaki.rest.importexport.ImportExportUtils;
 import jp.aegif.nemaki.rest.ingest.CanonicalImportService;
 import jp.aegif.nemaki.rest.ingest.ExternalIngestRequest;
 import jp.aegif.nemaki.rest.ingest.ExternalIngestResult;
@@ -54,161 +56,62 @@ public class CloudDriveResource extends ResourceBase {
 	private static final Log log = LogFactory.getLog(CloudDriveResource.class);
 
 	/**
-	 * SECURITY: Validate Origin/Referer header to prevent CSRF attacks.
-	 * This is required for state-changing endpoints that accept cookie-based authentication.
-	 *
-	 * STRICT VALIDATION: Compares scheme+host+port exactly.
-	 * Port omission is only allowed for standard ports (HTTP:80, HTTPS:443).
-	 *
-	 * @param request The HTTP request
-	 * @return Error message if CSRF check fails, null if validation passes
-	 */
-	private String validateCsrfProtection(HttpServletRequest request) {
-		// Get the expected origin components from the request
-		String serverHost = request.getServerName();
-		int serverPort = request.getServerPort();
-		String scheme = request.getScheme();
-
-		// Check Origin header first (more reliable)
-		String origin = request.getHeader("Origin");
-		if (origin != null && !origin.isEmpty()) {
-			if (isOriginValid(origin, scheme, serverHost, serverPort)) {
-				return null; // Valid origin
-			}
-			log.warn("CSRF protection: Origin header mismatch. Expected: " + scheme + "://" + serverHost +
-				":" + serverPort + ", Received: " + origin);
-			return "CSRF protection: invalid origin";
-		}
-
-		// Fall back to Referer header if Origin is not present
-		String referer = request.getHeader("Referer");
-		if (referer != null && !referer.isEmpty()) {
-			try {
-				URI refererUri = new URI(referer);
-				String refererScheme = refererUri.getScheme();
-				String refererHost = refererUri.getHost();
-				int refererPort = refererUri.getPort();
-
-				// Normalize port: -1 means default port for the scheme
-				int normalizedRefererPort = normalizePort(refererScheme, refererPort);
-				int normalizedServerPort = normalizePort(scheme, serverPort);
-
-				// STRICT: scheme, host, AND port must all match
-				if (scheme.equals(refererScheme) &&
-					serverHost.equals(refererHost) &&
-					normalizedServerPort == normalizedRefererPort) {
-					return null; // Valid referer
-				}
-
-				// For development: allow localhost variations but still require port match
-				if (isLocalhostDev(serverHost, refererHost)) {
-					if (normalizedServerPort == normalizedRefererPort) {
-						return null; // Allow localhost with same port for development
-					}
-				}
-			} catch (Exception e) {
-				log.warn("CSRF protection: Invalid Referer header: " + referer);
-			}
-			log.warn("CSRF protection: Referer header mismatch. Expected: " + scheme + "://" + serverHost +
-				":" + serverPort + ", Referer: " + referer);
-			return "CSRF protection: invalid referer";
-		}
-
-		// If neither Origin nor Referer is present, check if request is from same origin
-		// by checking for X-Requested-With header (set by XMLHttpRequest/fetch with credentials)
-		String xRequestedWith = request.getHeader("X-Requested-With");
-		if ("XMLHttpRequest".equals(xRequestedWith)) {
-			return null; // Likely same-origin AJAX request
-		}
-
-		// SECURITY: For state-changing endpoints, require at least one of these headers
-		// This prevents simple form-based CSRF attacks
-		log.warn("CSRF protection: No Origin, Referer, or X-Requested-With header found");
-		return "CSRF protection: missing origin verification headers";
-	}
-
-	/**
-	 * SECURITY: Validate origin string against expected scheme/host/port.
-	 * Uses STRICT matching: scheme+host+port must all match exactly.
-	 * Port omission in Origin header is only allowed for standard ports (HTTP:80, HTTPS:443).
-	 */
-	private boolean isOriginValid(String origin, String expectedScheme, String expectedHost, int expectedPort) {
-		try {
-			URI originUri = new URI(origin);
-			String originScheme = originUri.getScheme();
-			String originHost = originUri.getHost();
-			int originPort = originUri.getPort();
-
-			// Normalize ports for comparison
-			int normalizedOriginPort = normalizePort(originScheme, originPort);
-			int normalizedExpectedPort = normalizePort(expectedScheme, expectedPort);
-
-			// STRICT: scheme must match
-			if (!expectedScheme.equals(originScheme)) {
-				return false;
-			}
-
-			// STRICT: host must match exactly
-			if (!expectedHost.equals(originHost)) {
-				// For development: allow localhost <-> 127.0.0.1 but still require port match
-				if (!isLocalhostDev(expectedHost, originHost)) {
-					return false;
-				}
-			}
-
-			// STRICT: port must match (after normalization)
-			return normalizedExpectedPort == normalizedOriginPort;
-		} catch (Exception e) {
-			return false;
-		}
-	}
-
-	/**
-	 * Normalize port number: return default port for scheme if port is -1 or matches standard port.
-	 * HTTP: 80, HTTPS: 443
-	 */
-	private int normalizePort(String scheme, int port) {
-		if ("https".equalsIgnoreCase(scheme)) {
-			return (port == -1 || port == 443) ? 443 : port;
-		} else if ("http".equalsIgnoreCase(scheme)) {
-			return (port == -1 || port == 80) ? 80 : port;
-		}
-		// For other schemes, return port as-is (or -1)
-		return port;
-	}
-
-	/**
-	 * Check if both hosts are localhost variations (for development only).
-	 */
-	private boolean isLocalhostDev(String host1, String host2) {
-		return (("localhost".equals(host1) || "127.0.0.1".equals(host1)) &&
-				("localhost".equals(host2) || "127.0.0.1".equals(host2)));
-	}
-
-	/**
 	 * Validate that a client-provided cloud file URL belongs to an allowed host for the given provider.
 	 * Only HTTPS URLs from known cloud provider domains are accepted.
 	 */
-	/** Infer MIME type from filename extension for cloud imports. */
-	private static String inferMimeType(String fileName) {
-		if (fileName == null) return "application/octet-stream";
+	/**
+	 * Infer MIME type from filename for cloud imports.
+	 * Delegates to {@link ImportExportUtils#guessMimeType} (legacy Office .doc/.xls/.ppt, OOXML, zip, etc.);
+	 * adds CSV/SVG fallbacks not covered by that helper.
+	 * Package-visible for unit tests in {@code jp.aegif.nemaki.rest}.
+	 */
+	static String inferMimeType(String fileName) {
+		String g = ImportExportUtils.guessMimeType(fileName);
+		if (!"application/octet-stream".equals(g)) {
+			return g;
+		}
+		if (fileName == null) {
+			return "application/octet-stream";
+		}
 		String lower = fileName.toLowerCase();
-		if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-		if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-		if (lower.endsWith(".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-		if (lower.endsWith(".pdf")) return "application/pdf";
-		if (lower.endsWith(".txt")) return "text/plain";
-		if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html";
-		if (lower.endsWith(".csv")) return "text/csv";
-		if (lower.endsWith(".json")) return "application/json";
-		if (lower.endsWith(".png")) return "image/png";
-		if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
-		if (lower.endsWith(".gif")) return "image/gif";
-		if (lower.endsWith(".svg")) return "image/svg+xml";
+		if (lower.endsWith(".csv")) {
+			return "text/csv";
+		}
+		if (lower.endsWith(".svg")) {
+			return "image/svg+xml";
+		}
 		return "application/octet-stream";
 	}
 
-	private static boolean isAllowedCloudUrl(String provider, String url) {
+	/**
+	 * MIME for legacy cloud import when no connector/profile is configured.
+	 * Uses {@link #inferMimeType} from the filename; if still {@code application/octet-stream},
+	 * uses the multipart part's {@code Content-Type} when it is specific (not wildcard/octet-stream).
+	 * <p>
+	 * Note: {@link FormDataContentDisposition#getType()} is the disposition type ({@code form-data}),
+	 * not the part MIME type — use {@link FormDataBodyPart#getMediaType()} for the latter.
+	 */
+	static String resolveLegacyCloudImportMimeType(String finalFileName, FormDataBodyPart contentPart) {
+		String mimeType = inferMimeType(finalFileName);
+		if (!"application/octet-stream".equals(mimeType)) {
+			return mimeType;
+		}
+		if (contentPart == null || contentPart.getMediaType() == null) {
+			return mimeType;
+		}
+		jakarta.ws.rs.core.MediaType mt = contentPart.getMediaType();
+		if (mt.isWildcardType() || mt.isWildcardSubtype()) {
+			return mimeType;
+		}
+		String base = mt.getType() + "/" + mt.getSubtype();
+		if ("application/octet-stream".equalsIgnoreCase(base)) {
+			return mimeType;
+		}
+		return base;
+	}
+
+	/** Package-visible for unit tests ({@code jp.aegif.nemaki.rest}). */
+	static boolean isAllowedCloudUrl(String provider, String url) {
 		if (url == null || url.isEmpty()) return false;
 		try {
 			java.net.URI uri = new java.net.URI(url);
@@ -220,9 +123,13 @@ public class CloudDriveResource extends ResourceBase {
 			if ("google".equals(provider)) {
 				return host.endsWith(".google.com") || host.equals("google.com");
 			} else if ("microsoft".equals(provider)) {
+				// Personal OneDrive, M365 / Entra, SharePoint Online (incl. DE cloud), Teams file links
 				return host.endsWith(".live.com") || host.endsWith(".sharepoint.com")
+					|| host.endsWith(".sharepoint.de")
 					|| host.endsWith(".office.com") || host.endsWith(".microsoft.com")
-					|| host.endsWith(".officeapps.live.com");
+					|| host.endsWith(".officeapps.live.com")
+					|| host.endsWith(".teams.microsoft.com")
+					|| host.endsWith(".onedrive.com");
 			}
 			return false;
 		} catch (Exception e) {
@@ -671,6 +578,7 @@ public class CloudDriveResource extends ResourceBase {
 			@PathParam("folderId") String folderId,
 			@FormDataParam("content") InputStream contentStream,
 			@FormDataParam("content") FormDataContentDisposition contentDisposition,
+			@FormDataParam("content") FormDataBodyPart contentPart,
 			@FormDataParam("provider") String provider,
 			@FormDataParam("cloudFileId") String cloudFileId,
 			@FormDataParam("accessToken") String accessToken,
@@ -770,19 +678,7 @@ public class CloudDriveResource extends ResourceBase {
 			props.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl(
 				org.apache.chemistry.opencmis.commons.PropertyIds.NAME, finalFileName));
 
-			// Determine MIME type from content disposition or fallback to binary
-			String mimeType = "application/octet-stream";
-			if (contentDisposition != null && contentDisposition.getType() != null) {
-				mimeType = contentDisposition.getType();
-			}
-			// Try to infer from filename extension
-			if (finalFileName != null) {
-				if (finalFileName.endsWith(".docx")) mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-				else if (finalFileName.endsWith(".xlsx")) mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-				else if (finalFileName.endsWith(".pptx")) mimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-				else if (finalFileName.endsWith(".pdf")) mimeType = "application/pdf";
-				else if (finalFileName.endsWith(".txt")) mimeType = "text/plain";
-			}
+			String mimeType = resolveLegacyCloudImportMimeType(finalFileName, contentPart);
 
 			// Build content stream for CMIS
 			org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl cmisContentStream =
@@ -1085,7 +981,11 @@ public class CloudDriveResource extends ResourceBase {
 	 */
 	/**
 	 * Attempts to use the canonical import pipeline. Returns the JSON response string
-	 * if successful, or null if no connector/profile is configured (fall back to legacy).
+	 * if successful, or {@code null} only when canonical import is not set up (no Spring bean /
+	 * request preparation failure) or when auto-resolve reports no connector/profile (explicit
+	 * {@link ExternalIngestResult} errors). Runtime failures from
+	 * {@link CanonicalImportService#executeWithAutoResolve} return an error JSON — they must not
+	 * fall through to the legacy path after partial canonical side effects.
 	 */
 	@SuppressWarnings("unchecked")
 	private String tryCanonicalImport(
@@ -1094,14 +994,26 @@ public class CloudDriveResource extends ResourceBase {
 			String cloudFileId, String accessToken, String fileName,
 			InputStream content, String clientCloudFileUrl,
 			JSONObject result, JSONArray errMsg) {
+		org.springframework.context.ApplicationContext ctx = SpringContext.getApplicationContext();
+		if (ctx == null) {
+			return null;
+		}
+		CanonicalImportService importService;
 		try {
-			var ctx = SpringContext.getApplicationContext();
-			if (ctx == null) return null;
-			CanonicalImportService importService = ctx.getBean(CanonicalImportService.class);
-			if (importService == null) return null;
+			importService = ctx.getBean(CanonicalImportService.class);
+		} catch (Exception e) {
+			log.debug("CanonicalImportService unavailable, falling back to legacy: " + e.getMessage());
+			return null;
+		}
+		if (importService == null) {
+			return null;
+		}
 
+		final ExternalIngestRequest req;
+		final String resolvedCloudUrl;
+		try {
 			// Build request
-			ExternalIngestRequest req = new ExternalIngestRequest();
+			req = new ExternalIngestRequest();
 			req.setRepositoryId(repositoryId);
 			req.setTargetFolderOverride(folderId); // Preserve caller-selected folder
 			req.setSourceObjectId(cloudFileId);
@@ -1116,17 +1028,18 @@ public class CloudDriveResource extends ResourceBase {
 			metadata.put("cloudProvider", provider);
 			metadata.put("cloudFileId", cloudFileId);
 			// Resolve cloudFileUrl: prefer validated client-provided, fallback to server-generated
-			String resolvedCloudUrl = null;
+			String url = null;
 			if (clientCloudFileUrl != null && !clientCloudFileUrl.isEmpty()
 					&& isAllowedCloudUrl(provider, clientCloudFileUrl)) {
-				resolvedCloudUrl = clientCloudFileUrl;
+				url = clientCloudFileUrl;
 			} else {
 				CloudDriveService svc = getCloudDriveService();
 				if (svc != null) {
-					try { resolvedCloudUrl = svc.getCloudFileUrl(provider, cloudFileId); }
+					try { url = svc.getCloudFileUrl(provider, cloudFileId); }
 					catch (Exception e) { /* best effort */ }
 				}
 			}
+			resolvedCloudUrl = url;
 			if (resolvedCloudUrl != null) {
 				metadata.put("cloudFileUrl", resolvedCloudUrl);
 			}
@@ -1145,73 +1058,72 @@ public class CloudDriveResource extends ResourceBase {
 			if (!metadata.isEmpty()) {
 				req.setMetadata(metadata);
 			}
-
-			// Try auto-resolve connector/profile
-			ExternalIngestResult ingestResult;
-			try {
-				ingestResult = importService.executeWithAutoResolve(
-						callContext, req, provider, SourceArchetype.FILE_SHARE);
-			} catch (Exception e) {
-				log.info("Canonical import auto-resolve failed, falling back to legacy: " + e.getMessage(), e);
-				return null; // Fall back to legacy — no side effects yet
-			}
-
-			log.info("Canonical import result: success=" + ingestResult.isSuccess()
-					+ ", skipped=" + ingestResult.skipped() + ", objectId=" + ingestResult.objectId()
-					+ ", errors=" + ingestResult.errors());
-
-			if (!ingestResult.isSuccess() && !ingestResult.skipped()) {
-				// Check if auto-resolve failed (no connector/profile) → fall back to legacy
-				if (ingestResult.errors() != null && !ingestResult.errors().isEmpty()) {
-					String firstError = ingestResult.errors().get(0);
-					if (firstError.contains("Ambiguous auto-resolve")) {
-						// Config error: multiple profiles match — fail closed, do NOT fall back
-						for (String err : ingestResult.errors()) {
-							addErrMsg(errMsg, "import", err);
-						}
-						result = makeResult(false, result, errMsg);
-						return result.toJSONString();
-					}
-					if (firstError.contains("No enabled connector") || firstError.contains("No enabled import profile")) {
-						log.debug("Canonical import not available (" + firstError + "), falling back to legacy path");
-						return null; // Fall back to legacy
-					}
-				}
-				// Real error from canonical import — do NOT fall back (side effects may exist)
-				for (String err : ingestResult.errors()) {
-					addErrMsg(errMsg, "import", err);
-				}
-				result = makeResult(false, result, errMsg);
-				return result.toJSONString();
-			}
-
-			if (ingestResult.skipped()) {
-				result.put("status", "success");
-				result.put("skipped", true);
-				result.put("skipReason", ingestResult.skipReason());
-				return result.toJSONString();
-			}
-
-			// Canonical import succeeded — cloudDriveMetadata was applied by the pipeline
-			String newObjectId = ingestResult.objectId();
-			result.put("status", "success");
-			result.put("objectId", newObjectId);
-			result.put("name", fileName);
-			result.put("cloudFileId", cloudFileId);
-			result.put("cloudFileUrl", resolvedCloudUrl);
-			result.put("provider", provider);
-			result.put("isNewVersion", ingestResult.isNewVersion());
-			result.put("canonicalImport", true);
-			if (ingestResult.lineageEventId() != null) {
-				result.put("lineageEventId", ingestResult.lineageEventId());
-			}
-			return result.toJSONString();
-
 		} catch (Exception e) {
-			// Only pre-execute failures (bean lookup, request construction) should fall back
-			log.debug("Canonical import setup failed, falling back to legacy: " + e.getMessage());
+			log.debug("Canonical import request preparation failed, falling back to legacy: " + e.getMessage(), e);
 			return null;
 		}
+
+		final ExternalIngestResult ingestResult;
+		try {
+			ingestResult = importService.executeWithAutoResolve(
+					callContext, req, provider, SourceArchetype.FILE_SHARE);
+		} catch (Exception e) {
+			log.error("Canonical import failed unexpectedly (no legacy fallback): " + e.getMessage(), e);
+			addErrMsg(errMsg, "import", "Canonical import failed: " + e.getMessage());
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
+
+		log.info("Canonical import result: success=" + ingestResult.isSuccess()
+				+ ", skipped=" + ingestResult.skipped() + ", objectId=" + ingestResult.objectId()
+				+ ", errors=" + ingestResult.errors());
+
+		if (!ingestResult.isSuccess() && !ingestResult.skipped()) {
+			// Check if auto-resolve failed (no connector/profile) → fall back to legacy
+			if (ingestResult.errors() != null && !ingestResult.errors().isEmpty()) {
+				String firstError = ingestResult.errors().get(0);
+				if (firstError.contains("Ambiguous auto-resolve")) {
+					// Config error: multiple profiles match — fail closed, do NOT fall back
+					for (String err : ingestResult.errors()) {
+						addErrMsg(errMsg, "import", err);
+					}
+					result = makeResult(false, result, errMsg);
+					return result.toJSONString();
+				}
+				if (firstError.contains("No enabled connector") || firstError.contains("No enabled import profile")) {
+					log.debug("Canonical import not available (" + firstError + "), falling back to legacy path");
+					return null; // Fall back to legacy
+				}
+			}
+			// Real error from canonical import — do NOT fall back (side effects may exist)
+			for (String err : ingestResult.errors()) {
+				addErrMsg(errMsg, "import", err);
+			}
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
+
+		if (ingestResult.skipped()) {
+			result.put("status", "success");
+			result.put("skipped", true);
+			result.put("skipReason", ingestResult.skipReason());
+			return result.toJSONString();
+		}
+
+		// Canonical import succeeded — cloudDriveMetadata was applied by the pipeline
+		String newObjectId = ingestResult.objectId();
+		result.put("status", "success");
+		result.put("objectId", newObjectId);
+		result.put("name", fileName);
+		result.put("cloudFileId", cloudFileId);
+		result.put("cloudFileUrl", resolvedCloudUrl);
+		result.put("provider", provider);
+		result.put("isNewVersion", ingestResult.isNewVersion());
+		result.put("canonicalImport", true);
+		if (ingestResult.lineageEventId() != null) {
+			result.put("lineageEventId", ingestResult.lineageEventId());
+		}
+		return result.toJSONString();
 	}
 
 	private void saveCloudMetadata(org.apache.chemistry.opencmis.commons.server.CallContext callContext,

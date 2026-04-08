@@ -1,4 +1,5 @@
 import { AuthService } from './auth';
+import { parseJsonResponseBody } from './http/jsonFetch';
 
 export interface PasswordPolicy {
   minLength: number;
@@ -23,7 +24,7 @@ export async function getPasswordPolicy(repositoryId: string): Promise<PasswordP
     throw new Error(`Failed to fetch password policy: ${response.status}`);
   }
 
-  return response.json();
+  return (await parseJsonResponseBody(response, 'getPasswordPolicy')) as unknown as PasswordPolicy;
 }
 
 export async function updatePasswordPolicy(
@@ -43,10 +44,10 @@ export async function updatePasswordPolicy(
     body: JSON.stringify(policy)
   });
 
+  const data = await parseJsonResponseBody(response, 'updatePasswordPolicy');
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to update password policy: ${response.status}`);
+    throw new Error((data.detail as string) || `Failed to update password policy: ${response.status}`);
   }
 
-  return response.json();
+  return data as unknown as PasswordPolicy;
 }

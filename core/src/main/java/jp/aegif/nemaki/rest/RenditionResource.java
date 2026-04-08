@@ -229,6 +229,12 @@ public class RenditionResource extends ResourceBase {
 
         boolean force = forceParam != null && forceParam;
         Map<String, Object> response = new HashMap<>();
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            response.put("status", "error");
+            response.put("message", "CSRF validation failed: " + csrfError);
+            return Response.status(Response.Status.FORBIDDEN).entity(response).build();
+        }
 
         try {
             // SECURITY FIX: Require authentication and use user's CallContext for permission checks

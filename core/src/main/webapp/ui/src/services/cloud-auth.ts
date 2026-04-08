@@ -7,6 +7,8 @@
  */
 
 import { AuthToken } from './auth';
+import { parseJsonResponseBody } from './http/jsonFetch';
+import { getResourceBaseErrorMessage, isResourceBaseSuccess } from './http/restResult';
 
 export type CloudProvider = 'google' | 'microsoft';
 
@@ -31,13 +33,18 @@ export async function fetchCloudAuthConfig(repositoryId?: string): Promise<Cloud
     if (!response.ok) {
       return { googleEnabled: false, microsoftEnabled: false };
     }
-    const data = await response.json();
+    let data: Record<string, unknown>;
+    try {
+      data = await parseJsonResponseBody(response, 'fetchCloudAuthConfig');
+    } catch {
+      return { googleEnabled: false, microsoftEnabled: false };
+    }
     return {
       googleEnabled: data.googleEnabled === true,
-      googleClientId: data.googleClientId,
+      googleClientId: data.googleClientId as string | undefined,
       microsoftEnabled: data.microsoftEnabled === true,
-      microsoftClientId: data.microsoftClientId,
-      microsoftTenantId: data.microsoftTenantId,
+      microsoftClientId: data.microsoftClientId as string | undefined,
+      microsoftTenantId: data.microsoftTenantId as string | undefined,
     };
   } catch {
     return { googleEnabled: false, microsoftEnabled: false };
@@ -186,7 +193,7 @@ export async function signInWithMicrosoft(
 async function convertGoogleToken(idToken: string, repositoryId: string): Promise<AuthToken> {
   const response = await fetch(`/core/rest/repo/${repositoryId}/authtoken/google/convert`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     body: JSON.stringify({ id_token: idToken }),
   });
 
@@ -194,15 +201,23 @@ async function convertGoogleToken(idToken: string, repositoryId: string): Promis
     throw new Error('Failed to convert Google token');
   }
 
-  const result = await response.json();
-  if (!result.status) {
-    throw new Error(result.errMsg?.[0] || 'Google authentication failed');
+  const result = await parseJsonResponseBody(response, 'convertGoogleToken');
+  if (!isResourceBaseSuccess(result)) {
+    throw new Error(
+      `Google authentication failed: ${getResourceBaseErrorMessage(result, 'Google authentication failed')}`
+    );
   }
 
+  const value = result.value as { token?: string; userName?: string } | undefined;
+  if (!value || !value.token || !value.userName) {
+    throw new Error(
+      `Google authentication failed: ${getResourceBaseErrorMessage(result, 'missing token or userName')}`
+    );
+  }
   return {
-    token: result.value.token,
+    token: value.token,
     repositoryId,
-    username: result.value.userName,
+    username: value.userName,
     authMethod: 'google',
   };
 }
@@ -213,7 +228,7 @@ async function convertGoogleToken(idToken: string, repositoryId: string): Promis
 async function convertMicrosoftToken(idToken: string, repositoryId: string): Promise<AuthToken> {
   const response = await fetch(`/core/rest/repo/${repositoryId}/authtoken/microsoft/convert`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     body: JSON.stringify({ id_token: idToken }),
   });
 
@@ -221,15 +236,23 @@ async function convertMicrosoftToken(idToken: string, repositoryId: string): Pro
     throw new Error('Failed to convert Microsoft token');
   }
 
-  const result = await response.json();
-  if (!result.status) {
-    throw new Error(result.errMsg?.[0] || 'Microsoft authentication failed');
+  const result = await parseJsonResponseBody(response, 'convertMicrosoftToken');
+  if (!isResourceBaseSuccess(result)) {
+    throw new Error(
+      `Microsoft authentication failed: ${getResourceBaseErrorMessage(result, 'Microsoft authentication failed')}`
+    );
   }
 
+  const value = result.value as { token?: string; userName?: string } | undefined;
+  if (!value || !value.token || !value.userName) {
+    throw new Error(
+      `Microsoft authentication failed: ${getResourceBaseErrorMessage(result, 'missing token or userName')}`
+    );
+  }
   return {
-    token: result.value.token,
+    token: value.token,
     repositoryId,
-    username: result.value.userName,
+    username: value.userName,
     authMethod: 'microsoft',
   };
 }

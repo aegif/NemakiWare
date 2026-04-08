@@ -22,10 +22,12 @@ interface StoredAuthData {
 
 /**
  * Get authentication headers for CMIS API requests.
- * Authentication is handled by HttpOnly cookie, returns empty headers.
+ * Authentication is handled by HttpOnly cookie; no Authorization header.
+ * X-Requested-With: XMLHttpRequest satisfies ResourceBase CSRF checks
+ * for same-origin cookie sessions (mutating /core/rest/repo and XHR paths).
  */
 export function getCmisAuthHeaders(): Record<string, string> {
-  return {};
+  return { 'X-Requested-With': 'XMLHttpRequest' };
 }
 
 /**

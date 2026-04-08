@@ -1,4 +1,5 @@
 import { AuthService } from './auth';
+import { parseJsonResponseBody } from './http/jsonFetch';
 
 const CONNECTOR_URL = '/core/api/v1/admin/connectors';
 const PROFILE_URL = '/core/api/v1/admin/import-profiles';
@@ -14,6 +15,16 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
       ...options.headers,
     },
   });
+}
+
+/** Single body read + HTTP status check */
+async function parseJsonOrThrow<T>(res: Response, context: string): Promise<T> {
+  const data = (await parseJsonResponseBody(res, context)) as Record<string, unknown>;
+  if (!res.ok) {
+    const msg = typeof data.message === 'string' ? data.message : `HTTP ${res.status}`;
+    throw new Error(`${context}: ${msg}`);
+  }
+  return data as T;
 }
 
 // ── Connector Types ────────────────────────────────────────────────
@@ -72,14 +83,12 @@ export interface ProfileResponse {
 
 export async function listConnectors(): Promise<ConnectorDefinition[]> {
   const res = await fetchWithAuth(CONNECTOR_URL);
-  if (!res.ok) throw new Error(`Failed to list connectors: ${res.status}`);
-  return res.json();
+  return parseJsonOrThrow<ConnectorDefinition[]>(res, 'listConnectors');
 }
 
 export async function getConnector(connectorId: string): Promise<ConnectorDefinition> {
   const res = await fetchWithAuth(`${CONNECTOR_URL}/${encodeURIComponent(connectorId)}`);
-  if (!res.ok) throw new Error(`Failed to get connector: ${res.status}`);
-  return res.json();
+  return parseJsonOrThrow<ConnectorDefinition>(res, 'getConnector');
 }
 
 export async function createConnector(connector: ConnectorDefinition): Promise<{ status: string; connectorId: string }> {
@@ -88,11 +97,7 @@ export async function createConnector(connector: ConnectorDefinition): Promise<{
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(connector),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || `Failed to create connector: ${res.status}`);
-  }
-  return res.json();
+  return parseJsonOrThrow<{ status: string; connectorId: string }>(res, 'createConnector');
 }
 
 export async function updateConnector(connectorId: string, connector: Partial<ConnectorDefinition>): Promise<{ status: string }> {
@@ -101,11 +106,7 @@ export async function updateConnector(connectorId: string, connector: Partial<Co
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(connector),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || `Failed to update connector: ${res.status}`);
-  }
-  return res.json();
+  return parseJsonOrThrow<{ status: string }>(res, 'updateConnector');
 }
 
 export async function deleteConnector(connectorId: string): Promise<void> {
@@ -122,14 +123,12 @@ export async function listProfiles(repositoryId?: string): Promise<ImportProfile
     ? `${PROFILE_URL}?repositoryId=${encodeURIComponent(repositoryId)}`
     : PROFILE_URL;
   const res = await fetchWithAuth(url);
-  if (!res.ok) throw new Error(`Failed to list profiles: ${res.status}`);
-  return res.json();
+  return parseJsonOrThrow<ImportProfileDefinition[]>(res, 'listProfiles');
 }
 
 export async function getProfile(profileId: string): Promise<ProfileResponse> {
   const res = await fetchWithAuth(`${PROFILE_URL}/${encodeURIComponent(profileId)}`);
-  if (!res.ok) throw new Error(`Failed to get profile: ${res.status}`);
-  return res.json();
+  return parseJsonOrThrow<ProfileResponse>(res, 'getProfile');
 }
 
 export async function createProfile(
@@ -140,11 +139,7 @@ export async function createProfile(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(profile),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || `Failed to create profile: ${res.status}`);
-  }
-  return res.json();
+  return parseJsonOrThrow<{ status: string; profileId: string; warnings?: string[] }>(res, 'createProfile');
 }
 
 export async function updateProfile(
@@ -156,11 +151,7 @@ export async function updateProfile(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(profile),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || `Failed to update profile: ${res.status}`);
-  }
-  return res.json();
+  return parseJsonOrThrow<{ status: string; warnings?: string[] }>(res, 'updateProfile');
 }
 
 export async function deleteProfile(profileId: string): Promise<void> {
@@ -177,19 +168,17 @@ const SCHEDULER_URL = '/core/api/v1/admin/ingest-scheduler';
 
 export async function listIngestJobs(limit = 50): Promise<IngestJobRecord[]> {
   const res = await fetchWithAuth(`${INGEST_URL}/jobs?limit=${limit}`);
-  if (!res.ok) throw new Error(`Failed to list jobs: ${res.status}`);
-  return res.json();
+  return parseJsonOrThrow<IngestJobRecord[]>(res, 'listIngestJobs');
 }
 
 export async function listDlqEntries(limit = 100): Promise<{ count: number; entries: DlqEntry[] }> {
   const res = await fetchWithAuth(`${INGEST_URL}/dlq?limit=${limit}`);
-  if (!res.ok) throw new Error(`Failed to list DLQ: ${res.status}`);
-  return res.json();
+  return parseJsonOrThrow<{ count: number; entries: DlqEntry[] }>(res, 'listDlqEntries');
 }
 
 export async function retryDlqEntry(dlqId: string): Promise<{ status: string; objectId?: string; errors?: string[] }> {
   const res = await fetchWithAuth(`${INGEST_URL}/dlq/${encodeURIComponent(dlqId)}/retry`, { method: 'POST' });
-  return res.json();
+  return parseJsonOrThrow<{ status: string; objectId?: string; errors?: string[] }>(res, 'retryDlqEntry');
 }
 
 export async function deleteDlqEntry(dlqId: string): Promise<void> {
@@ -201,14 +190,15 @@ export async function deleteDlqEntry(dlqId: string): Promise<void> {
 
 export async function getSchedulerStatus(): Promise<{ scheduledProfiles: unknown[]; count: number; idleProfiles: string[] }> {
   const res = await fetchWithAuth(`${SCHEDULER_URL}/status`);
-  if (!res.ok) throw new Error(`Failed to get scheduler status: ${res.status}`);
-  return res.json();
+  return parseJsonOrThrow<{ scheduledProfiles: unknown[]; count: number; idleProfiles: string[] }>(
+    res,
+    'getSchedulerStatus'
+  );
 }
 
 export async function getCheckpoints(profileId: string): Promise<{ profileId: string; checkpoints: Record<string, string> }> {
   const res = await fetchWithAuth(`${SCHEDULER_URL}/checkpoint/${encodeURIComponent(profileId)}`);
-  if (!res.ok) throw new Error(`Failed to get checkpoints: ${res.status}`);
-  return res.json();
+  return parseJsonOrThrow<{ profileId: string; checkpoints: Record<string, string> }>(res, 'getCheckpoints');
 }
 
 export async function resetCheckpoint(profileId: string, scope?: string): Promise<{ status: string; message: string }> {
@@ -216,28 +206,27 @@ export async function resetCheckpoint(profileId: string, scope?: string): Promis
     ? `${SCHEDULER_URL}/checkpoint/${encodeURIComponent(profileId)}?scope=${encodeURIComponent(scope)}`
     : `${SCHEDULER_URL}/checkpoint/${encodeURIComponent(profileId)}`;
   const res = await fetchWithAuth(url, { method: 'DELETE' });
-  return res.json();
+  return parseJsonOrThrow<{ status: string; message: string }>(res, 'resetCheckpoint');
 }
 
 export async function triggerProfile(profileId: string): Promise<Record<string, unknown>> {
   const res = await fetchWithAuth(`${SCHEDULER_URL}/trigger/${encodeURIComponent(profileId)}`, { method: 'POST' });
-  return res.json();
+  return parseJsonOrThrow<Record<string, unknown>>(res, 'triggerProfile');
 }
 
 export async function startIdleMonitoring(profileId: string): Promise<{ status: string; message: string }> {
   const res = await fetchWithAuth(`${SCHEDULER_URL}/idle/start/${encodeURIComponent(profileId)}`, { method: 'POST' });
-  return res.json();
+  return parseJsonOrThrow<{ status: string; message: string }>(res, 'startIdleMonitoring');
 }
 
 export async function stopIdleMonitoring(profileId: string): Promise<{ status: string; message: string }> {
   const res = await fetchWithAuth(`${SCHEDULER_URL}/idle/stop/${encodeURIComponent(profileId)}`, { method: 'POST' });
-  return res.json();
+  return parseJsonOrThrow<{ status: string; message: string }>(res, 'stopIdleMonitoring');
 }
 
 export async function getIdleStatus(): Promise<{ idleProfiles: string[] }> {
   const res = await fetchWithAuth(`${SCHEDULER_URL}/idle/status`);
-  if (!res.ok) throw new Error(`Failed to get IDLE status: ${res.status}`);
-  return res.json();
+  return parseJsonOrThrow<{ idleProfiles: string[] }>(res, 'getIdleStatus');
 }
 
 // ── Types ─────────────────────────────────────────────────────────

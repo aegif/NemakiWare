@@ -32,6 +32,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { CMISService } from '../../services/cmis';
+import { parseJsonResponseBody } from '../../services/http/jsonFetch';
 import { CMISObject } from '../../types/cmis';
 
 const { Text } = Typography;
@@ -40,11 +41,10 @@ const { Text } = Typography;
  * Get authentication headers using the same pattern as CmisService (MEDIUM 5).
  * Reads from localStorage to get the auth token.
  */
-const getAuthHeaders = (): Record<string, string> => {
-  // Authentication is handled by HttpOnly cookie (nemaki_auth_token)
-  // which is automatically sent by the browser for same-origin requests.
-  return { 'Content-Type': 'application/json' };
-};;
+const getAuthHeaders = (): Record<string, string> => ({
+  'Content-Type': 'application/json',
+  'X-Requested-With': 'XMLHttpRequest',
+});
 
 interface FilesystemImportExportProps {
   repositoryId: string;
@@ -105,11 +105,12 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
         {
           method: 'POST',
           headers: getAuthHeaders(),
+          credentials: 'include',
           body: JSON.stringify({ sourcePath: values.sourcePath })
         }
       );
 
-      const result: ImportExportResult = await response.json();
+      const result = (await parseJsonResponseBody(response, 'filesystem.import')) as unknown as ImportExportResult;
       setImportResult(result);
 
       if (result.status === 'success') {
@@ -137,6 +138,7 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
         {
           method: 'POST',
           headers: getAuthHeaders(),
+          credentials: 'include',
           body: JSON.stringify({ 
             targetPath: values.targetPath,
             allowOverwrite: values.allowOverwrite || false
@@ -144,7 +146,7 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
         }
       );
 
-      const result: ImportExportResult = await response.json();
+      const result = (await parseJsonResponseBody(response, 'filesystem.export')) as unknown as ImportExportResult;
       setExportResult(result);
 
       if (result.status === 'success') {

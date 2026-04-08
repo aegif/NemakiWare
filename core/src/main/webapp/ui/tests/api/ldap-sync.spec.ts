@@ -14,6 +14,10 @@ const BASE_URL = 'http://localhost:8080';
 const REPO_ID = 'bedroom';
 const SYNC_BASE = `${BASE_URL}/core/rest/repo/${REPO_ID}/sync`;
 const AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+const AUTH_HEADERS = {
+  'Authorization': AUTH_HEADER,
+  'X-Requested-With': 'XMLHttpRequest',
+};
 
 let ldapConnected = false;
 
@@ -77,7 +81,7 @@ test.describe('LDAP Sync - Endpoint Availability', () => {
 
   test('POST /sync/trigger with dryRun=true executes safely', async ({ request }) => {
     const response = await request.post(`${SYNC_BASE}/trigger?dryRun=true`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: AUTH_HEADERS
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -166,7 +170,7 @@ test.describe('LDAP Sync - Preview & Dry Run (LDAP required)', () => {
 
   test('dry run trigger returns SUCCESS with syncResult', async ({ request }) => {
     const response = await request.post(`${SYNC_BASE}/trigger?dryRun=true`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: AUTH_HEADERS
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -185,7 +189,7 @@ test.describe.serial('LDAP Sync - Full Sync Execution (LDAP required)', () => {
 
   test('POST /sync/trigger (actual sync) creates users and groups', async ({ request }) => {
     const response = await request.post(`${SYNC_BASE}/trigger`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: AUTH_HEADERS
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -246,7 +250,7 @@ test.describe.serial('LDAP Sync - Full Sync Execution (LDAP required)', () => {
 
   test('second sync is idempotent (no new additions)', async ({ request }) => {
     const response = await request.post(`${SYNC_BASE}/trigger`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: AUTH_HEADERS
     });
     expect(response.status()).toBe(200);
     const data = await response.json();

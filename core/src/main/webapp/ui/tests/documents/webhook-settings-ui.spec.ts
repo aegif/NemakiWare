@@ -19,6 +19,7 @@ import { AuthHelper } from '../utils/auth-helper';
 const BASE_URL = 'http://localhost:8080';
 const REPOSITORY_ID = 'bedroom';
 const AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+const REST_CSRF = { 'X-Requested-With': 'XMLHttpRequest' as const };
 
 test.describe('Webhook Settings UI Tests', () => {
 
@@ -67,7 +68,7 @@ test.describe('Webhook Settings UI Tests', () => {
     // Create test folder via CMIS API
     const rootRes = await request.get(
       `${BASE_URL}/core/browser/${REPOSITORY_ID}?cmisselector=repositoryInfo`,
-      { headers: { 'Authorization': AUTH_HEADER } }
+      { headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF } }
     );
     const repoData = await rootRes.json();
     const rootFolderId = repoData[REPOSITORY_ID]?.rootFolderId;
@@ -76,7 +77,7 @@ test.describe('Webhook Settings UI Tests', () => {
     const createRes = await request.post(
       `${BASE_URL}/core/browser/${REPOSITORY_ID}`,
       {
-        headers: { 'Authorization': AUTH_HEADER },
+        headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF },
         form: {
           'cmisaction': 'createFolder',
           'objectId': rootFolderId,
@@ -96,7 +97,7 @@ test.describe('Webhook Settings UI Tests', () => {
       const addRes = await request.post(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/webhook/config/${folderId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json', ...REST_CSRF },
           data: {
             url: 'https://example.com/webhook-test',
             events: ['created', 'content_updated'],
@@ -115,7 +116,7 @@ test.describe('Webhook Settings UI Tests', () => {
       // READ: Verify webhook config was created
       const getRes = await request.get(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/webhook/config/${folderId}`,
-        { headers: { 'Authorization': AUTH_HEADER } }
+        { headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF } }
       );
       expect(getRes.ok()).toBeTruthy();
       const getData = await getRes.json();
@@ -134,7 +135,7 @@ test.describe('Webhook Settings UI Tests', () => {
       const updateRes = await request.put(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/webhook/config/${folderId}/${webhookId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json', ...REST_CSRF },
           data: {
             url: 'https://example.com/webhook-updated',
             events: ['created', 'updated', 'content_updated', 'deleted'],
@@ -155,7 +156,7 @@ test.describe('Webhook Settings UI Tests', () => {
       // Verify update
       const verifyRes = await request.get(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/webhook/config/${folderId}`,
-        { headers: { 'Authorization': AUTH_HEADER } }
+        { headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF } }
       );
       const verifyData = await verifyRes.json();
       const updatedConfig = verifyData.webhookConfigs.find((c: any) => c.id === webhookId);
@@ -168,7 +169,7 @@ test.describe('Webhook Settings UI Tests', () => {
       // DELETE: Remove webhook config
       const deleteRes = await request.delete(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/webhook/config/${folderId}/${webhookId}`,
-        { headers: { 'Authorization': AUTH_HEADER } }
+        { headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF } }
       );
       expect(deleteRes.ok()).toBeTruthy();
       const deleteData = await deleteRes.json();
@@ -177,7 +178,7 @@ test.describe('Webhook Settings UI Tests', () => {
       // Verify deletion
       const finalRes = await request.get(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/webhook/config/${folderId}`,
-        { headers: { 'Authorization': AUTH_HEADER } }
+        { headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF } }
       );
       const finalData = await finalRes.json();
       expect(finalData.webhookConfigs.length).toBe(0);
@@ -185,7 +186,7 @@ test.describe('Webhook Settings UI Tests', () => {
     } finally {
       // Cleanup: delete test folder
       await request.post(`${BASE_URL}/core/browser/${REPOSITORY_ID}`, {
-        headers: { 'Authorization': AUTH_HEADER },
+        headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF },
         form: { 'cmisaction': 'deleteTree', 'objectId': folderId, 'allVersions': 'true', 'continueOnFailure': 'true' },
       });
     }
@@ -195,7 +196,7 @@ test.describe('Webhook Settings UI Tests', () => {
     // Create test folder
     const rootRes = await request.get(
       `${BASE_URL}/core/browser/${REPOSITORY_ID}?cmisselector=repositoryInfo`,
-      { headers: { 'Authorization': AUTH_HEADER } }
+      { headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF } }
     );
     const repoData = await rootRes.json();
     const rootFolderId = repoData[REPOSITORY_ID]?.rootFolderId;
@@ -204,7 +205,7 @@ test.describe('Webhook Settings UI Tests', () => {
     const createRes = await request.post(
       `${BASE_URL}/core/browser/${REPOSITORY_ID}`,
       {
-        headers: { 'Authorization': AUTH_HEADER },
+        headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF },
         form: {
           'cmisaction': 'createFolder',
           'objectId': rootFolderId,
@@ -223,7 +224,7 @@ test.describe('Webhook Settings UI Tests', () => {
       const addRes = await request.post(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/webhook/config/${folderId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json', ...REST_CSRF },
           data: {
             url: 'https://example.com/content-webhook',
             events: ['content_updated'],
@@ -242,7 +243,7 @@ test.describe('Webhook Settings UI Tests', () => {
       // Verify content_updated is properly stored
       const getRes = await request.get(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/webhook/config/${folderId}`,
-        { headers: { 'Authorization': AUTH_HEADER } }
+        { headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF } }
       );
       const getData = await getRes.json();
       expect(getData.webhookConfigs.length).toBe(1);
@@ -251,7 +252,7 @@ test.describe('Webhook Settings UI Tests', () => {
 
     } finally {
       await request.post(`${BASE_URL}/core/browser/${REPOSITORY_ID}`, {
-        headers: { 'Authorization': AUTH_HEADER },
+        headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF },
         form: { 'cmisaction': 'deleteTree', 'objectId': folderId, 'allVersions': 'true', 'continueOnFailure': 'true' },
       });
     }
@@ -261,7 +262,7 @@ test.describe('Webhook Settings UI Tests', () => {
     // Create test folder
     const rootRes = await request.get(
       `${BASE_URL}/core/browser/${REPOSITORY_ID}?cmisselector=repositoryInfo`,
-      { headers: { 'Authorization': AUTH_HEADER } }
+      { headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF } }
     );
     const repoData = await rootRes.json();
     const rootFolderId = repoData[REPOSITORY_ID]?.rootFolderId;
@@ -270,7 +271,7 @@ test.describe('Webhook Settings UI Tests', () => {
     const createRes = await request.post(
       `${BASE_URL}/core/browser/${REPOSITORY_ID}`,
       {
-        headers: { 'Authorization': AUTH_HEADER },
+        headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF },
         form: {
           'cmisaction': 'createFolder',
           'objectId': rootFolderId,
@@ -294,7 +295,7 @@ test.describe('Webhook Settings UI Tests', () => {
       const addRes = await request.post(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/webhook/config/${folderId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json', ...REST_CSRF },
           data: {
             url: 'https://example.com/all-events',
             events: allEventTypes,
@@ -312,7 +313,7 @@ test.describe('Webhook Settings UI Tests', () => {
       // Verify all event types were stored correctly
       const getRes = await request.get(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/webhook/config/${folderId}`,
-        { headers: { 'Authorization': AUTH_HEADER } }
+        { headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF } }
       );
       const getData = await getRes.json();
       expect(getData.webhookConfigs.length).toBe(1);
@@ -325,7 +326,7 @@ test.describe('Webhook Settings UI Tests', () => {
 
     } finally {
       await request.post(`${BASE_URL}/core/browser/${REPOSITORY_ID}`, {
-        headers: { 'Authorization': AUTH_HEADER },
+        headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF },
         form: { 'cmisaction': 'deleteTree', 'objectId': folderId, 'allVersions': 'true', 'continueOnFailure': 'true' },
       });
     }
@@ -338,7 +339,7 @@ test.describe('Webhook Settings UI Tests', () => {
     // Create test folder as admin
     const rootRes = await request.get(
       `${BASE_URL}/core/browser/${REPOSITORY_ID}?cmisselector=repositoryInfo`,
-      { headers: { 'Authorization': AUTH_HEADER } }
+      { headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF } }
     );
     const repoData = await rootRes.json();
     const rootFolderId = repoData[REPOSITORY_ID]?.rootFolderId;
@@ -347,7 +348,7 @@ test.describe('Webhook Settings UI Tests', () => {
     const createRes = await request.post(
       `${BASE_URL}/core/browser/${REPOSITORY_ID}`,
       {
-        headers: { 'Authorization': AUTH_HEADER },
+        headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF },
         form: {
           'cmisaction': 'createFolder',
           'objectId': rootFolderId,
@@ -365,12 +366,12 @@ test.describe('Webhook Settings UI Tests', () => {
       // Ensure test user exists
       const restBase = `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}`;
       const checkRes = await request.get(`${restBase}/user/show/api-e2e-testuser`, {
-        headers: { 'Authorization': AUTH_HEADER },
+        headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF },
       });
       const checkData = await checkRes.json();
       if (checkData.status !== 'success' || !checkData.user) {
         const createUserRes = await request.post(`${restBase}/user/create/api-e2e-testuser`, {
-          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/x-www-form-urlencoded', ...REST_CSRF },
           data: new URLSearchParams({ name: 'api-e2e-testuser', password: 'testtest' }).toString(),
         });
         expect(createUserRes.status()).toBe(200);
@@ -380,7 +381,7 @@ test.describe('Webhook Settings UI Tests', () => {
       await request.post(
         `${BASE_URL}/core/browser/${REPOSITORY_ID}`,
         {
-          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/x-www-form-urlencoded', ...REST_CSRF },
           form: {
             cmisaction: 'applyACL',
             objectId: folderId,
@@ -394,7 +395,7 @@ test.describe('Webhook Settings UI Tests', () => {
       const addRes = await request.post(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/webhook/config/${folderId}`,
         {
-          headers: { 'Authorization': testUserAuth, 'Content-Type': 'application/json' },
+          headers: { 'Authorization': testUserAuth, 'Content-Type': 'application/json', ...REST_CSRF },
           data: {
             url: 'https://example.com/unauthorized',
             events: ['created'],
@@ -414,7 +415,7 @@ test.describe('Webhook Settings UI Tests', () => {
     } finally {
       // Cleanup as admin
       await request.post(`${BASE_URL}/core/browser/${REPOSITORY_ID}`, {
-        headers: { 'Authorization': AUTH_HEADER },
+        headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF },
         form: { 'cmisaction': 'deleteTree', 'objectId': folderId, 'allVersions': 'true', 'continueOnFailure': 'true' },
       });
     }
@@ -424,7 +425,7 @@ test.describe('Webhook Settings UI Tests', () => {
     // Create test folder
     const rootRes = await request.get(
       `${BASE_URL}/core/browser/${REPOSITORY_ID}?cmisselector=repositoryInfo`,
-      { headers: { 'Authorization': AUTH_HEADER } }
+      { headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF } }
     );
     const repoData = await rootRes.json();
     const rootFolderId = repoData[REPOSITORY_ID]?.rootFolderId;
@@ -433,7 +434,7 @@ test.describe('Webhook Settings UI Tests', () => {
     const createRes = await request.post(
       `${BASE_URL}/core/browser/${REPOSITORY_ID}`,
       {
-        headers: { 'Authorization': AUTH_HEADER },
+        headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF },
         form: {
           'cmisaction': 'createFolder',
           'objectId': rootFolderId,
@@ -452,7 +453,7 @@ test.describe('Webhook Settings UI Tests', () => {
       const hmacRes = await request.post(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/webhook/config/${folderId}`,
         {
-          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json', ...REST_CSRF },
           data: {
             url: 'https://example.com/hmac-webhook',
             events: ['created', 'content_updated'],
@@ -472,7 +473,7 @@ test.describe('Webhook Settings UI Tests', () => {
       // Verify HMAC config
       const getRes = await request.get(
         `${BASE_URL}/core/rest/repo/${REPOSITORY_ID}/webhook/config/${folderId}`,
-        { headers: { 'Authorization': AUTH_HEADER } }
+        { headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF } }
       );
       const getData = await getRes.json();
       expect(getData.webhookConfigs.length).toBe(1);
@@ -482,7 +483,7 @@ test.describe('Webhook Settings UI Tests', () => {
 
     } finally {
       await request.post(`${BASE_URL}/core/browser/${REPOSITORY_ID}`, {
-        headers: { 'Authorization': AUTH_HEADER },
+        headers: { 'Authorization': AUTH_HEADER, ...REST_CSRF },
         form: { 'cmisaction': 'deleteTree', 'objectId': folderId, 'allVersions': 'true', 'continueOnFailure': 'true' },
       });
     }

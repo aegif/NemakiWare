@@ -5,6 +5,8 @@
  * Supports optional repositoryId for repository-specific overrides.
  */
 
+import { parseJsonResponseBody } from './http/jsonFetch';
+
 export interface AuthConfig {
   oidcEnabled: boolean;
   samlEnabled: boolean;
@@ -73,16 +75,21 @@ export const fetchAuthConfig = async (repositoryId?: string): Promise<AuthConfig
       return getDefaultConfig();
     }
 
-    const data = await response.json();
+    let data: Record<string, unknown>;
+    try {
+      data = await parseJsonResponseBody(response, 'fetchAuthConfig');
+    } catch {
+      return getDefaultConfig();
+    }
 
     return {
       oidcEnabled: data.oidcEnabled === true,
       samlEnabled: data.samlEnabled === true,
       googleEnabled: data.googleEnabled === true,
       microsoftEnabled: data.microsoftEnabled === true,
-      samlSsoUrl: data.samlSsoUrl || undefined,
-      samlSpEntityId: data.samlSpEntityId || undefined,
-      samlSloUrl: data.samlSloUrl || undefined,
+      samlSsoUrl: (data.samlSsoUrl as string) || undefined,
+      samlSpEntityId: (data.samlSpEntityId as string) || undefined,
+      samlSloUrl: (data.samlSloUrl as string) || undefined,
     };
   } catch (error) {
     console.warn('Error fetching auth config:', error);

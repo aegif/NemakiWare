@@ -17,6 +17,7 @@ import * as zlib from 'zlib';
 
 const BASE_URL = 'http://localhost:8080';
 const AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+const REST_CSRF = { 'X-Requested-With': 'XMLHttpRequest' as const };
 const BROWSER_URL = `${BASE_URL}/core/browser/bedroom`;
 const REST_URL = `${BASE_URL}/core/rest/repo/bedroom`;
 const TIMEOUT = 30000;
@@ -180,7 +181,7 @@ async function exportFolder(request: any, folderId: string): Promise<Buffer> {
 
 async function importZip(request: any, targetFolderId: string, zipBuffer: Buffer): Promise<any> {
   const res = await request.post(`${REST_URL}/importexport/import/${targetFolderId}`, {
-    headers: { Authorization: AUTH_HEADER },
+    headers: { Authorization: AUTH_HEADER, ...REST_CSRF },
     multipart: {
       file: { name: 'export.zip', mimeType: 'application/zip', buffer: zipBuffer },
     },
@@ -220,7 +221,7 @@ async function deleteObject(request: any, objectId: string): Promise<void> {
 async function deleteCustomType(request: any, typeId: string): Promise<void> {
   try {
     await request.delete(`${REST_URL}/type/delete/${typeId}`, {
-      headers: { Authorization: AUTH_HEADER },
+      headers: { Authorization: AUTH_HEADER, ...REST_CSRF },
       timeout: TIMEOUT,
     });
   } catch (e) {
@@ -230,7 +231,7 @@ async function deleteCustomType(request: any, typeId: string): Promise<void> {
 
 async function createCustomDocType(request: any): Promise<void> {
   const res = await request.post(`${REST_URL}/type/create`, {
-    headers: { Authorization: AUTH_HEADER, 'Content-Type': 'application/json' },
+    headers: { Authorization: AUTH_HEADER, 'Content-Type': 'application/json', ...REST_CSRF },
     data: {
       id: CUSTOM_DOC_TYPE,
       localName: CUSTOM_DOC_TYPE,
@@ -263,7 +264,7 @@ async function createCustomDocType(request: any): Promise<void> {
 
 async function createCustomRelType(request: any): Promise<void> {
   const res = await request.post(`${REST_URL}/type/create`, {
-    headers: { Authorization: AUTH_HEADER, 'Content-Type': 'application/json' },
+    headers: { Authorization: AUTH_HEADER, 'Content-Type': 'application/json', ...REST_CSRF },
     data: {
       id: CUSTOM_REL_TYPE,
       localName: CUSTOM_REL_TYPE,

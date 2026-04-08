@@ -147,6 +147,7 @@ test.describe('Server-Side Cascade Delete', () => {
         headers: {
           'Authorization': AUTH_HEADER,
           'Content-Type': 'application/x-www-form-urlencoded',
+          'X-Requested-With': 'XMLHttpRequest',
         },
         data: new URLSearchParams({ name: TEST_USER, password: TEST_USER_PASS }).toString(),
       });

@@ -276,6 +276,13 @@ public class WebhookResource extends ResourceBase {
         boolean status = true;
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
+
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            addErrMsg(errMsg, "csrf", csrfError);
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
         
         if (!checkAdmin(errMsg, request)) {
             result = makeResult(false, result, errMsg);
@@ -330,6 +337,13 @@ public class WebhookResource extends ResourceBase {
         boolean status = true;
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
+
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            addErrMsg(errMsg, "csrf", csrfError);
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
         
         if (!checkAdmin(errMsg, request)) {
             result = makeResult(false, result, errMsg);
@@ -466,6 +480,13 @@ public class WebhookResource extends ResourceBase {
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
 
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            addErrMsg(errMsg, "csrf", csrfError);
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
+
         try {
             ContentService cs = getContentService();
             WebhookService ws = getWebhookService();
@@ -560,6 +581,13 @@ public class WebhookResource extends ResourceBase {
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
 
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            addErrMsg(errMsg, "csrf", csrfError);
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
+
         try {
             ContentService cs = getContentService();
             WebhookService ws = getWebhookService();
@@ -648,6 +676,13 @@ public class WebhookResource extends ResourceBase {
         boolean status = true;
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
+
+        String csrfError = validateCsrfProtection(request);
+        if (csrfError != null) {
+            addErrMsg(errMsg, "csrf", csrfError);
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
 
         try {
             ContentService cs = getContentService();

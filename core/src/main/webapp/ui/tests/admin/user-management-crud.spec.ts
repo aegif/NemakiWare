@@ -295,7 +295,10 @@ test.describe('User Management CRUD Operations', () => {
       await page.request.post(
         `http://localhost:8080/core/rest/repo/bedroom/user/create`,
         {
-          headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}` },
+          headers: {
+            'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`,
+            'X-Requested-With': 'XMLHttpRequest',
+          },
           form: { 'id': testUsername, 'name': `${testUsername}_display`, 'firstName': 'Test', 'lastName': 'User', 'email': testUserEmail, 'password': 'TestPassword123!' }
         }
       ).catch(() => console.log('API create user fallback - may already exist'));
@@ -475,7 +478,10 @@ test.describe('User Management CRUD Operations', () => {
       const deleteResponse = await page.request.delete(
         `http://localhost:8080/core/rest/repo/bedroom/user/delete/${testUsername}`,
         {
-          headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}` }
+          headers: {
+            'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`,
+            'X-Requested-With': 'XMLHttpRequest',
+          }
         }
       );
       console.log(`Delete test: API delete status: ${deleteResponse.status()}`);

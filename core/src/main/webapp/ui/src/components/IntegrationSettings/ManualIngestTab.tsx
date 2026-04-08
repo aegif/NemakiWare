@@ -3,6 +3,7 @@ import { Card, Form, Select, Input, Upload, Button, Alert, Space, Typography, Ap
 import { UploadOutlined, SendOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { AuthService } from '../../services/auth';
+import { parseJsonResponseBody } from '../../services/http/jsonFetch';
 import {
   ConnectorDefinition,
   ImportProfileDefinition,
@@ -144,7 +145,7 @@ export function ManualIngestTab({ repositoryId }: Props) {
 
       let body: IngestResult;
       try {
-        body = await res.json();
+        body = (await parseJsonResponseBody(res, 'manualIngest.execute')) as unknown as IngestResult;
       } catch {
         setResult({ errors: [`HTTP ${res.status}: ${res.statusText}`] });
         message.error(t('manualIngest.error'));

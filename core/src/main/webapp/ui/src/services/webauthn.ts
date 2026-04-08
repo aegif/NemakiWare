@@ -3,6 +3,9 @@
  * Handles Base64url encoding/decoding and WebAuthn API calls.
  */
 
+import { parseJsonResponseBody } from './http/jsonFetch';
+import { getResourceBaseErrorMessage, isResourceBaseSuccess } from './http/restResult';
+
 // Base64url encode/decode utilities
 function base64urlEncode(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -35,19 +38,6 @@ export interface PasskeyCredential {
   transports: string[] | null;
 }
 
-/**
- * Extract error message from server response.
- * Server format: { status: "failure", error: [{"key": "message"}] }
- */
-function extractServerError(data: any, fallback: string): string {
-  const errArr = data.error || data.errMsg;
-  if (Array.isArray(errArr) && errArr.length > 0 && typeof errArr[0] === 'object') {
-    const firstValue = Object.values(errArr[0])[0];
-    if (typeof firstValue === 'string') return firstValue;
-  }
-  return fallback;
-}
-
 export class WebAuthnService {
   private baseUrl: string;
 
@@ -69,13 +59,14 @@ export class WebAuthnService {
     const res = await fetch(`${this.baseUrl}/core/rest/repo/${repositoryId}/webauthn/register/begin`, {
       method: 'POST',
       credentials: 'include',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
     });
-    const data = await res.json();
-    if (data.status !== 'success') {
-      throw new Error(extractServerError(data, 'Registration begin failed'));
+    const data = (await parseJsonResponseBody(res, 'webauthn.registerBegin')) as Record<string, unknown>;
+    if (!isResourceBaseSuccess(data)) {
+      throw new Error(getResourceBaseErrorMessage(data, 'Registration begin failed'));
     }
 
-    const options = data.options;
+    const options = data.options as Record<string, any>;
 
     // Convert Base64url fields to ArrayBuffer for WebAuthn API
     options.challenge = base64urlDecode(options.challenge);
@@ -106,7 +97,7 @@ export class WebAuthnService {
       }
     }
 
-    return options;
+    return options as unknown as PublicKeyCredentialCreationOptions;
   }
 
   /**
@@ -134,17 +125,17 @@ export class WebAuthnService {
     const res = await fetch(`${this.baseUrl}/core/rest/repo/${repositoryId}/webauthn/register/complete`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       body: JSON.stringify({
         credential: credentialData,
         displayName: displayName || undefined,
       }),
     });
-    const data = await res.json();
-    if (data.status !== 'success') {
-      throw new Error(extractServerError(data, 'Registration complete failed'));
+    const data = (await parseJsonResponseBody(res, 'webauthn.registerComplete')) as Record<string, unknown>;
+    if (!isResourceBaseSuccess(data)) {
+      throw new Error(getResourceBaseErrorMessage(data, 'Registration complete failed'));
     }
-    return { credentialId: data.credentialId, displayName: data.displayName };
+    return { credentialId: data.credentialId as string, displayName: data.displayName as string };
   }
 
   /**
@@ -154,13 +145,14 @@ export class WebAuthnService {
     const res = await fetch(`${this.baseUrl}/core/rest/repo/${repositoryId}/webauthn/authenticate/begin`, {
       method: 'POST',
       credentials: 'include',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
     });
-    const data = await res.json();
-    if (data.status !== 'success') {
-      throw new Error(extractServerError(data, 'Authentication begin failed'));
+    const data = (await parseJsonResponseBody(res, 'webauthn.authenticateBegin')) as Record<string, unknown>;
+    if (!isResourceBaseSuccess(data)) {
+      throw new Error(getResourceBaseErrorMessage(data, 'Authentication begin failed'));
     }
 
-    const options = data.options;
+    const options = data.options as Record<string, any>;
 
     // Convert Base64url fields to ArrayBuffer for WebAuthn API
     options.challenge = base64urlDecode(options.challenge);
@@ -186,7 +178,7 @@ export class WebAuthnService {
       }
     }
 
-    return options;
+    return options as unknown as PublicKeyCredentialRequestOptions;
   }
 
   /**
@@ -221,14 +213,19 @@ export class WebAuthnService {
     const res = await fetch(`${this.baseUrl}/core/rest/repo/${repositoryId}/webauthn/authenticate/complete`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       body: JSON.stringify({ credential: credentialData }),
     });
-    const data = await res.json();
-    if (data.status !== 'success') {
-      throw new Error(extractServerError(data, 'Authentication failed'));
+    const data = (await parseJsonResponseBody(res, 'webauthn.authenticateComplete')) as Record<string, unknown>;
+    if (!isResourceBaseSuccess(data)) {
+      throw new Error(getResourceBaseErrorMessage(data, 'Authentication failed'));
     }
-    return data.value;
+    return data.value as {
+      userName: string;
+      token: string;
+      expiration: number;
+      repositoryId: string;
+    };
   }
 
   /**
@@ -239,11 +236,11 @@ export class WebAuthnService {
       method: 'GET',
       credentials: 'include',
     });
-    const data = await res.json();
-    if (data.status !== 'success') {
-      throw new Error(extractServerError(data, 'Failed to list credentials'));
+    const data = (await parseJsonResponseBody(res, 'webauthn.listCredentials')) as Record<string, unknown>;
+    if (!isResourceBaseSuccess(data)) {
+      throw new Error(getResourceBaseErrorMessage(data, 'Failed to list credentials'));
     }
-    return data.credentials || [];
+    return (data.credentials as PasskeyCredential[]) || [];
   }
 
   /**
@@ -253,10 +250,11 @@ export class WebAuthnService {
     const res = await fetch(`${this.baseUrl}/core/rest/repo/${repositoryId}/webauthn/credentials/${id}`, {
       method: 'DELETE',
       credentials: 'include',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
     });
-    const data = await res.json();
-    if (data.status !== 'success') {
-      throw new Error(extractServerError(data, 'Failed to delete credential'));
+    const data = (await parseJsonResponseBody(res, 'webauthn.deleteCredential')) as Record<string, unknown>;
+    if (!isResourceBaseSuccess(data)) {
+      throw new Error(getResourceBaseErrorMessage(data, 'Failed to delete credential'));
     }
   }
 }

@@ -70,6 +70,13 @@ public class DirectorySyncResource extends ResourceBase {
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
 
+        String csrfError = validateCsrfProtection(httpRequest);
+        if (csrfError != null) {
+            addErrMsg(errMsg, "csrf", csrfError);
+            result = makeResult(false, result, errMsg);
+            return result.toString();
+        }
+
         if (!checkAdminAuthorization(httpRequest, errMsg)) {
             status = false;
             result = makeResult(status, result, errMsg);

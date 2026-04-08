@@ -299,6 +299,13 @@ public class TypeResource extends ResourceBase {
 	public Response create(@PathParam("repositoryId") String repositoryId, String jsonInput,
 			@Context HttpServletRequest httpRequest) {
 		log.info("TypeResource.create() called for repository: " + repositoryId);
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("status", "error");
+			errorResult.put("message", "CSRF validation failed: " + csrfError);
+			return Response.status(Response.Status.FORBIDDEN).entity(errorResult.toJSONString()).build();
+		}
 
 		// Admin check
 		JSONArray adminErrMsg = new JSONArray();
@@ -422,6 +429,13 @@ public class TypeResource extends ResourceBase {
 			@Context HttpServletRequest httpRequest) {
 		log.info("TypeResource.update() called for repository: " + repositoryId + ", typeId: " + typeId);
 		log.warn("NOTE: Type update is a NemakiWare-specific operation that goes beyond CMIS standard compliance");
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("status", "error");
+			errorResult.put("message", "CSRF validation failed: " + csrfError);
+			return Response.status(Response.Status.FORBIDDEN).entity(errorResult.toJSONString()).build();
+		}
 
 		// Admin check
 		JSONArray adminErrMsg = new JSONArray();
@@ -521,6 +535,13 @@ public class TypeResource extends ResourceBase {
 			@Context HttpServletRequest httpRequest) {
 		log.info("TypeResource.delete() called for repository: " + repositoryId + ", typeId: " + typeId);
 		log.warn("NOTE: Type deletion is a NemakiWare-specific operation that goes beyond CMIS standard compliance");
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("status", "error");
+			errorResult.put("message", "CSRF validation failed: " + csrfError);
+			return Response.status(Response.Status.FORBIDDEN).entity(errorResult.toJSONString()).build();
+		}
 
 		// Admin check
 		JSONArray adminErrMsg = new JSONArray();
@@ -860,6 +881,12 @@ public class TypeResource extends ResourceBase {
 
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
 
 		// Admin check
 		if (!checkAdmin(errMsg, httpRequest)) {
@@ -935,6 +962,12 @@ public class TypeResource extends ResourceBase {
 
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
 
 		// Admin check
 		if (!checkAdmin(errMsg, httpRequest)) {
@@ -1008,6 +1041,12 @@ public class TypeResource extends ResourceBase {
 			@Context HttpServletRequest httpRequest) {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
 
 		// Admin check
 		if (!checkAdmin(errMsg, httpRequest)) {

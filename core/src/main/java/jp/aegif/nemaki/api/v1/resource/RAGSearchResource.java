@@ -253,7 +253,7 @@ public class RAGSearchResource {
             // Admin simulation: allow admins to search as another user
             if (request.getSimulateAsUserId() != null && !request.getSimulateAsUserId().trim().isEmpty()) {
                 UserItem currentUser = contentService.getUserItemById(repositoryId, context.getUsername());
-                if (currentUser == null || !currentUser.isAdmin()) {
+                if (currentUser == null || !Boolean.TRUE.equals(currentUser.isAdmin())) {
                     throw ApiException.permissionDenied("Only administrators can simulate search as another user");
                 }
                 String targetUserId = request.getSimulateAsUserId().trim();

@@ -160,7 +160,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         await page.request.post(
           `http://localhost:8080/core/rest/repo/bedroom/group/create/${testGroupId}`,
           {
-            headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}` },
+            headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`, 'X-Requested-With': 'XMLHttpRequest' },
             form: { name: 'Test Hierarchy Group', userMembers: 'admin' }
           }
         );
@@ -241,7 +241,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         await page.request.post(
           `http://localhost:8080/core/rest/repo/bedroom/group/create/${testGroupId}`,
           {
-            headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}` },
+            headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`, 'X-Requested-With': 'XMLHttpRequest' },
             form: { name: 'Test Hierarchy Group', groupMembers: firstGroupId.trim() }
           }
         );
@@ -436,7 +436,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         await page.request.post(
           `http://localhost:8080/core/rest/repo/bedroom/group/create/${groupAId}`,
           {
-            headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}` },
+            headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`, 'X-Requested-With': 'XMLHttpRequest' },
             form: { name: 'Test Circular Group A' }
           }
         );
@@ -516,7 +516,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         await page.request.post(
           `http://localhost:8080/core/rest/repo/bedroom/group/create/${groupBId}`,
           {
-            headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}` },
+            headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`, 'X-Requested-With': 'XMLHttpRequest' },
             form: { name: 'Test Circular Group B', groupMembers: groupAId }
           }
         );

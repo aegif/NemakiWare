@@ -326,6 +326,11 @@ public class ArchiveResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		String username = getCallContextUsername(httpRequest);
 		if (username == null) {
@@ -374,6 +379,11 @@ public class ArchiveResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		// Admin check
 		status = checkAdmin(errMsg, httpRequest);
@@ -695,6 +705,11 @@ public class ArchiveResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		status = checkAdmin(errMsg, httpRequest);
 		if (!status) {
@@ -760,6 +775,11 @@ public class ArchiveResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		String csrfError = validateCsrfProtection(httpRequest);
+		if (csrfError != null) {
+			addErrMsg(errMsg, "csrf", csrfError);
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
 		status = checkAdmin(errMsg, httpRequest);
 		if (!status) {

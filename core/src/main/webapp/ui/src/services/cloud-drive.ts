@@ -2,6 +2,9 @@
  * Cloud Drive Service for pushing/pulling documents to/from Google Drive and OneDrive.
  */
 
+import { parseJsonResponseBody } from './http/jsonFetch';
+import { getResourceBaseErrorMessage, isResourceBaseSuccess } from './http/restResult';
+
 /** Google Drive file metadata */
 export interface GoogleDriveFile {
   id: string;
@@ -39,19 +42,10 @@ export interface CloudDriveUrlResult {
   cloudFileId: string;
 }
 
-/**
- * Extract error message from NemakiWare REST API error array.
- * The server returns errors as [{key: "message"}, ...] objects via addErrMsg().
- */
-function extractErrorMessage(error: unknown[], fallback: string): string {
-  if (!error || error.length === 0) return fallback;
-  const first = error[0];
-  if (typeof first === 'string') return first;
-  if (typeof first === 'object' && first !== null) {
-    const values = Object.values(first);
-    if (values.length > 0 && typeof values[0] === 'string') return values[0];
-  }
-  return fallback;
+/** NemakiWare `error` array → readable string (same rules as ResourceBase). */
+function extractErrorMessage(error: unknown, fallback: string): string {
+  const arr = Array.isArray(error) ? error : [];
+  return getResourceBaseErrorMessage({ status: 'failure', error: arr }, fallback);
 }
 
 /**
@@ -65,16 +59,16 @@ export async function pushToCloud(
 ): Promise<CloudDrivePushResult> {
   const response = await fetch(`/core/rest/repo/${repositoryId}/cloud-drive/push/${objectId}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     body: JSON.stringify({ provider, accessToken }),
   });
 
-  const result = await response.json();
+  const result = await parseJsonResponseBody(response, 'pushToCloud');
   // Server returns status: "success" | "failure" (string), and error: [...] array
-  if (result.status !== 'success') {
-    throw new Error(extractErrorMessage(result.error, 'Failed to push to cloud'));
+  if (!isResourceBaseSuccess(result)) {
+    throw new Error(extractErrorMessage(result.error as unknown[], 'Failed to push to cloud'));
   }
-  return result;
+  return result as unknown as CloudDrivePushResult;
 }
 
 /**
@@ -89,15 +83,15 @@ export async function pushToCloudForceNew(
 ): Promise<CloudDrivePushResult> {
   const response = await fetch(`/core/rest/repo/${repositoryId}/cloud-drive/push/${objectId}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     body: JSON.stringify({ provider, accessToken, forceNew: true }),
   });
 
-  const result = await response.json();
-  if (result.status !== 'success') {
-    throw new Error(extractErrorMessage(result.error, 'Failed to push to cloud'));
+  const result = await parseJsonResponseBody(response, 'pushToCloudForceNew');
+  if (!isResourceBaseSuccess(result)) {
+    throw new Error(extractErrorMessage(result.error as unknown[], 'Failed to push to cloud'));
   }
-  return result;
+  return result as unknown as CloudDrivePushResult;
 }
 
 /**
@@ -113,9 +107,9 @@ export async function unlinkCloud(
     headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
   });
 
-  const result = await response.json();
-  if (result.status !== 'success') {
-    throw new Error(extractErrorMessage(result.error, 'Failed to unlink from cloud'));
+  const result = await parseJsonResponseBody(response, 'unlinkCloud');
+  if (!isResourceBaseSuccess(result)) {
+    throw new Error(extractErrorMessage(result.error as unknown[], 'Failed to unlink from cloud'));
   }
 }
 
@@ -131,16 +125,16 @@ export async function pullFromCloud(
 ): Promise<CloudDrivePullResult> {
   const response = await fetch(`/core/rest/repo/${repositoryId}/cloud-drive/pull/${objectId}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     body: JSON.stringify({ provider, accessToken, cloudFileId }),
   });
 
-  const result = await response.json();
+  const result = await parseJsonResponseBody(response, 'pullFromCloud');
   // Server returns status: "success" | "failure" (string), and error: [...] array
-  if (result.status !== 'success') {
-    throw new Error(extractErrorMessage(result.error, 'Failed to pull from cloud'));
+  if (!isResourceBaseSuccess(result)) {
+    throw new Error(extractErrorMessage(result.error as unknown[], 'Failed to pull from cloud'));
   }
-  return result;
+  return result as unknown as CloudDrivePullResult;
 }
 
 /**
@@ -151,12 +145,17 @@ export async function getCloudUrl(
   objectId: string
 ): Promise<CloudDriveUrlResult | null> {
   const response = await fetch(`/core/rest/repo/${repositoryId}/cloud-drive/url/${objectId}`);
-  const result = await response.json();
-  // Server returns status: "success" | "failure" (string)
-  if (result.status !== 'success') {
+  let result: Record<string, unknown>;
+  try {
+    result = await parseJsonResponseBody(response, 'getCloudUrl');
+  } catch {
     return null;
   }
-  return result;
+  // Server returns status: "success" | "failure" (string)
+  if (!isResourceBaseSuccess(result)) {
+    return null;
+  }
+  return result as unknown as CloudDriveUrlResult;
 }
 
 /**
@@ -176,8 +175,8 @@ export async function resolveOneDriveWebUrl(cloudFileId: string, accessToken: st
       console.warn('[CloudDrive] Failed to resolve OneDrive webUrl:', response.status);
       return null;
     }
-    const data = await response.json();
-    return data.webUrl || null;
+    const data = await parseJsonResponseBody(response, 'resolveOneDriveWebUrl');
+    return (typeof data.webUrl === 'string' ? data.webUrl : null) || null;
   } catch (e) {
     console.warn('[CloudDrive] Error resolving OneDrive webUrl:', e);
     return null;
@@ -371,12 +370,14 @@ export async function listGoogleDriveFiles(accessToken: string): Promise<GoogleD
     }
   );
 
+  const data = await parseJsonResponseBody(response, 'listGoogleDriveFiles');
   if (!response.ok) {
-    throw new Error(`Failed to list Google Drive files: ${response.status}`);
+    const errObj = data.error as { message?: string } | undefined;
+    const detail = errObj?.message || `HTTP ${response.status}`;
+    throw new Error(`Failed to list Google Drive files: ${detail}`);
   }
 
-  const data = await response.json();
-  return data.files || [];
+  return (data.files as GoogleDriveFile[]) || [];
 }
 
 /**
@@ -396,14 +397,17 @@ export async function listOneDriveFiles(accessToken: string): Promise<OneDriveFi
     }
   );
 
+  const data = await parseJsonResponseBody(response, 'listOneDriveFiles');
   if (!response.ok) {
-    throw new Error(`Failed to list OneDrive files: ${response.status}`);
+    const errObj = data.error as { message?: string } | undefined;
+    const detail = errObj?.message || `HTTP ${response.status}`;
+    throw new Error(`Failed to list OneDrive files: ${detail}`);
   }
 
-  const data = await response.json();
   // Filter out folders (items without 'file' property) on client side
   // Microsoft Graph API doesn't support "$filter=file ne null" syntax
-  return (data.value || [])
+  const items = Array.isArray(data.value) ? data.value : [];
+  return items
     .filter((item: any) => item.file)
     .map((item: any) => ({
       id: item.id,
@@ -481,7 +485,7 @@ export async function importFromGoogleDrive(
 
   // Authentication is handled by HttpOnly cookie (nemaki_auth_token)
   // which is automatically sent by the browser for same-origin requests.
-  const authHeaders: Record<string, string> = {};
+  const authHeaders: Record<string, string> = { 'X-Requested-With': 'XMLHttpRequest' };
 
   // Upload to NemakiWare using REST API (handles secondary type and comments)
   const formData = new FormData();
@@ -502,19 +506,19 @@ export async function importFromGoogleDrive(
   });
 
   console.log('[CloudDrive] Upload response status:', uploadResponse.status);
-  const result = await uploadResponse.json();
+  const result = await parseJsonResponseBody(uploadResponse, 'importFromGoogleDrive');
   console.log('[CloudDrive] Upload result:', result);
 
   // Server returns status: "success" | "failure" (string), and error: [...] array
-  if (result.status !== 'success') {
-    const errorMsg = extractErrorMessage(result.error, 'Failed to import from Google Drive');
+  if (!isResourceBaseSuccess(result)) {
+    const errorMsg = extractErrorMessage(result.error as unknown[], 'Failed to import from Google Drive');
     console.error('[CloudDrive] Import failed:', errorMsg, result.error);
     throw new Error(errorMsg);
   }
 
   return {
-    objectId: result.objectId,
-    name: result.name || fileName,
+    objectId: result.objectId as string,
+    name: (result.name as string) || fileName,
   };
 }
 
@@ -528,6 +532,12 @@ export async function importFromOneDrive(
   file: OneDriveFile,
   accessToken: string
 ): Promise<{ objectId: string; name: string }> {
+  // Prefer list payload webUrl; if missing, resolve so canonical import / metadata get a valid org URL
+  let webUrlForMetadata = file.webUrl;
+  if (!webUrlForMetadata) {
+    webUrlForMetadata = (await resolveOneDriveWebUrl(file.id, accessToken)) ?? undefined;
+  }
+
   // Download file content from OneDrive
   const downloadResponse = await fetch(
     `https://graph.microsoft.com/v1.0/me/drive/items/${file.id}/content`,
@@ -555,7 +565,7 @@ export async function importFromOneDrive(
 
   // Authentication is handled by HttpOnly cookie (nemaki_auth_token)
   // which is automatically sent by the browser for same-origin requests.
-  const authHeaders: Record<string, string> = {};
+  const authHeaders: Record<string, string> = { 'X-Requested-With': 'XMLHttpRequest' };
 
   // Upload to NemakiWare using REST API (handles secondary type and comments)
   const formData = new FormData();
@@ -566,8 +576,8 @@ export async function importFromOneDrive(
   formData.append('fileName', file.name);
   // Send the Graph API webUrl for the cloud file so it can be stored in metadata
   // (the server-side fallback URL only works for personal OneDrive, not org accounts)
-  if (file.webUrl) {
-    formData.append('cloudFileUrl', file.webUrl);
+  if (webUrlForMetadata) {
+    formData.append('cloudFileUrl', webUrlForMetadata);
   }
 
   const uploadResponse = await fetch(`/core/rest/repo/${repositoryId}/cloud-drive/import/${folderId}`, {
@@ -576,17 +586,17 @@ export async function importFromOneDrive(
     body: formData,
   });
 
-  const result = await uploadResponse.json();
+  const result = await parseJsonResponseBody(uploadResponse, 'importFromOneDrive');
 
   // Server returns status: "success" | "failure" (string), and error: [...] array
-  if (result.status !== 'success') {
-    const errorMsg = extractErrorMessage(result.error, 'Failed to import from OneDrive');
+  if (!isResourceBaseSuccess(result)) {
+    const errorMsg = extractErrorMessage(result.error as unknown[], 'Failed to import from OneDrive');
     console.error('[CloudDrive] Import failed:', errorMsg, result.error);
     throw new Error(errorMsg);
   }
 
   return {
-    objectId: result.objectId,
-    name: result.name || file.name,
+    objectId: result.objectId as string,
+    name: (result.name as string) || file.name,
   };
 }
