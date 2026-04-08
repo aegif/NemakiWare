@@ -1280,7 +1280,9 @@ public class IngestSchedulerService {
 
             // Detect potential message loss: if we have a checkpoint and the oldest
             // returned message is newer than checkpoint+1, messages may have been lost
-            // (Chatwork API returns only the latest 100 messages)
+            // (Chatwork API returns only the latest 100 messages).
+            // Fail closed: do not import newer messages or advance the checkpoint in this run —
+            // otherwise the gap becomes permanent. Operator must repair checkpoint or replay.
             if (lastMsgIdNum > 0 && !messages.isEmpty()) {
                 long oldestReturnedId = 0;
                 try { oldestReturnedId = Long.parseLong(messages.get(0).messageId()); }
@@ -1291,6 +1293,7 @@ public class IngestSchedulerService {
                             + ". Messages between these IDs may have been lost (Chatwork API limit: 100).";
                     logger.warn(gap);
                     errors.add(gap);
+                    return new FetchResult(messages.size(), 0, 0, errors);
                 }
             }
 

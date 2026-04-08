@@ -29,6 +29,12 @@ class CloudDriveResourceCloudUrlTest {
     }
 
     @Test
+    void googleRejectsUnrelatedGoogleHosts() {
+        assertFalse(CloudDriveResource.isAllowedCloudUrl("google", "https://mail.google.com/mail/u/0/#inbox"));
+        assertFalse(CloudDriveResource.isAllowedCloudUrl("google", "https://www.google.com/search?q=drive"));
+    }
+
+    @Test
     void microsoftAllowsCommonGraphWebUrlHosts() {
         assertTrue(CloudDriveResource.isAllowedCloudUrl("microsoft",
                 "https://contoso-my.sharepoint.com/personal/user/Documents/a.docx"));
@@ -43,6 +49,32 @@ class CloudDriveResourceCloudUrlTest {
     @Test
     void microsoftRejectsArbitraryHttps() {
         assertFalse(CloudDriveResource.isAllowedCloudUrl("microsoft", "https://attacker.example.com/"));
+    }
+
+    @Test
+    void microsoftRejectsGenericMicrosoftOrOfficeMarketingHosts() {
+        assertFalse(CloudDriveResource.isAllowedCloudUrl("microsoft", "https://www.microsoft.com/en-us/microsoft-365"));
+        assertFalse(CloudDriveResource.isAllowedCloudUrl("microsoft", "https://www.office.com/"));
+    }
+
+    @Test
+    void microsoftRejectsSharePointSiteAndListPagesWithoutFile() {
+        assertFalse(CloudDriveResource.isAllowedCloudUrl("microsoft",
+                "https://contoso.sharepoint.com/sites/ProjectTeam"));
+        assertFalse(CloudDriveResource.isAllowedCloudUrl("microsoft",
+                "https://contoso.sharepoint.com/sites/ProjectTeam/Shared%20Documents/Forms/AllItems.aspx"));
+        assertFalse(CloudDriveResource.isAllowedCloudUrl("microsoft",
+                "https://contoso.sharepoint.com/sites/ProjectTeam/SitePages/Home.aspx"));
+        assertFalse(CloudDriveResource.isAllowedCloudUrl("microsoft",
+                "https://contoso-my.sharepoint.com/personal/user_domain/"));
+    }
+
+    @Test
+    void isLikelySharePointFileOrOpenUrl_acceptsSharingTokensAndFiles() {
+        assertTrue(CloudDriveResource.isLikelySharePointFileOrOpenUrl(
+                "/:x:/g/team/file/abc", null));
+        assertTrue(CloudDriveResource.isLikelySharePointFileOrOpenUrl(
+                "/sites/T/Shared%20Documents/report.docx", null));
     }
 
     @Test

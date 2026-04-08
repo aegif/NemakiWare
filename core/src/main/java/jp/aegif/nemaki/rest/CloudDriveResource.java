@@ -36,7 +36,10 @@ import jp.aegif.nemaki.rest.ingest.ExternalIngestResult;
 import jp.aegif.nemaki.rest.ingest.SourceArchetype;
 import java.io.InputStream;
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * REST API for Cloud Drive integration (Google Drive / OneDrive).
@@ -119,22 +122,148 @@ public class CloudDriveResource extends ResourceBase {
 			if (!"https".equalsIgnoreCase(scheme)) return false;
 			String host = uri.getHost();
 			if (host == null) return false;
-			host = host.toLowerCase();
+			host = host.toLowerCase(Locale.ROOT);
 			if ("google".equals(provider)) {
-				return host.endsWith(".google.com") || host.equals("google.com");
+				return isAllowedGoogleDriveDocumentUrl(host, uri);
 			} else if ("microsoft".equals(provider)) {
-				// Personal OneDrive, M365 / Entra, SharePoint Online (incl. DE cloud), Teams file links
-				return host.endsWith(".live.com") || host.endsWith(".sharepoint.com")
-					|| host.endsWith(".sharepoint.de")
-					|| host.endsWith(".office.com") || host.endsWith(".microsoft.com")
-					|| host.endsWith(".officeapps.live.com")
-					|| host.endsWith(".teams.microsoft.com")
-					|| host.endsWith(".onedrive.com");
+				return isAllowedMicrosoftCloudDocumentUrl(host, uri);
 			}
 			return false;
 		} catch (Exception e) {
 			return false;
 		}
+	}
+
+	/**
+	 * Allow only HTTPS URLs that point at a specific Drive/Docs file or open dialog — not arbitrary *.google.com pages.
+	 */
+	static boolean isAllowedGoogleDriveDocumentUrl(String host, java.net.URI uri) {
+		String path = uri.getPath() != null ? uri.getPath() : "";
+		if ("docs.google.com".equals(host)) {
+			return path.matches("/(document|spreadsheets|presentation|drawings|forms)/d/[^/]+(/.*)?");
+		}
+		if ("drive.google.com".equals(host)) {
+			if (path.startsWith("/file/d/")) {
+				return true;
+			}
+			if ("/open".equals(path) || path.startsWith("/open/")) {
+				String q = uri.getQuery();
+				return q != null && q.contains("id=");
+			}
+			return false;
+		}
+		return false;
+	}
+
+	/**
+	 * Allow file-like cloud URLs for Microsoft (SharePoint/Teams/OneDrive/Office Online) — not generic *.microsoft.com sites.
+	 * SharePoint site home, list views, and folder browsers are rejected (no file-shaped path or open query).
+	 */
+	static boolean isAllowedMicrosoftCloudDocumentUrl(String host, java.net.URI uri) {
+		String path = uri.getPath() != null ? uri.getPath() : "";
+		String query = uri.getQuery();
+
+		if (host.endsWith(".sharepoint.com") || host.endsWith(".sharepoint.de")) {
+			return isLikelySharePointFileOrOpenUrl(path, query);
+		}
+		if ("teams.microsoft.com".equals(host) || host.endsWith(".teams.microsoft.com")) {
+			// File tab deep links; /l/channel/ etc. are not document URLs
+			return path.startsWith("/l/file/");
+		}
+		if ("onedrive.live.com".equals(host)) {
+			return path.contains("/edit") || (query != null && query.contains("id="));
+		}
+		if (host.endsWith(".officeapps.live.com")) {
+			return path.contains("/we/") || path.contains("/op/") || path.contains("/wv/") || path.endsWith(".aspx");
+		}
+		if (host.endsWith(".onedrive.com")) {
+			if (query != null && (query.contains("id=") || query.contains("resid="))) {
+				return true;
+			}
+			String last = lastDecodedPathSegment(path);
+			return last != null && isOfficeLikeFileName(last);
+		}
+		return false;
+	}
+
+	/**
+	 * True for modern sharing links, WOPI/doc viewer, file GUID query, or a last path segment that looks like an office file.
+	 */
+	static boolean isLikelySharePointFileOrOpenUrl(String path, String query) {
+		if (path == null) {
+			path = "";
+		}
+		if (path.contains("/:f:/") || path.contains("/:x:/") || path.contains("/:w:/")
+				|| path.contains("/:u:/") || path.contains("/:p:/") || path.contains("/:h:/")) {
+			return true;
+		}
+		// Site chrome, lists, wiki — not a file deep link for cloud metadata
+		if (path.contains("/SitePages/") || path.contains("/Forms/") || path.contains("/_catalogs/")) {
+			return false;
+		}
+		if (path.contains("AllItems.aspx") || path.contains("Thumbnails.aspx")) {
+			return false;
+		}
+		String lowerPath = path.toLowerCase(Locale.ROOT);
+		if (lowerPath.contains("/_layouts/")) {
+			return lowerPath.contains("doc.aspx") || lowerPath.contains("doc2.aspx") || lowerPath.contains("wopiframe")
+					|| lowerPath.contains("download.aspx") || lowerPath.contains("wordframe.aspx")
+					|| lowerPath.contains("excelframe.aspx") || lowerPath.contains("powerpointframe.aspx");
+		}
+		if (hasSharePointFileQuery(query)) {
+			return true;
+		}
+		String last = lastDecodedPathSegment(path);
+		return last != null && isOfficeLikeFileName(last);
+	}
+
+	private static boolean hasSharePointFileQuery(String query) {
+		if (query == null || query.isBlank()) {
+			return false;
+		}
+		if (query.contains("sourcedoc=")) {
+			return true;
+		}
+		if (!query.contains("id=")) {
+			return false;
+		}
+		// File GUID in id= (raw or URL-encoded braces)
+		return query.contains("%7B") || query.contains("{")
+				|| query.matches("(?i).*id=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.*");
+	}
+
+	static String lastDecodedPathSegment(String path) {
+		if (path == null || path.isEmpty()) {
+			return null;
+		}
+		String trimmed = path;
+		while (trimmed.endsWith("/") && trimmed.length() > 1) {
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		}
+		int lastSlash = trimmed.lastIndexOf('/');
+		String raw = lastSlash < 0 ? trimmed : trimmed.substring(lastSlash + 1);
+		if (raw.isEmpty()) {
+			return null;
+		}
+		try {
+			return URLDecoder.decode(raw, StandardCharsets.UTF_8);
+		} catch (Exception e) {
+			return raw;
+		}
+	}
+
+	/**
+	 * File-like name (not .aspx site pages except already handled under _layouts).
+	 */
+	static boolean isOfficeLikeFileName(String name) {
+		if (name == null || name.isEmpty()) {
+			return false;
+		}
+		String lower = name.toLowerCase(Locale.ROOT);
+		if (lower.endsWith(".aspx") || lower.endsWith(".html") || lower.endsWith(".htm")) {
+			return false;
+		}
+		return name.matches("(?i).+\\.(docx?|xlsx?|pptx?|pdf|txt|csv|zip|msg|eml|rtf|odt|ods|md|png|jpe?g|gif|webp|mp4|m4v|mov|mp3|wav|aac|vsdx|dwg|one|ics|vcf|m4a|heic|tif|tiff|bmp|svg|json|xml|log|yaml|yml)$");
 	}
 
 	private CloudDriveService cloudDriveService;
