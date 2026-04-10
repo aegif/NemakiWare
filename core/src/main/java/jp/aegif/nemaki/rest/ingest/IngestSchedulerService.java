@@ -1278,16 +1278,21 @@ public class IngestSchedulerService {
 
             var messages = chatwork.getMessages(roomId, true);
 
-            // Detect potential message loss: if we have a checkpoint and the oldest
-            // returned message is newer than checkpoint+1, messages may have been lost
+            // Detect potential message loss: if we have a checkpoint and the oldest returned
+            // message in the latest-100 window is newer than checkpoint+1, messages may have been lost
             // (Chatwork API returns only the latest 100 messages).
             // Fail closed: do not import newer messages or advance the checkpoint in this run —
             // otherwise the gap becomes permanent. Operator must repair checkpoint or replay.
             if (lastMsgIdNum > 0 && !messages.isEmpty()) {
-                long oldestReturnedId = 0;
-                try { oldestReturnedId = Long.parseLong(messages.get(0).messageId()); }
-                catch (NumberFormatException e) { /* ignore */ }
-                if (oldestReturnedId > lastMsgIdNum + 1) {
+                long oldestReturnedId = Long.MAX_VALUE;
+                for (var m : messages) {
+                    if (m == null || m.messageId() == null) continue;
+                    try {
+                        long id = Long.parseLong(m.messageId());
+                        if (id > 0 && id < oldestReturnedId) oldestReturnedId = id;
+                    } catch (NumberFormatException ignored) { /* ignore */ }
+                }
+                if (oldestReturnedId != Long.MAX_VALUE && oldestReturnedId > lastMsgIdNum + 1) {
                     String gap = "Chatwork message gap detected for room " + roomId
                             + ": checkpoint=" + lastMsgIdNum + ", oldest returned=" + oldestReturnedId
                             + ". Messages between these IDs may have been lost (Chatwork API limit: 100).";

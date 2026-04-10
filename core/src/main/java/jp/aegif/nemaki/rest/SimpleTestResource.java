@@ -17,12 +17,7 @@ import org.springframework.web.context.support.WebApplicationContextUtils;
 @Path("/test")
 public class SimpleTestResource extends ResourceBase {
 
-	private boolean isAdmin(HttpServletRequest request) {
-		CallContext callContext = (CallContext) request.getAttribute("CallContext");
-		if (callContext == null) return false;
-		Boolean isAdmin = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
-		return isAdmin != null && isAdmin;
-	}
+	// isAdmin is inherited from ResourceBase
 	private static final Log log = LogFactory.getLog(SimpleTestResource.class);
 
     @GET

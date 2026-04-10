@@ -255,8 +255,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 			// Keep token-validation logs minimal and never output token material.
 			if (log.isDebugEnabled()) {
-				log.debug("Token validation for user={}, repository={}, app={}, expiresInSec={}",
-						userName, repositoryId, app, (expiration - currentTime) / 1000);
+				log.debug("Token validation for user=" + userName + ", repository=" + repositoryId
+						+ ", app=" + app + ", expiresInSec=" + ((expiration - currentTime) / 1000));
 			}
 
 			if (currentTime > expiration) {
@@ -266,8 +266,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 				String _registeredToken = registeredToken.getToken();
 				boolean isValid = StringUtils.isNotEmpty(_registeredToken) && _registeredToken.equals(token);
 				if (log.isDebugEnabled()) {
-					log.debug("Token validation result for user={} in repository={}: {}",
-							userName, repositoryId, isValid);
+					log.debug("Token validation result for user=" + userName
+							+ " in repository=" + repositoryId + ": " + isValid);
 				}
 				return isValid;
 			}
