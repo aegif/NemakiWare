@@ -639,4 +639,36 @@ class CanonicalImportServiceTest {
         assertTrue(result.isSuccess(), () -> String.valueOf(result.errors()));
         verify(connectorService).findBySystemAndArchetype("onedrive", SourceArchetype.FILE_SHARE);
     }
+
+    // ── ExternalIngestResult contract tests ──────────────────────
+
+    @Test
+    void testSkippedResultWithoutObjectId() {
+        ExternalIngestResult result = ExternalIngestResult.skipped("req-1", "already exists");
+        assertTrue(result.skipped());
+        assertNull(result.objectId());
+        assertEquals("already exists", result.skipReason());
+        assertTrue(result.isSuccess()); // no errors
+    }
+
+    @Test
+    void testSkippedResultWithExistingObjectId() {
+        ExternalIngestResult result = ExternalIngestResult.skipped("req-2", "obj-abc-123", "idempotent");
+        assertTrue(result.skipped());
+        assertEquals("obj-abc-123", result.objectId());
+        assertEquals("idempotent", result.skipReason());
+        assertTrue(result.isSuccess());
+    }
+
+    @Test
+    void testSkippedResultSerializesToJsonWithObjectId() throws Exception {
+        ExternalIngestResult result = ExternalIngestResult.skipped("req-3", "existing-id", "duplicate");
+
+        // Verify the record's accessor values are correct for JSON serialization
+        assertEquals("existing-id", result.objectId());
+        assertEquals("duplicate", result.skipReason());
+        assertTrue(result.skipped());
+        assertFalse(result.isNewVersion());
+        assertFalse(result.dryRun());
+    }
 }

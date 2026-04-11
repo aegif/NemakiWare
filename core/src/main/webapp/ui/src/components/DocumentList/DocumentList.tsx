@@ -227,7 +227,8 @@ import {
   Tag,
   Radio,
   Alert,
-  DatePicker
+  DatePicker,
+  notification
 } from 'antd';
 import {
   FileOutlined,
@@ -266,7 +267,8 @@ import {
   listGoogleDriveFiles,
   listOneDriveFiles,
   GoogleDriveFile,
-  OneDriveFile
+  OneDriveFile,
+  CloudImportResult
 } from '../../services/cloud-drive';
 import { formatServerDate } from '../../utils/dateUtils';
 
@@ -771,11 +773,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     setCloudImporting(true);
     try {
       let accessToken: string;
+      let importResult: CloudImportResult;
       if (cloudImportProvider === 'google') {
         const authData = localStorage.getItem('nemakiware_auth');
         const loginHint = authData ? JSON.parse(authData).username : undefined;
         accessToken = await getGoogleDriveAccessToken(cloudAuthConfig.googleClientId!, loginHint);
-        await importFromGoogleDrive(
+        importResult = await importFromGoogleDrive(
           repositoryId,
           selectedFolderId,
           selectedCloudFile as GoogleDriveFile,
@@ -786,7 +789,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
           cloudAuthConfig.microsoftClientId!,
           cloudAuthConfig.microsoftTenantId!
         );
-        await importFromOneDrive(
+        importResult = await importFromOneDrive(
           repositoryId,
           selectedFolderId,
           selectedCloudFile as OneDriveFile,
@@ -794,7 +797,29 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         );
       }
 
-      message.success(t('cloudDrive.importSuccess', { name: selectedCloudFile.name }));
+      if (importResult.skipped) {
+        const reason = importResult.skipReason || t('cloudDrive.skipReasonDefault');
+        if (importResult.existingObjectId) {
+          const existingId = importResult.existingObjectId;
+          notification.info({
+            message: t('cloudDrive.skippedTitle'),
+            description: t('cloudDrive.skippedWithLink', { name: selectedCloudFile.name, reason }),
+            btn: (
+              <Button type="link" size="small" onClick={() => {
+                navigate(`/documents/${existingId}`);
+                notification.destroy();
+              }}>
+                {t('cloudDrive.openExisting')}
+              </Button>
+            ),
+            duration: 8,
+          });
+        } else {
+          message.info(t('cloudDrive.skipped', { name: selectedCloudFile.name, reason }));
+        }
+      } else {
+        message.success(t('cloudDrive.importSuccess', { name: selectedCloudFile.name }));
+      }
       setCloudImportModalVisible(false);
       setSelectedCloudFile(null);
       await loadObjects();

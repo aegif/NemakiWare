@@ -216,8 +216,11 @@ public class ResourceBase {
 	 * Returns null when valid, otherwise an error key string.
 	 */
 	protected String validateCsrfProtection(HttpServletRequest request) {
-		// Explicit header-based authentication is not vulnerable to browser CSRF in the
-		// same way as ambient cookie auth, so keep legacy REST clients compatible.
+		// Non-Basic Authorization (Bearer, etc.), Auth-Token, and API-Key headers are
+		// set explicitly by application code, not auto-attached by browsers, so they
+		// are not ambient credentials and can safely bypass CSRF checks.  Basic auth
+		// is excluded: browsers cache and auto-send it, making it CSRF-relevant.
+		// Shell/Python clients using Basic auth must add X-Requested-With or Origin.
 		if (hasExplicitAuthHeaders(request)) {
 			return null;
 		}
@@ -237,6 +240,9 @@ public class ResourceBase {
 
 		String referer = request.getHeader("Referer");
 		if (referer != null && !referer.isEmpty()) {
+			if (scheme == null || serverHost == null) {
+				return "invalid referer";
+			}
 			try {
 				java.net.URI refererUri = new java.net.URI(referer);
 				String refererScheme = refererUri.getScheme();
@@ -304,7 +310,12 @@ public class ResourceBase {
 		String auth = request.getHeader("Authorization");
 		if (auth == null || auth.isEmpty()) return false;
 		String trimmed = auth.trim();
-		// Browser-managed Basic auth remains CSRF-relevant and must not bypass checks.
+		// Browsers cache HTTP Basic credentials per realm and attach
+		// "Authorization: Basic ..." automatically on subsequent requests to
+		// the same origin — even on cross-site form POSTs.  That makes Basic
+		// auth an ambient credential, just like cookies, so it must NOT bypass
+		// CSRF validation.  Non-Basic schemes (Bearer, etc.) are set
+		// explicitly by application code and are safe to bypass.
 		return !trimmed.regionMatches(true, 0, "Basic ", 0, 6);
 	}
 
@@ -313,121 +324,27 @@ public class ResourceBase {
 		return value != null && !value.isEmpty();
 	}
 
+	/**
+	 * Derive the expected origin (scheme + host + port) from the servlet request.
+	 *
+	 * <p><strong>Important:</strong> This method uses only the servlet API values
+	 * ({@code getScheme()}, {@code getServerName()}, {@code getServerPort()}).
+	 * It does <em>not</em> parse {@code X-Forwarded-*} or {@code Forwarded}
+	 * headers itself, because those headers can be spoofed by any direct client.
+	 * Instead, Tomcat's {@code RemoteIpValve} (configured in {@code server.xml})
+	 * transparently rewrites the servlet values when the request originates from
+	 * a trusted internal proxy, so the servlet API already reflects the correct
+	 * public-facing origin.</p>
+	 */
 	private OriginParts getEffectiveOriginFromRequest(HttpServletRequest request) {
 		String scheme = request.getScheme();
 		String host = request.getServerName();
 		int port = request.getServerPort();
 
-		// RFC 7239 Forwarded (highest priority)
-		String forwarded = request.getHeader("Forwarded");
-		if (forwarded != null && !forwarded.isEmpty()) {
-			OriginParts parsed = parseForwardedOrigin(forwarded);
-			if (parsed != null) {
-				return parsed;
-			}
-		}
-
-		// Legacy proxy headers
-		String xfProto = firstHeaderToken(request.getHeader("X-Forwarded-Proto"));
-		String xfHost = firstHeaderToken(request.getHeader("X-Forwarded-Host"));
-		String xfPort = firstHeaderToken(request.getHeader("X-Forwarded-Port"));
-
-		if (xfProto != null && !xfProto.isEmpty()) {
-			scheme = xfProto.trim().toLowerCase(Locale.ROOT);
-		}
-		if (xfHost != null && !xfHost.isEmpty()) {
-			String[] hostPort = splitHostPort(xfHost.trim());
-			host = hostPort[0];
-			if (hostPort[1] != null) {
-				try {
-					port = Integer.parseInt(hostPort[1]);
-				} catch (NumberFormatException ignored) {
-					// keep current port
-				}
-			}
-		}
-		if (xfPort != null && !xfPort.isEmpty()) {
-			try {
-				port = Integer.parseInt(xfPort.trim());
-			} catch (NumberFormatException ignored) {
-				// keep current port
-			}
-		}
-
 		return new OriginParts(
-				scheme != null ? scheme.trim() : null,
+				scheme != null ? scheme.trim().toLowerCase(Locale.ROOT) : null,
 				host != null ? host.trim().toLowerCase(Locale.ROOT) : null,
 				port);
-	}
-
-	private OriginParts parseForwardedOrigin(String forwardedHeader) {
-		try {
-			String firstEntry = firstHeaderToken(forwardedHeader);
-			if (firstEntry == null) return null;
-
-			String scheme = null;
-			String host = null;
-			int port = -1;
-
-			String[] directives = firstEntry.split(";");
-			for (String directive : directives) {
-				String[] kv = directive.trim().split("=", 2);
-				if (kv.length != 2) continue;
-				String key = kv[0].trim().toLowerCase();
-				String value = kv[1].trim();
-				if (value.startsWith("\"") && value.endsWith("\"") && value.length() >= 2) {
-					value = value.substring(1, value.length() - 1);
-				}
-				if ("proto".equals(key)) {
-					scheme = value.trim().toLowerCase(Locale.ROOT);
-				} else if ("host".equals(key)) {
-					String[] hostPort = splitHostPort(value.trim());
-					host = hostPort[0];
-					if (hostPort[1] != null) {
-						try {
-							port = Integer.parseInt(hostPort[1]);
-						} catch (NumberFormatException ignored) {
-							// keep unset
-						}
-					}
-				}
-			}
-
-			if (scheme == null || host == null) return null;
-			if (port == -1) port = normalizePort(scheme, -1);
-			return new OriginParts(scheme, host.toLowerCase(Locale.ROOT), port);
-		} catch (Exception e) {
-			return null;
-		}
-	}
-
-	private String firstHeaderToken(String raw) {
-		if (raw == null) return null;
-		String token = raw.split(",")[0].trim();
-		return token.isEmpty() ? null : token;
-	}
-
-	private String[] splitHostPort(String hostHeader) {
-		if (hostHeader == null || hostHeader.isEmpty()) {
-			return new String[] { null, null };
-		}
-		// Bracketed IPv6: [::1]:8080
-		if (hostHeader.startsWith("[")) {
-			int closing = hostHeader.indexOf(']');
-			if (closing > 0) {
-				String host = hostHeader.substring(1, closing);
-				String port = null;
-				if (closing + 1 < hostHeader.length() && hostHeader.charAt(closing + 1) == ':') {
-					port = hostHeader.substring(closing + 2);
-				}
-				return new String[] { host, port };
-			}
-		}
-		int colon = hostHeader.lastIndexOf(':');
-		if (colon > -1 && hostHeader.indexOf(':') == colon) {
-			return new String[] { hostHeader.substring(0, colon), hostHeader.substring(colon + 1) };
-		}
-		return new String[] { hostHeader, null };
 	}
 
 	private static final class OriginParts {

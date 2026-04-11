@@ -122,7 +122,7 @@ cd docker
 docker compose -f docker-compose-ldap-keycloak-test.yml up -d
 
 # LDAP同期を実行
-curl -u admin:admin -X POST http://localhost:8080/core/rest/repo/bedroom/sync/trigger
+curl -u admin:admin -X POST -H "X-Requested-With: XMLHttpRequest" http://localhost:8080/core/rest/repo/bedroom/sync/trigger
 
 # 外部認証テストを実行
 npm run test:external-auth

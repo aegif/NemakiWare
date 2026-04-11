@@ -200,6 +200,7 @@ Test OIDC token conversion:
 ```bash
 curl -X POST "http://localhost:8080/core/rest/repo/bedroom/authtoken/oidc/convert" \
   -H "Content-Type: application/json" \
+  -H "X-Requested-With: XMLHttpRequest" \
   -d '{"user_info": {"preferred_username": "testuser", "email": "test@example.com"}}'
 ```
 
@@ -209,6 +210,7 @@ SAML_RESPONSE=$(echo '<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:p
 
 curl -X POST "http://localhost:8080/core/rest/repo/bedroom/authtoken/saml/convert" \
   -H "Content-Type: application/json" \
+  -H "X-Requested-With: XMLHttpRequest" \
   -d "{\"saml_response\": \"$SAML_RESPONSE\"}"
 ```
 
@@ -231,7 +233,7 @@ npx playwright test tests/auth/saml-login.spec.ts
 
 **Problem**: Token conversion fails with 401 Unauthorized
 
-**Solution**: The SSO endpoints bypass authentication. Check that the AuthenticationFilter is correctly configured to allow `/authtoken/saml/convert` and `/authtoken/oidc/convert` paths.
+**Solution**: The SSO token-conversion endpoints bypass *authentication* (AuthenticationFilter), meaning they do not require Basic auth or a pre-existing session. However, they still enforce *CSRF protection* (ResourceBase.validateCsrfProtection). CLI callers must include `X-Requested-With: XMLHttpRequest` or a valid `Origin` header. Check that the AuthenticationFilter is correctly configured to allow `/authtoken/saml/convert` and `/authtoken/oidc/convert` paths.
 
 ### SAML Issues
 

@@ -138,16 +138,18 @@ nemaki_api() {
     local endpoint="$2"
     local data="$3"
 
+    # X-Requested-With bypasses CSRF validation for Basic-auth REST clients
+    local csrf_header="X-Requested-With: XMLHttpRequest"
     if [ "$method" = "GET" ]; then
         curl -s -u "$NEMAKI_AUTH" "${NEMAKI_URL}${endpoint}"
     elif [ "$method" = "POST" ]; then
         if [ -n "$data" ]; then
-            curl -s -u "$NEMAKI_AUTH" -X POST -H "Content-Type: application/json" -d "$data" "${NEMAKI_URL}${endpoint}"
+            curl -s -u "$NEMAKI_AUTH" -X POST -H "$csrf_header" -H "Content-Type: application/json" -d "$data" "${NEMAKI_URL}${endpoint}"
         else
-            curl -s -u "$NEMAKI_AUTH" -X POST "${NEMAKI_URL}${endpoint}"
+            curl -s -u "$NEMAKI_AUTH" -X POST -H "$csrf_header" "${NEMAKI_URL}${endpoint}"
         fi
     elif [ "$method" = "DELETE" ]; then
-        curl -s -u "$NEMAKI_AUTH" -X DELETE "${NEMAKI_URL}${endpoint}"
+        curl -s -u "$NEMAKI_AUTH" -X DELETE -H "$csrf_header" "${NEMAKI_URL}${endpoint}"
     fi
 }
 

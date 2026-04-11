@@ -216,6 +216,33 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ---
 
+## CSRF保護 (REST API)
+
+`/core/rest/repo/...` 配下のstate-changing request (POST/PUT/DELETE) は `ResourceBase.validateCsrfProtection()` でCSRF検証される。
+
+**バイパス条件** (いずれか1つで通過):
+- `Authorization: Bearer ...` / `AUTH_TOKEN` / `X-API-Key` ヘッダー (非ambient credential)
+- `Origin` ヘッダーがサーバーと一致
+- `Referer` ヘッダーがサーバーと一致
+- `X-Requested-With: XMLHttpRequest` ヘッダー
+
+**Basic auth は CSRF バイパスしない** — ブラウザがrealm単位で自動付与するambient credentialのため。
+
+```bash
+# curl / shell / Python で REST API を呼ぶ場合の標準パターン:
+curl -u admin:admin -X POST -H "X-Requested-With: XMLHttpRequest" \
+  "http://localhost:8080/core/rest/repo/bedroom/..."
+
+# Python requests:
+requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest"})
+```
+
+**注意**: `/core/browser/...` (CMIS Browser Binding) と `/core/api/v1/...` (Spring MVC) はResourceBaseを通らないためCSRF検証なし。
+
+**Tomcat RemoteIpValve**: `docker/core/server.xml` に設定済み。信頼proxyからのX-Forwarded-Proto/Host/PortをservletAPI値に反映する。アプリ側ではforwardedヘッダーを自前パースしない。
+
+---
+
 ## セキュリティステータス (2026-03-16)
 
 - npm脆弱性: 0件 (dompurify 3.3.2 overrides適用、immutable 3.8.3 へ更新)

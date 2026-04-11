@@ -1034,8 +1034,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         var settings = ctx.getBean(jp.aegif.nemaki.rest.controller.IntegrationSettingsService.class);
                         String existing = settings.readSetting(idempKey);
                         if (existing != null && !existing.isBlank()) {
-                            return ExternalIngestResult.skipped(requestId,
-                                    "Idempotent: request '" + request.getIdempotencyKey() + "' already completed (objectId=" + existing + ")");
+                            return ExternalIngestResult.skipped(requestId, existing,
+                                    "Idempotent: request '" + request.getIdempotencyKey() + "' already completed");
                         }
                     }
                 } catch (Exception e) {
@@ -1057,7 +1057,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (existingDoc != null && existingDoc.isDocument()) {
                 // Existing document found — apply dedupe policy
                 if ("skip_if_same_version".equals(dedupePolicy)) {
-                    return ExternalIngestResult.skipped(requestId,
+                    return ExternalIngestResult.skipped(requestId, existingDoc.getId(),
                             "Document already exists with same source identity");
                 }
                 if ("replace".equals(dedupePolicy)) {

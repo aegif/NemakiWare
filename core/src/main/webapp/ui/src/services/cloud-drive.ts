@@ -5,6 +5,11 @@
 import { parseJsonResponseBody } from './http/jsonFetch';
 import { getResourceBaseErrorMessage, isResourceBaseSuccess } from './http/restResult';
 
+/** Result of a cloud import operation */
+export type CloudImportResult =
+  | { objectId: string; name: string; skipped?: false }
+  | { objectId?: undefined; name: string; skipped: true; skipReason?: string; existingObjectId?: string };
+
 /** Google Drive file metadata */
 export interface GoogleDriveFile {
   id: string;
@@ -428,7 +433,7 @@ export async function importFromGoogleDrive(
   folderId: string,
   file: GoogleDriveFile,
   accessToken: string
-): Promise<{ objectId: string; name: string }> {
+): Promise<CloudImportResult> {
   // For Google Docs formats, export as Office format
   let downloadUrl: string;
   let exportMimeType: string | null = null;
@@ -509,7 +514,16 @@ export async function importFromGoogleDrive(
   const result = await parseJsonResponseBody(uploadResponse, 'importFromGoogleDrive');
   console.log('[CloudDrive] Upload result:', result);
 
-  // Server returns status: "success" | "failure" (string), and error: [...] array
+  // Server returns status: "success" | "skipped" | "failure" (string), and error: [...] array
+  if (result.status === 'skipped') {
+    return {
+      objectId: undefined,
+      name: fileName,
+      skipped: true,
+      skipReason: result.skipReason as string | undefined,
+      existingObjectId: result.existingObjectId as string | undefined,
+    };
+  }
   if (!isResourceBaseSuccess(result)) {
     const errorMsg = extractErrorMessage(result.error as unknown[], 'Failed to import from Google Drive');
     console.error('[CloudDrive] Import failed:', errorMsg, result.error);
@@ -531,7 +545,7 @@ export async function importFromOneDrive(
   folderId: string,
   file: OneDriveFile,
   accessToken: string
-): Promise<{ objectId: string; name: string }> {
+): Promise<CloudImportResult> {
   // Prefer list payload webUrl; if missing, resolve so canonical import / metadata get a valid org URL
   let webUrlForMetadata = file.webUrl;
   if (!webUrlForMetadata) {
@@ -588,7 +602,16 @@ export async function importFromOneDrive(
 
   const result = await parseJsonResponseBody(uploadResponse, 'importFromOneDrive');
 
-  // Server returns status: "success" | "failure" (string), and error: [...] array
+  // Server returns status: "success" | "skipped" | "failure" (string), and error: [...] array
+  if (result.status === 'skipped') {
+    return {
+      objectId: undefined,
+      name: file.name,
+      skipped: true,
+      skipReason: result.skipReason as string | undefined,
+      existingObjectId: result.existingObjectId as string | undefined,
+    };
+  }
   if (!isResourceBaseSuccess(result)) {
     const errorMsg = extractErrorMessage(result.error as unknown[], 'Failed to import from OneDrive');
     console.error('[CloudDrive] Import failed:', errorMsg, result.error);

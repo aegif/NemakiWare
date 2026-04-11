@@ -33,6 +33,11 @@ public record ExternalIngestResult(
                 false, true, reason, null, List.of(), List.of());
     }
 
+    public static ExternalIngestResult skipped(String requestId, String existingObjectId, String reason) {
+        return new ExternalIngestResult(requestId, existingObjectId, null, false,
+                false, true, reason, null, List.of(), List.of());
+    }
+
     public static ExternalIngestResult dryRun(String requestId, String objectId, boolean wouldBeNewVersion) {
         return new ExternalIngestResult(requestId, objectId, null, wouldBeNewVersion,
                 true, false, null, null, List.of(), List.of());

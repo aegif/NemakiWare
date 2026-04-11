@@ -1141,7 +1141,7 @@ echo ""
 blue "=== 5. Solr/RAG インデックス同期 ==="
 
 echo "  Solr Full Reindex 実行中..."
-SOLR_REINDEX=$(curl -s -u "$AUTH" -X POST "http://localhost:8080/core/rest/repo/bedroom/search-engine/reindex" 2>&1)
+SOLR_REINDEX=$(curl -s -u "$AUTH" -X POST -H "X-Requested-With: XMLHttpRequest" "http://localhost:8080/core/rest/repo/bedroom/search-engine/reindex" 2>&1)
 echo "    Solr: $(echo "$SOLR_REINDEX" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('message','unknown'))" 2>/dev/null)"
 
 # Solr reindex 完了を待機
@@ -1169,7 +1169,7 @@ except:
 done
 
 echo "  RAG Full Reindex 実行中..."
-RAG_REINDEX=$(curl -s -u "$AUTH" -X POST "http://localhost:8080/core/rest/repo/bedroom/search-engine/rag/reindex" 2>&1)
+RAG_REINDEX=$(curl -s -u "$AUTH" -X POST -H "X-Requested-With: XMLHttpRequest" "http://localhost:8080/core/rest/repo/bedroom/search-engine/rag/reindex" 2>&1)
 echo "    RAG: $(echo "$RAG_REINDEX" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('message','unknown'))" 2>/dev/null)"
 echo "    ※ RAG reindexはバックグラウンドで実行中（Embedding生成に数分かかります）"
 

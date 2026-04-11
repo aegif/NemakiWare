@@ -51,6 +51,13 @@ get_root_folder_id() {
 BEDROOM_ROOT_ID=$(get_root_folder_id "bedroom")
 CANOPY_ROOT_ID=$(get_root_folder_id "canopy")
 
+BASE_URL="http://localhost:8080/core"
+# Standard CSRF header for non-browser REST clients using Basic auth.
+# Basic auth is an ambient credential (browsers auto-attach it), so
+# ResourceBase.validateCsrfProtection() requires an explicit signal
+# that the caller is not a cross-site form submission.
+CSRF="-H X-Requested-With:XMLHttpRequest"
+
 # Function to run test
 run_test() {
     local test_name="$1"
@@ -142,12 +149,11 @@ run_test "Basic Folder Query" "curl -s -u admin:admin 'http://localhost:8080/cor
 
 echo
 echo "=== 7. AUTHENTICATION TOKEN SERVICE TESTS ==="
-BASE_URL="http://localhost:8080/core"
 
 # Test token registration for admin user
 echo -n "Testing: Token Registration for Admin User ... "
 total_tests=$((total_tests + 1))
-if token_reg_response=$(curl -s -u admin:admin -X POST -H "Origin: $BASE_URL" "$BASE_URL/rest/repo/bedroom/authtoken/admin/register" 2>/dev/null) && \
+if token_reg_response=$(curl -s -u admin:admin -X POST $CSRF "$BASE_URL/rest/repo/bedroom/authtoken/admin/register" 2>/dev/null) && \
    echo "$token_reg_response" | jq -e '.status == "success"' >/dev/null 2>&1; then
     echo -e "${GREEN}PASSED${NC}"
     success_count=$((success_count + 1))
@@ -192,7 +198,7 @@ echo -n "Testing: Login Endpoint ... "
 total_tests=$((total_tests + 1))
 login_data='{"password":"admin"}'
 if login_response=$(curl -s -X POST -H "Content-Type: application/json" \
-                         -H "Origin: $BASE_URL" \
+                         $CSRF \
                          -u admin:admin \
                          -d "$login_data" \
                          "$BASE_URL/rest/repo/bedroom/authtoken/admin/login" 2>/dev/null) && \
@@ -270,13 +276,13 @@ type_test_json='{
 }'
 
 # Test type registration via /rest/repo/{repoId}/type/register-json
-if curl -s -X POST -H "Content-Type: application/json" -u admin:admin \
+if curl -s -X POST -H "Content-Type: application/json" $CSRF -u admin:admin \
        -d "$type_test_json" \
        "http://localhost:8080/core/rest/repo/bedroom/type/register-json" -o /dev/null -w "%{http_code}" | grep -q "200"; then
     echo -e "${GREEN}PASSED${NC} (Type registration functional)"
     success_count=$((success_count + 1))
     # Cleanup: delete the test type
-    curl -s -X DELETE -u admin:admin "http://localhost:8080/core/rest/repo/bedroom/type/delete/custom:testType" -o /dev/null 2>/dev/null
+    curl -s -X DELETE -u admin:admin $CSRF "http://localhost:8080/core/rest/repo/bedroom/type/delete/custom:testType" -o /dev/null 2>/dev/null
 else
     echo -e "${RED}FAILED${NC} (Type registration not working)"
 fi
@@ -655,23 +661,23 @@ run_test "CMIS Browser Invalid Auth" "curl -s -o /dev/null -w '%{http_code}' -u 
 # Test authtoken login endpoint returns failure for invalid credentials
 # Note: This endpoint returns HTTP 200 with {"status":"failure"} for auth failures (RESTful design)
 run_test "Authtoken Invalid User Login" "
-    response=\$(curl -s 'http://localhost:8080/core/rest/repo/bedroom/authtoken/nonexistent/login' -X POST -d 'password=wrongpassword')
+    response=\$(curl -s $CSRF 'http://localhost:8080/core/rest/repo/bedroom/authtoken/nonexistent/login' -X POST -d 'password=wrongpassword')
     if echo \"\$response\" | jq -e '.status == \"failure\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
 " "PASS"
 
 run_test "Authtoken Wrong Password Login" "
-    response=\$(curl -s 'http://localhost:8080/core/rest/repo/bedroom/authtoken/admin/login' -X POST -d 'password=wrongpassword')
+    response=\$(curl -s $CSRF 'http://localhost:8080/core/rest/repo/bedroom/authtoken/admin/login' -X POST -d 'password=wrongpassword')
     if echo \"\$response\" | jq -e '.status == \"failure\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
 " "PASS"
 
 run_test "Authtoken Empty Password Login" "
-    response=\$(curl -s 'http://localhost:8080/core/rest/repo/bedroom/authtoken/admin/login' -X POST -d '')
+    response=\$(curl -s $CSRF 'http://localhost:8080/core/rest/repo/bedroom/authtoken/admin/login' -X POST -d '')
     if echo \"\$response\" | jq -e '.status == \"failure\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
 " "PASS"
 
 # Test special characters are handled safely in login (should return failure, not crash)
 run_test "Authtoken SQL Injection Prevention" "
-    response=\$(curl -s 'http://localhost:8080/core/rest/repo/bedroom/authtoken/admin/login' -X POST -d \"password=admin' OR '1'='1\")
+    response=\$(curl -s $CSRF 'http://localhost:8080/core/rest/repo/bedroom/authtoken/admin/login' -X POST -d \"password=admin' OR '1'='1\")
     if echo \"\$response\" | jq -e '.status == \"failure\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
 " "PASS"
 

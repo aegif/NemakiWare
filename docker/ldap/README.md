@@ -118,7 +118,8 @@ curl -X GET "http://localhost:8080/core/rest/repo/bedroom/sync/preview" \
 
 #### Execute Sync
 ```bash
-curl -X POST "http://localhost:8080/core/rest/repo/bedroom/sync/trigger" \
+curl -X POST -H "X-Requested-With: XMLHttpRequest" \
+  "http://localhost:8080/core/rest/repo/bedroom/sync/trigger" \
   -u admin:admin
 ```
 

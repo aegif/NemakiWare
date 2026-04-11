@@ -418,6 +418,65 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
     }
   });
 
+  // ── Skipped result returns existingObjectId ──────────────────
+
+  test('should return skipped with existingObjectId for skip_if_same_version dedupe', async ({ request }) => {
+    const ts = Date.now();
+    const connId = `e2e-conn-skip-${ts}`;
+    const profId = `e2e-prof-skip-${ts}`;
+
+    // Create stub with skip_if_same_version dedupe policy
+    await request.delete(`${BASE}/v1/admin/import-profiles/${profId}`, { headers: AUTH }).catch(() => {});
+    await request.delete(`${BASE}/v1/admin/connectors/${connId}`, { headers: AUTH }).catch(() => {});
+
+    await request.post(`${BASE}/v1/admin/connectors`, {
+      headers: JSON_H,
+      data: { connectorId: connId, sourceArchetype: 'FILE_SHARE', sourceSystem: 'e2e_test', authType: 'none', enabled: true },
+    });
+    await request.post(`${BASE}/v1/admin/import-profiles`, {
+      headers: JSON_H,
+      data: {
+        profileId: profId, repositoryId: 'bedroom', targetFolderPath: '/',
+        defaultConnectorId: connId, defaultObjectTypeId: 'cmis:document',
+        dedupePolicy: 'skip_if_same_version', updatePolicy: 'version_up_on_content_change',
+        versioningPolicy: 'major', enabled: true,
+      },
+    });
+
+    try {
+      // First import creates the document
+      const r1 = await request.post(`${BASE}/v1/repo/bedroom/ingest`, {
+        headers: JSON_H,
+        data: {
+          profileId: profId, connectorId: connId,
+          sourceObjectId: `skip-test-${ts}`, sourceObjectType: 'file',
+          fileName: `skip-test-${ts}.txt`, executionMode: 'manual',
+        },
+      });
+      const b1 = await r1.json();
+      expect(b1.errors ?? []).toHaveLength(0);
+      expect(b1.objectId).toBeTruthy();
+
+      // Second import with same source identity → skipped
+      const r2 = await request.post(`${BASE}/v1/repo/bedroom/ingest`, {
+        headers: JSON_H,
+        data: {
+          profileId: profId, connectorId: connId,
+          sourceObjectId: `skip-test-${ts}`, sourceObjectType: 'file',
+          fileName: `skip-test-${ts}.txt`, executionMode: 'manual',
+        },
+      });
+      expect(r2.ok()).toBeTruthy();
+      const b2 = await r2.json();
+      expect(b2.skipped).toBe(true);
+      expect(b2.skipReason).toContain('already exists');
+      expect(b2.objectId).toBe(b1.objectId); // existingObjectId populated
+    } finally {
+      await request.delete(`${BASE}/v1/admin/import-profiles/${profId}`, { headers: AUTH }).catch(() => {});
+      await request.delete(`${BASE}/v1/admin/connectors/${connId}`, { headers: AUTH }).catch(() => {});
+    }
+  });
+
   test('DLQ list returns entries array', async ({ request }) => {
     const res = await request.get(`${BASE}/v1/admin/ingest/dlq`, { headers: AUTH });
     expect(res.ok()).toBeTruthy();

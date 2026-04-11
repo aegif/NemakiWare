@@ -158,6 +158,19 @@
       <Host name="localhost"  appBase="webapps"
             unpackWARs="true" autoDeploy="true">
 
+        <!-- RemoteIpValve: trust X-Forwarded-* headers only from known proxies.
+             This rewrites request.getScheme(), getServerName(), getServerPort()
+             so that application code can use servlet API values directly without
+             parsing forwarded headers itself.  internalProxies defaults to
+             common RFC-1918 / loopback ranges.
+             hostHeader / portHeader ensure that proxied Host and Port are
+             also reflected in getServerName() / getServerPort(). -->
+        <Valve className="org.apache.catalina.valves.RemoteIpValve"
+               protocolHeader="X-Forwarded-Proto"
+               hostHeader="X-Forwarded-Host"
+               portHeader="X-Forwarded-Port"
+               remoteIpHeader="X-Forwarded-For" />
+
         <!-- SingleSignOn valve, share authentication between web applications
              Documentation at: /docs/config/valve.html -->
         <!--

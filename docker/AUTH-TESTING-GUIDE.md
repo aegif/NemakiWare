@@ -84,6 +84,7 @@ React UIがOIDCトークンをNemakiWare内部トークンに変換する際に�
 ```bash
 curl -X POST http://localhost:8080/core/rest/repo/bedroom/authtoken/oidc/convert \
   -H "Content-Type: application/json" \
+  -H "X-Requested-With: XMLHttpRequest" \
   -d '{
     "oidc_token": "access_token_value",
     "id_token": "id_token_value",
@@ -137,6 +138,7 @@ React UIがSAMLレスポンスをNemakiWare内部トークンに変換する際�
 ```bash
 curl -X POST http://localhost:8080/core/rest/repo/bedroom/authtoken/saml/convert \
   -H "Content-Type: application/json" \
+  -H "X-Requested-With: XMLHttpRequest" \
   -d '{
     "saml_response": "base64_encoded_saml_response",
     "relay_state": "repositoryId=bedroom",

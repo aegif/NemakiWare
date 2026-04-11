@@ -158,6 +158,7 @@ for user_data in "ldapuser1:LDAP%20User%20One:ldappass1:LDAP%20User:One:ldapuser
     IFS=':' read -r userid name password firstname lastname email <<< "$user_data"
 
     result=$(curl -s -u admin:admin -X POST \
+        -H "X-Requested-With: XMLHttpRequest" \
         -d "name=$name&password=$password&firstName=$firstname&lastName=$lastname&email=$email" \
         "http://localhost:8080/core/rest/repo/bedroom/user/create/$userid")
 

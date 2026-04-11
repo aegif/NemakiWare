@@ -11,6 +11,7 @@ RUN rm -rf /usr/local/tomcat/webapps/*
 
 # Copy configuration files
 COPY context.xml /usr/local/tomcat/conf/
+COPY server.xml /usr/local/tomcat/conf/
 COPY nemakiware.properties /usr/local/tomcat/conf/
 COPY repositories.yml /usr/local/tomcat/conf/
 COPY log4j.properties /usr/local/tomcat/conf/

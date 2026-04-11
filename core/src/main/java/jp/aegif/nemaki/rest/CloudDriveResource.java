@@ -1233,9 +1233,12 @@ public class CloudDriveResource extends ResourceBase {
 		}
 
 		if (ingestResult.skipped()) {
-			result.put("status", "success");
+			result.put("status", "skipped");
 			result.put("skipped", true);
 			result.put("skipReason", ingestResult.skipReason());
+			if (ingestResult.objectId() != null) {
+				result.put("existingObjectId", ingestResult.objectId());
+			}
 			return result.toJSONString();
 		}
 

@@ -19,6 +19,8 @@ class ResourceBaseCsrfProtectionTest {
 
     private final TestableResourceBase resource = new TestableResourceBase();
 
+    // ── Auth-header bypass ──────────────────────────────────────────
+
     @Test
     void explicitAuthorizationHeaderBypassesCsrfOriginCheck() {
         HttpServletRequest request = mock(HttpServletRequest.class);
@@ -31,10 +33,14 @@ class ResourceBaseCsrfProtectionTest {
 
     @Test
     void basicAuthorizationHeaderDoesNotBypassCsrfOriginCheck() {
+        // Basic auth is an ambient credential (browsers cache and auto-attach it),
+        // so it must NOT bypass CSRF validation.
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getHeader("Authorization")).thenReturn("Basic dXNlcjpwYXNz");
         when(request.getHeader(CallContextKey.AUTH_TOKEN)).thenReturn(null);
         when(request.getHeader("AUTH_TOKEN")).thenReturn(null);
+        when(request.getHeader(CallContextKey.AUTH_TOKEN_APP)).thenReturn(null);
+        when(request.getHeader("AUTH_TOKEN_APP")).thenReturn(null);
         when(request.getHeader("X-API-Key")).thenReturn(null);
         when(request.getHeader("Origin")).thenReturn(null);
         when(request.getHeader("Referer")).thenReturn(null);
@@ -45,11 +51,9 @@ class ResourceBaseCsrfProtectionTest {
         assertEquals("missing origin verification headers", result);
     }
 
-    /**
-     * Browser Basic auth + explicit X-Requested-With (typical SPA / API test client pattern).
-     */
     @Test
     void basicAuthorizationWithXmlHttpRequestPassesCsrfCheck() {
+        // Basic auth + explicit X-Requested-With (typical SPA / API test client pattern).
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getHeader("Authorization")).thenReturn("Basic dXNlcjpwYXNz");
         when(request.getHeader(CallContextKey.AUTH_TOKEN)).thenReturn(null);
@@ -74,37 +78,7 @@ class ResourceBaseCsrfProtectionTest {
         assertNull(result);
     }
 
-    @Test
-    void acceptsOriginUsingForwardedHeadersBehindReverseProxy() {
-        HttpServletRequest request = mock(HttpServletRequest.class);
-        when(request.getScheme()).thenReturn("http");
-        when(request.getServerName()).thenReturn("core-internal");
-        when(request.getServerPort()).thenReturn(8080);
-        when(request.getHeader("X-Forwarded-Proto")).thenReturn("https");
-        when(request.getHeader("X-Forwarded-Host")).thenReturn("nemaki.example.com");
-        when(request.getHeader("X-Forwarded-Port")).thenReturn("443");
-        when(request.getHeader("Origin")).thenReturn("https://nemaki.example.com");
-
-        String result = resource.validate(request);
-
-        assertNull(result);
-    }
-
-    @Test
-    void rejectsMismatchedOriginEvenWithForwardedHeaders() {
-        HttpServletRequest request = mock(HttpServletRequest.class);
-        when(request.getScheme()).thenReturn("http");
-        when(request.getServerName()).thenReturn("core-internal");
-        when(request.getServerPort()).thenReturn(8080);
-        when(request.getHeader("X-Forwarded-Proto")).thenReturn("https");
-        when(request.getHeader("X-Forwarded-Host")).thenReturn("nemaki.example.com");
-        when(request.getHeader("X-Forwarded-Port")).thenReturn("443");
-        when(request.getHeader("Origin")).thenReturn("https://evil.example.com");
-
-        String result = resource.validate(request);
-
-        assertEquals("invalid origin", result);
-    }
+    // ── No credentials → reject ─────────────────────────────────────
 
     @Test
     void cookieStyleRequestWithoutOriginHeadersIsRejected() {
@@ -122,14 +96,17 @@ class ResourceBaseCsrfProtectionTest {
         assertEquals("missing origin verification headers", result);
     }
 
+    // ── Origin matching (servlet values reflect RemoteIpValve output) ─
+
     @Test
-    void acceptsOriginUsingForwardedHeaderSingleEntry() {
+    void acceptsOriginMatchingServletValues() {
+        // RemoteIpValve rewrites servlet values when behind a trusted proxy,
+        // so getScheme()/getServerName()/getServerPort() already reflect the
+        // public-facing origin.
         HttpServletRequest request = mock(HttpServletRequest.class);
-        when(request.getScheme()).thenReturn("http");
-        when(request.getServerName()).thenReturn("core-internal");
-        when(request.getServerPort()).thenReturn(8080);
-        when(request.getHeader("Forwarded"))
-                .thenReturn("for=192.0.2.60;proto=https;host=nemaki.example.com");
+        when(request.getScheme()).thenReturn("https");
+        when(request.getServerName()).thenReturn("nemaki.example.com");
+        when(request.getServerPort()).thenReturn(443);
         when(request.getHeader("Origin")).thenReturn("https://nemaki.example.com");
 
         String result = resource.validate(request);
@@ -138,14 +115,25 @@ class ResourceBaseCsrfProtectionTest {
     }
 
     @Test
-    void acceptsOriginUsingForwardedHeaderWithQuotedHostAndPort() {
+    void rejectsMismatchedOrigin() {
         HttpServletRequest request = mock(HttpServletRequest.class);
-        when(request.getScheme()).thenReturn("http");
-        when(request.getServerName()).thenReturn("core-internal");
-        when(request.getServerPort()).thenReturn(8080);
-        when(request.getHeader("Forwarded"))
-                .thenReturn("for=192.0.2.60;proto=\"https\";host=\"nemaki.example.com:443\"");
-        when(request.getHeader("Origin")).thenReturn("https://nemaki.example.com");
+        when(request.getScheme()).thenReturn("https");
+        when(request.getServerName()).thenReturn("nemaki.example.com");
+        when(request.getServerPort()).thenReturn(443);
+        when(request.getHeader("Origin")).thenReturn("https://evil.example.com");
+
+        String result = resource.validate(request);
+
+        assertEquals("invalid origin", result);
+    }
+
+    @Test
+    void acceptsOriginOnNonStandardPort() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getScheme()).thenReturn("https");
+        when(request.getServerName()).thenReturn("nemaki.example.com");
+        when(request.getServerPort()).thenReturn(8443);
+        when(request.getHeader("Origin")).thenReturn("https://nemaki.example.com:8443");
 
         String result = resource.validate(request);
 
@@ -153,13 +141,24 @@ class ResourceBaseCsrfProtectionTest {
     }
 
     @Test
-    void usesFirstForwardedEntryWhenMultipleArePresent() {
+    void rejectsOriginWithPortMismatch() {
         HttpServletRequest request = mock(HttpServletRequest.class);
-        when(request.getScheme()).thenReturn("http");
-        when(request.getServerName()).thenReturn("core-internal");
-        when(request.getServerPort()).thenReturn(8080);
-        when(request.getHeader("Forwarded"))
-                .thenReturn("for=192.0.2.60;proto=https;host=nemaki.example.com, for=198.51.100.1;proto=http;host=evil.example.com");
+        when(request.getScheme()).thenReturn("https");
+        when(request.getServerName()).thenReturn("nemaki.example.com");
+        when(request.getServerPort()).thenReturn(443);
+        when(request.getHeader("Origin")).thenReturn("https://nemaki.example.com:8443");
+
+        String result = resource.validate(request);
+
+        assertEquals("invalid origin", result);
+    }
+
+    @Test
+    void originCheckIsCaseInsensitive() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getScheme()).thenReturn("HTTPS");
+        when(request.getServerName()).thenReturn("NEMAKI.EXAMPLE.COM");
+        when(request.getServerPort()).thenReturn(443);
         when(request.getHeader("Origin")).thenReturn("https://nemaki.example.com");
 
         String result = resource.validate(request);
@@ -167,47 +166,14 @@ class ResourceBaseCsrfProtectionTest {
         assertNull(result);
     }
 
-    @Test
-    void fallsBackToXForwardedHeadersWhenForwardedIsMalformed() {
-        HttpServletRequest request = mock(HttpServletRequest.class);
-        when(request.getScheme()).thenReturn("http");
-        when(request.getServerName()).thenReturn("core-internal");
-        when(request.getServerPort()).thenReturn(8080);
-        when(request.getHeader("Forwarded")).thenReturn("for=192.0.2.60;host=");
-        when(request.getHeader("X-Forwarded-Proto")).thenReturn("https");
-        when(request.getHeader("X-Forwarded-Host")).thenReturn("nemaki.example.com");
-        when(request.getHeader("X-Forwarded-Port")).thenReturn("443");
-        when(request.getHeader("Origin")).thenReturn("https://nemaki.example.com");
-
-        String result = resource.validate(request);
-
-        assertNull(result);
-    }
+    // ── Referer matching ────────────────────────────────────────────
 
     @Test
-    void acceptsOriginWhenForwardedHostHasDifferentCase() {
+    void acceptsRefererMatchingServletValues() {
         HttpServletRequest request = mock(HttpServletRequest.class);
-        when(request.getScheme()).thenReturn("http");
-        when(request.getServerName()).thenReturn("core-internal");
-        when(request.getServerPort()).thenReturn(8080);
-        when(request.getHeader("Forwarded"))
-                .thenReturn("for=192.0.2.60;proto=https;host=NEMAKI.EXAMPLE.COM");
-        when(request.getHeader("Origin")).thenReturn("https://nemaki.example.com");
-
-        String result = resource.validate(request);
-
-        assertNull(result);
-    }
-
-    @Test
-    void acceptsRefererUsingXForwardedHeadersBehindReverseProxy() {
-        HttpServletRequest request = mock(HttpServletRequest.class);
-        when(request.getScheme()).thenReturn("http");
-        when(request.getServerName()).thenReturn("core-internal");
-        when(request.getServerPort()).thenReturn(8080);
-        when(request.getHeader("X-Forwarded-Proto")).thenReturn("https");
-        when(request.getHeader("X-Forwarded-Host")).thenReturn("nemaki.example.com");
-        when(request.getHeader("X-Forwarded-Port")).thenReturn("443");
+        when(request.getScheme()).thenReturn("https");
+        when(request.getServerName()).thenReturn("nemaki.example.com");
+        when(request.getServerPort()).thenReturn(443);
         when(request.getHeader("Origin")).thenReturn(null);
         when(request.getHeader("Referer")).thenReturn("https://nemaki.example.com/core/ui/index.html");
 
@@ -217,16 +183,44 @@ class ResourceBaseCsrfProtectionTest {
     }
 
     @Test
-    void rejectsMismatchedRefererUsingXForwardedHeaders() {
+    void rejectsMismatchedReferer() {
         HttpServletRequest request = mock(HttpServletRequest.class);
-        when(request.getScheme()).thenReturn("http");
-        when(request.getServerName()).thenReturn("core-internal");
-        when(request.getServerPort()).thenReturn(8080);
-        when(request.getHeader("X-Forwarded-Proto")).thenReturn("https");
-        when(request.getHeader("X-Forwarded-Host")).thenReturn("nemaki.example.com");
-        when(request.getHeader("X-Forwarded-Port")).thenReturn("443");
+        when(request.getScheme()).thenReturn("https");
+        when(request.getServerName()).thenReturn("nemaki.example.com");
+        when(request.getServerPort()).thenReturn(443);
         when(request.getHeader("Origin")).thenReturn(null);
         when(request.getHeader("Referer")).thenReturn("https://evil.example.com/core/ui/index.html");
+
+        String result = resource.validate(request);
+
+        assertEquals("invalid referer", result);
+    }
+
+    // ── Localhost dev bypass ────────────────────────────────────────
+
+    @Test
+    void localhostDevBypassAcceptsLocalhostTo127() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getScheme()).thenReturn("http");
+        when(request.getServerName()).thenReturn("localhost");
+        when(request.getServerPort()).thenReturn(8080);
+        when(request.getHeader("Origin")).thenReturn("http://127.0.0.1:8080");
+
+        String result = resource.validate(request);
+
+        assertNull(result);
+    }
+
+    // ── Null scheme safety ──────────────────────────────────────────
+
+    @Test
+    void nullSchemeDoesNotCauseNpeOnRefererCheck() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getScheme()).thenReturn(null);
+        when(request.getServerName()).thenReturn(null);
+        when(request.getServerPort()).thenReturn(-1);
+        when(request.getHeader("Origin")).thenReturn(null);
+        when(request.getHeader("Referer")).thenReturn("https://example.com/foo");
 
         String result = resource.validate(request);
 

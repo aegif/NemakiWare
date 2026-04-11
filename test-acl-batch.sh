@@ -9,6 +9,8 @@
 BASE_URL="http://localhost:8080/core"
 REPO="bedroom"
 ADMIN_AUTH="admin:admin"
+# CSRF protection requires non-Basic auth header or Origin/X-Requested-With
+CSRF_HEADER="X-Requested-With: XMLHttpRequest"
 
 # Unique test run identifier to avoid conflicts
 TEST_RUN_ID=$(date +%s)
@@ -55,6 +57,7 @@ create_user() {
     # The API hashes the password internally
     # Note: Form parameter is "name" not "userName"
     local result=$(curl -s -u "$ADMIN_AUTH" -X POST \
+        -H "$CSRF_HEADER" \
         -d "name=$userName" \
         -d "password=$TEST_PASSWORD" \
         "$BASE_URL/rest/repo/$REPO/user/create/$userId")
@@ -79,6 +82,7 @@ create_user() {
 delete_user() {
     local userId="$1"
     curl -s -u "$ADMIN_AUTH" -X DELETE \
+        -H "$CSRF_HEADER" \
         "$BASE_URL/rest/repo/$REPO/user/delete/$userId" > /dev/null 2>&1
 }
 
@@ -87,6 +91,7 @@ create_group() {
     local groupName="$2"
 
     curl -s -u "$ADMIN_AUTH" -X POST \
+        -H "$CSRF_HEADER" \
         -H "Content-Type: application/json" \
         -d "{\"groupId\":\"$groupId\",\"groupName\":\"$groupName\",\"users\":[],\"groups\":[]}" \
         "$BASE_URL/rest/repo/$REPO/group/create" > /dev/null 2>&1
@@ -95,6 +100,7 @@ create_group() {
 delete_group() {
     local groupId="$1"
     curl -s -u "$ADMIN_AUTH" -X DELETE \
+        -H "$CSRF_HEADER" \
         "$BASE_URL/rest/repo/$REPO/group/delete/$groupId" > /dev/null 2>&1
 }
 
@@ -103,6 +109,7 @@ add_user_to_group() {
     local userId="$2"
 
     curl -s -u "$ADMIN_AUTH" -X PUT \
+        -H "$CSRF_HEADER" \
         -H "Content-Type: application/json" \
         -d "{\"groupId\":\"$groupId\",\"userId\":\"$userId\"}" \
         "$BASE_URL/rest/repo/$REPO/group/member/add" > /dev/null 2>&1

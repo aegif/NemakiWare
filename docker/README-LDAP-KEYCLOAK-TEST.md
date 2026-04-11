@@ -75,17 +75,17 @@ curl -u admin:admin http://localhost:8080/core/atom/bedroom
 
 ```bash
 # ldapuser1
-curl -u admin:admin -X POST \
+curl -u admin:admin -X POST -H "X-Requested-With: XMLHttpRequest" \
   -d "name=LDAP%20User%20One&password=ldappass1&firstName=LDAP%20User&lastName=One&email=ldapuser1@nemakiware.example.com" \
   "http://localhost:8080/core/rest/repo/bedroom/user/create/ldapuser1"
 
 # ldapuser2
-curl -u admin:admin -X POST \
+curl -u admin:admin -X POST -H "X-Requested-With: XMLHttpRequest" \
   -d "name=LDAP%20User%20Two&password=ldappass2&firstName=LDAP%20User&lastName=Two&email=ldapuser2@nemakiware.example.com" \
   "http://localhost:8080/core/rest/repo/bedroom/user/create/ldapuser2"
 
 # ldapadmin
-curl -u admin:admin -X POST \
+curl -u admin:admin -X POST -H "X-Requested-With: XMLHttpRequest" \
   -d "name=LDAP%20Administrator&password=ldapadminpass&firstName=LDAP&lastName=Administrator&email=ldapadmin@nemakiware.example.com" \
   "http://localhost:8080/core/rest/repo/bedroom/user/create/ldapadmin"
 ```

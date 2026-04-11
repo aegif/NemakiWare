@@ -105,6 +105,15 @@ class TestEnvironmentSetup:
         rest_config = self.config["rest_api"]
         return (rest_config["username"], rest_config["password"])
 
+    def _get_rest_headers(self) -> dict:
+        """Get default headers for REST API requests.
+
+        Includes X-Requested-With to satisfy ResourceBase CSRF protection,
+        which rejects mutating requests with Basic auth alone (Basic auth is
+        an ambient credential that browsers auto-attach).
+        """
+        return {"X-Requested-With": "XMLHttpRequest"}
+
     def _get_rest_url(self, path: str) -> str:
         """Get full REST API URL."""
         base_url = self.config["rest_api"]["base_url"].rstrip("/")
@@ -235,7 +244,7 @@ class TestEnvironmentSetup:
             data = {"name": group_name, "users": "[]", "groups": "[]"}
 
             try:
-                response = requests.post(url, data=data, auth=self._get_rest_auth(), timeout=HTTP_TIMEOUT)
+                response = requests.post(url, data=data, auth=self._get_rest_auth(), headers=self._get_rest_headers(), timeout=HTTP_TIMEOUT)
                 response.raise_for_status()
                 result = response.json()
 
@@ -267,7 +276,7 @@ class TestEnvironmentSetup:
                 data = {"users": "[]", "groups": f'["{child_id}"]'}
 
                 try:
-                    response = requests.put(url, data=data, auth=self._get_rest_auth(), timeout=HTTP_TIMEOUT)
+                    response = requests.put(url, data=data, auth=self._get_rest_auth(), headers=self._get_rest_headers(), timeout=HTTP_TIMEOUT)
                     response.raise_for_status()
                     result = response.json()
 
@@ -305,7 +314,7 @@ class TestEnvironmentSetup:
                 }
 
                 try:
-                    response = requests.post(url, data=data, auth=self._get_rest_auth(), timeout=HTTP_TIMEOUT)
+                    response = requests.post(url, data=data, auth=self._get_rest_auth(), headers=self._get_rest_headers(), timeout=HTTP_TIMEOUT)
                     response.raise_for_status()
                     result = response.json()
 
@@ -330,7 +339,7 @@ class TestEnvironmentSetup:
         data = {"users": f'["{user_id}"]', "groups": "[]"}
 
         try:
-            response = requests.put(url, data=data, auth=self._get_rest_auth(), timeout=HTTP_TIMEOUT)
+            response = requests.put(url, data=data, auth=self._get_rest_auth(), headers=self._get_rest_headers(), timeout=HTTP_TIMEOUT)
             response.raise_for_status()
             result = response.json()
 
@@ -359,7 +368,7 @@ class TestEnvironmentSetup:
 
         try:
             files = {"data": ("type.xml", xml_content, "application/xml")}
-            response = requests.post(url, files=files, auth=self._get_rest_auth(), timeout=HTTP_TIMEOUT)
+            response = requests.post(url, files=files, auth=self._get_rest_auth(), headers=self._get_rest_headers(), timeout=HTTP_TIMEOUT)
             response.raise_for_status()
             result = response.json()
 
