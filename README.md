@@ -27,7 +27,7 @@ Building RAG on top of file storage or generic databases means bolting on permis
 ./scripts/install-opencmis-local.sh
 
 # Build UI
-cd core/src/main/webapp/ui && npm install && npm run build && cd ../../../..
+cd core/src/main/webapp/ui && npm install && npm run build && cd ../../../../..
 
 # Build server
 mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
