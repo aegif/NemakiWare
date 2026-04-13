@@ -2954,6 +2954,7 @@
     "error": "インポートに失敗しました",
     "resultError": "インポートエラー",
     "resultSkipped": "スキップ",
+    "existingObjectId": "既存ドキュメント",
     "resultDryRun": "ドライラン — 変更は行われませんでした",
     "resultSuccess": "インポート成功",
     "resultWarnings": "警告",

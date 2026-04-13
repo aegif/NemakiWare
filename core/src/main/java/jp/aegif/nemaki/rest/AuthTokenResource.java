@@ -1675,35 +1675,16 @@ public class AuthTokenResource extends ResourceBase{
 
 	/**
 	 * Determine if the current connection is secure (HTTPS).
-	 * Checks both the servlet container's isSecure() flag and the X-Forwarded-Proto
-	 * header to support TLS termination at a reverse proxy / load balancer.
+	 *
+	 * <p>Uses only {@code request.isSecure()}, which Tomcat's
+	 * {@code RemoteIpValve} (configured in {@code server.xml}) rewrites
+	 * when the request arrives from a trusted proxy with
+	 * {@code X-Forwarded-Proto: https}.  This avoids parsing forwarded
+	 * headers directly, which would be spoofable by untrusted clients
+	 * and inconsistent with the CSRF trust model in ResourceBase.</p>
 	 */
 	private boolean isSecureConnection(jakarta.servlet.http.HttpServletRequest req) {
-		if (req.isSecure()) {
-			return true;
-		}
-		// Support reverse proxy TLS termination (nginx, AWS ALB, Ingress, etc.)
-		// Handle multi-value X-Forwarded-Proto (e.g., "https, http" from proxy chains)
-		String forwardedProto = req.getHeader("X-Forwarded-Proto");
-		if (forwardedProto != null) {
-			String firstProto = forwardedProto.split(",")[0].trim();
-			if ("https".equalsIgnoreCase(firstProto)) {
-				return true;
-			}
-		}
-		// RFC 7239 Forwarded header support (e.g., "for=...; proto=https; by=...")
-		String forwarded = req.getHeader("Forwarded");
-		if (forwarded != null) {
-			// Parse first entry (before any comma) for the proto directive
-			String firstEntry = forwarded.split(",")[0];
-			for (String directive : firstEntry.split(";")) {
-				String trimmed = directive.trim().toLowerCase();
-				if (trimmed.startsWith("proto=")) {
-					return "https".equals(trimmed.substring(6).trim());
-				}
-			}
-		}
-		return false;
+		return req.isSecure();
 	}
 
 	/**

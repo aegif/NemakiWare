@@ -257,12 +257,17 @@ export function ManualIngestTab({ repositoryId }: Props) {
           {result.skipped && (
             <Alert type="info" showIcon
               message={t('manualIngest.resultSkipped')}
-              description={result.skipReason} />
+              description={
+                <Space direction="vertical">
+                  <Text>{result.skipReason}</Text>
+                  {result.objectId && <Text><strong>{t('manualIngest.existingObjectId')}:</strong> {result.objectId}</Text>}
+                </Space>
+              } />
           )}
           {result.dryRun && !result.errors?.length && (
             <Alert type="info" showIcon message={t('manualIngest.resultDryRun')} />
           )}
-          {result.objectId && !result.dryRun && (
+          {result.objectId && !result.dryRun && !result.skipped && (
             <Alert type="success" showIcon
               message={t('manualIngest.resultSuccess')}
               description={

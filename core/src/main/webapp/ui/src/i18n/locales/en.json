@@ -2954,6 +2954,7 @@
     "error": "Import failed",
     "resultError": "Import Error",
     "resultSkipped": "Skipped",
+    "existingObjectId": "Existing document",
     "resultDryRun": "Dry run — no changes were made",
     "resultSuccess": "Import Successful",
     "resultWarnings": "Warnings",

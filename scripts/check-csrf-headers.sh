@@ -3,7 +3,10 @@
 # CI guard: verify that all shell/Python/Markdown files calling
 # /rest/repo/ with mutating HTTP methods include a CSRF header.
 #
-# Usage: scripts/check-csrf-headers.sh [--fix]
+# Detects both single-line and multi-line curl commands (backslash
+# continuations), as well as Python requests.post/put calls.
+#
+# Usage: scripts/check-csrf-headers.sh
 #
 # Exit code 0 = no violations found, 1 = violations exist.
 
@@ -14,28 +17,51 @@ VIOLATIONS=0
 
 echo "=== Checking CSRF header compliance for /rest/repo/ mutating calls ==="
 
-# Find shell scripts and markdown files with mutating REST calls
-while IFS= read -r file; do
-    # Skip node_modules, target, .git
+check_file() {
+    local file="$1"
+
+    # Skip self, generated dirs
     case "$file" in
-        */node_modules/*|*/target/*|*/.git/*|*/check-csrf-headers.sh) continue ;;
+        */node_modules/*|*/target/*|*/.git/*|*/check-csrf-headers.sh) return ;;
     esac
 
-    # Extract lines with mutating REST calls (POST/PUT/DELETE to /rest/)
-    while IFS= read -r line; do
-        linenum=$(echo "$line" | cut -d: -f1)
-        content=$(echo "$line" | cut -d: -f2-)
+    # Python: check for requests.post/put to rest/ without _get_rest_headers
+    if [[ "$file" == *.py ]]; then
+        while IFS= read -r match; do
+            linenum=$(echo "$match" | cut -d: -f1)
+            # Look at surrounding 5 lines for headers=self._get_rest_headers()
+            context=$(sed -n "$((linenum > 3 ? linenum - 3 : 1)),$((linenum + 5))p" "$file" 2>/dev/null)
+            if ! echo "$context" | grep -qi "_get_rest_headers\|X-Requested-With\|XMLHttpRequest"; then
+                echo "  VIOLATION: $file:$linenum"
+                echo "    $(sed -n "${linenum}p" "$file")"
+                VIOLATIONS=$((VIOLATIONS + 1))
+            fi
+        done < <(grep -n "requests\.\(post\|put\|delete\).*rest" "$file" 2>/dev/null || true)
+        return
+    fi
 
-        # Check if X-Requested-With or Origin header is present
-        # Look at this line and next 3 lines for multi-line curl
-        context=$(sed -n "${linenum},$((linenum + 4))p" "$file" 2>/dev/null)
-        if ! echo "$context" | grep -qi "X-Requested-With\|Origin:\|_get_rest_headers\|CSRF"; then
-            echo "  VIOLATION: $file:$linenum"
-            echo "    $content"
+    # Shell/Markdown: join backslash-continued lines, then search
+    # This collapses "curl ... \\\n  -X POST \\\n  url" into one logical line.
+    local joined
+    joined=$(awk '/\\$/ { sub(/\\$/, ""); printf "%s", $0; next } { print }' "$file" 2>/dev/null)
+
+    while IFS= read -r match; do
+        linenum=$(echo "$match" | cut -d: -f1)
+        content=$(echo "$match" | cut -d: -f2-)
+
+        # Check if CSRF header is present in the logical line
+        if ! echo "$content" | grep -qi "X-Requested-With\|Origin:\|\$CSRF\|\${CSRF"; then
+            # Map back to approximate original line (awk collapses lines)
+            echo "  VIOLATION: $file (near joined-line $linenum)"
+            echo "    $(echo "$content" | head -c 120)"
             VIOLATIONS=$((VIOLATIONS + 1))
         fi
-    done < <(grep -n "curl.*-X POST.*rest/\|curl.*-X DELETE.*rest/\|curl.*-X PUT.*rest/\|requests\.post.*rest\|requests\.put.*rest" "$file" 2>/dev/null || true)
-done < <(find . -name "*.sh" -o -name "*.md" -o -name "*.py" | grep -v node_modules | grep -v target | grep -v .git)
+    done < <(echo "$joined" | grep -n "curl.*-X \(POST\|PUT\|DELETE\).*rest/" 2>/dev/null || true)
+}
+
+while IFS= read -r file; do
+    check_file "$file"
+done < <(find . \( -name "*.sh" -o -name "*.md" -o -name "*.py" \) -not -path "*/node_modules/*" -not -path "*/target/*" -not -path "*/.git/*")
 
 echo
 if [ "$VIOLATIONS" -eq 0 ]; then
