@@ -25,18 +25,30 @@ check_file() {
         */node_modules/*|*/target/*|*/.git/*|*/check-csrf-headers.sh) return ;;
     esac
 
-    # Python: check for requests.post/put to rest/ without _get_rest_headers
+    # Python: check requests.post/put/delete calls that target REST API.
+    # CMIS Browser Binding (/browser/) does not go through ResourceBase
+    # and needs no CSRF header.  We detect REST API calls by checking
+    # whether the URL argument references _get_rest_url or contains /rest/.
     if [[ "$file" == *.py ]]; then
+        # Skip files that don't use the REST API at all
+        if ! grep -q "_get_rest_url\|/rest/" "$file" 2>/dev/null; then
+            return
+        fi
         while IFS= read -r match; do
             linenum=$(echo "$match" | cut -d: -f1)
-            # Look at surrounding 5 lines for headers=self._get_rest_headers()
+            # Look at call + surrounding lines
             context=$(sed -n "$((linenum > 3 ? linenum - 3 : 1)),$((linenum + 5))p" "$file" 2>/dev/null)
-            if ! echo "$context" | grep -qi "_get_rest_headers\|X-Requested-With\|XMLHttpRequest"; then
+            # Skip if this call targets CMIS browser binding (not REST API)
+            if echo "$context" | grep -qi "browser_url\|cmisaction\|browser/"; then
+                continue
+            fi
+            # Check for CSRF header
+            if ! echo "$context" | grep -qi "_get_rest_headers\|X-Requested-With\|XMLHttpRequest\|csrf"; then
                 echo "  VIOLATION: $file:$linenum"
                 echo "    $(sed -n "${linenum}p" "$file")"
                 VIOLATIONS=$((VIOLATIONS + 1))
             fi
-        done < <(grep -n "requests\.\(post\|put\|delete\).*rest" "$file" 2>/dev/null || true)
+        done < <(grep -n "requests\.\(post\|put\|delete\)" "$file" 2>/dev/null || true)
         return
     fi
 

@@ -1204,6 +1204,11 @@
 					<httpConnector>
 						<port>8081</port>
 					</httpConnector>
+					<!-- Jetty XML config for ForwardedRequestCustomizer:
+					     equivalent of Tomcat's RemoteIpValve. Rewrites
+					     request scheme/host/port from X-Forwarded-* headers
+					     so servlet API values match the public-facing origin. -->
+					<jettyXml>${project.basedir}/src/main/webapp/WEB-INF/jetty-forwarded.xml</jettyXml>
 					<!-- Development environment variables (Jetty 12 flat key-value format) -->
 					<systemProperties>
 						<nemakiware.properties>file:${project.basedir}/src/main/webapp/WEB-INF/classes/nemakiware-jetty.properties</nemakiware.properties>

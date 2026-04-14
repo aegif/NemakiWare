@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Configure PUBLIC "-//Jetty//Configure//EN" "https://jetty.org/configure_12.dtd">
+<!--
+  ForwardedRequestCustomizer: Jetty equivalent of Tomcat's RemoteIpValve.
+
+  Rewrites request.getScheme(), getServerName(), getServerPort() from
+  X-Forwarded-* headers sent by trusted proxies, so that servlet API
+  values match the public-facing origin.  Required for:
+    - ResourceBase.validateCsrfProtection() origin matching
+    - AuthTokenResource.isSecureConnection() cookie Secure flag
+-->
+<Configure id="Server" class="org.eclipse.jetty.server.Server">
+  <Call name="getConnectors">
+    <Item>
+      <Call name="getConnectionFactory" arg="HttpConnectionFactory">
+        <Call name="getHttpConfiguration">
+          <Call name="addCustomizer">
+            <Arg>
+              <New class="org.eclipse.jetty.server.ForwardedRequestCustomizer">
+                <Set name="forwardedHostHeader">X-Forwarded-Host</Set>
+                <Set name="forwardedProtoHeader">X-Forwarded-Proto</Set>
+                <Set name="forwardedForHeader">X-Forwarded-For</Set>
+              </New>
+            </Arg>
+          </Call>
+        </Call>
+      </Call>
+    </Item>
+  </Call>
+</Configure>
