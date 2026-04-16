@@ -70,6 +70,18 @@ public class IngestDlqController {
             return errorResponse(HttpStatus.NOT_FOUND, "DLQ entry not found: " + dlqId);
         }
 
+        // Cooldown: allow at most 1 retry per entry per minute to prevent
+        // admin retry-spamming that could hit external API rate limits.
+        if (dlq.getLastRetryAt() != null && !dlq.getLastRetryAt().isBlank()) {
+            try {
+                long lastRetry = java.time.Instant.parse(dlq.getLastRetryAt()).toEpochMilli();
+                if (System.currentTimeMillis() - lastRetry < 60_000) {
+                    return errorResponse(HttpStatus.TOO_MANY_REQUESTS,
+                            "Retry cooldown: wait at least 60 seconds between retries for this entry");
+                }
+            } catch (Exception ignored) { /* unparsable date — allow retry */ }
+        }
+
         CallContext callContext = getCallContext();
         if (callContext == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();

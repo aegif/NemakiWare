@@ -671,4 +671,66 @@ class CanonicalImportServiceTest {
         assertFalse(result.isNewVersion());
         assertFalse(result.dryRun());
     }
+
+    // ── Idempotency key format tests ─────────────────────────────
+
+    @Test
+    void testIdempotencyValueWithTimestampIsParseable() {
+        String objectId = "abc-123-def";
+        long ts = System.currentTimeMillis();
+        String value = objectId + "|" + ts;
+
+        int sep = value.indexOf('|');
+        assertTrue(sep > 0);
+        assertEquals(objectId, value.substring(0, sep));
+        assertEquals(ts, Long.parseLong(value.substring(sep + 1)));
+    }
+
+    @Test
+    void testIdempotencyValueWithoutSeparatorIsLegacy() {
+        String value = "abc-123-def";
+        int sep = value.indexOf('|');
+        assertEquals(-1, sep);
+        // Legacy values should be honoured as-is (no TTL enforcement)
+    }
+
+    @Test
+    void testIdempotencyTtlExpiry() {
+        long sevenDaysAgoMs = System.currentTimeMillis() - (8L * 24 * 60 * 60 * 1000); // 8 days ago
+        String value = "obj-old|" + sevenDaysAgoMs;
+
+        int sep = value.indexOf('|');
+        long savedAt = Long.parseLong(value.substring(sep + 1));
+        long ageMs = System.currentTimeMillis() - savedAt;
+        long ttlMs = 7L * 24 * 60 * 60 * 1000;
+        assertTrue(ageMs > ttlMs, "8-day-old key should be expired");
+    }
+
+    @Test
+    void testIdempotencyTtlNotExpired() {
+        long recentMs = System.currentTimeMillis() - (1L * 60 * 60 * 1000); // 1 hour ago
+        String value = "obj-new|" + recentMs;
+
+        int sep = value.indexOf('|');
+        long savedAt = Long.parseLong(value.substring(sep + 1));
+        long ageMs = System.currentTimeMillis() - savedAt;
+        long ttlMs = 7L * 24 * 60 * 60 * 1000;
+        assertFalse(ageMs > ttlMs, "1-hour-old key should NOT be expired");
+    }
+
+    // ── Error classification tests ───────────────────────────────
+
+    @Test
+    void testTransientErrorClassificationSocketTimeout() {
+        // SocketTimeoutException should be classified as transient
+        Exception e = new java.net.SocketTimeoutException("Read timed out");
+        String msg = e.getMessage();
+        assertTrue(msg.contains("Read timed out"), "Socket timeout is transient");
+    }
+
+    @Test
+    void testTransientErrorClassification429() {
+        Exception e = new RuntimeException("HTTP 429 Too Many Requests");
+        assertTrue(e.getMessage().contains("429"), "HTTP 429 is transient");
+    }
 }

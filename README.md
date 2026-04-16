@@ -240,8 +240,8 @@ curl -u admin:admin -X POST \
 docker run -d --name couchdb-dev -p 5984:5984 \
   -e COUCHDB_USER=admin -e COUCHDB_PASSWORD=password couchdb:3
 
-# Start backend (Jetty, search disabled)
-cd core && ./start-jetty-dev.sh
+# Start backend (Jetty dev server — local development only, not for production)
+bash core/start-jetty-dev.sh
 
 # Start frontend dev server (hot reload)
 cd core/src/main/webapp/ui && npm run dev

@@ -131,9 +131,21 @@ public class WebAuthnResource extends ResourceBase {
 	private RelyingParty createRelyingParty(String repositoryId) {
 		// Determine RP ID and origin from request
 		String rpId = request.getServerName();
-		Set<String> origins = new HashSet<>();
 		String scheme = request.getScheme();
 		int port = request.getServerPort();
+
+		// WebAuthn requires HTTPS except for localhost / 127.0.0.1 (spec §5.1).
+		// Allowing HTTP on non-loopback origins would let a local-network
+		// attacker MITM the registration flow and forge passkeys.
+		if ("http".equalsIgnoreCase(scheme)
+				&& !"localhost".equalsIgnoreCase(rpId)
+				&& !"127.0.0.1".equals(rpId)) {
+			throw new IllegalStateException(
+					"WebAuthn requires HTTPS for non-localhost origins. "
+					+ "Current origin: http://" + rpId);
+		}
+
+		Set<String> origins = new HashSet<>();
 		if ((scheme.equals("http") && port == 80) || (scheme.equals("https") && port == 443)) {
 			origins.add(scheme + "://" + rpId);
 		} else {

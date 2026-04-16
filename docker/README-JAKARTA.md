@@ -1,6 +1,8 @@
 # Jakarta EE Deployment Guide for NemakiWare
 
-This guide explains how to deploy NemakiWare on Jakarta EE compatible containers (Tomcat 10+, Jetty 11+) using the custom-built Jakarta-converted OpenCMIS libraries.
+This guide explains how to deploy NemakiWare on Jakarta EE compatible containers using the custom-built Jakarta-converted OpenCMIS libraries.
+
+> **Server support**: Production deployments use **Tomcat 11.0+** (Docker image in `docker/core/`). The Jetty Maven plugin (`mvn jetty:run`) is available for **local development only** — it lacks the trusted-proxy configuration (RemoteIpValve) required for CSRF origin validation and TLS termination behind a reverse proxy. See `docs/TESTING-ENVIRONMENTS.md` for details.
 
 ## Overview
 

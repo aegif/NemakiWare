@@ -228,6 +228,9 @@ public class IngestSchedulerService {
     /**
      * Purge idempotency keys older than 7 days from nemaki_conf.
      * Runs at most once per hour to avoid hammering CouchDB.
+     *
+     * <p>Uses bookmark-based pagination so that collections with more
+     * than 200 entries are fully scanned across multiple pages.</p>
      */
     private void purgeExpiredIdempotencyKeysIfDue() {
         long now = System.currentTimeMillis();
@@ -236,9 +239,6 @@ public class IngestSchedulerService {
 
         if (settingsService == null) return;
         try {
-            // Read all keys with the idempotency prefix
-            jp.aegif.nemaki.rest.controller.IntegrationSettingsService svc = settingsService;
-            // Use CouchDB find to list all ingest.idempotency.* keys
             var confClient = jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
                     .getBean(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class)
                     .getClient(jp.aegif.nemaki.util.constant.SystemConst.NEMAKI_CONF_DB);
@@ -252,33 +252,48 @@ public class IngestSchedulerService {
             keySelector.put("$regex", "^ingest\\.idempotency\\.");
             selector.put("key", keySelector);
 
-            var findOpts = new com.ibm.cloud.cloudant.v1.model.PostFindOptions.Builder()
-                    .db(dbName).selector(selector).limit(500).build();
-            var result = cloudant.postFind(findOpts).execute().getResult();
-            var docs = result.getDocs();
-            if (docs == null || docs.isEmpty()) return;
-
             long ttlMs = 7L * 24 * 60 * 60 * 1000;
-            java.util.Set<String> keysToDelete = new java.util.HashSet<>();
-            for (var doc : docs) {
-                Object valObj = doc.get("value");
-                if (valObj instanceof String val) {
-                    int sep = val.indexOf('|');
-                    if (sep > 0) {
-                        try {
-                            long savedAt = Long.parseLong(val.substring(sep + 1));
-                            if (now - savedAt > ttlMs) {
-                                Object keyObj = doc.get("key");
-                                if (keyObj instanceof String key) keysToDelete.add(key);
-                            }
-                        } catch (NumberFormatException ignored) {}
+            int totalPurged = 0;
+            String bookmark = null;
+            int PAGE_SIZE = 200;
+
+            for (int page = 0; page < 100; page++) { // safety cap: 100 pages × 200 = 20 000 max
+                var builder = new com.ibm.cloud.cloudant.v1.model.PostFindOptions.Builder()
+                        .db(dbName).selector(selector).limit(PAGE_SIZE);
+                if (bookmark != null) builder.bookmark(bookmark);
+                var result = cloudant.postFind(builder.build()).execute().getResult();
+                var docs = result.getDocs();
+                if (docs == null || docs.isEmpty()) break;
+
+                java.util.Set<String> keysToDelete = new java.util.HashSet<>();
+                for (var doc : docs) {
+                    Object valObj = doc.get("value");
+                    if (valObj instanceof String val) {
+                        int sep = val.indexOf('|');
+                        if (sep > 0) {
+                            try {
+                                long savedAt = Long.parseLong(val.substring(sep + 1));
+                                if (now - savedAt > ttlMs) {
+                                    Object keyObj = doc.get("key");
+                                    if (keyObj instanceof String key) keysToDelete.add(key);
+                                }
+                            } catch (NumberFormatException ignored) {}
+                        }
                     }
                 }
+
+                if (!keysToDelete.isEmpty()) {
+                    settingsService.deleteSettings(keysToDelete);
+                    totalPurged += keysToDelete.size();
+                }
+
+                // Advance bookmark; stop if this was a partial page (last page)
+                bookmark = result.getBookmark();
+                if (docs.size() < PAGE_SIZE || bookmark == null || bookmark.isBlank()) break;
             }
 
-            if (!keysToDelete.isEmpty()) {
-                svc.deleteSettings(keysToDelete);
-                logger.info("Purged {} expired idempotency keys", keysToDelete.size());
+            if (totalPurged > 0) {
+                logger.info("Purged {} expired idempotency keys", totalPurged);
             }
         } catch (Exception e) {
             logger.debug("Idempotency key purge failed: {}", e.getMessage());

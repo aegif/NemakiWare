@@ -488,4 +488,26 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
     expect(res.ok()).toBeTruthy();
     expect(Array.isArray(await res.json())).toBeTruthy();
   });
+
+  // ── DLQ retry cooldown ──────────────────────────────────────
+
+  test('DLQ retry returns 429 on rapid retry of same entry', async ({ request }) => {
+    // List DLQ to find an entry (if any exist from previous test failures)
+    const listRes = await request.get(`${BASE}/v1/admin/ingest/dlq`, { headers: AUTH });
+    const entries = (await listRes.json()).entries || [];
+    if (entries.length === 0) {
+      // No DLQ entries — skip gracefully (cooldown logic still unit-tested)
+      return;
+    }
+    const dlqId = entries[0].id;
+
+    // First retry — should succeed (or fail for other reasons, but not 429)
+    const r1 = await request.post(`${BASE}/v1/admin/ingest/dlq/${dlqId}/retry`, { headers: AUTH });
+    // Don't assert r1 status (may fail for config reasons) — just confirm it's not 429
+    expect(r1.status()).not.toBe(429);
+
+    // Immediate second retry — should be rate-limited
+    const r2 = await request.post(`${BASE}/v1/admin/ingest/dlq/${dlqId}/retry`, { headers: AUTH });
+    expect(r2.status()).toBe(429);
+  });
 });

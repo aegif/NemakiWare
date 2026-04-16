@@ -4,7 +4,7 @@
   "sslRequired": "none",
   "clients": [
     {
-      "clientId": "nemakiware-oidc-client",
+      "clientId": "nemakiware-ui",
       "protocol": "openid-connect",
       "publicClient": true,
       "standardFlowEnabled": true,
@@ -20,9 +20,9 @@
     {
       "clientId": "nemakiware-saml-client",
       "protocol": "saml",
-      "adminUrl": "http://localhost:8080/core/ui/saml-callback.html",
+      "adminUrl": "http://localhost:8080/core/saml/acs",
       "redirectUris": [
-        "http://localhost:8080/core/ui/saml-callback.html"
+        "http://localhost:8080/core/saml/acs"
       ],
       "attributes": {
         "saml.force.post.binding": "false",
