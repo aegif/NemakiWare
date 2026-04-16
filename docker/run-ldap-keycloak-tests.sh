@@ -81,7 +81,21 @@ if [ "$SKIP_BUILD" = false ]; then
     # Build WAR
     echo "  Building WAR..."
     cd "$PROJECT_ROOT"
-    JAVA_HOME="${JAVA_HOME:-/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home}"
+    if [ -z "${JAVA_HOME:-}" ]; then
+        # Try macOS java_home helper, fall back to PATH-resolved java
+        if command -v /usr/libexec/java_home > /dev/null 2>&1; then
+            JAVA_HOME="$(/usr/libexec/java_home -v 21 2>/dev/null || /usr/libexec/java_home 2>/dev/null)"
+        fi
+        if [ -z "$JAVA_HOME" ] && command -v java > /dev/null 2>&1; then
+            JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)" 2>/dev/null || command -v java)")")"
+        fi
+    fi
+    if [ -z "$JAVA_HOME" ] || [ ! -d "$JAVA_HOME" ]; then
+        echo -e "${RED}ERROR: JAVA_HOME is not set and could not be auto-detected.${NC}"
+        echo "Set JAVA_HOME to a Java 21 installation, e.g.:"
+        echo "  export JAVA_HOME=\$(/usr/libexec/java_home -v 21)"
+        exit 1
+    fi
     export JAVA_HOME
     mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 
