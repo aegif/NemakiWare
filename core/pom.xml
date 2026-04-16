@@ -1194,21 +1194,21 @@
 					<scan>1</scan>
 					<stopPort>9967</stopPort>
 					<stopKey>foo</stopKey>
-					<!-- Skip Jetty during test phase to avoid port conflicts -->
-					<skip>true</skip>
+					<!-- skip is overridden in the start-jetty/stop-jetty
+					     executions to avoid port conflicts during the test
+					     phase.  Direct invocations (mvn jetty:run) do not
+					     skip, so the Jetty dev server actually starts. -->
 					<webApp>
 						<contextPath>/core</contextPath>
 						<!-- OpenCMIS JARs are on the compile classpath via GitHub Packages -->
 						<parentLoaderPriority>false</parentLoaderPriority>
 					</webApp>
-					<httpConnector>
-						<port>8081</port>
-					</httpConnector>
-					<!-- Jetty XML config for ForwardedRequestCustomizer:
-					     equivalent of Tomcat's RemoteIpValve. Rewrites
-					     request scheme/host/port from X-Forwarded-* headers
-					     so servlet API values match the public-facing origin. -->
-					<jettyXml>${project.basedir}/src/main/webapp/WEB-INF/jetty-forwarded.xml</jettyXml>
+					<!-- HTTP connector and ForwardedRequestCustomizer are
+					     defined in jetty-forwarded.xml so that the proxy
+					     trust model matches Tomcat's RemoteIpValve. -->
+					<jettyXmls>
+						<jettyXml>${project.basedir}/src/main/webapp/WEB-INF/jetty-forwarded.xml</jettyXml>
+					</jettyXmls>
 					<!-- Development environment variables (Jetty 12 flat key-value format) -->
 					<systemProperties>
 						<nemakiware.properties>file:${project.basedir}/src/main/webapp/WEB-INF/classes/nemakiware-jetty.properties</nemakiware.properties>
