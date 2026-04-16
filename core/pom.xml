@@ -1203,9 +1203,16 @@
 						<!-- OpenCMIS JARs are on the compile classpath via GitHub Packages -->
 						<parentLoaderPriority>false</parentLoaderPriority>
 					</webApp>
-					<!-- HTTP connector and ForwardedRequestCustomizer are
-					     defined in jetty-forwarded.xml so that the proxy
-					     trust model matches Tomcat's RemoteIpValve. -->
+					<!-- HTTP connector (port 8081) is defined in
+					     jetty-forwarded.xml.  ForwardedRequestCustomizer is
+					     INTENTIONALLY NOT registered there: Jetty 12 has no
+					     trusted-proxy filter for it (unlike Tomcat's
+					     RemoteIpValve internalProxies), so attaching it would
+					     let any client spoof X-Forwarded-Host and bypass the
+					     ResourceBase CSRF origin check.  Use the Tomcat
+					     Docker image (docker/core/server.xml) for any
+					     reverse-proxy testing.  See the file header comment
+					     in jetty-forwarded.xml for the full rationale. -->
 					<jettyXmls>
 						<jettyXml>${project.basedir}/src/main/webapp/WEB-INF/jetty-forwarded.xml</jettyXml>
 					</jettyXmls>
