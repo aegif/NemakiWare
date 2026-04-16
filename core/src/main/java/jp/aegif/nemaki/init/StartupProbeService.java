@@ -446,10 +446,28 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
         try {
             java.io.InputStream is = null;
 
+            // Strip "file:" / "file://" prefix that Maven Jetty plugin adds when
+            // system properties are passed as "file:${project.basedir}/...".
+            String resolvedPath = yamlPath;
+            if (resolvedPath.startsWith("file://")) {
+                resolvedPath = resolvedPath.substring(7);
+            } else if (resolvedPath.startsWith("file:")) {
+                resolvedPath = resolvedPath.substring(5);
+            }
+
             // Try as file system path first (Docker: -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml)
-            java.io.File file = new java.io.File(yamlPath);
+            java.io.File file = new java.io.File(resolvedPath);
             if (file.isFile()) {
                 is = new java.io.FileInputStream(file);
+            }
+
+            // Try as URL (handles file:, http:, etc.)
+            if (is == null && yamlPath.contains(":")) {
+                try {
+                    is = new java.net.URI(yamlPath).toURL().openStream();
+                } catch (Exception e) {
+                    log.debug("loadDbNamesFromRepositoriesYaml: not a valid URL: " + yamlPath);
+                }
             }
 
             // Try as classpath resource (e.g. "repositories.yml" in WEB-INF/classes)
