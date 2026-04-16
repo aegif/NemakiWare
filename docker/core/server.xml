@@ -161,15 +161,26 @@
         <!-- RemoteIpValve: trust X-Forwarded-* headers only from known proxies.
              This rewrites request.getScheme(), getServerName(), getServerPort()
              so that application code can use servlet API values directly without
-             parsing forwarded headers itself.  internalProxies defaults to
-             common RFC-1918 / loopback ranges.
-             hostHeader / portHeader ensure that proxied Host and Port are
-             also reflected in getServerName() / getServerPort(). -->
+             parsing forwarded headers itself.
+
+             internalProxies is narrowed to Docker compose internal networks
+             ONLY (172.16.0.0/12 + 10.0.0.0/8).  Other ranges are
+             INTENTIONALLY EXCLUDED to prevent CSRF bypass via spoofed
+             X-Forwarded-Host:
+             - 127.0.0.1 (loopback): an attacker reaching the Tomcat port
+               directly from the host would otherwise be trusted.
+             - 192.168.0.0/16: includes Docker Desktop's host-to-container
+               bridge (192.168.65.x), which would let any local request
+               spoof the public origin.
+
+             Production deployments behind a different proxy IP must
+             override this regex (e.g., via a custom server.xml). -->
         <Valve className="org.apache.catalina.valves.RemoteIpValve"
                protocolHeader="X-Forwarded-Proto"
                hostHeader="X-Forwarded-Host"
                portHeader="X-Forwarded-Port"
-               remoteIpHeader="X-Forwarded-For" />
+               remoteIpHeader="X-Forwarded-For"
+               internalProxies="172\.(?:1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}" />
 
         <!-- SingleSignOn valve, share authentication between web applications
              Documentation at: /docs/config/valve.html -->
