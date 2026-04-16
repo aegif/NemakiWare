@@ -236,8 +236,8 @@ public class WebAuthnResource extends ResourceBase {
 			challengeStore.put(challengeB64, new ChallengeData(
 					userId, creationOptions, null, System.currentTimeMillis()));
 
-			// Clean up expired challenges
-			cleanupExpiredChallenges();
+			// Clean up expired challenges (protect the one we just created)
+			cleanupExpiredChallenges(challengeB64);
 
 			// Serialize to JSON
 			String optionsJson = objectMapper.writeValueAsString(creationOptions);
@@ -388,7 +388,7 @@ public class WebAuthnResource extends ResourceBase {
 			challengeStore.put(challengeB64, new ChallengeData(
 					null, null, assertionRequest, System.currentTimeMillis()));
 
-			cleanupExpiredChallenges();
+			cleanupExpiredChallenges(challengeB64);
 
 			String optionsJson = objectMapper.writeValueAsString(
 					assertionRequest.getPublicKeyCredentialRequestOptions());
@@ -669,22 +669,36 @@ public class WebAuthnResource extends ResourceBase {
 		}
 	}
 
-	private void cleanupExpiredChallenges() {
+	/**
+	 * Purge expired challenges, then enforce the hard size cap.
+	 *
+	 * @param protectedKey challenge key that was just created by the
+	 *     current request — must NOT be evicted even if it falls into
+	 *     the overflow window (may be null if called defensively)
+	 */
+	private void cleanupExpiredChallenges(String protectedKey) {
 		long now = System.currentTimeMillis();
 		challengeStore.entrySet().removeIf(entry ->
 				(now - entry.getValue().timestamp) > CHALLENGE_TTL_MS);
 
-		// Hard size cap: if expired-purge wasn't enough (rare but possible
-		// under flooding of /authenticate/begin which is unauthenticated),
-		// evict oldest entries until we drop below the cap.  ConcurrentHashMap
-		// has no built-in LRU, so we sort once when the cap is hit; this is
-		// O(n log n) but only runs in the abuse path.
-		if (challengeStore.size() > CHALLENGE_STORE_MAX_SIZE) {
+		// Hard size cap.  Snapshot the size once; concurrent mutations can
+		// only shrink it (put is done, other threads may also be cleaning),
+		// so Math.max guards against negative limit().
+		int currentSize = challengeStore.size();
+		if (currentSize > CHALLENGE_STORE_MAX_SIZE) {
+			int evictCount = Math.max(0, currentSize - CHALLENGE_STORE_MAX_SIZE / 2);
 			log.warn("WebAuthn challenge store exceeded " + CHALLENGE_STORE_MAX_SIZE
-					+ " entries (" + challengeStore.size() + "), evicting oldest");
+					+ " entries (" + currentSize + "), evicting " + evictCount + " oldest");
 			challengeStore.entrySet().stream()
-					.sorted((a, b) -> Long.compare(a.getValue().timestamp, b.getValue().timestamp))
-					.limit(challengeStore.size() - CHALLENGE_STORE_MAX_SIZE / 2)
+					.filter(e -> !e.getKey().equals(protectedKey))
+					.sorted((a, b) -> {
+						int cmp = Long.compare(a.getValue().timestamp, b.getValue().timestamp);
+						// deterministic tie-break so burst requests with the
+						// same millisecond don't nondeterministically evict
+						// each other's challenges
+						return cmp != 0 ? cmp : a.getKey().compareTo(b.getKey());
+					})
+					.limit(evictCount)
 					.map(Map.Entry::getKey)
 					.toList()
 					.forEach(challengeStore::remove);

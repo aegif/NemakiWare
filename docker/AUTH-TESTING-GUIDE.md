@@ -56,7 +56,7 @@ docker compose -f docker-compose-auth-test.yml up -d
 | Client ID | nemakiware-ui |
 | Response Type | code (Authorization Code Flow) |
 | Scope | openid profile email |
-| Redirect URI | http://localhost:8080/core/ui/oidc-callback |
+| Redirect URI | http://localhost:8080/core/ui/oidc-callback.html |
 
 ### テスト手順
 
@@ -110,7 +110,7 @@ curl -X POST http://localhost:8080/core/rest/repo/bedroom/authtoken/oidc/convert
 | IdP Entity ID | http://localhost:8180/realms/nemakiware |
 | IdP SSO URL | http://localhost:8180/realms/nemakiware/protocol/saml |
 | SP Entity ID | nemakiware-sp |
-| Callback URL | http://localhost:8080/core/ui/saml-callback |
+| ACS (Assertion Consumer Service) URL | http://localhost:8080/core/saml/acs |
 
 ### テスト手順
 

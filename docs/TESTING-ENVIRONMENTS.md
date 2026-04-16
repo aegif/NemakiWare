@@ -10,9 +10,9 @@ NemakiWare のテスト実行環境の使い分けガイド。
 | TCK / 結合テスト | Tomcat (Docker) | CouchDB (Docker), Solr (Docker) | `./tck-test-clean.sh` |
 | QA 統合テスト | Tomcat (Docker) | CouchDB, Solr (Docker) | `./qa-test.sh qa` |
 | Playwright E2E | Tomcat (Docker) | CouchDB, Solr (Docker) | `npx playwright test` |
-| 開発時のコード確認 | Jetty (Maven) | CouchDB (Docker) | `bash core/start-jetty-dev.sh` |
+| 開発時のコード確認 | Jetty (Maven) | CouchDB (Docker), Solr (検索時のみ) | `bash core/start-jetty-dev.sh` |
 
-**結論**: CouchDB は **常に必要**。Solr は検索系（QA, TCK Query, E2E search テスト）で必要。Tomcat は CI/QA/E2E すべての結合テストで必要。Jetty は開発時のコード確認用に限定。
+**結論**: CouchDB は **常に必要**。Solr は検索系（QA, TCK Query, E2E search テスト、Jetty dev での検索操作）で必要。Tomcat は CI/QA/E2E すべての結合テストで必要。Jetty は開発時のコード確認用に限定。
 
 ---
 
