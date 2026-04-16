@@ -669,39 +669,54 @@ public class WebAuthnResource extends ResourceBase {
 		}
 	}
 
+	// Keys that are "in flight" (just created by a concurrent /begin
+	// request and not yet returned to the client).  Protected from
+	// eviction even when another thread runs the overflow cleanup.
+	private static final java.util.Set<String> inFlightKeys =
+			java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+
 	/**
 	 * Purge expired challenges, then enforce the hard size cap.
 	 *
-	 * @param protectedKey challenge key that was just created by the
-	 *     current request — must NOT be evicted even if it falls into
-	 *     the overflow window (may be null if called defensively)
+	 * <p>The overflow eviction is {@code synchronized} so that only one
+	 * thread runs the snapshot→sort→limit→remove sequence at a time.
+	 * Without this, concurrent threads could each independently select
+	 * the other's fresh challenge for eviction (protectedKey only guards
+	 * the <em>caller's own</em> key, not keys from parallel requests).</p>
+	 *
+	 * <p>All keys currently registered in {@link #inFlightKeys} are
+	 * excluded from eviction regardless of which thread runs the pass.</p>
+	 *
+	 * @param protectedKey challenge key to add to the in-flight set
+	 *     before cleanup and remove after (may be null)
 	 */
 	private void cleanupExpiredChallenges(String protectedKey) {
-		long now = System.currentTimeMillis();
-		challengeStore.entrySet().removeIf(entry ->
-				(now - entry.getValue().timestamp) > CHALLENGE_TTL_MS);
+		if (protectedKey != null) inFlightKeys.add(protectedKey);
+		try {
+			long now = System.currentTimeMillis();
+			challengeStore.entrySet().removeIf(entry ->
+					(now - entry.getValue().timestamp) > CHALLENGE_TTL_MS);
 
-		// Hard size cap.  Snapshot the size once; concurrent mutations can
-		// only shrink it (put is done, other threads may also be cleaning),
-		// so Math.max guards against negative limit().
-		int currentSize = challengeStore.size();
-		if (currentSize > CHALLENGE_STORE_MAX_SIZE) {
-			int evictCount = Math.max(0, currentSize - CHALLENGE_STORE_MAX_SIZE / 2);
-			log.warn("WebAuthn challenge store exceeded " + CHALLENGE_STORE_MAX_SIZE
-					+ " entries (" + currentSize + "), evicting " + evictCount + " oldest");
-			challengeStore.entrySet().stream()
-					.filter(e -> !e.getKey().equals(protectedKey))
-					.sorted((a, b) -> {
-						int cmp = Long.compare(a.getValue().timestamp, b.getValue().timestamp);
-						// deterministic tie-break so burst requests with the
-						// same millisecond don't nondeterministically evict
-						// each other's challenges
-						return cmp != 0 ? cmp : a.getKey().compareTo(b.getKey());
-					})
-					.limit(evictCount)
-					.map(Map.Entry::getKey)
-					.toList()
-					.forEach(challengeStore::remove);
+			synchronized (challengeStore) {
+				int currentSize = challengeStore.size();
+				if (currentSize > CHALLENGE_STORE_MAX_SIZE) {
+					int evictCount = Math.max(0, currentSize - CHALLENGE_STORE_MAX_SIZE / 2);
+					log.warn("WebAuthn challenge store exceeded " + CHALLENGE_STORE_MAX_SIZE
+							+ " entries (" + currentSize + "), evicting " + evictCount + " oldest");
+					challengeStore.entrySet().stream()
+							.filter(e -> !inFlightKeys.contains(e.getKey()))
+							.sorted((a, b) -> {
+								int cmp = Long.compare(a.getValue().timestamp, b.getValue().timestamp);
+								return cmp != 0 ? cmp : a.getKey().compareTo(b.getKey());
+							})
+							.limit(evictCount)
+							.map(Map.Entry::getKey)
+							.toList()
+							.forEach(challengeStore::remove);
+				}
+			}
+		} finally {
+			if (protectedKey != null) inFlightKeys.remove(protectedKey);
 		}
 	}
 

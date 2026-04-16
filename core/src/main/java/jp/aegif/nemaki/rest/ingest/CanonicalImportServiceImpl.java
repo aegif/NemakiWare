@@ -1233,19 +1233,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             emitAuditEvent(request.getRepositoryId(), null, callContext, false, e.getMessage());
 
             boolean isTransient = isTransientError(e);
-            // Save to dead-letter queue for retry only for non-manual and
-            // non-permanent errors.  Permanent errors (config/validation)
-            // would never succeed on retry and just pollute the DLQ.
+            // Save all non-manual failures to the DLQ so that no item is
+            // silently lost when the scheduler advances its checkpoint past
+            // this source item.  Permanent errors are marked retryable=false
+            // so the operator can inspect (and optionally retry after fixing
+            // the root cause) without auto-retry loops wasting resources.
             if (ingestJobService != null && !"manual".equals(request.getExecutionMode())) {
-                if (isTransient) {
-                    try {
-                        ingestJobService.saveToDlq(request, e.getMessage(), bufferedContent);
-                    } catch (Exception dlqErr) {
-                        logger.debug("Failed to save to DLQ: {}", dlqErr.getMessage());
-                    }
-                } else {
-                    logger.info("Permanent error — not sending to DLQ: requestId={}, error={}",
-                            requestId, e.getMessage());
+                try {
+                    ingestJobService.saveToDlq(request,
+                            (isTransient ? "[transient] " : "[permanent] ") + e.getMessage(),
+                            bufferedContent);
+                } catch (Exception dlqErr) {
+                    logger.debug("Failed to save to DLQ: {}", dlqErr.getMessage());
                 }
             }
             return ExternalIngestResult.error(requestId,

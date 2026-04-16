@@ -37,18 +37,23 @@ Keycloak will be available at http://localhost:8088 with admin credentials `admi
 The NemakiWare realm is pre-configured in `docker/keycloak/realm-export.json` with:
 
 - Realm name: `nemakiware`
-- OIDC client: `nemakiware-oidc-client`
+- OIDC client: `nemakiware-ui` (must match `config/oidc.ts` `client_id`)
 - SAML client: `nemakiware-saml-client`
 - Test user: `testuser` / `password`
+
+> **Note**: `docker/realm-export.json` ships with `nemakiware-oidc-client`.
+> If the UI uses `nemakiware-ui`, create a matching client in Keycloak or
+> update the realm export.  The values below reflect the **UI source of truth**
+> (`config/oidc.ts`, `config/saml.ts`).
 
 ### OIDC Client Configuration
 
 | Setting | Value |
 |---------|-------|
-| Client ID | `nemakiware-oidc-client` |
+| Client ID | `nemakiware-ui` |
 | Client Protocol | `openid-connect` |
 | Access Type | `public` |
-| Valid Redirect URIs | `http://localhost:8080/core/ui/*` |
+| Valid Redirect URIs | `http://localhost:8080/core/ui/oidc-callback.html` |
 | Web Origins | `http://localhost:8080` |
 
 ### SAML Client Configuration
@@ -59,8 +64,8 @@ The NemakiWare realm is pre-configured in `docker/keycloak/realm-export.json` wi
 | Client Protocol | `saml` |
 | Sign Documents | `ON` |
 | Sign Assertions | `ON` |
-| Valid Redirect URIs | `http://localhost:8080/core/ui/*` |
-| Master SAML Processing URL | `http://localhost:8080/core/ui/saml-callback.html` |
+| Valid Redirect URIs | `http://localhost:8080/core/*` |
+| Master SAML Processing URL | `http://localhost:8080/core/saml/acs` |
 
 ## NemakiWare Configuration
 
@@ -74,11 +79,12 @@ The React UI SSO configuration is located in:
 #### OIDC Configuration (`oidc.ts`)
 
 ```typescript
+// See config/oidc.ts for the actual runtime values
 export const getOIDCConfig = (): OIDCConfig => {
   return {
     authority: 'http://localhost:8088/realms/nemakiware',
-    client_id: 'nemakiware-oidc-client',
-    redirect_uri: `${window.location.origin}/core/ui/`,
+    client_id: 'nemakiware-ui',
+    redirect_uri: `${window.location.origin}/core/ui/oidc-callback.html`,
     post_logout_redirect_uri: `${window.location.origin}/core/ui/`,
     response_type: 'code',
     scope: 'openid profile email'
@@ -89,11 +95,12 @@ export const getOIDCConfig = (): OIDCConfig => {
 #### SAML Configuration (`saml.ts`)
 
 ```typescript
+// See config/saml.ts for the actual runtime values
 export const getSAMLConfig = (): SAMLConfig => {
   return {
     sso_url: 'http://localhost:8088/realms/nemakiware/protocol/saml',
     entity_id: 'nemakiware-saml-client',
-    callback_url: `${window.location.origin}/core/ui/saml-callback.html`,
+    callback_url: `${window.location.origin}/core/saml/acs`,
     logout_url: `${window.location.origin}/core/ui/`
   };
 };

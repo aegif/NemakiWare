@@ -218,10 +218,76 @@ public class IngestSchedulerService {
                     }
                 }
             }
+            // Periodic purge of expired idempotency keys (at most once per hour)
+            purgeExpiredIdempotencyKeysIfDue();
         } catch (Exception e) {
             logger.error("Ingest scheduler poll failed: {}", e.getMessage());
         }
     }
+
+    /**
+     * Purge idempotency keys older than 7 days from nemaki_conf.
+     * Runs at most once per hour to avoid hammering CouchDB.
+     */
+    private void purgeExpiredIdempotencyKeysIfDue() {
+        long now = System.currentTimeMillis();
+        if (now - lastIdempotencyPurge < IDEMPOTENCY_PURGE_INTERVAL_MS) return;
+        lastIdempotencyPurge = now;
+
+        if (settingsService == null) return;
+        try {
+            // Read all keys with the idempotency prefix
+            jp.aegif.nemaki.rest.controller.IntegrationSettingsService svc = settingsService;
+            // Use CouchDB find to list all ingest.idempotency.* keys
+            var confClient = jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+                    .getBean(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class)
+                    .getClient(jp.aegif.nemaki.util.constant.SystemConst.NEMAKI_CONF_DB);
+            if (confClient == null) return;
+            String dbName = confClient.getDatabaseName();
+            var cloudant = confClient.getClient();
+
+            var selector = new java.util.HashMap<String, Object>();
+            selector.put("type", "configuration");
+            var keySelector = new java.util.HashMap<String, Object>();
+            keySelector.put("$regex", "^ingest\\.idempotency\\.");
+            selector.put("key", keySelector);
+
+            var findOpts = new com.ibm.cloud.cloudant.v1.model.PostFindOptions.Builder()
+                    .db(dbName).selector(selector).limit(500).build();
+            var result = cloudant.postFind(findOpts).execute().getResult();
+            var docs = result.getDocs();
+            if (docs == null || docs.isEmpty()) return;
+
+            long ttlMs = 7L * 24 * 60 * 60 * 1000;
+            java.util.Set<String> keysToDelete = new java.util.HashSet<>();
+            for (var doc : docs) {
+                Object valObj = doc.get("value");
+                if (valObj instanceof String val) {
+                    int sep = val.indexOf('|');
+                    if (sep > 0) {
+                        try {
+                            long savedAt = Long.parseLong(val.substring(sep + 1));
+                            if (now - savedAt > ttlMs) {
+                                Object keyObj = doc.get("key");
+                                if (keyObj instanceof String key) keysToDelete.add(key);
+                            }
+                        } catch (NumberFormatException ignored) {}
+                    }
+                }
+            }
+
+            if (!keysToDelete.isEmpty()) {
+                svc.deleteSettings(keysToDelete);
+                logger.info("Purged {} expired idempotency keys", keysToDelete.size());
+            }
+        } catch (Exception e) {
+            logger.debug("Idempotency key purge failed: {}", e.getMessage());
+        }
+    }
+
+    /** Last time the idempotency key purge ran (epoch ms). */
+    private volatile long lastIdempotencyPurge = 0;
+    private static final long IDEMPOTENCY_PURGE_INTERVAL_MS = 60 * 60 * 1000L; // 1 hour
 
     private ImportProfileDefinitionService profileService;
     private ConnectorDefinitionService connectorService;
