@@ -21,6 +21,9 @@ public class ImportProfileDefinitionController {
     @Autowired
     private ImportProfileDefinitionService importProfileDefinitionService;
 
+    @Autowired(required = false)
+    private IngestSchedulerService ingestSchedulerService;
+
     @Autowired
     private HttpServletRequest httpRequest;
 
@@ -71,6 +74,10 @@ public class ImportProfileDefinitionController {
         def.setProfileId(profileId);
         try {
             importProfileDefinitionService.update(def);
+            // If profile was disabled and IDLE is running, stop the IDLE thread
+            if (!def.isEnabled() && ingestSchedulerService != null) {
+                ingestSchedulerService.stopIdle(profileId);
+            }
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("status", "success");
             List<String> warnings = getPhase2Warnings(def);
@@ -85,6 +92,10 @@ public class ImportProfileDefinitionController {
     public ResponseEntity<Map<String, Object>> delete(@PathVariable String profileId) {
         ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
         if (forbidden != null) return forbidden;
+        // Stop IDLE thread before deletion (no-op if not running)
+        if (ingestSchedulerService != null) {
+            ingestSchedulerService.stopIdle(profileId);
+        }
         importProfileDefinitionService.delete(profileId);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "success");

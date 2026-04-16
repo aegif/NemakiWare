@@ -369,7 +369,8 @@ public class IngestWebhookController {
                 if (clientState == null || !java.security.MessageDigest.isEqual(
                         clientState.getBytes(StandardCharsets.UTF_8),
                         expectedSecret.getBytes(StandardCharsets.UTF_8))) {
-                    logger.warn("Graph clientState mismatch: expected={}, got={}", expectedSecret, clientState);
+                    logger.warn("Graph clientState mismatch for connector (expected length={}, got length={})",
+                            expectedSecret.length(), clientState != null ? clientState.length() : 0);
                     return false;
                 }
             }

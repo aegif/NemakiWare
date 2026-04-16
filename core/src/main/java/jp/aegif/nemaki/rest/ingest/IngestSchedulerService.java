@@ -981,8 +981,9 @@ public class IngestSchedulerService {
                     // Import file attachments as children
                     for (SlackFile file : msg.files()) {
                         if (file.urlPrivateDownload() == null) continue;
+                        InputStream content = null;
                         try {
-                            InputStream content = slack.downloadFile(file.urlPrivateDownload());
+                            content = slack.downloadFile(file.urlPrivateDownload());
                             ExternalIngestRequest req = new ExternalIngestRequest();
                             req.setProfileId(profile.getProfileId());
                             req.setConnectorId(connector.getConnectorId());
@@ -1005,7 +1006,6 @@ public class IngestSchedulerService {
                             ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
                             if (result.isSuccess()) {
                                 imported++;
-                                // Link file to parent message
                                 if (parentObjectId != null) {
                                     createRelationshipSafe(callContext, profile.getRepositoryId(),
                                             parentObjectId, result.objectId(), errors);
@@ -1017,6 +1017,8 @@ public class IngestSchedulerService {
                             }
                         } catch (Exception e) {
                             errors.add("Slack file " + file.id() + ": " + e.getMessage());
+                        } finally {
+                            if (content != null) try { content.close(); } catch (Exception ignored) {}
                         }
                     }
                 } catch (Exception e) {
@@ -1093,8 +1095,9 @@ public class IngestSchedulerService {
                     // Import file attachments as children
                     for (TeamsFile file : msg.attachments()) {
                         if (file.contentUrl() == null) continue;
+                        InputStream content = null;
                         try {
-                            InputStream content = teams.downloadFile(file.contentUrl());
+                            content = teams.downloadFile(file.contentUrl());
                             ExternalIngestRequest req = new ExternalIngestRequest();
                             req.setProfileId(profile.getProfileId());
                             req.setConnectorId(connector.getConnectorId());
@@ -1127,6 +1130,8 @@ public class IngestSchedulerService {
                             }
                         } catch (Exception e) {
                             errors.add("Teams file " + file.id() + ": " + e.getMessage());
+                        } finally {
+                            if (content != null) try { content.close(); } catch (Exception ignored) {}
                         }
                     }
                 } catch (Exception e) {
@@ -1201,9 +1206,10 @@ public class IngestSchedulerService {
 
                     // Import file attachments as children
                     for (String fileId : post.fileIds()) {
+                        InputStream content = null;
                         try {
                             MattermostFile fileInfo = mm.getFileInfo(fileId);
-                            InputStream content = mm.downloadFile(fileId);
+                            content = mm.downloadFile(fileId);
                             ExternalIngestRequest req = new ExternalIngestRequest();
                             req.setProfileId(profile.getProfileId());
                             req.setConnectorId(connector.getConnectorId());
@@ -1236,6 +1242,8 @@ public class IngestSchedulerService {
                             }
                         } catch (Exception e) {
                             errors.add("MM file " + fileId + ": " + e.getMessage());
+                        } finally {
+                            if (content != null) try { content.close(); } catch (Exception ignored) {}
                         }
                     }
                 } catch (Exception e) {
@@ -1360,10 +1368,11 @@ public class IngestSchedulerService {
                 var files = chatwork.listFiles(roomId);
                 for (var file : files) {
                     throttle(throttleMs);
+                    InputStream content = null;
                     try {
                         String dlUrl = chatwork.getFileDownloadUrl(roomId, file.fileId());
                         if (dlUrl == null) continue;
-                        InputStream content = chatwork.downloadFile(dlUrl);
+                        content = chatwork.downloadFile(dlUrl);
                         ExternalIngestRequest fileReq = new ExternalIngestRequest();
                         fileReq.setProfileId(profile.getProfileId());
                         fileReq.setConnectorId(connector.getConnectorId());
@@ -1384,6 +1393,8 @@ public class IngestSchedulerService {
                         else errors.add("Chatwork file " + file.fileId() + ": " + String.join(", ", fileResult.errors()));
                     } catch (Exception e) {
                         errors.add("Chatwork file " + file.fileId() + ": " + e.getMessage());
+                    } finally {
+                        if (content != null) try { content.close(); } catch (Exception ignored) {}
                     }
                 }
             } catch (Exception e) {
@@ -1422,8 +1433,9 @@ public class IngestSchedulerService {
                 if (lastModified != null && file.modifiedAt() != null
                         && file.modifiedAt().compareTo(lastModified) <= 0) { skipped++; continue; }
 
+                InputStream content = null;
                 try {
-                    InputStream content = box.downloadFile(file.id());
+                    content = box.downloadFile(file.id());
                     ExternalIngestRequest req = new ExternalIngestRequest();
                     req.setProfileId(profile.getProfileId());
                     req.setConnectorId(connector.getConnectorId());
@@ -1452,6 +1464,8 @@ public class IngestSchedulerService {
                     }
                 } catch (Exception e) {
                     errors.add("Box file " + file.id() + ": " + e.getMessage());
+                } finally {
+                    if (content != null) try { content.close(); } catch (Exception ignored) {}
                 }
             }
             if (highWaterModified != null && !highWaterModified.equals(lastModified)) {
@@ -1485,8 +1499,9 @@ public class IngestSchedulerService {
                 if (lastModified != null && file.serverModified() != null
                         && file.serverModified().compareTo(lastModified) <= 0) { skipped++; continue; }
 
+                InputStream content = null;
                 try {
-                    InputStream content = dropbox.downloadFile(file.pathDisplay());
+                    content = dropbox.downloadFile(file.pathDisplay());
                     ExternalIngestRequest req = new ExternalIngestRequest();
                     req.setProfileId(profile.getProfileId());
                     req.setConnectorId(connector.getConnectorId());
@@ -1515,6 +1530,8 @@ public class IngestSchedulerService {
                     }
                 } catch (Exception e) {
                     errors.add("Dropbox file " + file.id() + ": " + e.getMessage());
+                } finally {
+                    if (content != null) try { content.close(); } catch (Exception ignored) {}
                 }
             }
             if (highWaterModified != null && !highWaterModified.equals(lastModified)) {

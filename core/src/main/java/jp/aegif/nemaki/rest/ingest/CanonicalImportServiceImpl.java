@@ -55,6 +55,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private static final Logger logger = LoggerFactory.getLogger(CanonicalImportServiceImpl.class);
     private static final com.fasterxml.jackson.databind.ObjectMapper JSON_MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
 
+    /** Idempotency key TTL: 7 days.  After this period the key is considered
+     *  expired and a new import with the same key will proceed normally. */
+    private static final long IDEMPOTENCY_TTL_MS = 7L * 24 * 60 * 60 * 1000;
+
     private ConnectorDefinitionService connectorDefinitionService;
     private ImportProfileDefinitionService importProfileDefinitionService;
     private ContentService contentService;
@@ -1026,7 +1030,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             // 5b. Idempotency check: skip if same key already succeeded
             if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
-                // Check persisted idempotency record (works for all dedupe modes)
+                // Check persisted idempotency record (works for all dedupe modes).
+                // Value format: "objectId|epochMillis" — TTL is 7 days.
                 String idempKey = "ingest.idempotency." + request.getIdempotencyKey();
                 try {
                     var ctx = jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
@@ -1034,8 +1039,33 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         var settings = ctx.getBean(jp.aegif.nemaki.rest.controller.IntegrationSettingsService.class);
                         String existing = settings.readSetting(idempKey);
                         if (existing != null && !existing.isBlank()) {
-                            return ExternalIngestResult.skipped(requestId, existing,
-                                    "Idempotent: request '" + request.getIdempotencyKey() + "' already completed");
+                            String existingObjectId = existing;
+                            // Parse TTL: if value contains "|", extract objectId and timestamp
+                            int sep = existing.indexOf('|');
+                            if (sep > 0) {
+                                existingObjectId = existing.substring(0, sep);
+                                try {
+                                    long savedAt = Long.parseLong(existing.substring(sep + 1));
+                                    long ageMs = System.currentTimeMillis() - savedAt;
+                                    if (ageMs > IDEMPOTENCY_TTL_MS) {
+                                        logger.info("Idempotency key expired after {}h, allowing re-import: {}",
+                                                ageMs / 3_600_000, request.getIdempotencyKey());
+                                        settings.deleteSettings(java.util.Set.of(idempKey));
+                                        // Fall through to normal import
+                                    } else {
+                                        return ExternalIngestResult.skipped(requestId, existingObjectId,
+                                                "Idempotent: request '" + request.getIdempotencyKey() + "' already completed");
+                                    }
+                                } catch (NumberFormatException nfe) {
+                                    // Legacy value without timestamp — honour it
+                                    return ExternalIngestResult.skipped(requestId, existingObjectId,
+                                            "Idempotent: request '" + request.getIdempotencyKey() + "' already completed");
+                                }
+                            } else {
+                                // Legacy value without "|" separator
+                                return ExternalIngestResult.skipped(requestId, existingObjectId,
+                                        "Idempotent: request '" + request.getIdempotencyKey() + "' already completed");
+                            }
                         }
                     }
                 } catch (Exception e) {
@@ -1184,7 +1214,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     var ctx = jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
                     if (ctx != null) {
                         var settings = ctx.getBean(jp.aegif.nemaki.rest.controller.IntegrationSettingsService.class);
-                        settings.writeSetting("ingest.idempotency." + request.getIdempotencyKey(), objectId);
+                        settings.writeSetting("ingest.idempotency." + request.getIdempotencyKey(),
+                                objectId + "|" + System.currentTimeMillis());
                     }
                 } catch (Exception e) {
                     logger.debug("Idempotency save failed: {}", e.getMessage());
@@ -1200,21 +1231,71 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         } catch (Exception e) {
             logger.error("Canonical import failed: requestId={}, error={}", requestId, e.getMessage(), e);
             emitAuditEvent(request.getRepositoryId(), null, callContext, false, e.getMessage());
-            // Save to dead-letter queue for retry (with buffered content if available)
+
+            boolean isTransient = isTransientError(e);
+            // Save to dead-letter queue for retry only for non-manual and
+            // non-permanent errors.  Permanent errors (config/validation)
+            // would never succeed on retry and just pollute the DLQ.
             if (ingestJobService != null && !"manual".equals(request.getExecutionMode())) {
-                try {
-                    ingestJobService.saveToDlq(request, e.getMessage(), bufferedContent);
-                } catch (Exception dlqErr) {
-                    logger.debug("Failed to save to DLQ: {}", dlqErr.getMessage());
+                if (isTransient) {
+                    try {
+                        ingestJobService.saveToDlq(request, e.getMessage(), bufferedContent);
+                    } catch (Exception dlqErr) {
+                        logger.debug("Failed to save to DLQ: {}", dlqErr.getMessage());
+                    }
+                } else {
+                    logger.info("Permanent error — not sending to DLQ: requestId={}, error={}",
+                            requestId, e.getMessage());
                 }
             }
-            return ExternalIngestResult.error(requestId, e.getMessage());
+            return ExternalIngestResult.error(requestId,
+                    (isTransient ? "[transient] " : "[permanent] ") + e.getMessage());
         }
     }
 
     /**
      * @return error message if metadata application failed, null on success
      */
+    /**
+     * Classify whether an import error is transient (worth retrying) or
+     * permanent (config/validation — will never succeed on retry).
+     *
+     * Transient: network timeouts, CouchDB/Solr unavailability, HTTP 429/503,
+     * optimistic lock conflicts, temporary I/O failures.
+     *
+     * Permanent: profile/connector not found, archetype not allowed,
+     * repository mismatch, dry-run (should not reach here), parse errors,
+     * type definition errors, permission denied.
+     */
+    private boolean isTransientError(Exception e) {
+        // Walk the cause chain looking for known transient signals
+        Throwable t = e;
+        for (int depth = 0; t != null && depth < 5; depth++, t = t.getCause()) {
+            String name = t.getClass().getName();
+            // Network / I/O
+            if (t instanceof java.net.SocketTimeoutException
+                    || t instanceof java.net.ConnectException
+                    || t instanceof java.net.NoRouteToHostException
+                    || t instanceof java.net.UnknownHostException) {
+                return true;
+            }
+            // CouchDB / HTTP 409 conflict (optimistic lock)
+            if (name.contains("UpdateConflictException") || name.contains("DocumentConflict")) {
+                return true;
+            }
+            // HTTP status in message (crude but catches adapter wrappers)
+            String msg = t.getMessage();
+            if (msg != null) {
+                if (msg.contains("429") || msg.contains("503") || msg.contains("502")
+                        || msg.contains("504") || msg.contains("Read timed out")
+                        || msg.contains("Connection reset") || msg.contains("Connection refused")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private String applySourceMetadata(String repositoryId, String objectId, CallContext callContext,
                                        ConnectorDefinition connector, ExternalIngestRequest request,
                                        ImportProfileDefinition profile, String contentHash) {
