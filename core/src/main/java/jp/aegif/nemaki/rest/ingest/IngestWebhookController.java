@@ -319,13 +319,41 @@ public class IngestWebhookController {
             return verifyChatworkSignature(secret, rawBody);
         }
 
-        // Generic HMAC-SHA256 verification — require signature when secret is configured
+        // Generic HMAC-SHA256 verification — require signature when secret is configured.
+        //
+        // Optional replay protection: if X-Webhook-Timestamp is present, the
+        // signature must cover "<timestamp>:<body>" and the timestamp must be
+        // within 5 minutes of the server clock.  This matches the Slack
+        // signing scheme.  Callers without timestamp support fall back to
+        // signing only the body — replay is then mitigated only by the
+        // ingest pipeline's source-identity dedupe.
         String headerSig = httpRequest.getHeader("X-Webhook-Signature");
         if (headerSig == null) {
             logger.warn("Webhook signature header missing for connector with configured secret");
             return false; // Secret is set but no signature provided — reject
         }
-        String computed = hmacSha256(secret, rawBody);
+
+        String headerTimestamp = httpRequest.getHeader("X-Webhook-Timestamp");
+        String signedPayload;
+        if (headerTimestamp != null && !headerTimestamp.isBlank()) {
+            long now = System.currentTimeMillis() / 1000L;
+            try {
+                long ts = Long.parseLong(headerTimestamp.trim());
+                if (Math.abs(now - ts) > 300) {
+                    logger.warn("Generic webhook timestamp outside 5-minute window: now={}, header={}",
+                            now, ts);
+                    return false;
+                }
+            } catch (NumberFormatException e) {
+                logger.warn("Generic webhook X-Webhook-Timestamp is not a unix epoch second: {}", headerTimestamp);
+                return false;
+            }
+            signedPayload = headerTimestamp + ":" + rawBody;
+        } else {
+            signedPayload = rawBody;
+        }
+
+        String computed = hmacSha256(secret, signedPayload);
         return java.security.MessageDigest.isEqual(
                 headerSig.getBytes(StandardCharsets.UTF_8),
                 computed.getBytes(StandardCharsets.UTF_8));

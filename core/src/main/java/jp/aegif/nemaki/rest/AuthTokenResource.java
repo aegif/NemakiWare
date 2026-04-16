@@ -449,6 +449,24 @@ public class AuthTokenResource extends ResourceBase{
 				logger.debug("SAML response was deflate-compressed, inflated {} -> {} bytes",
 						decodedBytes.length, xmlBytes.length);
 			} catch (java.util.zip.DataFormatException e) {
+				// DEFLATE failed.  Reject explicitly if the raw bytes look like
+				// gzip (magic 1f 8b) or zip (50 4b 03 04) — those would never
+				// parse as valid XML and could mask a compression bomb that
+				// the inflater limit didn't catch.
+				if (decodedBytes.length >= 2
+						&& (decodedBytes[0] & 0xff) == 0x1f
+						&& (decodedBytes[1] & 0xff) == 0x8b) {
+					addErrMsg(errMsg, "saml", "SAML response uses gzip — only DEFLATE (RFC 1951) is accepted");
+					return makeResult(false, result, errMsg).toString();
+				}
+				if (decodedBytes.length >= 4
+						&& (decodedBytes[0] & 0xff) == 0x50
+						&& (decodedBytes[1] & 0xff) == 0x4b
+						&& (decodedBytes[2] & 0xff) == 0x03
+						&& (decodedBytes[3] & 0xff) == 0x04) {
+					addErrMsg(errMsg, "saml", "SAML response is a zip archive — not allowed");
+					return makeResult(false, result, errMsg).toString();
+				}
 				xmlBytes = decodedBytes;
 				logger.debug("SAML response was not deflate-compressed, using raw bytes");
 			}
