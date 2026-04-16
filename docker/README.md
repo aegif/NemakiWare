@@ -21,7 +21,7 @@ cd docker
 
 - Docker Desktop installed and running
 - At least 4GB available RAM
-- Ports available: 5984, 8080, 8983, 9000
+- Ports available: 5984 (CouchDB), 8080 (NemakiWare core + UI), 8983 (Solr)
 
 ## Test Scripts Overview
 
@@ -80,7 +80,7 @@ After services start, verify endpoints:
 curl -u admin:admin http://localhost:8080/core/atom/bedroom
 
 # Check UI
-open http://localhost:9000/ui/login?repositoryId=bedroom
+open http://localhost:8080/core/ui/login?repositoryId=bedroom
 # Login: admin/admin
 ```
 
@@ -149,7 +149,7 @@ docker compose restart <service-name>
 | CouchDB Admin | http://localhost:5984/_utils | admin/password |
 | Solr Admin | http://localhost:8983/solr | - |
 | CMIS AtomPub | http://localhost:8080/core/atom/bedroom | admin/admin |
-| NemakiWare UI | http://localhost:9000/ui | admin/admin |
+| NemakiWare UI | http://localhost:8080/core/ui/ | admin/admin |
 
 ## Advanced Usage
 

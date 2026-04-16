@@ -453,11 +453,12 @@ const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');  // Not 
 - Primary config: `core/nemakiware.properties`, `docker/repositories.yml`.
 - For Java 21, ensure `MAVEN_OPTS` includes required `--add-opens` (see `core/start-jetty-dev.sh`).
 
-## Current Work Status (2026-01-05)
+## Current Work Status (2026-04-17)
 
 ### Active Branch
-- **Branch**: `release/3.0.0-RC1-QA`
-- **Focus**: QAテストとドキュメント整備
+- **Branch**: `release/3.1.1-RC2`
+- **Focus**: CSRF hardening, External Ingest stabilization, Jetty dev parity
+- See `CLAUDE.md` for the canonical version log (RC1〜RC12) and security status.
 
 ### TCK Complete Success Achievement (2025-11-09) 🎉
 
