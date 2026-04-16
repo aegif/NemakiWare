@@ -137,7 +137,7 @@ mvn jetty:run -f core/pom.xml -Pdevelopment
 ### 制約
 - TCK / QA / E2E は **Tomcat を前提** にしているため、Jetty で実行すると port 不一致 (8081 vs 8080) で動かない
 - Jetty開発サーバーは「単発の動作確認」用途
-- ForwardedRequestCustomizer は `core/src/main/webapp/WEB-INF/jetty-forwarded.xml` で設定済み（Tomcat の RemoteIpValve と同等）
+- **X-Forwarded-* は信頼しない**: Jetty 12 の `ForwardedRequestCustomizer` には Tomcat `RemoteIpValve` の `internalProxies` のような信頼proxy制限がないため、Jetty dev では一切登録していない。reverse proxy 経由のテストは Tomcat Docker でのみ可能 (`docker/core/server.xml`)
 - `repositories.yml` の `file:` URI は `StartupProbeService` が解決
 - CouchDB URL は `DatabasePreInitializer` のコンストラクタで `db.couchdb.url` system propertyから上書き
 

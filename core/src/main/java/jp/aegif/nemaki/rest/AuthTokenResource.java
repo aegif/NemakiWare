@@ -1677,11 +1677,16 @@ public class AuthTokenResource extends ResourceBase{
 	 * Determine if the current connection is secure (HTTPS).
 	 *
 	 * <p>Uses only {@code request.isSecure()}, which Tomcat's
-	 * {@code RemoteIpValve} (configured in {@code server.xml}) rewrites
-	 * when the request arrives from a trusted proxy with
+	 * {@code RemoteIpValve} (configured in {@code docker/core/server.xml})
+	 * rewrites when the request arrives from a trusted proxy with
 	 * {@code X-Forwarded-Proto: https}.  This avoids parsing forwarded
 	 * headers directly, which would be spoofable by untrusted clients
 	 * and inconsistent with the CSRF trust model in ResourceBase.</p>
+	 *
+	 * <p>On the Jetty dev server, no forwarded-header customizer is
+	 * registered (see {@code core/src/main/webapp/WEB-INF/jetty-forwarded.xml}
+	 * for the rationale), so this returns the actual local connection
+	 * scheme.  Jetty dev is HTTP-only and not intended for proxy testing.</p>
 	 */
 	private boolean isSecureConnection(jakarta.servlet.http.HttpServletRequest req) {
 		return req.isSecure();

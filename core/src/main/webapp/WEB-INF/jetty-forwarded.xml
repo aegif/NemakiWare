@@ -1,19 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE Configure PUBLIC "-//Jetty//Configure//EN" "https://jetty.org/configure_12.dtd">
 <!--
-  Jetty 12 server configuration with HTTP connector and
-  ForwardedRequestCustomizer.
+  Jetty 12 server configuration for the dev server (mvn jetty:run).
 
-  ForwardedRequestCustomizer is the Jetty equivalent of Tomcat's
-  RemoteIpValve.  It rewrites request.getScheme(), getServerName(),
-  and getServerPort() based on the X-Forwarded-* headers sent by a
-  trusted proxy, so that servlet API values match the public-facing
-  origin.  This matches the trust model used by ResourceBase
-  (CSRF origin check) and AuthTokenResource (cookie Secure flag).
+  ForwardedRequestCustomizer is INTENTIONALLY NOT registered here.
+  Reason: Jetty's ForwardedRequestCustomizer has no built-in
+  trusted-proxy IP filter (unlike Tomcat's RemoteIpValve
+  internalProxies), so adding it would let any client that can
+  reach the Jetty port spoof X-Forwarded-Host and rewrite the
+  servlet-facing scheme/host/port observed by ResourceBase and
+  AuthTokenResource.  That defeats the CSRF origin check.
+
+  Jetty dev is for local code-iteration only — it should never sit
+  behind a production reverse proxy.  If you do need to test a
+  reverse-proxy scenario, use the Tomcat Docker image (which has
+  the hardened RemoteIpValve in docker/core/server.xml).
+
+  This file is kept (rather than removed) so that the Jetty plugin
+  has an external XML to drive the connector definition; previously
+  the connector was defined inline in pom.xml as <httpConnector>,
+  but moving it here keeps connector + (future) customizer config
+  in one place and matches the trust-model documentation in
+  docs/TESTING-ENVIRONMENTS.md.
 -->
 <Configure id="Server" class="org.eclipse.jetty.server.Server">
 
-  <!-- HttpConfiguration with ForwardedRequestCustomizer -->
+  <!-- HttpConfiguration WITHOUT ForwardedRequestCustomizer.
+       Servlet values (getScheme/getServerName/getServerPort) reflect
+       the actual local connection only. -->
   <New id="httpConfig" class="org.eclipse.jetty.server.HttpConfiguration">
     <Set name="secureScheme">https</Set>
     <Set name="securePort">443</Set>
@@ -22,18 +36,9 @@
     <Set name="responseHeaderSize">8192</Set>
     <Set name="sendServerVersion">false</Set>
     <Set name="sendDateHeader">false</Set>
-    <Call name="addCustomizer">
-      <Arg>
-        <New class="org.eclipse.jetty.server.ForwardedRequestCustomizer">
-          <Set name="forwardedHostHeader">X-Forwarded-Host</Set>
-          <Set name="forwardedProtoHeader">X-Forwarded-Proto</Set>
-          <Set name="forwardedForHeader">X-Forwarded-For</Set>
-        </New>
-      </Arg>
-    </Call>
   </New>
 
-  <!-- HTTP Connector -->
+  <!-- HTTP Connector on port 8081 -->
   <Call name="addConnector">
     <Arg>
       <New class="org.eclipse.jetty.server.ServerConnector">

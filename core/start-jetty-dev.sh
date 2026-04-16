@@ -36,19 +36,23 @@ fi
 
 echo "Starting Jetty development server..."
 echo "Access Points:"
-echo "  - CMIS Service: http://localhost:8080/core/atom/bedroom (admin:admin)"
-echo "  - Repository Info: http://localhost:8080/core/atom/bedroom"
-echo "  - Folder Operations: http://localhost:8080/core/atom/bedroom/children?id=e02f784f8360a02cc14d1314c10038ff"
+echo "  - CMIS Service: http://localhost:8081/core/atom/bedroom (admin:admin)"
+echo "  - Repository Info: http://localhost:8081/core/atom/bedroom"
+echo "  - UI:             http://localhost:8081/core/ui/"
 echo ""
 echo "Development Features:"
 echo "  - Jakarta EE 11 Compatible"
-echo "  - Solr Disabled (MockSolrUtil + MockQueryProcessor)"
-echo "  - Automatic code reloading"
-echo "  - CouchDB only dependency"
+echo "  - Automatic code reloading (scan: 1s)"
+echo "  - CouchDB + Solr Docker dependencies"
+echo ""
+echo "NOTE: Port 8081 is fixed by core/src/main/webapp/WEB-INF/jetty-forwarded.xml"
+echo "      to avoid colliding with the Tomcat Docker container on 8080."
 echo ""
 echo "Press Ctrl+C to stop the server"
 echo "========================================"
 echo ""
 
-# Start Jetty with development profile (Jakarta dependencies already unified)
-mvn jetty:run -Pdevelopment -Djetty.port=8080
+# Start Jetty with development profile.
+# Port is set in jetty-forwarded.xml; -Djetty.port has no effect on
+# the connector defined there.
+mvn jetty:run -f core/pom.xml -Pdevelopment
