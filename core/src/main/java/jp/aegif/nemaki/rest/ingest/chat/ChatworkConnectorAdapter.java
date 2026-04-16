@@ -45,11 +45,13 @@ public class ChatworkConnectorAdapter {
     }
 
     public ChatworkConnectorAdapter(String apiToken, String apiBase) {
+        this(apiToken, apiBase, jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared());
+    }
+
+    public ChatworkConnectorAdapter(String apiToken, String apiBase, HttpClient httpClient) {
         this.apiToken = apiToken;
         this.apiBase = apiBase;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        this.httpClient = httpClient;
     }
 
     public record ChatworkRoom(String id, String name, String type, int messageNum, int fileNum) {}

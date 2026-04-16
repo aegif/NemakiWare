@@ -35,11 +35,13 @@ public class SalesforceConnectorAdapter {
      * @param accessToken OAuth2 access token
      */
     public SalesforceConnectorAdapter(String instanceUrl, String accessToken) {
+        this(instanceUrl, accessToken, jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared());
+    }
+
+    public SalesforceConnectorAdapter(String instanceUrl, String accessToken, HttpClient httpClient) {
         this.instanceUrl = instanceUrl.replaceAll("/+$", "");
         this.accessToken = accessToken;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        this.httpClient = httpClient;
     }
 
     public record SalesforceRecord(String id, String type, String name, Map<String, Object> fields) {}

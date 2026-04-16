@@ -35,11 +35,14 @@ public class SlackConnectorAdapter {
 
     /** Constructor with configurable API base URL (for testing with WireMock). */
     public SlackConnectorAdapter(String token, String apiBase) {
+        this(token, apiBase, jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared());
+    }
+
+    /** Constructor with explicit HttpClient (for tests that need a custom client). */
+    public SlackConnectorAdapter(String token, String apiBase, HttpClient httpClient) {
         this.token = token;
         this.apiBase = apiBase;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        this.httpClient = httpClient;
     }
 
     public record SlackMessage(String ts, String userId, String text, String threadTs, List<SlackFile> files) {}

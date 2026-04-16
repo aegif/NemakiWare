@@ -441,7 +441,7 @@ public class IngestWebhookController {
                     "clientState", connector.getWebhookSecret() != null ? connector.getWebhookSecret() : ""
             ));
 
-            var httpClient = java.net.http.HttpClient.newHttpClient();
+            var httpClient = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared();
             var request = java.net.http.HttpRequest.newBuilder()
                     .uri(java.net.URI.create("https://graph.microsoft.com/v1.0/subscriptions"))
                     .header("Authorization", "Bearer " + token)
@@ -477,7 +477,7 @@ public class IngestWebhookController {
         if (token == null) return badRequest("No access token");
 
         try {
-            var httpClient = java.net.http.HttpClient.newHttpClient();
+            var httpClient = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared();
             var request = java.net.http.HttpRequest.newBuilder()
                     .uri(java.net.URI.create("https://graph.microsoft.com/v1.0/subscriptions/" + subscriptionId))
                     .header("Authorization", "Bearer " + token)

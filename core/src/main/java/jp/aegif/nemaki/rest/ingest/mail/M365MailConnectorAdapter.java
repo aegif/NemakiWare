@@ -30,10 +30,12 @@ public class M365MailConnectorAdapter {
     private final HttpClient httpClient;
 
     public M365MailConnectorAdapter(String accessToken) {
+        this(accessToken, jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared());
+    }
+
+    public M365MailConnectorAdapter(String accessToken, HttpClient httpClient) {
         this.accessToken = accessToken;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        this.httpClient = httpClient;
     }
 
     /**

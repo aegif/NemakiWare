@@ -34,11 +34,13 @@ public class MattermostConnectorAdapter {
      * @param token   Personal access token or bot token
      */
     public MattermostConnectorAdapter(String baseUrl, String token) {
+        this(baseUrl, token, jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared());
+    }
+
+    public MattermostConnectorAdapter(String baseUrl, String token, HttpClient httpClient) {
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.token = token;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        this.httpClient = httpClient;
     }
 
     public record MattermostChannel(String id, String name, String displayName, String teamId) {}

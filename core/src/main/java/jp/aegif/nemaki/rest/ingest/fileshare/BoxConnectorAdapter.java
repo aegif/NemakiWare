@@ -30,10 +30,12 @@ public class BoxConnectorAdapter {
     private final HttpClient httpClient;
 
     public BoxConnectorAdapter(String accessToken) {
+        this(accessToken, jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared());
+    }
+
+    public BoxConnectorAdapter(String accessToken, HttpClient httpClient) {
         this.accessToken = accessToken;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        this.httpClient = httpClient;
     }
 
     public record BoxFile(String id, String name, String type, long size,
@@ -113,11 +115,9 @@ public class BoxConnectorAdapter {
                 .timeout(Duration.ofSeconds(60))
                 .GET()
                 .build();
-        // Box returns 302 redirect — HttpClient follows redirects by default
-        HttpResponse<InputStream> response = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .connectTimeout(Duration.ofSeconds(10))
-                .build()
+        // Box returns 302 redirect — shared HttpClient is configured to
+        // follow redirects (see AdapterHttpClient).
+        HttpResponse<InputStream> response = httpClient
                 .send(request, HttpResponse.BodyHandlers.ofInputStream());
         if (response.statusCode() != 200) {
             throw new RuntimeException("Box file download error " + response.statusCode());

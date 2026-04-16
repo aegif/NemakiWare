@@ -36,11 +36,13 @@ public class NotionConnectorAdapter {
     }
 
     public NotionConnectorAdapter(String token, String apiBase) {
+        this(token, apiBase, jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared());
+    }
+
+    public NotionConnectorAdapter(String token, String apiBase, HttpClient httpClient) {
         this.token = token;
         this.apiBase = apiBase;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        this.httpClient = httpClient;
     }
 
     public record NotionPageSummary(String id, String title, String url, String parentId, String lastEditedTime) {}

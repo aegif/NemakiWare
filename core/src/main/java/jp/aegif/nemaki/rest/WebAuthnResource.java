@@ -80,8 +80,17 @@ public class WebAuthnResource extends ResourceBase {
 	private static final ObjectMapper objectMapper = new ObjectMapper()
 			.registerModule(new Jdk8Module());
 
-	// Challenge store with TTL (5 minutes)
+	// Challenge store with TTL (5 minutes) and size cap.
+	//
+	// /webauthn/authenticate/begin is unauthenticated (see
+	// AuthenticationFilter), so a remote attacker could otherwise
+	// flood this map and exhaust heap.  CHALLENGE_STORE_MAX_SIZE
+	// caps the entry count; when reached, expired entries are
+	// purged first, and if still full the oldest entries are
+	// evicted to make room.  Legitimate concurrent registrations
+	// rarely exceed a few hundred at once.
 	private static final long CHALLENGE_TTL_MS = 5 * 60 * 1000;
+	private static final int CHALLENGE_STORE_MAX_SIZE = 10_000;
 	private static final ConcurrentHashMap<String, ChallengeData> challengeStore = new ConcurrentHashMap<>();
 
 	@Context
@@ -664,6 +673,22 @@ public class WebAuthnResource extends ResourceBase {
 		long now = System.currentTimeMillis();
 		challengeStore.entrySet().removeIf(entry ->
 				(now - entry.getValue().timestamp) > CHALLENGE_TTL_MS);
+
+		// Hard size cap: if expired-purge wasn't enough (rare but possible
+		// under flooding of /authenticate/begin which is unauthenticated),
+		// evict oldest entries until we drop below the cap.  ConcurrentHashMap
+		// has no built-in LRU, so we sort once when the cap is hit; this is
+		// O(n log n) but only runs in the abuse path.
+		if (challengeStore.size() > CHALLENGE_STORE_MAX_SIZE) {
+			log.warn("WebAuthn challenge store exceeded " + CHALLENGE_STORE_MAX_SIZE
+					+ " entries (" + challengeStore.size() + "), evicting oldest");
+			challengeStore.entrySet().stream()
+					.sorted((a, b) -> Long.compare(a.getValue().timestamp, b.getValue().timestamp))
+					.limit(challengeStore.size() - CHALLENGE_STORE_MAX_SIZE / 2)
+					.map(Map.Entry::getKey)
+					.toList()
+					.forEach(challengeStore::remove);
+		}
 	}
 
 	// ==========================================

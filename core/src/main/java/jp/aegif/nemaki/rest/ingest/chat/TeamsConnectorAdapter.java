@@ -36,11 +36,13 @@ public class TeamsConnectorAdapter {
     }
 
     public TeamsConnectorAdapter(String accessToken, String apiBase) {
+        this(accessToken, apiBase, jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared());
+    }
+
+    public TeamsConnectorAdapter(String accessToken, String apiBase, HttpClient httpClient) {
         this.accessToken = accessToken;
         this.apiBase = apiBase;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        this.httpClient = httpClient;
     }
 
     public record TeamsChannel(String id, String displayName, String teamId) {}

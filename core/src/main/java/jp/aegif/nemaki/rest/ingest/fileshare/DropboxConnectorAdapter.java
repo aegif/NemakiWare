@@ -31,10 +31,12 @@ public class DropboxConnectorAdapter {
     private final HttpClient httpClient;
 
     public DropboxConnectorAdapter(String accessToken) {
+        this(accessToken, jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared());
+    }
+
+    public DropboxConnectorAdapter(String accessToken, HttpClient httpClient) {
         this.accessToken = accessToken;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        this.httpClient = httpClient;
     }
 
     public record DropboxFile(String id, String name, String pathDisplay,
