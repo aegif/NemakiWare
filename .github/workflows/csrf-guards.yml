@@ -1,0 +1,70 @@
+name: CSRF Guards & Unit Tests
+
+# Fast-feedback CI for CSRF contract changes.  Runs guard scripts and
+# the relevant unit tests on every push / PR that touches the CSRF
+# trust model or the scripts that enforce it.
+#
+# Full TCK / E2E remain in their own workflows (integration-tests.yml,
+# playwright.yml).
+
+on:
+  push:
+    branches: [ master, main, develop, 'release/**' ]
+    paths:
+      - 'core/src/main/java/jp/aegif/nemaki/rest/ResourceBase.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/AuthTokenResource.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/ingest/**'
+      - 'core/src/test/java/jp/aegif/nemaki/rest/**'
+      - 'docker/core/server.xml'
+      - 'docker/core/Dockerfile*'
+      - 'core/src/main/webapp/WEB-INF/jetty-forwarded.xml'
+      - 'scripts/check-*.sh'
+      - '.github/workflows/csrf-guards.yml'
+  pull_request:
+    branches: [ master, main, develop ]
+    paths:
+      - 'core/src/main/java/jp/aegif/nemaki/rest/ResourceBase.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/AuthTokenResource.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/ingest/**'
+      - 'core/src/test/java/jp/aegif/nemaki/rest/**'
+      - 'docker/core/server.xml'
+      - 'docker/core/Dockerfile*'
+      - 'core/src/main/webapp/WEB-INF/jetty-forwarded.xml'
+      - 'scripts/check-*.sh'
+      - '.github/workflows/csrf-guards.yml'
+
+jobs:
+  guards:
+    name: Guard scripts (CSRF + Dockerfile parity)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: CSRF header compliance
+        run: ./scripts/check-csrf-headers.sh
+      - name: Dockerfile server.xml parity
+        run: ./scripts/check-dockerfile-parity.sh
+
+  unit-tests:
+    name: CSRF & ingest unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('core/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2-
+      - name: Run CSRF & ingest unit tests
+        run: |
+          mvn test \
+            -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest' \
+            -f core/pom.xml -Pdevelopment \
+            -Dmaven.test.failure.ignore=false

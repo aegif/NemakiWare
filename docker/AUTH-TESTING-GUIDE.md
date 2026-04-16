@@ -6,6 +6,8 @@
 
 Keycloakをローカル認証プロバイダ (IdP) として使用し、OIDC (OpenID Connect) と SAML 2.0 の両方の認証フローをテストできます。
 
+> **CSRF 注意**: `/core/rest/repo/.../authtoken/*/convert` 等の REST mutation は CSRF 保護対象です。CLI/curl からは `X-Requested-With: XMLHttpRequest` ヘッダーを必ず付与してください。詳細は [CLAUDE.md の CSRF保護セクション](../CLAUDE.md#csrf保護-rest-api) を参照。
+
 ## クイックスタート
 
 ### 1. 認証テスト環境の起動

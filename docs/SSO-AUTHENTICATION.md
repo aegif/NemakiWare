@@ -10,6 +10,11 @@ NemakiWare supports three authentication methods:
 2. **OIDC (OpenID Connect)** - OAuth 2.0 based authentication with identity providers like Keycloak, Google, Azure AD
 3. **SAML 2.0** - Enterprise SSO authentication with identity providers like Keycloak, Okta, ADFS
 
+> **CSRF Protection**: REST mutating endpoints (POST/PUT/DELETE under `/core/rest/repo/...`)
+> require an explicit CSRF marker. CLI/curl callers using Basic auth must add
+> `X-Requested-With: XMLHttpRequest`. See [CLAUDE.md CSRF section](../CLAUDE.md#csrf保護-rest-api)
+> for the canonical contract.
+
 ## Prerequisites
 
 - NemakiWare server running (default: http://localhost:8080)
