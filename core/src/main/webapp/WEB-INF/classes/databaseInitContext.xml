@@ -25,7 +25,13 @@
           class="jp.aegif.nemaki.init.DatabasePreInitializer"
           init-method="initializeDatabase" 
           lazy-init="false">
-        <!-- CouchDB connection properties -->
+        <!-- CouchDB connection properties.
+             The XML values are defaults for Docker; DatabasePreInitializer's
+             constructor overrides them at runtime from system properties:
+             -Ddb.couchdb.url, -Ddb.couchdb.auth.username, -Ddb.couchdb.auth.password
+             (Docker compose sets these via CATALINA_OPTS; Jetty dev sets
+              them via pom.xml systemProperties.)  This avoids requiring a
+             PropertyPlaceholderConfigurer in this early-init context. -->
         <property name="couchdbUrl" value="http://couchdb:5984" />
         <property name="couchdbUsername" value="admin" />
         <property name="couchdbPassword" value="password" />

@@ -79,8 +79,24 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
     private String couchdbPassword = "password";
 
     public DatabasePreInitializer() {
-        // Constructor - initialization handled by onApplicationEvent
-        log.info("DatabasePreInitializer bean created");
+        // Override XML defaults from system properties when present.
+        // Docker compose sets these via CATALINA_OPTS; Jetty dev sets
+        // them via pom.xml <systemProperties>.  Without this override,
+        // Jetty would try to connect to "http://couchdb:5984" which
+        // does not resolve outside Docker compose.
+        String urlOverride = System.getProperty("db.couchdb.url");
+        if (urlOverride != null && !urlOverride.isEmpty()) {
+            this.couchdbUrl = urlOverride;
+        }
+        String userOverride = System.getProperty("db.couchdb.auth.username");
+        if (userOverride != null && !userOverride.isEmpty()) {
+            this.couchdbUsername = userOverride;
+        }
+        String passOverride = System.getProperty("db.couchdb.auth.password");
+        if (passOverride != null && !passOverride.isEmpty()) {
+            this.couchdbPassword = passOverride;
+        }
+        log.info("DatabasePreInitializer bean created (couchdbUrl=" + this.couchdbUrl + ")");
     }
 
     /**
