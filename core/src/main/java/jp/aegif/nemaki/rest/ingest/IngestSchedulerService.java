@@ -223,7 +223,12 @@ public class IngestSchedulerService {
                     // can mark a genuinely hung fetch as STUCK.  Without
                     // this cap, an infinite heartbeat loop would mask
                     // wedged connector calls forever.
-                    final int MAX_HEARTBEATS = 6; // 6 × 5min = 30min max
+                    //
+                    // Detection latency = (MAX_HEARTBEATS × 5min) + STUCK_TIMEOUT_MS
+                    // With MAX_HEARTBEATS=2: last heartbeat at ~10min, detected
+                    // STUCK at ~40min (10 + 30).  This gives slow but healthy
+                    // fetches a 10-minute grace period before heartbeats stop.
+                    final int MAX_HEARTBEATS = 2;
                     int heartbeatCount = 0;
                     while (!future.isDone()) {
                         try { future.get(5, java.util.concurrent.TimeUnit.MINUTES); }
