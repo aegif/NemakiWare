@@ -70,8 +70,7 @@ public class IngestDlqController {
             return errorResponse(HttpStatus.NOT_FOUND, "DLQ entry not found: " + dlqId);
         }
 
-        // Cooldown: allow at most 1 retry per entry per minute to prevent
-        // admin retry-spamming that could hit external API rate limits.
+        // Cooldown: allow at most 1 retry per entry per 60 seconds.
         if (dlq.getLastRetryAt() != null && !dlq.getLastRetryAt().isBlank()) {
             try {
                 long lastRetry = java.time.Instant.parse(dlq.getLastRetryAt()).toEpochMilli();
@@ -80,6 +79,15 @@ public class IngestDlqController {
                             "Retry cooldown: wait at least 60 seconds between retries for this entry");
                 }
             } catch (Exception ignored) { /* unparsable date — allow retry */ }
+        }
+
+        // Reserve the retry BEFORE dispatch.  This atomically updates
+        // lastRetryAt in CouchDB using _rev as an optimistic lock.
+        // If two concurrent retries race, only one wins the write;
+        // the loser gets a 409 and returns 429 to the caller.
+        if (!ingestJobService.reserveDlqRetry(dlq)) {
+            return errorResponse(HttpStatus.TOO_MANY_REQUESTS,
+                    "Retry already in progress for this entry (concurrent request)");
         }
 
         CallContext callContext = getCallContext();
@@ -102,7 +110,6 @@ public class IngestDlqController {
 
             // Route through the correct archetype-specific flow
             ExternalIngestResult result = dispatchByArchetype(callContext, request);
-            ingestJobService.updateDlqRetry(dlq);
 
             Map<String, Object> response = new LinkedHashMap<>();
             if (result.skipped()) {

@@ -1266,7 +1266,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * repository mismatch, dry-run (should not reach here), parse errors,
      * type definition errors, permission denied.
      */
-    private boolean isTransientError(Exception e) {
+    /* package */ boolean isTransientError(Exception e) {
         // Walk the cause chain looking for known transient signals
         Throwable t = e;
         for (int depth = 0; t != null && depth < 5; depth++, t = t.getCause()) {

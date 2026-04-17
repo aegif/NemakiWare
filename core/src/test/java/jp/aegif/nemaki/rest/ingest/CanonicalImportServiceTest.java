@@ -672,65 +672,47 @@ class CanonicalImportServiceTest {
         assertFalse(result.dryRun());
     }
 
-    // ── Idempotency key format tests ─────────────────────────────
+    // ── isTransientError — real implementation tests ───────────
 
     @Test
-    void testIdempotencyValueWithTimestampIsParseable() {
-        String objectId = "abc-123-def";
-        long ts = System.currentTimeMillis();
-        String value = objectId + "|" + ts;
-
-        int sep = value.indexOf('|');
-        assertTrue(sep > 0);
-        assertEquals(objectId, value.substring(0, sep));
-        assertEquals(ts, Long.parseLong(value.substring(sep + 1)));
+    void testIsTransientError_SocketTimeout() {
+        assertTrue(service.isTransientError(new java.net.SocketTimeoutException("Read timed out")));
     }
 
     @Test
-    void testIdempotencyValueWithoutSeparatorIsLegacy() {
-        String value = "abc-123-def";
-        int sep = value.indexOf('|');
-        assertEquals(-1, sep);
-        // Legacy values should be honoured as-is (no TTL enforcement)
+    void testIsTransientError_ConnectException() {
+        assertTrue(service.isTransientError(new java.net.ConnectException("Connection refused")));
     }
 
     @Test
-    void testIdempotencyTtlExpiry() {
-        long sevenDaysAgoMs = System.currentTimeMillis() - (8L * 24 * 60 * 60 * 1000); // 8 days ago
-        String value = "obj-old|" + sevenDaysAgoMs;
-
-        int sep = value.indexOf('|');
-        long savedAt = Long.parseLong(value.substring(sep + 1));
-        long ageMs = System.currentTimeMillis() - savedAt;
-        long ttlMs = 7L * 24 * 60 * 60 * 1000;
-        assertTrue(ageMs > ttlMs, "8-day-old key should be expired");
+    void testIsTransientError_Http429InMessage() {
+        assertTrue(service.isTransientError(new RuntimeException("HTTP 429 Too Many Requests")));
     }
 
     @Test
-    void testIdempotencyTtlNotExpired() {
-        long recentMs = System.currentTimeMillis() - (1L * 60 * 60 * 1000); // 1 hour ago
-        String value = "obj-new|" + recentMs;
-
-        int sep = value.indexOf('|');
-        long savedAt = Long.parseLong(value.substring(sep + 1));
-        long ageMs = System.currentTimeMillis() - savedAt;
-        long ttlMs = 7L * 24 * 60 * 60 * 1000;
-        assertFalse(ageMs > ttlMs, "1-hour-old key should NOT be expired");
-    }
-
-    // ── Error classification tests ───────────────────────────────
-
-    @Test
-    void testTransientErrorClassificationSocketTimeout() {
-        // SocketTimeoutException should be classified as transient
-        Exception e = new java.net.SocketTimeoutException("Read timed out");
-        String msg = e.getMessage();
-        assertTrue(msg.contains("Read timed out"), "Socket timeout is transient");
+    void testIsTransientError_Http503InMessage() {
+        assertTrue(service.isTransientError(new RuntimeException("503 Service Unavailable")));
     }
 
     @Test
-    void testTransientErrorClassification429() {
-        Exception e = new RuntimeException("HTTP 429 Too Many Requests");
-        assertTrue(e.getMessage().contains("429"), "HTTP 429 is transient");
+    void testIsTransientError_WrappedSocketTimeout() {
+        Exception wrapped = new RuntimeException("import failed",
+                new java.net.SocketTimeoutException("connect timed out"));
+        assertTrue(service.isTransientError(wrapped), "Wrapped SocketTimeout should be transient");
+    }
+
+    @Test
+    void testIsTransientError_PermanentNullPointer() {
+        assertFalse(service.isTransientError(new NullPointerException("null")));
+    }
+
+    @Test
+    void testIsTransientError_PermanentIllegalArgument() {
+        assertFalse(service.isTransientError(new IllegalArgumentException("bad input")));
+    }
+
+    @Test
+    void testIsTransientError_PermanentClassCast() {
+        assertFalse(service.isTransientError(new ClassCastException("cannot cast")));
     }
 }

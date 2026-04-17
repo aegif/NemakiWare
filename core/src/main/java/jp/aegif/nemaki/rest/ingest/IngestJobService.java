@@ -179,10 +179,33 @@ public class IngestJobService {
         return results.isEmpty() ? null : results.get(0);
     }
 
-    public void updateDlqRetry(IngestDeadLetterRecord dlq) {
+    /**
+     * Reserve a DLQ entry for retry by atomically updating lastRetryAt
+     * BEFORE the actual dispatch.  Uses CouchDB _rev as an optimistic
+     * lock: if another thread already reserved the same entry, the
+     * upsert fails with 409 Conflict and we return false.
+     *
+     * @return true if reservation succeeded (caller should proceed with dispatch),
+     *         false if another concurrent retry already claimed this entry
+     */
+    public boolean reserveDlqRetry(IngestDeadLetterRecord dlq) {
         dlq.setRetryCount(dlq.getRetryCount() + 1);
         dlq.setLastRetryAt(Instant.now().toString());
-        upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE, MAPPER.convertValue(dlq, Map.class));
+        try {
+            upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE,
+                    MAPPER.convertValue(dlq, Map.class));
+            return true;
+        } catch (Exception e) {
+            // 409 Conflict or other write failure → another thread won the race
+            logger.debug("DLQ retry reservation failed (concurrent retry?): {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /** @deprecated Use {@link #reserveDlqRetry(IngestDeadLetterRecord)} instead. */
+    @Deprecated
+    public void updateDlqRetry(IngestDeadLetterRecord dlq) {
+        reserveDlqRetry(dlq);
     }
 
     public void deleteDlqEntry(String dlqId) {
