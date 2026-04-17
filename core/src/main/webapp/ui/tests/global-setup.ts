@@ -23,7 +23,9 @@ const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';
 const SKIP_KEYCLOAK = process.env.SKIP_KEYCLOAK === 'true';
 
 // Global state file to share Keycloak availability with tests
-const STATE_FILE = '/tmp/nemakiware-test-state.json';
+// Durable state file in project (survives OS restarts unlike /tmp).
+// .gitignore already covers test-results/ artifacts.
+const STATE_FILE = require('path').resolve(__dirname, '..', 'test-results', '.test-state.json');
 
 /**
  * Check if Keycloak is running and healthy

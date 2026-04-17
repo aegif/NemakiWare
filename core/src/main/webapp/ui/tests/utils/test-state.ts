@@ -7,7 +7,9 @@
 
 import * as fs from 'fs';
 
-const STATE_FILE = '/tmp/nemakiware-test-state.json';
+import * as path from 'path';
+
+const STATE_FILE = path.resolve(__dirname, '..', '..', 'test-results', '.test-state.json');
 
 interface TestState {
   keycloakAvailable: boolean;

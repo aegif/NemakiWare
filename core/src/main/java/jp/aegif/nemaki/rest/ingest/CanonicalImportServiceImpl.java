@@ -1627,7 +1627,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     /**
      * Resolves a concrete folder ID from the profile. Uses targetFolderId if set,
      * otherwise resolves targetFolderPath via ObjectService.getObjectByPath.
+     *
+     * <p>Results are cached for 5 minutes per (repositoryId, folderPath)
+     * pair to avoid repeated CMIS calls during scheduled batch imports.</p>
      */
+    private static final java.util.concurrent.ConcurrentHashMap<String, String> folderPathCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.ConcurrentHashMap<String, Long> folderPathCacheTime =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final long FOLDER_PATH_CACHE_TTL_MS = 5 * 60 * 1000L;
+
     private String resolveTargetFolderId(ImportProfileDefinition profile, String repositoryId,
                                          CallContext callContext) {
         String folderId = profile.getTargetFolderId();
@@ -1636,13 +1645,20 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
         String folderPath = profile.getTargetFolderPath();
         if (folderPath != null && !folderPath.isBlank()) {
+            // Check cache
+            String cacheKey = repositoryId + "|" + folderPath;
+            Long cachedAt = folderPathCacheTime.get(cacheKey);
+            if (cachedAt != null && System.currentTimeMillis() - cachedAt < FOLDER_PATH_CACHE_TTL_MS) {
+                String cached = folderPathCache.get(cacheKey);
+                if (cached != null) return cached;
+            }
+
             try {
                 var objectData = objectService.getObjectByPath(callContext, repositoryId,
                         folderPath, null, Boolean.FALSE,
                         org.apache.chemistry.opencmis.commons.enums.IncludeRelationships.NONE,
                         null, Boolean.FALSE, Boolean.FALSE, null);
                 if (objectData != null && objectData.getId() != null) {
-                    // Verify it's actually a folder, not a document
                     Object baseTypeId = objectData.getProperties() != null
                             ? objectData.getProperties().getProperties().get("cmis:baseTypeId")
                             : null;
@@ -1654,6 +1670,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         return null;
                     }
                     logger.debug("Resolved targetFolderPath '{}' to folderId '{}'", folderPath, objectData.getId());
+                    folderPathCache.put(cacheKey, objectData.getId());
+                    folderPathCacheTime.put(cacheKey, System.currentTimeMillis());
                     return objectData.getId();
                 }
             } catch (Exception e) {

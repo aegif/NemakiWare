@@ -1409,8 +1409,19 @@ public class IngestSchedulerService {
             // Dedupe is handled by the persisted message ID checkpoint below.
             String lastMsgId = loadSimpleCheckpoint(profile.getProfileId(), "chatwork." + roomId);
             long lastMsgIdNum = 0;
-            try { if (lastMsgId != null) lastMsgIdNum = Long.parseLong(lastMsgId); }
-            catch (NumberFormatException e) { logger.warn("Invalid Chatwork checkpoint '{}', resetting", lastMsgId); }
+            if (lastMsgId != null && !lastMsgId.isBlank()) {
+                try {
+                    lastMsgIdNum = Long.parseLong(lastMsgId);
+                } catch (NumberFormatException e) {
+                    // Corrupted checkpoint — do NOT reset to 0 (would re-import everything).
+                    // Fail closed: report error, skip this room, let operator fix checkpoint.
+                    String msg = "Chatwork checkpoint for room " + roomId + " is corrupted: '" + lastMsgId
+                            + "'. Delete the checkpoint via admin API to re-sync, or set a valid numeric ID.";
+                    logger.error(msg);
+                    errors.add(msg);
+                    return new FetchResult(0, 0, 0, errors);
+                }
+            }
 
             var messages = chatwork.getMessages(roomId, true);
 
