@@ -67,7 +67,7 @@ test.describe('Office Document Preview', () => {
       if (await menuToggle.count() > 0) {
         try {
           await menuToggle.click({ timeout: 3000 });
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         } catch (e) {
           // Sidebar may already be closed
         }
@@ -91,12 +91,12 @@ test.describe('Office Document Preview', () => {
           });
           if (await deleteButton.count() > 0) {
             await deleteButton.click();
-            await page.waitForTimeout(500);
+            await waitForRender(page);
             // Confirm deletion if dialog appears
             const confirmButton = page.locator('.ant-modal-confirm-btns button').filter({ hasText: /OK|確認|削除/ });
             if (await confirmButton.count() > 0) {
               await confirmButton.click();
-              await page.waitForTimeout(1000);
+              await waitForRender(page);
             }
           }
         }
@@ -137,7 +137,7 @@ test.describe('Office Document Preview', () => {
       // Navigate to documents
       const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
       await documentsMenuItem.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Find upload button
       const uploadButton = page.locator('button').filter({ hasText: /ファイルアップロード|アップロード|Upload/ }).first();
@@ -150,7 +150,7 @@ test.describe('Office Document Preview', () => {
 
       // Click upload button to open modal
       await uploadButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Wait for upload modal
       const uploadModal = page.locator('.ant-modal').filter({ hasText: /ファイルアップロード|Upload|ドキュメント/ });
@@ -159,7 +159,7 @@ test.describe('Office Document Preview', () => {
       // Upload the Excel file
       const fileInput = page.locator('.ant-modal input[type="file"]').first();
       await fileInput.setInputFiles(testFilePath);
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Click the upload button to actually upload
       const uploadSubmitButton = uploadModal.locator('button').filter({ hasText: 'アップロード' });
@@ -174,11 +174,11 @@ test.describe('Office Document Preview', () => {
       if (await closeButton.count() > 0 && await uploadModal.isVisible()) {
         await closeButton.click({ timeout: 3000 }).catch(() => {});
       }
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Refresh the document list to see the uploaded file
       await documentsMenuItem.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Find the uploaded file in document list
       const fileRow = page.locator('.ant-table-tbody tr').filter({
@@ -192,7 +192,7 @@ test.describe('Office Document Preview', () => {
       // Click on the file to open document viewer
       const fileNameCell = fileRow.locator('td').first();
       await fileNameCell.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Find and click preview tab
       const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プレビュー' });
@@ -204,7 +204,7 @@ test.describe('Office Document Preview', () => {
       }
 
       await previewTab.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       console.log('✅ Preview tab opened');
 
       // Check for loading state
@@ -300,7 +300,7 @@ test.describe('Office Document Preview', () => {
       // Navigate to documents
       const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
       await documentsMenuItem.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Upload file
       const uploadButton = page.locator('button').filter({ hasText: /ファイルアップロード|アップロード|Upload/ }).first();
@@ -312,14 +312,14 @@ test.describe('Office Document Preview', () => {
       }
 
       await uploadButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       const uploadModal = page.locator('.ant-modal');
       await expect(uploadModal).toBeVisible({ timeout: 5000 });
 
       const fileInput = page.locator('.ant-modal input[type="file"]').first();
       await fileInput.setInputFiles(testFilePath);
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Click the upload button to actually upload
       const uploadSubmitButton = uploadModal.locator('button').filter({ hasText: 'アップロード' });
@@ -334,11 +334,11 @@ test.describe('Office Document Preview', () => {
       if (await closeButton.count() > 0 && await uploadModal.isVisible()) {
         await closeButton.click({ timeout: 3000 }).catch(() => {});
       }
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Refresh the document list
       await documentsMenuItem.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Find and click the uploaded file
       const fileRow = page.locator('.ant-table-tbody tr').filter({
@@ -350,7 +350,7 @@ test.describe('Office Document Preview', () => {
 
       const fileNameCell = fileRow.locator('td').first();
       await fileNameCell.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Open preview tab
       const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プレビュー' });
@@ -361,7 +361,7 @@ test.describe('Office Document Preview', () => {
       }
 
       await previewTab.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Try to generate rendition if not available
       const retryButton = page.locator('button').filter({ hasText: /プレビュー生成を試行|再試行/ });
@@ -417,7 +417,7 @@ test.describe('Office Document Preview', () => {
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Debug: Log all rows in the table
     const allRows = page.locator('.ant-table-tbody tr');
@@ -450,7 +450,7 @@ test.describe('Office Document Preview', () => {
     if (await eyeButton.count() > 0) {
       console.log('Clicking eye icon to open preview...');
       await eyeButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Check for preview modal/drawer
       const previewModal = page.locator('.ant-modal, .ant-drawer');
@@ -463,7 +463,7 @@ test.describe('Office Document Preview', () => {
 
         if (await previewTab.count() > 0) {
           await previewTab.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
           console.log('✅ Clicked preview tab');
 
           // Check for PDF document or retry button
@@ -544,7 +544,7 @@ test.describe('Office Document Preview', () => {
       // Try clicking the file name
       const fileNameButton = excelRow.locator('button').first();
       await fileNameButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Check for preview
       const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プレビュー' });

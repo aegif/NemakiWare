@@ -66,13 +66,13 @@ test.describe('Type Management Consistency with Document Operations', () => {
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
     if (await typeManagementItem.count() > 0) {
       await typeManagementItem.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     } else {
       test.skip('Type Management menu not available');
       return;
@@ -88,7 +88,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     }
 
     await newTypeButton.first().click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const createModal = page.locator('.ant-modal:visible, .ant-drawer:visible');
     await expect(createModal).toBeVisible({ timeout: 5000 });
@@ -111,7 +111,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     const baseTypeSelect = createModal.locator('.ant-form-item').filter({ hasText: 'ベースタイプ' }).locator('.ant-select');
     if (await baseTypeSelect.count() > 0) {
       await baseTypeSelect.first().click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
       const documentOption = page.locator('.ant-select-item').filter({ hasText: /ドキュメント|Documents/i });
       if (await documentOption.count() > 0) {
         await documentOption.first().click();
@@ -122,12 +122,12 @@ test.describe('Type Management Consistency with Document Operations', () => {
     const propertiesTab = createModal.locator('.ant-tabs-tab').filter({ hasText: /プロパティ定義|Properties/ });
     if (await propertiesTab.count() > 0) {
       await propertiesTab.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const addPropertyButton = page.locator('button').filter({ hasText: /プロパティを追加|Add Property/ });
       if (await addPropertyButton.count() > 0) {
         await addPropertyButton.first().click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         const propertyCard = page.locator('.ant-card').last();
 
@@ -177,7 +177,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     }
 
     // Verify type appears in table
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
     const typeRow = page.locator('.ant-table-tbody tr').filter({ hasText: customTypeId });
     const typeInTable = await typeRow.count() > 0;
     console.log(`Type ${customTypeId} in table: ${typeInTable}`);
@@ -191,7 +191,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Upload document
     const uploadButton = page.locator('button').filter({ hasText: /アップロード|Upload/ }).first();
@@ -201,7 +201,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     }
 
     await uploadButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const uploadModal = page.locator('.ant-modal:visible');
     await expect(uploadModal).toBeVisible({ timeout: 5000 });
@@ -213,7 +213,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
       mimeType: 'text/plain',
       buffer: Buffer.from(`Type management test content - ${testRunId}`, 'utf-8'),
     });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Fill file name
     const nameInput = uploadModal.locator('input[placeholder*="ファイル名"]');
@@ -225,13 +225,13 @@ test.describe('Type Management Consistency with Document Operations', () => {
     const typeSelector = uploadModal.locator('.ant-select').filter({ hasText: /タイプ|Type/ });
     if (await typeSelector.count() > 0) {
       await typeSelector.click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       const customTypeOption = page.locator('.ant-select-item-option').filter({ hasText: customTypeId });
       if (await customTypeOption.count() > 0) {
         await customTypeOption.click();
         console.log(`Selected custom type: ${customTypeId}`);
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Fill custom property if visible
         const customPropInput = uploadModal.locator(`input[placeholder*="${customPropName}"], input[name*="${customPropId}"]`);
@@ -270,13 +270,13 @@ test.describe('Type Management Consistency with Document Operations', () => {
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
     if (await typeManagementItem.count() > 0) {
       await typeManagementItem.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Find the custom type row
@@ -290,7 +290,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     const deleteButton = typeRow.locator('button').filter({ hasText: /削除|Delete/ }).first();
     if (await deleteButton.count() > 0) {
       await deleteButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Confirm deletion
       const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|削除/ }).first();
@@ -323,7 +323,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
@@ -333,13 +333,13 @@ test.describe('Type Management Consistency with Document Operations', () => {
     }
 
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Look for preview button
     const previewButton = page.locator('button').filter({ hasText: /プレビュー|Preview|表示/ }).first();
     if (await previewButton.count() > 0) {
       await previewButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Check if preview modal/panel opened
       const previewContainer = page.locator('.ant-modal:visible, .preview-container, iframe');
@@ -351,7 +351,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
         const closeButton = page.locator('.ant-modal-close').first();
         if (await closeButton.count() > 0) {
           await closeButton.click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         }
       }
     } else {
@@ -362,7 +362,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: /プロパティ|Properties/ });
     if (await propertiesTab.count() > 0) {
       await propertiesTab.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const customPropLabel = page.locator(`text=${customPropName}`);
       const customPropVisible = await customPropLabel.count() > 0;
@@ -379,30 +379,30 @@ test.describe('Type Management Consistency with Document Operations', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Delete the test document
     await testHelper.deleteTestDocument(testDocumentName);
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // CRITICAL FIX: Reload page to ensure clean state before navigating to type management
     // The deleteTestDocument operation may leave modal overlays blocking interactions
     console.log('Reloading page to ensure clean state before type deletion...');
     await page.reload();
     await page.waitForSelector('.ant-table, .ant-layout', { timeout: 10000 });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Now try to delete the custom type
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
     if (await typeManagementItem.count() > 0) {
       await typeManagementItem.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Find and delete the custom type
@@ -411,7 +411,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
       const deleteButton = typeRow.locator('button').filter({ hasText: /削除|Delete/ }).first();
       if (await deleteButton.count() > 0) {
         await deleteButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|削除/ }).first();
         if (await confirmButton.count() > 0) {

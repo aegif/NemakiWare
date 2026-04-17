@@ -370,10 +370,10 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
     if (await searchMenu.count() > 0) {
       await searchMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     } else {
       await page.goto('http://localhost:8080/core/ui/#/search');
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Enter search text
@@ -386,7 +386,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
     const folderScopeSelect = page.locator('.ant-select').filter({ hasText: /フォルダ|Folder|Scope/ });
     if (await folderScopeSelect.count() > 0) {
       await folderScopeSelect.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Select root folder
       const rootFolderOption = page.locator('.ant-select-item-option').filter({ hasText: rootFolderName });
@@ -424,19 +424,19 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Navigate to root folder > subfolder 1
     const rootFolderRow = page.locator('.ant-table-tbody tr').filter({ hasText: rootFolderName }).first();
     if (await rootFolderRow.count() > 0) {
       await rootFolderRow.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     const subfolder1Row = page.locator('.ant-table-tbody tr').filter({ hasText: subFolder1Name }).first();
     if (await subfolder1Row.count() > 0) {
       await subfolder1Row.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Find document 1 and move it
@@ -447,13 +447,13 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
     }
 
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Look for move button
     const moveButton = page.locator('button').filter({ hasText: /移動|Move/ }).first();
     if (await moveButton.count() > 0) {
       await moveButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Select destination folder (subfolder 2)
       const moveModal = page.locator('.ant-modal:visible');
@@ -462,13 +462,13 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
         const subfolder2Option = moveModal.locator('text=' + subFolder2Name);
         if (await subfolder2Option.count() > 0) {
           await subfolder2Option.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(500);
+          await waitForRender(page);
 
           // Confirm move
           const confirmButton = moveModal.locator('button').filter({ hasText: /OK|確認|移動/ }).first();
           if (await confirmButton.count() > 0) {
             await confirmButton.click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(2000);
+            await waitForUiStable(page);
             console.log('Document moved to subfolder 2');
           }
         }
@@ -490,7 +490,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
     if (await searchMenu.count() > 0) {
       await searchMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Search for documents
@@ -518,19 +518,19 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
     // Verify document 1 is now in subfolder 2
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Navigate to subfolder 2
     const rootFolderRow = page.locator('.ant-table-tbody tr').filter({ hasText: rootFolderName }).first();
     if (await rootFolderRow.count() > 0) {
       await rootFolderRow.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     const subfolder2Row = page.locator('.ant-table-tbody tr').filter({ hasText: subFolder2Name }).first();
     if (await subfolder2Row.count() > 0) {
       await subfolder2Row.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Check if document 1 is now here
       const doc1InSubfolder2 = page.locator('.ant-table-tbody tr').filter({ hasText: testDocument1Name });

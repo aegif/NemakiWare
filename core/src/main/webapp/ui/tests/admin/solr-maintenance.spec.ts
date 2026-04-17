@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -87,7 +88,7 @@ test.describe('Solr Index Maintenance', () => {
 
     if (await adminMenu.count() > 0) {
       await adminMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
 
     // Look for Solr maintenance menu item
@@ -97,7 +98,7 @@ test.describe('Solr Index Maintenance', () => {
 
     if (await solrMenuItem.count() > 0) {
       await solrMenuItem.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Verify Solr maintenance page loaded
       expect(page.url()).toContain('/solr');
@@ -116,7 +117,7 @@ test.describe('Solr Index Maintenance', () => {
       console.log('Solr maintenance menu item not found - trying direct navigation');
       // Try direct navigation
       await page.goto('/core/ui/#/solr');
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       const hasContent = await page.locator('.ant-tabs, .ant-card').count() > 0;
       if (!hasContent) {
@@ -175,7 +176,7 @@ test.describe('Solr Index Maintenance', () => {
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check for reindex status card
     const statusCard = page.locator('.ant-card').filter({
@@ -207,7 +208,7 @@ test.describe('Solr Index Maintenance', () => {
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Click on reindexing tab (use exact match to avoid matching "RAG再インデクシング")
     const reindexTab = page.locator('.ant-tabs-tab').filter({
@@ -216,7 +217,7 @@ test.describe('Solr Index Maintenance', () => {
 
     if (await reindexTab.count() > 0) {
       await reindexTab.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Check for full reindex button
       const fullReindexButton = page.locator('button').filter({
@@ -256,7 +257,7 @@ test.describe('Solr Index Maintenance', () => {
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Click on Solr query tab
     const queryTab = page.locator('.ant-tabs-tab').filter({
@@ -265,7 +266,7 @@ test.describe('Solr Index Maintenance', () => {
 
     if (await queryTab.count() > 0) {
       await queryTab.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Check for query form elements
       const queryTextArea = page.locator('textarea');
@@ -294,7 +295,7 @@ test.describe('Solr Index Maintenance', () => {
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Click on Solr query tab
     const queryTab = page.locator('.ant-tabs-tab').filter({
@@ -307,7 +308,7 @@ test.describe('Solr Index Maintenance', () => {
     }
 
     await queryTab.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Fill in query
     const queryTextArea = page.locator('textarea').first();
@@ -338,7 +339,7 @@ test.describe('Solr Index Maintenance', () => {
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Click on reindexing tab (use exact match to avoid matching "RAG再インデクシング")
     const reindexTab = page.locator('.ant-tabs-tab').filter({
@@ -351,7 +352,7 @@ test.describe('Solr Index Maintenance', () => {
     }
 
     await reindexTab.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Click full reindex button
     const fullReindexButton = page.locator('button').filter({
@@ -364,7 +365,7 @@ test.describe('Solr Index Maintenance', () => {
     }
 
     await fullReindexButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Check for Popconfirm dialog
     const popconfirm = page.locator('.ant-popconfirm, .ant-popover');
@@ -394,7 +395,7 @@ test.describe('Solr Index Maintenance', () => {
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Click on reindexing tab (use exact match to avoid matching "RAG再インデクシング")
     const reindexTab = page.locator('.ant-tabs-tab').filter({
@@ -407,7 +408,7 @@ test.describe('Solr Index Maintenance', () => {
     }
 
     await reindexTab.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Click index clear button
     const clearButton = page.locator('button').filter({
@@ -420,7 +421,7 @@ test.describe('Solr Index Maintenance', () => {
     }
 
     await clearButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Check for Popconfirm dialog
     const popconfirm = page.locator('.ant-popconfirm, .ant-popover');
@@ -483,7 +484,7 @@ test.describe('Solr Index Maintenance', () => {
       console.log('Clicked refresh button');
     }
 
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify statistics are still displayed after refresh
     const statisticItems = page.locator('.ant-statistic');
@@ -494,7 +495,7 @@ test.describe('Solr Index Maintenance', () => {
   test('should display Solr URL', async ({ page, browserName }) => {
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check for Solr URL display
     const solrUrlText = page.locator('text=Solr URL');
@@ -521,7 +522,7 @@ test.describe('Solr Index Maintenance', () => {
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Click on reindexing tab (use exact match to avoid matching "RAG再インデクシング")
     const reindexTab = page.locator('.ant-tabs-tab').filter({
@@ -534,7 +535,7 @@ test.describe('Solr Index Maintenance', () => {
     }
 
     await reindexTab.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Find folder ID input
     const folderIdInput = page.locator('input[placeholder*="フォルダID"], input[placeholder*="Folder ID"]');
@@ -569,7 +570,7 @@ test.describe('Solr Index Maintenance', () => {
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check for tabs
     const tabs = page.locator('.ant-tabs-tab');
@@ -595,7 +596,7 @@ test.describe('Solr Index Maintenance', () => {
     // Test tab switching
     for (let i = 0; i < Math.min(tabCount, 3); i++) {
       await tabs.nth(i).click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Verify tab is active
       const activeTab = page.locator('.ant-tabs-tab-active');

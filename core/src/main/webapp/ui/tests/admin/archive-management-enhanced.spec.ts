@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -94,7 +95,7 @@ test.describe('Archive Management Enhanced', () => {
       const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: '期限切れ未アーカイブ' });
       if (await pendingTab.count() > 0) {
         await pendingTab.click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Check for empty state or table content
         const emptyMessage = page.locator('.ant-empty-description').filter({
@@ -134,7 +135,7 @@ test.describe('Archive Management Enhanced', () => {
       const settingsTab = page.locator('.ant-tabs-tab').filter({ hasText: 'リテンション設定' });
       if (await settingsTab.count() > 0) {
         await settingsTab.click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Click reload button
         const reloadButton = page.locator('.ant-tabs-tabpane-active button').filter({ hasText: '再読み込み' });
@@ -199,7 +200,7 @@ test.describe('Archive Management Enhanced', () => {
       const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: 'Pending Archives' });
       if (await pendingTab.count() > 0) {
         await pendingTab.click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         const emptyMessage = page.locator('.ant-empty-description').filter({
           hasText: 'No pending archives'
@@ -231,11 +232,11 @@ test.describe('Archive Management Enhanced', () => {
       const langSwitcher = page.locator('.ant-select').filter({ hasText: /日本語|English/ }).first();
       if (await langSwitcher.count() > 0) {
         await langSwitcher.click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
         const englishOption = page.locator('.ant-select-item-option').filter({ hasText: 'English' });
         if (await englishOption.count() > 0) {
           await englishOption.click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
 
           // Verify English title appeared
           const enTitle = page.locator('h2').filter({ hasText: 'Archive Management' });
@@ -320,7 +321,7 @@ test.describe('Archive Management Enhanced', () => {
       const reloadButton = page.locator('.ant-tabs-tabpane-active button').filter({ hasText: /再読み込み|Reload/i });
       if (await reloadButton.count() > 0) {
         await reloadButton.click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
         console.log('Pending archives reload button works');
       }
     });
@@ -406,7 +407,7 @@ test.describe('Archive Management Enhanced', () => {
       }
 
       await settingsTab.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Click reload to fetch settings
       const reloadButton = page.locator('.ant-tabs-tabpane-active button').filter({ hasText: /再読み込み|Reload/i });
@@ -485,7 +486,7 @@ test.describe('Archive Management Enhanced', () => {
       const restoreButton = archiveRows.first().locator('button').filter({ hasText: /復元|Restore/i }).first();
       if (await restoreButton.count() > 0) {
         await restoreButton.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Verify popconfirm message is localized
         const popconfirm = page.locator('.ant-popconfirm, .ant-popover');
@@ -527,7 +528,7 @@ test.describe('Archive Management Enhanced', () => {
 
       if (await extendButton.count() > 0) {
         await extendButton.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Verify modal opened
         const modal = page.locator('.ant-modal').filter({
@@ -561,7 +562,7 @@ test.describe('Archive Management Enhanced', () => {
         const cancelButton = modal.locator('.ant-modal-footer button').filter({ hasText: /キャンセル|Cancel/i });
         if (await cancelButton.count() > 0) {
           await cancelButton.click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         }
       } else {
         console.log('No extend expiration button found (no pending archives or tab empty)');
@@ -603,7 +604,7 @@ test.describe('Archive Management - Non-Admin User', () => {
       return;
     }
 
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
     await testHelper.closeMobileSidebar(browserName);
 
     // Navigate to archive page
@@ -860,7 +861,7 @@ test.describe('Archive Management - Restore Edge Cases', () => {
     try {
       await localApiHelper.deleteObject(testDocId!);
       console.log('Document deleted (archived)');
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     } catch (error) {
       console.log('Failed to delete document:', error);
     }
@@ -870,7 +871,7 @@ test.describe('Archive Management - Restore Edge Cases', () => {
       await localApiHelper.deleteFolderTree(testFolderId!);
       console.log('Parent folder deleted');
       testFolderId = null; // Already deleted
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     } catch (error) {
       console.log('Failed to delete parent folder:', error);
     }
@@ -889,7 +890,7 @@ test.describe('Archive Management - Restore Edge Cases', () => {
     const restoreButton = archiveRow.first().locator('button').filter({ hasText: /復元|Restore/i }).first();
     if (await restoreButton.count() > 0) {
       await restoreButton.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Confirm restore
       const confirmButton = page.locator('.ant-popconfirm button, .ant-popover button')

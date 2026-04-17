@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -60,7 +61,7 @@ test.describe('Type GUI Editor', () => {
 
     // Wait for type management page to load
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Check for GUI create button
     const guiCreateButton = page.locator('button:has-text("GUIで新規作成")');
@@ -74,12 +75,12 @@ test.describe('Type GUI Editor', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Click GUI create button
     const guiCreateButton = page.locator('button:has-text("GUIで新規作成")');
     await guiCreateButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Verify modal opens
     const modal = page.locator('.ant-modal:visible');
@@ -99,12 +100,12 @@ test.describe('Type GUI Editor', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Open GUI editor
     const guiCreateButton = page.locator('button:has-text("GUIで新規作成")');
     await guiCreateButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const modal = page.locator('.ant-modal:visible');
     await expect(modal).toBeVisible({ timeout: 5000 });
@@ -124,12 +125,12 @@ test.describe('Type GUI Editor', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Open GUI editor
     const guiCreateButton = page.locator('button:has-text("GUIで新規作成")');
     await guiCreateButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const modal = page.locator('.ant-modal:visible');
     await expect(modal).toBeVisible({ timeout: 5000 });
@@ -156,12 +157,12 @@ test.describe('Type GUI Editor', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Open GUI editor
     const guiCreateButton = page.locator('button:has-text("GUIで新規作成")');
     await guiCreateButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const modal = page.locator('.ant-modal:visible');
     await expect(modal).toBeVisible({ timeout: 5000 });
@@ -169,7 +170,7 @@ test.describe('Type GUI Editor', () => {
     // Click JSON tab
     const jsonTab = modal.locator('.ant-tabs-tab:has-text("JSONエディタ")');
     await jsonTab.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Verify JSON editor content is visible (FIX 2025-12-24: Use .first() to avoid strict mode violation)
     const jsonDescription = modal.locator('text=JSON形式で直接編集').first();
@@ -179,7 +180,7 @@ test.describe('Type GUI Editor', () => {
     // Switch back to GUI tab
     const guiTab = modal.locator('.ant-tabs-tab:has-text("GUIエディタ")');
     await guiTab.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Verify GUI editor content is visible
     const basicInfoPanel = modal.locator('.ant-collapse-header:has-text("基本情報")');
@@ -193,12 +194,12 @@ test.describe('Type GUI Editor', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Open GUI editor
     const guiCreateButton = page.locator('button:has-text("GUIで新規作成")');
     await guiCreateButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const modal = page.locator('.ant-modal:visible');
     await expect(modal).toBeVisible({ timeout: 5000 });
@@ -213,7 +214,7 @@ test.describe('Type GUI Editor', () => {
       const buttonText = await createButton.textContent();
       console.log(`Clicking button: "${buttonText}"`);
       await createButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Verify validation error is shown - try multiple error message patterns
       const validationError = modal.locator('.ant-form-item-explain-error').first();
@@ -240,7 +241,7 @@ test.describe('Type GUI Editor', () => {
     console.log('Test: Verifying GUI edit button for custom types');
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find a custom type row (nemaki:parentChildRelationship)
     const typeRow = page.locator('tr[data-row-key="nemaki:parentChildRelationship"]').first();
@@ -261,12 +262,12 @@ test.describe('Type GUI Editor', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Open GUI editor
     const guiCreateButton = page.locator('button:has-text("GUIで新規作成")');
     await guiCreateButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const modal = page.locator('.ant-modal:visible');
     await expect(modal).toBeVisible({ timeout: 5000 });
@@ -283,12 +284,12 @@ test.describe('Type GUI Editor', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Open GUI editor
     const guiCreateButton = page.locator('button:has-text("GUIで新規作成")');
     await guiCreateButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const modal = page.locator('.ant-modal:visible');
     await expect(modal).toBeVisible({ timeout: 5000 });
@@ -296,7 +297,7 @@ test.describe('Type GUI Editor', () => {
     // Click cancel button
     const cancelButton = modal.locator('button:has-text("キャンセル")');
     await cancelButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Verify modal is closed
     await expect(modal).not.toBeVisible({ timeout: 5000 });

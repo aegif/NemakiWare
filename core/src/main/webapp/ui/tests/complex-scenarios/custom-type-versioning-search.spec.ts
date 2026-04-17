@@ -173,13 +173,13 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
     if (await typeManagementItem.count() > 0) {
       await typeManagementItem.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     } else {
       test.skip('Type Management menu not available');
       return;
@@ -196,7 +196,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     }
 
     await newTypeButton.first().click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const createModal = page.locator('.ant-modal:visible, .ant-drawer:visible');
     await expect(createModal).toBeVisible({ timeout: 5000 });
@@ -223,7 +223,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     const baseTypeSelect = createModal.locator('.ant-form-item').filter({ hasText: 'ベースタイプ' }).locator('.ant-select');
     if (await baseTypeSelect.count() > 0) {
       await baseTypeSelect.first().click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
       const documentOption = page.locator('.ant-select-item').filter({ hasText: /ドキュメント|Documents/i });
       if (await documentOption.count() > 0) {
         await documentOption.first().click();
@@ -235,14 +235,14 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     const propertiesTab = createModal.locator('.ant-tabs-tab').filter({ hasText: /プロパティ定義|Properties/ });
     if (await propertiesTab.count() > 0) {
       await propertiesTab.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     // Add required property
     const addPropertyButton = page.locator('button').filter({ hasText: /プロパティを追加|Add Property/ });
     if (await addPropertyButton.count() > 0) {
       await addPropertyButton.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Fill required property details
       const propertyCard = page.locator('.ant-card').last();
@@ -271,7 +271,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
         const currentType = await propTypeSelect.textContent();
         if (!currentType?.includes('string') && !currentType?.includes('文字列')) {
           await propTypeSelect.click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
           const stringOption = page.locator('.ant-select-item-option').filter({ hasText: /文字列|String/i }).first();
           if (await stringOption.count() > 0 && await stringOption.isVisible()) {
             await stringOption.click();
@@ -296,7 +296,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Add searchable property
     if (await addPropertyButton.count() > 0) {
       await addPropertyButton.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       const propertyCard2 = page.locator('.ant-card').last();
 
@@ -324,7 +324,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
         const currentType2 = await propTypeSelect2.textContent();
         if (!currentType2?.includes('string') && !currentType2?.includes('文字列')) {
           await propTypeSelect2.click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
           const stringOption2 = page.locator('.ant-select-item-option').filter({ hasText: /文字列|String/i }).first();
           if (await stringOption2.count() > 0 && await stringOption2.isVisible()) {
             await stringOption2.click();
@@ -365,7 +365,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
       const closeButton = page.locator('.ant-modal-close');
       if (await closeButton.count() > 0) {
         await closeButton.first().click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
       }
     }
 
@@ -380,7 +380,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Generate unique document name
     testDocumentName = `test-search-doc-${testRunId}.txt`;
@@ -393,7 +393,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     }
 
     await uploadButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Wait for upload modal
     const uploadModal = page.locator('.ant-modal:visible');
@@ -406,7 +406,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
       mimeType: 'text/plain',
       buffer: Buffer.from(`Test document content for search testing - ${testRunId}`, 'utf-8'),
     });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Fill file name
     const nameInput = uploadModal.locator('input[placeholder*="ファイル名"]');
@@ -418,13 +418,13 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     const typeSelector = uploadModal.locator('.ant-select').filter({ hasText: /タイプ|Type/ });
     if (await typeSelector.count() > 0) {
       await typeSelector.click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       const customTypeOption = page.locator('.ant-select-item-option').filter({ hasText: customTypeId });
       if (await customTypeOption.count() > 0) {
         await customTypeOption.click();
         console.log(`Selected custom type: ${customTypeId}`);
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Fill required property if visible
         const requiredPropInput = uploadModal.locator(`input[placeholder*="${requiredPropName}"], input[name*="${requiredPropId}"]`);
@@ -491,11 +491,11 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
     if (await searchMenu.count() > 0) {
       await searchMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     } else {
       // Fallback: Navigate directly
       await page.goto('http://localhost:8080/core/ui/#/search');
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Enter search text
@@ -509,13 +509,13 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     const typeSelector = page.locator('.ant-select').filter({ hasText: /オブジェクトタイプ|タイプ/ }).first();
     if (await typeSelector.count() > 0) {
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       const customTypeOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: customTypeId });
       if (await customTypeOption.count() > 0) {
         await customTypeOption.click(isMobile ? { force: true } : {});
         console.log(`Selected custom type filter: ${customTypeId}`);
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
       } else {
         // Close dropdown
         await page.keyboard.press('Escape');
@@ -554,7 +554,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find and click on the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
@@ -564,13 +564,13 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     }
 
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Look for properties tab or edit button
     const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: /プロパティ|Properties/ });
     if (await propertiesTab.count() > 0) {
       await propertiesTab.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     // Find and update the searchable property
@@ -584,7 +584,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
       const saveButton = page.locator('button').filter({ hasText: /保存|Save/ }).first();
       if (await saveButton.count() > 0) {
         await saveButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
     } else {
       console.log('Searchable property input not found - property editing may not be available');
@@ -597,7 +597,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
     if (await searchMenu.count() > 0) {
       await searchMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       const searchInput = page.locator('input[placeholder*="検索"]').first();
       if (await searchInput.count() > 0) {
@@ -626,7 +626,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click({ force: true });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
@@ -672,7 +672,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     }
 
     if (checkoutSucceeded) {
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       // Refresh page to get updated state
       await page.reload();
       await page.waitForTimeout(3000);
@@ -684,7 +684,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
       if (await checkinButton.count() > 0) {
         console.log('Found check-in button, clicking...');
         await checkinButton.click({ force: true });
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         const checkinModal = page.locator('.ant-modal:visible');
         if (await checkinModal.count() > 0) {
@@ -725,14 +725,14 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     if (await remainingModal.count() > 0) {
       console.log('Dismissing remaining modal before search navigation');
       await page.keyboard.press('Escape');
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     // Verify search finds document with restored value
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
     if (await searchMenu.count() > 0) {
       await searchMenu.click({ force: true });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       const searchInput = page.locator('input[placeholder*="検索"]').first();
       if (await searchInput.count() > 0) {
@@ -759,7 +759,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
@@ -770,19 +770,19 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
 
     // Click on document to open detail view
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Look for version history button or tab
     const versionHistoryButton = page.locator('button').filter({ hasText: /バージョン履歴|Version History/ });
     if (await versionHistoryButton.count() > 0) {
       await versionHistoryButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Look for delete version button for latest version
       const deleteVersionButton = page.locator('button').filter({ hasText: /削除|Delete/ }).first();
       if (await deleteVersionButton.count() > 0) {
         await deleteVersionButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Confirm deletion
         const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|削除/ }).first();
@@ -803,7 +803,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
     if (await searchMenu.count() > 0) {
       await searchMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       const searchInput = page.locator('input[placeholder*="検索"]').first();
       if (await searchInput.count() > 0) {

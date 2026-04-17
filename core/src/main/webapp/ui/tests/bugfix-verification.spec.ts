@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect, Page } from '@playwright/test';
 import { AuthHelper } from './utils/auth-helper';
 import { TestHelper, generateTestId } from './utils/test-helper';
@@ -251,12 +252,12 @@ test.describe('Bug Fix Verification Tests', () => {
     // FIX (2025-12-26): Navigate directly to parent folder - root folder might be empty
     // No need to wait for root folder rows, we navigate directly via URL
     await page.goto(`/core/ui/index.html#/documents`);
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
     await testHelper.waitForAntdLoad();
 
     // Wait for table to load (structure only, not rows - root may be empty)
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Step 3: Navigate to parent folder using URL (more reliable than double-click)
     console.log('Navigating to parent folder...');
@@ -291,7 +292,7 @@ test.describe('Bug Fix Verification Tests', () => {
     await page.waitForURL(url => url.href.includes(parentFolderId), { timeout: 10000 }).catch(() => {
       console.log('waitForURL timed out, checking current URL manually');
     });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
     await testHelper.waitForAntdLoad();
 
     // Step 6: VERIFY - Should be in parent folder, NOT root
@@ -411,14 +412,14 @@ test.describe('Bug Fix Verification Tests', () => {
       console.log('Target document not visible, reloading...');
       await page.reload();
       await page.waitForSelector('.ant-table', { timeout: 15000 });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       tableRows = await page.locator('.ant-table-row').count();
       console.log(`Table rows after reload: ${tableRows}`);
     }
 
     await expect(targetRow).toBeVisible({ timeout: 30000 });
     await targetRow.click();
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Step 5: Click on relationship tab
     console.log('Clicking on relationship tab...');
@@ -426,7 +427,7 @@ test.describe('Bug Fix Verification Tests', () => {
 
     if (await relationshipTab.count() > 0) {
       await relationshipTab.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Step 6: VERIFY - The source document should appear in the relationship list
       console.log('Verifying relationship is visible on target document...');
@@ -449,7 +450,7 @@ test.describe('Bug Fix Verification Tests', () => {
         const relTab = drawer.locator('text=/関連|Relationship/i');
         if (await relTab.count() > 0) {
           await relTab.click();
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
           const sourceVisible = drawer.locator(`text=${sourceDocName}`);
           expect(await sourceVisible.count()).toBeGreaterThan(0);
           console.log('SUCCESS: Bidirectional relationship displayed in drawer');
@@ -518,7 +519,7 @@ test.describe('Bug Fix Verification Tests', () => {
 
     // Step 4: Fetch document and verify property
     console.log('Fetching document to verify property...');
-    await page.waitForTimeout(1000); // Wait for async processing
+    await waitForRender(page); // Wait for async processing
 
     const verifyData = await getObjectProperties(page, docId);
 
@@ -619,7 +620,7 @@ test.describe('Bug Fix Verification Tests', () => {
     console.log(`PWC ID: ${pwcId}`);
 
     // Wait for checkout state to propagate
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Step 3: Verify document is checked out
     console.log('Verifying checkout status...');
@@ -644,7 +645,7 @@ test.describe('Bug Fix Verification Tests', () => {
     // Step 5: Verify checkout is canceled
     console.log('Verifying checkout is canceled...');
     // Wait for cancel state to propagate
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const finalData = await getObjectProperties(page, docId);
 
@@ -726,7 +727,7 @@ test.describe('Bug Fix Verification Tests', () => {
     console.log(`PWC ID: ${pwcId}`);
 
     // Wait for checkout state to propagate
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Step 3: Check in with new content using PWC ID
     console.log('Checking in with new content...');
@@ -768,7 +769,7 @@ test.describe('Bug Fix Verification Tests', () => {
       expect(versionLabel).toMatch(/^[2-9]\.|^[1-9][0-9]+\./);
     } else {
       // Fetch the new version object to get version label
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
       const finalData = await getObjectProperties(page, newVersionId || docId);
       const finalVersionLabel = getPropertyValue(finalData, 'cmis:versionLabel');
       console.log(`Final version label: ${finalVersionLabel}`);
@@ -776,7 +777,7 @@ test.describe('Bug Fix Verification Tests', () => {
     }
 
     // Verify checkout is cleared
-    await page.waitForTimeout(500);
+    await waitForRender(page);
     const verifyData = await getObjectProperties(page, docId);
     const isCheckedOut = getPropertyValue(verifyData, 'cmis:isVersionSeriesCheckedOut');
     console.log(`Is checked out after checkin: ${isCheckedOut}`);

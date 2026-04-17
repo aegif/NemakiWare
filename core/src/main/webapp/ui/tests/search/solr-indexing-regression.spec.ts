@@ -76,7 +76,7 @@ test.describe('Solr Indexing Regression Tests', () => {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();
       if (await menuToggle.count() > 0) {
         await menuToggle.click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
     }
   });
@@ -189,7 +189,7 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     // Also verify via UI search
     await page.goto('http://localhost:8080/core/ui/#/search');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], input[placeholder*="Search"], .ant-input').first();
     if (await searchInput.count() > 0) {
@@ -255,7 +255,7 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     if (await fileInput.count() === 0) {
       await uploadButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     // Set file content programmatically
@@ -272,20 +272,20 @@ test.describe('Solr Indexing Regression Tests', () => {
     const closeModalButton = page.locator('.ant-modal-close, .ant-modal button:has-text("OK"), .ant-modal button:has-text("閉じる")').first();
     if (await closeModalButton.count() > 0) {
       await closeModalButton.click({ force: true });
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
 
     // Also try clicking outside modal if it's still visible
     const modalMask = page.locator('.ant-modal-mask');
     if (await modalMask.isVisible()) {
       await page.keyboard.press('Escape');
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
 
     // Navigate to search page
     const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
     await searchMenu.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Search for the unique content or filename
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]').first();
@@ -333,7 +333,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     // Cleanup: Delete the test file
     // (Navigate back to documents and delete)
     await page.goto('http://localhost:8080/core/ui/#/documents');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const testFileRow = page.locator('.ant-table tbody tr').filter({ hasText: uniqueFileName });
     if (await testFileRow.count() > 0) {
@@ -341,13 +341,13 @@ test.describe('Solr Indexing Regression Tests', () => {
       const deleteButton = testFileRow.locator('button:has(.anticon-delete, [aria-label="delete"])').first();
       if (await deleteButton.count() > 0) {
         await deleteButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Confirm deletion
         const confirmButton = page.locator('.ant-modal button:has-text("OK"), .ant-modal button:has-text("削除")').first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
           console.log('✅ Test file cleaned up');
         }
       }
@@ -381,7 +381,7 @@ test.describe('Solr Indexing Regression Tests', () => {
       const uploadButton = page.locator('button:has-text("アップロード"), button:has(.anticon-upload, [aria-label="upload"])').first();
       if (await uploadButton.count() > 0) {
         await uploadButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
       }
     }
 
@@ -399,14 +399,14 @@ test.describe('Solr Indexing Regression Tests', () => {
       const closeModalButton = page.locator('.ant-modal-close, .ant-modal button:has-text("OK"), .ant-modal button:has-text("閉じる")').first();
       if (await closeModalButton.count() > 0) {
         await closeModalButton.click({ force: true });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
 
       // Also try clicking outside modal if it's still visible
       const modalMask = page.locator('.ant-modal-mask');
       if (await modalMask.isVisible()) {
         await page.keyboard.press('Escape');
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
     } else {
       // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
@@ -417,7 +417,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     // Verify document is searchable before deletion
     const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
     await searchMenu.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]').first();
     await searchInput.fill(uniqueFileName.replace('.txt', ''));
@@ -452,14 +452,14 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     // Delete the document
     await page.goto('http://localhost:8080/core/ui/#/documents');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const testFileRow = page.locator('.ant-table tbody tr').filter({ hasText: uniqueFileName });
     if (await testFileRow.count() > 0) {
       const deleteButton = testFileRow.locator('button:has(.anticon-delete, [aria-label="delete"])').first();
       if (await deleteButton.count() > 0) {
         await deleteButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         const confirmButton = page.locator('.ant-modal button:has-text("OK"), .ant-modal button:has-text("削除")').first();
         if (await confirmButton.count() > 0) {
@@ -472,7 +472,7 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     // Verify document is NOT searchable after deletion
     await searchMenu.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     await searchInput.fill(uniqueFileName.replace('.txt', ''));
     if (await searchButton.count() > 0) {
@@ -520,11 +520,11 @@ test.describe('Solr Indexing Regression Tests', () => {
     const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
     if (await searchMenu.count() > 0) {
       await searchMenu.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     } else {
       // Try direct navigation to search page
       await page.goto('http://localhost:8080/core/ui/#/search');
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Try multiple search input selectors

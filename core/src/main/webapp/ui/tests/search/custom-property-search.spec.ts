@@ -64,7 +64,7 @@ test.describe('Custom Property Search Functionality', () => {
 
     if (await typeSelector.count() > 0) {
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Verify dropdown options are visible
       const dropdownOptions = page.locator('.ant-select-dropdown .ant-select-item-option');
@@ -86,13 +86,13 @@ test.describe('Custom Property Search Functionality', () => {
 
     if (await typeSelector.count() > 0) {
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Select cmis:document type
       const documentOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'cmis:document' }).first();
       if (await documentOption.count() > 0) {
         await documentOption.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Check if custom property card appears (カスタムプロパティで検索)
         const customPropertyCard = page.locator('.ant-card').filter({ hasText: /カスタムプロパティ/ });
@@ -115,7 +115,7 @@ test.describe('Custom Property Search Functionality', () => {
 
     if (await typeSelector.count() > 0) {
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Try to select a custom type (nemaki types have custom properties)
       const nemakiTypeOptions = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: /nemaki:/ });
@@ -123,7 +123,7 @@ test.describe('Custom Property Search Functionality', () => {
       if (await nemakiTypeOptions.count() > 0) {
         // Select first nemaki type
         await nemakiTypeOptions.first().click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Look for form fields that might be generated
         const formFields = page.locator('.ant-form-item');
@@ -139,7 +139,7 @@ test.describe('Custom Property Search Functionality', () => {
         const documentOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'cmis:document' }).first();
         if (await documentOption.count() > 0) {
           await documentOption.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
         }
       }
     }
@@ -168,13 +168,13 @@ test.describe('Custom Property Search Functionality', () => {
 
     if (await typeSelector.count() > 0) {
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Select cmis:folder type
       const folderOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'cmis:folder' }).first();
       if (await folderOption.count() > 0) {
         await folderOption.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
       } else {
         // Close dropdown if option not found
         await page.keyboard.press('Escape');
@@ -207,13 +207,13 @@ test.describe('Custom Property Search Functionality', () => {
 
     if (await typeSelector.count() > 0) {
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Select cmis:document type
       const documentOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'cmis:document' }).first();
       if (await documentOption.count() > 0) {
         await documentOption.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
       } else {
         await page.keyboard.press('Escape');
       }
@@ -251,13 +251,13 @@ test.describe('Custom Property Search Functionality', () => {
 
     if (await typeSelector.count() > 0) {
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Select a type that has string properties
       const documentOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'cmis:document' }).first();
       if (await documentOption.count() > 0) {
         await documentOption.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Check for Input elements (string property type)
         const inputFields = page.locator('.ant-input');
@@ -280,12 +280,12 @@ test.describe('Custom Property Search Functionality', () => {
     if (await typeSelector.count() > 0) {
       // First, select cmis:document
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const documentOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'cmis:document' }).first();
       if (await documentOption.count() > 0) {
         await documentOption.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
       } else {
         await page.keyboard.press('Escape');
         return;
@@ -296,12 +296,12 @@ test.describe('Custom Property Search Functionality', () => {
 
       // Now change to cmis:folder
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const folderOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'cmis:folder' }).first();
       if (await folderOption.count() > 0) {
         await folderOption.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Verify form fields may have changed (reset)
         const newFormFields = await page.locator('.ant-form-item').count();
@@ -322,7 +322,7 @@ test.describe('Custom Property Search Functionality', () => {
 
     if (await typeSelector.count() > 0) {
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Select a type
       const documentOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'cmis:document' }).first();
@@ -331,7 +331,7 @@ test.describe('Custom Property Search Functionality', () => {
 
         // Loading indicator might appear briefly
         // We can't easily catch a brief loading state, but we verify no errors occur
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Verify no error messages
         const errorMessage = page.locator('.ant-message-error');
@@ -350,13 +350,13 @@ test.describe('Custom Property Search Functionality', () => {
 
     if (await typeSelector.count() > 0) {
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Select cmis:folder type
       const folderOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'cmis:folder' }).first();
       if (await folderOption.count() > 0) {
         await folderOption.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
       } else {
         await page.keyboard.press('Escape');
         return;
@@ -391,13 +391,13 @@ test.describe('Custom Property Search Functionality', () => {
 
     if (await typeSelector.count() > 0) {
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Select cmis:folder type
       const folderOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'cmis:folder' }).first();
       if (await folderOption.count() > 0) {
         await folderOption.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
       } else {
         await page.keyboard.press('Escape');
         return;
@@ -744,7 +744,7 @@ test.describe('Custom Property Input Types', () => {
 
     if (await typeSelector.count() > 0) {
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Try to find types with numeric properties
       const dropdownOptions = page.locator('.ant-select-dropdown .ant-select-item-option');
@@ -753,7 +753,7 @@ test.describe('Custom Property Input Types', () => {
       // Select first available type
       if (optionCount > 0) {
         await dropdownOptions.first().click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Check for InputNumber components
         const numberInputs = page.locator('.ant-input-number');
@@ -774,13 +774,13 @@ test.describe('Custom Property Input Types', () => {
 
     if (await typeSelector.count() > 0) {
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Select a type
       const documentOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'cmis:document' }).first();
       if (await documentOption.count() > 0) {
         await documentOption.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Check for DatePicker components
         const datePickers = page.locator('.ant-picker');
@@ -801,13 +801,13 @@ test.describe('Custom Property Input Types', () => {
 
     if (await typeSelector.count() > 0) {
       await typeSelector.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Select a type
       const documentOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'cmis:document' }).first();
       if (await documentOption.count() > 0) {
         await documentOption.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Check for Select components (might be used for boolean true/false)
         const selectComponents = page.locator('.ant-select');

@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, ApiHelper, generateTestId } from '../utils/test-helper';
@@ -168,7 +169,7 @@ test.describe('Document Versioning', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Upload a test document first with unique name
     const timestamp = Date.now();
@@ -194,7 +195,7 @@ test.describe('Document Versioning', () => {
     await expect(documentRow).toBeVisible();
 
     // Look for check-out button (EditOutlined icon) in the document row's action column
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
     
     // Find the checkout button by looking for the edit icon button
     const checkoutButton = documentRow.locator('button').filter({ has: page.locator('span[role="img"][aria-label="edit"]') }).first();
@@ -255,18 +256,18 @@ test.describe('Document Versioning', () => {
 
     // Cleanup: Delete the test document
     await page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first().click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     const deleteButton = page.locator('button.anticon-delete, [aria-label="delete"], button').filter({ hasText: /削除|Delete/i }).first();
     if (await deleteButton.count() > 0) {
       await deleteButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Confirm deletion if modal appears
       const confirmButton = page.locator('.ant-modal button').filter({ hasText: /OK|削除|確認/i }).first();
       if (await confirmButton.count() > 0) {
         await confirmButton.click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
     }
   });
@@ -277,7 +278,7 @@ test.describe('Document Versioning', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Upload a test document first with unique name to avoid conflicts
     const timestamp = Date.now();
@@ -292,7 +293,7 @@ test.describe('Document Versioning', () => {
     console.log(`Test: Looking for ${filename} in document table`);
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     await expect(documentRow).toBeVisible();
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Step 1: Check-out using icon button in the row (EditOutlined = aria-label="edit")
     const checkoutButton = documentRow.locator('button').filter({ has: page.locator('span[role="img"][aria-label="edit"]') }).first();
@@ -339,7 +340,7 @@ test.describe('Document Versioning', () => {
           buffer: Buffer.from('Version 2.0 content - updated', 'utf-8'),
         });
         console.log('Test: Attached new version file');
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
       }
 
       // Submit check-in (primary button in the modal)
@@ -400,7 +401,7 @@ test.describe('Document Versioning', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Upload a test document with unique name
     const timestamp = Date.now();
@@ -416,24 +417,24 @@ test.describe('Document Versioning', () => {
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     await expect(documentRow).toBeVisible();
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const checkoutButton = page.locator('button, .ant-btn').filter({ hasText: /チェックアウト|Check.*Out/i }).first();
     if (await checkoutButton.count() > 0) {
       await checkoutButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Cancel check-out
       const cancelCheckoutButton = page.locator('button, .ant-btn').filter({ hasText: /チェックアウト.*キャンセル|Cancel.*Check.*Out/i }).first();
       if (await cancelCheckoutButton.count() > 0) {
         await cancelCheckoutButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Confirm cancellation if modal appears
         const confirmButton = page.locator('.ant-modal button').filter({ hasText: /OK|確認|キャンセル/i }).first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
 
         // Verify PWC indicator is gone
@@ -449,22 +450,22 @@ test.describe('Document Versioning', () => {
     // Cleanup: Delete the test document
     // Note: After cancel check-out, loadObjects() automatically updates the table
     // Wait for table to refresh after cancel operation
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const cleanupDocRow2 = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     if (await cleanupDocRow2.count() > 0) {
       await cleanupDocRow2.click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       const deleteButton = page.locator('button.anticon-delete, [aria-label="delete"], button').filter({ hasText: /削除|Delete/i }).first();
       if (await deleteButton.count() > 0) {
         await deleteButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|はい|削除|確認/i }).first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
       }
     }
@@ -476,7 +477,7 @@ test.describe('Document Versioning', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Upload a test document with unique name
     const timestamp = Date.now();
@@ -492,7 +493,7 @@ test.describe('Document Versioning', () => {
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     await expect(documentRow).toBeVisible();
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Look for version history button (might be in context menu or toolbar)
     const versionHistoryButton = page.locator('button, .ant-btn, .ant-menu-item').filter({
@@ -501,7 +502,7 @@ test.describe('Document Versioning', () => {
 
     if (await versionHistoryButton.count() > 0) {
       await versionHistoryButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Verify version history modal/panel appears
       const versionHistoryModal = page.locator('.ant-modal, .ant-drawer').filter({
@@ -535,22 +536,22 @@ test.describe('Document Versioning', () => {
 
     // Cleanup: Delete the test document
     // Wait for modal to close if still open
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const cleanupDocRow3 = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     if (await cleanupDocRow3.count() > 0) {
       await cleanupDocRow3.click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       const deleteButton = page.locator('button.anticon-delete, [aria-label="delete"], button').filter({ hasText: /削除|Delete/i }).first();
       if (await deleteButton.count() > 0) {
         await deleteButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|はい|削除|確認/i }).first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
       }
     }
@@ -562,7 +563,7 @@ test.describe('Document Versioning', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Upload a test document with unique name
     const timestamp = Date.now();
@@ -578,7 +579,7 @@ test.describe('Document Versioning', () => {
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     await expect(documentRow).toBeVisible();
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Open version history
     const versionHistoryButton = page.locator('button, .ant-btn, .ant-menu-item').filter({
@@ -587,7 +588,7 @@ test.describe('Document Versioning', () => {
 
     if (await versionHistoryButton.count() > 0) {
       await versionHistoryButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Look for download button in version history
       const versionDownloadButton = page.locator('button, .ant-btn').filter({
@@ -633,22 +634,22 @@ test.describe('Document Versioning', () => {
 
     // Cleanup: Delete the test document
     // Wait for modal to close if still open
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const cleanupDocRow4 = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     if (await cleanupDocRow4.count() > 0) {
       await cleanupDocRow4.click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       const deleteButton = page.locator('button.anticon-delete, [aria-label="delete"], button').filter({ hasText: /削除|Delete/i }).first();
       if (await deleteButton.count() > 0) {
         await deleteButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|はい|削除|確認/i }).first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
       }
     }
@@ -706,7 +707,7 @@ test.describe('Document Versioning', () => {
     if (await documentRow.count() === 0) {
       await page.reload();
       await page.waitForSelector('.ant-table', { timeout: 15000 });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
     await expect(documentRow).toBeVisible({ timeout: 15000 });
 
@@ -719,13 +720,13 @@ test.describe('Document Versioning', () => {
     const eyeButton = documentRow.locator('button').filter({ has: page.locator('span[role="img"][aria-label="eye"]') }).first();
     if (await eyeButton.count() > 0) {
       await eyeButton.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Click version history tab
       const versionTab = page.locator('.ant-tabs-tab').filter({ hasText: /バージョン履歴|Version History/i });
       if (await versionTab.count() > 0) {
         await versionTab.click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Check for version entries
         const versionRows = page.locator('.ant-table-tbody tr');

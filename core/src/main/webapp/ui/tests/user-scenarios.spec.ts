@@ -61,7 +61,7 @@ test.describe('User Scenario Tests', () => {
       // Login is done in beforeEach, and document is ensured
       // Wait for document list to load
       await page.waitForSelector('.ant-table', { timeout: 10000 });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Verify table has rows (ensured by beforeEach)
       const rows = page.locator('.ant-table-row');
@@ -76,7 +76,7 @@ test.describe('User Scenario Tests', () => {
     test('should open document detail and view tabs without errors', async ({ page }) => {
       // Login is done in beforeEach, document ensured
       await page.waitForSelector('.ant-table', { timeout: 10000 });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Find the test document row (ensured by beforeEach)
       const documentRow = page.locator('.ant-table-row').filter({ hasText: testDocName }).first();
@@ -93,7 +93,7 @@ test.describe('User Scenario Tests', () => {
         });
 
         await detailButton.click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Verify we navigated to document detail page
         const currentUrl = page.url();
@@ -116,7 +116,7 @@ test.describe('User Scenario Tests', () => {
           console.log(`Clicking tab: ${tabText}`);
 
           await tab.click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         }
 
         // Check for critical errors
@@ -137,7 +137,7 @@ test.describe('User Scenario Tests', () => {
     test('should display secondary types tab without errors', async ({ page }) => {
       // Login is done in beforeEach, document ensured
       await page.waitForSelector('.ant-table', { timeout: 10000 });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Find the test document row (ensured by beforeEach)
       const documentRow = page.locator('.ant-table-row').filter({ hasText: testDocName }).first();
@@ -152,14 +152,14 @@ test.describe('User Scenario Tests', () => {
         });
 
         await detailButton.click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Find and click セカンダリタイプ tab
         const secondaryTypeTab = page.locator('.ant-tabs-tab').filter({ hasText: 'セカンダリタイプ' });
 
         if (await secondaryTypeTab.count() > 0) {
           await secondaryTypeTab.click();
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
 
           // Verify tab content rendered
           const tabContent = page.locator('.ant-tabs-tabpane-active');
@@ -182,7 +182,7 @@ test.describe('User Scenario Tests', () => {
     test('should display relationships tab without errors', async ({ page }) => {
       // Login is done in beforeEach, document ensured
       await page.waitForSelector('.ant-table', { timeout: 10000 });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Find the test document row (ensured by beforeEach)
       const documentRow = page.locator('.ant-table-row').filter({ hasText: testDocName }).first();
@@ -197,7 +197,7 @@ test.describe('User Scenario Tests', () => {
         });
 
         await detailButton.click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Find and click 関係 tab (FIXED 2025-12-26: Was incorrectly looking for '関連' instead of '関係')
         // Implemented in DocumentViewer.tsx line 917
@@ -205,7 +205,7 @@ test.describe('User Scenario Tests', () => {
 
         if (await relationshipTab.count() > 0) {
           await relationshipTab.click();
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
 
           // Verify tab content rendered
           const tabContent = page.locator('.ant-tabs-tabpane-active');
@@ -231,7 +231,7 @@ test.describe('User Scenario Tests', () => {
     test('should display preview tab for documents with content', async ({ page }) => {
       // Login is done in beforeEach
       await page.waitForSelector('.ant-table', { timeout: 10000 });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Find a document (not folder) - look for document icon or .txt extension
       const documentRows = page.locator('.ant-table-row');
@@ -248,7 +248,7 @@ test.describe('User Scenario Tests', () => {
 
           if (await detailButton.count() > 0) {
             await detailButton.click();
-            await page.waitForTimeout(2000);
+            await waitForUiStable(page);
 
             // Find プレビュー tab
             const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プレビュー' });
@@ -257,7 +257,7 @@ test.describe('User Scenario Tests', () => {
               console.log('Preview tab found - document has content stream');
 
               await previewTab.click();
-              await page.waitForTimeout(2000);
+              await waitForUiStable(page);
 
               // Verify preview content area is visible
               const previewContent = page.locator('.ant-tabs-tabpane-active');
@@ -270,7 +270,7 @@ test.describe('User Scenario Tests', () => {
               console.log('Preview tab not visible for this document');
               // Go back and try another document
               await page.goBack();
-              await page.waitForTimeout(1000);
+              await waitForRender(page);
             }
           }
         }
@@ -286,7 +286,7 @@ test.describe('User Scenario Tests', () => {
     test('should return to document list when clicking back button', async ({ page }) => {
       // Login is done in beforeEach
       await page.waitForSelector('.ant-table', { timeout: 10000 });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       const documentRow = page.locator('.ant-table-row').first();
 
@@ -299,7 +299,7 @@ test.describe('User Scenario Tests', () => {
           console.log('Document list URL:', listUrl);
 
           await detailButton.click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
 
           // Verify we're on detail page
           expect(page.url()).toMatch(/\/documents\/[a-f0-9]+/);
@@ -342,7 +342,7 @@ test.describe('User Scenario Tests', () => {
     test('should be able to view multiple documents sequentially', async ({ page }) => {
       // Login is done in beforeEach
       await page.waitForSelector('.ant-table', { timeout: 10000 });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       const rows = page.locator('.ant-table-row');
       const rowCount = await rows.count();
@@ -369,7 +369,7 @@ test.describe('User Scenario Tests', () => {
           });
 
           await detailButton.click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
 
           // Verify tabs loaded (with retry on failure)
           const tabs = page.locator('.ant-tabs-nav');
@@ -435,7 +435,7 @@ test.describe('User Scenario Tests', () => {
     test('should handle CMIS Browser Binding property format correctly', async ({ page }) => {
       // login is handled by beforeEach
       await page.waitForSelector('.ant-table', { timeout: 10000 });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       const documentRow = page.locator('.ant-table-row').first();
 
@@ -450,7 +450,7 @@ test.describe('User Scenario Tests', () => {
           });
 
           await detailButton.click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
 
           // Click through all visible tabs to trigger property access
           const tabItems = page.locator('.ant-tabs-tab:visible');
@@ -467,7 +467,7 @@ test.describe('User Scenario Tests', () => {
             } catch {
               console.log(`Tab ${i} (${tabText}) click failed, skipping`);
             }
-            await page.waitForTimeout(500);
+            await waitForRender(page);
           }
 
           // Check for property access errors - the specific bug we're verifying is fixed
@@ -497,7 +497,7 @@ test.describe('User Scenario Tests', () => {
     test('should add secondary type without y.includes error', async ({ page }) => {
       // login is handled by beforeEach
       await page.waitForSelector('.ant-table', { timeout: 10000 });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Find a document (preferably text file in root)
       const documentRow = page.locator('.ant-table-row').first();
@@ -521,7 +521,7 @@ test.describe('User Scenario Tests', () => {
         return;
       }
       await detailButton.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Click on secondary types tab
       const secondaryTab = page.locator('.ant-tabs-tab').filter({ hasText: 'セカンダリタイプ' });
@@ -556,7 +556,7 @@ test.describe('User Scenario Tests', () => {
 
         // Open dropdown
         await selector.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Check if there are options in the dropdown
         const options = page.locator('.ant-select-dropdown:visible .ant-select-item-option');
@@ -566,14 +566,14 @@ test.describe('User Scenario Tests', () => {
         if (optionCount > 0) {
           // Select first available option
           await options.first().click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
 
           // Click add button
           const addButton = page.locator('button').filter({ hasText: '追加' });
           if (await addButton.count() > 0) {
             console.log('Clicking add button...');
             await addButton.click();
-            await page.waitForTimeout(2000);
+            await waitForUiStable(page);
 
             // Check for errors AFTER the add operation - THIS IS THE CRITICAL CHECK
             const afterAddErrors = jsErrors.filter(e =>

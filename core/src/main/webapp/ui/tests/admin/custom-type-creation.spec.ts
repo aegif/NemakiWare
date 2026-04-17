@@ -182,7 +182,7 @@ test.describe('Custom Type Creation and Property Management', () => {
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
@@ -199,7 +199,7 @@ test.describe('Custom Type Creation and Property Management', () => {
 
     // Wait for type table to load
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Generate unique custom type ID
     const typeIdSuffix = generateTestId();
@@ -216,13 +216,13 @@ test.describe('Custom Type Creation and Property Management', () => {
       console.log('✅ Clicked create type button');
 
       // Wait for creation modal/form - longer wait for form rendering
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       const createModal = page.locator('.ant-modal:visible, .ant-drawer:visible');
       await expect(createModal).toBeVisible({ timeout: 5000 });
       console.log('✅ Create type modal opened');
 
       // Wait for tabs to render (form uses Tabs component)
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Fill type ID (TypeManagement.tsx name="id", placeholder="タイプIDを入力")
       // The type ID is in the first tab "基本情報"
@@ -285,7 +285,7 @@ test.describe('Custom Type Creation and Property Management', () => {
       const baseTypeSelect = createModal.locator('.ant-form-item').filter({ hasText: 'ベースタイプ' }).locator('.ant-select');
       if (await baseTypeSelect.count() > 0) {
         await baseTypeSelect.first().click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Select cmis:document from dropdown
         const documentOption = page.locator('.ant-select-item').filter({ hasText: /ドキュメント|Documents/i });
@@ -334,16 +334,16 @@ test.describe('Custom Type Creation and Property Management', () => {
         const closeButton = page.locator('.ant-modal-close');
         if (await closeButton.count() > 0) {
           await closeButton.first().click();
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
         }
       }
       console.log('✅ Modal handling completed');
 
       // IMPROVEMENT: Wait longer and reload the page to ensure fresh data
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       await page.reload();
       await page.waitForSelector('.ant-table', { timeout: 15000 });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Verify new type appears in table
       // The type might be on a different page due to pagination
@@ -370,7 +370,7 @@ test.describe('Custom Type Creation and Property Management', () => {
         const nextPageButton = page.locator('.ant-pagination-next:not(.ant-pagination-disabled)');
         if (await nextPageButton.count() > 0 && pageNum < maxPages) {
           await nextPageButton.click();
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
         } else {
           break;
         }
@@ -407,7 +407,7 @@ test.describe('Custom Type Creation and Property Management', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find a custom type (non-cmis: types) that we can edit
     // The edit button is disabled for standard CMIS types (cmis:* prefix)
@@ -423,7 +423,7 @@ test.describe('Custom Type Creation and Property Management', () => {
       // Click JSON button (opens JSON editor modal)
       const editButton = customTypeRow.locator('button').filter({ hasText: 'JSON' });
       await editButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
       console.log('✅ Clicked edit button');
 
       // Wait for JSON edit modal to open
@@ -489,7 +489,7 @@ test.describe('Custom Type Creation and Property Management', () => {
               console.log('✅ Clicked save button');
 
               // Wait for success or error message
-              await page.waitForTimeout(2000);
+              await waitForUiStable(page);
 
               const successMessage = page.locator('.ant-message-success');
               const errorMessage = page.locator('.ant-message-error');
@@ -540,7 +540,7 @@ test.describe('Custom Type Creation and Property Management', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
@@ -565,7 +565,7 @@ test.describe('Custom Type Creation and Property Management', () => {
         console.log('✅ Type selector found in upload modal');
         // Select custom type from dropdown
         await typeSelect.first().click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Look for test: custom document types in dropdown (created by test 1)
         // Note: nemaki: types are relationship types, not document types
@@ -590,7 +590,7 @@ test.describe('Custom Type Creation and Property Management', () => {
           }
         }
 
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Upload file
         await testHelper.uploadTestFile(
@@ -599,7 +599,7 @@ test.describe('Custom Type Creation and Property Management', () => {
           'This document uses a custom type.'
         );
 
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Submit upload
         const submitBtn = page.locator('.ant-modal button[type="submit"], .ant-modal button:has-text("アップロード")');
@@ -617,7 +617,7 @@ test.describe('Custom Type Creation and Property Management', () => {
           }
         }
 
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Verify document appears in list
         const documentInTable = page.locator('.ant-table-tbody').locator(`text=${filename}`);
@@ -629,7 +629,7 @@ test.describe('Custom Type Creation and Property Management', () => {
           // Reload and try again (Solr indexing might be slow)
           await page.reload();
           await page.waitForSelector('.ant-table', { timeout: 15000 });
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
 
         console.log(`Test: Document upload with type selector verified (type: ${selectedTypeName})`);

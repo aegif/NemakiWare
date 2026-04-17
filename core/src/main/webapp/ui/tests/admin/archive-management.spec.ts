@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -93,7 +94,7 @@ test.describe('Archive Management', () => {
 
     if (await adminMenu.count() > 0) {
       await adminMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
 
     // Look for archive management menu item
@@ -103,7 +104,7 @@ test.describe('Archive Management', () => {
 
     if (await archiveMenuItem.count() > 0) {
       await archiveMenuItem.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Verify archive management page loaded
       const pageTitle = page.locator('h2, .ant-card-head-title').filter({
@@ -120,7 +121,7 @@ test.describe('Archive Management', () => {
       console.log('Archive management menu item not found - feature may not be available in menu');
       // Try direct navigation
       await page.goto('/core/ui/#/archive');
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       const hasContent = await page.locator('.ant-table, .ant-card').count() > 0;
       if (!hasContent) {
@@ -134,7 +135,7 @@ test.describe('Archive Management', () => {
 
     // Navigate to archive management
     await page.goto('/core/ui/#/archive');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check if table exists
     const archiveTable = page.locator('.ant-table');
@@ -170,7 +171,7 @@ test.describe('Archive Management', () => {
 
     // Navigate to archive management
     await page.goto('/core/ui/#/archive');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const archiveTable = page.locator('.ant-table');
 
@@ -220,7 +221,7 @@ test.describe('Archive Management', () => {
     // First navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Upload a test document for archiving
     const timestamp = Date.now();
@@ -236,7 +237,7 @@ test.describe('Archive Management', () => {
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     await expect(documentRow).toBeVisible({ timeout: 5000 });
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Look for delete button
     const deleteButton = page.locator('button').filter({
@@ -257,7 +258,7 @@ test.describe('Archive Management', () => {
       await deleteButton.click(isMobile ? { force: true } : {});
     }
 
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Confirm deletion if modal/popconfirm appears
     const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button, .ant-popover button')
@@ -265,11 +266,11 @@ test.describe('Archive Management', () => {
 
     if (await confirmButton.count() > 0) {
       await confirmButton.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Verify document is no longer in document list
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
     const deletedRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename });
 
     // Document should be gone from document list (moved to archive)
@@ -280,7 +281,7 @@ test.describe('Archive Management', () => {
 
     // Now navigate to archive management to verify
     await page.goto('/core/ui/#/archive');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Look for the deleted document in archive list
     const archiveRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename });
@@ -299,7 +300,7 @@ test.describe('Archive Management', () => {
 
     // Navigate to archive management
     await page.goto('/core/ui/#/archive');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // CRITICAL FIX (2025-12-14): Check for empty table placeholder first
     const emptyPlaceholder = page.locator('.ant-table-placeholder, .ant-empty');
@@ -333,7 +334,7 @@ test.describe('Archive Management', () => {
     console.log(`Attempting to restore: ${objectName}`);
 
     // Wait for table to fully render with all action buttons
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Find restore button in the first row - try multiple selectors
     // The button has text "復元" and is inside a Popconfirm wrapper
@@ -370,7 +371,7 @@ test.describe('Archive Management', () => {
 
     await restoreButton.click(isMobile ? { force: true } : {});
 
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Handle Popconfirm "このオブジェクトを復元しますか？"
     const confirmButton = page.locator('.ant-popconfirm button, .ant-popover button')
@@ -378,7 +379,7 @@ test.describe('Archive Management', () => {
 
     if (await confirmButton.count() > 0) {
       await confirmButton.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Check for success message
       const successMessage = page.locator('.ant-message-success');
@@ -387,7 +388,7 @@ test.describe('Archive Management', () => {
       }
 
       // Verify object is no longer in archive list (restored successfully)
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
       const stillInArchive = page.locator('.ant-table-tbody tr').filter({ hasText: objectName || '' });
 
       if (await stillInArchive.count() === 0) {
@@ -405,7 +406,7 @@ test.describe('Archive Management', () => {
 
     // Navigate to archive management
     await page.goto('/core/ui/#/archive');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const archiveRows = page.locator('.ant-table-tbody tr');
     const rowCount = await archiveRows.count();
@@ -450,7 +451,7 @@ test.describe('Archive Management', () => {
 
     // Navigate to archive management
     await page.goto('/core/ui/#/archive');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const archiveRows = page.locator('.ant-table-tbody tr');
     const rowCount = await archiveRows.count();
@@ -481,7 +482,7 @@ test.describe('Archive Management', () => {
       await detailButton.click(isMobile ? { force: true } : {});
     }
 
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify navigation to document viewer or detail page
     const currentUrl = page.url();
@@ -500,7 +501,7 @@ test.describe('Archive Management', () => {
     // This test verifies the empty state handling
     // Navigate to archive management
     await page.goto('/core/ui/#/archive');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const archiveTable = page.locator('.ant-table');
 

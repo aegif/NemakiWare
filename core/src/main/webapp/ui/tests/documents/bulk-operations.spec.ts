@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId, ApiHelper } from '../utils/test-helper';
@@ -259,7 +260,7 @@ test.describe('Bulk Operations', () => {
     // Navigate to the subfolder in the UI
     await page.goto(`http://localhost:8080/core/ui/index.html#/documents?folderId=${folderId}`);
     await page.waitForSelector('.ant-table-tbody', { timeout: 15000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     return { names: createdNames, folderId };
   }
@@ -280,7 +281,7 @@ test.describe('Bulk Operations', () => {
     testDocumentNames.push(...createdDocs);
 
     // Wait for documents to appear in list
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Look for selection checkboxes in table rows (exclude header checkbox)
     const selectionCheckboxes = page.locator('.ant-table-tbody .ant-table-selection-column input[type="checkbox"]');
@@ -357,7 +358,7 @@ test.describe('Bulk Operations', () => {
     }
 
     testDocumentNames.push(...createdDocs);
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Look for select-all checkbox in table header
     const selectAllCheckbox = page.locator('.ant-table-thead th.ant-table-selection-column input[type="checkbox"]');
@@ -370,7 +371,7 @@ test.describe('Bulk Operations', () => {
 
     // Click select-all checkbox
     await selectAllCheckbox.check(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Verify all checkboxes are checked
     const allCheckboxes = page.locator('.ant-table-selection-column input[type="checkbox"]');
@@ -384,7 +385,7 @@ test.describe('Bulk Operations', () => {
 
     // Click select-all again to deselect
     await selectAllCheckbox.uncheck(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Verify all checkboxes are unchecked
     const uncheckedCount = await page.locator('.ant-table-selection-column input[type="checkbox"]:checked').count();
@@ -452,7 +453,7 @@ test.describe('Bulk Operations', () => {
     // Navigate to the test folder in the UI
     await page.goto(`http://localhost:8080/core/ui/index.html#/documents?folderId=${testFolderId}`);
     await page.waitForSelector('.ant-table-tbody', { timeout: 15000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Select all documents (only the 5 test documents should be in this folder)
     const selectAllCheckbox = page.locator('.ant-table-thead th.ant-table-selection-column input[type="checkbox"]');
@@ -462,7 +463,7 @@ test.describe('Bulk Operations', () => {
     }
 
     await selectAllCheckbox.check(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Look for bulk delete button — ja: "5件を削除", en: "Delete 5 items"
     const bulkDeleteButton = page.locator('button').filter({ hasText: /\d+件を削除|一括削除|Delete \d+ items?|Bulk Delete/i });
@@ -474,7 +475,7 @@ test.describe('Bulk Operations', () => {
 
     console.log(`Clicking bulk delete button...`);
     await bulkDeleteButton.first().click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Confirm bulk deletion — Modal OK button text is t('common.delete') = "削除" / "Delete"
     await page.waitForSelector('.ant-modal', { timeout: 5000 });
@@ -563,7 +564,7 @@ test.describe('Bulk Operations', () => {
     }
 
     testDocumentNames.push(...createdDocs);
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Select 2 documents (body rows only, exclude header checkbox)
     const selectionCheckboxes = page.locator('.ant-table-tbody .ant-table-selection-column input[type="checkbox"]');
@@ -574,7 +575,7 @@ test.describe('Bulk Operations', () => {
 
     await selectionCheckboxes.nth(0).check(isMobile ? { force: true } : {});
     await selectionCheckboxes.nth(1).check(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Verify 2 row checkboxes are selected (ignore header checkbox)
     const checkedCount = await page
@@ -589,7 +590,7 @@ test.describe('Bulk Operations', () => {
       .first();
     if (await searchMenuItem.count() > 0) {
       await searchMenuItem.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     const documentsMenuItem = page
@@ -600,7 +601,7 @@ test.describe('Bulk Operations', () => {
 
     // Wait for DocumentList to fully re-render after returning
     await testHelper.waitForAntdLoad();
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Verify selection is cleared (no row checkboxes remain checked)
     const checkedAfterNav = await page
@@ -623,7 +624,7 @@ test.describe('Bulk Operations', () => {
     }
 
     testDocumentNames.push(...createdDocs);
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Select all documents
     const selectAllCheckbox = page.locator('.ant-table-thead th.ant-table-selection-column input[type="checkbox"]');
@@ -650,7 +651,7 @@ test.describe('Bulk Operations', () => {
     }
 
     await selectAllCheckbox.check(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Click bulk delete button (use count pattern to match "N件を削除")
     const bulkDeleteButton = page.locator('button').filter({ hasText: /\d+件を削除|Delete \d+ items?/i });
@@ -660,7 +661,7 @@ test.describe('Bulk Operations', () => {
     }
 
     await bulkDeleteButton.first().click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Confirm bulk deletion
     const modal = page.locator('.ant-modal').filter({ hasText: /一括削除|Bulk Delete/i });

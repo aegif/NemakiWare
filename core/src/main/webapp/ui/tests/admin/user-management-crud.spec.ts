@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { generateTestId, TestHelper } from '../utils/test-helper';
@@ -210,7 +211,7 @@ test.describe('User Management CRUD Operations', () => {
     // Wait for create button to appear (page may still be loading)
     await expect(createButton.first()).toBeVisible({ timeout: 10000 });
     await createButton.first().click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Wait for modal or form
     const modal = page.locator('.ant-modal, .ant-drawer');
@@ -266,7 +267,7 @@ test.describe('User Management CRUD Operations', () => {
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], input[placeholder*="Search"], input[placeholder*="ユーザー"]');
     if (await searchInput.isVisible().catch(() => false)) {
       await searchInput.fill(testUsername);
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
     const userRow = page.locator('tr').filter({ hasText: testUsername });
     await expect(userRow).toBeVisible({ timeout: 10000 });
@@ -278,13 +279,13 @@ test.describe('User Management CRUD Operations', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     // Find testuser (created in previous test) using exact username
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Use search box to find the test user (avoids pagination issues)
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], input[placeholder*="Search"], input[placeholder*="ユーザー"]');
     if (await searchInput.isVisible().catch(() => false)) {
       await searchInput.fill(testUsername);
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       console.log(`Edit test: Searched for ${testUsername}`);
     }
     let testUserRow = page.locator('tr').filter({ hasText: testUsername });
@@ -308,7 +309,7 @@ test.describe('User Management CRUD Operations', () => {
       const searchInput2 = page.locator('input[placeholder*="検索"], input[placeholder*="search"], input[placeholder*="Search"], input[placeholder*="ユーザー"]');
       if (await searchInput2.isVisible().catch(() => false)) {
         await searchInput2.fill(testUsername);
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
       testUserRow = page.locator('tr').filter({ hasText: testUsername });
     }
@@ -322,7 +323,7 @@ test.describe('User Management CRUD Operations', () => {
     });
     await expect(editButton.first()).toBeVisible({ timeout: 5000 });
     await editButton.first().click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Wait for edit modal/form
     const modal = page.locator('.ant-modal, .ant-drawer');
@@ -350,7 +351,7 @@ test.describe('User Management CRUD Operations', () => {
     try {
       const successMessage = page.locator('.ant-message:has-text("ユーザー"), .ant-message:has-text("更新"), .ant-message-success');
       await expect(successMessage.first()).toBeVisible({ timeout: 15000 });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     } catch {
       // Modal closing indicates success even without visible message
       await expect(modal).not.toBeVisible({ timeout: 10000 });
@@ -366,23 +367,23 @@ test.describe('User Management CRUD Operations', () => {
     const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     if (await documentsMenu.count() > 0) {
       await documentsMenu.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     // Navigate back to user management
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
     await page.locator('.ant-menu-item:has-text("ユーザー管理")').click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Search for testuser to avoid pagination issues
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], input[placeholder*="Search"], input[placeholder*="ユーザー"]');
     if (await searchInput.isVisible().catch(() => false)) {
       await searchInput.fill(testUsername);
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Find testuser using exact username
@@ -397,7 +398,7 @@ test.describe('User Management CRUD Operations', () => {
     });
     await expect(editButton.first()).toBeVisible({ timeout: 5000 });
     await editButton.first().click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const modal = page.locator('.ant-modal, .ant-drawer');
     await expect(modal).toBeVisible({ timeout: 5000 });
@@ -426,7 +427,7 @@ test.describe('User Management CRUD Operations', () => {
 
     // Find testuser using search box to avoid pagination issues
     console.log(`Delete test: Looking for user: ${testUsername}`);
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], input[placeholder*="Search"], input[placeholder*="ユーザー"]');
     if (await searchInput.isVisible().catch(() => false)) {
       await searchInput.fill(testUsername);
@@ -435,7 +436,7 @@ test.describe('User Management CRUD Operations', () => {
       if (await searchButton.count() > 0) {
         await searchButton.click();
       }
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
     const testUserRow = page.locator(`tr:has(td:text-is("${testUsername}"))`);
 
@@ -449,10 +450,10 @@ test.describe('User Management CRUD Operations', () => {
     await expect(deleteButton.first()).toBeVisible({ timeout: 5000 });
     console.log(`Delete test: Found delete button, clicking...`);
     await deleteButton.first().click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Confirm deletion - Popconfirm appears as a popover with OK/Cancel buttons
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
     const confirmButton = page.locator('.ant-popconfirm .ant-btn-primary, .ant-popover .ant-btn-primary, .ant-popconfirm-buttons .ant-btn-primary, button:has-text("はい"), button:has-text("OK")');
     console.log(`Delete test: Looking for confirm button...`);
     const confirmCount = await confirmButton.count();
@@ -488,7 +489,7 @@ test.describe('User Management CRUD Operations', () => {
     } catch (e) {
       console.log(`Delete test: API delete fallback error:`, e);
     }
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Reload page to verify
     await page.reload();
@@ -496,7 +497,7 @@ test.describe('User Management CRUD Operations', () => {
     const searchInput2 = page.locator('input[placeholder*="検索"], input[placeholder*="search"], input[placeholder*="Search"], input[placeholder*="ユーザー"]');
     if (await searchInput2.isVisible().catch(() => false)) {
       await searchInput2.fill(testUsername);
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Verify user is removed - check UI table

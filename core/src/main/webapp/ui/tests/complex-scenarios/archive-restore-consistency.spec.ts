@@ -144,7 +144,7 @@ test.describe('Archive and Restore Consistency', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Create folder
     const folderCreated = await testHelper.createFolder(testFolderName, isMobile);
@@ -193,7 +193,7 @@ test.describe('Archive and Restore Consistency', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Navigate into test folder using helper (single click on folder name)
     await testHelper.navigateIntoFolder(testFolderName, isMobile);
@@ -211,21 +211,21 @@ test.describe('Archive and Restore Consistency', () => {
     if (await deleteButton.count() > 0) {
       console.log('Found delete button in document row');
       await deleteButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Wait for and click confirmation in modal or popconfirm
       // NemakiWare uses Modal with OK/Cancel buttons for delete confirmation
       const confirmButton = page.locator('.ant-modal-footer button.ant-btn-primary, .ant-popconfirm button.ant-btn-primary').first();
       if (await confirmButton.count() > 0) {
         await confirmButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
         console.log('Document deleted (archived)');
       } else {
         console.log('Confirmation button not found - checking for popconfirm OK button');
         const okButton = page.locator('.ant-popover button').filter({ hasText: /OK|はい|確認/ }).first();
         if (await okButton.count() > 0) {
           await okButton.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
           console.log('Document deleted via popconfirm');
         }
       }
@@ -236,14 +236,14 @@ test.describe('Archive and Restore Consistency', () => {
       if (await anyDeleteButton.count() > 0) {
         console.log('Found delete icon, clicking parent button');
         await anyDeleteButton.locator('..').click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       } else {
         console.log('No delete button found anywhere on page');
       }
     }
 
     // Verify document is no longer visible in folder
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
     const documentStillVisible = await page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).count() > 0;
     console.log(`Document still visible after delete: ${documentStillVisible}`);
     expect(documentStillVisible).toBe(false);
@@ -258,7 +258,7 @@ test.describe('Archive and Restore Consistency', () => {
     const archiveMenu = page.locator('.ant-menu-item').filter({ hasText: /アーカイブ|Archive|ゴミ箱|Trash/ });
     if (await archiveMenu.count() > 0) {
       await archiveMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Verify document is in archive
       const archivedDocument = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName });
@@ -268,13 +268,13 @@ test.describe('Archive and Restore Consistency', () => {
       if (isInArchive) {
         // Verify document properties are preserved
         await archivedDocument.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Check if properties tab shows original values
         const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: /プロパティ|Properties/ });
         if (await propertiesTab.count() > 0) {
           await propertiesTab.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
           console.log('Viewing archived document properties');
         }
       }
@@ -292,25 +292,25 @@ test.describe('Archive and Restore Consistency', () => {
     const archiveMenu = page.locator('.ant-menu-item').filter({ hasText: /アーカイブ|Archive|ゴミ箱|Trash/ });
     if (await archiveMenu.count() > 0) {
       await archiveMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Find the archived document
       const archivedDocument = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
       if (await archivedDocument.count() > 0) {
         await archivedDocument.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Look for restore button
         const restoreButton = page.locator('button').filter({ hasText: /復元|Restore|元に戻す/ }).first();
         if (await restoreButton.count() > 0) {
           await restoreButton.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(500);
+          await waitForRender(page);
 
           // Confirm if dialog appears
           const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|復元|はい/ }).first();
           if (await confirmButton.count() > 0) {
             await confirmButton.click();
-            await page.waitForTimeout(2000);
+            await waitForUiStable(page);
             console.log('Document restored');
           }
         } else {
@@ -328,7 +328,7 @@ test.describe('Archive and Restore Consistency', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Navigate into test folder using helper (single click on folder name)
     const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first();
@@ -343,12 +343,12 @@ test.describe('Archive and Restore Consistency', () => {
       if (isRestored) {
         // Verify properties are preserved
         await restoredDocument.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: /プロパティ|Properties/ });
         if (await propertiesTab.count() > 0) {
           await propertiesTab.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
           console.log('Restored document properties verified');
         }
       }
@@ -363,7 +363,7 @@ test.describe('Archive and Restore Consistency', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Navigate into test folder using helper (single click on folder name)
     const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first();
@@ -375,17 +375,17 @@ test.describe('Archive and Restore Consistency', () => {
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() > 0) {
       await documentRow.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       const archiveButton = page.locator('button').filter({ hasText: /アーカイブ|Archive|削除|Delete/ }).first();
       if (await archiveButton.count() > 0) {
         await archiveButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|削除|はい/ }).first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
       }
     }
@@ -394,23 +394,23 @@ test.describe('Archive and Restore Consistency', () => {
     const archiveMenu = page.locator('.ant-menu-item').filter({ hasText: /アーカイブ|Archive|ゴミ箱|Trash/ });
     if (await archiveMenu.count() > 0) {
       await archiveMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       const archivedDocument = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
       if (await archivedDocument.count() > 0) {
         await archivedDocument.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Look for permanent delete button
         const permanentDeleteButton = page.locator('button').filter({ hasText: /完全削除|Permanent Delete|完全に削除/ }).first();
         if (await permanentDeleteButton.count() > 0) {
           await permanentDeleteButton.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(500);
+          await waitForRender(page);
 
           const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|削除|はい/ }).first();
           if (await confirmButton.count() > 0) {
             await confirmButton.click();
-            await page.waitForTimeout(2000);
+            await waitForUiStable(page);
             console.log('Document permanently deleted');
           }
         } else {
@@ -420,7 +420,7 @@ test.describe('Archive and Restore Consistency', () => {
     }
 
     // Verify document is gone from archive
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
     const documentInArchive = await page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).count() > 0;
     console.log(`Document still in archive after permanent delete: ${documentInArchive}`);
   });

@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { generateTestId } from '../utils/test-helper';
 import { AuthHelper } from '../utils/auth-helper';
@@ -30,7 +31,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
     );
     await page.goto('http://localhost:8080/core/ui/index.html#/groups');
     await groupListPromise;
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Wait for group management page to fully load
     await expect(page.locator('.ant-table')).toBeVisible({ timeout: 15000 });
@@ -40,7 +41,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
     test('should show separate user and group member fields in create modal', async ({ page }) => {
       // Click create button to open modal
       await page.locator('button:has-text("作成")').click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Verify modal is open
       await expect(page.locator('.ant-modal-content')).toBeVisible();
@@ -71,7 +72,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
       if (await editButton.count() > 0) {
         await editButton.click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Verify modal is open
         await expect(page.locator('.ant-modal-content')).toBeVisible();
@@ -112,7 +113,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         // Click create button and wait for modal
         await page.locator('button:has-text("作成")').click();
         await page.waitForSelector('.ant-modal-content', { state: 'visible', timeout: 10000 });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Fill group form
         await page.fill('input#id', testGroupId);
@@ -121,7 +122,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         // Open user members dropdown
         const userMembersSelect = page.locator('.ant-form-item').filter({ hasText: 'ユーザーメンバー' }).locator('.ant-select');
         await userMembersSelect.click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Select first available user if any
         const userOptions = page.locator('.ant-select-dropdown .ant-select-item-option');
@@ -132,7 +133,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
         // Close dropdown by clicking modal title then wait
         await page.locator('.ant-modal-title').click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Submit form and wait for API response
         const responsePromise = page.waitForResponse(
@@ -151,7 +152,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       } catch {
         // Close modal if still open
         await page.locator('.ant-modal button:has-text("キャンセル")').click().catch(() => {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
 
       // Fallback: create via API if UI failed
@@ -166,7 +167,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         );
         await page.reload();
         await page.waitForSelector('.ant-table', { timeout: 10000 });
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
 
       // Verify group was created via API (more reliable with large cloud-synced group lists)
@@ -196,7 +197,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       try {
         await page.locator('button:has-text("作成")').click();
         await page.waitForSelector('.ant-modal-content', { state: 'visible', timeout: 10000 });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         await page.fill('input#id', testGroupId);
         await page.fill('input#name', 'Test Hierarchy Group');
@@ -204,7 +205,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         // Open group members dropdown
         const groupMembersSelect = page.locator('.ant-form-item').filter({ hasText: 'グループメンバー' }).locator('.ant-select');
         await groupMembersSelect.click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         const groupOptions = page.locator('.ant-select-dropdown .ant-select-item-option');
         const optionCount = await groupOptions.count();
@@ -228,12 +229,12 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
         // Wait for modal to close as success indicator
         const modalClosed = await page.waitForSelector('.ant-modal-content', { state: 'hidden', timeout: 10000 }).then(() => true).catch(() => false);
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
         createdViaUI = modalClosed;
       } catch {
         // Close modal if still open
         await page.locator('.ant-modal-content button:has-text("キャンセル")').click().catch(() => {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
 
       // Fallback: create via API if UI failed
@@ -247,7 +248,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         );
         await page.reload();
         await page.waitForSelector('.ant-table', { timeout: 10000 });
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
 
       // Verify group was created via API (more reliable with large cloud-synced group lists)
@@ -292,7 +293,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
         // Click the "more" tag to open detail modal
         await moreTags.first().click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Check if members detail modal opens
         const detailModal = page.locator('.ant-modal').filter({ hasText: 'メンバー詳細' });
@@ -328,12 +329,12 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       const groupId = await groupIdCell.textContent();
 
       await editButton.click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Open group members dropdown
       const groupMembersSelect = page.locator('.ant-form-item').filter({ hasText: 'グループメンバー' }).locator('.ant-select');
       await groupMembersSelect.click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // The current group should NOT be in the dropdown options
       const selfOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: groupId || '' });
@@ -407,7 +408,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       try {
         // Create group A (no members)
         await page.locator('button:has-text("作成")').click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         await page.fill('input#id', groupAId);
         await page.fill('input#name', 'Test Circular Group A');
@@ -427,7 +428,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         }
       } catch {
         await page.locator('.ant-modal button:has-text("キャンセル")').click().catch(() => {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
 
       // Fallback: create via API if UI failed
@@ -442,7 +443,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         );
         await page.reload();
         await page.waitForSelector('.ant-table', { timeout: 10000 });
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
 
       // Search for the group (may not be on first page)
@@ -455,7 +456,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         );
         await searchInput.press('Enter');
         await searchPromise;
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
 
       // Verify group A was created
@@ -464,14 +465,14 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
     test('step 2: create group B with A as member (B contains A)', async ({ page }) => {
       // Wait for table to be fully loaded
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       let createdViaUI = false;
 
       try {
         // Create group B with A as member
         await page.locator('button:has-text("作成")').click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         await page.fill('input#id', groupBId);
         await page.fill('input#name', 'Test Circular Group B');
@@ -479,7 +480,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         // Open group members dropdown and select group A
         const groupMembersSelect = page.locator('.ant-form-item').filter({ hasText: 'グループメンバー' }).locator('.ant-select');
         await groupMembersSelect.click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Find and click group A option
         const groupAOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: groupAId });
@@ -490,7 +491,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
         // Close dropdown by clicking title
         await page.locator('.ant-modal-title').click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Submit and wait for API response
         const responsePromise = page.waitForResponse(
@@ -507,7 +508,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         }
       } catch {
         await page.locator('.ant-modal button:has-text("キャンセル")').click().catch(() => {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
 
       // Fallback: create via API if UI failed
@@ -522,7 +523,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         );
         await page.reload();
         await page.waitForSelector('.ant-table', { timeout: 10000 });
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
 
       // Verify group B was created (check first cell contains exact ID)
@@ -540,7 +541,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
     test('step 3: edit A and verify B is disabled (circular prevention)', async ({ page }) => {
       // Wait for table to load
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Find group A by exact ID in first column and click edit
       const groupARow = page.locator('.ant-table tbody tr').filter({
@@ -549,7 +550,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       await expect(groupARow.first()).toBeVisible({ timeout: 5000 });
 
       await groupARow.first().locator('button:has-text("編集")').click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Verify modal is open
       await expect(page.locator('.ant-modal-content')).toBeVisible();
@@ -557,7 +558,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       // Open group members dropdown
       const groupMembersSelect = page.locator('.ant-form-item').filter({ hasText: 'グループメンバー' }).locator('.ant-select');
       await groupMembersSelect.click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Group B should be disabled in the dropdown (because B contains A, adding B to A would create cycle)
       const groupBOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: groupBId });
@@ -584,7 +585,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       // This test verifies that disabled options cannot be selected via UI
 
       // Wait for table to load
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Find group A by exact ID in first column and click edit
       const groupARow = page.locator('.ant-table tbody tr').filter({
@@ -593,7 +594,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       await expect(groupARow.first()).toBeVisible({ timeout: 5000 });
 
       await groupARow.first().locator('button:has-text("編集")').click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Verify modal is open
       await expect(page.locator('.ant-modal-content')).toBeVisible();
@@ -602,7 +603,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       const groupMembersField = page.locator('.ant-form-item').filter({ hasText: 'グループメンバー' });
       const select = groupMembersField.locator('.ant-select');
       await select.click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Try to click on group B (should be disabled)
       const groupBOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: groupBId });
@@ -612,7 +613,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         await groupBOption.click({ force: true }).catch(() => {
           // Expected - disabled options may reject clicks
         });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Verify group B was NOT added to the selection
         // If selection contains group B, it would appear as a tag in the select

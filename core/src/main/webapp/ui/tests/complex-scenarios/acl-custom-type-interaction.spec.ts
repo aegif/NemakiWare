@@ -60,7 +60,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Click folder creation button
     const folderButton = page.locator('button').filter({ hasText: /フォルダ作成|新規フォルダ|Create Folder/ }).first();
@@ -70,7 +70,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     }
 
     await folderButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Fill folder name in modal
     const folderModal = page.locator('.ant-modal:visible');
@@ -113,13 +113,13 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Navigate into test folder
     const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first();
     if (await folderRow.count() > 0) {
       await folderRow.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Upload document
@@ -146,7 +146,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find and select the test folder
     const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first();
@@ -156,13 +156,13 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     }
 
     await folderRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Look for ACL/permissions button or tab
     const aclButton = page.locator('button').filter({ hasText: /権限|ACL|Permissions/ }).first();
     if (await aclButton.count() > 0) {
       await aclButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Look for ACL modal or panel
       const aclPanel = page.locator('.ant-modal:visible, .ant-drawer:visible, .ant-card').filter({ hasText: /権限|ACL|Permissions/ });
@@ -173,7 +173,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
         const addButton = aclPanel.locator('button').filter({ hasText: /追加|Add/ }).first();
         if (await addButton.count() > 0) {
           await addButton.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(500);
+          await waitForRender(page);
 
           // Select user/group
           const userSelect = page.locator('.ant-select').filter({ hasText: /ユーザー|User|Group/ }).first();
@@ -204,7 +204,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
           const saveButton = aclPanel.locator('button').filter({ hasText: /保存|Save|OK/ }).first();
           if (await saveButton.count() > 0) {
             await saveButton.click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(2000);
+            await waitForUiStable(page);
             console.log('ACL permissions saved');
           }
         }
@@ -222,13 +222,13 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Navigate into test folder
     const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first();
     if (await folderRow.count() > 0) {
       await folderRow.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Find and select the test document
@@ -239,25 +239,25 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     }
 
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Look for ACL/permissions button
     const aclButton = page.locator('button').filter({ hasText: /権限|ACL|Permissions/ }).first();
     if (await aclButton.count() > 0) {
       await aclButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Look for "break inheritance" option
       const breakInheritanceButton = page.locator('button, .ant-switch').filter({ hasText: /継承を解除|Break Inheritance|独自の権限/ }).first();
       if (await breakInheritanceButton.count() > 0) {
         await breakInheritanceButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Confirm if dialog appears
         const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|はい/ }).first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
 
         console.log('ACL inheritance broken');
@@ -275,13 +275,13 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Navigate into test folder
     const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first();
     if (await folderRow.count() > 0) {
       await folderRow.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Find and select the test document
@@ -292,13 +292,13 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     }
 
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Look for ACL/permissions button
     const aclButton = page.locator('button').filter({ hasText: /権限|ACL|Permissions/ }).first();
     if (await aclButton.count() > 0) {
       await aclButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Check for indicator that inheritance is broken
       const inheritanceIndicator = page.locator('text=/継承.*解除|独自の権限|Not Inherited/i');

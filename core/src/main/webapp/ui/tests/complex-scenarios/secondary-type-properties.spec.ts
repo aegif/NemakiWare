@@ -65,13 +65,13 @@ test.describe('Secondary Type with Custom Properties', () => {
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
     if (await typeManagementItem.count() > 0) {
       await typeManagementItem.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     } else {
       test.skip('Type Management menu not available');
       return;
@@ -87,7 +87,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     }
 
     await newTypeButton.first().click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const createModal = page.locator('.ant-modal:visible, .ant-drawer:visible');
     await expect(createModal).toBeVisible({ timeout: 5000 });
@@ -111,7 +111,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     const baseTypeSelect = createModal.locator('.ant-form-item').filter({ hasText: 'ベースタイプ' }).locator('.ant-select');
     if (await baseTypeSelect.count() > 0) {
       await baseTypeSelect.first().click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Look for secondary type option
       const secondaryOption = page.locator('.ant-select-item').filter({ hasText: /セカンダリ|Secondary|Aspect/i });
@@ -132,14 +132,14 @@ test.describe('Secondary Type with Custom Properties', () => {
     const propertiesTab = createModal.locator('.ant-tabs-tab').filter({ hasText: /プロパティ定義|Properties/ });
     if (await propertiesTab.count() > 0) {
       await propertiesTab.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     // Add property
     const addPropertyButton = page.locator('button').filter({ hasText: /プロパティを追加|Add Property/ });
     if (await addPropertyButton.count() > 0) {
       await addPropertyButton.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       const propertyCard = page.locator('.ant-card').last();
 
@@ -166,7 +166,7 @@ test.describe('Secondary Type with Custom Properties', () => {
         const currentType = await propTypeSelect.textContent();
         if (!currentType?.includes('string') && !currentType?.includes('文字列')) {
           await propTypeSelect.click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
           const stringOption = page.locator('.ant-select-item-option').filter({ hasText: /文字列|String/i }).first();
           if (await stringOption.count() > 0 && await stringOption.isVisible()) {
             await stringOption.click();
@@ -205,7 +205,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Upload document
     const uploadSuccess = await testHelper.uploadDocument(testDocumentName, `Secondary type test content - ${testRunId}`, isMobile);
@@ -231,7 +231,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find and click on the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
@@ -241,26 +241,26 @@ test.describe('Secondary Type with Custom Properties', () => {
     }
 
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Look for secondary type / aspect management
     const aspectButton = page.locator('button').filter({ hasText: /アスペクト|セカンダリ|Secondary|Aspect/ }).first();
     if (await aspectButton.count() > 0) {
       await aspectButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Look for aspect selector
       const aspectSelect = page.locator('.ant-select').filter({ hasText: /アスペクト|セカンダリ|Secondary/ });
       if (await aspectSelect.count() > 0) {
         await aspectSelect.click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Select our secondary type
         const aspectOption = page.locator('.ant-select-item-option').filter({ hasText: secondaryTypeId });
         if (await aspectOption.count() > 0) {
           await aspectOption.click();
           console.log(`Applied secondary type: ${secondaryTypeId}`);
-          await page.waitForTimeout(500);
+          await waitForRender(page);
 
           // Fill aspect property value
           const aspectPropInput = page.locator(`input[name*="${aspectPropId}"], input[placeholder*="${aspectPropName}"]`);
@@ -273,7 +273,7 @@ test.describe('Secondary Type with Custom Properties', () => {
           const saveButton = page.locator('button').filter({ hasText: /保存|Save|適用/ }).first();
           if (await saveButton.count() > 0) {
             await saveButton.click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(2000);
+            await waitForUiStable(page);
           }
         }
       }
@@ -294,10 +294,10 @@ test.describe('Secondary Type with Custom Properties', () => {
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
     if (await searchMenu.count() > 0) {
       await searchMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     } else {
       await page.goto('http://localhost:8080/core/ui/#/search');
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Enter search text
@@ -327,7 +327,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find and click on the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
@@ -337,19 +337,19 @@ test.describe('Secondary Type with Custom Properties', () => {
     }
 
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Look for secondary type / aspect management
     const aspectButton = page.locator('button').filter({ hasText: /アスペクト|セカンダリ|Secondary|Aspect/ }).first();
     if (await aspectButton.count() > 0) {
       await aspectButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Look for remove button for our secondary type
       const removeButton = page.locator('button').filter({ hasText: /削除|Remove|解除/ }).first();
       if (await removeButton.count() > 0) {
         await removeButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Confirm if needed
         const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|はい/ }).first();
@@ -357,7 +357,7 @@ test.describe('Secondary Type with Custom Properties', () => {
           await confirmButton.click();
         }
 
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
         console.log('Secondary type removed');
       }
     }
@@ -369,7 +369,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
     if (await searchMenu.count() > 0) {
       await searchMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       const searchInput = page.locator('input[placeholder*="検索"]').first();
       if (await searchInput.count() > 0) {

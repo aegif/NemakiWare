@@ -212,13 +212,13 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
     if (await typeManagementItem.count() > 0) {
       await typeManagementItem.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Click "新規タイプ" button
@@ -237,19 +237,19 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       const baseTypeFormItem = page.locator('.ant-form-item').filter({ hasText: /ベースタイプ|Base Type/i });
       const baseTypeSelect = baseTypeFormItem.locator('.ant-select').first();
       await baseTypeSelect.click({ timeout: 10000 });
-      await page.waitForTimeout(500);
+      await waitForRender(page);
       const documentOption = page.locator('.ant-select-item-option').filter({ hasText: /ドキュメント|Document/i }).first();
       await documentOption.click();
 
       // Switch to properties tab
       const propertiesTab = page.locator('.ant-tabs-tab:has-text("プロパティ定義")');
       await propertiesTab.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Add custom property
       const addPropertyButton = page.locator('button:has-text("プロパティを追加")');
       await addPropertyButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Fill property details
       const propertyCard = page.locator('.ant-card').last();
@@ -342,12 +342,12 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       }
 
       const typeCreationSuccess = true;
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Refresh the page to ensure table is updated
       await page.reload({ waitUntil: 'networkidle' });
       await page.waitForSelector('.ant-table', { timeout: 15000 });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Verify type appears in table (check multiple pages for pagination)
       let typeFound = false;
@@ -366,7 +366,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
         const nextPageButton = page.locator('.ant-pagination-next:not(.ant-pagination-disabled)');
         if (await nextPageButton.count() > 0 && pageNum < maxPages) {
           await nextPageButton.click();
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
         } else {
           break;
         }
@@ -393,7 +393,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
@@ -413,14 +413,14 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
         testDocName,
         'Document with custom type and custom attributes'
       );
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Check if type selector is available
       const typeSelect = page.locator('.ant-modal .ant-select').filter({ has: page.locator('label:has-text("タイプ"), label:has-text("objectTypeId")') });
 
       if (await typeSelect.count() > 0) {
         await typeSelect.first().click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Select custom type if available in dropdown
         const customTypeOption = page.locator(`.ant-select-item-option:has-text("${customTypeName}")`);
@@ -439,7 +439,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       const uploadModal = page.locator('.ant-modal:not(.ant-modal-hidden)');
       await expect(uploadModal).not.toBeVisible({ timeout: 30000 });
       console.log('Upload modal closed');
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Find and open the uploaded document
       // Reload page to ensure document list is refreshed
@@ -461,7 +461,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
 
       if (linkCount > 0) {
         await documentLink.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Extract document ID from URL
         const url = page.url();
@@ -485,7 +485,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
         const propertiesTab = page.locator('.ant-tabs-tab:has-text("プロパティ")');
         if (await propertiesTab.count() > 0) {
           await propertiesTab.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
 
           // Look for custom property field
           const customPropField = page.locator(`.ant-form-item-label:has-text("${customPropName}")`);
@@ -516,13 +516,13 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
 
     // Navigate to document detail page
     await page.goto(`http://localhost:8080/core/ui/#/documents/${testDocumentId}`);
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Click on properties tab
     const propertiesTab = page.locator('.ant-tabs-tab:has-text("プロパティ")');
     if (await propertiesTab.count() > 0) {
       await propertiesTab.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Find custom property input
       const customPropInput = page.locator(`input[id*="${customPropId}"]`);
@@ -533,7 +533,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
         // Fill custom property value
         await customPropInput.clear();
         await customPropInput.fill(testValue);
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Save changes
         const saveButton = page.locator('button[type="submit"]').filter({ hasText: '保存' });
@@ -547,12 +547,12 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
 
         // Verify persistence by reloading
         await page.reload();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Navigate to properties tab again
         const propertiesTabReload = page.locator('.ant-tabs-tab:has-text("プロパティ")');
         await propertiesTabReload.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Verify saved value
         const reloadedInput = page.locator(`input[id*="${customPropId}"]`);

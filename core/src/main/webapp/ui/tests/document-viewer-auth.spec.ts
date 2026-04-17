@@ -171,14 +171,14 @@ test.describe('Document Viewer Authentication', () => {
 
     // Navigate to login page
     await page.goto('http://localhost:8080/core/ui/index.html');
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Login as admin
     const repositorySelect = page.locator('.ant-select-selector').first();
     await repositorySelect.click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
     await page.locator('.ant-select-item-option:has-text("bedroom")').click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     await page.locator('input[placeholder*="ユーザー名"]').fill('admin');
     await page.locator('input[placeholder*="パスワード"]').fill('admin');
@@ -198,7 +198,7 @@ test.describe('Document Viewer Authentication', () => {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();
       if (await menuToggle.count() > 0) {
         await menuToggle.click({ timeout: 3000 });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
         console.log('✅ Mobile sidebar closed');
       }
     }
@@ -266,7 +266,7 @@ test.describe('Document Viewer Authentication', () => {
     const backButton = page.locator('button:has-text("戻る")');
     if (await backButton.count() > 0) {
       await backButton.click({ force: true });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Should return to documents list
       const hasDocumentsList = await page.locator('.ant-table').count() > 0;
@@ -289,13 +289,13 @@ test.describe('Document Viewer Authentication', () => {
   test('should handle multiple document detail accesses without session issues', async ({ page, browserName }) => {
     // Login
     await page.goto('http://localhost:8080/core/ui/index.html');
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const repositorySelect = page.locator('.ant-select-selector').first();
     await repositorySelect.click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
     await page.locator('.ant-select-item-option:has-text("bedroom")').click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     await page.locator('input[placeholder*="ユーザー名"]').fill('admin');
     await page.locator('input[placeholder*="パスワード"]').fill('admin');
@@ -311,7 +311,7 @@ test.describe('Document Viewer Authentication', () => {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();
       if (await menuToggle.count() > 0) {
         await menuToggle.click({ timeout: 3000 });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
     }
 
@@ -430,25 +430,25 @@ test.describe('Document Viewer Authentication', () => {
           const closeButton = page.locator('.ant-drawer-close');
           if (await closeButton.count() > 0) {
             await closeButton.click();
-            await page.waitForTimeout(1000);
+            await waitForRender(page);
             console.log(`  ✅ Closed drawer`);
           }
         } else if (hasModal) {
           const closeButton = page.locator('.ant-modal-close');
           if (await closeButton.count() > 0) {
             await closeButton.click();
-            await page.waitForTimeout(1000);
+            await waitForRender(page);
             console.log(`  ✅ Closed modal`);
           }
         } else {
           const backButton = page.locator('button:has-text("戻る")');
           if (await backButton.count() > 0) {
             await backButton.click({ force: true });
-            await page.waitForTimeout(1000);
+            await waitForRender(page);
             console.log(`  ✅ Clicked back button`);
           } else {
             await page.goto('http://localhost:8080/core/ui/index.html#/documents');
-            await page.waitForTimeout(2000);
+            await waitForUiStable(page);
             console.log(`  ✅ Navigated back to documents page`);
           }
         }

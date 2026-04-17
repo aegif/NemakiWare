@@ -251,7 +251,7 @@ test.describe('Required Property Validation Tests', () => {
 
     // Navigate to documents
     await testHelper.navigateToDocuments();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // CRITICAL: Force reload to ensure types are freshly loaded after beforeAll creates them
     // The DocumentList component loads types once on mount, so we need a reload
@@ -285,7 +285,7 @@ test.describe('Required Property Validation Tests', () => {
     console.log(`Type list loaded after reload: ${typeListLoaded}`);
 
     // Wait for React to fully process the type list and stabilize the DOM
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Wait for page content to be ready
     await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
@@ -337,7 +337,7 @@ test.describe('Required Property Validation Tests', () => {
           console.log(`Modal/type selector attempt ${attempt} failed: ${e instanceof Error ? e.message.split('\n')[0] : e}`);
           // Close any stale modal before retry
           await page.keyboard.press('Escape').catch(() => {});
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
       }
       if (!dropdownOpened) {
@@ -362,7 +362,7 @@ test.describe('Required Property Validation Tests', () => {
       // Try typing to search for our test type - this bypasses virtual scrolling
       console.log('Searching for test type by typing...');
       await page.keyboard.type('Test Required Property');
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Check options after search filter
       const filteredOptions = page.locator('.ant-select-item-option');
@@ -382,7 +382,7 @@ test.describe('Required Property Validation Tests', () => {
       if (await testTypeOption.count() > 0) {
         console.log('Found test type, selecting...');
         await testTypeOption.click();
-        await page.waitForTimeout(2000);  // Wait for type selection to process and custom props to render
+        await waitForUiStable(page);  // Wait for type selection to process and custom props to render
 
         // Verify modal is still open after type selection
         await expect(modal).toBeVisible({ timeout: 3000 });
@@ -444,7 +444,7 @@ test.describe('Required Property Validation Tests', () => {
         mimeType: 'text/plain',
         buffer: Buffer.from('Test content for required property validation')
       });
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // STEP 5: Try to submit without required custom property
       console.log('STEP 5: Attempting to submit without required property');
@@ -472,7 +472,7 @@ test.describe('Required Property Validation Tests', () => {
       console.log('STEP 7: Filling required custom property');
       const requiredInput = customPropsContainer.locator('input').first();
       await requiredInput.fill('Test Required Value');
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // STEP 8: Submit again
       console.log('STEP 8: Submitting with required property filled');
@@ -488,21 +488,21 @@ test.describe('Required Property Validation Tests', () => {
 
         // STEP 10: Clean up - delete test document
         console.log('STEP 10: Cleaning up test document');
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         const docRow = page.locator('tr').filter({ hasText: testFileName });
         if (await docRow.count() > 0) {
           const deleteButton = docRow.locator('button').filter({ has: page.locator('.anticon-delete, [aria-label="delete"]') });
           if (await deleteButton.count() > 0) {
             await deleteButton.click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(500);
+            await waitForRender(page);
 
             const deleteModal = page.locator('.ant-modal-content').filter({ hasText: /削除|Delete/ });
             if (await deleteModal.count() > 0) {
               const confirmBtn = deleteModal.locator('button.ant-btn-dangerous, button').filter({ hasText: /削除|Delete/ });
               if (await confirmBtn.count() > 0) {
                 await confirmBtn.first().click();
-                await page.waitForTimeout(2000);
+                await waitForUiStable(page);
                 console.log('✓ Test document cleaned up');
               }
             }
@@ -533,7 +533,7 @@ test.describe('Required Property Validation Tests', () => {
       console.log('STEP 1: Opening folder creation modal');
       const createFolderButton = page.locator('button').filter({ hasText: /フォルダ作成|Create Folder/ });
       await createFolderButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       await expect(page.locator('.ant-modal-content')).toBeVisible({ timeout: 5000 });
       // Target the folder creation modal specifically (last opened modal without upload area)
@@ -557,10 +557,10 @@ test.describe('Required Property Validation Tests', () => {
           break;
         } catch (e) {
           console.log(`Folder type selector click attempt ${clickAttempt} failed: ${e instanceof Error ? e.message.split('\n')[0] : e}`);
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
       }
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Find and select our test type
       const testTypeOption = page.locator('.ant-select-item-option').filter({
@@ -574,7 +574,7 @@ test.describe('Required Property Validation Tests', () => {
       }
 
       await testTypeOption.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // STEP 3: Verify custom properties section with required indicator
       console.log('STEP 3: Verifying custom properties section');
@@ -615,7 +615,7 @@ test.describe('Required Property Validation Tests', () => {
       console.log('STEP 7: Filling required custom property');
       const requiredInput = customPropsContainer.locator('input').first();
       await requiredInput.fill('Test Required Folder Value');
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // STEP 8: Submit again
       console.log('STEP 8: Submitting with required property filled');
@@ -631,21 +631,21 @@ test.describe('Required Property Validation Tests', () => {
 
         // STEP 10: Clean up - delete test folder
         console.log('STEP 10: Cleaning up test folder');
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         const folderRow = page.locator('tr').filter({ hasText: testFolderName });
         if (await folderRow.count() > 0) {
           const deleteButton = folderRow.locator('button').filter({ has: page.locator('.anticon-delete, [aria-label="delete"]') });
           if (await deleteButton.count() > 0) {
             await deleteButton.click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(500);
+            await waitForRender(page);
 
             const deleteModal = page.locator('.ant-modal-content').filter({ hasText: /削除|Delete/ });
             if (await deleteModal.count() > 0) {
               const confirmBtn = deleteModal.locator('button.ant-btn-dangerous, button').filter({ hasText: /削除|Delete/ });
               if (await confirmBtn.count() > 0) {
                 await confirmBtn.first().click();
-                await page.waitForTimeout(2000);
+                await waitForUiStable(page);
                 console.log('✓ Test folder cleaned up');
               }
             }
@@ -685,13 +685,13 @@ test.describe('Required Property Validation Tests', () => {
         } catch (e) {
           console.log(`Type selector attempt ${attempt} failed: ${e instanceof Error ? e.message.split('\n')[0] : e}`);
           await page.keyboard.press('Escape').catch(() => {});
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
       }
 
       // Use search to find the test type (bypasses virtual scrolling limit)
       await page.keyboard.type('Test Required Property');
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const testTypeOption = page.locator('.ant-select-item-option').filter({
         hasText: 'Test Required Property Document'
@@ -704,7 +704,7 @@ test.describe('Required Property Validation Tests', () => {
       }
 
       await testTypeOption.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Find custom properties section
       const customPropsContainer = modal3.locator('div[style*="background"]').filter({

@@ -66,7 +66,7 @@ test.describe('Version and Property History Consistency', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Upload document
     const uploadSuccess = await testHelper.uploadDocument(testDocumentName, initialContent, isMobile);
@@ -94,7 +94,7 @@ test.describe('Version and Property History Consistency', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
@@ -116,11 +116,11 @@ test.describe('Version and Property History Consistency', () => {
       console.log(`PWC created: ${isPWC}`);
 
       // Look for check-in button (CheckOutlined icon)
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
       const checkinButton = page.locator('button').filter({ has: page.locator('span[role="img"][aria-label="check"]') }).first();
       if (await checkinButton.count() > 0) {
         await checkinButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Fill check-in form if modal appears
         const checkinModal = page.locator('.ant-modal:visible');
@@ -133,7 +133,7 @@ test.describe('Version and Property History Consistency', () => {
               mimeType: 'text/plain',
               buffer: Buffer.from(version2Content, 'utf-8'),
             });
-            await page.waitForTimeout(500);
+            await waitForRender(page);
           }
 
           // Fill version comment
@@ -173,7 +173,7 @@ test.describe('Version and Property History Consistency', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
@@ -192,7 +192,7 @@ test.describe('Version and Property History Consistency', () => {
       const checkinButton = page.locator('button').filter({ has: page.locator('span[role="img"][aria-label="check"]') }).first();
       if (await checkinButton.count() > 0) {
         await checkinButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         const checkinModal = page.locator('.ant-modal:visible');
         if (await checkinModal.count() > 0) {
@@ -204,7 +204,7 @@ test.describe('Version and Property History Consistency', () => {
               mimeType: 'text/plain',
               buffer: Buffer.from(version3Content, 'utf-8'),
             });
-            await page.waitForTimeout(500);
+            await waitForRender(page);
           }
 
           // Fill version comment
@@ -234,7 +234,7 @@ test.describe('Version and Property History Consistency', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find and click on the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
@@ -244,13 +244,13 @@ test.describe('Version and Property History Consistency', () => {
     }
 
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Look for version history button or tab
     const versionHistoryButton = page.locator('button, .ant-tabs-tab').filter({ hasText: /バージョン履歴|Version History|履歴/ }).first();
     if (await versionHistoryButton.count() > 0) {
       await versionHistoryButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Count versions in history
       const versionRows = page.locator('.ant-table-tbody tr, .ant-list-item');
@@ -278,7 +278,7 @@ test.describe('Version and Property History Consistency', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find and click on the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
@@ -288,13 +288,13 @@ test.describe('Version and Property History Consistency', () => {
     }
 
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Open version history
     const versionHistoryButton = page.locator('button, .ant-tabs-tab').filter({ hasText: /バージョン履歴|Version History|履歴/ }).first();
     if (await versionHistoryButton.count() > 0) {
       await versionHistoryButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Find delete button for latest version (3.0)
       const latestVersionRow = page.locator('.ant-table-tbody tr, .ant-list-item').first();
@@ -302,7 +302,7 @@ test.describe('Version and Property History Consistency', () => {
 
       if (await deleteButton.count() > 0) {
         await deleteButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Confirm deletion
         const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|削除/ }).first();
@@ -316,7 +316,7 @@ test.describe('Version and Property History Consistency', () => {
       }
 
       // Verify current version is now 2.0
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       const currentVersionLabel = page.locator('text=/現在.*2\\.0|Latest.*2\\.0|2\\.0.*最新/');
       const isVersion2Current = await currentVersionLabel.count() > 0;
       console.log(`Version 2.0 is now current: ${isVersion2Current}`);
@@ -331,7 +331,7 @@ test.describe('Version and Property History Consistency', () => {
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
@@ -341,13 +341,13 @@ test.describe('Version and Property History Consistency', () => {
     }
 
     await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Look for preview or download button to verify content
     const previewButton = page.locator('button').filter({ hasText: /プレビュー|Preview|表示/ }).first();
     if (await previewButton.count() > 0) {
       await previewButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Check if preview shows version 2 content
       const previewContent = page.locator('.ant-modal:visible, .preview-container, iframe');

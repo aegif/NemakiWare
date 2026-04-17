@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { generateTestId, TestHelper } from '../utils/test-helper';
@@ -230,7 +231,7 @@ test.describe('Group Management CRUD Operations', () => {
     );
     await page.goto('http://localhost:8080/core/ui/index.html#/groups');
     await groupListPromise;
-    await page.waitForTimeout(500);
+    await waitForRender(page);
   });
 
   test('should create new group', async ({ page, browserName }) => {
@@ -240,7 +241,7 @@ test.describe('Group Management CRUD Operations', () => {
     const createButton = page.locator('button').filter({ hasText: /作成|Create/i });
     await expect(createButton.first()).toBeVisible({ timeout: 10000 });
     await createButton.first().click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Wait for modal
     const modal = page.locator('.ant-modal, .ant-drawer');
@@ -287,7 +288,7 @@ test.describe('Group Management CRUD Operations', () => {
 
       // Wait for modal to close and table to update
       await page.waitForSelector('.ant-modal', { state: 'hidden', timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Verify group was created via API (more reliable than UI search with large cloud-synced group lists)
       const apiResp = await page.request.get(
@@ -302,7 +303,7 @@ test.describe('Group Management CRUD Operations', () => {
       if (await searchInput.count() > 0) {
         await searchInput.first().fill(TEST_GROUP_NAME);
         await searchInput.first().press('Enter');
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
         const groupRow = page.locator('.ant-table-tbody tr').filter({ hasText: TEST_GROUP_NAME });
         if (await groupRow.count() > 0) {
           console.log('[DEBUG] Test 1: Group also found in UI search');
@@ -344,7 +345,7 @@ test.describe('Group Management CRUD Operations', () => {
       );
       await page.keyboard.type(TEST_GROUP_NAME, { delay: 30 });
       await searchResponsePromise2;
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
 
     // Find test group row (created in previous test)
@@ -361,7 +362,7 @@ test.describe('Group Management CRUD Operations', () => {
 
       // Open edit modal
       await membersButton.first().click({ force: true });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
       console.log('[DEBUG] Test 2: Edit button clicked');
 
       const modal = page.locator('.ant-modal, .ant-drawer');
@@ -377,11 +378,11 @@ test.describe('Group Management CRUD Operations', () => {
       await membersSelect.first().scrollIntoViewIfNeeded();
       await page.waitForTimeout(300);
       await membersSelect.first().click({ force: true });
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Try testuser first, then admin as fallback
       await page.keyboard.type('testuser');
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       const userOption = page.locator('.ant-select-item:has-text("testuser")').first();
       if (await userOption.count() > 0) {
@@ -391,7 +392,7 @@ test.describe('Group Management CRUD Operations', () => {
         // Clear and try admin
         for (let i = 0; i < 8; i++) await page.keyboard.press('Backspace');
         await page.keyboard.type('admin');
-        await page.waitForTimeout(500);
+        await waitForRender(page);
         const adminOption = page.locator('.ant-select-item:has-text("admin")').first();
         await expect(adminOption).toBeVisible({ timeout: 3000 });
         console.log('[DEBUG] Test 2: Selecting admin');
@@ -400,7 +401,7 @@ test.describe('Group Management CRUD Operations', () => {
 
       // Close dropdown before submit
       await page.keyboard.press('Escape');
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Submit - button must exist and API must respond 200
       const submitButton = page.locator('.ant-modal-footer button.ant-btn-primary, .ant-modal button').filter({ hasText: /保\s*存|更\s*新|OK/ });
@@ -419,7 +420,7 @@ test.describe('Group Management CRUD Operations', () => {
       console.log('[DEBUG] Test 2: Modal closed after member update');
 
       // Postcondition: reopen the edit modal and verify the member persisted
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
       await membersButton.first().click({ force: true });
       const verifyModal = page.locator('.ant-modal, .ant-drawer');
       await expect(verifyModal).toBeVisible({ timeout: 5000 });
@@ -453,7 +454,7 @@ test.describe('Group Management CRUD Operations', () => {
       );
       await page.keyboard.type(TEST_GROUP_NAME, { delay: 30 });
       await searchResponsePromise3;
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
 
     // Find test group - must exist from the create test (no API fallback)
@@ -466,7 +467,7 @@ test.describe('Group Management CRUD Operations', () => {
     });
     await expect(editButton.first()).toBeVisible({ timeout: 5000 });
     await editButton.first().click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Wait for edit modal/form
     const modal = page.locator('.ant-modal, .ant-drawer');
@@ -476,16 +477,16 @@ test.describe('Group Management CRUD Operations', () => {
     const descriptionField = modal.locator('#description, textarea[id="description"]');
     if (await descriptionField.count() > 0) {
       await descriptionField.first().fill('Test group description');
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Submit form
       const submitButton = modal.locator('button').filter({ hasText: /更\s*新|保存|OK/ });
       if (await submitButton.count() > 0) {
         await submitButton.first().click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       } else {
         await descriptionField.first().press('Enter');
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
       }
 
       // Wait for modal to close
@@ -510,7 +511,7 @@ test.describe('Group Management CRUD Operations', () => {
       );
       await page.keyboard.type(TEST_GROUP_NAME, { delay: 30 });
       await searchResponsePromise4;
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
 
     // Find test group (must exist from previous tests)
@@ -523,7 +524,7 @@ test.describe('Group Management CRUD Operations', () => {
     });
     if (await editButton.count() > 0) {
       await editButton.first().click({ force: true });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const modal = page.locator('.ant-modal, .ant-drawer');
       await expect(modal).toBeVisible({ timeout: 5000 });
@@ -573,7 +574,7 @@ test.describe('Group Management CRUD Operations', () => {
       );
       await page.keyboard.type(TEST_GROUP_NAME, { delay: 30 });
       await searchResponsePromise5;
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
 
     // Find test group
@@ -588,7 +589,7 @@ test.describe('Group Management CRUD Operations', () => {
     });
     await expect(deleteButton.first()).toBeVisible({ timeout: 5000 });
     await deleteButton.first().click({ force: true });
-    await page.waitForTimeout(500);
+    await waitForRender(page);
     console.log('[DEBUG] Test 5: Delete button clicked, waiting for confirmation popconfirm...');
 
     // Confirm deletion
@@ -596,7 +597,7 @@ test.describe('Group Management CRUD Operations', () => {
     await expect(confirmButton.first()).toBeVisible({ timeout: 5000 });
     console.log('[DEBUG] Test 5: Clicking confirmation button to delete group...');
     await confirmButton.first().click();
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
     console.log('[DEBUG] Test 5: Confirmation button clicked');
 
     // Log API activity
@@ -607,7 +608,7 @@ test.describe('Group Management CRUD Operations', () => {
 
     // Wait for table to refresh
     console.log('[DEBUG] Test 5: Waiting for table to refresh...');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify group is removed from list
     const deletedGroup = page.locator(`text=${TEST_GROUP_NAME}`);

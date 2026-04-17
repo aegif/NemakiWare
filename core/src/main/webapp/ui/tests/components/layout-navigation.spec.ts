@@ -59,7 +59,7 @@ test.describe('Layout Navigation', () => {
         // Only click if sidebar is expanded (menu-fold icon visible)
         if (icon === 'menu-fold') {
           await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         }
       }
     }
@@ -73,7 +73,7 @@ test.describe('Layout Navigation', () => {
       const menuToggle = page.locator('button').filter({ has: page.locator('.anticon-menu-unfold, [aria-label="menu-unfold"]') });
       if (await menuToggle.count() > 0) {
         await menuToggle.first().click({ force: true });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
     }
 
@@ -105,7 +105,7 @@ test.describe('Layout Navigation', () => {
 
     // Click to toggle
     await menuToggle.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500); // Wait for animation
+    await waitForRender(page); // Wait for animation
 
     // Icon should change
     const toggledIcon = await menuToggle.locator('[data-icon]').first().getAttribute('data-icon');
@@ -113,7 +113,7 @@ test.describe('Layout Navigation', () => {
 
     // Toggle back
     await menuToggle.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     const revertedIcon = await menuToggle.locator('[data-icon]').first().getAttribute('data-icon');
     expect(revertedIcon).toEqual(initialIcon);
@@ -126,7 +126,7 @@ test.describe('Layout Navigation', () => {
     const searchMenuItem = page.locator('.ant-menu-item').filter({ hasText: /検索|Search/i });
     if (await searchMenuItem.count() > 0) {
       await searchMenuItem.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     // Now click on Documents menu item
@@ -134,7 +134,7 @@ test.describe('Layout Navigation', () => {
 
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Verify navigation occurred
       const url = page.url();
@@ -149,7 +149,7 @@ test.describe('Layout Navigation', () => {
 
     if (await searchMenuItem.count() > 0) {
       await searchMenuItem.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Verify navigation occurred
       const url = page.url();
@@ -167,7 +167,7 @@ test.describe('Layout Navigation', () => {
       // Click on the submenu title to expand
       const submenuTitle = adminSubmenu.locator('.ant-menu-submenu-title').first();
       await submenuTitle.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Check for child menu items
       const userManagement = page.locator('.ant-menu-item').filter({ hasText: /ユーザー管理|User/i });
@@ -194,13 +194,13 @@ test.describe('Layout Navigation', () => {
     if (await adminSubmenu.count() > 0) {
       const submenuTitle = adminSubmenu.locator('.ant-menu-submenu-title').first();
       await submenuTitle.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Click on user management
       const userManagement = page.locator('.ant-menu-item').filter({ hasText: /ユーザー管理|User/i });
       if (await userManagement.count() > 0) {
         await userManagement.first().click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Verify navigation
         const url = page.url();
@@ -218,13 +218,13 @@ test.describe('Layout Navigation', () => {
     if (await adminSubmenu.count() > 0) {
       const submenuTitle = adminSubmenu.locator('.ant-menu-submenu-title').first();
       await submenuTitle.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Click on group management
       const groupManagement = page.locator('.ant-menu-item').filter({ hasText: /グループ管理|Group/i });
       if (await groupManagement.count() > 0) {
         await groupManagement.first().click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Verify navigation
         const url = page.url();
@@ -242,13 +242,13 @@ test.describe('Layout Navigation', () => {
     if (await adminSubmenu.count() > 0) {
       const submenuTitle = adminSubmenu.locator('.ant-menu-submenu-title').first();
       await submenuTitle.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Click on type management
       const typeManagement = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type/i });
       if (await typeManagement.count() > 0) {
         await typeManagement.first().click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Verify navigation
         const url = page.url();
@@ -266,13 +266,13 @@ test.describe('Layout Navigation', () => {
     if (await adminSubmenu.count() > 0) {
       const submenuTitle = adminSubmenu.locator('.ant-menu-submenu-title').first();
       await submenuTitle.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Click on archive management
       const archiveManagement = page.locator('.ant-menu-item').filter({ hasText: /アーカイブ|Archive/i });
       if (await archiveManagement.count() > 0) {
         await archiveManagement.first().click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Verify navigation
         const url = page.url();
@@ -330,7 +330,7 @@ test.describe('Layout Navigation', () => {
 
     if (await userDropdownTrigger.count() > 0) {
       await userDropdownTrigger.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Check for logout menu item
       const logoutOption = page.locator('.ant-dropdown-menu-item').filter({ hasText: /ログアウト|Logout/i });
@@ -352,7 +352,7 @@ test.describe('Layout Navigation', () => {
 
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Check if menu item is selected (has ant-menu-item-selected class)
       const selectedMenuItem = page.locator('.ant-menu-item-selected').filter({ hasText: /ドキュメント|Documents/i });
@@ -372,14 +372,14 @@ test.describe('Layout Navigation', () => {
 
     if (await userDropdownTrigger.count() > 0) {
       await userDropdownTrigger.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Click logout option
       const logoutOption = page.locator('.ant-dropdown-menu-item').filter({ hasText: /ログアウト|Logout/i });
 
       if (await logoutOption.count() > 0) {
         await logoutOption.first().click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // After logout, should see login form
         const loginForm = page.locator('form, .login-container, input[type="password"]');
@@ -432,7 +432,7 @@ test.describe('Layout Sidebar Collapse', () => {
     if (await menuToggle.count() > 0) {
       // Collapse the sidebar
       await menuToggle.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Check for collapsed sidebar indicator
       const sider = page.locator('.ant-layout-sider');
@@ -464,7 +464,7 @@ test.describe('Layout Sidebar Collapse', () => {
 
       // Collapse the sidebar
       await menuToggle.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // After collapse, menu item should still exist but may show only icon
       const collapsedMenuItem = page.locator('.ant-menu-item').first();
@@ -487,7 +487,7 @@ test.describe('Layout Sidebar Collapse', () => {
 
     if (await menuToggle.count() > 0) {
       await menuToggle.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Try to navigate using collapsed menu items (icons only)
       const menuItems = page.locator('.ant-menu-item');
@@ -495,7 +495,7 @@ test.describe('Layout Sidebar Collapse', () => {
 
       if (await firstMenuItem.count() > 0) {
         await firstMenuItem.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Navigation should still work
         const url = page.url();

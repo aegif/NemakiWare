@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
@@ -164,7 +165,7 @@ async function findRowInPaginatedTable(page: any, text: string, maxPages: number
       break; // No more pages
     }
     await nextButton.click();
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
     await waitForTableLoad(page, 10000);
   }
   return false;
@@ -311,7 +312,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Upload modal should appear (30s timeout to accommodate slow operations)
     const uploadModal = page.locator('.ant-modal:has-text("型定義ファイルのインポート")');
@@ -325,7 +326,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     // setInputFiles() sets native input's files but doesn't trigger Upload.Dragger's onChange
     // This causes uploadFileList to remain empty, preventing handleFileUpload() from executing
     await fileInput.dispatchEvent('change');
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // CRITICAL FIX (2025-12-14): Start waiting for message BEFORE clicking
     // Ant Design messages appear briefly (3 seconds by default), so we must
@@ -404,7 +405,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const uploadModal = page.locator('.ant-modal:has-text("型定義ファイルのインポート")');
     const fileInput = uploadModal.locator('input[type="file"]');
@@ -414,7 +415,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     // setInputFiles() sets native input's files but doesn't trigger Upload.Dragger's onChange
     // This causes uploadFileList to remain empty, preventing handleFileUpload() from executing
     await fileInput.dispatchEvent('change');
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const importModalButton = uploadModal.locator('button:has-text("インポート")');
     await importModalButton.click();
@@ -510,7 +511,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
             break;
           }
           await nextBtn.click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
           typeRow = page.locator(`tr:has-text("${testTypeId}")`);
           maxPages--;
         }
@@ -530,7 +531,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     // "GUI編集" opens GUI editor, "JSON" opens JSON editor
     const editButton = typeRow.locator('button:has-text("JSON")');
     await editButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // JSON edit modal should appear (30s timeout to accommodate slow operations)
     const jsonEditModal = page.locator('.ant-modal:has-text("型定義の編集 (JSON)")');
@@ -603,7 +604,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const uploadModal = page.locator('.ant-modal:has-text("型定義ファイルのインポート")');
     const fileInput = uploadModal.locator('input[type="file"]');
@@ -619,7 +620,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     // setInputFiles() sets native input's files but doesn't trigger Upload.Dragger's onChange
     // This causes uploadFileList to remain empty, preventing handleFileUpload() from executing
     await fileInput.dispatchEvent('change');
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const importModalButton = uploadModal.locator('button:has-text("インポート")');
     await importModalButton.click();
@@ -646,7 +647,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
             break;
           }
           await nextBtn.click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
           newTypeRow = page.locator(`tr:has-text("${newTypeId}")`);
           maxPages--;
         }
@@ -667,7 +668,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     // FIX (2025-12-24): Button text is "JSON" not "編集" for JSON editing
     const editButton = newTypeRow.locator('button:has-text("JSON")');
     await editButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const jsonEditModal = page.locator('.ant-modal:has-text("型定義の編集 (JSON)")');
     const jsonTextArea = jsonEditModal.locator('textarea');
@@ -764,7 +765,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
             break;
           }
           await nextBtn.click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
           typeRow = page.locator(`tr:has-text("${testTypeId}")`);
           maxPages--;
         }
@@ -783,7 +784,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     // Use Japanese text selector instead of aria-label (consistent with cleanup logic)
     const deleteButton = typeRow.locator('button:has-text("削除")');
     await deleteButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Popconfirm should appear
     const popconfirm = page.locator('.ant-popconfirm, .ant-popover-inner:has(.ant-popconfirm-message)');
@@ -825,7 +826,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const uploadModal = page.locator('.ant-modal:has-text("型定義ファイルのインポート")');
     await expect(uploadModal).toBeVisible({ timeout: 30000 });
@@ -859,7 +860,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const uploadModal = page.locator('.ant-modal:has-text("型定義ファイルのインポート")');
     const fileInput = uploadModal.locator('input[type="file"]');
@@ -874,7 +875,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     // setInputFiles() sets native input's files but doesn't trigger Upload.Dragger's onChange
     // This causes uploadFileList to remain empty, preventing handleFileUpload() from executing
     await fileInput.dispatchEvent('change');
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const importModalButton = uploadModal.locator('button:has-text("インポート")');
     await importModalButton.click();
@@ -894,7 +895,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     // FIX (2025-12-24): Button text is "JSON" not "編集" for JSON editing
     const editButton = typeRow.locator('button:has-text("JSON")');
     await editButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const jsonEditModal = page.locator('.ant-modal:has-text("型定義の編集 (JSON)")');
     await expect(jsonEditModal).toBeVisible({ timeout: 30000 });
@@ -923,7 +924,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     // Use Japanese text selector instead of aria-label (consistent with cleanup logic)
     const deleteButton = typeRow.locator('button:has-text("削除")');
     await deleteButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     const popconfirm = page.locator('.ant-popconfirm');
     const okButton = popconfirm.locator('button.ant-btn-primary');

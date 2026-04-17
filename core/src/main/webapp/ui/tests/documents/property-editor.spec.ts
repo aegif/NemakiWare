@@ -147,7 +147,7 @@ test.describe('PropertyEditor Component Tests', () => {
 
     // Navigate to documents using helper
     await testHelper.navigateToDocuments();
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     await testHelper.closeMobileSidebar(browserName);
 
@@ -179,13 +179,13 @@ test.describe('PropertyEditor Component Tests', () => {
 
     if (await detailButton.count() > 0) {
       await detailButton.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Click properties tab
       const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
       if (await propertiesTab.count() > 0) {
         await propertiesTab.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
         console.log('PropertyEditor Test: Properties tab opened successfully');
       }
     }
@@ -194,7 +194,7 @@ test.describe('PropertyEditor Component Tests', () => {
   test('should display string properties with correct input type', async ({ page, browserName }) => {
     const isMobile = testHelper.isMobile(browserName);
 
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Test document ensured by beforeEach
     const docRow = page.locator('tr').filter({ hasText: testDocName });
@@ -207,13 +207,13 @@ test.describe('PropertyEditor Component Tests', () => {
 
     if (await detailButton.count() > 0) {
       await detailButton.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Click properties tab
       const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
       if (await propertiesTab.count() > 0) {
         await propertiesTab.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Look for string property fields - either input or form item containing property labels
         const nameInput = page.locator('input[id*="cmis:name"], input[placeholder*="名前"]');
@@ -246,7 +246,7 @@ test.describe('PropertyEditor Component Tests', () => {
   test('should verify PropertyEditor handles integer/decimal property types correctly', async ({ page, browserName }) => {
     const isMobile = testHelper.isMobile(browserName);
 
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Test document ensured by beforeEach
     const docRow = page.locator('tr').filter({ hasText: testDocName });
@@ -258,12 +258,12 @@ test.describe('PropertyEditor Component Tests', () => {
 
     if (await detailButton.count() > 0) {
       await detailButton.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
       if (await propertiesTab.count() > 0) {
         await propertiesTab.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Standard cmis:document has cmis:contentStreamLength (integer type)
         // PropertyEditor should render it as InputNumber or read-only text
@@ -286,7 +286,7 @@ test.describe('PropertyEditor Component Tests', () => {
   test('should verify PropertyEditor handles boolean property types correctly', async ({ page, browserName }) => {
     const isMobile = testHelper.isMobile(browserName);
 
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Test document ensured by beforeEach
     const docRow = page.locator('tr').filter({ hasText: testDocName });
@@ -298,12 +298,12 @@ test.describe('PropertyEditor Component Tests', () => {
 
     if (await detailButton.count() > 0) {
       await detailButton.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
       if (await propertiesTab.count() > 0) {
         await propertiesTab.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Standard cmis:document has cmis:isLatestVersion, cmis:isLatestMajorVersion (boolean type)
         // PropertyEditor renders boolean properties as Switch components
@@ -326,7 +326,7 @@ test.describe('PropertyEditor Component Tests', () => {
   test('should verify PropertyEditor handles datetime property types correctly', async ({ page, browserName }) => {
     const isMobile = testHelper.isMobile(browserName);
 
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Test document ensured by beforeEach
     const docRow = page.locator('tr').filter({ hasText: testDocName });
@@ -338,12 +338,12 @@ test.describe('PropertyEditor Component Tests', () => {
 
     if (await detailButton.count() > 0) {
       await detailButton.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
       if (await propertiesTab.count() > 0) {
         await propertiesTab.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Standard CMIS datetime properties: cmis:creationDate, cmis:lastModificationDate
         // These are read-only and may render as DatePicker (disabled) or text
@@ -369,7 +369,7 @@ test.describe('PropertyEditor Component Tests', () => {
   test('should display updatable=false properties as disabled with read-only indicator', async ({ page, browserName }) => {
     const isMobile = testHelper.isMobile(browserName);
 
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Test document ensured by beforeEach
     const docRow = page.locator('tr').filter({ hasText: testDocName });
@@ -381,12 +381,12 @@ test.describe('PropertyEditor Component Tests', () => {
 
     if (await detailButton.count() > 0) {
       await detailButton.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
       if (await propertiesTab.count() > 0) {
         await propertiesTab.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Look for disabled fields with "(読み取り専用)" label
         // Standard CMIS read-only properties: cmis:objectId, cmis:baseTypeId, cmis:createdBy, cmis:creationDate, etc.
@@ -422,7 +422,7 @@ test.describe('PropertyEditor Component Tests', () => {
   test('should show required property validation with asterisk', async ({ page, browserName }) => {
     const isMobile = testHelper.isMobile(browserName);
 
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Test document ensured by beforeEach
     const docRow = page.locator('tr').filter({ hasText: testDocName });
@@ -434,12 +434,12 @@ test.describe('PropertyEditor Component Tests', () => {
 
     if (await detailButton.count() > 0) {
       await detailButton.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
       if (await propertiesTab.count() > 0) {
         await propertiesTab.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Look for required field indicators (red asterisk)
         const requiredIndicators = page.locator('span[style*="color: red"], .ant-form-item-required');
@@ -460,7 +460,7 @@ test.describe('PropertyEditor Component Tests', () => {
               const saveButton = page.locator('button:has-text("保存")');
               if (await saveButton.count() > 0) {
                 await saveButton.click();
-                await page.waitForTimeout(1000);
+                await waitForRender(page);
 
                 // Check for validation error message
                 const errorMessage = page.locator('.ant-form-item-explain-error, .ant-message-error');
@@ -482,7 +482,7 @@ test.describe('PropertyEditor Component Tests', () => {
   test('should display multi-value properties with tags mode Select', async ({ page, browserName }) => {
     const isMobile = testHelper.isMobile(browserName);
 
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Test document ensured by beforeEach
     const docRow = page.locator('tr').filter({ hasText: testDocName });
@@ -494,12 +494,12 @@ test.describe('PropertyEditor Component Tests', () => {
 
     if (await detailButton.count() > 0) {
       await detailButton.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
       if (await propertiesTab.count() > 0) {
         await propertiesTab.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Look for Select components with mode="tags" or mode="multiple"
         // Standard CMIS multi-value property: cmis:secondaryObjectTypeIds

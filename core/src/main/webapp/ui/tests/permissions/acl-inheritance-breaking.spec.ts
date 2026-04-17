@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
@@ -58,7 +59,7 @@ async function waitForTableRow(page: any, folderName: string, maxAttempts = 10):
     } catch {
       console.log(`Table not visible yet (attempt ${attempt}/${maxAttempts})`);
       await page.reload();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       continue;
     }
 
@@ -75,7 +76,7 @@ async function waitForTableRow(page: any, folderName: string, maxAttempts = 10):
 
     console.log(`Folder row not found in table (attempt ${attempt}/${maxAttempts}), reloading...`);
     await page.reload();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
   }
 
   throw new Error(`Folder row for "${folderName}" not found in table after ${maxAttempts} attempts`);
@@ -183,7 +184,7 @@ test.describe('ACL Inheritance Breaking', () => {
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const createResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
       headers: getAuthHeader(),
@@ -205,7 +206,7 @@ test.describe('ACL Inheritance Breaking', () => {
     const permissionsButton = folderRow.locator('button').filter({ hasText: /権限管理|Permission/i }).first();
     await expect(permissionsButton).toBeVisible({ timeout: 5000 });
     await permissionsButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Wait for permissions page to load (not a modal, but a full page)
     const permissionsHeading = page.locator('h2').filter({ hasText: /権限管理|Permission/i });
@@ -222,7 +223,7 @@ test.describe('ACL Inheritance Breaking', () => {
     const backButton = page.locator('button').filter({ hasText: /戻る|Back/i });
     if (await backButton.count() > 0) {
       await backButton.first().click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
   });
 
@@ -235,7 +236,7 @@ test.describe('ACL Inheritance Breaking', () => {
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const createResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
       headers: getAuthHeader(),
@@ -256,7 +257,7 @@ test.describe('ACL Inheritance Breaking', () => {
     const permissionsButton = folderRow.locator('button').filter({ hasText: /権限管理|Permission/i }).first();
     await expect(permissionsButton).toBeVisible({ timeout: 5000 });
     await permissionsButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Wait for permissions page to load (not a modal, but a full page)
     const permissionsHeading = page.locator('h2').filter({ hasText: /権限管理|Permission/i });
@@ -267,7 +268,7 @@ test.describe('ACL Inheritance Breaking', () => {
     });
 
     await breakInheritanceButton.click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     const confirmDialog = page.locator('.ant-modal-confirm');
     await expect(confirmDialog).toBeVisible({ timeout: 5000 });
@@ -284,14 +285,14 @@ test.describe('ACL Inheritance Breaking', () => {
     const cancelButton = confirmDialog.locator('button').filter({ hasText: /キャンセル|Cancel/i });
     if (await cancelButton.count() > 0) {
       await cancelButton.click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
 
     // Navigate back to documents
     const backButton = page.locator('button').filter({ hasText: /戻る|Back/i });
     if (await backButton.count() > 0) {
       await backButton.first().click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
   });
 
@@ -304,7 +305,7 @@ test.describe('ACL Inheritance Breaking', () => {
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const createResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
       headers: getAuthHeader(),
@@ -330,7 +331,7 @@ test.describe('ACL Inheritance Breaking', () => {
     const permissionsButton = folderRow.locator('button').filter({ hasText: /権限管理|Permission/i }).first();
     await expect(permissionsButton).toBeVisible({ timeout: 5000 });
     await permissionsButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Wait for permissions page to load (not a modal, but a full page)
     const permissionsHeading = page.locator('h2').filter({ hasText: /権限管理|Permission/i });
@@ -341,7 +342,7 @@ test.describe('ACL Inheritance Breaking', () => {
     });
 
     await breakInheritanceButton.click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     const confirmDialog = page.locator('.ant-modal-confirm');
     const confirmButton = confirmDialog.locator('button.ant-btn-primary').first();
@@ -389,7 +390,7 @@ test.describe('ACL Inheritance Breaking', () => {
     const backButton = page.locator('button').filter({ hasText: /戻る|Back/i });
     if (await backButton.count() > 0) {
       await backButton.first().click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
   });
 
@@ -402,7 +403,7 @@ test.describe('ACL Inheritance Breaking', () => {
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const createResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
       headers: getAuthHeader(),
@@ -437,7 +438,7 @@ test.describe('ACL Inheritance Breaking', () => {
     const permissionsButton = folderRow.locator('button').filter({ hasText: /権限管理|Permission/i }).first();
     await expect(permissionsButton).toBeVisible({ timeout: 5000 });
     await permissionsButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Wait for permissions page to load (not a modal, but a full page)
     const permissionsHeading = page.locator('h2').filter({ hasText: /権限管理|Permission/i });
@@ -448,7 +449,7 @@ test.describe('ACL Inheritance Breaking', () => {
     });
 
     await breakInheritanceButton.click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     const confirmDialog = page.locator('.ant-modal-confirm');
     const confirmButton = confirmDialog.locator('button.ant-btn-primary').first();
@@ -465,7 +466,7 @@ test.describe('ACL Inheritance Breaking', () => {
     }
 
     // Additional wait to ensure backend operation completes (success message appears quickly but backend may still be processing)
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const aclAfterResponse = await page.request.get(
       `http://localhost:8080/core/browser/bedroom/${folderId}?cmisselector=acl`,
@@ -476,7 +477,7 @@ test.describe('ACL Inheritance Breaking', () => {
     // FIX 2025-12-27: Add retry logic for ACL response to handle cache timing issues
     if (!aclAfterResponse.ok()) {
       console.log(`⚠️ First ACL response failed: ${aclAfterResponse.status()}, retrying after 2s...`);
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       const retryResponse = await page.request.get(
         `http://localhost:8080/core/browser/bedroom/${folderId}?cmisselector=acl`,
         { headers: getAuthHeader() }
@@ -502,7 +503,7 @@ test.describe('ACL Inheritance Breaking', () => {
       const backButton = page.locator('button').filter({ hasText: /戻る|Back/i });
       if (await backButton.count() > 0) {
         await backButton.first().click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
       return;
     }
@@ -523,7 +524,7 @@ test.describe('ACL Inheritance Breaking', () => {
     const backButton = page.locator('button').filter({ hasText: /戻る|Back/i });
     if (await backButton.count() > 0) {
       await backButton.first().click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
   });
 });

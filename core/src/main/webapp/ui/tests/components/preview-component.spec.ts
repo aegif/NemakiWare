@@ -71,7 +71,7 @@ test.describe('PreviewComponent File Type Routing', () => {
       if (await menuToggle.count() > 0) {
         try {
           await menuToggle.click({ timeout: 3000 });
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         } catch (e) {
           // Sidebar may already be closed
         }
@@ -106,7 +106,7 @@ test.describe('PreviewComponent File Type Routing', () => {
       if (await uploadButton.count() > 0) {
         // Click upload button to open modal
         await uploadButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Wait for upload modal to be visible
         const uploadModal = page.locator('.ant-modal').filter({ hasText: /ファイルアップロード|Upload/ });
@@ -115,17 +115,17 @@ test.describe('PreviewComponent File Type Routing', () => {
         // Set up file input for upload (inside modal)
         const fileInput = page.locator('.ant-modal input[type="file"]').first();
         await fileInput.setInputFiles(testFilePath);
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Click submit button in upload modal
         const submitButton = uploadModal.locator('button.ant-btn-primary').filter({ hasText: /アップロード|Upload|OK/ });
         if (await submitButton.count() > 0) {
           await submitButton.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
 
         // Wait for upload to complete and modal to close
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Find the uploaded file in document list
         const fileName = path.basename(testFilePath);
@@ -141,7 +141,7 @@ test.describe('PreviewComponent File Type Routing', () => {
 
           if (await eyeButton.count() > 0) {
             await eyeButton.click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(2000);
+            await waitForUiStable(page);
 
             // Check if tabs container exists (document viewer with tabs)
             const tabsContainer = page.locator('.ant-tabs');
@@ -152,7 +152,7 @@ test.describe('PreviewComponent File Type Routing', () => {
             const nameButton = documentRow.locator('button').filter({ hasText: fileName });
             if (await nameButton.count() > 0) {
               await nameButton.click(isMobile ? { force: true } : {});
-              await page.waitForTimeout(2000);
+              await waitForUiStable(page);
               const tabsContainer = page.locator('.ant-tabs');
               await expect(tabsContainer).toBeVisible({ timeout: 10000 });
               console.log('✅ Tabs container is visible after clicking file name');
@@ -182,7 +182,7 @@ test.describe('PreviewComponent File Type Routing', () => {
       // Double-click to navigate into folder (not open viewer)
       const folderName = folderRow.locator('td').first();
       await folderName.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Folders should not have a preview tab since they don't have content
       // This validates the canPreview() logic - folder navigation should work
@@ -192,7 +192,7 @@ test.describe('PreviewComponent File Type Routing', () => {
       const createFolderButton = page.locator('button').filter({ hasText: /フォルダ作成|新規フォルダ|Create Folder/ }).first();
       if (await createFolderButton.count() > 0) {
         await createFolderButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         const folderModal = page.locator('.ant-modal').filter({ hasText: /フォルダ|Folder/ });
         if (await folderModal.count() > 0) {
@@ -200,7 +200,7 @@ test.describe('PreviewComponent File Type Routing', () => {
           await nameInput.fill(`test-folder-${generateTestId()}`);
           const okButton = folderModal.locator('button.ant-btn-primary');
           await okButton.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
           console.log('✅ Created test folder for navigation test');
         }
       } else {
@@ -232,7 +232,7 @@ test.describe('PreviewComponent Image Preview', () => {
       if (await menuToggle.count() > 0) {
         try {
           await menuToggle.click({ timeout: 3000 });
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         } catch (e) {
           // Sidebar may already be closed
         }
@@ -268,7 +268,7 @@ test.describe('PreviewComponent Image Preview', () => {
       if (await uploadButton.count() > 0) {
         // Click upload button to open modal
         await uploadButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Wait for upload modal to be visible
         const uploadModal = page.locator('.ant-modal').filter({ hasText: /ファイルアップロード|Upload/ });
@@ -277,7 +277,7 @@ test.describe('PreviewComponent Image Preview', () => {
         // Set up file input for upload (inside modal)
         const fileInput = page.locator('.ant-modal input[type="file"]').first();
         await fileInput.setInputFiles(testImagePath);
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Wait for upload to complete
         const successMessage = page.locator('.ant-message-success, .ant-notification-notice-success');
@@ -290,13 +290,13 @@ test.describe('PreviewComponent Image Preview', () => {
           if (await imageRow.count() > 0) {
             // Click to open document viewer
             await imageRow.locator('td').first().click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(1000);
+            await waitForRender(page);
 
             // Click preview tab
             const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プレビュー' });
             if (await previewTab.count() > 0) {
               await previewTab.click(isMobile ? { force: true } : {});
-              await page.waitForTimeout(1000);
+              await waitForRender(page);
 
               // Verify ImagePreview component is rendered (should have an img tag)
               const previewImage = page.locator('.ant-card img');
@@ -339,7 +339,7 @@ test.describe('PreviewComponent Text Preview', () => {
       if (await menuToggle.count() > 0) {
         try {
           await menuToggle.click({ timeout: 3000 });
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         } catch (e) {
           // Sidebar may already be closed
         }
@@ -364,7 +364,7 @@ test.describe('PreviewComponent Text Preview', () => {
       if (await uploadButton.count() > 0) {
         // Click upload button to open modal
         await uploadButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Wait for upload modal to be visible
         const uploadModal = page.locator('.ant-modal').filter({ hasText: /ファイルアップロード|Upload/ });
@@ -373,7 +373,7 @@ test.describe('PreviewComponent Text Preview', () => {
         // Set up file input for upload (inside modal)
         const fileInput = page.locator('.ant-modal input[type="file"]').first();
         await fileInput.setInputFiles(testTextPath);
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Wait for upload to complete
         const successMessage = page.locator('.ant-message-success, .ant-notification-notice-success');
@@ -386,13 +386,13 @@ test.describe('PreviewComponent Text Preview', () => {
           if (await textRow.count() > 0) {
             // Click to open document viewer
             await textRow.locator('td').first().click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(1000);
+            await waitForRender(page);
 
             // Click preview tab
             const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プレビュー' });
             if (await previewTab.count() > 0) {
               await previewTab.click(isMobile ? { force: true } : {});
-              await page.waitForTimeout(1000);
+              await waitForRender(page);
 
               // Verify TextPreview component is rendered (should have pre or code tag with content)
               const previewContent = page.locator('.ant-card pre, .ant-card code');
@@ -435,7 +435,7 @@ test.describe('PreviewComponent Error Handling', () => {
       if (await menuToggle.count() > 0) {
         try {
           await menuToggle.click({ timeout: 3000 });
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         } catch (e) {
           // Sidebar may already be closed
         }
@@ -469,7 +469,7 @@ test.describe('PreviewComponent Error Handling', () => {
       if (await uploadButton.count() > 0) {
         // Click upload button to open modal
         await uploadButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Wait for upload modal to be visible
         const uploadModal = page.locator('.ant-modal').filter({ hasText: /ファイルアップロード|Upload/ });
@@ -478,7 +478,7 @@ test.describe('PreviewComponent Error Handling', () => {
         // Set up file input for upload (inside modal)
         const fileInput = page.locator('.ant-modal input[type="file"]').first();
         await fileInput.setInputFiles(testFilePath);
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Wait for upload to complete
         const successMessage = page.locator('.ant-message-success, .ant-notification-notice-success');
@@ -491,13 +491,13 @@ test.describe('PreviewComponent Error Handling', () => {
           if (await archiveRow.count() > 0) {
             // Click to open document viewer
             await archiveRow.locator('td').first().click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(1000);
+            await waitForRender(page);
 
             // Check for preview tab or lack thereof
             const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プレビュー' });
             if (await previewTab.count() > 0) {
               await previewTab.click(isMobile ? { force: true } : {});
-              await page.waitForTimeout(1000);
+              await waitForRender(page);
 
               // Verify warning message is displayed for unsupported type
               const warningAlert = page.locator('.ant-alert-warning');
@@ -538,7 +538,7 @@ test.describe('PreviewComponent Error Handling', () => {
       if (await uploadButton.count() > 0) {
         // Click upload button to open modal
         await uploadButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Wait for upload modal to be visible
         const uploadModal = page.locator('.ant-modal').filter({ hasText: /ファイルアップロード|Upload/ });
@@ -547,13 +547,13 @@ test.describe('PreviewComponent Error Handling', () => {
         // Set up file input for upload
         const fileInput = page.locator('.ant-modal input[type="file"]').first();
         await fileInput.setInputFiles(testFilePath);
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Click submit button
         const submitButton = uploadModal.locator('button.ant-btn-primary').filter({ hasText: /アップロード|Upload|OK/ });
         if (await submitButton.count() > 0) {
           await submitButton.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
 
         // Find the uploaded file
@@ -564,12 +564,12 @@ test.describe('PreviewComponent Error Handling', () => {
 
         if (await documentRow.count() > 0) {
           await documentRow.locator('td').first().click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
 
           const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プレビュー' });
           if (await previewTab.count() > 0) {
             await previewTab.click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(1000);
+            await waitForRender(page);
 
             // Verify Card wrapper is present (contains any preview or error state)
             const cardWrapper = page.locator('.ant-card');
@@ -610,7 +610,7 @@ test.describe('PreviewComponent PDF Preview', () => {
       if (await menuToggle.count() > 0) {
         try {
           await menuToggle.click({ timeout: 3000 });
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         } catch (e) {
           // Sidebar may already be closed
         }
@@ -654,7 +654,7 @@ startxref
       if (await uploadButton.count() > 0) {
         // Click upload button to open modal
         await uploadButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Wait for upload modal to be visible
         const uploadModal = page.locator('.ant-modal').filter({ hasText: /ファイルアップロード|Upload/ });
@@ -663,13 +663,13 @@ startxref
         // Set up file input for upload
         const fileInput = page.locator('.ant-modal input[type="file"]').first();
         await fileInput.setInputFiles(testPdfPath);
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Click submit button
         const submitButton = uploadModal.locator('button.ant-btn-primary').filter({ hasText: /アップロード|Upload|OK/ });
         if (await submitButton.count() > 0) {
           await submitButton.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
 
         // Find the uploaded PDF in document list
@@ -681,7 +681,7 @@ startxref
         if (await pdfRow.count() > 0) {
           // Click to open document viewer
           await pdfRow.locator('td').first().click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
 
           // Click preview tab
           const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プレビュー' });
@@ -728,7 +728,7 @@ test.describe('PreviewComponent Video Preview', () => {
       if (await menuToggle.count() > 0) {
         try {
           await menuToggle.click({ timeout: 3000 });
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         } catch (e) {
           // Sidebar may already be closed
         }
@@ -769,7 +769,7 @@ test.describe('PreviewComponent Video Preview', () => {
       if (await uploadButton.count() > 0) {
         // Click upload button to open modal
         await uploadButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Wait for upload modal to be visible
         const uploadModal = page.locator('.ant-modal').filter({ hasText: /ファイルアップロード|Upload/ });
@@ -778,13 +778,13 @@ test.describe('PreviewComponent Video Preview', () => {
         // Set up file input for upload
         const fileInput = page.locator('.ant-modal input[type="file"]').first();
         await fileInput.setInputFiles(testVideoPath);
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Click submit button
         const submitButton = uploadModal.locator('button.ant-btn-primary').filter({ hasText: /アップロード|Upload|OK/ });
         if (await submitButton.count() > 0) {
           await submitButton.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
 
         // Find the uploaded video in document list
@@ -796,13 +796,13 @@ test.describe('PreviewComponent Video Preview', () => {
         if (await videoRow.count() > 0) {
           // Click to open document viewer
           await videoRow.locator('td').first().click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
 
           // Click preview tab
           const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プレビュー' });
           if (await previewTab.count() > 0) {
             await previewTab.click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(2000);
+            await waitForUiStable(page);
 
             // Verify video preview is rendered (video element or error message for invalid video)
             const videoElement = page.locator('.ant-card video, .ant-card .ant-alert');

@@ -171,7 +171,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
       // Navigate to the app first to establish context for localStorage access
       await page.goto('http://localhost:8080/core/ui/index.html');
       await page.waitForLoadState('domcontentloaded');
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Clear all storage to simulate fresh browser (now in valid context)
       await page.context().clearCookies();
@@ -182,7 +182,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
 
       // Reload to apply cleared storage state
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Check for any login-related elements
       const usernameInput = await page.locator('input[placeholder*="ユーザー名"]').count();
@@ -210,7 +210,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
     test('should clear localStorage when authentication fails with 401', async ({ page }) => {
       // Set up a mock token that will fail validation
       await page.goto('http://localhost:8080/core/ui/index.html');
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Set invalid token in localStorage
       await page.evaluate(() => {
@@ -248,7 +248,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
       // Navigate to the app first to establish context for localStorage access
       await page.goto('http://localhost:8080/core/ui/index.html');
       await page.waitForLoadState('domcontentloaded');
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Clear storage (now in valid context)
       await page.context().clearCookies();
@@ -278,7 +278,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
       }
 
       await navigationPromise;
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Log result (loading state may be too fast to catch)
       if (loadingSpinnerSeen) {
@@ -367,7 +367,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
         const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();
         if (await menuToggle.count() > 0) {
           await menuToggle.click({ timeout: 3000 });
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         }
       }
 
@@ -383,7 +383,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
         if (await menuItem.count() > 0) {
           console.log(`Navigating to: ${route.name}`);
           await menuItem.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
 
           // Verify still authenticated
           const hasLoginForm = await page.locator('input[placeholder*="ユーザー名"]').count() > 0;
@@ -401,7 +401,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
     test('should handle invalid localStorage data gracefully', async ({ page }) => {
       // Set malformed data in localStorage
       await page.goto('http://localhost:8080/core/ui/index.html');
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       await page.evaluate(() => {
         // Set invalid JSON that can't be parsed
@@ -458,7 +458,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
       // Navigate to the app first to establish context for localStorage access
       await page.goto('http://localhost:8080/core/ui/index.html');
       await page.waitForLoadState('domcontentloaded');
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Clear storage (now in valid context)
       await page.context().clearCookies();
@@ -469,7 +469,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
 
       // Navigate to protected route - should show login
       await page.goto('http://localhost:8080/core/ui/index.html#/documents');
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Track page reload
       let reloadOccurred = false;
@@ -486,9 +486,9 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
       const repositorySelect = page.locator('.ant-select-selector').first();
       if (await repositorySelect.count() > 0) {
         await repositorySelect.click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
         await page.locator('.ant-select-item-option:has-text("bedroom")').click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
 
       await page.locator('input[placeholder*="ユーザー名"]').fill('admin');
@@ -550,7 +550,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
 
       if (menuCount > 0) {
         await menuItems.first().click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
       }
 
       // Verify no unhandled errors during navigation
