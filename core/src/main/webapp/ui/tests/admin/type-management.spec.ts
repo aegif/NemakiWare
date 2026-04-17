@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 
 /**
  * Type Management E2E Tests
@@ -151,7 +152,7 @@ test.describe('Type Management - Custom Types Display', () => {
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
@@ -166,7 +167,7 @@ test.describe('Type Management - Custom Types Display', () => {
 
     // Wait for type table to load
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Expected base types
     const expectedBaseTypes = [
@@ -194,7 +195,7 @@ test.describe('Type Management - Custom Types Display', () => {
 
     // Wait for type table to load
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Expected custom types (children of cmis:relationship)
     const expectedCustomTypes = [
@@ -228,7 +229,7 @@ test.describe('Type Management - Custom Types Display', () => {
     console.log('Test: Verifying nemaki:parentChildRelationship type details');
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Use more precise selector with data-row-key attribute
     const typeRow = page.locator('tr[data-row-key="nemaki:parentChildRelationship"]').first();
@@ -261,14 +262,14 @@ test.describe('Type Management - Custom Types Display', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Click on a type row (e.g., cmis:document)
     const typeRow = page.locator('tr[data-row-key="cmis:document"]');
 
     if (await typeRow.count() > 0) {
       await typeRow.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Check if type details modal/drawer appears
       const typeDetailsModal = page.locator('.ant-modal, .ant-drawer');
@@ -286,7 +287,7 @@ test.describe('Type Management - Custom Types Display', () => {
         const closeButton = typeDetailsModal.locator('button.ant-modal-close, button.ant-drawer-close');
         if (await closeButton.count() > 0) {
           await closeButton.first().click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         }
       } else {
         console.log('ℹ️ Type details modal not implemented yet - skipping');
@@ -367,7 +368,7 @@ test.describe('Type Management - Custom Types Display', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find nemaki:parentChildRelationship row
     const typeRow = page.locator('tr[data-row-key="nemaki:parentChildRelationship"]');
@@ -387,7 +388,7 @@ test.describe('Type Management - Custom Types Display', () => {
     console.log('✅ Clicked JSON edit button');
 
     // Wait for JSON edit modal to appear
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Try multiple possible modal selectors
     let editModal = page.locator('.ant-modal:visible').filter({ hasText: '型定義の編集' });
@@ -451,7 +452,7 @@ test.describe('Type Management - Custom Types Display', () => {
       console.log('✅ Clicked save button');
 
       // Wait for response
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Check for success - either success message or modal closed
       const successMessage = page.locator('.ant-message-success');

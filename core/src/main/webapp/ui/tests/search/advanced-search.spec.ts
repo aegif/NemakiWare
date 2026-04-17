@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 
 /**
  * Advanced Search E2E Tests
@@ -322,7 +323,7 @@ test.describe('Advanced Search', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Look for search input
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], .ant-input-search input');
@@ -342,7 +343,7 @@ test.describe('Advanced Search', () => {
       }
 
       // Wait for search results
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Verify results container exists
       const resultsContainer = page.locator('.ant-table, .search-results, .ant-list');
@@ -382,7 +383,7 @@ test.describe('Advanced Search', () => {
     });
 
     // Wait for page to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Perform a search
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
@@ -396,7 +397,7 @@ test.describe('Advanced Search', () => {
         await searchInput.first().press('Enter');
       }
 
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       console.log(`Total search requests: ${searchRequests.length}`);
       searchRequests.forEach((url, index) => {
@@ -428,7 +429,7 @@ test.describe('Advanced Search', () => {
 
   test('should navigate to document from search results', async ({ page }) => {
     // Wait for page to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Perform search
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
@@ -438,13 +439,13 @@ test.describe('Advanced Search', () => {
       const searchButton = page.locator('button:has-text("検索")');
       if (await searchButton.count() > 0) {
         await searchButton.first().click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Look for clickable result
         const resultLink = page.locator('.ant-table tbody tr a, .ant-table tbody tr td').first();
         if (await resultLink.count() > 0) {
           await resultLink.click();
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
 
           // Should navigate somewhere (document detail or download)
           // Just verify page didn't error
@@ -460,12 +461,12 @@ test.describe('Advanced Search', () => {
 
   test('should navigate back from search page', async ({ page }) => {
     // Wait for page to stabilize
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Click on Documents menu item
     const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     await documentsMenu.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify navigation to documents page
     expect(page.url()).toContain('/documents');
@@ -493,7 +494,7 @@ test.describe('Advanced Search', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find search input
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
@@ -604,7 +605,7 @@ test.describe('Advanced Search', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to be fully loaded
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Search for keyword that appears in PDF filename — 'Specification' matches the filename
     // Note: CMIS CONTAINS + name LIKE will match filename even if PDF has no extractable text
@@ -677,7 +678,7 @@ test.describe('Advanced Search', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Search for keyword that definitely doesn't exist
     // CRITICAL (2025-12-14): Do NOT use numbers in the keyword!
@@ -733,7 +734,7 @@ test.describe('Advanced Search', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to be fully loaded
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Search for 'CMIS-v1.1-Specification' — matches PDF filename via name LIKE
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
@@ -836,7 +837,7 @@ test.describe('Advanced Search', () => {
         const closeButton = page.locator('button[aria-label="Close"], button:has-text("閉じる"), .ant-modal-close');
         if (await closeButton.count() > 0) {
           await closeButton.first().click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
           console.log('✅ PDF preview modal closed successfully');
         }
       } else {
@@ -847,7 +848,7 @@ test.describe('Advanced Search', () => {
 
           // Navigate back to search
           await page.goBack();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         } else {
           console.log('ℹ️ PDF preview/navigation behavior differs from expected pattern');
         }
@@ -886,7 +887,7 @@ test.describe('Advanced Search', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to be fully loaded
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Search for PDF filename (without extension first)
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
@@ -993,7 +994,7 @@ test.describe('Advanced Search', () => {
     console.log('Test: Metadata exclusion checkbox UI verification');
 
     // Wait for page to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Look for the checkbox with the Japanese label
     const metadataCheckbox = page.locator('input[type="checkbox"]').filter({
@@ -1048,7 +1049,7 @@ test.describe('Advanced Search', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find search input
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
@@ -1075,7 +1076,7 @@ test.describe('Advanced Search', () => {
     if (await checkbox.count() > 0 && await checkbox.isChecked()) {
       // Uncheck if checked
       await checkboxLabel.first().click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
 
     // Search for a keyword that should match document names/filenames
@@ -1149,7 +1150,7 @@ test.describe('Advanced Search', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find search input
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
@@ -1175,7 +1176,7 @@ test.describe('Advanced Search', () => {
     const checkbox = page.locator('.ant-checkbox-input, input[type="checkbox"]').first();
     if (await checkbox.count() > 0 && !(await checkbox.isChecked())) {
       await checkboxLabel.first().click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
       console.log('✅ Checked the metadata exclusion checkbox');
     }
 
@@ -1239,7 +1240,7 @@ test.describe('Advanced Search', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to be fully loaded
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Search for Japanese keyword (common in Japanese PDFs)
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');

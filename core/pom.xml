@@ -724,13 +724,20 @@
 			<version>4.0.0-RELEASE</version>
 		</dependency>
 
-		<!-- CAD drawing library (DXF/DWG/JWW/SFC/P21 → SVG/PDF) -->
+		<!-- CAD drawing library (DXF/DWG/JWW/SFC/P21 → SVG/PDF).
+		     CadRenditionManagerImpl uses reflection to load this at
+		     runtime, so it is safe to omit — CAD preview simply
+		     becomes unavailable if the JAR is not on the classpath.
+		     To enable: mvn install:install-file -DgroupId=io.github.yumioka \
+		       -DartifactId=mathacad-core -Dversion=0.1.0 -Dpackaging=jar \
+		       -Dfile=/path/to/mathacad-core-0.1.0.jar
+		     The previous systemPath stub (322-byte empty JAR) served
+		     only to satisfy the compiler; reflection never resolved it. -->
 		<dependency>
 			<groupId>io.github.yumioka</groupId>
 			<artifactId>mathacad-core</artifactId>
 			<version>0.1.0</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/built-jars/mathacad-core-0.1.0.jar</systemPath>
+			<optional>true</optional>
 		</dependency>
 
 		<!-- CommonMark Markdown → HTML (text extraction for search) -->
@@ -1127,9 +1134,16 @@
 						ui/playwright.config.ts,
 						ui/.gitignore,
 						ui/README.md,
+						ui/TESTING.md,
 						ui/index.html,
 						ui/assets/**,
-						ui/dist/**
+						ui/dist/**,
+						ui/test-results.json,
+						ui/vitest.config.ts,
+						ui/run-e2e-tests.sh,
+						ui/scripts/**,
+						ui/cleanup-test-types.sh,
+						ui/eslint.config.js
 					</warSourceExcludes>
 					<!-- Copy production build files to ui/ directory -->
 					<!-- webResources runs AFTER warSourceExcludes, so production index.html will be included -->

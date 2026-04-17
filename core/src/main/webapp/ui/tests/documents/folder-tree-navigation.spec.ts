@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 
 
 /**
@@ -185,7 +186,7 @@ test.describe('FolderTree Navigation', () => {
     console.log(`Clicking on folder: ${nodeTitleBefore}`);
 
     await targetNode.click();
-    await page.waitForTimeout(500); // Wait for selection visual update
+    await waitForRender(page); // Wait for selection visual update
 
     // Verify visual selection indicator (background color or border)
     // Selected folder should have light blue background (#e6f7ff)
@@ -244,7 +245,7 @@ test.describe('FolderTree Navigation', () => {
 
     // Click toggle to expand/collapse
     await expandToggle.click();
-    await page.waitForTimeout(500); // Wait for animation
+    await waitForRender(page); // Wait for animation
 
     // Check state changed
     const isExpandedAfter = await expandToggle.evaluate(el =>
@@ -301,13 +302,13 @@ test.describe('FolderTree Navigation', () => {
     }
 
     // Wait for tree to show the new folder
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const folderInTree = folderTree.locator('.ant-tree-node-content-wrapper').filter({ hasText: testFolderName });
 
     if (await folderInTree.count() > 0) {
       await folderInTree.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Verify content pane updated (should show empty folder or different content)
       const newContent = await tableBody.textContent();
@@ -465,7 +466,7 @@ test.describe('FolderTree Navigation', () => {
 
       // Second click (double-click) to make current
       await childInTree.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // After double-click, tree should redraw with child as current folder
       // This means child folder should now be the "root" of visible tree
@@ -590,7 +591,7 @@ test.describe('FolderTree Navigation', () => {
         if (!isLeaf) {
           // Expand the node
           await expandToggle.click();
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
 
           // Check if child folder now visible in tree
           const childInTree = folderTree.locator('.ant-tree-node-content-wrapper').filter({ hasText: childName });
