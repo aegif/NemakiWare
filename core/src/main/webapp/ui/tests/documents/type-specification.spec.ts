@@ -38,7 +38,7 @@ test.describe('Type Specification Features', () => {
 
       // Wait for upload modal
       await page.waitForSelector('.ant-modal:has-text("ファイルアップロード")', { timeout: 5000 });
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Verify type selector exists
       const typeSelector = page.locator('.ant-modal .ant-select').filter({ hasText: /タイプを選択|cmis:document/ }).first();
@@ -71,7 +71,7 @@ test.describe('Type Specification Features', () => {
         console.log('Dropdown did not appear within timeout - types may still be loading');
         // Click again to retry
         await typeSelector.click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
 
       // Verify cmis:document option exists
@@ -106,7 +106,7 @@ test.describe('Type Specification Features', () => {
         mimeType: 'text/plain',
         buffer: Buffer.from(content, 'utf-8'),
       });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Fill file name
       const nameInput = page.locator('.ant-modal input[placeholder*="ファイル名"]');
@@ -135,7 +135,7 @@ test.describe('Type Specification Features', () => {
 
         // Wait for modal
         await page.waitForSelector('.ant-modal', { timeout: 5000 });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Verify type selector exists
         const typeSelector = page.locator('.ant-modal .ant-select');
@@ -185,13 +185,13 @@ test.describe('Type Specification Features', () => {
       }
 
       // Wait for document viewer to open
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Click properties tab if it exists
       const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
       if (await propertiesTab.count() > 0) {
         await propertiesTab.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Verify secondary type section exists
         const secondaryTypeSection = page.locator('text=セカンダリタイプ');
@@ -240,7 +240,7 @@ test.describe('Type Specification Features', () => {
         // Reload to find newly created document
         await page.reload();
         await page.waitForSelector('.ant-table', { timeout: 15000 });
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
 
       const docButton = page.locator('.ant-table-row .ant-btn-link').filter({ hasText: docName }).first();
@@ -270,7 +270,7 @@ test.describe('Type Specification Features', () => {
       }
 
       await secondaryTab.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Verify nemaki:commentable is shown
       const commentableTag = page.locator('.ant-tag, .ant-select-selection-item').filter({ hasText: /commentable/i });
@@ -281,7 +281,7 @@ test.describe('Type Specification Features', () => {
       const removeButton = page.locator('button:has(.anticon-close, [aria-label="close"]), .ant-tag .anticon-close, button:has-text("削除")').first();
       if (await removeButton.count() > 0) {
         await removeButton.click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Check for confirmation dialog
         const confirmDialog = page.locator('.ant-modal-confirm, .ant-popconfirm');
@@ -309,7 +309,7 @@ test.describe('Type Specification Features', () => {
       const searchMenuItem = page.locator('.ant-menu-item').filter({ hasText: '検索' });
       if (await searchMenuItem.count() > 0) {
         await searchMenuItem.click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Verify secondary type selector exists using form item
         const secondaryTypeFormItem = page.locator('.ant-form-item').filter({ hasText: 'セカンダリタイプ' }).first();
@@ -330,7 +330,7 @@ test.describe('Type Specification Features', () => {
       }
 
       await searchMenuItem.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Find and click secondary type selector
       const secondaryTypeFormItem = page.locator('.ant-form-item').filter({ hasText: 'セカンダリタイプ' });
@@ -362,7 +362,7 @@ test.describe('Type Specification Features', () => {
       // Wait for search form to load
       try {
         await page.waitForSelector('.ant-form', { timeout: 10000 });
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Find and click search button within the form
         const searchButton = page.locator('.ant-form button[type="submit"], .ant-btn-primary').filter({ hasText: '検索' }).first();
@@ -371,7 +371,7 @@ test.describe('Type Specification Features', () => {
 
         // Wait for results table to appear
         await page.waitForSelector('.ant-table', { timeout: 30000 });
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Check for secondary type column in results table
         const secondaryTypeColumn = page.locator('.ant-table-thead th').filter({ hasText: 'セカンダリタイプ' });
@@ -397,7 +397,7 @@ test.describe('Type Specification Features', () => {
       }
 
       await searchMenuItem.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Find and click secondary type selector
       const secondaryTypeFormItem = page.locator('.ant-form-item').filter({ hasText: 'セカンダリタイプ' });
@@ -421,7 +421,7 @@ test.describe('Type Specification Features', () => {
       if (optionCount > 0) {
         // Select the first option
         await options.first().click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Check if custom property search card appears
         const customPropCard = page.locator('.ant-card').filter({ hasText: 'セカンダリタイプのプロパティで検索' });
@@ -445,7 +445,7 @@ test.describe('Type Specification Features', () => {
       // Wait for search form to load
       try {
         await page.waitForSelector('.ant-form', { timeout: 10000 });
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Find and click search button within the form
         const searchButton = page.locator('.ant-form button[type="submit"], .ant-btn-primary').filter({ hasText: '検索' }).first();
@@ -454,7 +454,7 @@ test.describe('Type Specification Features', () => {
 
         // Wait for results
         await page.waitForSelector('.ant-table', { timeout: 30000 });
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Check if CMIS query is displayed
         const queryDisplay = page.locator('text=実行したCMISクエリ');
@@ -493,7 +493,7 @@ test.describe('Type Specification Features', () => {
       // Wait for search form to load
       try {
         await page.waitForSelector('.ant-form', { timeout: 10000 });
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Find and click search button within the form
         const searchButton = page.locator('.ant-form button[type="submit"], .ant-btn-primary').filter({ hasText: '検索' }).first();
@@ -502,7 +502,7 @@ test.describe('Type Specification Features', () => {
 
         // Wait for results table
         await page.waitForSelector('.ant-table', { timeout: 30000 });
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Check for object type column
         const objectTypeColumn = page.locator('.ant-table-thead th').filter({ hasText: 'オブジェクトタイプ' });
@@ -539,7 +539,7 @@ test.describe('Type Specification - Error Handling', () => {
     // Wait for modal - should appear regardless of type loading status
     try {
       await page.waitForSelector('.ant-modal', { timeout: 10000 });
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Modal should be usable even if types failed to load
       const fileInput = page.locator('.ant-modal input[type="file"]');

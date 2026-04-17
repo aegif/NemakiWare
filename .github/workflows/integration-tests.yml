@@ -7,7 +7,13 @@ on:
       - 'core/src/main/java/**'
       - 'core/src/test/java/**'
       - 'core/pom.xml'
+      - 'core/src/main/webapp/WEB-INF/**'
+      - 'common/**'
+      - 'cloudant-init/**'
+      - 'solr/**'
       - 'docker/core/**'
+      - 'docker/solr/**'
+      - 'docker/docker-compose-simple.yml'
       - '.github/workflows/integration-tests.yml'
   pull_request:
     branches: [ master, main, develop ]
@@ -15,7 +21,13 @@ on:
       - 'core/src/main/java/**'
       - 'core/src/test/java/**'
       - 'core/pom.xml'
+      - 'core/src/main/webapp/WEB-INF/**'
+      - 'common/**'
+      - 'cloudant-init/**'
+      - 'solr/**'
       - 'docker/core/**'
+      - 'docker/solr/**'
+      - 'docker/docker-compose-simple.yml'
       - '.github/workflows/integration-tests.yml'
 
 jobs:

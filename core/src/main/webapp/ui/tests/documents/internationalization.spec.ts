@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
@@ -199,7 +200,7 @@ test.describe('Internationalization Tests', () => {
     ]);
 
     // Wait for table update
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify Japanese filename appears in document list
     const documentRow = page.locator(`.ant-table-tbody tr:has-text("${japaneseFilename}")`);
@@ -260,14 +261,14 @@ test.describe('Internationalization Tests', () => {
         // FIX 2025-12-24: Wait for button to be stable before clicking
         const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary').first();
         await submitButton.waitFor({ state: 'visible', timeout: 5000 });
-        await page.waitForTimeout(500); // Wait for animation to settle
+        await waitForRender(page); // Wait for animation to settle
         await submitButton.click({ force: true });
 
         await Promise.race([
           page.waitForSelector('.ant-message-success', { timeout: 15000 }),
           page.waitForTimeout(5000),
         ]);
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
         filesUploaded++;
       } catch (e) {
         console.log(`⚠️ Failed to upload ${filename}: ${e}`);
@@ -275,7 +276,7 @@ test.describe('Internationalization Tests', () => {
         const closeBtn = page.locator('.ant-modal-close');
         if (await closeBtn.isVisible().catch(() => false)) {
           await closeBtn.click().catch(() => {});
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         }
       }
     }
@@ -461,7 +462,7 @@ test.describe('Internationalization Tests', () => {
       );
 
       // Wait for modal to stabilize before clicking submit
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary').first();
       if (await submitButton.isVisible().catch(() => false)) {
         await submitButton.click({ force: true });
@@ -501,7 +502,7 @@ test.describe('Internationalization Tests', () => {
       await page.reload();
       await page.waitForTimeout(3000);
     }
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Open document properties
     const documentRow = page.locator(`.ant-table-tbody tr:has-text("${unicodeFilename}")`);
@@ -523,7 +524,7 @@ test.describe('Internationalization Tests', () => {
 
     if (await propertiesButton.count() > 0) {
       await propertiesButton.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Verify Unicode characters in properties modal/drawer
       const propertiesContainer = page.locator('.ant-modal, .ant-drawer');
@@ -639,7 +640,7 @@ test.describe('Internationalization Tests', () => {
     await page.waitForTimeout(3000);
 
     // Wait for all uploads to complete
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Test search with Japanese characters
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -679,7 +680,7 @@ test.describe('Internationalization Tests', () => {
     } else {
       await searchInput.clear();
     }
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Verify uploaded international files are still accessible after search
     for (const filename of searchableFilenames) {
@@ -762,7 +763,7 @@ test.describe('Internationalization Tests', () => {
 
     if (await successMessage.count() > 0) {
       // Moderate length succeeded - verify display
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: uuid });
       await expect(documentRow).toBeVisible({ timeout: 10000 });
 
@@ -787,7 +788,7 @@ test.describe('Internationalization Tests', () => {
       // Check if validation error appears for too-long filename
       const validationError = page.locator('.ant-form-item-explain-error, .ant-modal .ant-alert-error');
 
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       if (await validationError.count() > 0) {
         // Validation error is expected for very long filenames - test passes

@@ -133,7 +133,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Click upload button
@@ -157,14 +157,14 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
       testDocName,
       `Test content for bug fix verification ${UNIQUE_ID}`
     );
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Submit upload
     const submitBtn = page.locator('.ant-modal button[type="submit"]');
     await submitBtn.click();
 
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify document appears
     const uploadedDoc = page.locator(`text=${testDocName}`);
@@ -181,7 +181,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Find and click on the test document
@@ -200,7 +200,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     const secondaryTypeTab = page.locator('.ant-tabs-tab').filter({ hasText: /セカンダリ|Secondary/ });
     if (await secondaryTypeTab.count() > 0) {
       await secondaryTypeTab.click({ force: true });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
       console.log(`[TEST 2] Secondary type tab opened`);
 
       // Select a type from dropdown FIRST (enables the add button)
@@ -215,7 +215,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
 
       if (await selectToUse.count() > 0 && await selectToUse.isVisible()) {
         await selectToUse.click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Look for commentable or any available secondary type
         const typeOption = page.locator('.ant-select-item').first();
@@ -223,13 +223,13 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
           const optionText = await typeOption.textContent();
           console.log(`[TEST 2] Selecting secondary type: ${optionText}`);
           await typeOption.click();
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
 
           // Now click the enabled add button
           const addButton = page.locator('button').filter({ hasText: /追加/ }).first();
           if (await addButton.count() > 0) {
             await addButton.click({ force: true });
-            await page.waitForTimeout(2000);
+            await waitForUiStable(page);
 
             // Check for success message
             const successMsg = page.locator('.ant-message-success');
@@ -251,7 +251,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: /プロパティ|Properties|基本/ });
     if (await propertiesTab.count() > 0) {
       await propertiesTab.first().click({ force: true });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     // Look for description field and set it
@@ -307,13 +307,13 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
     if (await searchMenu.count() > 0) {
       await searchMenu.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenu.count() > 0) {
       await documentsMenu.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Find and open the test document
@@ -331,7 +331,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: /プロパティ|Properties|基本/ });
     if (await propertiesTab.count() > 0) {
       await propertiesTab.first().click({ force: true });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     // Verify description is present
@@ -360,7 +360,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     const secondaryTypeTab = page.locator('.ant-tabs-tab').filter({ hasText: /セカンダリ|Secondary/ });
     if (await secondaryTypeTab.count() > 0) {
       await secondaryTypeTab.click({ force: true });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Look for assigned secondary type tags
       const typeTags = page.locator('.ant-tag');
@@ -382,7 +382,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Get current URL to capture folder ID
@@ -414,7 +414,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     if (await backButton.count() > 0) {
       console.log(`[TEST 4] Clicking back button...`);
       await backButton.click({ force: true });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Check the resulting URL
       const finalUrl = page.url();
@@ -435,7 +435,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
         }
 
         // Verify the test document is still visible (same folder)
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
         const docStillVisible = page.locator('tr').filter({ hasText: testDocName });
         if (await docStillVisible.count() > 0) {
           console.log(`[TEST 4] ✅ Test document visible in returned folder`);
@@ -459,7 +459,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     const docRow = page.locator('tr').filter({ hasText: testDocName });
@@ -475,13 +475,13 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
 
     if (await deleteButton.count() > 0) {
       await deleteButton.click({ force: true });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Wait for popconfirm and click first confirmation button
       const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary').first();
       if (await confirmButton.count() > 0) {
         await confirmButton.click({ force: true });
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         const successMsg = page.locator('.ant-message-success');
         if (await successMsg.count() > 0) {
@@ -549,7 +549,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
 
     // Navigate to documents
     await page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' }).click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Upload
     let uploadBtn = page.locator('button').filter({ hasText: 'アップロード' }).first();
@@ -564,11 +564,11 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
 
     await testHelper.uploadTestFile('.ant-modal input[type="file"]', docExact,
       `Contains the exact phrase ${EXACT_PHRASE} for search testing.`);
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     await page.locator('.ant-modal button[type="submit"]').click();
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     await expect(page.locator(`text=${docExact}`)).toBeVisible({ timeout: 5000 });
     console.log(`[SEARCH S1] ✅ Exact match document uploaded`);
@@ -580,7 +580,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     await page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' }).click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     let uploadBtn = page.locator('button').filter({ hasText: 'アップロード' }).first();
     if (await uploadBtn.count() === 0) {
@@ -595,11 +595,11 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
     // Content has individual words but NOT the exact phrase
     await testHelper.uploadTestFile('.ant-modal input[type="file"]', docPartial,
       `Contains EXACT word and MATCH word and PHRASE word but not together. Also ${SEARCH_ID} separately.`);
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     await page.locator('.ant-modal button[type="submit"]').click();
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     await expect(page.locator(`text=${docPartial}`)).toBeVisible({ timeout: 5000 });
     console.log(`[SEARCH S2] ✅ Partial match document uploaded`);
@@ -618,7 +618,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
 
     // Go to search page
     await page.locator('.ant-menu-item').filter({ hasText: '検索' }).click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Enter search term
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]').first();
@@ -667,7 +667,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     await page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' }).click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     for (const docName of [docExact, docPartial]) {
       const docRow = page.locator('tr').filter({ hasText: docName });
@@ -679,13 +679,13 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
           // Wait for popconfirm to appear
           try {
             await page.waitForSelector('.ant-popconfirm', { state: 'visible', timeout: 5000 });
-            await page.waitForTimeout(500);
+            await waitForRender(page);
 
             // Click "はい" or OK button in popconfirm
             const confirmBtn = page.locator('.ant-popconfirm button').filter({ hasText: /はい|OK|Yes/ }).first();
             if (await confirmBtn.count() > 0 && await confirmBtn.isVisible()) {
               await confirmBtn.click({ force: true });
-              await page.waitForTimeout(2000);
+              await waitForUiStable(page);
               console.log(`[SEARCH S5] ✅ Deleted: ${docName}`);
             }
           } catch (e) {

@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
@@ -319,7 +320,7 @@ test.describe('Document Management', () => {
         const expandableFolder = folderTree.locator('.ant-tree-switcher');
         if (await expandableFolder.count() > 0) {
           await expandableFolder.first().click();
-          await page.waitForTimeout(1000); // Wait for expansion animation
+          await waitForRender(page); // Wait for expansion animation
         }
       } else {
         // If no folder tree, check for breadcrumb navigation
@@ -338,7 +339,7 @@ test.describe('Document Management', () => {
 
   test('should handle file upload', async ({ page, browserName }) => {
     // Wait for page to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Detect mobile browsers
     const isMobile = testHelper.isMobile(browserName);
@@ -384,7 +385,7 @@ test.describe('Document Management', () => {
       // Fill the filename field (onChange might auto-fill, but ensure it's correct)
       const nameInput = page.locator('.ant-modal input[placeholder="ファイル名を入力"]');
       await nameInput.fill(filename);
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Debug: Check if filename field is filled
       const filenameValue = await nameInput.inputValue();
@@ -417,7 +418,7 @@ test.describe('Document Management', () => {
       }
 
       // Wait a moment and check for validation errors
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
       const validationErrors = page.locator('.ant-form-item-explain-error');
       const errorCount = await validationErrors.count();
       if (errorCount > 0) {
@@ -444,7 +445,7 @@ test.describe('Document Management', () => {
       }
 
       // Wait for modal to close
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Verify modal is closed
       const modalVisible = await page.locator('.ant-modal:not(.ant-modal-hidden)').isVisible().catch(() => false);
@@ -466,7 +467,7 @@ test.describe('Document Management', () => {
         const rootFolder = page.locator('.ant-tree-title').filter({ hasText: 'Repository Root' });
         if (await rootFolder.count() > 0) {
           await rootFolder.click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
 
         // Check again
@@ -479,7 +480,7 @@ test.describe('Document Management', () => {
         console.log('DEBUG: Trying page reload as last resort');
         await page.reload();
         await page.waitForSelector('.ant-table', { timeout: 10000 });
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
 
       // Final check - look for the document in table
@@ -493,7 +494,7 @@ test.describe('Document Management', () => {
 
   test('should display document properties', async ({ page, browserName }) => {
     // Wait for table to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Detect mobile browsers
     const isMobile = testHelper.isMobile(browserName);
@@ -509,7 +510,7 @@ test.describe('Document Management', () => {
         await detailButton.click(isMobile ? { force: true } : {});
 
         // Wait for navigation to document detail page
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Verify we navigated to a document detail page
         expect(page.url()).toMatch(/\/documents\/[a-f0-9]+/);
@@ -525,7 +526,7 @@ test.describe('Document Management', () => {
   test('should handle document search', async ({ page, browserName }) => {
     test.setTimeout(60000);
     // Wait for page to stabilize
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Detect mobile browsers
     const isMobile = testHelper.isMobile(browserName);
@@ -545,7 +546,7 @@ test.describe('Document Management', () => {
 
     // Fill search query
     await searchInput.fill('test');
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Click search button (.search-button is the class on DocumentList's Button)
     const searchButton = page.locator('.search-button');
@@ -558,7 +559,7 @@ test.describe('Document Management', () => {
 
       await searchButton.click(isMobile ? { force: true } : {});
       await responsePromise;
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // After search, the clear button should appear (isSearchMode = true) or table should be present
       const clearButton = page.locator('button').filter({ hasText: /クリア|Clear/ });
@@ -568,7 +569,7 @@ test.describe('Document Management', () => {
     } else {
       // Fallback: use Enter key to trigger search
       await searchInput.press('Enter');
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
   });
 
@@ -595,7 +596,7 @@ test.describe('Document Management', () => {
    */
   test('should handle folder creation', async ({ page, browserName }) => {
     // Wait for page to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Detect mobile browsers
     const isMobile = testHelper.isMobile(browserName);
@@ -626,7 +627,7 @@ test.describe('Document Management', () => {
       await page.waitForSelector('.ant-message-success', { timeout: 10000 });
 
       // Wait for modal to close
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Verify folder appears in the list
       const createdFolder = page.locator(`text=${folderName}`);
@@ -643,7 +644,7 @@ test.describe('Document Management', () => {
     page.setDefaultTimeout(45000); // 45 seconds for page operations
 
     // Wait for page to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Detect mobile browsers
     const isMobile = testHelper.isMobile(browserName);
@@ -671,7 +672,7 @@ test.describe('Document Management', () => {
         buffer: Buffer.from('This document will be deleted.', 'utf-8')
       }]);
 
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Verify filename field was auto-filled
       const nameInput = page.locator('.ant-modal input[placeholder="ファイル名を入力"]');
@@ -679,13 +680,13 @@ test.describe('Document Management', () => {
       if (!currentValue || currentValue !== filename) {
         await nameInput.fill(filename);
       }
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       const submitBtn = page.locator('.ant-modal button[type="submit"]').filter({ hasText: 'アップロード' });
       await submitBtn.click();
 
       await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Now find and delete the uploaded document
       // Look for delete button in the row containing the filename
@@ -699,7 +700,7 @@ test.describe('Document Management', () => {
         // Use text content to identify the correct modal (avoids conflict with other modals)
         const deleteModal = page.locator('.ant-modal').filter({ hasText: '削除' });
         await expect(deleteModal).toBeVisible({ timeout: 10000 });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Click "削除する" or "はい" button in the modal (okText)
         let confirmButton = deleteModal.locator('button').filter({ hasText: '削除する' });
@@ -720,7 +721,7 @@ test.describe('Document Management', () => {
           await page.waitForSelector('.ant-message-success', { timeout: 15000 });
 
           // Wait for table to refresh after deletion
-          await page.waitForTimeout(2000); // Give React time to update state
+          await waitForUiStable(page); // Give React time to update state
 
           // Wait for any loading indicators to disappear
           const spinner = page.locator('.ant-spin');
@@ -747,7 +748,7 @@ test.describe('Document Management', () => {
 
   test('should handle document download', async ({ page, browserName }) => {
     // Wait for table to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Detect mobile browsers
     const isMobile = testHelper.isMobile(browserName);

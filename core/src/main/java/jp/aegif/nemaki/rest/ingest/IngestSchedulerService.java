@@ -207,7 +207,28 @@ public class IngestSchedulerService {
                 try {
                     Map<String, String> params = profile.getSchedulerParams() != null
                             ? profile.getSchedulerParams() : Map.of();
-                    FetchResult result = executeFetch(null, profile, connector, params);
+
+                    // Run fetch on a virtual thread so the scheduler thread
+                    // can send periodic heartbeats while the fetch is in progress.
+                    // Without this, any connector that hangs would block the
+                    // heartbeat and the stuck detector would eventually mark
+                    // the job STUCK even if the fetch is just slow.
+                    final IngestJobRecord heartbeatJob = job;
+                    var future = java.util.concurrent.CompletableFuture.supplyAsync(
+                            () -> executeFetch(null, profile, connector, params),
+                            Thread.ofVirtual().name("fetch-" + profile.getProfileId()).factory()::newThread);
+
+                    // Heartbeat every 5 minutes while the fetch runs
+                    while (!future.isDone()) {
+                        try { future.get(5, java.util.concurrent.TimeUnit.MINUTES); }
+                        catch (java.util.concurrent.TimeoutException _timeout) {
+                            if (heartbeatJob != null && ingestJobService != null) {
+                                try { ingestJobService.heartbeat(heartbeatJob); }
+                                catch (Exception hbe) { logger.debug("Heartbeat failed: {}", hbe.getMessage()); }
+                            }
+                        }
+                    }
+                    FetchResult result = future.get(); // already done, retrieves result or throws
 
                     // Complete job record
                     if (job != null && ingestJobService != null) {
@@ -227,12 +248,14 @@ public class IngestSchedulerService {
                                 profile.getProfileId(), result.errors().size());
                     }
                 } catch (Exception e) {
-                    logger.error("Scheduled fetch failed for {}: {}", profile.getProfileId(), e.getMessage());
-                    // Record failed job
+                    Throwable cause = e instanceof java.util.concurrent.ExecutionException ? e.getCause() : e;
+                    logger.error("Scheduled fetch failed for {}: {}", profile.getProfileId(),
+                            cause != null ? cause.getMessage() : e.getMessage());
                     if (job != null && ingestJobService != null) {
                         try {
                             ingestJobService.completeJob(job,
-                                    new FetchResult(0, 0, List.of(e.getMessage())));
+                                    new FetchResult(0, 0, List.of(
+                                            cause != null ? cause.getMessage() : e.getMessage())));
                         } catch (Exception je) {
                             logger.debug("Failed to record job failure: {}", je.getMessage());
                         }

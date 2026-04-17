@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { generateTestId } from '../utils/test-helper';
@@ -137,7 +138,7 @@ test.describe('Custom Property Input Feature', () => {
         );
         if (typesResponse.ok()) break;
         console.log(`Type API attempt ${attempt + 1} failed (${typesResponse.status()}), retrying...`);
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
 
       if (!typesResponse!.ok()) {
@@ -224,7 +225,7 @@ test.describe('Custom Property Input Feature', () => {
       await page.locator('.ant-modal-mask').click({ force: true, position: { x: 10, y: 10 } });
 
       // Wait a bit
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Modal should still be visible
       await expect(modal).toBeVisible();
@@ -248,7 +249,7 @@ test.describe('Custom Property Input Feature', () => {
 
       // Click cancel
       await page.locator('.ant-modal button:has-text("キャンセル")').click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Modal should be closed
       await expect(modal).not.toBeVisible();
@@ -279,7 +280,7 @@ test.describe('Custom Property Input Feature', () => {
           }
         );
         if (typesResponse.ok()) break;
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
 
       if (!typesResponse!.ok()) {
@@ -323,7 +324,7 @@ test.describe('Custom Property Input Feature', () => {
       });
 
       // Wait for filename to be auto-filled
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Select the custom type
       const typeDropdown = modal.locator('.ant-select').first();
@@ -333,7 +334,7 @@ test.describe('Custom Property Input Feature', () => {
       const typeOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: customDocType.displayName || customDocType.id });
       if (await typeOption.count() > 0) {
         await typeOption.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Fill ALL required custom properties
         const customPropsSection = modal.locator('h4:has-text("カスタムプロパティ")');
@@ -364,27 +365,27 @@ test.describe('Custom Property Input Feature', () => {
             if (i > 0) {
               // Close any lingering popup by clicking elsewhere
               await modal.locator('h4:has-text("カスタムプロパティ")').click();
-              await page.waitForTimeout(500);
+              await waitForRender(page);
             }
 
             const picker = datePickers.nth(i);
             await picker.click();
-            await page.waitForTimeout(1000);
+            await waitForRender(page);
 
             const popup = page.locator('.ant-picker-dropdown:not(.ant-picker-dropdown-hidden)');
             if (await popup.count() > 0) {
               const nowBtn = popup.locator('.ant-picker-now-btn');
               if (await nowBtn.count() > 0) {
                 await nowBtn.click();
-                await page.waitForTimeout(500);
+                await waitForRender(page);
               }
               const okBtn = popup.locator('.ant-picker-ok button');
               if (await okBtn.count() > 0) {
                 await okBtn.click();
-                await page.waitForTimeout(500);
+                await waitForRender(page);
               }
             }
-            await page.waitForTimeout(500);
+            await waitForRender(page);
           }
         }
       }
@@ -396,7 +397,7 @@ test.describe('Custom Property Input Feature', () => {
       await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 30000 });
 
       // Verify document appears in list
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       const documentRow = page.locator('.ant-table-row').filter({ hasText: testFileName });
       await expect(documentRow).toBeVisible({ timeout: 10000 });
     });
@@ -434,7 +435,7 @@ test.describe('Custom Property Input Feature', () => {
           }
         );
         if (typesResponse.ok()) break;
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
 
       if (!typesResponse!.ok()) {
@@ -474,7 +475,7 @@ test.describe('Custom Property Input Feature', () => {
       const typeOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: customFolderType.displayName || customFolderType.id });
       if (await typeOption.count() > 0) {
         await typeOption.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Check if custom properties section is shown
         const customPropsSection = modal.locator('h4:has-text("カスタムプロパティ")');
@@ -499,7 +500,7 @@ test.describe('Custom Property Input Feature', () => {
       await page.locator('.ant-modal-mask').click({ force: true, position: { x: 10, y: 10 } });
 
       // Wait a bit
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Modal should still be visible
       await expect(modal).toBeVisible();
@@ -523,7 +524,7 @@ test.describe('Custom Property Input Feature', () => {
 
       // Click cancel
       await page.locator('.ant-modal button:has-text("キャンセル")').click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Modal should be closed
       await expect(modal).not.toBeVisible();
@@ -562,7 +563,7 @@ test.describe('Custom Property Input Feature', () => {
       await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 15000 });
 
       // Verify folder appears in list
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       const folderRow = page.locator('.ant-table-row').filter({ hasText: testFolderName });
       await expect(folderRow).toBeVisible({ timeout: 10000 });
 
@@ -619,7 +620,7 @@ test.describe('Custom Property Input Feature', () => {
         return;
       }
       await relationshipTab.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Look for "Add Relationship" button
       const addButton = page.locator('button:has-text("関係を追加")');
@@ -699,7 +700,7 @@ test.describe('Custom Property Input Feature', () => {
         return;
       }
       await relationshipTab.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Open add relationship modal
       const addButton = page.locator('button:has-text("関係を追加")');
@@ -720,7 +721,7 @@ test.describe('Custom Property Input Feature', () => {
       const typeOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: customRelType.displayName || customRelType.id });
       if (await typeOption.count() > 0) {
         await typeOption.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Check for custom properties section
         const customPropsSection = modal.locator('h4:has-text("カスタムプロパティ")');
@@ -754,7 +755,7 @@ test.describe('Custom Property Input Feature', () => {
         return;
       }
       await relationshipTab.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Open add relationship modal
       const addButton = page.locator('button:has-text("関係を追加")');
@@ -774,7 +775,7 @@ test.describe('Custom Property Input Feature', () => {
 
         // Click outside modal
         await page.locator('.ant-modal-mask').click({ force: true, position: { x: 10, y: 10 } });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Modal should still be visible
         await expect(modal).toBeVisible();
@@ -844,7 +845,7 @@ test.describe('Custom Property Input Feature', () => {
         const typeOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: typeWithVariedProps.displayName || typeWithVariedProps.id });
         if (await typeOption.count() > 0) {
           await typeOption.click();
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
 
           // Check for different input types
           const customPropsSection = modal.locator('div:has(> h4:has-text("カスタムプロパティ"))');
@@ -866,7 +867,7 @@ test.describe('Custom Property Input Feature', () => {
 
       // Close any open dropdowns first by pressing Escape
       await page.keyboard.press('Escape');
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Close modal
       await page.locator('.ant-modal button:has-text("キャンセル")').click({ timeout: 10000 });

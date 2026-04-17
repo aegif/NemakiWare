@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, ApiHelper, generateTestId } from '../utils/test-helper';
@@ -104,7 +105,7 @@ test.describe('Error Recovery Tests', () => {
     // Click upload button and wait for modal
     await uploadButton.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:has-text("ファイルアップロード")', { timeout: 10000 });
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Find file input in the modal
     const fileInput = page.locator('.ant-modal input[type="file"]').first();
@@ -114,7 +115,7 @@ test.describe('Error Recovery Tests', () => {
       mimeType: 'text/plain',
       buffer: Buffer.from('Test content for network error')
     });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Fill name if needed
     const nameInput = page.locator('.ant-modal #name, .ant-modal input[id="name"]').first();
@@ -191,7 +192,7 @@ test.describe('Error Recovery Tests', () => {
     await uploadButton.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 10000 });
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(1000); // Wait for modal to fully stabilize
+    await waitForRender(page); // Wait for modal to fully stabilize
 
     // Set file using Ant Design Upload.Dragger file input
     const fileInput = page.locator('.ant-modal .ant-upload-drag input[type="file"], .ant-modal .ant-upload input[type="file"]').first();
@@ -201,7 +202,7 @@ test.describe('Error Recovery Tests', () => {
       mimeType: 'text/plain',
       buffer: Buffer.from('Test content for timeout')
     });
-    await page.waitForTimeout(2000); // Wait for Ant Design Upload to process the file
+    await waitForUiStable(page); // Wait for Ant Design Upload to process the file
 
     // The filename is auto-filled from the Upload onChange handler
     const nameInput = page.locator('.ant-modal #name, .ant-modal input[id="name"]').first();
@@ -212,7 +213,7 @@ test.describe('Error Recovery Tests', () => {
       }
     }
 
-    await page.waitForTimeout(500); // Allow form to stabilize
+    await waitForRender(page); // Allow form to stabilize
 
     const submitButton = page.locator('.ant-modal button[type="submit"]').first();
     await submitButton.waitFor({ state: 'visible', timeout: 5000 });
@@ -268,7 +269,7 @@ test.describe('Error Recovery Tests', () => {
         // Reload page to see the new folder
         await page.reload();
         await page.waitForSelector('.ant-table', { timeout: 15000 });
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
         folderRow = page.locator('.ant-table-tbody tr').filter({ has: page.locator('[aria-label="folder"], .anticon-folder, .anticon-folder-open') }).first();
         // Cleanup: delete folder after test
         if (folderId) {
@@ -345,7 +346,7 @@ test.describe('Error Recovery Tests', () => {
     await uploadButton.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 10000 });
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Set file using Ant Design Upload.Dragger
     const fileInput = page.locator('.ant-modal .ant-upload-drag input[type="file"], .ant-modal .ant-upload input[type="file"]').first();
@@ -355,7 +356,7 @@ test.describe('Error Recovery Tests', () => {
       mimeType: 'text/plain',
       buffer: Buffer.from('Test content for 500 error')
     });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify name field
     const nameInput = page.locator('.ant-modal #name, .ant-modal input[id="name"]').first();
@@ -365,7 +366,7 @@ test.describe('Error Recovery Tests', () => {
         await nameInput.fill(filename);
       }
     }
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     const submitButton = page.locator('.ant-modal button[type="submit"]').first();
     await submitButton.waitFor({ state: 'visible', timeout: 5000 });
@@ -393,14 +394,14 @@ test.describe('Error Recovery Tests', () => {
       const closeButton = page.locator('.ant-modal button').filter({ hasText: /キャンセル|Cancel/i });
       if (await closeButton.count() > 0) {
         await closeButton.click({ force: true });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
 
       // Retry manually
       await uploadButton.click(isMobile ? { force: true } : {});
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 10000 });
       await page.waitForLoadState('networkidle');
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Set file again
       const fileInput2 = page.locator('.ant-modal .ant-upload-drag input[type="file"], .ant-modal .ant-upload input[type="file"]').first();
@@ -410,7 +411,7 @@ test.describe('Error Recovery Tests', () => {
         mimeType: 'text/plain',
         buffer: Buffer.from('Test content for 500 error retry')
       });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Verify name field
       const nameInput2 = page.locator('.ant-modal #name, .ant-modal input[id="name"]').first();
@@ -420,7 +421,7 @@ test.describe('Error Recovery Tests', () => {
           await nameInput2.fill(filename);
         }
       }
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       const submitButton2 = page.locator('.ant-modal button[type="submit"]').first();
       await submitButton2.waitFor({ state: 'visible', timeout: 5000 });
@@ -577,7 +578,7 @@ test.describe('Error Recovery Tests', () => {
     await uploadButton.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 10000 });
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Set file using Ant Design Upload.Dragger
     const fileInput = page.locator('.ant-modal .ant-upload-drag input[type="file"], .ant-modal .ant-upload input[type="file"]').first();
@@ -587,7 +588,7 @@ test.describe('Error Recovery Tests', () => {
       mimeType: 'text/plain',
       buffer: Buffer.from('Test content for malformed response')
     });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify name field
     const nameInput = page.locator('.ant-modal #name, .ant-modal input[id="name"]').first();
@@ -597,7 +598,7 @@ test.describe('Error Recovery Tests', () => {
         await nameInput.fill(filename);
       }
     }
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     const submitButton = page.locator('.ant-modal button[type="submit"]').first();
     await submitButton.waitFor({ state: 'visible', timeout: 5000 });
@@ -608,7 +609,7 @@ test.describe('Error Recovery Tests', () => {
     await expect(errorMessage.first()).toBeVisible({ timeout: 10000 });
 
     // Verify app is still functional (not in error state)
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
     const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     await expect(documentsMenu).toBeVisible();
 

@@ -136,7 +136,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Click upload button
@@ -160,14 +160,14 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
       docWithExactMatch,
       `This document contains the EXACT search term ${UNIQUE_SEARCH_TERM} in its content.`
     );
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Submit upload
     const submitBtn = page.locator('.ant-modal button[type="submit"]');
     await submitBtn.click();
 
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify document appears
     const uploadedDoc = page.locator(`text=${docWithExactMatch}`);
@@ -184,7 +184,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Click upload button
@@ -209,14 +209,14 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
       docWithPartialMatch,
       `This document has UNIQUE content and uses SEARCH functionality to VERIFY results. But NOT the exact phrase together.`
     );
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Submit upload
     const submitBtn = page.locator('.ant-modal button[type="submit"]');
     await submitBtn.click();
 
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify document appears
     const uploadedDoc = page.locator(`text=${docWithPartialMatch}`);
@@ -233,7 +233,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Click upload button
@@ -257,14 +257,14 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
       docWithNoMatch,
       `This document has completely unrelated content about cats and dogs.`
     );
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Submit upload
     const submitBtn = page.locator('.ant-modal button[type="submit"]');
     await submitBtn.click();
 
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify document appears
     const uploadedDoc = page.locator(`text=${docWithNoMatch}`);
@@ -287,7 +287,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
     // Navigate directly to search page via URL
     await page.goto('http://localhost:8080/core/ui/index.html#/search');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find search input
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
@@ -368,7 +368,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Delete each test document
@@ -385,15 +385,15 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
         if (await deleteButton.count() > 0) {
           // Use force click to avoid tooltip interference
           await deleteButton.click({ force: true });
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
 
           // Wait for popconfirm to appear
-          await page.waitForTimeout(500);
+          await waitForRender(page);
           const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary').first();
           if (await confirmButton.count() > 0) {
             // Use force click to bypass tooltip overlay
             await confirmButton.click({ force: true });
-            await page.waitForTimeout(2000);
+            await waitForUiStable(page);
             console.log(`[TEST] ✅ Deleted: ${docName}`);
           }
         }

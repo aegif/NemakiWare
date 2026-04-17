@@ -242,11 +242,16 @@ public class IngestJobService {
         dlq.setRetryCount(dlq.getRetryCount() + 1);
         dlq.setLastRetryAt(Instant.now().toString());
         try {
-            upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE,
+            String savedId = upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE,
                     MAPPER.convertValue(dlq, Map.class));
+            if (savedId == null) {
+                // upsertDocument returns null on !result.isOk() (e.g. _rev conflict)
+                // without throwing — treat as failed reservation
+                logger.debug("DLQ retry reservation failed (write conflict): dlqId={}", dlq.getDlqId());
+                return false;
+            }
             return true;
         } catch (Exception e) {
-            // 409 Conflict or other write failure → another thread won the race
             logger.debug("DLQ retry reservation failed (concurrent retry?): {}", e.getMessage());
             return false;
         }
