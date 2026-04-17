@@ -41,10 +41,60 @@ public class IngestJobService {
         job.setProfileId(profileId);
         job.setConnectorId(connectorId);
         job.setRepositoryId(repositoryId);
-        job.setStartedAt(Instant.now().toString());
+        String now = Instant.now().toString();
+        job.setStartedAt(now);
+        job.setLastHeartbeatAt(now);
         job.setStatus(IngestJobRecord.Status.RUNNING);
         upsertDocument(job.getJobId(), IngestJobRecord.DOC_TYPE, MAPPER.convertValue(job, Map.class));
         return job;
+    }
+
+    /**
+     * Update the heartbeat timestamp of a running job.
+     * Called periodically during long fetches to prove the job is alive.
+     */
+    public void heartbeat(IngestJobRecord job) {
+        if (job == null) return;
+        job.setLastHeartbeatAt(Instant.now().toString());
+        upsertDocument(job.getJobId(), IngestJobRecord.DOC_TYPE, MAPPER.convertValue(job, Map.class));
+    }
+
+    /**
+     * Scan for RUNNING jobs whose lastHeartbeatAt is older than
+     * {@link IngestJobRecord#STUCK_TIMEOUT_MS} and mark them STUCK.
+     * Called once per scheduler poll cycle.
+     *
+     * @return number of jobs marked STUCK
+     */
+    @SuppressWarnings("unchecked")
+    public int detectStuckJobs() {
+        List<IngestJobRecord> running = findByTypeAndField(
+                IngestJobRecord.DOC_TYPE, "status", "RUNNING",
+                IngestJobRecord.class, 100);
+        long now = System.currentTimeMillis();
+        int stuckCount = 0;
+        for (IngestJobRecord job : running) {
+            String hb = job.getLastHeartbeatAt();
+            if (hb == null) hb = job.getStartedAt();
+            if (hb == null) continue;
+            try {
+                long hbMs = Instant.parse(hb).toEpochMilli();
+                if (now - hbMs > IngestJobRecord.STUCK_TIMEOUT_MS) {
+                    job.setStatus(IngestJobRecord.Status.STUCK);
+                    job.setCompletedAt(Instant.now().toString());
+                    job.setErrors(java.util.List.of("Job stuck: no heartbeat for "
+                            + ((now - hbMs) / 60_000) + " minutes"));
+                    upsertDocument(job.getJobId(), IngestJobRecord.DOC_TYPE,
+                            MAPPER.convertValue(job, Map.class));
+                    logger.warn("Marked job {} as STUCK (no heartbeat for {}min)",
+                            job.getJobId(), (now - hbMs) / 60_000);
+                    stuckCount++;
+                }
+            } catch (Exception e) {
+                logger.debug("Failed to parse heartbeat for job {}: {}", job.getJobId(), e.getMessage());
+            }
+        }
+        return stuckCount;
     }
 
     public void completeJob(IngestJobRecord job, IngestSchedulerService.FetchResult result) {
@@ -256,6 +306,11 @@ public class IngestJobService {
     @SuppressWarnings("unchecked")
     private <T> List<T> findByType(String docType, Class<T> clazz, int limit) {
         return findBySelector(Map.of("type", docType), clazz, limit);
+    }
+
+    private <T> List<T> findByTypeAndField(String docType, String field, String value,
+                                            Class<T> clazz, int limit) {
+        return findBySelector(Map.of("type", docType, field, value), clazz, limit);
     }
 
     @SuppressWarnings("unchecked")

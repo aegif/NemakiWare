@@ -220,6 +220,15 @@ public class IngestSchedulerService {
             }
             // Periodic purge of expired idempotency keys (at most once per hour)
             purgeExpiredIdempotencyKeysIfDue();
+
+            // Detect stuck jobs (RUNNING with no heartbeat for >30 min)
+            if (ingestJobService != null) {
+                try {
+                    ingestJobService.detectStuckJobs();
+                } catch (Exception e) {
+                    logger.debug("Stuck job detection failed: {}", e.getMessage());
+                }
+            }
         } catch (Exception e) {
             logger.error("Ingest scheduler poll failed: {}", e.getMessage());
         }

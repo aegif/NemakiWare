@@ -15,7 +15,10 @@ public class IngestJobRecord {
 
     public static final String DOC_TYPE = "ingest_job_record";
 
-    public enum Status { RUNNING, COMPLETED, FAILED, PARTIAL }
+    public enum Status { RUNNING, COMPLETED, FAILED, PARTIAL, STUCK }
+
+    /** Jobs with no heartbeat for this long are considered stuck. */
+    public static final long STUCK_TIMEOUT_MS = 30 * 60 * 1000L; // 30 minutes
 
     private String jobId;
     private String profileId;
@@ -23,6 +26,7 @@ public class IngestJobRecord {
     private String repositoryId;
     private String startedAt;
     private String completedAt;
+    private String lastHeartbeatAt;
     private Status status;
     private int fetched;
     private int imported;
@@ -51,6 +55,9 @@ public class IngestJobRecord {
 
     public String getCompletedAt() { return completedAt; }
     public void setCompletedAt(String completedAt) { this.completedAt = completedAt; }
+
+    public String getLastHeartbeatAt() { return lastHeartbeatAt; }
+    public void setLastHeartbeatAt(String lastHeartbeatAt) { this.lastHeartbeatAt = lastHeartbeatAt; }
 
     public Status getStatus() { return status; }
     public void setStatus(Status status) { this.status = status; }
