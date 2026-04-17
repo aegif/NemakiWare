@@ -1699,13 +1699,24 @@ public class IngestSchedulerService {
         } catch (NumberFormatException e) {
             logger.warn("Invalid limit parameter '{}', using default 50", params.get("limit"));
         }
-        // Enforce rateLimitRpm: cap limit to avoid exceeding the connector's rate limit
-        // in a single fetch cycle. Each fetched item typically requires 1-2 API calls.
+        // Enforce rateLimitRpm: cap limit to avoid exceeding the connector's
+        // rate limit in a single fetch cycle.  API calls per item vary by
+        // archetype: Notion pages need 3-5 (blocks + file downloads),
+        // chat adapters need 2-3 (messages + file downloads), file-share
+        // adapters need 1-2 (list + download).  Use a per-archetype
+        // divisor instead of the old blanket "/2".
         if (connector.getRateLimitRpm() != null && connector.getRateLimitRpm() > 0) {
-            int maxPerCycle = connector.getRateLimitRpm() / 2; // conservative: ~2 API calls per item
+            int callsPerItem = switch (connector.getSourceArchetype()) {
+                case COMPOUND_NOTE -> 5;   // Notion: search + blocks + file × N
+                case CHAT_CONTEXT  -> 3;   // Slack/Teams/MM: messages + files
+                case MESSAGE_CONTEXT -> 3; // IMAP/Gmail/M365: list + download
+                case BUSINESS_RECORD -> 2; // Salesforce: query + record
+                case FILE_SHARE    -> 2;   // Box/Dropbox: list + download
+            };
+            int maxPerCycle = connector.getRateLimitRpm() / callsPerItem;
             if (limit > maxPerCycle) {
-                logger.debug("Rate limit: capping fetch limit from {} to {} for connector {}",
-                        limit, maxPerCycle, connector.getConnectorId());
+                logger.debug("Rate limit: capping fetch limit from {} to {} for connector {} ({}×/item)",
+                        limit, maxPerCycle, connector.getConnectorId(), callsPerItem);
                 limit = Math.max(1, maxPerCycle);
             }
         }
