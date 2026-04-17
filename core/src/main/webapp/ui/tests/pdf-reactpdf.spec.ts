@@ -1,3 +1,4 @@
+import { waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from './utils/auth-helper';
 import { TestHelper, ApiHelper } from './utils/test-helper';
@@ -118,7 +119,7 @@ test('PDF preview should render with react-pdf', async ({ page }) => {
   const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: /プレビュー|Preview/i });
   await expect(previewTab).toBeVisible({ timeout: 10000 });
   await previewTab.click();
-  await page.waitForTimeout(8000);
+  await waitForUiStable(page, { timeout: 15000 }); // rendering
 
   // Check for react-pdf elements
   const pdfDocument = page.locator('.react-pdf__Document');
@@ -135,7 +136,7 @@ test('PDF preview should render with react-pdf', async ({ page }) => {
 
   if (!success) {
     // Retry with longer wait
-    await page.waitForTimeout(10000);
+    await waitForUiStable(page, { timeout: 15000 }); // rendering
     const hasCanvasRetry = await pdfCanvas.isVisible();
     const hasDocumentRetry = await pdfDocument.isVisible();
     const successRetry = hasCanvasRetry || hasDocumentRetry;

@@ -226,7 +226,7 @@ test.describe('Office Document Preview', () => {
 
         // Click retry to generate rendition
         await retryButton.first().click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(10000); // Wait for LibreOffice conversion
+        await waitForUiStable(page, { timeout: 15000 }); // rendering // Wait for LibreOffice conversion
 
         // Check again for PDF preview
         const pdfAfterRetry = page.locator('.react-pdf__Document, canvas');
@@ -368,7 +368,7 @@ test.describe('Office Document Preview', () => {
       if (await retryButton.count() > 0) {
         console.log('Clicking retry to generate Japanese PDF rendition...');
         await retryButton.first().click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(15000); // Longer wait for Japanese font rendering
+        await waitForUiStable(page, { timeout: 20000 }); // rendering // Longer wait for Japanese font rendering
       }
 
       // Check for PDF display
@@ -496,7 +496,7 @@ test.describe('Office Document Preview', () => {
             await retryButton.first().click(isMobile ? { force: true } : {});
 
             // Wait for LibreOffice conversion
-            await page.waitForTimeout(15000);
+            await waitForUiStable(page, { timeout: 20000 }); // rendering
 
             // Check again
             const pdfAfterRetry = page.locator('.react-pdf__Document, canvas');

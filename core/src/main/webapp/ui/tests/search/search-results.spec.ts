@@ -269,7 +269,7 @@ test.describe('Search Results Detailed Verification', () => {
     await searchButton.click(isMobile ? { force: true } : {});
 
     // Wait for search results
-    await page.waitForTimeout(4000);
+    await waitForUiStable(page, { timeout: 10000 });
 
     // Verify table and column headers exist
     const table = page.locator('.ant-table').first();

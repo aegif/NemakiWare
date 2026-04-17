@@ -269,7 +269,7 @@ test.describe('Comprehensive Preview Tests', () => {
     // as it could mask infinite-loading regressions
     if (!pdfVisible) {
       // Retry with extended wait for slow PDF.js worker initialization
-      await page.waitForTimeout(15000);
+      await waitForUiStable(page, { timeout: 20000 }); // rendering
       const pdfRetry = await pdfContainer.first().isVisible().catch(() => false);
       expect(pdfRetry).toBe(true);
     }
@@ -338,7 +338,7 @@ test.describe('Comprehensive Preview Tests', () => {
     // as it could mask infinite-loading regressions
     if (!headerVisible && !editorVisible && !contentVisible) {
       // Retry with extended wait for async Monaco Editor initialization
-      await page.waitForTimeout(15000);
+      await waitForUiStable(page, { timeout: 20000 }); // rendering
       const headerRetry = await textHeader.isVisible().catch(() => false);
       const editorRetry = await monacoEditor.first().isVisible().catch(() => false);
       const contentRetry = await textContent.isVisible().catch(() => false);

@@ -639,7 +639,7 @@ test.describe('Advanced Search', () => {
 
     if (await pdfResult.count() === 0) {
       console.log('⚠️ PDF not found in first search - waiting for Solr indexing...');
-      await page.waitForTimeout(25000); // Additional wait for Solr commit (up to 30 seconds)
+      await waitForUiStable(page, { timeout: 30000 }); // Solr commit // Additional wait for Solr commit (up to 30 seconds)
 
       // Retry search
       await searchInput.first().fill('Specification');
@@ -767,7 +767,7 @@ test.describe('Advanced Search', () => {
 
     if (await pdfResult.count() === 0) {
       console.log('⚠️ PDF not found in first search - waiting for Solr indexing...');
-      await page.waitForTimeout(25000);
+      await waitForUiStable(page, { timeout: 30000 }); // Solr commit
       await searchInput.first().fill('CMIS-v1.1-Specification');
       if (await searchButton.count() > 0) {
         await searchButton.first().click(isMobile ? { force: true } : {});
@@ -922,7 +922,7 @@ test.describe('Advanced Search', () => {
 
     if (await pdfResult.count() === 0) {
       console.log('⚠️ PDF not found with filename (no extension) - waiting for Solr indexing...');
-      await page.waitForTimeout(25000); // Additional wait for Solr commit (up to 30 seconds)
+      await waitForUiStable(page, { timeout: 30000 }); // Solr commit // Additional wait for Solr commit (up to 30 seconds)
 
       // Retry search
       await searchInput.first().fill('CMIS-v1.1-Specification-Sample');
@@ -1302,7 +1302,7 @@ test.describe('Advanced Search', () => {
     if (!foundJapanesePdf) {
       // beforeAll creates '日本語ドキュメント.pdf' — if not found, Solr indexing may be delayed
       // Retry with longer wait
-      await page.waitForTimeout(10000);
+      await waitForUiStable(page, { timeout: 15000 }); // Solr indexing
       await searchInput.first().fill('日本語ドキュメント');
       if (await searchButton.count() > 0) {
         await searchButton.first().click(isMobile ? { force: true } : {});

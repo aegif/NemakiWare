@@ -164,7 +164,7 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     // Step 3: Wait for Solr indexing and search
     console.log('Waiting for Solr indexing...');
-    await page.waitForTimeout(10000);
+    await waitForUiStable(page, { timeout: 15000 }); // Solr indexing
 
     // Search via CMIS query (Solr-backed)
     let found = false;
@@ -314,7 +314,7 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     if (resultCount === 0) {
       console.log('⚠️ Document not found immediately - waiting for Solr indexing...');
-      await page.waitForTimeout(15000);
+      await waitForUiStable(page, { timeout: 20000 }); // Solr indexing
 
       await searchInput.fill(uniqueFileName.replace('.txt', ''));
       if (await searchButton.count() > 0) {
@@ -436,7 +436,7 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     if (countBeforeDelete === 0) {
       // Wait for indexing
-      await page.waitForTimeout(15000);
+      await waitForUiStable(page, { timeout: 20000 }); // Solr indexing
       await searchInput.fill(uniqueFileName.replace('.txt', ''));
       if (await searchButton.count() > 0) {
         await searchButton.click(isMobile ? { force: true } : {});

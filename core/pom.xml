@@ -67,6 +67,15 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
+			<!-- Override transitive guava 32.1.3-jre to latest stable.
+			     32.x has no critical CVEs but 33.x fixes several moderate
+			     issues and is requested by azure-identity / microsoft-graph
+			     transitive dependencies. -->
+			<dependency>
+				<groupId>com.google.guava</groupId>
+				<artifactId>guava</artifactId>
+				<version>33.5.0-jre</version>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 

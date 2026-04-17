@@ -76,7 +76,7 @@ test.describe('Excel Preview Tests', () => {
 
     // Wait for rendition to generate and display
     console.log('Waiting for Excel PDF preview to load...');
-    await page.waitForTimeout(10000);
+    await waitForUiStable(page, { timeout: 15000 }); // rendering
 
     // Take screenshot for debugging
     await page.screenshot({ path: '/tmp/excel-preview-test.png', fullPage: true });
@@ -115,7 +115,7 @@ test.describe('Excel Preview Tests', () => {
     if (!success) {
       // Retry: wait longer for LibreOffice PDF rendition generation
       console.log('Retrying after additional wait for rendition generation...');
-      await page.waitForTimeout(15000);
+      await waitForUiStable(page, { timeout: 20000 }); // rendering
 
       const hasCanvasRetry = await pdfCanvas.isVisible();
       const hasDocumentRetry = await pdfDocument.isVisible();
