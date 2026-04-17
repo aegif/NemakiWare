@@ -1,4 +1,4 @@
-import { waitForUiStable } from '../utils/wait-helpers';
+import { waitForUiStable } from './utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from './utils/auth-helper';
 import { TestHelper, ApiHelper } from './utils/test-helper';
