@@ -208,41 +208,29 @@ public class IngestSchedulerService {
                     Map<String, String> params = profile.getSchedulerParams() != null
                             ? profile.getSchedulerParams() : Map.of();
 
-                    // Run fetch on a virtual thread so the scheduler thread
-                    // can send periodic heartbeats while the fetch is in progress.
-                    // Without this, any connector that hangs would block the
-                    // heartbeat and the stuck detector would eventually mark
-                    // the job STUCK even if the fetch is just slow.
+                    // Run fetch on a virtual thread with progress-based
+                    // heartbeat via ThreadLocal.  The throttle() method
+                    // (called per-item in every adapter loop) sends a
+                    // heartbeat at most every 5 minutes, proving the
+                    // fetch is making real progress.  If the connector
+                    // wedges (no items processed → no throttle calls),
+                    // lastHeartbeatAt stops updating and detectStuckJobs()
+                    // marks the job STUCK after STUCK_TIMEOUT_MS (30min).
                     final IngestJobRecord heartbeatJob = job;
                     var future = java.util.concurrent.CompletableFuture.supplyAsync(
-                            () -> executeFetch(null, profile, connector, params),
+                            () -> {
+                                currentJobHolder.set(heartbeatJob);
+                                lastProgressHeartbeat.get()[0] = System.currentTimeMillis();
+                                try {
+                                    return executeFetch(null, profile, connector, params);
+                                } finally {
+                                    currentJobHolder.remove();
+                                    lastProgressHeartbeat.remove();
+                                }
+                            },
                             r -> Thread.ofVirtual().name("fetch-" + profile.getProfileId()).start(r));
 
-                    // Heartbeat every 5 minutes while the fetch runs, but
-                    // stop after MAX_HEARTBEATS so that detectStuckJobs()
-                    // can mark a genuinely hung fetch as STUCK.  Without
-                    // this cap, an infinite heartbeat loop would mask
-                    // wedged connector calls forever.
-                    //
-                    // Detection latency = (MAX_HEARTBEATS × 5min) + STUCK_TIMEOUT_MS
-                    // With MAX_HEARTBEATS=2: last heartbeat at ~10min, detected
-                    // STUCK at ~40min (10 + 30).  This gives slow but healthy
-                    // fetches a 10-minute grace period before heartbeats stop.
-                    final int MAX_HEARTBEATS = 2;
-                    int heartbeatCount = 0;
-                    while (!future.isDone()) {
-                        try { future.get(5, java.util.concurrent.TimeUnit.MINUTES); }
-                        catch (java.util.concurrent.TimeoutException _timeout) {
-                            if (heartbeatCount < MAX_HEARTBEATS && heartbeatJob != null && ingestJobService != null) {
-                                try { ingestJobService.heartbeat(heartbeatJob); }
-                                catch (Exception hbe) { logger.debug("Heartbeat failed: {}", hbe.getMessage()); }
-                                heartbeatCount++;
-                            }
-                            // After MAX_HEARTBEATS, lastHeartbeatAt stops updating
-                            // and the stuck detector will catch it.
-                        }
-                    }
-                    FetchResult result = future.get(); // already done, retrieves result or throws
+                    FetchResult result = future.get();
 
                     // Complete job record
                     if (job != null && ingestJobService != null) {
@@ -645,8 +633,30 @@ public class IngestSchedulerService {
         return 60_000L / connector.getRateLimitRpm();
     }
 
-    /** Sleep for the throttle delay, if configured. Swallows InterruptedException. */
-    static void throttle(long delayMs) {
+    /**
+     * ThreadLocal carrying the current job record for progress-based
+     * heartbeat.  Set by pollScheduledProfiles before executeFetch,
+     * read by throttle() on every item.
+     */
+    private static final ThreadLocal<IngestJobRecord> currentJobHolder = new ThreadLocal<>();
+    private static final ThreadLocal<long[]> lastProgressHeartbeat = ThreadLocal.withInitial(() -> new long[]{0});
+
+    /** Sleep for the throttle delay, if configured. Also sends a
+     *  progress-based heartbeat at most once per 5 minutes so that
+     *  detectStuckJobs() can distinguish a genuinely hung fetch from
+     *  a slow but progressing one. */
+    void throttle(long delayMs) {
+        // Progress heartbeat: proves the fetch is making real progress
+        // (each throttle call = one item processed).
+        IngestJobRecord job = currentJobHolder.get();
+        if (job != null && ingestJobService != null) {
+            long now = System.currentTimeMillis();
+            long[] last = lastProgressHeartbeat.get();
+            if (now - last[0] > 5 * 60 * 1000L) { // at most every 5 min
+                try { ingestJobService.heartbeat(job); } catch (Exception ignored) {}
+                last[0] = now;
+            }
+        }
         if (delayMs > 0) {
             try { Thread.sleep(delayMs); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         }
