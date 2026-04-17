@@ -100,7 +100,7 @@ test.describe('Admin Route Protection', () => {
       // Archive is accessible to all authenticated users (not admin-only)
       // Retry navigation if redirected (feature toggles may not have loaded yet)
       for (let retry = 0; retry < 3; retry++) {
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
         if (page.url().includes('/archive')) break;
         console.log(`archive access: Retrying navigation (attempt ${retry + 2})`);
         await page.goto(`${BASE_URL}/#/archive`);
@@ -129,7 +129,7 @@ test.describe('Admin Route Protection', () => {
     test('should be able to access /users', async ({ page }) => {
       await page.goto(`${BASE_URL}/#/users`);
       // Wait for page to stabilize - check if we're still on users
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
       // Re-navigate if redirected (session timing issue)
       if (!page.url().includes('/users')) {
         await page.goto(`${BASE_URL}/#/users`);
@@ -144,7 +144,7 @@ test.describe('Admin Route Protection', () => {
     test('should be able to access /groups', async ({ page }) => {
       await page.goto(`${BASE_URL}/#/groups`);
       // Wait for page to stabilize - check if we're still on groups
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
       // Re-navigate if redirected (session timing issue)
       if (!page.url().includes('/groups')) {
         await page.goto(`${BASE_URL}/#/groups`);
@@ -156,7 +156,7 @@ test.describe('Admin Route Protection', () => {
     test('should be able to access /types', async ({ page }) => {
       await page.goto(`${BASE_URL}/#/types`);
       // Wait for page to stabilize - check if we're still on types
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
       // Re-navigate if redirected (session timing issue)
       if (!page.url().includes('/types')) {
         await page.goto(`${BASE_URL}/#/types`);
@@ -168,7 +168,7 @@ test.describe('Admin Route Protection', () => {
     test('should be able to access /archive', async ({ page }) => {
       await page.goto(`${BASE_URL}/#/archive`);
       // Wait for page to stabilize - check if we're still on archive
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
       // Re-navigate if redirected (session timing issue)
       if (!page.url().includes('/archive')) {
         await page.goto(`${BASE_URL}/#/archive`);
@@ -184,7 +184,7 @@ test.describe('Admin Route Protection', () => {
       await menu.getByText('管理', { exact: true }).click();
 
       // Wait for submenu to expand
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Check all submenu items are visible
       await expect(page.locator('span:has-text("ユーザー管理")')).toBeVisible();
@@ -255,7 +255,7 @@ test.describe('Permission Management Access', () => {
       await page.goto(`${BASE_URL}/#/permissions/${testDocumentId}`);
 
       // Wait for page load and check we're on the permissions page
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // The permission page should either show permission content or redirect based on access
       // For api-e2e-testuser with read permission, they should be able to view the page

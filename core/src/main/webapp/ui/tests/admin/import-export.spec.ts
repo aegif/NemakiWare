@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 
@@ -433,7 +434,7 @@ test.describe.serial('Import/Export Feature', () => {
     test('should display admin-only warning', async ({ page }) => {
       await authHelper.login();
       await page.goto(`${BASE_URL}/core/ui/index.html#/filesystem-import-export`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Should show admin-only warning alert
       const warningAlert = page.locator('.ant-alert-warning');
@@ -443,7 +444,7 @@ test.describe.serial('Import/Export Feature', () => {
     test('should display import and export tabs', async ({ page }) => {
       await authHelper.login();
       await page.goto(`${BASE_URL}/core/ui/index.html#/filesystem-import-export`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Check for tabs
       const tabs = page.locator('.ant-tabs-tab');
@@ -466,14 +467,14 @@ test.describe.serial('Import/Export Feature', () => {
     test('should display import form with source path and folder selector', async ({ page }) => {
       await authHelper.login();
       await page.goto(`${BASE_URL}/core/ui/index.html#/filesystem-import-export`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Click import tab if not already active
       const importTab = page.locator('.ant-tabs-tab').filter({
         hasText: /インポート|Import/i
       });
       await importTab.first().click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Check for source path input
       const sourcePathInput = page.locator('input[placeholder*="/path/to/import"]');
@@ -493,14 +494,14 @@ test.describe.serial('Import/Export Feature', () => {
     test('should display export form with folder selector and target path', async ({ page }) => {
       await authHelper.login();
       await page.goto(`${BASE_URL}/core/ui/index.html#/filesystem-import-export`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Click export tab
       const exportTab = page.locator('.ant-tabs-tab').filter({
         hasText: /エクスポート|Export/i
       });
       await exportTab.first().click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Check for target path input
       const targetPathInput = page.locator('input[placeholder*="/path/to/export"]');
@@ -524,14 +525,14 @@ test.describe.serial('Import/Export Feature', () => {
     test('should load folder list in import form selector', async ({ page }) => {
       await authHelper.login();
       await page.goto(`${BASE_URL}/core/ui/index.html#/filesystem-import-export`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Click import tab
       const importTab = page.locator('.ant-tabs-tab').filter({
         hasText: /インポート|Import/i
       });
       await importTab.first().click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Open folder selector dropdown
       const folderSelect = page.locator('.ant-form-item').filter({
@@ -540,7 +541,7 @@ test.describe.serial('Import/Export Feature', () => {
 
       if (await folderSelect.isVisible().catch(() => false)) {
         await folderSelect.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Check dropdown has options
         const options = page.locator('.ant-select-dropdown .ant-select-item-option');
@@ -556,14 +557,14 @@ test.describe.serial('Import/Export Feature', () => {
     test('should show validation error when submitting import form without required fields', async ({ page }) => {
       await authHelper.login();
       await page.goto(`${BASE_URL}/core/ui/index.html#/filesystem-import-export`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Click import tab
       const importTab = page.locator('.ant-tabs-tab').filter({
         hasText: /インポート|Import/i
       });
       await importTab.first().click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Click import button without filling required fields
       const importButton = page.locator('button').filter({
@@ -572,7 +573,7 @@ test.describe.serial('Import/Export Feature', () => {
 
       if (await importButton.isVisible().catch(() => false)) {
         await importButton.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Should show validation errors (Ant Design form validation)
         const validationErrors = page.locator('.ant-form-item-explain-error');
@@ -585,7 +586,7 @@ test.describe.serial('Import/Export Feature', () => {
     test('should have refresh folders button', async ({ page }) => {
       await authHelper.login();
       await page.goto(`${BASE_URL}/core/ui/index.html#/filesystem-import-export`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Check for refresh button
       const refreshButton = page.locator('button').filter({

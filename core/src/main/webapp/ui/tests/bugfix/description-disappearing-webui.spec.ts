@@ -150,14 +150,14 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
       testDocName,
       'Test content for description persistence bug verification'
     );
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Submit upload
     const submitBtn = page.locator('.ant-modal button[type="submit"]');
     await submitBtn.click();
 
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify document appears
     const uploadedDoc = page.locator(`text=${testDocName}`);
@@ -169,7 +169,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     console.log(`[TEST] Adding secondary type to document: ${testDocName}`);
     const isMobile = testHelper.isMobile(browserName);
 
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find the test document row
     const docRow = page.locator('tr').filter({ hasText: testDocName });
@@ -181,35 +181,35 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     // Click on document name to open document viewer
     const docLink = docRow.locator('a, button').first();
     await docLink.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
     console.log(`[TEST] Document viewer opened`);
 
     // Look for secondary type tab or management section
     const secondaryTypeTab = page.locator('.ant-tabs-tab').filter({ hasText: /セカンダリ|Secondary|アスペクト/ });
     if (await secondaryTypeTab.count() > 0) {
       await secondaryTypeTab.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
       console.log(`[TEST] Secondary type tab opened`);
 
       // First, select a type from the dropdown (required to enable the add button)
       const typeSelect = page.locator('.ant-select');
       if (await typeSelect.count() > 0) {
         await typeSelect.first().click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         const commentableOption = page.locator('.ant-select-item').filter({ hasText: /commentable/ });
         if (await commentableOption.count() > 0) {
           await commentableOption.click();
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
           console.log(`[TEST] Selected nemaki:commentable from dropdown`);
 
           // Now the add button should be enabled
           const addSecondaryButton = page.locator('button').filter({ hasText: /追加|Add/ });
           if (await addSecondaryButton.count() > 0) {
             // Wait for button to become enabled
-            await page.waitForTimeout(500);
+            await waitForRender(page);
             await addSecondaryButton.first().click({ force: true });
-            await page.waitForTimeout(2000);
+            await waitForUiStable(page);
             console.log(`[TEST] Clicked add button for secondary type`);
           }
         } else {
@@ -221,7 +221,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
       const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: /プロパティ|Properties/ });
       if (await propertiesTab.count() > 0) {
         await propertiesTab.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
       }
       console.log(`[TEST] Secondary type tab not found, checking properties`);
     }
@@ -235,7 +235,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     console.log(`[TEST] Setting description and comment on document: ${testDocName}`);
     const isMobile = testHelper.isMobile(browserName);
 
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find and click on the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
@@ -246,13 +246,13 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
 
     const docLink = docRow.locator('a, button').first();
     await docLink.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Look for edit mode button
     const editButton = page.locator('button').filter({ hasText: /編集|Edit/ });
     if (await editButton.count() > 0) {
       await editButton.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
       console.log(`[TEST] Edit mode activated`);
     }
 
@@ -280,7 +280,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     const saveButton = page.locator('button').filter({ hasText: /保存|Save|更新|Update/ });
     if (await saveButton.count() > 0) {
       await saveButton.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Check for success message
       const successMsg = page.locator('.ant-message-success');
@@ -300,13 +300,13 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
     if (await searchMenu.count() > 0) {
       await searchMenu.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenu.count() > 0) {
       await documentsMenu.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Find and open the test document
@@ -318,7 +318,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
 
     const docLink = docRow.locator('a, button').first();
     await docLink.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // CRITICAL ASSERTION: Check if description is still visible
     const descriptionText = page.locator(`text=${testDescription}`);

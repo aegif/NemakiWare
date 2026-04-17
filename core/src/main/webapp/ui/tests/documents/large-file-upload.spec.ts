@@ -192,7 +192,7 @@ test.describe('Large File Upload', () => {
       // Click upload button
       const uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
       await uploadButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Set file input using temp file path
       const fileInput = page.locator('input[type="file"]');
@@ -213,7 +213,7 @@ test.describe('Large File Upload', () => {
         // Monitor progress changes
         let previousProgress = 0;
         for (let i = 0; i < 30; i++) {
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
 
           const progressText = await page.locator('.ant-progress-text, .ant-upload-list-item-progress').textContent();
           if (progressText) {
@@ -244,7 +244,7 @@ test.describe('Large File Upload', () => {
         console.log('Test: Upload success message timeout - may still be processing');
       }
 
-      await page.waitForTimeout(5000);
+      await waitForUiStable(page, { timeout: 15000 });
 
       // Verify file appears in document list
       const uploadedFile = page.locator('.ant-table-tbody tr').filter({ hasText: largeFileName });
@@ -265,17 +265,17 @@ test.describe('Large File Upload', () => {
 
         // Cleanup: Delete the large file
         await uploadedFile.click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         const deleteButton = page.locator('button').filter({ has: page.locator('.anticon-delete, [aria-label="delete"]') });
         if (await deleteButton.count() > 0) {
           await deleteButton.first().click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
 
           const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button').filter({ hasText: /OK|確認/ });
           if (await confirmButton.count() > 0) {
             await confirmButton.first().click();
-            await page.waitForTimeout(5000); // Large file deletion may take time
+            await waitForUiStable(page, { timeout: 15000 }); // Large file deletion may take time
             console.log('Test: Large file deleted');
           }
         }
@@ -315,7 +315,7 @@ test.describe('Large File Upload', () => {
       // Click upload button
       const uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
       await uploadButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Set file input using temp file path
       const fileInput = page.locator('input[type="file"]');
@@ -324,7 +324,7 @@ test.describe('Large File Upload', () => {
       console.log('Test: File set for upload, looking for cancel button');
 
       // Wait a moment for upload to start
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Look for cancel/close button in upload list item
       const cancelButton = page.locator('.ant-upload-list-item-card-actions button, .ant-upload-list-item button').filter({
@@ -335,7 +335,7 @@ test.describe('Large File Upload', () => {
         console.log('Test: Cancel button found, clicking to cancel upload');
         await cancelButton.first().click();
 
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Verify upload was cancelled (file should not appear in document list)
         const cancelledFile = page.locator('.ant-table-tbody tr').filter({ hasText: cancelTestFileName });
@@ -348,17 +348,17 @@ test.describe('Large File Upload', () => {
 
           // Cleanup if file was uploaded
           await cancelledFile.click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
 
           const deleteButton = page.locator('button').filter({ has: page.locator('.anticon-delete, [aria-label="delete"]') });
           if (await deleteButton.count() > 0) {
             await deleteButton.first().click();
-            await page.waitForTimeout(500);
+            await waitForRender(page);
 
             const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button').filter({ hasText: /OK|確認/ });
             if (await confirmButton.count() > 0) {
               await confirmButton.first().click();
-              await page.waitForTimeout(2000);
+              await waitForUiStable(page);
             }
           }
         }
@@ -370,17 +370,17 @@ test.describe('Large File Upload', () => {
         const uploadedFile = page.locator('.ant-table-tbody tr').filter({ hasText: cancelTestFileName });
         if (await uploadedFile.count() > 0) {
           await uploadedFile.click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
 
           const deleteButton = page.locator('button').filter({ has: page.locator('.anticon-delete, [aria-label="delete"]') });
           if (await deleteButton.count() > 0) {
             await deleteButton.first().click();
-            await page.waitForTimeout(500);
+            await waitForRender(page);
 
             const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button').filter({ hasText: /OK|確認/ });
             if (await confirmButton.count() > 0) {
               await confirmButton.first().click();
-              await page.waitForTimeout(2000);
+              await waitForUiStable(page);
             }
           }
         }

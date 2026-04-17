@@ -193,7 +193,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
 
     const docLink = docRow.locator('a, button').first();
     await docLink.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
     console.log(`[TEST 2] Document viewer opened`);
 
     // Look for secondary type tab
@@ -287,7 +287,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     const saveButton = page.locator('button').filter({ hasText: /保存|Save|更新|Update/ }).first();
     if (await saveButton.count() > 0 && await saveButton.isVisible()) {
       await saveButton.click({ force: true });
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       const successMsg = page.locator('.ant-message-success');
       if (await successMsg.count() > 0) {
@@ -325,7 +325,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
 
     const docLink = docRow.locator('a, button').first();
     await docLink.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Check properties tab
     const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: /プロパティ|Properties|基本/ });
@@ -403,7 +403,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
 
     const docLink = docRow.locator('a, button').first();
     await docLink.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Check document viewer URL
     const viewerUrl = page.url();
@@ -607,7 +607,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
 
   test('S3. Wait for Solr indexing', async ({ page }) => {
     console.log(`[SEARCH S3] Waiting 5s for Solr indexing...`);
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
     console.log(`[SEARCH S3] ✅ Done`);
   });
 
@@ -634,7 +634,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
       await searchInput.press('Enter');
     }
 
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Check results
     const exactRow = page.locator('tr').filter({ hasText: docExact });

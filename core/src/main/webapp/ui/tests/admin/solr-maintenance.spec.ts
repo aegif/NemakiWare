@@ -320,7 +320,7 @@ test.describe('Solr Index Maintenance', () => {
     }).first();
 
     await executeButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Check for results
     const resultAlert = page.locator('.ant-alert-info');

@@ -297,7 +297,7 @@ test.describe('Bulk Operations', () => {
     for (let i = 0; i < 3 && i < checkboxCount; i++) {
       const checkbox = selectionCheckboxes.nth(i);
       await checkbox.check(isMobile ? { force: true } : {});
-      await page.waitForTimeout(300);
+      await waitForRender(page);
     }
 
     // Verify 3 row checkboxes are checked (ignore header checkbox)
@@ -491,7 +491,7 @@ test.describe('Bulk Operations', () => {
       } catch {
         console.log('No success message detected - checking via API');
       }
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Verify test documents are removed via API (with retry for async deletion)
       let allDeleted = false;
@@ -511,7 +511,7 @@ test.describe('Bulk Operations', () => {
         }
         if (allDeleted) break;
         console.log(`[Attempt ${attempt + 1}] Not all documents deleted yet, waiting 3s...`);
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
       }
       expect(allDeleted).toBe(true);
 

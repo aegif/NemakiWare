@@ -31,7 +31,7 @@ async function navigateToDocument(page: any): Promise<string | null> {
 
   // Navigate directly to DocumentViewer
   await page.goto(`/core/ui/index.html#/documents/${suiteDocId}`);
-  await page.waitForTimeout(3000);
+  await waitForUiStable(page);
 
   return suiteDocName;
 }
@@ -201,7 +201,7 @@ test.describe('Type Migration Features', () => {
 
       const modal = page.locator('.ant-modal').filter({ hasText: /オブジェクトタイプの変更|Change Object Type/i });
       await expect(modal).toBeVisible({ timeout: 5000 });
-      await page.waitForTimeout(1000); // Wait for types to load
+      await waitForRender(page); // Wait for types to load
 
       // Verify type selector label exists
       const typeSelectorLabel = modal.locator('text=/新しいタイプを選択|Select new type/i');
@@ -229,7 +229,7 @@ test.describe('Type Migration Features', () => {
 
       const modal = page.locator('.ant-modal').filter({ hasText: /オブジェクトタイプの変更|Change Object Type/i });
       await expect(modal).toBeVisible({ timeout: 5000 });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Verify OK button is disabled when no type selected
       const okButton = modal.locator('.ant-btn-primary').filter({ hasText: /タイプを変更|Change Type/i });
@@ -288,7 +288,7 @@ test.describe('Type Migration - Error Handling', () => {
 
     const modal = page.locator('.ant-modal').filter({ hasText: /オブジェクトタイプの変更|Change Object Type/i });
     await expect(modal).toBeVisible({ timeout: 5000 });
-    await page.waitForTimeout(2000); // Wait for types to load
+    await waitForUiStable(page); // Wait for types to load
 
     // Check if "互換タイプなし" warning is shown (only if no custom types defined)
     const noTypesWarning = modal.locator('.ant-alert').filter({ hasText: /互換タイプなし|No compatible types/i });

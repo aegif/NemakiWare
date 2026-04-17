@@ -174,21 +174,21 @@ test.describe('CMIS API 404 Error Handling', () => {
     // NOTE: Route interception is set up AFTER login to avoid intercepting folder requests
     // Navigate to login page FIRST
     await page.goto('http://localhost:8080/core/ui/index.html');
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Login as admin
     const repositorySelect = page.locator('.ant-select-selector').first();
     await repositorySelect.click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
     await page.locator('.ant-select-item-option:has-text("bedroom")').click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     await page.locator('input[placeholder*="ユーザー名"]').fill('admin');
     await page.locator('input[placeholder*="パスワード"]').fill('admin');
     await page.locator('button[type="submit"]').click();
 
     // Wait for navigation and UI initialization (longer timeout for webkit/tablet)
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Verify login successful - check for documents page elements
     await expect(page.locator('.ant-table')).toBeVisible({ timeout: 15000 });
@@ -216,7 +216,7 @@ test.describe('CMIS API 404 Error Handling', () => {
 
       if (await menuToggle.count() > 0) {
         await menuToggle.click({ timeout: 3000 });
-        await page.waitForTimeout(500); // Wait for animation
+        await waitForRender(page); // Wait for animation
         console.log('✅ Mobile sidebar closed');
       }
     }
@@ -241,7 +241,7 @@ test.describe('CMIS API 404 Error Handling', () => {
     await firstDocument.click({ force: true });
 
     // Wait for 404 error handling and potential redirect
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Check current URL and page state after API error
     const currentUrl = page.url();
@@ -277,23 +277,23 @@ test.describe('CMIS API 404 Error Handling', () => {
     // the UI remains functional and user isn't "stuck"
 
     await page.goto('http://localhost:8080/core/ui/index.html');
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Login
     // Click on Ant Design Select (combobox) for repository
     const repositorySelect = page.locator('.ant-select-selector').first();
     await repositorySelect.click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
     // Select bedroom from dropdown
     await page.locator('.ant-select-item-option:has-text("bedroom")').click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     await page.locator('input[placeholder*="ユーザー名"]').fill('admin');
     await page.locator('input[placeholder*="パスワード"]').fill('admin');
     await page.locator('button[type="submit"]').click();
 
     // Wait for navigation and UI initialization (longer timeout for webkit/tablet)
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     await expect(page.locator('.ant-table')).toBeVisible({ timeout: 15000 });
     console.log('✅ Login successful');
@@ -307,7 +307,7 @@ test.describe('CMIS API 404 Error Handling', () => {
 
       if (await menuToggle.count() > 0) {
         await menuToggle.click({ timeout: 3000 });
-        await page.waitForTimeout(500); // Wait for animation
+        await waitForRender(page); // Wait for animation
         console.log('✅ Mobile sidebar closed');
       }
     }
@@ -342,7 +342,7 @@ test.describe('CMIS API 404 Error Handling', () => {
     if (await documentsMenu.count() > 0) {
       // Use force click to bypass sidebar overlay in test environment
       await documentsMenu.click({ force: true });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     // Verify documents page still loads

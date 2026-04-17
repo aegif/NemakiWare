@@ -275,7 +275,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
   test('Step 4: Wait for Solr indexing', async ({ page }) => {
     console.log(`[TEST] Waiting for Solr to index documents (5 seconds)...`);
     // Give Solr time to index the uploaded documents
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
     console.log(`[TEST] ✅ Wait complete`);
   });
 
@@ -310,7 +310,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
     }
 
     // Wait for search results
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Take screenshot for evidence
     await page.screenshot({ path: 'test-results/screenshots/search-tokenization-results.png', fullPage: true });

@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -36,7 +37,7 @@ test.describe('System Folders (/.system)', () => {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
       if (await menuToggle.count() > 0) {
         await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
     }
   });
@@ -231,7 +232,7 @@ test.describe('System Folders (/.system)', () => {
 
     // Step 3: Navigate directly to users folder via URL (avoids maxItems pagination issues)
     await page.goto(`http://localhost:8080/core/ui/index.html#/documents?folderId=${usersFolderId}`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Verify we can see users (check for table rows)
     const table = page.locator('.ant-table-tbody');

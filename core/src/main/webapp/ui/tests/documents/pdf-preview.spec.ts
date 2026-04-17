@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -134,13 +135,13 @@ test.describe('PDF Preview Functionality', () => {
 
     // Navigate directly to DocumentViewer for this PDF
     await page.goto(`/core/ui/index.html#/documents/${pdfInfo.objectId}`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Look for preview tab and click it
     const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: /プレビュー|Preview/i });
     if (await previewTab.count() > 0) {
       await previewTab.first().click();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
       console.log('Clicked preview tab');
     }
 
@@ -152,7 +153,7 @@ test.describe('PDF Preview Functionality', () => {
       console.log('PDF viewer element found - preview is rendering');
 
       // Wait for PDF content to load
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       const canvasElements = await page.locator('canvas[data-page-number]').count();
       if (canvasElements > 0) {
@@ -215,7 +216,7 @@ test.describe('PDF Preview Functionality', () => {
 
     // Navigate directly to DocumentViewer
     await page.goto(`/core/ui/index.html#/documents/${pdfInfo.objectId}`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Look for download button in DocumentViewer
     const downloadButton = page.locator('button').filter({
@@ -289,13 +290,13 @@ test.describe('PDF Preview Functionality', () => {
 
     // Navigate directly to DocumentViewer
     await page.goto(`/core/ui/index.html#/documents/${pdfInfo.objectId}`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Click preview tab if available
     const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: /プレビュー|Preview/i });
     if (await previewTab.count() > 0) {
       await previewTab.first().click();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
       console.log('Clicked preview tab');
     }
 
@@ -306,7 +307,7 @@ test.describe('PDF Preview Functionality', () => {
       console.log('PDF viewer element found');
 
       // Wait for PDF content to render
-      await page.waitForTimeout(5000);
+      await waitForUiStable(page, { timeout: 15000 });
 
       // Verify canvas rendering with actual content
       const firstPageCanvas = page.locator('canvas[data-page-number="1"]');

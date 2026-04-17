@@ -687,7 +687,7 @@ startxref
           const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プレビュー' });
           if (await previewTab.count() > 0) {
             await previewTab.click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(3000);
+            await waitForUiStable(page);
 
             // Verify PDF preview is rendered (react-pdf Document/canvas or error message)
             const pdfContainer = page.locator('.ant-card .react-pdf__Document, .ant-card canvas, .ant-card .ant-alert');

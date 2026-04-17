@@ -261,7 +261,7 @@ test.describe('Bug Fix 1: Gray Overlay After Login', () => {
     await authHelper.login();
 
     // Wait a bit for any overlays to appear/disappear
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check for blocking overlays
     const overlaySelectors = [
@@ -331,7 +331,7 @@ test.describe('Bug Fix 1: Gray Overlay After Login', () => {
     await page.goto(UI_URL);
     await page.waitForLoadState('networkidle');
     // Wait for login page to fully render (auth config loads asynchronously)
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Look for OIDC login button (text may be "OIDC認証でログイン" or "OIDC")
     const oidcButton = page.locator('button:has-text("OIDC"), button:has-text("OpenID")').first();
@@ -360,7 +360,7 @@ test.describe('Bug Fix 1: Gray Overlay After Login', () => {
 
     // Wait for redirect back
     await page.waitForURL(/.*\/core\/ui.*/, { timeout: 30000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check for blocking overlays (same as basic login test)
     const blockingOverlay = page.locator('.ant-modal-mask:visible, .ant-spin-blur:visible');
@@ -584,20 +584,20 @@ test.describe('Bug Fix 3: Description Property Disappearing on Re-edit', () => {
       // Navigate to document
       await page.goto(`${UI_URL}/#/repository/${REPOSITORY_ID}/object/${docId}`);
       await page.waitForLoadState('networkidle');
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Click on Properties tab if exists
       const propertiesTab = page.locator('[data-node-key="properties"], .ant-tabs-tab:has-text("プロパティ")').first();
       if (await propertiesTab.count() > 0) {
         await propertiesTab.click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
 
       // Click Edit button
       const editButton = page.locator('button:has-text("編集")').first();
       if (await editButton.count() > 0) {
         await editButton.click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         // Find description field by form item label
         const descFormItem = page.locator('.ant-form-item').filter({ hasText: /Description|説明/ }).first();
@@ -610,14 +610,14 @@ test.describe('Bug Fix 3: Description Property Disappearing on Re-edit', () => {
         const saveButton = page.locator('button:has-text("保存")').first();
         if (await saveButton.count() > 0) {
           await saveButton.click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
 
         // Re-open edit mode
         const editButton2 = page.locator('button:has-text("編集")').first();
         if (await editButton2.count() > 0) {
           await editButton2.click();
-          await page.waitForTimeout(500);
+          await waitForRender(page);
 
           // Check that description field still has the value
           const inputs = page.locator('input[type="text"], textarea');

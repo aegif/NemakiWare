@@ -450,7 +450,7 @@ test.describe('Required Property Validation Tests', () => {
       console.log('STEP 5: Attempting to submit without required property');
       const submitButton = modal.locator('button.ant-btn-primary').filter({ hasText: /アップロード|Upload/ });
       await submitButton.click();
-      await page.waitForTimeout(1500);
+      await waitForUiStable(page);
 
       // STEP 6: Verify validation error appears
       console.log('STEP 6: Checking for validation error');
@@ -477,7 +477,7 @@ test.describe('Required Property Validation Tests', () => {
       // STEP 8: Submit again
       console.log('STEP 8: Submitting with required property filled');
       await submitButton.click();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // STEP 9: Verify success
       const modalStillVisible = await modal.isVisible();
@@ -540,7 +540,7 @@ test.describe('Required Property Validation Tests', () => {
       const modal = page.locator('.ant-modal-content').last();
 
       // Wait for modal to stabilize
-      await page.waitForTimeout(1500);
+      await waitForUiStable(page);
 
       // STEP 2: Select test folder type (with retry for DOM stability)
       console.log('STEP 2: Selecting test folder type');
@@ -594,13 +594,13 @@ test.describe('Required Property Validation Tests', () => {
       console.log('STEP 4: Filling folder name only');
       const nameInput = modal.locator('input').first();
       await nameInput.fill(testFolderName);
-      await page.waitForTimeout(300);
+      await waitForRender(page);
 
       // STEP 5: Try to submit without required custom property
       console.log('STEP 5: Attempting to submit without required property');
       const submitButton = modal.locator('button.ant-btn-primary').first();
       await submitButton.click();
-      await page.waitForTimeout(1500);
+      await waitForUiStable(page);
 
       // STEP 6: Verify validation error appears
       console.log('STEP 6: Checking for validation error');
@@ -620,7 +620,7 @@ test.describe('Required Property Validation Tests', () => {
       // STEP 8: Submit again
       console.log('STEP 8: Submitting with required property filled');
       await submitButton.click();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // STEP 9: Verify success
       const modalStillVisible = await modal.isVisible();

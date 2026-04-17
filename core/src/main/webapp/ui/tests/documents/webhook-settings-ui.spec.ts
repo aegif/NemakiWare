@@ -525,7 +525,7 @@ test.describe('Webhook Settings UI Tests', () => {
     await modal.locator('.ant-modal-footer button.ant-btn-primary').click();
 
     // Wait for modal to close and table to update
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify row added in webhook table (scope to the active tab panel to exclude property tables)
     const webhookPanel = page.locator('.ant-tabs-tabpane-active, .ant-tabs-tabpane:not([hidden])').last();
@@ -552,7 +552,7 @@ test.describe('Webhook Settings UI Tests', () => {
     await editModal.locator('.ant-modal-footer button.ant-btn-primary').click();
 
     // Wait for update
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify URL was updated
     await expect(webhookPanel.locator('.ant-table-tbody')).toContainText('https://test.example.com/hook-updated');
@@ -568,7 +568,7 @@ test.describe('Webhook Settings UI Tests', () => {
     await confirmButton.click();
 
     // Wait for deletion
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify table is empty
     await expect(page.locator('.ant-table-empty, .ant-empty')).toBeVisible({ timeout: 5000 });

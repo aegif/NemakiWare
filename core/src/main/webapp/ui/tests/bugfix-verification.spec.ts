@@ -262,7 +262,7 @@ test.describe('Bug Fix Verification Tests', () => {
     // Step 3: Navigate to parent folder using URL (more reliable than double-click)
     console.log('Navigating to parent folder...');
     await page.goto(`/core/ui/index.html#/documents?folderId=${parentFolderId}`);
-    await page.waitForTimeout(3000); // Wait for history state to settle
+    await waitForUiStable(page); // Wait for history state to settle
     await testHelper.waitForAntdLoad();
 
     // FIX (2025-12-26): Wait for table structure, then verify child folder is visible
@@ -278,7 +278,7 @@ test.describe('Bug Fix Verification Tests', () => {
     // Step 4: Navigate into child folder
     console.log('Navigating to child folder...');
     await page.goto(`/core/ui/index.html#/documents?folderId=${childFolderId}`);
-    await page.waitForTimeout(3000); // Wait for history state to settle
+    await waitForUiStable(page); // Wait for history state to settle
     await testHelper.waitForAntdLoad();
 
     // Verify we're in child folder
@@ -384,14 +384,14 @@ test.describe('Bug Fix Verification Tests', () => {
     console.log('Relationship created successfully');
 
     // Wait for server-side relationship indexing
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Step 3: Navigate to documents page with explicit root folder ID
     // FIX (2025-12-26): Navigate directly to root folder with folderId parameter
     // This ensures the newly created documents are visible
     console.log('Navigating to documents page...');
     await page.goto(`/core/ui/index.html#/documents?folderId=${rootFolderId}`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
     await testHelper.waitForAntdLoad();
 
     // Wait for table structure

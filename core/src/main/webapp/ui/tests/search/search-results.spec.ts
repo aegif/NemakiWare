@@ -45,7 +45,7 @@ test.describe('Search Results Detailed Verification', () => {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();
       if (await menuToggle.count() > 0) {
         await menuToggle.click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
     }
 
@@ -71,7 +71,7 @@ test.describe('Search Results Detailed Verification', () => {
     await searchButton.click(isMobile ? { force: true } : {});
 
     // Wait for search to execute
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Verify "クリア" button appears (indicates search mode is active)
     const clearButton = page.locator('button:has-text("クリア")').first();
@@ -110,7 +110,7 @@ test.describe('Search Results Detailed Verification', () => {
     await searchButton.click(isMobile ? { force: true } : {});
 
     // Wait for search results
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Find table rows with results
     const table = page.locator('.ant-table').first();
@@ -142,7 +142,7 @@ test.describe('Search Results Detailed Verification', () => {
     await searchButton.click(isMobile ? { force: true } : {});
 
     // Wait for search results
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Find table rows
     const table = page.locator('.ant-table').first();
@@ -180,7 +180,7 @@ test.describe('Search Results Detailed Verification', () => {
     await searchButton.click(isMobile ? { force: true } : {});
 
     // Wait for search results
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Find table rows
     const table = page.locator('.ant-table').first();
@@ -219,7 +219,7 @@ test.describe('Search Results Detailed Verification', () => {
     await searchButton.click(isMobile ? { force: true } : {});
 
     // Wait for search mode to activate
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Verify search-mode: パス column visible and クリア button visible
     const table = page.locator('.ant-table').first();
@@ -233,7 +233,7 @@ test.describe('Search Results Detailed Verification', () => {
     await clearButton.click(isMobile ? { force: true } : {});
 
     // Wait for mode switch
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify browse-mode: standard columns visible
     const sizeHeader = table.locator('th:has-text("サイズ")');

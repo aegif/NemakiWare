@@ -265,14 +265,14 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       // Select property type (string)
       const propTypeSelect = propertyCard.locator('.ant-select').first();
       await propTypeSelect.click();
-      await page.waitForTimeout(300);
+      await waitForRender(page);
       const stringOption = page.locator('.ant-select-item-option:has-text("文字列")').first();
       await stringOption.click();
 
       // Select cardinality (single)
       const cardinalitySelect = propertyCard.locator('.ant-select').last();
       await cardinalitySelect.click();
-      await page.waitForTimeout(300);
+      await waitForRender(page);
       const singleOption = page.locator('.ant-select-item-option:has-text("単一")').first();
       await singleOption.click();
 
@@ -444,7 +444,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       // Find and open the uploaded document
       // Reload page to ensure document list is refreshed
       await page.reload();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       console.log(`🔍 Looking for document link with text: "${testDocName}"`);
       let documentLink = page.locator(`a:has-text("${testDocName}")`);
@@ -542,7 +542,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
         // FIX (2025-12-26): Wait for API response instead of transient success message
         // The success message fades out in ~3 seconds
         console.log('Waiting for save operation to complete...');
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
         console.log('✅ Save operation completed');
 
         // Verify persistence by reloading

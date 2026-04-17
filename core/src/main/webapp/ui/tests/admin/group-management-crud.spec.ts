@@ -376,7 +376,7 @@ test.describe('Group Management CRUD Operations', () => {
 
       // Open dropdown and add a member
       await membersSelect.first().scrollIntoViewIfNeeded();
-      await page.waitForTimeout(300);
+      await waitForRender(page);
       await membersSelect.first().click({ force: true });
       await waitForRender(page);
 

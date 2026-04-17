@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -44,7 +45,7 @@ test.describe('Config Viewer - Admin Access', () => {
 
   test('should display config viewer page for admin', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/config-viewer`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Should show the title
     const title = page.locator('h2, .ant-card-head-title').filter({
@@ -55,7 +56,7 @@ test.describe('Config Viewer - Admin Access', () => {
 
   test('should display table with property data', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/config-viewer`);
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Table should be present
     const table = page.locator('.ant-table');
@@ -72,7 +73,7 @@ test.describe('Config Viewer - Admin Access', () => {
 
   test('should display correct column headers', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/config-viewer`);
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     const tableHeader = page.locator('.ant-table-thead');
     await expect(tableHeader).toBeVisible({ timeout: 10000 });
@@ -95,7 +96,7 @@ test.describe('Config Viewer - Admin Access', () => {
 
   test('should display source tags with color coding', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/config-viewer`);
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Source tags should be present (ant-tag elements)
     const tags = page.locator('.ant-table-tbody .ant-tag');
@@ -107,7 +108,7 @@ test.describe('Config Viewer - Admin Access', () => {
 
   test('should mask sensitive values', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/config-viewer`);
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Look for masked values (***) in the table
     const maskedCells = page.locator('.ant-table-tbody td').filter({ hasText: '***' });
@@ -124,7 +125,7 @@ test.describe('Config Viewer - Admin Access', () => {
 
   test('should support key search filter', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/config-viewer`);
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Find search input
     const searchInput = page.locator('.ant-input-search input, input[placeholder]').first();
@@ -134,7 +135,7 @@ test.describe('Config Viewer - Admin Access', () => {
 
       // Type a search term
       await searchInput.fill('db.');
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const filteredRows = await page.locator('.ant-table-tbody tr.ant-table-row').count();
       console.log(`Before filter: ${initialRows}, after 'db.' filter: ${filteredRows}`);
@@ -144,19 +145,19 @@ test.describe('Config Viewer - Admin Access', () => {
 
       // Clear search
       await searchInput.clear();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
   });
 
   test('should support category filter', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/config-viewer`);
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Find category select
     const categorySelect = page.locator('.ant-select').first();
     if (await categorySelect.count() > 0) {
       await categorySelect.click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Check for category options
       const options = page.locator('.ant-select-item-option');
@@ -168,7 +169,7 @@ test.describe('Config Viewer - Admin Access', () => {
         const dbOption = options.filter({ hasText: 'DB' });
         if (await dbOption.count() > 0) {
           await dbOption.click();
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
 
           const filteredRows = await page.locator('.ant-table-tbody tr.ant-table-row').count();
           console.log(`Rows after DB category filter: ${filteredRows}`);
@@ -200,7 +201,7 @@ test.describe('Config Viewer - i18n', () => {
       localStorage.setItem('nemakiware-language', 'ja');
     });
     await page.goto(`${BASE_URL}/core/ui/#/config-viewer`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     const title = page.locator('h2, .ant-card-head-title').filter({ hasText: '設定プロパティ一覧' });
     await expect(title).toBeVisible({ timeout: 10000 });
@@ -213,7 +214,7 @@ test.describe('Config Viewer - i18n', () => {
     // Full reload needed so React re-initializes i18n with the new language
     await page.reload({ waitUntil: 'load' });
     await page.goto(`${BASE_URL}/core/ui/#/config-viewer`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     const title = page.locator('h2, .ant-card-head-title').filter({ hasText: 'Configuration Properties' });
     await expect(title).toBeVisible({ timeout: 10000 });
@@ -237,7 +238,7 @@ test.describe('Config Viewer - Navigation', () => {
 
     if (await menuItem.count() > 0) {
       await menuItem.click();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Should navigate to config-viewer page
       expect(page.url()).toContain('config-viewer');

@@ -45,7 +45,7 @@ test.describe('Concurrent Load Test - UI Heavy', () => {
 
         // Login
         await authHelper.login();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Verify logged in
         const userInfo = page.locator('.ant-avatar, [data-testid="user-info"]');
@@ -97,13 +97,13 @@ test.describe('Concurrent Load Test - UI Heavy', () => {
         const authHelper = new AuthHelper(page);
 
         await authHelper.login();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Navigate to folder view
         const folderMenu = page.locator('.ant-menu-item').filter({ hasText: /フォルダ|Folder|ブラウズ/i });
         if (await folderMenu.count() > 0) {
           await folderMenu.first().click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
 
         // Count visible folders/files
@@ -156,16 +156,16 @@ test.describe('Concurrent Load Test - UI Heavy', () => {
         const authHelper = new AuthHelper(page);
 
         await authHelper.login();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Navigate to search
         const searchMenu = page.locator('.ant-menu-item').filter({ hasText: /検索|Search/i });
         if (await searchMenu.count() > 0) {
           await searchMenu.first().click();
-          await page.waitForTimeout(1500);
+          await waitForUiStable(page);
         } else {
           await page.goto(`${BASE_URL}/core/ui/#/search`);
-          await page.waitForTimeout(1500);
+          await waitForUiStable(page);
         }
 
         // Perform search
@@ -177,7 +177,7 @@ test.describe('Concurrent Load Test - UI Heavy', () => {
         const searchButton = page.locator('button.search-button').first();
         if (await searchButton.count() > 0) {
           await searchButton.click();
-          await page.waitForTimeout(3000);
+          await waitForUiStable(page);
         }
 
         // Get result count
@@ -230,19 +230,19 @@ test.describe('Concurrent Load Test - UI Heavy', () => {
         const authHelper = new AuthHelper(page);
 
         await authHelper.login();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Navigate to admin > type management
         const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
         if (await adminMenu.count() > 0) {
           await adminMenu.click();
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
         }
 
         const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
         if (await typeManagementItem.count() > 0) {
           await typeManagementItem.click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
 
         // Count types in table
@@ -463,11 +463,11 @@ test.describe('Mixed Load Test - UI and API', () => {
         const authHelper = new AuthHelper(page);
 
         await authHelper.login();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Navigate to search and perform search
         await page.goto(`${BASE_URL}/core/ui/#/search`);
-        await page.waitForTimeout(1500);
+        await waitForUiStable(page);
 
         const searchInput = page.locator('input[placeholder*="検索"]').first();
         if (await searchInput.count() > 0) {
@@ -477,7 +477,7 @@ test.describe('Mixed Load Test - UI and API', () => {
         const searchButton = page.locator('button.search-button').first();
         if (await searchButton.count() > 0) {
           await searchButton.click();
-          await page.waitForTimeout(3000);
+          await waitForUiStable(page);
         }
 
         await context.close();
@@ -575,7 +575,7 @@ test.describe('Mixed Load Test - UI and API', () => {
           const page = await context.newPage();
           const authHelper = new AuthHelper(page);
           await authHelper.login();
-          await page.waitForTimeout(1500);
+          await waitForUiStable(page);
           await context.close();
           return true;
         } catch {

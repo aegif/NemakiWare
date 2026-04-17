@@ -108,7 +108,7 @@ test.describe('Version and Property History Consistency', () => {
     if (await checkoutButton.count() > 0) {
       await checkoutButton.click(isMobile ? { force: true } : {});
       console.log('Clicked checkout button');
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Wait for PWC indicator (作業中 tag)
       const pwcTag = page.locator('.ant-tag').filter({ hasText: '作業中' });
@@ -152,7 +152,7 @@ test.describe('Version and Property History Consistency', () => {
           const submitButton = checkinModal.locator('button[type="submit"], button:has-text("チェックイン")').first();
           if (await submitButton.count() > 0) {
             await submitButton.click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(3000);
+            await waitForUiStable(page);
             version2Label = '2.0';
             console.log(`Version 2.0 created`);
           }
@@ -186,7 +186,7 @@ test.describe('Version and Property History Consistency', () => {
     const checkoutButton = documentRow.locator('button').filter({ has: page.locator('span[role="img"][aria-label="edit"]') }).first();
     if (await checkoutButton.count() > 0) {
       await checkoutButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Check in with new content
       const checkinButton = page.locator('button').filter({ has: page.locator('span[role="img"][aria-label="check"]') }).first();
@@ -217,7 +217,7 @@ test.describe('Version and Property History Consistency', () => {
           const submitButton = checkinModal.locator('button[type="submit"], button:has-text("チェックイン")').first();
           if (await submitButton.count() > 0) {
             await submitButton.click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(3000);
+            await waitForUiStable(page);
             version3Label = '3.0';
             console.log(`Version 3.0 created`);
           }
@@ -308,7 +308,7 @@ test.describe('Version and Property History Consistency', () => {
         const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|削除/ }).first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
-          await page.waitForTimeout(3000);
+          await waitForUiStable(page);
           console.log('Latest version deleted');
         }
       } else {

@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect, Page } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
@@ -22,7 +23,7 @@ async function waitForUIStable(page: Page, options?: { timeout?: number }) {
   const notification = page.locator('.ant-message-notice');
   try {
     // Wait a bit for notification to appear first (it might be animating in)
-    await page.waitForTimeout(300);
+    await waitForRender(page);
     // Then wait for it to disappear
     await notification.waitFor({ state: 'hidden', timeout: 5000 });
   } catch {
@@ -30,7 +31,7 @@ async function waitForUIStable(page: Page, options?: { timeout?: number }) {
   }
 
   // Additional small wait for table stability
-  await page.waitForTimeout(500);
+  await waitForRender(page);
 }
 
 /**
@@ -94,7 +95,7 @@ async function navigateToFolderViaTable(page: Page, folderName: string, options?
       await waitForUIStable(page);
 
       // Additional wait for React state synchronization
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
       return;
     }
 
@@ -123,7 +124,7 @@ async function navigateToFolderViaTable(page: Page, folderName: string, options?
     } catch {
       // Tree might need refresh - wait and retry table
       console.log(`[NAV] Folder not found in tree, waiting for UI update...`);
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Retry table lookup
       const retryRow = page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).first();
@@ -146,7 +147,7 @@ async function navigateToFolderViaTable(page: Page, folderName: string, options?
         }
 
         await waitForUIStable(page);
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
         return;
       }
 
@@ -156,7 +157,7 @@ async function navigateToFolderViaTable(page: Page, folderName: string, options?
 
   // Two-click navigation: first click selects, second click navigates
   await folderNode.click();
-  await page.waitForTimeout(500);
+  await waitForRender(page);
   await folderNode.click();
 
   // CRITICAL FIX (2025-12-24): Wait for URL to change after tree navigation
@@ -174,7 +175,7 @@ async function navigateToFolderViaTable(page: Page, folderName: string, options?
   await waitForUIStable(page);
 
   // Additional wait for React state synchronization
-  await page.waitForTimeout(1000);
+  await waitForRender(page);
 }
 
 /**
@@ -209,7 +210,7 @@ async function createFolder(page: Page, folderName: string, isMobile: boolean): 
   }
 
   // Wait for modal content to fully render
-  await page.waitForTimeout(1000);
+  await waitForRender(page);
 
   // Find and fill the name input - be more specific
   const nameInput = modal.locator('input[placeholder*="フォルダ名"]').first();
@@ -306,7 +307,7 @@ async function createFolder(page: Page, folderName: string, isMobile: boolean): 
       console.log(`[FOLDER] Folder "${folderName}" visible in table: true (after ${Date.now() - startTime}ms)`);
       break;
     }
-    await page.waitForTimeout(500);
+    await waitForRender(page);
   }
 
   if (!folderInTable) {
@@ -317,7 +318,7 @@ async function createFolder(page: Page, folderName: string, isMobile: boolean): 
     console.log(`[FOLDER] Attempting page reload to force refresh...`);
     await page.reload();
     await page.waitForSelector('.ant-table', { timeout: 10000 }).catch(() => null);
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check again after reload
     folderInTable = await page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).isVisible().catch(() => false);
@@ -469,7 +470,7 @@ test.describe('Folder Hierarchy Operations', () => {
     // Navigate explicitly to root folder to ensure clean state
     await page.goto('http://localhost:8080/core/ui/#/documents');
     await page.waitForSelector('.ant-table-tbody', { timeout: 10000 });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
   });
 
   test.afterEach(async ({ page }) => {
@@ -596,7 +597,7 @@ test.describe('Folder Hierarchy Operations', () => {
     expect(folderCreated).toBe(true);
 
     // Wait for tree to update
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify folder appears in tree
     const folderNode = folderTree.locator('.ant-tree-title, .ant-tree-node-content-wrapper').filter({ hasText: folderName });
@@ -677,7 +678,7 @@ test.describe('Folder Hierarchy Operations', () => {
     // Verify in UI - navigate to the renamed folder's document viewer
     await page.goto(`http://localhost:8080/core/ui/index.html#/documents/${folderId}`);
     await page.waitForSelector('.ant-tabs-tab, .ant-card', { timeout: 15000 });
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // New name should be visible in the document viewer (title/breadcrumb/properties)
     const pageContent = await page.locator('.ant-card, .ant-page-header, [class*="documentViewer"]').first().textContent() || '';
@@ -740,7 +741,7 @@ test.describe('Folder Hierarchy Operations', () => {
     // Verify UI reflects the deletion — navigate to documents and confirm folder is gone
     await page.goto('http://localhost:8080/core/ui/index.html#/documents');
     await page.waitForSelector('.ant-table-tbody', { timeout: 15000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // The deleted folder should not appear anywhere in the table
     const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: folderName });

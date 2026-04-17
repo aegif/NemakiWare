@@ -581,7 +581,7 @@ test.describe('Office Document Preview', () => {
     // Navigate to document viewer
     await page.goto(`http://localhost:8080/core/ui/index.html#/documents/${docId}`);
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Check for tabs (document viewer should show tabs)
     const tabsContainer = page.locator('.ant-tabs-tab');
@@ -595,7 +595,7 @@ test.describe('Office Document Preview', () => {
     if (tabExists) {
       console.log('✓ Preview tab found in document viewer');
       await previewTab.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       const previewContent = page.locator('.react-pdf__Document, .ant-spin, [data-testid*="preview"], iframe');
       const contentExists = await previewContent.count() > 0;

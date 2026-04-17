@@ -228,7 +228,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
 
       // Navigate to protected route - should trigger auth check
       await page.goto('http://localhost:8080/core/ui/index.html#/documents');
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Check if token was cleared or login form is shown
       const tokenAfter = await page.evaluate(() => localStorage.getItem('nemakiware_auth'));
@@ -301,7 +301,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
       await authHelper.login();
 
       // Wait for protected content to load
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Verify protected content is visible (not login form)
       const hasLoginForm = await page.locator('input[placeholder*="ユーザー名"]').count() > 0;
@@ -322,7 +322,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
     test('should maintain authentication across page reload', async ({ page }) => {
       // Login first
       await authHelper.login();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Verify authenticated
       let hasProtectedContent = await page.locator('.ant-layout-content, .ant-menu').count() > 0;
@@ -335,7 +335,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
       // Reload the page
       console.log('Reloading page...');
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.waitForTimeout(5000);
+      await waitForUiStable(page, { timeout: 15000 });
 
       // Check localStorage after reload
       const tokenAfterReload = await page.evaluate(() => localStorage.getItem('nemakiware_auth'));
@@ -358,7 +358,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
     test('should maintain authentication across navigation between protected routes', async ({ page, browserName }) => {
       // Login
       await authHelper.login();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // MOBILE FIX: Close sidebar if needed
       const isMobile = testHelper.isMobile(browserName);
@@ -410,7 +410,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
 
       // Navigate to protected route
       await page.goto('http://localhost:8080/core/ui/index.html#/documents');
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Should gracefully handle and show login
       const hasLoginForm = await page.locator('input[placeholder*="ユーザー名"]').count() > 0;
@@ -438,7 +438,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
 
       // Navigate to protected route
       await page.goto('http://localhost:8080/core/ui/index.html#/documents');
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Should show login form
       const hasLoginForm = await page.locator('input[placeholder*="ユーザー名"]').count() > 0;
@@ -505,7 +505,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
         // Timeout is acceptable
       }
 
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Verify we're now authenticated
       const hasProtectedContent = await page.locator('.ant-layout-content, .ant-menu').count() > 0;
@@ -526,7 +526,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
     test('should display error boundary fallback on component error', async ({ page }) => {
       // Login first
       await authHelper.login();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Verify authenticated
       const hasProtectedContent = await page.locator('.ant-layout-content').count() > 0;
@@ -566,7 +566,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
     test('should handle 401 error pattern gracefully', async ({ page }) => {
       // Login first
       await authHelper.login();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Verify authenticated first
       const wasAuthenticated = await page.locator('.ant-layout-content, .ant-menu').count() > 0;
@@ -583,7 +583,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
       // Reload to force React to re-read auth state from localStorage
       // (React in-memory state persists until reload)
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Should either show login or handle gracefully
       const hasLoginForm = await page.locator('input[placeholder*="ユーザー名"]').count() > 0;

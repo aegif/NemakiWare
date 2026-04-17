@@ -70,7 +70,7 @@ async function openTestDocument(page: Page, objectId: string, documentName: stri
   await page.goto(`${BASE_URL}/core/ui/#/documents/${objectId}`);
   // CRITICAL FIX: DocumentViewer uses Card component with h2 for title, not ant-page-header
   await page.waitForSelector('.ant-card, .ant-descriptions, .ant-table', { timeout: 15000 });
-  await page.waitForTimeout(1000);
+  await waitForRender(page);
 
   // DocumentViewer renders document name in h2 element inside the Card header
   const headerTitle = page.locator('h2').filter({ hasText: documentName }).first();
@@ -84,7 +84,7 @@ async function openPropertiesTab(page: Page) {
   await test.step('wait for properties table', async () => {
     const propertyTable = page.locator('.ant-table').first();
     await expect(propertyTable).toBeVisible({ timeout: 15000 });
-    await page.waitForTimeout(500);
+    await waitForRender(page);
   });
 }
 
@@ -135,7 +135,7 @@ test.describe('Property Display Tests', () => {
   test('should display all metadata correctly in DocumentViewer upper section', async ({ page }) => {
     // Verify metadata Descriptions component is visible (DocumentViewer uses Ant Design Descriptions)
     // Wait for the DocumentViewer to fully load
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Ant Design Descriptions renders labels as spans with class ant-descriptions-item-label
     // or as th elements. The labels come from i18n: ID, タイプ, パス, 作成者, 更新者
@@ -311,7 +311,7 @@ test.describe('Property Display Tests', () => {
     const editButton = page.locator('button:has-text("編集")');
     await expect(editButton, 'Edit button should be present').toBeVisible();
     await editButton.click();
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Now in edit mode with form
     const propertyForm = page.locator('form');
@@ -333,7 +333,7 @@ test.describe('Property Display Tests', () => {
     const cancelButton = page.locator('button:has-text("キャンセル")');
     await expect(cancelButton, 'Cancel button should be visible in edit mode').toBeVisible();
     await cancelButton.click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Back to display mode
     await expect(propertyTable).toBeVisible();
@@ -346,7 +346,7 @@ test.describe('Property Display Tests', () => {
     const editButton = page.locator('button:has-text("編集")');
     await expect(editButton, 'Edit button should be present').toBeVisible();
     await editButton.click();
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Verify form is in edit mode
     const propertyForm = page.locator('form');

@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -78,7 +79,7 @@ test.describe('Back to Current Folder Navigation', () => {
     console.log(`Clicking on document: ${docName}`);
 
     await docNameButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Step 4: Verify we're in DocumentViewer with correct folderId
     const viewerUrl = page.url();
@@ -100,7 +101,7 @@ test.describe('Back to Current Folder Navigation', () => {
 
     console.log('Clicking back button...');
     await backButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Step 6: Verify we returned to the correct folder
     const finalUrl = page.url();
@@ -147,7 +148,7 @@ test.describe('Back to Current Folder Navigation', () => {
 
       // Open first document
       await rootDocs.first().locator('button.ant-btn-link').first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       let currentUrl = page.url();
       console.log(`After opening first doc: ${currentUrl}`);
@@ -156,7 +157,7 @@ test.describe('Back to Current Folder Navigation', () => {
       const backButton = page.locator('button').filter({ hasText: '戻る' });
       await expect(backButton).toBeVisible({ timeout: 5000 });
       await backButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       currentUrl = page.url();
       console.log(`After back: ${currentUrl}`);
@@ -182,7 +183,7 @@ test.describe('Back to Current Folder Navigation', () => {
     for (let i = 0; i < Math.min(await folderRows.count(), 5); i++) {
       const folder = folderRows.nth(i);
       await folder.locator('button.ant-btn-link').first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       const url = page.url();
       const folderId = url.match(/folderId=([a-f0-9]+)/)?.[1];
@@ -200,7 +201,7 @@ test.describe('Back to Current Folder Navigation', () => {
 
       // Go back to root
       await page.goto('http://localhost:8080/core/ui/index.html#/documents');
-      await page.waitForTimeout(1500);
+      await waitForUiStable(page);
     }
 
     if (!foundFolder) {
@@ -213,7 +214,7 @@ test.describe('Back to Current Folder Navigation', () => {
       hasNot: page.locator('.anticon-folder')
     });
     await docs.first().locator('button.ant-btn-link').first().click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     let currentUrl = page.url();
     let currentFolderId = currentUrl.match(/folderId=([a-f0-9]+)/)?.[1];
@@ -223,7 +224,7 @@ test.describe('Back to Current Folder Navigation', () => {
     // Go back
     const backButton = page.locator('button').filter({ hasText: '戻る' });
     await backButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     currentUrl = page.url();
     currentFolderId = currentUrl.match(/folderId=([a-f0-9]+)/)?.[1];
@@ -237,7 +238,7 @@ test.describe('Back to Current Folder Navigation', () => {
 
     if (await docs2.count() >= 2) {
       await docs2.nth(1).locator('button.ant-btn-link').first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       currentUrl = page.url();
       currentFolderId = currentUrl.match(/folderId=([a-f0-9]+)/)?.[1];
@@ -246,7 +247,7 @@ test.describe('Back to Current Folder Navigation', () => {
 
       // Go back again
       await page.locator('button').filter({ hasText: '戻る' }).click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       currentUrl = page.url();
       currentFolderId = currentUrl.match(/folderId=([a-f0-9]+)/)?.[1];

@@ -260,7 +260,7 @@ test.describe('User Management CRUD Operations', () => {
 
     // Reload page to ensure table is refreshed
     await page.reload();
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Verify user appears in list (use search to avoid pagination issues)
     console.log(`Create test: Verifying user ${testUsername} appears in table`);
@@ -304,7 +304,7 @@ test.describe('User Management CRUD Operations', () => {
         }
       ).catch(() => console.log('API create user fallback - may already exist'));
       await page.reload();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
       // Search again after reload
       const searchInput2 = page.locator('input[placeholder*="検索"], input[placeholder*="search"], input[placeholder*="Search"], input[placeholder*="ユーザー"]');
       if (await searchInput2.isVisible().catch(() => false)) {
@@ -472,7 +472,7 @@ test.describe('User Management CRUD Operations', () => {
 
     // Wait for deletion to complete
     console.log(`Delete test: Waiting for deletion to complete...`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // API fallback: ensure user is deleted via REST API if UI delete didn't work
     try {
@@ -493,7 +493,7 @@ test.describe('User Management CRUD Operations', () => {
 
     // Reload page to verify
     await page.reload();
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
     const searchInput2 = page.locator('input[placeholder*="検索"], input[placeholder*="search"], input[placeholder*="Search"], input[placeholder*="ユーザー"]');
     if (await searchInput2.isVisible().catch(() => false)) {
       await searchInput2.fill(testUsername);

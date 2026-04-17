@@ -166,7 +166,7 @@ test.describe('Office Document Preview', () => {
       if (await uploadSubmitButton.count() > 0) {
         await uploadSubmitButton.click(isMobile ? { force: true } : {});
         console.log('Clicked upload submit button');
-        await page.waitForTimeout(5000); // Wait for upload to complete
+        await waitForUiStable(page, { timeout: 15000 }); // Wait for upload to complete
       }
 
       // Close modal if it's still open
@@ -211,7 +211,7 @@ test.describe('Office Document Preview', () => {
       const loadingSpinner = page.locator('.ant-spin');
       if (await loadingSpinner.count() > 0 && await loadingSpinner.isVisible()) {
         console.log('Waiting for preview to load...');
-        await page.waitForTimeout(5000);
+        await waitForUiStable(page, { timeout: 15000 });
       }
 
       // Check if PDF preview is shown or retry button
@@ -326,7 +326,7 @@ test.describe('Office Document Preview', () => {
       if (await uploadSubmitButton.count() > 0) {
         await uploadSubmitButton.click(isMobile ? { force: true } : {});
         console.log('Clicked upload submit button for Japanese file');
-        await page.waitForTimeout(5000);
+        await waitForUiStable(page, { timeout: 15000 });
       }
 
       // Close modal if still open
@@ -474,7 +474,7 @@ test.describe('Office Document Preview', () => {
           // Wait for loading to complete
           if (await loadingSpinner.count() > 0 && await loadingSpinner.isVisible()) {
             console.log('Waiting for preview to load...');
-            await page.waitForTimeout(5000);
+            await waitForUiStable(page, { timeout: 15000 });
           }
 
           if (await pdfDocument.count() > 0 && await pdfDocument.first().isVisible()) {

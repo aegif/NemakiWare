@@ -213,13 +213,13 @@ test.describe('Document Properties Edit and Persistence', () => {
         'Test content for property editing'
       );
 
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const submitBtn = page.locator('.ant-modal button[type="submit"]');
       await submitBtn.click();
 
       await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Verify document appears
       const uploadedDoc = page.locator(`text=${testDocName}`);
@@ -242,7 +242,7 @@ test.describe('Document Properties Edit and Persistence', () => {
   test('should open and edit document properties', async ({ page, browserName }) => {
     const isMobile = testHelper.isMobile(browserName);
 
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find the test document row
     const docRow = page.locator('tr').filter({ hasText: testDocName });
@@ -256,7 +256,7 @@ test.describe('Document Properties Edit and Persistence', () => {
     await documentNameLink.click({ force: true });
 
     // Wait for navigation to detail page
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Look for the "編集" button in PropertyEditor (NOT "編集管理")
     // Button is in PropertyEditor.tsx line 311: <Button type="primary" icon={<EditOutlined />}>編集</Button>
@@ -270,7 +270,7 @@ test.describe('Document Properties Edit and Persistence', () => {
 
     // Click edit button to enter edit mode
     await editButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // In edit mode, look for editable form fields
     // PropertyEditor renders form fields with antd Form.Item
@@ -308,20 +308,20 @@ test.describe('Document Properties Edit and Persistence', () => {
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     const userManagementItem = page.locator('.ant-menu-item:has-text("ユーザー管理")');
     if (await userManagementItem.count() > 0) {
       await userManagementItem.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     // Navigate back to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Find the test document
@@ -335,7 +335,7 @@ test.describe('Document Properties Edit and Persistence', () => {
 
       if (await detailButton.count() > 0) {
         await detailButton.first().click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Check if updated description is visible
         const updatedDescription = page.locator('text=Updated description for testing persistence');
@@ -349,7 +349,7 @@ test.describe('Document Properties Edit and Persistence', () => {
           });
           if (await editButton.count() > 0) {
             await editButton.first().click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(1000);
+            await waitForRender(page);
 
             const descInput = page.locator('textarea[id*="description"]');
             if (await descInput.count() > 0) {

@@ -221,7 +221,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
         // Close dropdown by clicking modal title (Escape would close the modal)
         await page.locator('.ant-modal-title').click();
-        await page.waitForTimeout(300);
+        await waitForRender(page);
 
         // Submit form - try multiple selectors
         const submitBtn = page.locator('.ant-modal-content button[type="submit"], .ant-modal-content .ant-btn-primary').first();
@@ -346,7 +346,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
       // Close modal
       await page.keyboard.press('Escape');
-      await page.waitForTimeout(300);
+      await waitForRender(page);
       await page.locator('.ant-modal-content button:has-text("キャンセル")').click().catch(() => {});
     });
   });
@@ -486,7 +486,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         const groupAOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: groupAId });
         if (await groupAOption.count() > 0) {
           await groupAOption.click();
-          await page.waitForTimeout(300);
+          await waitForRender(page);
         }
 
         // Close dropdown by clicking title
@@ -575,7 +575,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
       // Close dropdown
       await page.keyboard.press('Escape');
-      await page.waitForTimeout(300);
+      await waitForRender(page);
 
       // Close modal
       await page.locator('.ant-modal-content button:has-text("キャンセル")').click();
@@ -640,7 +640,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
       // Close dropdown and modal
       await page.keyboard.press('Escape');
-      await page.waitForTimeout(300);
+      await waitForRender(page);
 
       // Try to close modal, ignore if already closed
       try {

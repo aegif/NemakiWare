@@ -147,7 +147,7 @@ test.describe('404 Error Handling Verification', () => {
 
     // Navigate to a non-existent document ID within the React UI
     await page.goto('http://localhost:8080/core/ui/index.html#/documents/nonexistent-id-12345');
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     const currentUrl = page.url();
     console.log('Current URL after navigating to non-existent document:', currentUrl);
@@ -187,7 +187,7 @@ test.describe('404 Error Handling Verification', () => {
 
     // Force reload to apply token removal (SPA retains in-memory auth state)
     await page.reload({ waitUntil: 'networkidle' });
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Verify login form is displayed (the SPA should show login when auth is missing)
     const currentUrl = page.url();
@@ -217,7 +217,7 @@ test.describe('404 Error Handling Verification', () => {
   test('should show login page without error on initial 404', async ({ page }) => {
     // Try to access non-existent URL directly (without logging in first)
     await page.goto('http://localhost:8080/core/ui/nonexistent-page');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // React Router should handle this gracefully
     // Either show login page or show a user-friendly error

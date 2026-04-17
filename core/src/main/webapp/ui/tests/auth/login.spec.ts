@@ -205,7 +205,7 @@ test.describe('NemakiWare Authentication', () => {
       if (await menuToggle.count() > 0) {
         try {
           await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         } catch (error) {
           // Continue even if sidebar close fails
         }
@@ -255,7 +255,7 @@ test.describe('NemakiWare Authentication', () => {
         const option = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'bedroom' }).first();
         await option.waitFor({ state: 'attached', timeout: 3000 });
         await option.scrollIntoViewIfNeeded();
-        await page.waitForTimeout(300);
+        await waitForRender(page);
         await option.click();
       }
 
@@ -264,7 +264,7 @@ test.describe('NemakiWare Authentication', () => {
       await loginButton.click();
 
       // Wait for potential error message
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Verify we're still on login page
       await expect(page.locator('input[type="password"]')).toBeVisible();
@@ -313,7 +313,7 @@ test.describe('NemakiWare Authentication', () => {
       if (await menuToggle.count() > 0) {
         try {
           await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500);
+          await waitForRender(page);
         } catch (error) {
           // Continue even if sidebar close fails
         }
@@ -347,7 +347,7 @@ test.describe('NemakiWare Authentication', () => {
     await page.goto('/core/ui/index.html#/documents');
 
     // Should redirect to login or show login form
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const onLoginPage = await page.locator('input[type="password"]').isVisible();
     const redirectedToLogin = page.url().includes('login') || page.url().endsWith('/ui/');

@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -41,7 +42,7 @@ test.describe('Integration Settings - Page Rendering', () => {
 
   test('should display integration settings page for admin', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     const title = page.locator('h3').filter({
       hasText: /連携設定|Integration Settings/i
@@ -51,7 +52,7 @@ test.describe('Integration Settings - Page Rendering', () => {
 
   test('should display all fifteen tabs', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Use role=tab to count all tabs including those in overflow dropdown
     const tabs = page.locator('[role="tab"]');
@@ -87,7 +88,7 @@ test.describe('Integration Settings - Page Rendering', () => {
 
   test('should display OIDC tab with form fields', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // OIDC tab should be active by default
     // Should have form fields
@@ -98,7 +99,7 @@ test.describe('Integration Settings - Page Rendering', () => {
 
     // Scroll to bottom to ensure buttons are visible
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Should have a Save button (Ant Design may insert space: 保 存)
     const saveButton = page.locator('button').filter({ hasText: /保\s*存|Save/i });
@@ -111,12 +112,12 @@ test.describe('Integration Settings - Page Rendering', () => {
 
   test('should switch between tabs', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Click Google Auth tab (exclude "Google Dataplex")
     const googleTab = page.locator('.ant-tabs-tab').filter({ hasText: /Google(?!.*Dataplex)/i });
     await googleTab.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Should have Google tab panel visible with a form item
     const googlePanel = page.locator('.ant-tabs-tabpane-active');
@@ -128,7 +129,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     // Click Microsoft tab (exclude "Microsoft Purview")
     const msTab = page.locator('.ant-tabs-tab').filter({ hasText: /Microsoft(?!.*Purview)/i });
     await msTab.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Should have Microsoft tab with Tenant ID field
     const msPanel = page.locator('.ant-tabs-tabpane-active');
@@ -141,7 +142,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     // Click SAML tab
     const samlTab = page.locator('.ant-tabs-tab').filter({ hasText: /SAML/i });
     await samlTab.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Should have SAML tab with form items
     const samlPanel = page.locator('.ant-tabs-tabpane-active');
@@ -154,7 +155,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     // Click Purview tab
     const purviewTab = page.locator('.ant-tabs-tab').filter({ hasText: /Purview/i });
     await purviewTab.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Should have Purview tab with form items
     const purviewPanel = page.locator('.ant-tabs-tabpane-active');
@@ -165,7 +166,7 @@ test.describe('Integration Settings - Page Rendering', () => {
 
     // Should have Test Connection button
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(500);
+    await waitForRender(page);
     const testButton = purviewPanel.locator('button').filter({ hasText: /接続テスト|Test\s*Connection/i });
     await expect(testButton).toBeVisible({ timeout: 10000 });
     console.log('Purview tab loaded with Test Connection button');
@@ -173,7 +174,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     // Click Atlas tab
     const atlasTab = page.locator('.ant-tabs-tab').filter({ hasText: /Apache Atlas/i });
     await atlasTab.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const atlasPanel = page.locator('.ant-tabs-tabpane-active');
     const atlasFormItems = atlasPanel.locator('.ant-form-item');
@@ -185,7 +186,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     // Click Dataplex tab
     const dataplexTab = page.locator('.ant-tabs-tab').filter({ hasText: /Google Dataplex/i });
     await dataplexTab.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const dataplexPanel = page.locator('.ant-tabs-tabpane-active');
     const dataplexFormItems = dataplexPanel.locator('.ant-form-item');
@@ -197,7 +198,7 @@ test.describe('Integration Settings - Page Rendering', () => {
 
   test('should display source tags', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // OIDC settings are set via system_property in Docker
     const tags = page.locator('.ant-tag');
@@ -208,7 +209,7 @@ test.describe('Integration Settings - Page Rendering', () => {
 
   test('should display override warning for system property settings', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // OIDC settings are overridden by system properties in Docker env
     const warnings = page.locator('.ant-alert-warning');
@@ -235,7 +236,7 @@ test.describe('Integration Settings - Navigation', () => {
     });
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
 
     // Look for integration settings menu item
@@ -245,7 +246,7 @@ test.describe('Integration Settings - Navigation', () => {
 
     if (await menuItem.count() > 0) {
       await menuItem.click();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       expect(page.url()).toContain('integration-settings');
       console.log('Integration Settings menu item works correctly');

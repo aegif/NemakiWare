@@ -82,10 +82,10 @@ test.describe('Password Change', () => {
     await loginAsUser(page, 'admin', 'admin');
     await page.goto(`${UI_URL}/#/users`);
     // Wait for page to stabilize - re-navigate if redirected (session timing issue)
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
     if (!page.url().includes('/users')) {
       await page.goto(`${UI_URL}/#/users`);
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
     await page.waitForSelector('.ant-table', { timeout: 15000 });
 
@@ -94,7 +94,7 @@ test.describe('Password Change', () => {
     if (await searchInput.count() > 0) {
       await searchInput.first().fill(TEST_USER_ID);
       await searchInput.first().press('Enter');
-      await page.waitForTimeout(1500);
+      await waitForUiStable(page);
     }
 
     // Find test user row and click edit (retry search if CouchDB view not yet updated)
@@ -102,12 +102,12 @@ test.describe('Password Change', () => {
     for (let retry = 0; retry < 3; retry++) {
       if (await testUserRow.isVisible()) break;
       if (retry < 2) {
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
         if (await searchInput.count() > 0) {
           await searchInput.first().clear();
           await searchInput.first().fill(TEST_USER_ID);
           await searchInput.first().press('Enter');
-          await page.waitForTimeout(1500);
+          await waitForUiStable(page);
         }
       }
     }
@@ -162,12 +162,12 @@ test.describe('Password Change', () => {
     await loginAsUser(page, TEST_USER_ID, currentTestUserPassword);
 
     // Wait for auth state to fully load before navigating
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
     // Navigate to account settings
     await page.goto(`${UI_URL}/#/account`);
     // Retry navigation if redirected (auth state race condition)
     for (let retry = 0; retry < 3; retry++) {
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       if (page.url().includes('/account')) break;
       console.log(`password-change: Retrying navigation to /account (attempt ${retry + 2})`);
       await page.goto(`${UI_URL}/#/account`);
@@ -177,7 +177,7 @@ test.describe('Password Change', () => {
     const passwordTab = page.locator('.ant-tabs-tab').filter({ hasText: /パスワード|Password/i });
     if (await passwordTab.count() > 0) {
       await passwordTab.first().click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
 
     // Should see the password change form (button or heading)

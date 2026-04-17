@@ -334,7 +334,7 @@ test.describe('Internationalization Tests', () => {
 
     const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary');
     await submitButton.click({ force: true });
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Verify Japanese folder appears
     const japaneseFolderRow = page.locator('.ant-table-tbody tr').filter({ hasText: japaneseFolderName });
@@ -348,7 +348,7 @@ test.describe('Internationalization Tests', () => {
       // Fallback: click the name cell text
       await japaneseFolderRow.locator(`text=${japaneseFolderName}`).click({ force: true });
     }
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Create Chinese subfolder inside Japanese folder
     // First try UI, fall back to API if modal doesn't open
@@ -362,7 +362,7 @@ test.describe('Internationalization Tests', () => {
         await nameInput2.fill(chineseFolderName);
         const submitButton2 = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary');
         await submitButton2.click({ force: true });
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
         chineseSubfolderCreated = true;
       } catch {
         console.log('Folder creation modal did not open, using API fallback');
@@ -395,7 +395,7 @@ test.describe('Internationalization Tests', () => {
         });
       }
       await page.reload();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Verify breadcrumb shows Japanese folder name correctly (if still in subfolder)
@@ -416,7 +416,7 @@ test.describe('Internationalization Tests', () => {
       const jpFolder = page.locator('.ant-table-tbody tr a').filter({ hasText: '日本語' }).first();
       if (await jpFolder.isVisible().catch(() => false)) {
         await jpFolder.click({ force: true });
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
         chineseFolderRow = page.locator('.ant-table-tbody tr').filter({ hasText: chineseFolderName });
       }
     }
@@ -500,7 +500,7 @@ test.describe('Internationalization Tests', () => {
         });
       }
       await page.reload();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
     await waitForUiStable(page);
 
@@ -637,7 +637,7 @@ test.describe('Internationalization Tests', () => {
     }
 
     // Wait for Solr indexing
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Wait for all uploads to complete
     await waitForUiStable(page);
@@ -658,7 +658,7 @@ test.describe('Internationalization Tests', () => {
 
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Verify Japanese file appears in search results
       const japaneseResult = page.locator('.ant-table-tbody tr').filter({ hasText: '検索テスト' });
@@ -670,7 +670,7 @@ test.describe('Internationalization Tests', () => {
     } else {
       // If no search button, pressing Enter might trigger search
       await searchInput.press('Enter');
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Clear search

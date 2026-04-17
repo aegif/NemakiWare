@@ -523,7 +523,7 @@ test.describe('Advanced Search', () => {
     }
 
     // Wait for search to complete
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Verify the search input is now empty (cleared after search)
     const inputValueAfter = await searchInput.first().inputValue();
@@ -626,7 +626,7 @@ test.describe('Advanced Search', () => {
     }
 
     // Wait for initial search results (Solr may need time for indexing)
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Verify results table appears
     const resultsTable = page.locator('.ant-table, .search-results');
@@ -648,7 +648,7 @@ test.describe('Advanced Search', () => {
       } else {
         await searchInput.first().press('Enter');
       }
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Assert PDF is found in search results
@@ -701,7 +701,7 @@ test.describe('Advanced Search', () => {
       await searchInput.first().press('Enter');
     }
 
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Verify no results or empty state message
     const noResultsMessage = page.locator('.ant-empty, .no-results, :has-text("該当なし"), :has-text("結果なし")');
@@ -754,7 +754,7 @@ test.describe('Advanced Search', () => {
     }
 
     // Wait for initial search results (Solr may need time for indexing)
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Verify results table appears
     const resultsTable = page.locator('.ant-table, .search-results');
@@ -774,7 +774,7 @@ test.describe('Advanced Search', () => {
       } else {
         await searchInput.first().press('Enter');
       }
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Assert PDF is found
@@ -818,7 +818,7 @@ test.describe('Advanced Search', () => {
 
       // Click on PDF result row
       await pdfResult.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Check if PDF preview modal opened
       const pdfPreviewModal = page.locator('.ant-modal:visible, [role="dialog"]:visible');
@@ -909,7 +909,7 @@ test.describe('Advanced Search', () => {
     }
 
     // Wait for initial search results (Solr may need time for indexing)
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Verify results table appears
     const resultsTable = page.locator('.ant-table, .search-results');
@@ -931,7 +931,7 @@ test.describe('Advanced Search', () => {
       } else {
         await searchInput.first().press('Enter');
       }
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       pdfResult = page.locator('tr').filter({ hasText: 'CMIS-v1.1-Specification-Sample.pdf' });
     }
@@ -946,7 +946,7 @@ test.describe('Advanced Search', () => {
       } else {
         await searchInput.first().press('Enter');
       }
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       pdfResult = page.locator('tr').filter({ hasText: 'CMIS-v1.1-Specification-Sample.pdf' });
     }
@@ -1091,7 +1091,7 @@ test.describe('Advanced Search', () => {
     }
 
     // Wait for search results
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Check the executed CMIS query display
     const queryDisplay = page.locator(':has-text("実行したCMISクエリ")');
@@ -1191,7 +1191,7 @@ test.describe('Advanced Search', () => {
     }
 
     // Wait for search results
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Check the executed CMIS query display
     const queryDisplay = page.locator(':has-text("実行したCMISクエリ")');
@@ -1273,7 +1273,7 @@ test.describe('Advanced Search', () => {
       }
 
       // Wait for search results to load
-      await page.waitForTimeout(5000);
+      await waitForUiStable(page, { timeout: 15000 });
 
       const count = await japanesePdfLocator.count();
       if (count > 0) {
@@ -1309,7 +1309,7 @@ test.describe('Advanced Search', () => {
       } else {
         await searchInput.first().press('Enter');
       }
-      await page.waitForTimeout(5000);
+      await waitForUiStable(page, { timeout: 15000 });
       const retryCount = await japanesePdfLocator.count();
       if (retryCount > 0) {
         console.log(`✅ Found Japanese PDF on retry after Solr indexing delay`);

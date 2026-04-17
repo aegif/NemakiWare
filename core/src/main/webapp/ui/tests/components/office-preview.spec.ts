@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect, Page } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -43,7 +44,7 @@ test.describe('Office Preview Component', () => {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
       if (await menuToggle.count() > 0) {
         await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
     }
 
@@ -58,7 +59,7 @@ test.describe('Office Preview Component', () => {
   test('should display preview tab for documents', async ({ page }) => {
     // Navigate to documents list
     await page.goto('http://localhost:8080/core/ui/#/documents');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check if document table exists
     const documentTable = page.locator('.ant-table-tbody');
@@ -69,7 +70,7 @@ test.describe('Office Preview Component', () => {
       const firstRow = page.locator('.ant-table-tbody tr').first();
       if (await firstRow.count() > 0) {
         await firstRow.click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Check if preview tab exists
         const previewTab = page.locator('.ant-tabs-tab:has-text("プレビュー"), .ant-tabs-tab:has-text("Preview")');
@@ -88,7 +89,7 @@ test.describe('Office Preview Component', () => {
 
   test('should handle document selection and show properties', async ({ page }) => {
     await page.goto('http://localhost:8080/core/ui/#/documents');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check for document table
     const tableBody = page.locator('.ant-table-tbody');
@@ -99,7 +100,7 @@ test.describe('Office Preview Component', () => {
       if (rowCount > 0) {
         // Click on first document
         await rows.first().click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Check if document details panel appears
         const detailsPanel = page.locator('.ant-card, .ant-drawer, [class*="detail"], [class*="preview"]');
@@ -114,7 +115,7 @@ test.describe('Office Preview Component', () => {
   test('should have preview component structure', async ({ page }) => {
     // This test verifies the preview component is properly integrated
     await page.goto('http://localhost:8080/core/ui/#/documents');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Look for any preview-related elements in the DOM
     const previewElements = await page.locator('[class*="preview"], [class*="Preview"]').count();
@@ -149,7 +150,7 @@ test.describe('Office Preview - File Type Support', () => {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
       if (await menuToggle.count() > 0) {
         await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
     }
 
@@ -163,7 +164,7 @@ test.describe('Office Preview - File Type Support', () => {
   test('should recognize supported office file types', async ({ page }) => {
     // Navigate to documents
     await page.goto('http://localhost:8080/core/ui/#/documents');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check if there are documents with office file extensions
     const tableBody = page.locator('.ant-table-tbody');
@@ -190,7 +191,7 @@ test.describe('Office Preview - File Type Support', () => {
 
   test('should display preview for PDF files', async ({ page }) => {
     await page.goto('http://localhost:8080/core/ui/#/documents');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check for PDF files in the document list
     const pageContent = await page.content();
@@ -201,7 +202,7 @@ test.describe('Office Preview - File Type Support', () => {
       const pdfRow = page.locator('.ant-table-tbody tr:has-text(".pdf")').first();
       if (await pdfRow.count() > 0) {
         await pdfRow.click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Check for PDF preview elements
         const pdfPreview = page.locator('canvas, [class*="pdf"], [class*="PDF"], iframe[src*="pdf"]');
@@ -235,7 +236,7 @@ test.describe('Office Preview - Error Handling', () => {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
       if (await menuToggle.count() > 0) {
         await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
     }
 
@@ -249,7 +250,7 @@ test.describe('Office Preview - Error Handling', () => {
   test('should handle missing document gracefully', async ({ page }) => {
     // Try to access a non-existent document preview
     await page.goto('http://localhost:8080/core/ui/#/documents?preview=non-existent-id');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Page should not crash - either show error or redirect
     const url = page.url();
@@ -264,14 +265,14 @@ test.describe('Office Preview - Error Handling', () => {
   test('should handle preview service unavailable', async ({ page }) => {
     // Navigate to documents and select one
     await page.goto('http://localhost:8080/core/ui/#/documents');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const tableBody = page.locator('.ant-table-tbody');
     if (await tableBody.count() > 0) {
       const rows = page.locator('.ant-table-tbody tr');
       if (await rows.count() > 0) {
         await rows.first().click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Check if there's a preview error message (if rendition service is down)
         const errorMessages = page.locator('.ant-message-error, .ant-alert-error, .ant-empty');
@@ -345,7 +346,7 @@ test.describe('Office Preview - Rendition Integration', () => {
   test('should verify preview component receives rendition data', async ({ page }) => {
     // Navigate to documents
     await page.goto('http://localhost:8080/core/ui/#/documents');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Monitor network requests for rendition API calls
     const renditionRequests: string[] = [];
@@ -361,7 +362,7 @@ test.describe('Office Preview - Rendition Integration', () => {
       const rows = page.locator('.ant-table-tbody tr');
       if (await rows.count() > 0) {
         await rows.first().click();
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
 
         // Log any rendition requests made
         if (renditionRequests.length > 0) {

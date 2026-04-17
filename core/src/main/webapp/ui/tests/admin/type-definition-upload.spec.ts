@@ -143,7 +143,7 @@ async function waitForTableLoad(page: any, timeout: number = 30000) {
       }
 
       // Wait before next check
-      await page.waitForTimeout(300);
+      await waitForRender(page);
     }
 
     console.warn(`Table did not stabilize within ${timeout}ms timeout`);
@@ -346,7 +346,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     // Check if upload was successful - if not, skip remaining assertions
     if (!successElement) {
       // Try alternative detection: check if table has the new type
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
       const typeInTable = await page.locator(`tr:has-text("${testTypeId}")`).count();
       if (typeInTable > 0) {
         console.log('✅ Type found in table (message may have been missed)');
@@ -426,7 +426,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     const conflictModal = page.locator('.ant-modal:has-text("型定義の競合確認")');
 
     // Wait for either conflict modal or success message
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
     const conflictModalVisible = await conflictModal.isVisible().catch(() => false);
 
     if (!conflictModalVisible) {
@@ -692,7 +692,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     const editConflictModal = page.locator('.ant-modal:has-text("型定義の競合確認（編集）")');
 
     // Wait and check if modal appears
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
     const editConflictModalVisible = await editConflictModal.isVisible().catch(() => false);
 
     if (!editConflictModalVisible) {

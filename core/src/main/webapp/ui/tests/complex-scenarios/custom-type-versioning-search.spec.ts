@@ -352,7 +352,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     console.log('Submitted type creation form');
 
     // Wait for modal to close or success message
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     const successMessage = page.locator('.ant-message-success');
     if (await successMessage.count() > 0) {
@@ -461,7 +461,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     }
 
     // Wait for document to appear in table
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     const docExists = await documentRow.count() > 0;
@@ -526,7 +526,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     const searchButton = page.locator('button.search-button, button:has-text("検索")').first();
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Verify search results
@@ -591,7 +591,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     }
 
     // Wait for Solr indexing
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Navigate to search and verify old value no longer finds document
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
@@ -606,7 +606,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
         const searchButton = page.locator('button.search-button, button:has-text("検索")').first();
         if (await searchButton.count() > 0) {
           await searchButton.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(3000);
+          await waitForUiStable(page);
         }
 
         // Check if document is NOT in results (because value was updated)
@@ -644,7 +644,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
       console.log('Found checkout button, clicking...');
       await checkoutButton.click({ force: true });
       console.log('Clicked checkout button');
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
       await page.waitForSelector('.ant-message-success', { timeout: 10000 }).catch(() => {
         console.log('No success message appeared');
       });
@@ -675,7 +675,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
       await waitForUiStable(page);
       // Refresh page to get updated state
       await page.reload();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       const updatedDocumentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
 
@@ -704,7 +704,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
           const submitButton = checkinModal.locator('button[type="submit"], button:has-text("チェックイン"), .ant-modal-footer button.ant-btn-primary').first();
           if (await submitButton.count() > 0) {
             await submitButton.click({ force: true });
-            await page.waitForTimeout(3000);
+            await waitForUiStable(page);
             console.log('Check-in submitted');
           }
         } else {
@@ -718,7 +718,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     }
 
     // Wait for Solr indexing
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Dismiss any remaining modals before navigating
     const remainingModal = page.locator('.ant-modal-wrap:visible');
@@ -741,7 +741,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
         const searchButton = page.locator('button.search-button, button:has-text("検索")').first();
         if (await searchButton.count() > 0) {
           await searchButton.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(3000);
+          await waitForUiStable(page);
         }
 
         const documentInResults = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName });
@@ -788,7 +788,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
         const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|削除/ }).first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
-          await page.waitForTimeout(3000);
+          await waitForUiStable(page);
           console.log('Deleted latest version');
         }
       }
@@ -797,7 +797,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     }
 
     // Wait for Solr indexing
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Verify search behavior after version deletion
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
@@ -813,7 +813,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
         const searchButton = page.locator('button.search-button, button:has-text("検索")').first();
         if (await searchButton.count() > 0) {
           await searchButton.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(3000);
+          await waitForUiStable(page);
         }
 
         const documentInResults = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName });

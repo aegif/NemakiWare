@@ -184,7 +184,7 @@ test.describe('Solr Indexing Regression Tests', () => {
       }
 
       console.log(`  Attempt ${attempt + 1}: not found yet, waiting...`);
-      await page.waitForTimeout(5000);
+      await waitForUiStable(page, { timeout: 15000 });
     }
 
     // Also verify via UI search
@@ -200,7 +200,7 @@ test.describe('Solr Indexing Regression Tests', () => {
       } else {
         await searchInput.press('Enter');
       }
-      await page.waitForTimeout(5000);
+      await waitForUiStable(page, { timeout: 15000 });
 
       const results = page.locator('.ant-table tbody tr');
       const count = await results.count();
@@ -235,7 +235,7 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     // Navigate to documents page
     await page.goto('http://localhost:8080/core/ui/#/documents');
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Create a unique test file content
     const uniqueContent = `TestContent_${uniqueId}`;
@@ -265,7 +265,7 @@ test.describe('Solr Indexing Regression Tests', () => {
       buffer: Buffer.from(uniqueContent)
     });
 
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
     console.log(`✅ Uploaded file: ${uniqueFileName}`);
 
     // Close any modal dialogs that might be open after upload
@@ -306,7 +306,7 @@ test.describe('Solr Indexing Regression Tests', () => {
       await searchInput.press('Enter');
     }
 
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Verify the document is found
     const resultsTable = page.locator('.ant-table tbody tr');
@@ -322,7 +322,7 @@ test.describe('Solr Indexing Regression Tests', () => {
       } else {
         await searchInput.press('Enter');
       }
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       resultCount = await resultsTable.count();
     }
@@ -369,7 +369,7 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     // Navigate to documents page
     await page.goto('http://localhost:8080/core/ui/#/documents');
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Create a test document to delete
     const uniqueFileName = `delete-test-${uniqueId}.txt`;
@@ -392,7 +392,7 @@ test.describe('Solr Indexing Regression Tests', () => {
         buffer: Buffer.from(uniqueContent)
       });
 
-      await page.waitForTimeout(5000);
+      await waitForUiStable(page, { timeout: 15000 });
       console.log(`✅ Created test file: ${uniqueFileName}`);
 
       // Close any modal dialogs that might be open after upload
@@ -429,7 +429,7 @@ test.describe('Solr Indexing Regression Tests', () => {
       await searchInput.press('Enter');
     }
 
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     const resultsBeforeDelete = page.locator('.ant-table tbody tr');
     let countBeforeDelete = await resultsBeforeDelete.count();
@@ -443,7 +443,7 @@ test.describe('Solr Indexing Regression Tests', () => {
       } else {
         await searchInput.press('Enter');
       }
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
       countBeforeDelete = await resultsBeforeDelete.count();
     }
 
@@ -464,7 +464,7 @@ test.describe('Solr Indexing Regression Tests', () => {
         const confirmButton = page.locator('.ant-modal button:has-text("OK"), .ant-modal button:has-text("削除")').first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
-          await page.waitForTimeout(3000);
+          await waitForUiStable(page);
           console.log('✅ Test file deleted');
         }
       }
@@ -481,7 +481,7 @@ test.describe('Solr Indexing Regression Tests', () => {
       await searchInput.press('Enter');
     }
 
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     const resultsAfterDelete = page.locator('.ant-table tbody tr').filter({ hasText: uniqueFileName });
     const countAfterDelete = await resultsAfterDelete.count();
@@ -503,7 +503,7 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     // Navigate to documents page
     await page.goto('http://localhost:8080/core/ui/#/documents');
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Look for an existing document that can be moved
     const documentRow = page.locator('.ant-table tbody tr').first();
@@ -559,7 +559,7 @@ test.describe('Solr Indexing Regression Tests', () => {
       await searchInput.press('Enter');
     }
 
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     const resultsBeforeMove = page.locator('.ant-table tbody tr');
     const countBeforeMove = await resultsBeforeMove.count();

@@ -70,7 +70,7 @@ async function navigateToAnyDocument(page: any): Promise<boolean> {
     console.log('[SKIP] Table did not load data rows within timeout');
     return false;
   }
-  await page.waitForTimeout(1000);
+  await waitForRender(page);
 
   // Find a file row by looking for document name pattern (supports both anchor and button links)
   const fileRow = page.locator('.ant-table-tbody tr').filter({ hasText: /\.txt|\.pdf|\.docx|\.png|\.jpg/ }).first();
@@ -517,7 +517,7 @@ test.describe('UI Integration Tests', () => {
     await secondaryTypeTab.click();
 
     // Wait for tab content to load
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Verify tab is active by checking aria-selected
     await expect(secondaryTypeTab).toHaveAttribute('aria-selected', 'true', { timeout: 5000 });
@@ -538,7 +538,7 @@ test.describe('UI Integration Tests', () => {
     await secondaryTypeTab.click();
 
     // Wait for content to load fully
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check for various valid states:
     // 1. Dropdown selector visible (can add more types)

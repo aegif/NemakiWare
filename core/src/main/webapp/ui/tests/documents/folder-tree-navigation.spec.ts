@@ -288,7 +288,7 @@ test.describe('FolderTree Navigation', () => {
     const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary');
     await submitButton.click();
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-    await page.waitForTimeout(1500);
+    await waitForUiStable(page);
 
     // Get initial table content
     const tableBody = page.locator('.ant-table-tbody');
@@ -434,12 +434,12 @@ test.describe('FolderTree Navigation', () => {
     const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary');
     await submitButton.click();
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-    await page.waitForTimeout(1500);
+    await waitForUiStable(page);
 
     // Navigate into parent folder to create child
     const parentInTable = page.locator('.ant-table-tbody').locator(`text=${parentName}`);
     await parentInTable.click();
-    await page.waitForTimeout(1500);
+    await waitForUiStable(page);
 
     // Create child folder
     await createFolderButton.click();
@@ -447,7 +447,7 @@ test.describe('FolderTree Navigation', () => {
     await nameInput.fill(childName);
     await submitButton.click();
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-    await page.waitForTimeout(1500);
+    await waitForUiStable(page);
 
     // Now test double-click in tree
     const folderTree = page.locator('.ant-tree');
@@ -546,12 +546,12 @@ test.describe('FolderTree Navigation', () => {
     const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary');
     await submitButton.click();
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-    await page.waitForTimeout(1500);
+    await waitForUiStable(page);
 
     // Navigate into parent folder
     const parentInTable = page.locator('.ant-table-tbody').locator(`text=${parentName}`);
     await parentInTable.click();
-    await page.waitForTimeout(1500);
+    await waitForUiStable(page);
 
     // Create child folder inside
     await createFolderButton.click();
@@ -559,13 +559,13 @@ test.describe('FolderTree Navigation', () => {
     await nameInput.fill(childName);
     await submitButton.click();
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-    await page.waitForTimeout(1500);
+    await waitForUiStable(page);
 
     // Navigate back to root to see tree structure
     const rootBreadcrumb = page.locator('.ant-breadcrumb').locator('text=/').first();
     if (await rootBreadcrumb.count() > 0) {
       await rootBreadcrumb.click();
-      await page.waitForTimeout(1500);
+      await waitForUiStable(page);
     }
 
     // Now check tree expansion behavior

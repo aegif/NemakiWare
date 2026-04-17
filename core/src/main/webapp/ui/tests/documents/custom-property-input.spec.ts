@@ -185,7 +185,7 @@ test.describe('Custom Property Input Feature', () => {
         await typeOption.click();
 
         // Wait longer for async type definition fetch to complete
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
 
         // Print captured console logs
         console.log('Console logs captured:', consoleLogs);
@@ -575,7 +575,7 @@ test.describe('Custom Property Input Feature', () => {
         const confirmButton = page.locator('.ant-modal-confirm-btns button:has-text("削除"), .ant-modal button:has-text("削除する")');
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
-          await page.waitForTimeout(3000);
+          await waitForUiStable(page);
         }
       }
     });
@@ -594,7 +594,7 @@ test.describe('Custom Property Input Feature', () => {
       await documentLink.click();
 
       // Wait for document viewer to load (hash-based routing)
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Look for relationship tab
       const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
@@ -611,7 +611,7 @@ test.describe('Custom Property Input Feature', () => {
       }
 
       await documentLink.click();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Click relationship tab
       const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
@@ -691,7 +691,7 @@ test.describe('Custom Property Input Feature', () => {
       }
 
       await documentLink.click();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Click relationship tab
       const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
@@ -746,7 +746,7 @@ test.describe('Custom Property Input Feature', () => {
       }
 
       await documentLink.click();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Click relationship tab
       const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');

@@ -282,7 +282,7 @@ test.describe('Error Recovery Tests', () => {
         await folderLink.click(isMobile ? { force: true } : {});
 
         // Verify error notification, empty state, or graceful handling
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
         const errorIndicator = page.locator('.ant-message-notice, .ant-notification-notice, .ant-alert-error, [role="alert"], .ant-empty, .ant-result-error, .ant-result, .ant-table-placeholder');
         const hasError = await errorIndicator.first().isVisible().catch(() => false);
 

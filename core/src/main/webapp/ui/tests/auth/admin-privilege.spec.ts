@@ -110,24 +110,24 @@ test.describe('Admin Privilege Management', () => {
     test.setTimeout(90000);
     await loginAsUser(page, 'admin', 'admin');
     // Wait for auth state (isAdmin) to fully load before navigating to admin route
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
     await page.goto(`${UI_URL}/#/users`);
     // Retry navigation if redirected away (AdminRoute race condition with isAdmin loading)
     for (let retry = 0; retry < 3; retry++) {
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       if (page.url().includes('/users')) break;
       console.log(`admin-privilege: Retrying navigation to /users (attempt ${retry + 2})`);
       await page.goto(`${UI_URL}/#/users`);
     }
     await page.waitForSelector('.ant-table', { timeout: 15000 });
     // Wait for table rows to be fully rendered and interactive
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Search for test user to handle pagination
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], .ant-input-search input');
     if (await searchInput.count() > 0) {
       await searchInput.first().fill(TEST_USER_ID);
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     // Find the test user row and click edit
@@ -168,11 +168,11 @@ test.describe('Admin Privilege Management', () => {
   test('admin can revoke admin privilege from another user', async ({ page, request }) => {
     await loginAsUser(page, 'admin', 'admin');
     // Wait for auth state (isAdmin) to fully load before navigating to admin route
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
     await page.goto(`${UI_URL}/#/users`);
     // Retry navigation if redirected away (AdminRoute race condition with isAdmin loading)
     for (let retry = 0; retry < 3; retry++) {
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       if (page.url().includes('/users')) break;
       console.log(`admin-privilege: Retrying navigation to /users (attempt ${retry + 2})`);
       await page.goto(`${UI_URL}/#/users`);
@@ -183,7 +183,7 @@ test.describe('Admin Privilege Management', () => {
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], .ant-input-search input');
     if (await searchInput.count() > 0) {
       await searchInput.first().fill(TEST_USER_ID);
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     // Find the test user row and click edit
@@ -223,11 +223,11 @@ test.describe('Admin Privilege Management', () => {
   test('admin cannot revoke own admin privilege', async ({ page }) => {
     await loginAsUser(page, 'admin', 'admin');
     // Wait for auth state (isAdmin) to fully load before navigating to admin route
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
     await page.goto(`${UI_URL}/#/users`);
     // Retry navigation if redirected away (AdminRoute race condition with isAdmin loading)
     for (let retry = 0; retry < 3; retry++) {
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       if (page.url().includes('/users')) break;
       console.log(`admin-privilege: Retrying navigation to /users (attempt ${retry + 2})`);
       await page.goto(`${UI_URL}/#/users`);
@@ -238,7 +238,7 @@ test.describe('Admin Privilege Management', () => {
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], .ant-input-search input');
     if (await searchInput.count() > 0) {
       await searchInput.first().fill('admin');
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
 
     // Find the admin user row (first cell contains exactly "admin")

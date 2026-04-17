@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { generateTestId } from '../utils/test-helper';
@@ -123,7 +124,7 @@ test.describe('Bulk Delete Improvements', () => {
 
     // Refresh document list
     await page.reload();
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Find the document row and click delete
     const docRow = page.locator(`tr:has-text("${docName}")`);
@@ -138,7 +139,7 @@ test.describe('Bulk Delete Improvements', () => {
     await deleteButton.click();
 
     // Wait for the descendant check to complete (deleteLoading becomes false)
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify delete confirmation modal appears
     const modal = page.locator('.ant-modal-content');
@@ -163,11 +164,11 @@ test.describe('Bulk Delete Improvements', () => {
     expect(deleteResponse.status()).toBeLessThan(400);
 
     // Wait for UI to update after deletion
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Verify that the document is no longer in the list (reload to get fresh data)
     await page.reload();
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
     const docAfterReload = page.locator(`tr:has-text("${docName}")`);
     const stillExists = await docAfterReload.isVisible().catch(() => false);
     expect(stillExists).toBe(false);
@@ -190,7 +191,7 @@ test.describe('Bulk Delete Improvements', () => {
       localStorage.setItem('i18nextLng', 'en');
     });
     await page.reload();
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Create parent folder
     const parentName = `bulk-parent-${testUUID}`;
@@ -284,7 +285,7 @@ test.describe('Bulk Delete Improvements', () => {
       localStorage.setItem('i18nextLng', 'ja');
     });
     await page.reload();
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Verify i18n file contains correct message (read from filesystem since locale files are bundled)
     const fs = await import('fs');
@@ -376,7 +377,7 @@ test.describe('Bulk Delete Improvements', () => {
 
     // Refresh and delete parent
     await page.reload();
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     const parentRow = page.locator(`tr:has-text("${parentName}")`);
     await expect(parentRow).toBeVisible({ timeout: 10000 });
@@ -396,7 +397,7 @@ test.describe('Bulk Delete Improvements', () => {
     await confirmButton.click();
 
     await expect(modal).not.toBeVisible({ timeout: 30000 });
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check for CASCADE DELETE logs (note: console.debug may not be captured by default)
     const cascadeDeleteLogs = consoleLogs.filter(log => log.includes('[CASCADE DELETE]'));
@@ -446,7 +447,7 @@ test.describe('Bulk Delete Improvements', () => {
 
     // Refresh document list
     await page.reload();
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Look for bulk selection checkboxes
     const selectAllCheckbox = page.locator('.ant-table-thead th.ant-table-selection-column input[type="checkbox"]');
@@ -462,7 +463,7 @@ test.describe('Bulk Delete Improvements', () => {
         const checkbox = docRow.locator('.ant-table-selection-column input[type="checkbox"]');
         if (await checkbox.count() > 0) {
           await checkbox.check();
-          await page.waitForTimeout(300);
+          await waitForRender(page);
         }
       }
     }
@@ -481,7 +482,7 @@ test.describe('Bulk Delete Improvements', () => {
     }
 
     await bulkDeleteButton.first().click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Confirm bulk deletion
     const confirmButton = page.locator('.ant-modal button.ant-btn-primary, .ant-popconfirm button.ant-btn-primary');
@@ -525,7 +526,7 @@ test.describe('Bulk Delete Improvements', () => {
     // as creating a scenario with duplicate descendant paths is complex.
 
     // Navigate to documents page
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify the page loaded correctly
     const documentTable = page.locator('.ant-table');

@@ -81,7 +81,7 @@ async function login(page: any): Promise<void> {
 async function navigateToDocument(page: any, documentName: string): Promise<void> {
   // Wait for document list to load
   await page.waitForSelector('.ant-table-tbody', { timeout: 15000 });
-  await page.waitForTimeout(1500); // Allow table to fully render
+  await waitForUiStable(page); // Allow table to fully render
 
   // REWRITTEN (2025-12-14): Add retry logic for newly created documents that may not be indexed yet
   // Solr indexing can take a few seconds, so we retry page reloads to find the document
@@ -115,7 +115,7 @@ async function navigateToDocument(page: any, documentName: string): Promise<void
       console.log(`Document "${documentName}" not found in table (attempt ${attempts}/${maxAttempts}), reloading...`);
       await page.reload();
       await page.waitForSelector('.ant-table-tbody', { timeout: 15000 });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
   }
 
@@ -164,7 +164,7 @@ async function navigateToDocument(page: any, documentName: string): Promise<void
     } catch (error) {
       console.log(`Tabs not found (attempt ${attempt}/3), waiting...`);
       if (attempt < 3) {
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
     }
   }
@@ -352,7 +352,7 @@ test.describe('Relationship Feature Verification', () => {
       const relationshipsTab = page.getByRole('tab', { name: /リレーションシップ|Relationships|関係/i });
       await expect(relationshipsTab).toBeVisible({ timeout: 10000 });
       await relationshipsTab.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // CRITICAL VERIFICATION: Check that relationship table is displayed
       // Wait for the relationships tab content to be visible
@@ -555,12 +555,12 @@ test.describe('Secondary Type Feature Verification', () => {
         tabsVisible = await page.locator('.ant-tabs').isVisible().catch(() => false);
         if (tabsVisible) break;
         console.log(`Tabs not visible (attempt ${attempt}/3), waiting...`);
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
       if (!tabsVisible) {
         // Try reload as last resort
         await page.reload();
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
         tabsVisible = await page.locator('.ant-tabs').isVisible().catch(() => false);
       }
       if (!tabsVisible) {
@@ -576,7 +576,7 @@ test.describe('Secondary Type Feature Verification', () => {
         return;
       }
       await secondaryTypeTab.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // CRITICAL VERIFICATION: Check that secondary type is displayed
       // Verify tab is active by checking aria-selected
@@ -594,7 +594,7 @@ test.describe('Secondary Type Feature Verification', () => {
       // Optionally check for property value in properties tab
       const propertiesTab = page.getByRole('tab', { name: 'プロパティ' });
       await propertiesTab.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Check if comment property is visible (either as label or value)
       const hasCommentProperty = await page.locator(`text=${uniqueComment}`).first().isVisible().catch(() => false) ||

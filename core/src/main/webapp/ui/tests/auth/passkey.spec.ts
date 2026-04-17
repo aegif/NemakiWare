@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect, CDPSession, Page } from '@playwright/test';
 
 test.describe.serial('Passkey (WebAuthn) Management', () => {
@@ -82,11 +83,11 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
   test('Account settings shows passkey section', async ({ page }) => {
     await loginAsAdmin(page);
     // Wait for auth state to fully load before navigating
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
     await page.goto(`${UI_URL}/#/account`);
     // Retry navigation if redirected (auth state race condition)
     for (let retry = 0; retry < 3; retry++) {
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       if (page.url().includes('/account')) break;
       console.log(`passkey: Retrying navigation to /account (attempt ${retry + 2})`);
       await page.goto(`${UI_URL}/#/account`);
@@ -117,11 +118,11 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
 
     // Navigate to account page BEFORE setting up virtual authenticator
     // Wait for auth state to fully load before navigating
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
     await page.goto(`${UI_URL}/#/account`);
     // Retry navigation if redirected (auth state race condition)
     for (let retry = 0; retry < 3; retry++) {
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       if (page.url().includes('/account')) break;
       console.log(`passkey-registration: Retrying navigation to /account (attempt ${retry + 2})`);
       await page.goto(`${UI_URL}/#/account`);

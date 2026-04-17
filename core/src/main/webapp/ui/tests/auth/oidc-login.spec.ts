@@ -48,7 +48,7 @@ test.describe('NemakiWare OIDC Authentication', () => {
       { timeout: 30000 }
     );
 
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const oidcButton = page.locator('button:has-text("OIDC"), button:has-text("OpenID")').first();
     await expect(oidcButton).toBeVisible({ timeout: 10000 });
@@ -65,7 +65,7 @@ test.describe('NemakiWare OIDC Authentication', () => {
       { timeout: 30000 }
     );
 
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const oidcButton = page.locator('button:has-text("OIDC"), button:has-text("OpenID")').first();
     await oidcButton.click();
@@ -89,7 +89,7 @@ test.describe('NemakiWare OIDC Authentication', () => {
       { timeout: 30000 }
     );
 
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const oidcButton = page.locator('button:has-text("OIDC"), button:has-text("OpenID")').first();
     await oidcButton.click();

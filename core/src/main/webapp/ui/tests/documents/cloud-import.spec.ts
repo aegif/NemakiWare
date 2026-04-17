@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
@@ -63,7 +64,7 @@ test.describe('Cloud Drive Import', () => {
 		const uploadButton = page.locator('button:has-text("アップロード"), button:has-text("Upload")');
 
 		// Wait for toolbar to render
-		await page.waitForTimeout(2000);
+		await waitForUiStable(page);
 
 		const uploadCount = await uploadButton.count();
 

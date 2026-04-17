@@ -180,7 +180,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     // Submit form
     const submitButton = createModal.locator('button[type="submit"], button:has-text("作成"), button.ant-btn-primary');
     await submitButton.first().click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     const successMessage = page.locator('.ant-message-success');
     if (await successMessage.count() > 0) {
@@ -288,7 +288,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     // Wait for Solr indexing
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Navigate to search page
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
@@ -310,7 +310,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     const searchButton = page.locator('button.search-button, button:has-text("検索")').first();
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Check results
@@ -363,7 +363,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     }
 
     // Wait for Solr indexing
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Search again and verify document is not found by aspect property
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
@@ -379,7 +379,7 @@ test.describe('Secondary Type with Custom Properties', () => {
       const searchButton = page.locator('button.search-button, button:has-text("検索")').first();
       if (await searchButton.count() > 0) {
         await searchButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
       }
 
       const documentInResults = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName });

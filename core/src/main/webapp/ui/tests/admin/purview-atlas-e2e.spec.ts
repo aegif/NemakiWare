@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect, Page, APIRequestContext } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -577,13 +578,13 @@ test.describe('Group 3: Governance Tab', () => {
     // Navigate to the folder's document viewer
     // Use direct URL navigation to the object
     await page.goto(`${BASE_URL}/core/ui/#/documents/${testFolderId}`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Look for Governance tab
     const governanceTab = page.locator('[role="tab"]').filter({ hasText: /Governance|ガバナンス/i });
     if (await governanceTab.count() > 0) {
       await governanceTab.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Verify qualifiedName or entityType is displayed somewhere
       const pageText = await page.locator('.ant-tabs-tabpane-active').textContent();
@@ -809,7 +810,7 @@ test.describe('Group 6: Lineage Journal UI', () => {
     skipIfNoAtlas(available);
 
     await page.goto(`${BASE_URL}/core/ui/#/lineage-journal`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Should have a table
     const table = page.locator('.ant-table');
@@ -828,13 +829,13 @@ test.describe('Group 6: Lineage Journal UI', () => {
     skipIfNoAtlas(available);
 
     await page.goto(`${BASE_URL}/core/ui/#/lineage-journal`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Find a detail button
     const detailButton = page.locator('button').filter({ hasText: /詳細|Detail/i }).first();
     if (await detailButton.count() > 0) {
       await detailButton.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Drawer should appear
       const drawer = page.locator('.ant-drawer');
@@ -847,7 +848,7 @@ test.describe('Group 6: Lineage Journal UI', () => {
       const closeBtn = drawer.locator('.ant-drawer-close');
       if (await closeBtn.count() > 0) {
         await closeBtn.click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
     } else {
       console.log('No detail button found — no events in table');
@@ -872,13 +873,13 @@ test.describe('Group 6: Lineage Journal UI', () => {
 
     // Also verify UI stats page if it exists
     await page.goto(`${BASE_URL}/core/ui/#/lineage-journal`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Look for stats tab
     const statsTab = page.locator('[role="tab"]').filter({ hasText: /統計|Stats/i });
     if (await statsTab.count() > 0) {
       await statsTab.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
       const statsText = await page.locator('.ant-tabs-tabpane-active').textContent();
       console.log('Stats tab text (first 200):', statsText?.substring(0, 200));
     }
@@ -900,12 +901,12 @@ test.describe('Group 6: Lineage Journal UI', () => {
 
     // Check UI
     await page.goto(`${BASE_URL}/core/ui/#/lineage-journal`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     const deadLetterTab = page.locator('[role="tab"]').filter({ hasText: /Dead.*Letter|デッドレター/i });
     if (await deadLetterTab.count() > 0) {
       await deadLetterTab.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       const tabContent = await page.locator('.ant-tabs-tabpane-active').textContent();
       console.log('Dead Letter tab text (first 200):', tabContent?.substring(0, 200));

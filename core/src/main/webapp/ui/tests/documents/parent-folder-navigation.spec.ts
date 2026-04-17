@@ -214,7 +214,7 @@ test.describe('Parent Folder Navigation', () => {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();
       if (await menuToggle.count() > 0) {
         await menuToggle.click({ timeout: 3000 });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
       }
     }
 
@@ -226,7 +226,7 @@ test.describe('Parent Folder Navigation', () => {
 
       // CRITICAL FIX (2025-11-26): Wait for UI to stabilize after navigation
       // Ensures header and toolbar are fully rendered before test operations
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
       await testHelper.waitForAntdLoad();
     }
 
@@ -243,7 +243,7 @@ test.describe('Parent Folder Navigation', () => {
     // Wait for table to be fully loaded before checking for TestParent
     console.log('[CLEANUP DEBUG] Waiting for table to load...');
     await page.waitForSelector('.ant-table-tbody', { timeout: 10000 });
-    await page.waitForTimeout(1000); // Additional wait for table content to render
+    await waitForRender(page); // Additional wait for table content to render
     console.log('[CLEANUP DEBUG] Table loaded, checking for TestParent...');
 
     // Find TestParent row and get its objectId from data-row-key attribute
@@ -357,7 +357,7 @@ test.describe('Parent Folder Navigation', () => {
 
     // Click the folder button to enter
     await folderButton.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify we're in a subfolder by checking URL has folderId
     expect(page.url()).toContain('folderId=');
@@ -402,7 +402,7 @@ test.describe('Parent Folder Navigation', () => {
     const folderName = await folderButton.textContent();
 
     await folderButton.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify we're in subfolder
     const subfolderUrl = page.url();
@@ -412,7 +412,7 @@ test.describe('Parent Folder Navigation', () => {
     const upButton = page.locator('button').filter({ hasText: /上へ/ });
     await expect(upButton).toBeVisible({ timeout: 10000 });
     await upButton.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify we navigated back
     const parentUrl = page.url();
@@ -443,7 +443,7 @@ test.describe('Parent Folder Navigation', () => {
     const firstFolderName = await firstFolderButton.textContent();
     console.log(`Navigating into folder: ${firstFolderName}`);
     await firstFolderButton.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check if there's a subfolder in this folder
     const subfolderRow = page.locator('.ant-table-tbody tr').filter({ has: page.locator('.anticon-folder') }).first();
@@ -455,7 +455,7 @@ test.describe('Parent Folder Navigation', () => {
       const upButton = page.locator('button').filter({ hasText: /上へ/ });
       if (await upButton.isVisible().catch(() => false)) {
         await upButton.click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
 
       // Try to find a folder with known children (like Sites or Technical Documents)
@@ -470,7 +470,7 @@ test.describe('Parent Folder Navigation', () => {
         test.skip('No folder with subfolders found');
         return;
       }
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Now we should be in a folder. Navigate into a subfolder if available
@@ -482,7 +482,7 @@ test.describe('Parent Folder Navigation', () => {
       const subfolderName = await subfolderButton.textContent();
       console.log(`Navigating into subfolder: ${subfolderName}`);
       await subfolderButton.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Verify we're now 2 levels deep by checking URL has folderId
       expect(page.url()).toContain('folderId=');
@@ -492,7 +492,7 @@ test.describe('Parent Folder Navigation', () => {
       await expect(upButton).toBeVisible({ timeout: 10000 });
       console.log('Clicking Up button to go back to parent');
       await upButton.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
 
       // Verify URL still has folderId (we're in parent, not root)
       expect(page.url()).toContain('folderId=');
@@ -502,7 +502,7 @@ test.describe('Parent Folder Navigation', () => {
       if (await upButtonAgain.isVisible().catch(() => false) && !(await upButtonAgain.isDisabled().catch(() => true))) {
         console.log('Clicking Up button again to go to root');
         await upButtonAgain.click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
 
       console.log('Multi-level navigation test completed successfully');
@@ -530,7 +530,7 @@ test.describe('Parent Folder Navigation', () => {
 
     // Click the folder button to enter
     await folderButton.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify breadcrumb shows the folder name
     const breadcrumb = page.locator('.ant-breadcrumb');
@@ -541,7 +541,7 @@ test.describe('Parent Folder Navigation', () => {
     // Navigate back using breadcrumb Home icon
     const homeLink = breadcrumb.locator('.ant-breadcrumb-link').first();
     await homeLink.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify we're back in root - the folder should be visible again
     const originalFolder = page.locator('.ant-table-tbody tr').filter({ hasText: folderName || '' });
@@ -574,7 +574,7 @@ test.describe('Parent Folder Navigation', () => {
 
     // Click the folder button to enter
     await folderButton.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Get folder ID from URL after entering subfolder
     const subfolderUrl = page.url();
@@ -585,7 +585,7 @@ test.describe('Parent Folder Navigation', () => {
     // Navigate up
     const upButton = page.locator('button').filter({ hasText: /親フォルダへ|上へ|Up/ });
     await upButton.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Get root folder ID from URL
     const rootUrl = page.url();

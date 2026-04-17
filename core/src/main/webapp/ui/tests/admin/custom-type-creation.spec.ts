@@ -302,7 +302,7 @@ test.describe('Custom Type Creation and Property Management', () => {
       console.log('✅ Clicked submit button');
 
       // Wait for success message or modal close
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Check for error or success message
       const successMessage = page.locator('.ant-message-success');

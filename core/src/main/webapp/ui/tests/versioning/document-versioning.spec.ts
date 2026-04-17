@@ -221,7 +221,7 @@ test.describe('Document Versioning', () => {
       });
       
       // Wait for table to reload after checkout
-      await page.waitForTimeout(5000);
+      await waitForUiStable(page, { timeout: 15000 });
       
       console.log('Test: Console logs captured:', consoleLogs);
 
@@ -309,7 +309,7 @@ test.describe('Document Versioning', () => {
     await page.waitForSelector('.ant-message-success', { timeout: 10000 }).catch(() => {
       console.log('Test: No success message appeared');
     });
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Step 2: Find check-in button (CheckOutlined = aria-label="check") in the refreshed row
     const refreshedRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
@@ -356,7 +356,7 @@ test.describe('Document Versioning', () => {
       ]).catch(() => {
         console.log('Test: No explicit success signal, continuing...');
       });
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Verify check-in success (PWC indicator should disappear)
       const pwcTag = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).locator('.ant-tag').filter({ hasText: '作業中' });
@@ -700,7 +700,7 @@ test.describe('Document Versioning', () => {
     // Step 3: Navigate to documents page and verify in UI
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Verify document exists
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();

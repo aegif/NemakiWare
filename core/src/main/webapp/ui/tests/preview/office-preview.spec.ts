@@ -75,7 +75,7 @@ test.describe('Office Preview E2E Tests', () => {
     // DocumentViewer loads object, then secondary data (versions, relationships, RAG) causing re-renders
     await page.waitForSelector('.ant-tabs-tab', { timeout: 30000 });
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify document viewer loaded (properties tab or any tab should be visible)
     const tabsContainer = page.locator('.ant-tabs-tab');
@@ -88,7 +88,7 @@ test.describe('Office Preview E2E Tests', () => {
     if (previewTabVisible) {
       // Click preview tab (use force to handle transient DOM updates)
       await previewTab.click({ force: true });
-      await page.waitForTimeout(5000);
+      await waitForUiStable(page, { timeout: 15000 });
 
       // Check for PDF preview container or loading state
       const pdfContainer = page.locator('[data-testid="office-preview-pdf"], .react-pdf__Document, .ant-spin, .ant-alert');
@@ -120,7 +120,7 @@ test.describe('Office Preview E2E Tests', () => {
     // Wait for document viewer to finish loading and stabilize
     await page.waitForSelector('.ant-tabs-tab', { timeout: 30000 });
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify document viewer loaded
     const tabsContainer = page.locator('.ant-tabs-tab');
@@ -133,7 +133,7 @@ test.describe('Office Preview E2E Tests', () => {
     if (previewTabVisible) {
       // Click preview tab (use force to handle transient DOM updates)
       await previewTab.click({ force: true });
-      await page.waitForTimeout(5000);
+      await waitForUiStable(page, { timeout: 15000 });
 
       const pdfContainer = page.locator('[data-testid="office-preview-pdf"], .react-pdf__Document, .ant-spin, .ant-alert');
       const containerVisible = await pdfContainer.isVisible({ timeout: 30000 }).catch(() => false);

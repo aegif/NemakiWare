@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -38,7 +39,7 @@ test.describe('Cloud Directory Sync', () => {
 
     if (await adminMenu.count() > 0) {
       await adminMenu.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
+      await waitForRender(page);
     }
 
     // Look for cloud directory sync menu item
@@ -53,14 +54,14 @@ test.describe('Cloud Directory Sync', () => {
     }
 
     await cloudSyncMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     expect(page.url()).toContain('/cloud-directory-sync');
   });
 
   test('should display Google and Microsoft tabs', async ({ page }) => {
     await page.goto('/core/ui/#/cloud-directory-sync');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // If page redirected away (feature not enabled), skip
     if (!page.url().includes('/cloud-directory-sync')) {
@@ -80,7 +81,7 @@ test.describe('Cloud Directory Sync', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     await page.goto('/core/ui/#/cloud-directory-sync');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     if (!page.url().includes('/cloud-directory-sync')) {
       test.skip(true, 'Cloud directory sync page not available');
@@ -91,7 +92,7 @@ test.describe('Cloud Directory Sync', () => {
     await expect(microsoftTab).toBeVisible({ timeout: 5000 });
 
     await microsoftTab.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Verify Microsoft tab is active
     const activeTab = page.locator('.ant-tabs-tab-active');
@@ -100,7 +101,7 @@ test.describe('Cloud Directory Sync', () => {
 
   test('should display sync control buttons', async ({ page }) => {
     await page.goto('/core/ui/#/cloud-directory-sync');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     if (!page.url().includes('/cloud-directory-sync')) {
       test.skip(true, 'Cloud directory sync page not available');
@@ -125,7 +126,7 @@ test.describe('Cloud Directory Sync', () => {
 
   test('should display sync status statistics', async ({ page }) => {
     await page.goto('/core/ui/#/cloud-directory-sync');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     if (!page.url().includes('/cloud-directory-sync')) {
       test.skip(true, 'Cloud directory sync page not available');
@@ -146,7 +147,7 @@ test.describe('Cloud Directory Sync', () => {
 
   test('should display status tag', async ({ page }) => {
     await page.goto('/core/ui/#/cloud-directory-sync');
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     if (!page.url().includes('/cloud-directory-sync')) {
       test.skip(true, 'Cloud directory sync page not available');

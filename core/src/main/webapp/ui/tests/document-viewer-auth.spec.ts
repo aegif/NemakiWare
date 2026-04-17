@@ -185,7 +185,7 @@ test.describe('Document Viewer Authentication', () => {
     await page.locator('button[type="submit"]').click();
 
     // Wait for navigation and UI initialization
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Verify login successful - check for documents page elements
     await expect(page.locator('.ant-table')).toBeVisible({ timeout: 15000 });
@@ -226,7 +226,7 @@ test.describe('Document Viewer Authentication', () => {
     await targetDocument.click({ force: true });
 
     // Wait for document detail page to load
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Check for authentication errors
     const hasLoginForm = await page.locator('input[placeholder*="ユーザー名"]').count() > 0;
@@ -300,7 +300,7 @@ test.describe('Document Viewer Authentication', () => {
     await page.locator('input[placeholder*="ユーザー名"]').fill('admin');
     await page.locator('input[placeholder*="パスワード"]').fill('admin');
     await page.locator('button[type="submit"]').click();
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     await expect(page.locator('.ant-table')).toBeVisible({ timeout: 15000 });
 
@@ -351,7 +351,7 @@ test.describe('Document Viewer Authentication', () => {
         // Click document
         console.log(`  Clicking document button ${i}...`);
         await freshDocumentButtons.nth(i).click({ force: true });
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
         
         // Wait for navigation to complete
         console.log(`  Waiting for URL to match document pattern...`);

@@ -343,7 +343,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
 
     // Wait for Solr indexing
     console.log('Waiting for Solr indexing...');
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Verify documents were created by querying
     const verifyQuery = await page.request.get(
@@ -364,7 +364,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
     const isMobile = testHelper.isMobile(browserName);
 
     // Wait for Solr indexing
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Navigate to search page
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
@@ -402,7 +402,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
     const searchButton = page.locator('button.search-button, button:has-text("検索")').first();
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Verify both documents are found (they're both in the tree under root folder)
@@ -484,7 +484,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
     const isMobile = testHelper.isMobile(browserName);
 
     // Wait for Solr indexing
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Navigate to search page
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
@@ -502,7 +502,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
     const searchButton = page.locator('button.search-button, button:has-text("検索")').first();
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Both documents should still be found (just in different locations)

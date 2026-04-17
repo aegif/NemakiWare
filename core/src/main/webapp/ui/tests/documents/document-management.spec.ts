@@ -244,7 +244,7 @@ test.describe('Document Management', () => {
     console.log('Current URL:', page.url());
 
     // Wait for page to stabilize after navigation
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Debug: Take screenshot
     await page.screenshot({ path: 'test-results/debug-document-list.png', fullPage: true });
@@ -285,7 +285,7 @@ test.describe('Document Management', () => {
 
   test('should navigate folder structure', async ({ page, browserName }) => {
     // Wait for page to stabilize after navigation
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Detect mobile browsers by viewport size
     const viewportSize = page.viewportSize();
@@ -380,7 +380,7 @@ test.describe('Document Management', () => {
       });
 
       // Wait for Ant Design to process the file and update its internal state
-      await page.waitForTimeout(1500);
+      await waitForUiStable(page);
 
       // Fill the filename field (onChange might auto-fill, but ensure it's correct)
       const nameInput = page.locator('.ant-modal input[placeholder="ファイル名を入力"]');
@@ -454,7 +454,7 @@ test.describe('Document Management', () => {
       // CRITICAL FIX (2025-12-24): Wait for table to refresh after successful upload
       // The upload was successful (API returned 201), now wait for UI to update
       // First try waiting without reload - loadObjects() should have been called
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Check if document appears
       let uploadedFile = page.locator('.ant-table-tbody').locator(`text=${filename}`);

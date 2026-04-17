@@ -146,7 +146,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
         const propTypeSelect = propertyCard.locator('.ant-select').first();
         if (await propTypeSelect.count() > 0) {
           await propTypeSelect.click();
-          await page.waitForTimeout(300);
+          await waitForRender(page);
           const stringOption = page.locator('.ant-select-item-option').filter({ hasText: /文字列|String/i }).first();
           if (await stringOption.count() > 0) {
             await stringOption.click();
@@ -158,7 +158,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     // Submit form
     const submitButton = createModal.locator('button[type="submit"], button:has-text("作成"), button.ant-btn-primary');
     await submitButton.first().click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Check for success
     const successMessage = page.locator('.ant-message-success');
@@ -244,7 +244,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     // Submit upload
     const submitButton = uploadModal.locator('button[type="submit"]').filter({ hasText: /アップロード|Upload/ });
     await submitButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Verify document created
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
@@ -296,7 +296,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
       const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|削除/ }).first();
       if (await confirmButton.count() > 0) {
         await confirmButton.click();
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
       }
 
       // Check for error message (deletion should fail)
@@ -416,7 +416,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
         const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|削除/ }).first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
-          await page.waitForTimeout(3000);
+          await waitForUiStable(page);
         }
 
         // Verify type is deleted

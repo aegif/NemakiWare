@@ -309,7 +309,7 @@ test.describe('User Scenario Tests', () => {
 
           if (await backButton.count() > 0) {
             await backButton.click();
-            await page.waitForTimeout(1500);
+            await waitForUiStable(page);
 
             // Verify we're back on the documents page or UI root (both are valid)
             const url = page.url();
@@ -318,7 +318,7 @@ test.describe('User Scenario Tests', () => {
             // Verify table is visible again (navigate to documents if at UI root)
             if (!url.includes('/documents')) {
               await page.goto(`${page.url().split('#')[0]}#/documents`);
-              await page.waitForTimeout(1500);
+              await waitForUiStable(page);
             }
             const table = page.locator('.ant-table');
             await expect(table).toBeVisible({ timeout: 5000 });
@@ -327,7 +327,7 @@ test.describe('User Scenario Tests', () => {
           } else {
             // Try browser back
             await page.goBack();
-            await page.waitForTimeout(1500);
+            await waitForUiStable(page);
           }
         } else {
           test.skip(true, 'Detail button not found');
@@ -380,7 +380,7 @@ test.describe('User Scenario Tests', () => {
           } catch {
             console.log(`Document ${i + 1}: tabs not visible, reloading...`);
             await page.reload();
-            await page.waitForTimeout(3000);
+            await waitForUiStable(page);
             try {
               await expect(tabs).toBeVisible({ timeout: 10000 });
               tabsVisible = true;
@@ -401,7 +401,7 @@ test.describe('User Scenario Tests', () => {
               } catch {
                 console.log(`Tab ${j} click failed, skipping`);
               }
-              await page.waitForTimeout(300);
+              await waitForRender(page);
             }
           }
 
@@ -420,7 +420,7 @@ test.describe('User Scenario Tests', () => {
           } else {
             await page.goBack();
           }
-          await page.waitForTimeout(1500);
+          await waitForUiStable(page);
 
           // Verify table is back
           await expect(page.locator('.ant-table')).toBeVisible({ timeout: 5000 });
@@ -530,7 +530,7 @@ test.describe('User Scenario Tests', () => {
         return;
       }
       await secondaryTab.click();
-      await page.waitForTimeout(1500);
+      await waitForUiStable(page);
 
       // Check for initial errors (before operation)
       const initialErrors = jsErrors.filter(e =>

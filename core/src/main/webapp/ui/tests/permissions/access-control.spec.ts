@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, ApiHelper, generateTestId } from '../utils/test-helper';
@@ -209,7 +210,7 @@ test.describe('Access Control and Permissions', () => {
           break;
         }
         console.log(`Setup: User verification attempt ${attempt + 1} failed (${verifyResponse.status()}), retrying...`);
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
       }
 
       if (!userVerified) {
@@ -290,7 +291,7 @@ test.describe('Access Control and Permissions', () => {
 
         const modal = page.locator('.ant-modal:not(.ant-modal-hidden)');
         await modal.waitFor({ state: 'visible', timeout: 10000 });
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         let nameInput = modal.locator('input[placeholder*="フォルダ名"]').first();
         if (await nameInput.count() === 0) {
@@ -340,7 +341,7 @@ test.describe('Access Control and Permissions', () => {
         const cancelBtn = page.locator('.ant-modal button:has-text("キャンセル"), .ant-modal button:has-text("Cancel")');
         if (await cancelBtn.count() > 0) await cancelBtn.first().click().catch(() => {});
         await page.reload();
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
       }
 
       // Verify folder created (use .first() to avoid strict mode violation when name appears in both tree and breadcrumb)
@@ -455,7 +456,7 @@ test.describe('Access Control and Permissions', () => {
             'Permission test content - should be read-only for testuser'
           );
 
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
 
           const submitBtn = page.locator('.ant-modal button[type="submit"]');
           await submitBtn.click();
@@ -1059,7 +1060,7 @@ test.describe('Access Control and Permissions', () => {
             if (!isDisabled) {
               // Try to delete and expect failure
               await deleteButton.first().click(isMobile ? { force: true } : {});
-              await page.waitForTimeout(500);
+              await waitForRender(page);
 
               const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary');
               if (await confirmButton.count() > 0) {
@@ -1072,7 +1073,7 @@ test.describe('Access Control and Permissions', () => {
 
                 // If no error message, verify document still exists (deletion was blocked)
                 if (!errorVisible) {
-                  await page.waitForTimeout(1000);
+                  await waitForRender(page);
                   // Document should still exist in the list
                   const docStillExists = await page.locator('tr').filter({ hasText: testDocName }).count();
                   expect(docStillExists).toBeGreaterThan(0);

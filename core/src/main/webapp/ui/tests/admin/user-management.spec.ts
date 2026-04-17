@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -153,7 +154,7 @@ test.describe('User Management', () => {
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
     }
     await page.locator('.ant-menu-item:has-text("ユーザー管理")').click();
     await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
@@ -177,7 +178,7 @@ test.describe('User Management', () => {
 
   test('should display existing users', async ({ page }) => {
     // Wait for user list to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check for admin user (should always exist)
     const adminUser = page.locator('text=admin');
@@ -189,7 +190,7 @@ test.describe('User Management', () => {
 
   test('should handle user search or filter', async ({ page }) => {
     // Wait for page to load
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Look for search input (FIX: Use .ant-input-search input to target actual input element)
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], .ant-input-search input');
@@ -197,7 +198,7 @@ test.describe('User Management', () => {
     if (await searchInput.count() > 0) {
       // Perform search
       await searchInput.first().fill('admin');
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Verify search results
       const adminResult = page.locator('text=admin');
@@ -213,12 +214,12 @@ test.describe('User Management', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to stabilize
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // Click on Documents menu item
     const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     await documentsMenu.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Verify navigation to documents page
     expect(page.url()).toContain('/documents');

@@ -191,7 +191,7 @@ test.describe('Custom Property Search Functionality', () => {
     const searchButton = page.locator('button.search-button').first();
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Verify CMIS query was constructed (may include type filter)
@@ -229,7 +229,7 @@ test.describe('Custom Property Search Functionality', () => {
     const searchButton = page.locator('button.search-button').first();
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Verify search results appear
@@ -373,7 +373,7 @@ test.describe('Custom Property Search Functionality', () => {
     const searchButton = page.locator('button.search-button').first();
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Verify type selector still shows cmis:folder
@@ -414,7 +414,7 @@ test.describe('Custom Property Search Functionality', () => {
     const searchButton = page.locator('button.search-button').first();
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Verify search results table
@@ -481,7 +481,7 @@ test.describe('Custom Property Range Search', () => {
     const searchButton = page.locator('button.search-button').first();
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Verify search results table appears
@@ -511,7 +511,7 @@ test.describe('Custom Property Range Search', () => {
     const searchButton = page.locator('button.search-button').first();
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Verify search results table appears
@@ -680,7 +680,7 @@ test.describe('Custom Property Range Search', () => {
     const searchButton = page.locator('button.search-button').first();
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
 
     // Verify search results table appears

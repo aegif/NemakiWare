@@ -95,7 +95,7 @@ test.describe('LDAP User Authentication via Keycloak OIDC', () => {
     expect(page.url()).toContain('8080');
 
     // Verify user is logged in (should see username in header)
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
     // The UI shows username text in header after login
     const usernameDisplay = page.locator(`text=${LDAP_USERS.user1.username}`).first();
     await expect(usernameDisplay).toBeVisible({ timeout: 10000 });
@@ -134,7 +134,7 @@ test.describe('LDAP User Authentication via Keycloak OIDC', () => {
     expect(page.url()).toContain('8080');
 
     // Verify admin user is logged in
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
     const usernameDisplay = page.locator(`text=${LDAP_USERS.admin.username}`).first();
     await expect(usernameDisplay).toBeVisible({ timeout: 10000 });
   });
@@ -169,7 +169,7 @@ test.describe('LDAP User Authentication via Keycloak OIDC', () => {
     await loginButton.click();
 
     // Should stay on Keycloak with error message
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
     const errorMessage = page.locator('.alert-error, .kc-feedback-text, [class*="error"]').first();
     await expect(errorMessage).toBeVisible({ timeout: 5000 });
 
@@ -327,32 +327,32 @@ test.describe('Session Management', () => {
     await page.waitForURL(/localhost:8080|core\/ui/i, { timeout: 30000 });
 
     // Verify login succeeded
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
     const usernameDisplay = page.locator(`text=${LDAP_USERS.user1.username}`).first();
     await expect(usernameDisplay).toBeVisible({ timeout: 10000 });
 
     // Click on username to open user menu
     await usernameDisplay.click();
-    await page.waitForTimeout(500);
+    await waitForRender(page);
 
     // Click logout (look for Japanese or English)
     const logoutMenuItem = page.locator('text=ログアウト').or(page.locator('text=Logout')).first();
     await logoutMenuItem.click({ timeout: 5000 });
 
     // Wait for Keycloak logout confirmation page
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     // If on Keycloak logout confirmation page, click the Logout button
     const keycloakLogoutButton = page.locator('button:has-text("Logout")');
     if (await keycloakLogoutButton.isVisible({ timeout: 3000 }).catch(() => false)) {
       await keycloakLogoutButton.click();
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Should show login form after logout (OIDC button or password input)
     // Navigate back to NemakiWare UI
     await page.goto(`${NEMAKIWARE_URL}/core/ui/`);
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     const loginPage = page.locator('button:has-text("OIDC")').or(page.locator('input[type="password"]')).first();
     await expect(loginPage).toBeVisible({ timeout: 10000 });

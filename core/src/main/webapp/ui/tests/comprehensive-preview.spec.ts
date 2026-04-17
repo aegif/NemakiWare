@@ -235,12 +235,12 @@ test.describe('Comprehensive Preview Tests', () => {
     await page.fill('input[placeholder="ユーザー名"]', 'admin');
     await page.fill('input[placeholder="パスワード"]', 'admin');
     await page.click('button:has-text("ログイン")');
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
   });
 
   test('PDF Preview - PDFサンプル.pdf', async ({ page }) => {
     await page.goto(`http://localhost:8080/core/ui/#/documents?folderId=${testFolderId}`);
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find and click on PDF file
     const row = page.locator('tr:has-text("PDFサンプル.pdf")');
@@ -250,7 +250,7 @@ test.describe('Comprehensive Preview Tests', () => {
     const viewButton = row.locator('button').filter({ has: page.locator('.anticon-eye') });
     await expect(viewButton).toBeVisible({ timeout: 5000 });
     await viewButton.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check preview tab exists
     const previewTab = page.locator('.ant-tabs-tab:has-text("プレビュー")');
@@ -258,7 +258,7 @@ test.describe('Comprehensive Preview Tests', () => {
 
     // Click preview tab
     await previewTab.click();
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Check for PDF preview component — multiple possible selectors
     // react-pdf renders canvas/Document, or loading spinner may still be present
@@ -277,7 +277,7 @@ test.describe('Comprehensive Preview Tests', () => {
 
   test('Image Preview - 画像サンプル.png', async ({ page }) => {
     await page.goto(`http://localhost:8080/core/ui/#/documents?folderId=${testFolderId}`);
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find and click on image file
     const row = page.locator('tr:has-text("画像サンプル.png")');
@@ -287,7 +287,7 @@ test.describe('Comprehensive Preview Tests', () => {
     const viewButton = row.locator('button').filter({ has: page.locator('.anticon-eye') });
     await expect(viewButton).toBeVisible({ timeout: 5000 });
     await viewButton.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check preview tab exists
     const previewTab = page.locator('.ant-tabs-tab:has-text("プレビュー")');
@@ -295,7 +295,7 @@ test.describe('Comprehensive Preview Tests', () => {
 
     // Click preview tab
     await previewTab.click();
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Check for image preview (img element inside the active tab panel)
     const imageElement = page.locator('.ant-tabs-tabpane-active img').first();
@@ -304,7 +304,7 @@ test.describe('Comprehensive Preview Tests', () => {
 
   test('Text Preview - テキストサンプル.txt', async ({ page }) => {
     await page.goto(`http://localhost:8080/core/ui/#/documents?folderId=${testFolderId}`);
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find and click on text file
     const row = page.locator('tr:has-text("テキストサンプル.txt")');
@@ -314,7 +314,7 @@ test.describe('Comprehensive Preview Tests', () => {
     const viewButton = row.locator('button').filter({ has: page.locator('.anticon-eye') });
     await expect(viewButton).toBeVisible({ timeout: 5000 });
     await viewButton.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Check preview tab exists
     const previewTab = page.locator('.ant-tabs-tab:has-text("プレビュー")');
@@ -322,7 +322,7 @@ test.describe('Comprehensive Preview Tests', () => {
 
     // Click preview tab
     await previewTab.click();
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Check for text preview — multiple possible selectors
     // Monaco Editor renders h4 with filename, or pre/code block, or textarea

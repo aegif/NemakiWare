@@ -86,7 +86,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     // Submit
     const submitButton = folderModal.locator('button[type="submit"], button:has-text("作成"), button.ant-btn-primary').first();
     await submitButton.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Verify folder created
     const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first();
@@ -179,7 +179,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
           const userSelect = page.locator('.ant-select').filter({ hasText: /ユーザー|User|Group/ }).first();
           if (await userSelect.count() > 0) {
             await userSelect.click();
-            await page.waitForTimeout(300);
+            await waitForRender(page);
 
             // Select a user (e.g., admin or test user)
             const userOption = page.locator('.ant-select-item-option').first();
@@ -192,7 +192,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
           const permissionSelect = page.locator('.ant-select').filter({ hasText: /権限|Permission|Role/ }).last();
           if (await permissionSelect.count() > 0) {
             await permissionSelect.click();
-            await page.waitForTimeout(300);
+            await waitForRender(page);
 
             const readOption = page.locator('.ant-select-item-option').filter({ hasText: /読み取り|Read|Viewer/ }).first();
             if (await readOption.count() > 0) {

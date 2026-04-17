@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { generateTestId } from '../utils/test-helper';
@@ -187,7 +188,7 @@ test.describe('Cascade Delete Functionality', () => {
 
     // Step 4: Refresh document list
     await page.reload();
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Step 5: Find and click delete button for parent folder
     // First, find the row containing the parent folder
@@ -302,7 +303,7 @@ test.describe('Cascade Delete Functionality', () => {
 
     // Step 4: Refresh document list
     await page.reload();
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Step 5: Find and click delete button for parent folder
     const parentRow = page.locator(`tr:has-text("${parentName}")`);
@@ -328,9 +329,9 @@ test.describe('Cascade Delete Functionality', () => {
 
     // Step 7: Verify parent is deleted (retry with reload to account for async cascade)
     for (let attempt = 0; attempt < 10; attempt++) {
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
       await page.reload();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       const parentVisible = await page.locator(`tr:has-text("${parentName}")`).isVisible();
       if (!parentVisible) break;
@@ -367,7 +368,7 @@ test.describe('Cascade Delete Functionality', () => {
         break;
       }
       console.log(`Attempt ${attempt + 1}: child still exists, waiting for cascade delete...`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
     }
     expect(childDeleted).toBeTruthy();
 
@@ -403,7 +404,7 @@ test.describe('Cascade Delete Functionality', () => {
 
     // Step 2: Refresh document list
     await page.reload();
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Step 3: Find and click delete button
     const docRow = page.locator(`tr:has-text("${docName}")`);

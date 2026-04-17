@@ -188,7 +188,7 @@ test.describe('Permission Management UI - ACL Display', () => {
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Create a test folder
     // CRITICAL FIX (2025-12-27): Don't rely on success message (fades out in 3 seconds)
@@ -198,7 +198,7 @@ test.describe('Permission Management UI - ACL Display', () => {
 
       const modal = page.locator('.ant-modal:not(.ant-modal-hidden)');
       await modal.waitFor({ state: 'visible', timeout: 10000 });
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       // Use more specific input selector
       let nameInput = modal.locator('input[placeholder*="フォルダ名"]').first();
@@ -216,7 +216,7 @@ test.describe('Permission Management UI - ACL Display', () => {
 
       // Wait for modal to close instead of success message
       await expect(modal).not.toBeVisible({ timeout: 15000 });
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       console.log(`Test: Created test folder: ${testFolderName}`);
     }
@@ -234,7 +234,7 @@ test.describe('Permission Management UI - ACL Display', () => {
       if (await permissionsButton.count() > 0) {
         console.log('Test: Clicking permissions button...');
         await permissionsButton.first().click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // CRITICAL TEST: Verify NO error message appears
         const errorMessage = page.locator('.ant-message-error').filter({ hasText: 'データの読み込みに失敗しました' });
@@ -249,7 +249,7 @@ test.describe('Permission Management UI - ACL Display', () => {
         }
 
         // Wait for navigation or UI change
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Debug: Check what's on the page
         const currentUrl = page.url();
@@ -306,7 +306,7 @@ test.describe('Permission Management UI - ACL Display', () => {
         const backButton = page.locator('button').filter({ hasText: /戻る|Back/i });
         if (await backButton.count() > 0) {
           await backButton.first().click();
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
           console.log('✅ Navigated back to documents');
         }
       } else {
@@ -314,7 +314,7 @@ test.describe('Permission Management UI - ACL Display', () => {
 
         // Try clicking the folder row first to see action buttons
         await folderRow.first().click();
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Look for permissions button in action menu or toolbar
         const actionPermissionsButton = page.locator('button').filter({
@@ -324,7 +324,7 @@ test.describe('Permission Management UI - ACL Display', () => {
         if (await actionPermissionsButton.count() > 0) {
           console.log('Test: Found permissions button in action menu');
           await actionPermissionsButton.first().click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(1000);
+          await waitForRender(page);
 
           // Verify no error
           const errorMessage = page.locator('.ant-message-error').filter({ hasText: 'データの読み込みに失敗しました' });
@@ -343,17 +343,17 @@ test.describe('Permission Management UI - ACL Display', () => {
     const cleanupFolderRow = page.locator('tr').filter({ hasText: testFolderName });
     if (await cleanupFolderRow.count() > 0) {
       await cleanupFolderRow.first().click();
-      await page.waitForTimeout(500);
+      await waitForRender(page);
 
       const deleteButton = page.locator('button').filter({ has: page.locator('.anticon-delete, [aria-label="delete"]') });
       if (await deleteButton.count() > 0) {
         await deleteButton.first().click();
-        await page.waitForTimeout(500);
+        await waitForRender(page);
 
         const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button').filter({ hasText: /OK|確認/ });
         if (await confirmButton.count() > 0) {
           await confirmButton.first().click();
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
         }
       }
     }
@@ -444,14 +444,14 @@ test.describe('Permission Management UI - ACL Display', () => {
     // Navigate to documents and try to access permissions
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click();
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Find root folder or any folder
     const anyFolder = page.locator('tr').filter({ has: page.locator('.anticon-folder, [aria-label="folder"]') }).first();
 
     if (await anyFolder.count() > 0) {
       await anyFolder.click();
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       // Look for permissions button
       const permissionsButton = page.locator('button').filter({
@@ -460,7 +460,7 @@ test.describe('Permission Management UI - ACL Display', () => {
 
       if (await permissionsButton.count() > 0) {
         await permissionsButton.first().click();
-        await page.waitForTimeout(2000);
+        await waitForUiStable(page);
 
         // Verify ACL request used correct URL
         console.log(`Total ACL requests: ${aclRequests.length}`);

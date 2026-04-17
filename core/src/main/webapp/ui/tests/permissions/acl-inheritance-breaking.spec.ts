@@ -359,7 +359,7 @@ test.describe('ACL Inheritance Breaking', () => {
     }
 
     // Wait for the page to reload and update the button visibility
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     const breakButtonAfter = page.locator('button').filter({
       hasText: /継承を切る|Break Inheritance/i

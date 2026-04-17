@@ -179,7 +179,7 @@ test.describe('Basic Connectivity Tests', () => {
     await page.goto('http://localhost:8080/core/ui/index.html');
 
     // Wait for potential React app initialization
-    await page.waitForTimeout(5000);
+    await waitForUiStable(page, { timeout: 15000 });
 
     // Check if any form elements appeared
     const formElements = await page.locator('input, button, form').count();

@@ -47,7 +47,7 @@ test.describe('Archive Management Enhanced', () => {
         localStorage.setItem('nemakiware-language', 'ja');
       });
       await page.goto(`${BASE_URL}/core/ui/#/archive`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Verify page title
       const title = page.locator('h2').filter({ hasText: 'アーカイブ管理' });
@@ -89,7 +89,7 @@ test.describe('Archive Management Enhanced', () => {
         localStorage.setItem('nemakiware-language', 'ja');
       });
       await page.goto(`${BASE_URL}/core/ui/#/archive`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Click on pending archives tab
       const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: '期限切れ未アーカイブ' });
@@ -130,7 +130,7 @@ test.describe('Archive Management Enhanced', () => {
         localStorage.setItem('nemakiware-language', 'ja');
       });
       await page.goto(`${BASE_URL}/core/ui/#/archive`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       const settingsTab = page.locator('.ant-tabs-tab').filter({ hasText: 'リテンション設定' });
       if (await settingsTab.count() > 0) {
@@ -141,7 +141,7 @@ test.describe('Archive Management Enhanced', () => {
         const reloadButton = page.locator('.ant-tabs-tabpane-active button').filter({ hasText: '再読み込み' });
         if (await reloadButton.count() > 0) {
           await reloadButton.click();
-          await page.waitForTimeout(3000);
+          await waitForUiStable(page);
 
           // Verify settings labels
           const expectedLabels = ['リテンション', 'コールド移行日数', 'スケジュール (Cron式)', 'ストレージ種別'];
@@ -164,7 +164,7 @@ test.describe('Archive Management Enhanced', () => {
         localStorage.setItem('nemakiware-language', 'en');
       });
       await page.reload();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Verify page title
       const title = page.locator('h2').filter({ hasText: 'Archive Management' });
@@ -195,7 +195,7 @@ test.describe('Archive Management Enhanced', () => {
         localStorage.setItem('nemakiware-language', 'en');
       });
       await page.reload();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: 'Pending Archives' });
       if (await pendingTab.count() > 0) {
@@ -223,7 +223,7 @@ test.describe('Archive Management Enhanced', () => {
         localStorage.setItem('nemakiware-language', 'ja');
       });
       await page.goto(`${BASE_URL}/core/ui/#/archive`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       const jaTitle = page.locator('h2').filter({ hasText: 'アーカイブ管理' });
       await expect(jaTitle).toBeVisible({ timeout: 10000 });
@@ -249,7 +249,7 @@ test.describe('Archive Management Enhanced', () => {
           localStorage.setItem('nemakiware-language', 'en');
         });
         await page.reload();
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
 
         const enTitle = page.locator('h2').filter({ hasText: 'Archive Management' });
         await expect(enTitle).toBeVisible({ timeout: 10000 });
@@ -261,7 +261,7 @@ test.describe('Archive Management Enhanced', () => {
   test.describe('Admin-only tabs visibility', () => {
     test('should show all tabs for admin user', async ({ page }) => {
       await page.goto(`${BASE_URL}/core/ui/#/archive`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       const tabs = page.locator('.ant-tabs-tab');
       const tabCount = await tabs.count();
@@ -292,7 +292,7 @@ test.describe('Archive Management Enhanced', () => {
   test.describe('Pending Archives tab', () => {
     test('should load pending archives data', async ({ page }) => {
       await page.goto(`${BASE_URL}/core/ui/#/archive`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: /期限切れ未アーカイブ|Pending Archives/i });
       if (await pendingTab.count() === 0) {
@@ -301,7 +301,7 @@ test.describe('Archive Management Enhanced', () => {
       }
 
       await pendingTab.click();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Should show either empty state or table
       const emptyState = page.locator('.ant-empty');
@@ -328,7 +328,7 @@ test.describe('Archive Management Enhanced', () => {
 
     test('should display badge count when pending items exist', async ({ page }) => {
       await page.goto(`${BASE_URL}/core/ui/#/archive`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // First click on pending tab to load data
       const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: /期限切れ未アーカイブ|Pending Archives/i });
@@ -338,7 +338,7 @@ test.describe('Archive Management Enhanced', () => {
       }
 
       await pendingTab.click();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Check for badge on tab (only present when count > 0)
       const badge = pendingTab.locator('.ant-badge');
@@ -357,7 +357,7 @@ test.describe('Archive Management Enhanced', () => {
   test.describe('Migration Logs tab', () => {
     test('should load migration logs', async ({ page }) => {
       await page.goto(`${BASE_URL}/core/ui/#/archive`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       const logsTab = page.locator('.ant-tabs-tab').filter({ hasText: /移行ログ|Migration Logs/i });
       if (await logsTab.count() === 0) {
@@ -366,7 +366,7 @@ test.describe('Archive Management Enhanced', () => {
       }
 
       await logsTab.click();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Verify table columns
       const tableHeader = page.locator('.ant-tabs-tabpane-active .ant-table-thead');
@@ -398,7 +398,7 @@ test.describe('Archive Management Enhanced', () => {
   test.describe('Settings tab', () => {
     test('should load and display retention settings', async ({ page }) => {
       await page.goto(`${BASE_URL}/core/ui/#/archive`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       const settingsTab = page.locator('.ant-tabs-tab').filter({ hasText: /リテンション設定|Retention Settings/i });
       if (await settingsTab.count() === 0) {
@@ -413,7 +413,7 @@ test.describe('Archive Management Enhanced', () => {
       const reloadButton = page.locator('.ant-tabs-tabpane-active button').filter({ hasText: /再読み込み|Reload/i });
       if (await reloadButton.count() > 0) {
         await reloadButton.click();
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
       }
 
       // Verify Descriptions component loaded with settings
@@ -450,7 +450,7 @@ test.describe('Archive Management Enhanced', () => {
   test.describe('Archive error messages', () => {
     test('should show restore button with proper i18n text', async ({ page }) => {
       await page.goto(`${BASE_URL}/core/ui/#/archive`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       const archiveRows = page.locator('.ant-table-tbody tr.ant-table-row');
       const rowCount = await archiveRows.count();
@@ -474,7 +474,7 @@ test.describe('Archive Management Enhanced', () => {
 
     test('should show popconfirm with localized text on restore', async ({ page }) => {
       await page.goto(`${BASE_URL}/core/ui/#/archive`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       const archiveRows = page.locator('.ant-table-tbody tr.ant-table-row');
       if (await archiveRows.count() === 0) {
@@ -510,7 +510,7 @@ test.describe('Archive Management Enhanced', () => {
   test.describe('Extend expiration modal', () => {
     test('should open extend expiration modal from pending archives', async ({ page }) => {
       await page.goto(`${BASE_URL}/core/ui/#/archive`);
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: /期限切れ未アーカイブ|Pending Archives/i });
       if (await pendingTab.count() === 0) {
@@ -519,7 +519,7 @@ test.describe('Archive Management Enhanced', () => {
       }
 
       await pendingTab.click();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Check if there are pending archives with extend button
       const extendButton = page.locator('.ant-tabs-tabpane-active button').filter({
@@ -609,7 +609,7 @@ test.describe('Archive Management - Non-Admin User', () => {
 
     // Navigate to archive page
     await page.goto(`${BASE_URL}/core/ui/#/archive`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     // Non-admin should only see the archives tab
     const tabs = page.locator('.ant-tabs-tab');
@@ -878,7 +878,7 @@ test.describe('Archive Management - Restore Edge Cases', () => {
 
     // 5. Navigate to archive page and try to restore
     await page.goto(`${BASE_URL}/core/ui/#/archive`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     const archiveRow = page.locator('.ant-table-tbody tr.ant-table-row').filter({ hasText: testDocName });
     if (await archiveRow.count() === 0) {
@@ -897,7 +897,7 @@ test.describe('Archive Management - Restore Edge Cases', () => {
         .filter({ hasText: /はい|OK|Yes/i }).first();
       if (await confirmButton.count() > 0) {
         await confirmButton.click();
-        await page.waitForTimeout(3000);
+        await waitForUiStable(page);
 
         // Check for error message about parent folder
         const errorMessage = page.locator('.ant-message-error');

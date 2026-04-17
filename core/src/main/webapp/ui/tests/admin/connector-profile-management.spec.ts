@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:8080';
@@ -10,12 +11,12 @@ test.describe('Connector & Profile Management UI', () => {
     await page.fill('input[type="text"], input[name="username"], #username', 'admin');
     await page.fill('input[type="password"], input[name="password"], #password', 'admin');
     await page.click('button[type="submit"]');
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
   });
 
   test('should display Connectors tab in Integration Settings', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     const tabs = page.locator('[role="tab"]');
     const connectorTab = tabs.filter({ hasText: /Connector|コネクタ/i });
@@ -24,7 +25,7 @@ test.describe('Connector & Profile Management UI', () => {
 
   test('should display Import Profiles tab in Integration Settings', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
-    await page.waitForTimeout(3000);
+    await waitForUiStable(page);
 
     const tabs = page.locator('[role="tab"]');
     const profileTab = tabs.filter({ hasText: /Import Profile|インポートプロファイル/i });

@@ -1,3 +1,4 @@
+import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
@@ -230,13 +231,13 @@ test.describe('Advanced ACL Management', () => {
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    await waitForUiStable(page);
 
     // Step 1: Create parent folder
     const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
     if (await createFolderButton.count() > 0) {
       await createFolderButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      await waitForRender(page);
 
       const modal = page.locator('.ant-modal:not(.ant-modal-hidden)');
       const nameInput = modal.locator('input[placeholder*="名前"], input[id*="name"]');
@@ -245,7 +246,7 @@ test.describe('Advanced ACL Management', () => {
       const submitButton = modal.locator('button[type="submit"], button.ant-btn-primary');
       await submitButton.click();
       await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-      await page.waitForTimeout(2000);
+      await waitForUiStable(page);
     }
 
     // Step 2: Set ACL on parent folder with specific user permission
@@ -291,13 +292,13 @@ test.describe('Advanced ACL Management', () => {
           // Step 3: Navigate into parent folder
           const folderLink = parentFolderRow.locator('button, a').first();
           await folderLink.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(2000);
+          await waitForUiStable(page);
 
           // Step 4: Create child folder
           const createChildButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
           if (await createChildButton.count() > 0) {
             await createChildButton.click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(1000);
+            await waitForRender(page);
 
             const childModal = page.locator('.ant-modal:not(.ant-modal-hidden)');
             const childNameInput = childModal.locator('input[placeholder*="名前"], input[id*="name"]');
@@ -306,7 +307,7 @@ test.describe('Advanced ACL Management', () => {
             const childSubmitButton = childModal.locator('button[type="submit"], button.ant-btn-primary');
             await childSubmitButton.click();
             await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-            await page.waitForTimeout(2000);
+            await waitForUiStable(page);
 
             // Step 5: Check child folder ACL via API
             const childQueryResponse = await page.request.get(
@@ -547,7 +548,7 @@ test.describe('Advanced ACL Management', () => {
         }
 
         // Wait for ACL to propagate
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Step 1 Verification: Check ACL was applied correctly (as admin via dedicated ACL endpoint)
         const aclCheckResponse1 = await page.request.get(
@@ -619,7 +620,7 @@ test.describe('Advanced ACL Management', () => {
         console.log('Test: Changed testuser permission from cmis:all to cmis:read');
 
         // Wait for ACL propagation
-        await page.waitForTimeout(1000);
+        await waitForRender(page);
 
         // Step 2 Verification: Check ACL was updated correctly (as admin via dedicated ACL endpoint)
         const aclCheckResponse2 = await page.request.get(

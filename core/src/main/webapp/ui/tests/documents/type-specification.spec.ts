@@ -52,7 +52,7 @@ test.describe('Type Specification Features', () => {
 
       // Wait for upload modal
       await page.waitForSelector('.ant-modal:has-text("ファイルアップロード")', { timeout: 10000 });
-      await page.waitForTimeout(1500);
+      await waitForUiStable(page);
 
       // Click type selector to open dropdown
       const typeSelector = page.locator('.ant-modal .ant-select').first();
@@ -120,7 +120,7 @@ test.describe('Type Specification Features', () => {
       await page.waitForSelector('.ant-modal:has-text("ファイルアップロード")', { state: 'hidden', timeout: 20000 });
 
       // Verify document appears in table
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
       const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: fileName });
       await expect(documentRow).toBeVisible({ timeout: 10000 });
     });
@@ -255,7 +255,7 @@ test.describe('Type Specification Features', () => {
       }
 
       await docButton.click();
-      await page.waitForTimeout(3000);
+      await waitForUiStable(page);
 
       // Click on secondary type tab
       const secondaryTab = page.locator('.ant-tabs-tab').filter({ hasText: 'セカンダリタイプ' });

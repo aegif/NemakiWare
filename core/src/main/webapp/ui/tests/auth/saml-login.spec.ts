@@ -48,7 +48,7 @@ test.describe('NemakiWare SAML Authentication', () => {
       { timeout: 30000 }
     );
 
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const samlButton = page.locator('button:has-text("SAML"), button:has-text("SSO")').first();
     await expect(samlButton).toBeVisible({ timeout: 10000 });
@@ -65,7 +65,7 @@ test.describe('NemakiWare SAML Authentication', () => {
       { timeout: 30000 }
     );
 
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const samlButton = page.locator('button:has-text("SAML"), button:has-text("SSO")').first();
     await samlButton.click();
@@ -89,7 +89,7 @@ test.describe('NemakiWare SAML Authentication', () => {
       { timeout: 30000 }
     );
 
-    await page.waitForTimeout(1000);
+    await waitForRender(page);
 
     const samlButton = page.locator('button:has-text("SAML"), button:has-text("SSO")').first();
     await samlButton.click();
