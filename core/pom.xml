@@ -725,20 +725,21 @@
 		</dependency>
 
 		<!-- CAD drawing library (DXF/DWG/JWW/SFC/P21 → SVG/PDF).
-		     CadRenditionManagerImpl uses reflection to load this at
-		     runtime, so it is safe to omit — CAD preview simply
-		     becomes unavailable if the JAR is not on the classpath.
-		     To enable: mvn install:install-file -DgroupId=io.github.yumioka \
-		       -DartifactId=mathacad-core -Dversion=0.1.0 -Dpackaging=jar \
-		       -Dfile=/path/to/mathacad-core-0.1.0.jar
-		     The previous systemPath stub (322-byte empty JAR) served
-		     only to satisfy the compiler; reflection never resolved it. -->
+		     CadRenditionManagerImpl loads this via Class.forName() at
+		     runtime only — no compile-time import exists, so the
+		     dependency declaration is fully commented out.  CAD preview
+		     is simply unavailable unless the JAR is on the classpath.
+		     To enable: place mathacad-core-0.1.0.jar in
+		     WEB-INF/lib/ of the deployed WAR. -->
+		<!--
 		<dependency>
 			<groupId>io.github.yumioka</groupId>
 			<artifactId>mathacad-core</artifactId>
 			<version>0.1.0</version>
+			<scope>provided</scope>
 			<optional>true</optional>
 		</dependency>
+		-->
 
 		<!-- CommonMark Markdown → HTML (text extraction for search) -->
 		<dependency>

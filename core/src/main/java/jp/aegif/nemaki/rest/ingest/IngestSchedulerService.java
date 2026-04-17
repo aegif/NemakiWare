@@ -216,7 +216,7 @@ public class IngestSchedulerService {
                     final IngestJobRecord heartbeatJob = job;
                     var future = java.util.concurrent.CompletableFuture.supplyAsync(
                             () -> executeFetch(null, profile, connector, params),
-                            Thread.ofVirtual().name("fetch-" + profile.getProfileId()).factory()::newThread);
+                            r -> Thread.ofVirtual().name("fetch-" + profile.getProfileId()).start(r));
 
                     // Heartbeat every 5 minutes while the fetch runs
                     while (!future.isDone()) {

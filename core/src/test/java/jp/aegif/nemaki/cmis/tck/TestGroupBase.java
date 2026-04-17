@@ -345,42 +345,57 @@ public class TestGroupBase extends AbstractRunner {
 			session = factory.createSession(sessionParams);
 
 			if (session != null) {
-				// Get root folder
-				org.apache.chemistry.opencmis.client.api.Folder rootFolder = session.getRootFolder();
-
-				// Find and delete all cmistck objects
-				org.apache.chemistry.opencmis.client.api.ItemIterable<org.apache.chemistry.opencmis.client.api.CmisObject> children =
-					rootFolder.getChildren();
-
+				// Use CMIS SQL query to find cmistck* objects instead of
+				// iterating all root folder children.  The old approach
+				// caused Read timed out when the root folder had >5000
+				// children (accumulated from prior test runs).
 				int deletedCount = 0;
-				for (org.apache.chemistry.opencmis.client.api.CmisObject child : children) {
-					if (child == null) {
-						continue;
-					}
-					String name = child.getName();
-					if (name != null && name.startsWith("cmistck")) {
-						try {
-							// Delete with all versions if it's a document
-							if (child instanceof org.apache.chemistry.opencmis.client.api.Document) {
-								((org.apache.chemistry.opencmis.client.api.Document) child).deleteAllVersions();
-							} else if (child instanceof org.apache.chemistry.opencmis.client.api.Folder) {
-								// Delete folder recursively
-								((org.apache.chemistry.opencmis.client.api.Folder) child).deleteTree(true, null, true);
-							} else {
-								child.delete(true);
+				String[] prefixes = {"cmistck", "test-custom-"};
+				for (String prefix : prefixes) {
+					try {
+						String query = "SELECT cmis:objectId, cmis:baseTypeId, cmis:name FROM cmis:document "
+								+ "WHERE cmis:name LIKE '" + prefix + "%'";
+						org.apache.chemistry.opencmis.client.api.ItemIterable<org.apache.chemistry.opencmis.client.api.QueryResult> results =
+								session.query(query, false);
+						for (org.apache.chemistry.opencmis.client.api.QueryResult qr : results) {
+							String objectId = qr.getPropertyValueById("cmis:objectId");
+							try {
+								session.getObject(objectId).delete(true);
+								deletedCount++;
+							} catch (Exception deleteEx) {
+								// Object may already be deleted or locked
 							}
-							deletedCount++;
-
-						} catch (Exception deleteEx) {
-							System.err.println("TCK CLEANUP: Failed to delete " + name + ": " + deleteEx.getMessage());
-							// Continue with other deletions
 						}
+					} catch (Exception queryEx) {
+						// Query may fail if Solr is not available; fall back to folder scan
+						System.err.println("TCK CLEANUP: Query-based cleanup failed for '" + prefix + "': " + queryEx.getMessage());
+					}
+					try {
+						String folderQuery = "SELECT cmis:objectId, cmis:name FROM cmis:folder "
+								+ "WHERE cmis:name LIKE '" + prefix + "%'";
+						org.apache.chemistry.opencmis.client.api.ItemIterable<org.apache.chemistry.opencmis.client.api.QueryResult> results =
+								session.query(folderQuery, false);
+						for (org.apache.chemistry.opencmis.client.api.QueryResult qr : results) {
+							String objectId = qr.getPropertyValueById("cmis:objectId");
+							try {
+								org.apache.chemistry.opencmis.client.api.CmisObject obj = session.getObject(objectId);
+								if (obj instanceof org.apache.chemistry.opencmis.client.api.Folder) {
+									((org.apache.chemistry.opencmis.client.api.Folder) obj).deleteTree(true, null, true);
+								} else {
+									obj.delete(true);
+								}
+								deletedCount++;
+							} catch (Exception deleteEx) {
+								// Continue
+							}
+						}
+					} catch (Exception queryEx) {
+						System.err.println("TCK CLEANUP: Folder query cleanup failed for '" + prefix + "': " + queryEx.getMessage());
 					}
 				}
 
 				if (deletedCount > 0) {
-					System.out.println("TCK CLEANUP: Deleted " + deletedCount + " test artifacts");
-					// Brief wait for deletions to propagate
+					System.out.println("TCK CLEANUP: Deleted " + deletedCount + " test artifacts via query");
 					Thread.sleep(500);
 				}
 			}

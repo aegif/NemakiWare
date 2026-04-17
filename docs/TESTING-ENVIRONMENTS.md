@@ -123,15 +123,16 @@ npx playwright test tests/api/ingest-pipeline-e2e.spec.ts  # 特定ファイル
 
 ### 実行方法
 ```bash
-# 前提: CouchDB と Solr は Docker で起動済み
+# 前提: CouchDB は Docker で起動済み（必須）
+# Solr は検索機能を使う場合のみ必要
 bash core/start-jetty-dev.sh
 # または
 mvn jetty:run -f core/pom.xml -Pdevelopment
 ```
 
 ### 依存
-- **CouchDB** (Docker, ポート 5984)
-- **Solr** (Docker, ポート 8983) — 検索を使う機能の場合
+- **CouchDB** (Docker, ポート 5984) — **必須**
+- **Solr** (Docker, ポート 8983) — 検索機能を使う場合のみ
 - 自身は Maven Jetty プラグイン (12.1.5, ee11)
 
 ### 制約

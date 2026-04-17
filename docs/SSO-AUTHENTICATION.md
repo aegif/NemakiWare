@@ -41,10 +41,9 @@ The NemakiWare realm is pre-configured in `docker/keycloak/realm-export.json` wi
 - SAML client: `nemakiware-saml-client`
 - Test user: `testuser` / `password`
 
-> **Note**: `docker/realm-export.json` ships with `nemakiware-oidc-client`.
-> If the UI uses `nemakiware-ui`, create a matching client in Keycloak or
-> update the realm export.  The values below reflect the **UI source of truth**
-> (`config/oidc.ts`, `config/saml.ts`).
+> **Note**: `docker/realm-export.json` ships with client ID `nemakiware-ui`
+> (matching `config/oidc.ts`).  The SAML client is `nemakiware-saml-client`
+> with ACS URL `/core/saml/acs` (matching `config/saml.ts`).
 
 ### OIDC Client Configuration
 

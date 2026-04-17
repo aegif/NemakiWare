@@ -40,6 +40,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: { java-version: '21', distribution: 'temurin', cache: 'maven' }
+      - name: Build sibling modules
+        run: |
+          mvn clean install -N -DskipTests -q
+          mvn clean install -f common/pom.xml -DskipTests -q
+          mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+          mvn clean install -f solr/pom.xml -DskipTests -q
       - name: Run unit tests
         run: |
           mvn test \
