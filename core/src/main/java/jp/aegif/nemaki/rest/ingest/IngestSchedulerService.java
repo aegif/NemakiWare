@@ -56,6 +56,8 @@ public class IngestSchedulerService {
     /**
      * Start the periodic polling scheduler. Called after all beans are initialized.
      */
+    private java.util.concurrent.ScheduledExecutorService stuckJobDetector;
+
     public void startPolling() {
         if (scheduler != null) return;
         scheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
@@ -66,9 +68,28 @@ public class IngestSchedulerService {
         scheduler.scheduleWithFixedDelay(this::pollScheduledProfiles,
                 POLL_INTERVAL_SECONDS, POLL_INTERVAL_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
         logger.info("Ingest scheduler started (interval={}s)", POLL_INTERVAL_SECONDS);
+
+        // Separate thread for stuck job detection — cannot share the main
+        // scheduler thread because if executeFetch() hangs, the scheduler
+        // thread is blocked and detectStuckJobs() would never run.
+        stuckJobDetector = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "IngestStuckDetector");
+            t.setDaemon(true);
+            return t;
+        });
+        stuckJobDetector.scheduleWithFixedDelay(() -> {
+            if (ingestJobService != null) {
+                try { ingestJobService.detectStuckJobs(); }
+                catch (Exception e) { logger.debug("Stuck job detection failed: {}", e.getMessage()); }
+            }
+        }, 5 * 60, 5 * 60, java.util.concurrent.TimeUnit.SECONDS); // every 5 minutes
     }
 
     public void stopPolling() {
+        if (stuckJobDetector != null) {
+            stuckJobDetector.shutdownNow();
+            stuckJobDetector = null;
+        }
         if (scheduler != null) {
             scheduler.shutdownNow();
             scheduler = null;
@@ -220,15 +241,9 @@ public class IngestSchedulerService {
             }
             // Periodic purge of expired idempotency keys (at most once per hour)
             purgeExpiredIdempotencyKeysIfDue();
-
-            // Detect stuck jobs (RUNNING with no heartbeat for >30 min)
-            if (ingestJobService != null) {
-                try {
-                    ingestJobService.detectStuckJobs();
-                } catch (Exception e) {
-                    logger.debug("Stuck job detection failed: {}", e.getMessage());
-                }
-            }
+            // Note: detectStuckJobs() runs on a separate scheduled thread
+            // (stuckJobDetector) so that it can detect hangs even when
+            // this scheduler thread is blocked inside executeFetch().
         } catch (Exception e) {
             logger.error("Ingest scheduler poll failed: {}", e.getMessage());
         }

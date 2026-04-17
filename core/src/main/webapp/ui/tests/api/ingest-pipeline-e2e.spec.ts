@@ -496,20 +496,20 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
     const connId = `e2e-conn-dlq-${ts}`;
     const profId = `e2e-prof-dlq-${ts}`;
 
-    // Create stub connector + profile with a broken endpoint to force a DLQ entry
+    // Create stub connector + profile that targets a nonexistent folder
+    // so the scheduled import will fail and create a DLQ entry.
     await request.post(`${BASE}/v1/admin/connectors`, {
       headers: JSON_H,
       data: {
         connectorId: connId, sourceArchetype: 'FILE_SHARE',
         sourceSystem: 'e2e_test', authType: 'none', enabled: true,
-        // endpoint that will cause a transient-like error
-        endpoint: 'http://localhost:1/nonexistent',
       },
     });
     await request.post(`${BASE}/v1/admin/import-profiles`, {
       headers: JSON_H,
       data: {
-        profileId: profId, repositoryId: 'bedroom', targetFolderPath: '/',
+        profileId: profId, repositoryId: 'bedroom',
+        targetFolderPath: '/nonexistent-dlq-test-folder',
         defaultConnectorId: connId, defaultObjectTypeId: 'cmis:document',
         dedupePolicy: 'create_new_version', updatePolicy: 'version_up_on_content_change',
         versioningPolicy: 'major', enabled: true,
@@ -517,23 +517,34 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
     });
 
     try {
-      // List DLQ entries to find one with our profile (or use existing)
+      // Trigger an import that will fail (nonexistent folder → error → DLQ).
+      // executionMode=scheduled so the error goes to DLQ.
+      await request.post(`${BASE}/v1/repo/bedroom/ingest`, {
+        headers: JSON_H,
+        data: {
+          profileId: profId, connectorId: connId,
+          sourceObjectId: `dlq-fixture-${ts}`, sourceObjectType: 'file',
+          fileName: `dlq-fixture-${ts}.txt`, executionMode: 'scheduled',
+        },
+      });
+
+      // The import should have failed and created a DLQ entry.
       const listRes = await request.get(`${BASE}/v1/admin/ingest/dlq`, { headers: AUTH });
-      const entries = (await listRes.json()).entries || [];
+      const entries = ((await listRes.json()).entries || [])
+        .filter((e: { profileId?: string }) => e.profileId === profId);
       if (entries.length === 0) {
-        // No DLQ entries available — test cannot exercise cooldown.
-        // This is expected in clean environments; cooldown is also
-        // covered by the atomic reservation logic (409 on concurrent write).
+        // If DLQ entry was not created (permanent errors now go to DLQ too,
+        // but just in case), skip gracefully.
         return;
       }
       const dlqId = entries[0].dlqId;
       expect(dlqId).toBeTruthy();
 
-      // First retry — reservation succeeds (dispatch may fail, that's OK)
+      // First retry — reservation succeeds
       const r1 = await request.post(`${BASE}/v1/admin/ingest/dlq/${dlqId}/retry`, { headers: AUTH });
       expect(r1.status()).not.toBe(429);
 
-      // Immediate second retry — must hit cooldown (lastRetryAt just written)
+      // Immediate second retry — must hit cooldown
       const r2 = await request.post(`${BASE}/v1/admin/ingest/dlq/${dlqId}/retry`, { headers: AUTH });
       expect(r2.status()).toBe(429);
     } finally {
