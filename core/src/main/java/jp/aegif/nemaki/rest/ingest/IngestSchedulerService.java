@@ -218,14 +218,23 @@ public class IngestSchedulerService {
                             () -> executeFetch(null, profile, connector, params),
                             r -> Thread.ofVirtual().name("fetch-" + profile.getProfileId()).start(r));
 
-                    // Heartbeat every 5 minutes while the fetch runs
+                    // Heartbeat every 5 minutes while the fetch runs, but
+                    // stop after MAX_HEARTBEATS so that detectStuckJobs()
+                    // can mark a genuinely hung fetch as STUCK.  Without
+                    // this cap, an infinite heartbeat loop would mask
+                    // wedged connector calls forever.
+                    final int MAX_HEARTBEATS = 6; // 6 × 5min = 30min max
+                    int heartbeatCount = 0;
                     while (!future.isDone()) {
                         try { future.get(5, java.util.concurrent.TimeUnit.MINUTES); }
                         catch (java.util.concurrent.TimeoutException _timeout) {
-                            if (heartbeatJob != null && ingestJobService != null) {
+                            if (heartbeatCount < MAX_HEARTBEATS && heartbeatJob != null && ingestJobService != null) {
                                 try { ingestJobService.heartbeat(heartbeatJob); }
                                 catch (Exception hbe) { logger.debug("Heartbeat failed: {}", hbe.getMessage()); }
+                                heartbeatCount++;
                             }
+                            // After MAX_HEARTBEATS, lastHeartbeatAt stops updating
+                            // and the stuck detector will catch it.
                         }
                     }
                     FetchResult result = future.get(); // already done, retrieves result or throws
