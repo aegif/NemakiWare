@@ -300,7 +300,7 @@ const UserGuide: React.FC = () => {
 
   return (
     <Collapse
-      defaultActiveKey={['documents']}
+      defaultActiveKey={['login', 'documents', 'upload']}
       items={sections}
     />
   );

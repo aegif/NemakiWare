@@ -1170,6 +1170,7 @@
 								<include>auth-popup-entry.js</include>
 								<include>assets/**</include>
 								<include>pdf-worker/**</include>
+								<include>help-images/**</include>
 								<include>*.png</include>
 							</includes>
 						</resource>
