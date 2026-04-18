@@ -215,6 +215,7 @@ import { ArchiveManagement } from './components/ArchiveManagement/ArchiveManagem
 import { SolrMaintenance } from './components/SolrMaintenance/SolrMaintenance';
 import { AuditDashboard } from './components/AuditDashboard/AuditDashboard';
 import { ApiDocs } from './components/ApiDocs/ApiDocs';
+import HelpPage from './components/HelpPage/HelpPage';
 import { FilesystemImportExport } from './components/FilesystemImportExport/FilesystemImportExport';
 import { WebhookManagement } from './components/WebhookManagement/WebhookManagement';
 import { CloudDirectorySync } from './components/CloudDirectorySync/CloudDirectorySync';
@@ -461,6 +462,11 @@ function AppRoutes() {
               <AdminRoute>
                 <ApiDocs repositoryId={authToken.repositoryId} />
               </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/help" element={
+            <ProtectedRoute>
+              <HelpPage />
             </ProtectedRoute>
           } />
           <Route path="/filesystem-import-export" element={

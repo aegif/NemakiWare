@@ -104,8 +104,14 @@
       "purview": "Microsoft Purview",
       "rssManagement": "RSS Token Management",
       "accountSettings": "Account Settings",
-      "lineageJournalTitle": "Lineage Journal"
+      "lineageJournalTitle": "Lineage Journal",
+      "help": "Help"
     },
+  "help": {
+    "title": "NemakiWare Help",
+    "userGuide": "User Guide",
+    "adminGuide": "Admin Guide"
+  },
   "purviewManagement": {
     "title": "Microsoft Purview Management",
     "actions": {

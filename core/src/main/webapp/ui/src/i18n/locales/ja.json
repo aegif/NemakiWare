@@ -104,8 +104,14 @@
       "purview": "Microsoft Purview",
       "rssManagement": "RSSトークン管理",
       "accountSettings": "アカウント設定",
-      "lineageJournalTitle": "Lineage ジャーナル"
+      "lineageJournalTitle": "Lineage ジャーナル",
+      "help": "ヘルプ"
     },
+  "help": {
+    "title": "NemakiWare ヘルプ",
+    "userGuide": "ユーザーガイド",
+    "adminGuide": "管理者ガイド"
+  },
   "purviewManagement": {
     "title": "Microsoft Purview 管理",
     "actions": {
