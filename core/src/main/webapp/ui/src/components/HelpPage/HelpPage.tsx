@@ -70,6 +70,7 @@ const UserGuide: React.FC = () => {
       label: <Space><LoginOutlined /><Text strong>ログイン</Text></Space>,
       children: (
         <>
+          <HelpImage src="00-login.png" alt="ログイン画面" />
           <Steps
             direction="vertical"
             size="small"
@@ -229,18 +230,38 @@ const UserGuide: React.FC = () => {
     },
     {
       key: 'acl',
-      label: <Space><LockOutlined /><Text strong>権限の確認</Text></Space>,
+      label: <Space><LockOutlined /><Text strong>権限（ACL）</Text></Space>,
       children: (
         <>
-          <Paragraph>ドキュメントの詳細画面で「権限」タブを開くと、現在のアクセス権限を確認できます。</Paragraph>
+          <Paragraph>ドキュメントやフォルダの詳細画面で「権限」タブを開くと、現在のアクセス制御リスト（ACL）を確認できます。</Paragraph>
+          <Title level={5}>権限レベル</Title>
           <Descriptions bordered column={1} size="small">
-            <Descriptions.Item label="cmis:read">閲覧権限</Descriptions.Item>
-            <Descriptions.Item label="cmis:write">編集権限（アップロード・プロパティ変更）</Descriptions.Item>
-            <Descriptions.Item label="cmis:all">全操作権限（管理者レベル）</Descriptions.Item>
+            <Descriptions.Item label="cmis:read">閲覧のみ（ダウンロード・プロパティ参照）</Descriptions.Item>
+            <Descriptions.Item label="cmis:write">編集（アップロード・プロパティ変更・バージョン作成）</Descriptions.Item>
+            <Descriptions.Item label="cmis:all">全操作（権限の変更・削除を含むすべての操作が可能）</Descriptions.Item>
           </Descriptions>
-          <Alert type="warning" showIcon style={{ marginTop: 12 }}
-            message="権限の変更は管理者のみ可能です"
+          <Alert type="info" showIcon style={{ marginTop: 12 }}
+            message="cmis:all と admin ユーザーの違い"
+            description="cmis:all はドキュメント/フォルダ単位のアクセス権限です。あるフォルダに cmis:all を持つユーザーは、そのフォルダの権限変更が可能です。一方、admin ユーザーはシステム管理者で、ユーザー/グループの管理やシステム設定の変更ができます。両者は独立した概念です。"
           />
+          <Divider />
+          <Title level={5}>権限の変更</Title>
+          <Steps
+            direction="vertical"
+            size="small"
+            items={[
+              { title: '対象のドキュメント/フォルダの詳細画面を開く' },
+              { title: '「権限」タブをクリック' },
+              { title: 'ユーザーまたはグループを追加', description: '権限レベル（cmis:read / cmis:write / cmis:all）を選択します' },
+              { title: '「保存」をクリック' },
+            ]}
+          />
+          <Alert type="info" showIcon style={{ marginTop: 8 }}
+            message="権限の変更には、対象に対して cmis:all 権限を持っている必要があります"
+          />
+          <Divider />
+          <Title level={5}>権限の継承</Title>
+          <Paragraph>デフォルトでは親フォルダの権限を継承します。「継承を解除」をクリックすると、独自の権限設定に切り替わります。解除時に親の権限エントリが直接権限としてコピーされるので、そこから個別に編集できます。</Paragraph>
         </>
       ),
     },
@@ -272,6 +293,7 @@ const UserGuide: React.FC = () => {
       label: <Space><KeyOutlined /><Text strong>パスキー認証</Text></Space>,
       children: (
         <>
+          <HelpImage src="17-account-settings.png" alt="アカウント設定画面（パスキータブ）" />
           <Title level={5}>パスキーの登録</Title>
           <Steps
             direction="vertical"
