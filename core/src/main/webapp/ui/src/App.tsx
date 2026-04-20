@@ -341,13 +341,14 @@ function AppRoutes() {
 
   // Public routes that don't require authentication
   // cloud-login needs to be accessible for MCP cloud authentication flow
-  const isPublicRoute = location.pathname === '/cloud-login';
+  const isPublicRoute = location.pathname === '/cloud-login' || location.pathname === '/help';
 
   // Handle public routes - accessible without authentication
   if (isPublicRoute) {
     return (
       <Routes>
         <Route path="/cloud-login" element={<McpCloudLogin />} />
+        <Route path="/help" element={<HelpPage />} />
       </Routes>
     );
   }
