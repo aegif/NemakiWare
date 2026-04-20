@@ -162,12 +162,26 @@ const UserGuide: React.FC = () => {
       ),
     },
     {
-      key: 'preview',
-      label: <Space><EyeOutlined /><Text strong>プレビュー</Text></Space>,
+      key: 'detail',
+      label: <Space><EyeOutlined /><Text strong>ドキュメント詳細・プレビュー</Text></Space>,
       children: (
         <>
-          <Paragraph>ドキュメントをクリックして詳細画面を開き、「プレビュー」タブをクリックします。</Paragraph>
-          <HelpImage src="04-document-detail.png" alt="ドキュメント詳細画面（プロパティタブ）" />
+          <Title level={5}>ドキュメント詳細画面</Title>
+          <Paragraph>ドキュメント一覧でファイル名をクリックすると詳細画面が開きます。画面上部にメタデータ（パス、作成者、更新日時、サイズ等）が表示され、下部にタブが並びます。</Paragraph>
+          <HelpImage src="04-document-detail.png" alt="ドキュメント詳細画面 — プロパティタブ" />
+          <Card size="small" title="画面上部のボタン">
+            <Descriptions bordered column={1} size="small">
+              <Descriptions.Item label="← 戻る">ドキュメント一覧に戻ります</Descriptions.Item>
+              <Descriptions.Item label="ダウンロード">ファイルをダウンロードします</Descriptions.Item>
+              <Descriptions.Item label="チェックアウト">ドキュメントをロックして編集を開始します</Descriptions.Item>
+              <Descriptions.Item label="タイプを変更">ドキュメントのオブジェクトタイプを変更します</Descriptions.Item>
+              <Descriptions.Item label="権限管理">権限管理画面を開きます</Descriptions.Item>
+            </Descriptions>
+          </Card>
+          <Divider />
+          <Title level={5}>プレビュータブ</Title>
+          <Paragraph>「プレビュー」タブをクリックすると、ファイルの内容を画面内で確認できます。</Paragraph>
+          <HelpImage src="05-preview.png" alt="プレビュータブ — テキストファイルの表示例" />
           <Table
             size="small" pagination={false}
             dataSource={[
@@ -182,6 +196,10 @@ const UserGuide: React.FC = () => {
               { title: 'プレビュー方法', dataIndex: 'method' },
             ]}
           />
+          <Divider />
+          <Title level={5}>セカンダリタイプ（アスペクト）タブ</Title>
+          <Paragraph>ドキュメントに追加のメタデータを付与するセカンダリタイプの管理ができます。セレクターから追加したいタイプを選択し「追加」をクリックします。</Paragraph>
+          <HelpImage src="18-secondary-type.png" alt="セカンダリタイプタブ" />
         </>
       ),
     },
@@ -325,7 +343,7 @@ const UserGuide: React.FC = () => {
 
   return (
     <Collapse
-      defaultActiveKey={['login', 'documents', 'upload']}
+      defaultActiveKey={['login', 'documents']}
       items={sections}
     />
   );
@@ -492,6 +510,28 @@ const AdminGuide: React.FC = () => {
         <>
         <HelpImage src="22-import-export.png" alt="インポート/エクスポート画面" />
         <Paragraph>ドキュメントの一括インポート/エクスポート。エクスポートは ZIP 形式（メタデータ + コンテンツ）。インポート時に同名ファイルの上書き設定が可能です。</Paragraph>
+        </>
+      ),
+    },
+    {
+      key: 'config',
+      label: <Space><DatabaseOutlined /><Text strong>設定ビューア</Text></Space>,
+      children: (
+        <>
+          <HelpImage src="21-config-viewer.png" alt="設定ビューア — プロパティ一覧" />
+          <Paragraph>システム設定の現在値と設定元（取得元）を確認できます。プロパティキーで検索やカテゴリーで絞り込みが可能です。</Paragraph>
+          <Card size="small" title="取得元（ソース）の種類">
+            <Descriptions bordered column={1} size="small">
+              <Descriptions.Item label={<span style={{ color: '#52c41a' }}>nemakiware.properties</span>}>プロパティファイルで定義された設定</Descriptions.Item>
+              <Descriptions.Item label={<span style={{ color: '#1890ff' }}>nemakiware-dev.properties</span>}>開発環境固有の設定（プロファイル別）</Descriptions.Item>
+              <Descriptions.Item label={<span style={{ color: '#722ed1' }}>nemakiware-basetype.properties</span>}>CMIS ベースタイプの設定</Descriptions.Item>
+              <Descriptions.Item label={<span style={{ color: '#fa8c16' }}>CouchDB</span>}>管理画面から変更した設定（データベースに保存）</Descriptions.Item>
+            </Descriptions>
+          </Card>
+          <Alert type="info" showIcon style={{ marginTop: 12 }}
+            message="設定値の変更"
+            description="設定ビューアは読み取り専用です。値を変更するには、プロパティファイルを直接編集するか、Setup Wizard / 管理 API を使用します。パスワードポリシー（最小文字数）はこの画面から直接変更可能です。"
+          />
         </>
       ),
     },
