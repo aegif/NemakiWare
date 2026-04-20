@@ -22,7 +22,7 @@ tei:
   ports:
     - "8081:80"
   environment:
-    - MODEL_ID=intfloat/multilingual-e5-small
+    - MODEL_ID=intfloat/multilingual-e5-large
 ```
 
 ### Amazon Bedrock

@@ -125,6 +125,12 @@ services:
 
   # Text Embeddings Inference (TEI) Service
   # Hugging Face's embedding inference server for multilingual E5 model
+  #
+  # MEMORY: e5-large requires ~4GB RAM for ONNX inference.
+  # If Docker Desktop has <=8GB, TEI may be OOM-killed (exit 137).
+  # Increase Docker memory to >=12GB, or switch to e5-small (384 dim)
+  # — but note that Solr schema uses knn_vector_1024 so dimension
+  # change requires schema migration + full RAG reindex.
   tei:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
     platform: linux/amd64  # Required for Apple Silicon (Rosetta emulation)
@@ -134,8 +140,17 @@ services:
       - "8081:80"
     volumes:
       - tei_cache:/data
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+        reservations:
+          memory: 2g
     environment:
       # Model: intfloat/multilingual-e5-large (1024 dimensions)
+      # Matches Solr knn_vector_1024 schema. Do NOT change without
+      # also updating solr/configsets/nemaki/conf/managed-schema.xml
+      # and running a full RAG reindex.
       - MODEL_ID=intfloat/multilingual-e5-large
       # Hugging Face Hub settings
       - HF_HUB_URL=https://huggingface.co
