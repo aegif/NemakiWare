@@ -167,6 +167,7 @@ const UserGuide: React.FC = () => {
       children: (
         <>
           <Paragraph>ドキュメントをクリックして詳細画面を開き、「プレビュー」タブをクリックします。</Paragraph>
+          <HelpImage src="04-document-detail.png" alt="ドキュメント詳細画面（プロパティタブ）" />
           <Table
             size="small" pagination={false}
             dataSource={[
@@ -202,6 +203,7 @@ const UserGuide: React.FC = () => {
           />
           <Divider />
           <Title level={5}>過去バージョンの閲覧</Title>
+          <HelpImage src="06-version-history.png" alt="バージョン履歴タブ" />
           <Paragraph>詳細画面の「バージョン履歴」タブから過去のバージョンを確認・ダウンロードできます。</Paragraph>
         </>
       ),
@@ -233,7 +235,8 @@ const UserGuide: React.FC = () => {
       label: <Space><LockOutlined /><Text strong>権限（ACL）</Text></Space>,
       children: (
         <>
-          <Paragraph>ドキュメントやフォルダの詳細画面で「権限」タブを開くと、現在のアクセス制御リスト（ACL）を確認できます。</Paragraph>
+          <Paragraph>ドキュメントやフォルダの詳細画面で「権限管理」ボタンをクリックすると、権限管理画面が開きます。</Paragraph>
+          <HelpImage src="16-permissions.png" alt="権限管理画面（ACL一覧・継承/直接の区別）" />
           <Title level={5}>権限レベル</Title>
           <Descriptions bordered column={1} size="small">
             <Descriptions.Item label="cmis:read">閲覧のみ（ダウンロード・プロパティ参照）</Descriptions.Item>
@@ -469,7 +472,10 @@ const AdminGuide: React.FC = () => {
       key: 'webhook',
       label: <Space><SendOutlined /><Text strong>Webhook 管理</Text></Space>,
       children: (
+        <>
+        <HelpImage src="20-webhook.png" alt="Webhook 管理画面" />
         <Paragraph>ドキュメントの作成・更新・削除時に外部 URL に HTTP 通知を送信します。URL、イベント種別、対象フォルダを設定して「保存」します。</Paragraph>
+        </>
       ),
     },
     {
@@ -483,7 +489,10 @@ const AdminGuide: React.FC = () => {
       key: 'importexport',
       label: <Space><SwapOutlined /><Text strong>インポート/エクスポート</Text></Space>,
       children: (
+        <>
+        <HelpImage src="22-import-export.png" alt="インポート/エクスポート画面" />
         <Paragraph>ドキュメントの一括インポート/エクスポート。エクスポートは ZIP 形式（メタデータ + コンテンツ）。インポート時に同名ファイルの上書き設定が可能です。</Paragraph>
+        </>
       ),
     },
     {
