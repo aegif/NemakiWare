@@ -33,14 +33,11 @@ const HelpImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => (
  */
 const HelpPage: React.FC = () => {
   const { t } = useTranslation();
-  let isAdmin = false;
-  try {
-    // useAuth may throw if rendered outside AuthProvider (public route)
-    const { authToken } = useAuth();
-    isAdmin = authToken?.isAdmin === true;
-  } catch {
-    isAdmin = false;
-  }
+  // AuthProvider wraps the entire app (App → AuthProvider → AppContent),
+  // so useAuth() is always available here — even on the unauthenticated
+  // /help path, where authToken is simply null.
+  const { authToken } = useAuth();
+  const isAdmin = authToken?.isAdmin === true;
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px' }}>
