@@ -492,7 +492,7 @@ const AdminGuide: React.FC = () => {
           <HelpImage src="21-config-viewer.png" alt={t('help.admin.configAlt', '設定ビューア')} />
           <Paragraph>{t('help.admin.configDesc', 'システム設定の現在値と設定元（取得元）を確認できます。プロパティキーで検索やカテゴリーで絞り込みが可能です。')}</Paragraph>
           <Alert type="info" showIcon style={{ marginTop: 12 }}
-            message={t('help.admin.configNote', '設定ビューアは読み取り専用です。値を変更するにはプロパティファイルを直接編集するか、管理 API を使用します。')}
+            message={t('help.admin.configNote', '設定ビューアはほとんどの設定について読み取り専用です。パスワードポリシー（最小文字数）はこの画面から直接変更可能です。その他の設定はプロパティファイルを直接編集するか、管理 API を使用します。')}
           />
         </>
       ),
@@ -512,7 +512,14 @@ const AdminGuide: React.FC = () => {
     },
   ];
 
-  return <Collapse defaultActiveKey={['users']} items={sections} />;
+  return (
+    <>
+      <Alert type="info" showIcon style={{ marginBottom: 16 }}
+        message={t('help.admin.toggleNote', '以下の管理機能は、サーバーの設定（feature toggle）によって無効化されている場合があります。メニューに表示されない機能はご利用の環境では利用できません。')}
+      />
+      <Collapse defaultActiveKey={['users']} items={sections} />
+    </>
+  );
 };
 
 export default HelpPage;

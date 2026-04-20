@@ -341,20 +341,23 @@ function AppRoutes() {
 
   // Public routes that don't require authentication
   // cloud-login needs to be accessible for MCP cloud authentication flow
-  const isPublicRoute = location.pathname === '/cloud-login' || location.pathname === '/help';
+  const isPublicRoute = location.pathname === '/cloud-login';
 
   // Handle public routes - accessible without authentication
   if (isPublicRoute) {
     return (
       <Routes>
         <Route path="/cloud-login" element={<McpCloudLogin />} />
-        <Route path="/help" element={<HelpPage />} />
       </Routes>
     );
   }
 
-  // If not authenticated, show login page
+  // If not authenticated, show login page or public help
   if (!isAuthenticated || !authToken) {
+    // Allow unauthenticated access to /help (without Layout wrapper)
+    if (location.pathname === '/help') {
+      return <HelpPage />;
+    }
     return <Login onLogin={async (_auth) => {
       // AuthContext will handle the authentication state update
       // The AuthContext's useEffect will detect the localStorage change and update state
