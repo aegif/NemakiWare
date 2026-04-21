@@ -249,3 +249,4 @@ test-data-setup/config.yaml
 
 # Root node_modules (UI node_modules is handled separately)
 /node_modules/
+core/.factorypath
