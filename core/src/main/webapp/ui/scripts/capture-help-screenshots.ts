@@ -138,11 +138,98 @@ async function main() {
   await page.screenshot({ path: path.join(OUT, '15-help-page.png') });
   console.log('✓ 15-help-page.png');
 
-  // 16. Login page (logout first)
-  await page.goto(`${BASE}/login`);
-  await page.waitForTimeout(1000);
-  await page.screenshot({ path: path.join(OUT, '00-login.png') });
+  // 16. Permissions page (via document ID)
+  // Find a document ID first
+  const childrenRes = await page.request.get(
+    'http://localhost:8080/core/browser/bedroom/root?cmisselector=children&maxItems=20',
+    { headers: { Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64') } },
+  );
+  const childrenData = await childrenRes.json();
+  const docObj = childrenData.objects?.find((o: any) =>
+    o.object.properties['cmis:baseTypeId'].value === 'cmis:document');
+  if (docObj) {
+    const docId = docObj.object.properties['cmis:objectId'].value;
+
+    // 04. Document detail
+    await page.goto(`${BASE}/#/documents/${docId}`);
+    await page.waitForTimeout(3000);
+    await page.screenshot({ path: path.join(OUT, '04-document-detail.png') });
+    console.log('✓ 04-document-detail.png');
+
+    // 05. Preview tab
+    const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: /プレビュー|Preview/ });
+    if (await previewTab.count() > 0) {
+      await previewTab.click();
+      await page.waitForTimeout(3000);
+      await page.screenshot({ path: path.join(OUT, '05-preview.png') });
+      console.log('✓ 05-preview.png');
+    }
+
+    // 06. Version history tab
+    const versionTab = page.locator('.ant-tabs-tab').filter({ hasText: /バージョン|Version/ });
+    if (await versionTab.count() > 0) {
+      await versionTab.click();
+      await page.waitForTimeout(2000);
+      await page.screenshot({ path: path.join(OUT, '06-version-history.png') });
+      console.log('✓ 06-version-history.png');
+    }
+
+    // 18. Secondary type tab
+    const secondaryTab = page.locator('.ant-tabs-tab').filter({ hasText: /セカンダリ|Secondary/ });
+    if (await secondaryTab.count() > 0) {
+      await secondaryTab.click();
+      await page.waitForTimeout(2000);
+      await page.screenshot({ path: path.join(OUT, '18-secondary-type.png') });
+      console.log('✓ 18-secondary-type.png');
+    }
+
+    // 19. Relationship tab
+    const relTab = page.locator('.ant-tabs-tab').filter({ hasText: /リレーション|Relation/ });
+    if (await relTab.count() > 0) {
+      await relTab.click();
+      await page.waitForTimeout(2000);
+      await page.screenshot({ path: path.join(OUT, '19-relationship.png') });
+      console.log('✓ 19-relationship.png');
+    }
+
+    // 16. Permissions page
+    await page.goto(`${BASE}/#/permissions/${docId}`);
+    await page.waitForTimeout(3000);
+    await page.screenshot({ path: path.join(OUT, '16-permissions.png') });
+    console.log('✓ 16-permissions.png');
+  }
+
+  // 17. Account settings
+  await page.goto(`${BASE}/#/account`);
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: path.join(OUT, '17-account-settings.png') });
+  console.log('✓ 17-account-settings.png');
+
+  // 20. Webhook management
+  await page.goto(`${BASE}/#/webhooks`);
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: path.join(OUT, '20-webhook.png') });
+  console.log('✓ 20-webhook.png');
+
+  // 21. Config viewer
+  await page.goto(`${BASE}/#/config-viewer`);
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: path.join(OUT, '21-config-viewer.png') });
+  console.log('✓ 21-config-viewer.png');
+
+  // 22. Import/Export
+  await page.goto(`${BASE}/#/filesystem-import-export`);
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: path.join(OUT, '22-import-export.png') });
+  console.log('✓ 22-import-export.png');
+
+  // 00. Login page (fresh context without credentials)
+  const loginPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await loginPage.goto(`${BASE}/`);
+  await loginPage.waitForTimeout(2000);
+  await loginPage.screenshot({ path: path.join(OUT, '00-login.png') });
   console.log('✓ 00-login.png');
+  await loginPage.close();
 
   await browser.close();
   console.log(`\nAll screenshots saved to ${OUT}`);
