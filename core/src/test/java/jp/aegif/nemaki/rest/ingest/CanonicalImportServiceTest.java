@@ -393,6 +393,7 @@ class CanonicalImportServiceTest {
     private Content createMockContent(String objectId) {
         Content content = new Content();
         content.setId(objectId);
+        content.setType("cmis:document"); // Required for isDocument() to return true
         content.setAspects(new ArrayList<>());
         content.setSecondaryIds(new ArrayList<>());
         return content;
@@ -714,5 +715,348 @@ class CanonicalImportServiceTest {
     @Test
     void testIsTransientError_PermanentClassCast() {
         assertFalse(service.isTransientError(new ClassCastException("cannot cast")));
+    }
+
+    // ── isTransientError: expanded classification tests ────────────
+
+    @Test
+    void testIsTransientError_SSLHandshakeIsPermanent() {
+        assertFalse(service.isTransientError(
+                new javax.net.ssl.SSLHandshakeException("certificate validation failed")),
+                "SSL handshake errors should be permanent");
+    }
+
+    @Test
+    void testIsTransientError_Http401IsPermanent() {
+        assertFalse(service.isTransientError(
+                new RuntimeException("Graph API auth error 401: Unauthorized")),
+                "HTTP 401 should be permanent");
+    }
+
+    @Test
+    void testIsTransientError_Http403IsPermanent() {
+        assertFalse(service.isTransientError(
+                new RuntimeException("Forbidden")),
+                "HTTP 403 should be permanent");
+    }
+
+    @Test
+    void testIsTransientError_SocketExceptionIsTransient() {
+        assertTrue(service.isTransientError(
+                new java.net.SocketException("Connection reset")),
+                "SocketException should be transient");
+    }
+
+    @Test
+    void testIsTransientError_RateLimitMessageIsTransient() {
+        assertTrue(service.isTransientError(
+                new RuntimeException("rate limit exceeded, please retry")),
+                "Rate limit message should be transient");
+    }
+
+    // ── dedupeMatchBy tests ────────────────────────────────────────
+
+    @Test
+    void testDedupeMatchBySourceId_MatchesBySourceObjectId() {
+        jp.aegif.nemaki.dao.ContentDaoService contentDaoService =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(contentDaoService);
+
+        // Existing document in target folder with matching sourceObjectId
+        Content existingDoc = createMockContent("existing-doc-1");
+        existingDoc.setName("old-name.txt");
+        Aspect extAspect = new Aspect();
+        extAspect.setName("nemaki:externalIntegration");
+        extAspect.setProperties(List.of(
+                new Property("nemaki:sourceObjectId", "slack-file-123"),
+                new Property("nemaki:sourceSystem", "slack"),
+                new Property("nemaki:sourceObjectType", "file")
+        ));
+        existingDoc.setAspects(List.of(extAspect));
+
+        when(contentDaoService.getChildren("bedroom", "folder-1")).thenReturn(List.of(existingDoc));
+
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        profile.setDedupePolicy("create_new_version");
+        profile.setDedupeMatchBy("source_id"); // default
+        profile.setUpdatePolicy("always_version_up"); // force version-up for test
+        when(profileService.get("p1")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        connector.setSourceSystem("slack");
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        // Request with same sourceObjectId → should find existing doc
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("slack-file-123");
+        req.setSourceObjectType("file");
+        req.setFileName("new-name.txt"); // different filename
+
+        // Mock versioning for the update path (checkOut is void, mutates Holder)
+        doAnswer(inv -> {
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> h = inv.getArgument(2);
+            h.setValue("pwc-1");
+            return null;
+        }).when(versioningService).checkOut(any(), eq("bedroom"), any(), any(), isNull());
+        // checkIn is also void, mutates Holder back to the checked-in objectId
+        doAnswer(inv -> {
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> h = inv.getArgument(2);
+            h.setValue("existing-doc-1");
+            return null;
+        }).when(versioningService).checkIn(any(), eq("bedroom"), any(), any(), any(), any(), anyString(), any(), isNull(), isNull(), isNull());
+        Content mockContent = createMockContent("existing-doc-1");
+        when(contentService.getContent("bedroom", "existing-doc-1")).thenReturn(mockContent);
+
+        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        assertTrue(result.isSuccess(), () -> "Should succeed: " + result.errors()
+                + " objectId=" + result.objectId() + " versionLabel=" + result.versionLabel()
+                + " isNewVersion=" + result.isNewVersion() + " skipped=" + result.skipped()
+                + " warnings=" + result.warnings());
+        assertTrue(result.isNewVersion(), () -> "Should be a version-up of existing doc, got objectId="
+                + result.objectId() + " versionLabel=" + result.versionLabel());
+    }
+
+    @Test
+    void testDedupeMatchByFilename_MatchesByName() {
+        jp.aegif.nemaki.dao.ContentDaoService contentDaoService =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(contentDaoService);
+
+        // Existing document with matching filename (different sourceObjectId)
+        Content existingDoc = createMockContent("existing-doc-2");
+        existingDoc.setName("report.pdf");
+        existingDoc.setAspects(List.of()); // No external integration aspect
+
+        when(contentDaoService.getChildren("bedroom", "folder-1")).thenReturn(List.of(existingDoc));
+
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p2");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        profile.setDedupePolicy("create_new_version");
+        profile.setDedupeMatchBy("filename"); // match by name
+        profile.setUpdatePolicy("always_version_up");
+        when(profileService.get("p2")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c2");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        connector.setSourceSystem("slack");
+        when(connectorService.get("c2")).thenReturn(connector);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p2");
+        req.setConnectorId("c2");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("brand-new-id-456"); // different ID
+        req.setSourceObjectType("file");
+        req.setFileName("report.pdf"); // same filename
+
+        doAnswer(inv -> {
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> h = inv.getArgument(2);
+            h.setValue("pwc-2");
+            return null;
+        }).when(versioningService).checkOut(any(), eq("bedroom"), any(), any(), isNull());
+        doAnswer(inv -> {
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> h = inv.getArgument(2);
+            h.setValue("existing-doc-2");
+            return null;
+        }).when(versioningService).checkIn(any(), eq("bedroom"), any(), any(), any(), any(), anyString(), any(), isNull(), isNull(), isNull());
+        Content mockContent = createMockContent("existing-doc-2");
+        when(contentService.getContent("bedroom", "existing-doc-2")).thenReturn(mockContent);
+
+        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        assertTrue(result.isSuccess(), () -> "Should succeed: " + result.errors());
+        assertTrue(result.isNewVersion(), "Filename match should trigger version-up");
+    }
+
+    @Test
+    void testDedupeMatchByFilename_NoMatchCreatesNew() {
+        jp.aegif.nemaki.dao.ContentDaoService contentDaoService =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(contentDaoService);
+
+        // Existing document with different filename
+        Content existingDoc = createMockContent("existing-doc-3");
+        existingDoc.setName("other.pdf");
+        existingDoc.setAspects(List.of());
+
+        when(contentDaoService.getChildren("bedroom", "folder-1")).thenReturn(List.of(existingDoc));
+
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p3");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        profile.setDedupeMatchBy("filename");
+        when(profileService.get("p3")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c3");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        connector.setSourceSystem("box");
+        when(connectorService.get("c3")).thenReturn(connector);
+
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn("new-doc-id");
+
+        Content mockContent = createMockContent("new-doc-id");
+        when(contentService.getContent("bedroom", "new-doc-id")).thenReturn(mockContent);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p3");
+        req.setConnectorId("c3");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("box-file-999");
+        req.setFileName("report.pdf"); // no match
+
+        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        assertTrue(result.isSuccess());
+        assertFalse(result.isNewVersion(), "No filename match → new document, not version-up");
+    }
+
+    @Test
+    void testDedupeMatchBySourceIdOrFilename_FallbackToFilename() {
+        jp.aegif.nemaki.dao.ContentDaoService contentDaoService =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(contentDaoService);
+
+        // Existing document with different sourceObjectId but matching filename
+        Content existingDoc = createMockContent("existing-doc-4");
+        existingDoc.setName("budget.xlsx");
+        Aspect extAspect = new Aspect();
+        extAspect.setName("nemaki:externalIntegration");
+        extAspect.setProperties(List.of(
+                new Property("nemaki:sourceObjectId", "old-id-000"),
+                new Property("nemaki:sourceSystem", "slack"),
+                new Property("nemaki:sourceObjectType", "file")
+        ));
+        existingDoc.setAspects(List.of(extAspect));
+
+        when(contentDaoService.getChildren("bedroom", "folder-1")).thenReturn(List.of(existingDoc));
+
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p4");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        profile.setDedupePolicy("create_new_version");
+        profile.setDedupeMatchBy("source_id_or_filename"); // fallback
+        profile.setUpdatePolicy("always_version_up");
+        when(profileService.get("p4")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c4");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        connector.setSourceSystem("slack");
+        when(connectorService.get("c4")).thenReturn(connector);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p4");
+        req.setConnectorId("c4");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("new-upload-id-789"); // different from old-id-000
+        req.setFileName("budget.xlsx"); // matches existing name
+
+        doAnswer(inv -> {
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> h = inv.getArgument(2);
+            h.setValue("pwc-4");
+            return null;
+        }).when(versioningService).checkOut(any(), eq("bedroom"), any(), any(), isNull());
+        doAnswer(inv -> {
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> h = inv.getArgument(2);
+            h.setValue("existing-doc-4");
+            return null;
+        }).when(versioningService).checkIn(any(), eq("bedroom"), any(), any(), any(), any(), anyString(), any(), isNull(), isNull(), isNull());
+        Content mockContent = createMockContent("existing-doc-4");
+        when(contentService.getContent("bedroom", "existing-doc-4")).thenReturn(mockContent);
+
+        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        assertTrue(result.isSuccess(), () -> "Should succeed: " + result.errors());
+        assertTrue(result.isNewVersion(), "source_id miss → filename match → should version-up");
+    }
+
+    @Test
+    void testDefaultDedupeMatchByIsSourceId() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        assertEquals("source_id", profile.getDedupeMatchBy(),
+                "Default dedupeMatchBy should be source_id for backward compatibility");
+    }
+
+    // ── Dedupe policy else-if chain regression test ────────────────
+
+    @Test
+    void testDedupeElseIfChain_ReplaceDoesNotFallThroughToParentContextChanged() {
+        // This is a regression test for the if→else if fix.
+        // "replace" should delete + create new; it should NOT also check
+        // create_new_if_parent_context_changed afterward.
+        jp.aegif.nemaki.dao.ContentDaoService contentDaoService =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(contentDaoService);
+
+        Content existingDoc = createMockContent("to-be-replaced");
+        existingDoc.setName("file.txt");
+        Aspect extAspect = new Aspect();
+        extAspect.setName("nemaki:externalIntegration");
+        extAspect.setProperties(List.of(
+                new Property("nemaki:sourceObjectId", "src-1"),
+                new Property("nemaki:sourceSystem", "test"),
+                new Property("nemaki:sourceObjectType", "file")
+        ));
+        existingDoc.setAspects(List.of(extAspect));
+
+        when(contentDaoService.getChildren("bedroom", "folder-1")).thenReturn(List.of(existingDoc));
+
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p-replace");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        profile.setDedupePolicy("replace"); // should delete + create new
+        when(profileService.get("p-replace")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c-replace");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        connector.setSourceSystem("test");
+        when(connectorService.get("c-replace")).thenReturn(connector);
+
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn("replaced-new-id");
+
+        Content mockContent = createMockContent("replaced-new-id");
+        when(contentService.getContent("bedroom", "replaced-new-id")).thenReturn(mockContent);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p-replace");
+        req.setConnectorId("c-replace");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("src-1");
+        req.setSourceObjectType("file");
+        req.setFileName("file.txt");
+
+        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        assertTrue(result.isSuccess());
+        // Verify the old doc was deleted
+        verify(objectService).deleteObject(any(), eq("bedroom"), eq("to-be-replaced"), eq(true), isNull());
+        // Verify a new doc was created (not versioned)
+        assertFalse(result.isNewVersion(), "Replace should create new, not version-up");
     }
 }

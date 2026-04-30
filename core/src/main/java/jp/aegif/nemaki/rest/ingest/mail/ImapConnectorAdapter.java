@@ -225,16 +225,19 @@ public class ImapConnectorAdapter {
 
         logger.info("IMAP IDLE started for {}:{}", connector.getEndpoint(), folderName);
 
-        // IDLE loop — re-enters IDLE after each server notification or timeout
+        // IDLE loop — re-enters IDLE after each server notification or timeout.
+        // Uses exponential backoff (10s → 20s → 40s → ... → 5min cap) on consecutive failures.
+        int consecutiveFailures = 0;
+        final int MAX_IDLE_FAILURES = 10; // Stop after 10 consecutive failures
         while (idleRunning && store.isConnected()) {
             try {
                 if (folder instanceof org.eclipse.angus.mail.imap.IMAPFolder imapFolder) {
                     imapFolder.idle();
                 } else {
-                    // Fallback: poll every 30 seconds if IDLE is not supported
                     Thread.sleep(30_000);
-                    folder.getMessageCount(); // triggers NOOP to check for new messages
+                    folder.getMessageCount();
                 }
+                consecutiveFailures = 0; // Reset on successful IDLE cycle
             } catch (jakarta.mail.FolderClosedException e) {
                 logger.info("IDLE folder closed, stopping");
                 break;
@@ -242,11 +245,18 @@ public class ImapConnectorAdapter {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                if (idleRunning) {
-                    logger.warn("IDLE error, retrying in 10s: {}", e.getMessage());
-                    try { Thread.sleep(10_000); } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt(); break;
-                    }
+                if (!idleRunning) break;
+                consecutiveFailures++;
+                if (consecutiveFailures >= MAX_IDLE_FAILURES) {
+                    logger.error("IDLE: {} consecutive failures, stopping IDLE for {}",
+                            consecutiveFailures, connector.getEndpoint());
+                    break;
+                }
+                long backoffMs = Math.min(10_000L * (1L << Math.min(consecutiveFailures - 1, 5)), 300_000L); // 10s→20s→...→5min
+                logger.warn("IDLE error ({}/{}), retrying in {}s: {}",
+                        consecutiveFailures, MAX_IDLE_FAILURES, backoffMs / 1000, e.getMessage());
+                try { Thread.sleep(backoffMs); } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt(); break;
                 }
             }
         }
@@ -255,14 +265,26 @@ public class ImapConnectorAdapter {
         logger.info("IMAP IDLE stopped for {}:{}", connector.getEndpoint(), folderName);
     }
 
-    /** Stop the IDLE loop. */
+    /** Stop the IDLE loop and wait for the thread to exit. */
     public void stopIdle() {
         idleRunning = false;
         if (idleFolder != null && idleFolder.isOpen()) {
             try { idleFolder.close(false); } catch (Exception e) { /* triggers FolderClosedException in idle loop */ }
         }
+        // Wait for the IDLE thread to finish before disconnect
+        Thread t = idleThread;
+        if (t != null) {
+            try { t.join(10_000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            if (t.isAlive()) {
+                logger.warn("IMAP IDLE thread did not exit within 10s for {}", connector.getEndpoint());
+            }
+        }
     }
 
     private volatile boolean idleRunning;
-    private Folder idleFolder;
+    private volatile Thread idleThread;
+    private volatile Folder idleFolder;
+
+    /** Set the thread running the IDLE loop (called by scheduler after thread start). */
+    public void setIdleThread(Thread thread) { this.idleThread = thread; }
 }

@@ -31,8 +31,14 @@ class SlackConnectorAdapterTest {
     @BeforeEach
     void setUp() {
         wireMock.resetAll();
+        System.setProperty("nemaki.ingest.allowLocalhost", "true");
         adapter = new SlackConnectorAdapter("xoxb-test-token",
                 "http://localhost:" + wireMock.port());
+    }
+
+    @AfterEach
+    void tearDown() {
+        System.clearProperty("nemaki.ingest.allowLocalhost");
     }
 
     // ── Auth contract ────────────────────────────────────────────
@@ -156,5 +162,66 @@ class SlackConnectorAdapterTest {
         assertEquals(2, channels.size());
         assertFalse(channels.get(0).isPrivate());
         assertTrue(channels.get(1).isPrivate());
+    }
+
+    // ── Pagination contract ──────────────────────────────────────
+
+    @Test
+    void getHistoryFollowsCursorPagination() throws Exception {
+        // Page 1: has_more=true with next_cursor
+        wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
+                .withQueryParam("channel", equalTo("C1"))
+                .withQueryParam("limit", equalTo("200"))
+                .willReturn(okJson("""
+                    {"ok":true,"messages":[
+                        {"ts":"1.1","user":"U1","text":"hello"}
+                    ],"has_more":true,"response_metadata":{"next_cursor":"cursor_page2"}}
+                    """)));
+        // Page 2: no more
+        wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
+                .withQueryParam("cursor", matching("cursor_page2"))
+                .willReturn(okJson("""
+                    {"ok":true,"messages":[
+                        {"ts":"1.2","user":"U1","text":"world"}
+                    ],"has_more":false}
+                    """)));
+
+        var messages = adapter.getHistory("C1", null, 200);
+        assertEquals(2, messages.size());
+        assertEquals("1.1", messages.get(0).ts());
+        assertEquals("1.2", messages.get(1).ts());
+    }
+
+    @Test
+    void getHistoryRespectsLimitCap() throws Exception {
+        // Return 3 messages but limit is 2
+        wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
+                .willReturn(okJson("""
+                    {"ok":true,"messages":[
+                        {"ts":"1","user":"U1","text":"a"},
+                        {"ts":"2","user":"U1","text":"b"},
+                        {"ts":"3","user":"U1","text":"c"}
+                    ],"has_more":false}
+                    """)));
+
+        var messages = adapter.getHistory("C1", null, 2);
+        assertEquals(2, messages.size(), "Should respect limit cap of 2");
+    }
+
+    // ── Thread replies contract ──────────────────────────────────
+
+    @Test
+    void getThreadRepliesExcludesParent() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/conversations.replies"))
+                .willReturn(okJson("""
+                    {"ok":true,"messages":[
+                        {"ts":"1.0","user":"U1","text":"parent","thread_ts":"1.0"},
+                        {"ts":"1.1","user":"U2","text":"reply","thread_ts":"1.0"}
+                    ]}
+                    """)));
+
+        var replies = adapter.getThreadReplies("C1", "1.0");
+        assertEquals(1, replies.size(), "Parent message should be excluded");
+        assertEquals("1.1", replies.get(0).ts());
     }
 }

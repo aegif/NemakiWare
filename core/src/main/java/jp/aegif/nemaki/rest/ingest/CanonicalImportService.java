@@ -72,4 +72,12 @@ public interface CanonicalImportService {
      * Import chat context: create document, apply nemaki:chatContextMetadata.
      */
     ExternalIngestResult executeChatContextImport(CallContext callContext, ExternalIngestRequest request);
+
+    /**
+     * Create a CMIS relationship between two objects.
+     *
+     * @return error message if failed, null on success
+     */
+    String createDirectRelationship(CallContext callContext, String repositoryId,
+                                    String sourceId, String targetId);
 }

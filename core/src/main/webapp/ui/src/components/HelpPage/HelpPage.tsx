@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Tabs, Typography, Collapse, Descriptions, Alert, Table, Space, Steps, Image, Divider, Card } from 'antd';
 import {
   FileOutlined, FolderOutlined, SearchOutlined, UploadOutlined,
@@ -7,10 +7,11 @@ import {
   TeamOutlined, DatabaseOutlined, SendOutlined,
   SyncOutlined, BarChartOutlined, SwapOutlined, ApiOutlined,
   LoginOutlined, QuestionCircleOutlined, DeleteOutlined,
-  CheckCircleOutlined
+  CheckCircleOutlined, RobotOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
+import { fetchAdapterRegistry, AdapterDescriptor } from '../../services/externalIngest';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -128,7 +129,7 @@ const UserGuide: React.FC = () => {
         <>
           <Title level={5}>{t('help.user.folderCreate', 'フォルダの作成')}</Title>
           <Steps direction="vertical" size="small" items={[
-            { title: t('help.user.folderStep1', '「＋ フォルダ作成」ボタンをクリック'), description: t('help.user.folderStep1Desc', 'ツールバー右側にあります') },
+            { title: t('help.user.folderStep1', '「フォルダ作成」ボタンをクリック'), description: t('help.user.folderStep1Desc', 'ツールバー右側にあります') },
             { title: t('help.user.folderStep2', 'フォルダ名を入力') },
             { title: t('help.user.folderStep3', 'タイプを選択（任意）'), description: t('help.user.folderStep3Desc', 'カスタムフォルダタイプがある場合は選択') },
             { title: t('help.user.folderStep4', '「作成」をクリック') },
@@ -137,7 +138,7 @@ const UserGuide: React.FC = () => {
           <Title level={5}>{t('help.user.folderDelete', 'フォルダの削除')}</Title>
           <Steps direction="vertical" size="small" items={[
             { title: t('help.user.folderDelStep1', '削除したいフォルダの行をチェック') },
-            { title: t('help.user.folderDelStep2', '「削除」ボタンをクリック') },
+            { title: t('help.user.folderDelStep2', '「削除する」ボタンをクリック') },
             { title: t('help.user.folderDelStep3', '確認ダイアログで「OK」'), description: t('help.user.folderDelStep3Desc', '中にファイルがある場合はカスケード削除の確認が表示されます') },
           ]} />
         </>
@@ -171,7 +172,7 @@ const UserGuide: React.FC = () => {
           <HelpImage src="04-document-detail.png" alt={t('help.user.detailAlt', 'ドキュメント詳細画面 — プロパティタブ')} />
           <Card size="small" title={t('help.user.detailButtons', '画面上部のボタン')}>
             <Descriptions bordered column={1} size="small">
-              <Descriptions.Item label={t('help.user.btnBack', '← 戻る')}>{t('help.user.btnBackDesc', 'ドキュメント一覧に戻ります')}</Descriptions.Item>
+              <Descriptions.Item label={t('help.user.btnBack', '戻る')}>{t('help.user.btnBackDesc', 'ドキュメント一覧に戻ります')}</Descriptions.Item>
               <Descriptions.Item label={t('help.user.btnDownload', 'ダウンロード')}>{t('help.user.btnDownloadDesc', 'ファイルをダウンロードします')}</Descriptions.Item>
               <Descriptions.Item label={t('help.user.btnCheckout', 'チェックアウト')}>{t('help.user.btnCheckoutDesc', 'ドキュメントをロックして編集を開始します')}</Descriptions.Item>
               <Descriptions.Item label={t('help.user.btnTypeChange', 'タイプを変更')}>{t('help.user.btnTypeChangeDesc', 'ドキュメントのオブジェクトタイプを変更します')}</Descriptions.Item>
@@ -198,6 +199,10 @@ const UserGuide: React.FC = () => {
           <Title level={5}>{t('help.user.secondaryTitle', 'セカンダリタイプ（アスペクト）タブ')}</Title>
           <Paragraph>{t('help.user.secondaryDesc', 'ドキュメントに追加のメタデータを付与するセカンダリタイプの管理ができます。セレクターから追加したいタイプを選択し「追加」をクリックします。')}</Paragraph>
           <HelpImage src="18-secondary-type.png" alt={t('help.user.secondaryAlt', 'セカンダリタイプタブ')} />
+          <Divider />
+          <Title level={5}>{t('help.user.relationshipTitle', 'リレーションシップタブ')}</Title>
+          <Paragraph>{t('help.user.relationshipDesc', 'ドキュメント間の関連付け（リレーションシップ）を表示・管理します。外部インジェストで取り込まれた添付ファイルや関連レコードの関係もここに表示されます。')}</Paragraph>
+          <HelpImage src="19-relationship.png" alt={t('help.user.relationshipAlt', 'リレーションシップタブ')} />
         </>
       ),
     },
@@ -259,7 +264,7 @@ const UserGuide: React.FC = () => {
           <Title level={5}>{t('help.user.aclChange', '権限の変更')}</Title>
           <Steps direction="vertical" size="small" items={[
             { title: t('help.user.aclStep1', 'ドキュメント詳細画面の「権限管理」ボタンをクリック'), description: t('help.user.aclStep1Desc', '権限管理画面に移動します') },
-            { title: t('help.user.aclStep2', '「＋ 権限を追加」をクリック') },
+            { title: t('help.user.aclStep2', '「権限を追加」をクリック') },
             { title: t('help.user.aclStep3', 'ユーザーまたはグループを選択し、権限レベルを設定') },
           ]} />
           <Alert type="info" showIcon style={{ marginTop: 8 }}
@@ -282,7 +287,7 @@ const UserGuide: React.FC = () => {
             description={t('help.user.cloudPrereqDesc', 'Google Drive ボタンは Google 認証でログインした場合、OneDrive ボタンは Microsoft 認証でログインした場合にのみ表示されます。パスワードログインの場合はこれらのボタンは表示されません。また、サーバー側でクラウド連携が有効に設定されている必要があります。')}
           />
           <Steps direction="vertical" size="small" items={[
-            { title: t('help.user.cloudStep1', '「Google Drive からインポート」または「OneDrive からインポート」ボタンをクリック'), description: t('help.user.cloudStep1Desc', 'ツールバーにプロバイダ別のボタンが表示されます') },
+            { title: t('help.user.cloudStep1', '「Google Driveからインポート」または「OneDriveからインポート」ボタンをクリック'), description: t('help.user.cloudStep1Desc', 'ツールバーにプロバイダ別のボタンが表示されます') },
             { title: t('help.user.cloudStep2', 'クラウドストレージのファイル一覧が表示されます') },
             { title: t('help.user.cloudStep3', 'インポートするファイルを選択') },
             { title: t('help.user.cloudStep4', '「インポート」をクリック') },
@@ -304,7 +309,7 @@ const UserGuide: React.FC = () => {
           <Steps direction="vertical" size="small" items={[
             { title: t('help.user.pkStep1', 'メニューの「アカウント設定」を開く') },
             { title: t('help.user.pkStep2', '「パスキー」タブを選択') },
-            { title: t('help.user.pkStep3', '「パスキーを追加」をクリック') },
+            { title: t('help.user.pkStep3', '「パスキーを登録」をクリック') },
             { title: t('help.user.pkStep4', 'ブラウザの認証プロンプトに従う'), description: t('help.user.pkStep4Desc', 'Touch ID / Face ID / セキュリティキーで認証') },
             { status: 'finish' as const, title: t('help.user.pkDone', '完了'), icon: <CheckCircleOutlined /> },
           ]} />
@@ -331,8 +336,11 @@ const UserGuide: React.FC = () => {
 const AdminGuide: React.FC = () => {
   const { t } = useTranslation();
 
-  // Check feature toggles to only show relevant sections
-  // (In a future enhancement, these could be fetched from the server)
+  // Adapter registry — single source of truth for adapter tables
+  const [adapters, setAdapters] = useState<AdapterDescriptor[]>([]);
+  useEffect(() => {
+    fetchAdapterRegistry().then(setAdapters).catch(() => {});
+  }, []);
 
   const sections = [
     {
@@ -344,14 +352,14 @@ const AdminGuide: React.FC = () => {
           <Title level={5}>{t('help.admin.userCreate', 'ユーザーの作成')}</Title>
           <Steps direction="vertical" size="small" items={[
             { title: t('help.admin.userStep1', '「管理」→「ユーザー管理」を開く') },
-            { title: t('help.admin.userStep2', '「新規ユーザー」をクリック') },
-            { title: t('help.admin.userStep3', 'ユーザー ID、表示名、パスワードを入力'), description: t('help.admin.userStep3Desc', 'パスワードは BCrypt でハッシュ化されて安全に保存されます') },
-            { title: t('help.admin.userStep4', '管理者権限を設定（任意）') },
+            { title: t('help.admin.userStep2', '「作成」ボタンをクリック') },
+            { title: t('help.admin.userStep3', 'ユーザー ID、表示名、パスワードを入力'), description: t('help.admin.userStep3Desc', 'パスワードは BCrypt でハッシュ化されて安全に保存されます。姓・名・メールアドレスも任意で設定可能です。') },
+            { title: t('help.admin.userStep4', '管理者権限・所属グループを設定（任意）'), description: t('help.admin.userStep4Desc', '管理者スイッチ、所属グループ、許可する認証方式（パスワード/パスキー/OIDC/SAML）を設定できます。') },
             { title: t('help.admin.userStep5', '「作成」をクリック') },
           ]} />
           <Alert type="info" showIcon style={{ marginTop: 12 }}
             message={t('help.admin.userPwReset', '管理者はパスワードリセットが可能')}
-            description={t('help.admin.userPwResetDesc', 'ユーザー一覧から対象ユーザーの「パスワードリセット」で新しいパスワードを設定できます（旧パスワード不要）。')}
+            description={t('help.admin.userPwResetDesc', 'ユーザー一覧から対象ユーザーの「パスワードをリセット」で新しいパスワードを設定できます（旧パスワード不要）。')}
           />
         </>
       ),
@@ -377,8 +385,8 @@ const AdminGuide: React.FC = () => {
           <Steps direction="vertical" size="small" items={[
             { title: t('help.admin.typeStep1', '「新規タイプ」をクリック') },
             { title: t('help.admin.typeStep2', 'タイプ ID と表示名を設定') },
-            { title: t('help.admin.typeStep3', '親タイプを選択'), description: 'cmis:document, cmis:folder' },
-            { title: t('help.admin.typeStep4', 'プロパティを追加'), description: t('help.admin.typeStep4Desc', '文字列/数値/日付/真偽値から選択。必須/検索可能を設定') },
+            { title: t('help.admin.typeStep3', '親タイプを選択'), description: t('help.admin.typeStep3Desc', 'cmis:document, cmis:folder, cmis:relationship, cmis:policy, cmis:item, cmis:secondary から選択') },
+            { title: t('help.admin.typeStep4', 'プロパティを追加'), description: t('help.admin.typeStep4Desc', '文字列(string)/整数(integer)/小数(decimal)/真偽値(boolean)/日時(datetime) から選択。必須/検索可能を設定') },
             { title: t('help.admin.typeStep5', '「作成」をクリック') },
           ]} />
         </>
@@ -391,9 +399,10 @@ const AdminGuide: React.FC = () => {
         <>
           <HelpImage src="11-archive.png" alt={t('help.admin.archiveAlt', 'アーカイブ管理画面')} />
           <Descriptions bordered column={1} size="small">
-            <Descriptions.Item label={t('help.admin.archRestore', '復元')}>{t('help.admin.archRestoreDesc', '元のフォルダにドキュメントを復元します')}</Descriptions.Item>
-            <Descriptions.Item label={t('help.admin.archPerm', '完全削除')}>{t('help.admin.archPermDesc', 'データベースから物理削除。復元できなくなります')}</Descriptions.Item>
-            <Descriptions.Item label={t('help.admin.archBulk', '一括操作')}>{t('help.admin.archBulkDesc', 'チェックボックスで複数選択し、一括復元/一括削除が可能')}</Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.archRestore', '復元')}>{t('help.admin.archRestoreDesc', '元のフォルダにドキュメントを復元します（行ごとのボタン）')}</Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.archDownload', 'ダウンロード')}>{t('help.admin.archDownloadDesc', 'アーカイブされたドキュメントのコンテンツをダウンロードします')}</Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.archForce', '強制アーカイブ')}>{t('help.admin.archForceDesc', '保留中（有効期限前）のドキュメントを即座にアーカイブに移行します')}</Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.archExtend', '有効期限延長')}>{t('help.admin.archExtendDesc', '保留中のドキュメントの有効期限を延長します')}</Descriptions.Item>
           </Descriptions>
         </>
       ),
@@ -404,42 +413,197 @@ const AdminGuide: React.FC = () => {
       children: (
         <>
           <HelpImage src="12-solr-management.png" alt={t('help.admin.solrAlt', 'Solr 管理画面')} />
-          <Steps direction="vertical" size="small" items={[
-            { title: t('help.admin.solrStep1', 'フルインデックス再構築'), description: t('help.admin.solrStep1Desc', '全ドキュメントの検索インデックスを再作成します（数分〜数十分）') },
-            { title: t('help.admin.solrStep2', 'RAG ベクトルインデックス再構築'), description: t('help.admin.solrStep2Desc', 'セマンティック検索用の embedding を全ドキュメントで再計算します') },
-          ]} />
+          <Paragraph>{t('help.admin.solrIntro', '検索インデックスの状態確認と保守操作を行います。Solr（全文検索）と RAG（ベクトル検索）の2つのセクションがあります。')}</Paragraph>
+          <Title level={5}>{t('help.admin.solrFulltext', 'Solr（全文検索）')}</Title>
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label={t('help.admin.solrStep1', 'フルインデックス再構築')}>{t('help.admin.solrStep1Desc', '全ドキュメントの検索インデックスを再作成します（数分〜数十分）')}</Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.solrFolderReindex', 'フォルダ単位の再構築')}>{t('help.admin.solrFolderReindexDesc', '指定フォルダ配下のドキュメントのみインデックスを再作成します。再帰オプションで子フォルダも含められます。')}</Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.solrClear', 'インデックスクリア')}>{t('help.admin.solrClearDesc', '検索インデックスを全削除します。再構築が必要です。')}</Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.solrOptimize', 'インデックス最適化')}>{t('help.admin.solrOptimizeDesc', 'Solr インデックスのセグメント統合を実行し、検索パフォーマンスを改善します。')}</Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.solrCancel', 'キャンセル')}>{t('help.admin.solrCancelDesc', '実行中のインデックス再構築を中断します。')}</Descriptions.Item>
+          </Descriptions>
+          <Title level={5} style={{ marginTop: 16 }}>{t('help.admin.solrRag', 'RAG（ベクトル検索）')}</Title>
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label={t('help.admin.solrStep2', 'RAG ベクトルインデックス再構築')}>{t('help.admin.solrStep2Desc', 'セマンティック検索用の embedding を全ドキュメントで再計算します。TEI サービスが必要で、ドキュメント数に応じて長時間かかる場合があります。')}</Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.solrRagClear', 'RAG インデックスクリア')}>{t('help.admin.solrRagClearDesc', 'ベクトルインデックスを全削除します。')}</Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.solrRagCancel', 'キャンセル')}>{t('help.admin.solrRagCancelDesc', '実行中の RAG 再構築を中断します。')}</Descriptions.Item>
+          </Descriptions>
         </>
       ),
     },
     {
       key: 'ingest',
-      label: <Space><SwapOutlined /><Text strong>{t('help.admin.ingestTitle', '外部インジェスト')}</Text></Space>,
+      label: <Space><SwapOutlined /><Text strong>{t('help.admin.ingestTitle', '連携設定 — 外部インジェスト')}</Text></Space>,
       children: (
         <>
-          <HelpImage src="13-integration-settings.png" alt={t('help.admin.ingestAlt', '統合設定画面')} />
+          <HelpImage src="13-integration-settings.png" alt={t('help.admin.ingestAlt', '連携設定画面')} />
           <Paragraph>{t('help.admin.ingestIntro', '外部システムからドキュメントを自動取り込みます。コネクタの設定、インポートプロファイル、スケジューラ管理が可能です。')}</Paragraph>
+
+          {/* --- 概念説明 --- */}
+          <Title level={5}>{t('help.admin.ingestConcepts', '基本概念')}</Title>
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label={t('help.admin.ingestConceptConnector', 'コネクタ (Connector)')}>
+              {t('help.admin.ingestConceptConnectorDesc', '外部システムへの接続情報を定義します。接続先URL、認証トークン、対象アーキタイプ（FILE_SHARE / MESSAGE_CONTEXT / CHAT_CONTEXT 等）を設定します。1つのコネクタは1つの外部システムに対応します。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestConceptProfile', 'インポートプロファイル (Import Profile)')}>
+              {t('help.admin.ingestConceptProfileDesc', 'コネクタに紐づく取り込みルールです。保存先フォルダ、重複検出ポリシー、バージョニング方針、スケジューラの有効/無効を設定します。1つのコネクタに複数のプロファイルを作成できます（例: Slack の複数チャンネル）。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestConceptArchetype', 'ソースアーキタイプ (Source Archetype)')}>
+              {t('help.admin.ingestConceptArchetypeDesc', '取り込み元データの種類を分類します。FILE_SHARE（ファイル）、MESSAGE_CONTEXT（メール）、COMPOUND_NOTE（ノート）、CHAT_CONTEXT（チャット）、BUSINESS_RECORD（業務レコード）の5種類があり、それぞれ専用のメタデータ（セカンダリタイプ）が自動付与されます。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestConceptScheduler', 'スケジューラ')}>
+              {t('help.admin.ingestConceptSchedulerDesc', '有効なプロファイルを5分間隔でポーリング実行します（cron 式ではなく固定間隔）。前回の取り込み位置（チェックポイント）を記憶しており、差分のみを取り込みます。')}
+            </Descriptions.Item>
+          </Descriptions>
+
+          {/* --- 対応アダプタ一覧 --- */}
+          {/* --- 対応アダプタ一覧（AdapterRegistry API から動的生成） --- */}
+          <Title level={5} style={{ marginTop: 24 }}>{t('help.admin.ingestAdapters', '対応アダプタ一覧')}</Title>
           <Table size="small" pagination={false}
-            dataSource={[
-              { key: '1', adapter: 'IMAP', target: t('help.admin.ingestIMAP', 'メールサーバー') },
-              { key: '2', adapter: 'Gmail', target: 'Gmail API' },
-              { key: '3', adapter: 'M365 Mail', target: 'Microsoft 365' },
-              { key: '4', adapter: 'Slack', target: t('help.admin.ingestChat', 'チャンネルメッセージ') },
-              { key: '5', adapter: 'Teams', target: t('help.admin.ingestChat', 'チャンネルメッセージ') },
-              { key: '6', adapter: 'Mattermost', target: t('help.admin.ingestChat', 'チャンネルメッセージ') },
-              { key: '7', adapter: 'Chatwork', target: t('help.admin.ingestCW', 'ルームメッセージ') },
-              { key: '8', adapter: 'Notion', target: t('help.admin.ingestNotion', 'ページ・データベース') },
-              { key: '9', adapter: 'Salesforce', target: t('help.admin.ingestSF', 'レコード') },
-              { key: '10', adapter: 'Box', target: t('help.admin.ingestFile', 'ファイル') },
-              { key: '11', adapter: 'Dropbox', target: t('help.admin.ingestFile', 'ファイル') },
-            ]}
+            dataSource={adapters
+              .filter(a => a.sourceSystem !== 'google_drive' && a.sourceSystem !== 'onedrive')
+              .map(a => ({
+                key: a.sourceSystem,
+                adapter: a.displayName,
+                archetype: a.archetype,
+                params: [...a.requiredParams, ...a.optionalParams].filter(k => k !== 'limit').join(', ') || '-',
+              }))}
             columns={[
               { title: t('help.admin.adapterCol', 'アダプタ'), dataIndex: 'adapter', width: 120 },
-              { title: t('help.admin.targetCol', '取り込み対象'), dataIndex: 'target' },
+              { title: t('help.admin.ingestArchetypeCol', 'アーキタイプ'), dataIndex: 'archetype', width: 170 },
+              { title: t('help.admin.ingestParamsCol', '主要パラメータ'), dataIndex: 'params' },
             ]}
           />
+
+          {/* --- コネクタ登録手順 --- */}
+          <Divider />
+          <Title level={5}>{t('help.admin.ingestConnectorSetup', 'コネクタの登録手順')}</Title>
+          <Steps direction="vertical" size="small" items={[
+            { title: t('help.admin.ingestConnStep1', '「管理」→「連携設定」→「コネクタ」タブを開く') },
+            { title: t('help.admin.ingestConnStep2', '「新規コネクタ」をクリック') },
+            { title: t('help.admin.ingestConnStep3', 'コネクタID を入力（必須）'), description: t('help.admin.ingestConnStep3Desc', '一意の識別子です（例: "slack-workspace-1"）。作成後は変更できません。表示名（displayName）は任意で設定できます。') },
+            { title: t('help.admin.ingestConnStep4', 'ソースシステムを入力（必須）'), description: t('help.admin.ingestConnStep4Desc', '自由入力のテキストフィールドです。slack / gmail_mail / m365_mail / imap / notion / salesforce / teams / mattermost / chatwork / box / dropbox などを入力します。') },
+            { title: t('help.admin.ingestConnStep5', 'ソースアーキタイプを選択（必須）'), description: t('help.admin.ingestConnStep5Desc', 'ドロップダウンから FILE_SHARE / COMPOUND_NOTE / CHAT_CONTEXT / BUSINESS_RECORD / MESSAGE_CONTEXT を選択します。新規作成時は FILE_SHARE が初期値です。') },
+            { title: t('help.admin.ingestConnStep6', '認証方式・接続先を設定'), description: t('help.admin.ingestConnStep6Desc', '認証方式（authType）を oauth2 / api_key / service_account / none から選択し、エンドポイント（endpoint）にAPIのURLを入力します。Microsoft 系の場合はテナントID（tenantId）も設定します。Webhook を使う場合は webhookSecret を設定します。') },
+            { title: t('help.admin.ingestConnStep7', '「作成」をクリック') },
+          ]} />
+          <Alert type="info" showIcon style={{ marginTop: 8 }}
+            message={t('help.admin.ingestConnNote', 'コネクタのセキュリティ')}
+            description={t('help.admin.ingestConnNoteDesc', 'Webhook シークレットは保存後の GET レスポンスで [configured] にマスクされます。値を変更する場合は新しい値を入力して保存してください。空欄で保存すると既存の値が維持されます。実際の API トークンはサーバー側の credentialRef（プロパティ参照）で管理され、UI には表示されません。')}
+          />
+
+          {/* --- インポートプロファイル設定 --- */}
+          <Divider />
+          <Title level={5}>{t('help.admin.ingestProfileSetup', 'インポートプロファイルの設定')}</Title>
+          <Steps direction="vertical" size="small" items={[
+            { title: t('help.admin.ingestProfStep1', '「連携設定」→「インポートプロファイル」タブを開く') },
+            { title: t('help.admin.ingestProfStep2', '「新規プロファイル」をクリック') },
+            { title: t('help.admin.ingestProfStep3', 'プロファイルID を入力（必須）'), description: t('help.admin.ingestProfStep3Desc', '一意の識別子です（例: "slack-general-ch"）。作成後は変更できません。') },
+            { title: t('help.admin.ingestProfStep3b', 'コネクタを紐付け'), description: t('help.admin.ingestProfStep3bDesc', 'allowedConnectorIds に使用するコネクタIDを入力し、defaultConnectorId にスケジューラ実行時のデフォルトコネクタIDを設定します。') },
+            { title: t('help.admin.ingestProfStep4', '保存先フォルダを指定'), description: t('help.admin.ingestProfStep4Desc', 'targetFolderId に CMIS フォルダIDを設定します。省略するとルートフォルダに保存されます。') },
+            { title: t('help.admin.ingestProfStep5', 'ポリシーを設定'), description: t('help.admin.ingestProfStep5Desc', '重複検出（dedupePolicy）、更新（updatePolicy）、バージョニング（versioningPolicy）の各ポリシーを設定します（後述）') },
+            { title: t('help.admin.ingestProfStep6', 'スケジューラパラメータを設定'), description: t('help.admin.ingestProfStep6Desc', 'アダプタ固有のパラメータ（channelId 等）を schedulerParams に JSON 形式で入力します') },
+            { title: t('help.admin.ingestProfStep7', 'スケジューラを有効化'), description: t('help.admin.ingestProfStep7Desc', 'schedulerEnabled をオンにすると5分間隔の自動取り込みが開始されます。defaultConnectorId の設定が必須です。') },
+          ]} />
+
+          {/* --- ポリシー説明 --- */}
+          <Title level={5} style={{ marginTop: 24 }}>{t('help.admin.ingestPolicies', 'ポリシー設定')}</Title>
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label={t('help.admin.ingestDedupePolicy', '重複検出 (dedupePolicy)')}>
+              {t('help.admin.ingestDedupePolicyDesc', 'skip_if_same_version（デフォルト）: 同一ソースIDのドキュメントが既に存在する場合はスキップ。create_new_version: 既存ドキュメントに新バージョンとして追加。replace: 既存を削除して新規作成。create_new_if_parent_context_changed: ソースの親コンテキストが変わった場合のみ新規作成。replace_relationships_on_resync: 再同期時に既存リレーションシップを削除して再作成。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestUpdatePolicy', '更新ポリシー (updatePolicy)')}>
+              {t('help.admin.ingestUpdatePolicyDesc', 'always_version_up: 常に新しいバージョンを作成（チェックアウト→チェックイン）。update_metadata_only: メタデータのみ更新（コンテンツは変更なし）。version_up_on_content_change: コンテンツのSHA-256ハッシュが変わった場合のみバージョンアップ。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestVersionPolicy', 'バージョニング (versioningPolicy)')}>
+              {t('help.admin.ingestVersionPolicyDesc', 'major: メジャーバージョン（1.0 → 2.0）。minor: マイナーバージョン（1.0 → 1.1）。none: バージョニングなし。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestAclPolicy', 'ACL同期 (aclSyncPolicy)')}>
+              {t('help.admin.ingestAclPolicyDesc', 'inherit_from_folder（デフォルト）: 親フォルダの権限を継承（CMIS標準動作）。none: 親フォルダからの継承を切断し独立した権限を設定。copy_from_source: ソース側のACLを NemakiWare のローカルACEとしてコピー。')}
+            </Descriptions.Item>
+          </Descriptions>
+
+          {/* --- 実行パターン --- */}
+          <Title level={5} style={{ marginTop: 24 }}>{t('help.admin.ingestExecution', '実行パターン')}</Title>
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label={t('help.admin.ingestExecScheduled', '① 定期ポーリング（スケジューラ）')}>
+              {t('help.admin.ingestExecScheduledDesc', 'プロファイルの schedulerEnabled をオンにすると、5分間隔で自動実行されます。前回のチェックポイント（タイムスタンプやメッセージID）から差分のみを取り込みます。cron式ではなく固定間隔です。レート制限（rateLimitRpm）でAPI呼び出し頻度を制御できます。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestExecManual', '② 手動実行')}>
+              {t('help.admin.ingestExecManualDesc', '「手動インポート」タブからプロファイルを選択して即時実行できます。スケジューラが無効でも実行可能です。テストや初回の大量取り込みに便利です。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestExecWebhook', '③ Webhook（イベント駆動）')}>
+              {t('help.admin.ingestExecWebhookDesc', 'Slack Events API、Microsoft Graph changeNotification、汎用 HMAC Webhook に対応しています。コネクタに webhookSecret を設定すると、外部システムからのイベント通知で即座に取り込みが実行されます。「コネクタ」タブに Webhook URL が表示されます。')}
+            </Descriptions.Item>
+          </Descriptions>
+
+          {/* --- アダプタ固有パラメータ --- */}
+          {/* --- アダプタ固有パラメータ（AdapterRegistry API から動的生成） --- */}
+          <Title level={5} style={{ marginTop: 24 }}>{t('help.admin.ingestSchedulerParams', 'アダプタ別スケジューラパラメータ')}</Title>
+          <Paragraph>{t('help.admin.ingestSchedulerParamsDesc', 'schedulerParams にJSON形式で設定します。アダプタごとに必須パラメータが異なります。')}</Paragraph>
+          <Table size="small" pagination={false}
+            dataSource={adapters
+              .filter(a => a.sourceSystem !== 'google_drive' && a.sourceSystem !== 'onedrive')
+              .map(a => ({
+                key: a.sourceSystem,
+                adapter: a.displayName,
+                required: a.requiredParams.length > 0 ? a.requiredParams.join(', ') : '-',
+                optional: a.optionalParams.join(', ') || '-',
+                example: a.paramsExample,
+              }))}
+            columns={[
+              { title: t('help.admin.adapterCol', 'アダプタ'), dataIndex: 'adapter', width: 100 },
+              { title: t('help.admin.ingestRequiredCol', '必須'), dataIndex: 'required', width: 160 },
+              { title: t('help.admin.ingestOptionalCol', '任意'), dataIndex: 'optional', width: 120 },
+              { title: t('help.admin.ingestExampleCol', '設定例'), dataIndex: 'example' },
+            ]}
+          />
+
+          {/* --- チェックポイントとジョブ管理 --- */}
+          <Divider />
+          <Title level={5}>{t('help.admin.ingestJobManagement', 'ジョブ管理とチェックポイント')}</Title>
+          <Paragraph>{t('help.admin.ingestJobManagementDesc', 'スケジューラ実行のたびにジョブレコードが作成され、進捗がリアルタイムで追跡されます。')}</Paragraph>
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label={t('help.admin.ingestJobStatus', 'ジョブステータス')}>
+              {t('help.admin.ingestJobStatusDesc', 'RUNNING: 実行中（ハートビートで進捗監視）。COMPLETED: 正常完了。PARTIAL: 一部成功・一部失敗。FAILED: 全件失敗。30分以上ハートビートがないジョブは自動的にFAILED（スタック検出）になります。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestCheckpoint', 'チェックポイント')}>
+              {t('help.admin.ingestCheckpointDesc', '各プロファイルの最後に正常取得した位置を記憶します。次回実行時はこの位置から差分取り込みを行います。チェックポイントはアダプタごとに異なります（Gmail: 日付、Slack: メッセージts、IMAP: UID等）。管理APIでチェックポイントのリセット（全件再取り込み）が可能です。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestContentHash', 'コンテンツハッシュ')}>
+              {t('help.admin.ingestContentHashDesc', '取り込み時にSHA-256ハッシュを計算・保存します。version_up_on_content_change ポリシーでは、ハッシュが一致する場合はメタデータのみ更新し、不要なバージョンアップを防ぎます。')}
+            </Descriptions.Item>
+          </Descriptions>
+
+          {/* --- DLQ --- */}
+          <Title level={5} style={{ marginTop: 24 }}>{t('help.admin.dlq', 'DLQ（デッドレターキュー）')}</Title>
+          <Paragraph>{t('help.admin.ingestDlqIntro', '取り込みに失敗したアイテムはエラー分類に基づいて処理されます。')}</Paragraph>
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label={t('help.admin.ingestDlqTransient', '一時的エラー (transient)')}>
+              {t('help.admin.ingestDlqTransientDesc', 'ネットワークタイムアウト、HTTP 429（レート制限）、HTTP 503（サービス利用不可）。DLQ に保存され、「リトライ」ボタンで再取り込みできます。自動リトライは行われません。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestDlqPermanent', '永続的エラー (permanent)')}>
+              {t('help.admin.ingestDlqPermanentDesc', '認証エラー、権限不足、データ形式エラー等。原因を修正してからリトライしてください。元のコンテンツは DLQ レコードに CouchDB attachment として保存されています。')}
+            </Descriptions.Item>
+          </Descriptions>
           <Alert type="info" showIcon style={{ marginTop: 12 }}
-            message={t('help.admin.dlq', 'DLQ（デッドレターキュー）')}
-            description={t('help.admin.dlqDesc', '取り込みに失敗したアイテムは DLQ に保存されます。「ジョブ履歴」タブで確認し、原因を修正してから「リトライ」で再取り込みできます（60秒のクールダウンあり）。')}
+            message={t('help.admin.ingestDlqRetry', 'DLQ リトライ')}
+            description={t('help.admin.ingestDlqRetryDesc', '「ジョブ履歴」タブで失敗ジョブの DLQ アイテムを確認し、「リトライ」をクリックします。アーキタイプに応じた取り込みフローが自動選択されます。60秒のクールダウンがあります。')}
+          />
+
+          {/* --- 具体例 --- */}
+          <Divider />
+          <Title level={5}>{t('help.admin.ingestExample', '設定例: Slack チャンネルの取り込み')}</Title>
+          <Steps direction="vertical" size="small" items={[
+            { title: t('help.admin.ingestExStep1', '1. Slack Bot Token を取得'), description: t('help.admin.ingestExStep1Desc', 'Slack App を作成し、channels:history, channels:read, files:read のスコープを持つ Bot Token (xoxb-...) を取得します') },
+            { title: t('help.admin.ingestExStep2', '2. コネクタを作成'), description: t('help.admin.ingestExStep2Desc', 'ソースシステム: slack、アーキタイプ: CHAT_CONTEXT、認証方式: api_key を選択。Bot Token はサーバー側プロパティで管理します。') },
+            { title: t('help.admin.ingestExStep3', '3. インポートプロファイルを作成'), description: t('help.admin.ingestExStep3Desc', 'defaultConnectorId にコネクタIDを設定、schedulerParams: {"channelId":"C01ABCD2345"}、dedupePolicy: skip_if_same_version、targetFolderId: 保存先フォルダID') },
+            { title: t('help.admin.ingestExStep4', '4. スケジューラを有効化'), description: t('help.admin.ingestExStep4Desc', 'schedulerEnabled をオンにすると、5分ごとにチャンネルの新着メッセージと添付ファイルが自動取り込みされます') },
+            { title: t('help.admin.ingestExStep5', '5. Webhook（オプション）'), description: t('help.admin.ingestExStep5Desc', 'webhookSecret を設定し、Slack Events API の Request URL に「コネクタ」タブに表示される Webhook URL を登録すると、メッセージ投稿時に即座に取り込みが実行されます') },
+          ]} />
+          <Alert type="warning" showIcon style={{ marginTop: 12 }}
+            message={t('help.admin.ingestRateLimit', 'レート制限について')}
+            description={t('help.admin.ingestRateLimitDesc', '各アダプタにはデフォルトのレート制限が設定されています（例: CHAT_CONTEXT 系は3 RPM、FILE_SHARE 系は2 RPM）。rateLimitRpm パラメータでコネクタ単位に調整できます。API の利用制限に合わせて適切に設定してください。')}
           />
         </>
       ),
@@ -450,7 +614,7 @@ const AdminGuide: React.FC = () => {
       children: (
         <>
           <HelpImage src="14-audit-dashboard.png" alt={t('help.admin.auditAlt', '監査ダッシュボード')} />
-          <Paragraph>{t('help.admin.auditDesc', '操作数のグラフ（日別/週別）、操作種別の内訳、ユーザー別の操作数を確認できます。')}</Paragraph>
+          <Paragraph>{t('help.admin.auditDesc', '監査イベントの統計情報（総イベント数、成功/スキップ/失敗の件数と割合）と、フィルタ付きのイベント一覧を確認できます。メトリクスのリセットも可能です。')}</Paragraph>
         </>
       ),
     },
@@ -460,7 +624,7 @@ const AdminGuide: React.FC = () => {
       children: (
         <>
           <HelpImage src="20-webhook.png" alt={t('help.admin.webhookAlt', 'Webhook 管理画面')} />
-          <Paragraph>{t('help.admin.webhookDesc', 'ドキュメントの作成・更新・削除時に外部 URL に HTTP 通知を送信します。URL、イベント種別、対象フォルダを設定して「保存」します。')}</Paragraph>
+          <Paragraph>{t('help.admin.webhookDesc', 'ドキュメントの作成・更新・削除時に外部 URL に HTTP 通知を送信します。Webhook の設定は REST API で管理し、この画面では登録済み設定の一覧、配送ログの確認、テスト送信が可能です。')}</Paragraph>
         </>
       ),
     },
@@ -468,7 +632,24 @@ const AdminGuide: React.FC = () => {
       key: 'sync',
       label: <Space><SyncOutlined /><Text strong>{t('help.admin.syncTitle', 'クラウドディレクトリ同期')}</Text></Space>,
       children: (
-        <Paragraph>{t('help.admin.syncDesc', 'Google Workspace / Microsoft Entra ID のユーザー・グループを NemakiWare に同期します。手動実行と定期自動同期に対応しています。')}</Paragraph>
+        <>
+          <Paragraph>{t('help.admin.syncDesc', 'Google Workspace / Microsoft Entra ID のユーザー・グループを NemakiWare に同期します。「連携設定」→「ディレクトリ同期」タブから手動実行できます。')}</Paragraph>
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label={t('help.admin.syncGoogle', 'Google Workspace')}>
+              {t('help.admin.syncGoogleDesc', 'Google Cloud のサービスアカウント（JSON キーファイル）とドメイン全体の委任が必要です。管理者メールアドレス、ドメイン名を設定します。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.syncMicrosoft', 'Microsoft Entra ID')}>
+              {t('help.admin.syncMicrosoftDesc', 'Azure AD アプリ登録で Client Credentials（テナントID、クライアントID、クライアントシークレット）を取得し設定します。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.syncLdap', 'LDAP')}>
+              {t('help.admin.syncLdapDesc', 'LDAP/LDAPS サーバーからユーザー・グループを同期します。Bind DN、ベース DN、接続先 URL を設定します。')}
+            </Descriptions.Item>
+          </Descriptions>
+          <Alert type="info" showIcon style={{ marginTop: 12 }}
+            message={t('help.admin.syncScheduleNote', '定期同期について')}
+            description={t('help.admin.syncScheduleNoteDesc', '定期自動同期はサーバー設定ファイル（nemakiware.properties）の cloud.directory.sync.cron で cron 式を設定します。UI からの定期同期設定は現在未対応です。')}
+          />
+        </>
       ),
     },
     {
@@ -477,7 +658,7 @@ const AdminGuide: React.FC = () => {
       children: (
         <>
           <HelpImage src="22-import-export.png" alt={t('help.admin.ieAlt', 'インポート/エクスポート画面')} />
-          <Paragraph>{t('help.admin.ieDesc', 'ドキュメントの一括インポート/エクスポート。エクスポートは ZIP 形式（メタデータ + コンテンツ）。インポート時に同名ファイルの上書き設定が可能です。')}</Paragraph>
+          <Paragraph>{t('help.admin.ieDesc', 'サーバーのローカルファイルシステムを経由したドキュメントの一括インポート/エクスポート。エクスポートは JSON メタデータ + コンテンツファイルの形式でサーバー上のディレクトリに出力されます。インポート時に同名ファイルの上書き設定が可能です。')}</Paragraph>
         </>
       ),
     },
@@ -503,6 +684,240 @@ const AdminGuide: React.FC = () => {
           <Alert type="warning" showIcon
             message={t('help.admin.apiCsrf', 'CSRF 保護')}
             description={t('help.admin.apiCsrfDesc', 'REST API の POST/PUT/DELETE は CSRF 保護されています。CLI や curl からアクセスする場合は X-Requested-With: XMLHttpRequest ヘッダーを付与してください。')}
+          />
+        </>
+      ),
+    },
+    {
+      key: 'mcp',
+      label: <Space><RobotOutlined /><Text strong>{t('help.admin.mcpTitle', 'MCP サーバー（AI 連携）')}</Text></Space>,
+      children: (
+        <>
+          <Paragraph>{t('help.admin.mcpIntro', 'NemakiWare は MCP（Model Context Protocol）サーバーを内蔵しています。Claude Code などの MCP 対応 AI クライアントから、ドキュメントの検索・取得・セマンティック検索が可能です。特別な設定は不要で、NemakiWare Core が起動していれば自動的に利用可能です。')}</Paragraph>
+
+          {/* --- エンドポイント --- */}
+          <Title level={5}>{t('help.admin.mcpEndpoints', 'エンドポイント')}</Title>
+          <Table size="small" pagination={false}
+            dataSource={[
+              { key: '1', path: '/core/mcp/message', method: 'POST', desc: t('help.admin.mcpEndpointMessage', 'MCP JSON-RPC メッセージ処理（メインエンドポイント）') },
+              { key: '2', path: '/core/mcp/info', method: 'GET', desc: t('help.admin.mcpEndpointInfo', 'サーバー情報の取得') },
+              { key: '3', path: '/core/mcp/health', method: 'GET', desc: t('help.admin.mcpEndpointHealth', 'ヘルスチェック') },
+            ]}
+            columns={[
+              { title: t('help.admin.mcpPathCol', 'パス'), dataIndex: 'path', width: 220 },
+              { title: t('help.admin.mcpMethodCol', 'メソッド'), dataIndex: 'method', width: 80 },
+              { title: t('help.admin.mcpDescCol', '説明'), dataIndex: 'desc' },
+            ]}
+          />
+
+          {/* --- 各クライアント接続手順 --- */}
+          <Divider />
+          <Title level={5}>{t('help.admin.mcpClients', 'MCP クライアントからの接続')}</Title>
+          <Paragraph>{t('help.admin.mcpClientsIntro', 'NemakiWare の MCP サーバーは HTTP POST ベースの Streamable HTTP トランスポートを使用しています。MCP 対応の各種 AI ツールから以下の手順で接続できます。')}</Paragraph>
+          <Alert type="info" showIcon style={{ marginBottom: 16 }}
+            message={t('help.admin.mcpAuthNote', '認証について')}
+            description={t('help.admin.mcpAuthNoteDesc', 'Basic 認証のヘッダー値は「ユーザー名:パスワード」を Base64 エンコードしたものです。例: admin:admin → YWRtaW46YWRtaW4=。接続後は nemakiware_login ツールでセッショントークンを取得し、Bearer 認証に切り替えることも可能です。')}
+          />
+
+          {/* --- Claude Desktop --- */}
+          <Title level={5}>{t('help.admin.mcpClaudeDesktop', 'Claude Desktop')}</Title>
+          <Paragraph>{t('help.admin.mcpCdIntro', 'Claude Desktop は stdio トランスポートのみ対応のため、mcp-remote プロキシを使用して NemakiWare の HTTP MCP サーバーに接続します。')}</Paragraph>
+          <Steps direction="vertical" size="small" items={[
+            { title: t('help.admin.mcpCdStep1', '1. Claude Desktop の設定を開く'), description: t('help.admin.mcpCdStep1Desc', 'メニュー「Claude」→「Settings...」→「Developer」→「Edit Config」をクリックします') },
+            { title: t('help.admin.mcpCdStep2', '2. claude_desktop_config.json を編集'), description: t('help.admin.mcpCdStep2Desc', '下記の設定を追加します。ファイルの場所: macOS: ~/Library/Application Support/Claude/claude_desktop_config.json、Windows: %APPDATA%\\Claude\\claude_desktop_config.json') },
+            { title: t('help.admin.mcpCdStep3', '3. Claude Desktop を再起動'), description: t('help.admin.mcpCdStep3Desc', '設定を反映するために Claude Desktop を完全に終了して再起動します。チャット画面のツールアイコン（🔨）に nemakiware ツールが表示されれば接続成功です。') },
+          ]} />
+          <Card size="small" title={t('help.admin.mcpCdConfig', '設定例（claude_desktop_config.json）')} style={{ marginTop: 12 }}>
+            <pre style={{ fontSize: 12, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{`{
+  "mcpServers": {
+    "nemakiware": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "http://localhost:8080/core/mcp/message",
+        "--header",
+        "Authorization: Basic YWRtaW46YWRtaW4="
+      ]
+    }
+  }
+}`}</pre>
+          </Card>
+
+          {/* --- Claude Code --- */}
+          <Divider />
+          <Title level={5}>{t('help.admin.mcpClaudeCode', 'Claude Code（CLI / VS Code / JetBrains）')}</Title>
+          <Steps direction="vertical" size="small" items={[
+            { title: t('help.admin.mcpCcStep1', '1. 設定ファイルを作成'), description: t('help.admin.mcpCcStep1Desc', 'プロジェクト単位: プロジェクトルートに .mcp.json を作成。ユーザー全体: ~/.claude/mcp.json を作成。') },
+            { title: t('help.admin.mcpCcStep2', '2. NemakiWare MCP サーバーを追加'), description: t('help.admin.mcpCcStep2Desc', '下記の JSON 設定を追加します。URL はご利用の NemakiWare サーバーに合わせて変更してください。') },
+            { title: t('help.admin.mcpCcStep3', '3. Claude Code を再起動'), description: t('help.admin.mcpCcStep3Desc', 'CLI: /mcp コマンドで接続状態を確認。VS Code / JetBrains: 拡張機能を再読み込み。ツール一覧に nemakiware_* が表示されれば接続成功です。') },
+          ]} />
+          <Card size="small" title={t('help.admin.mcpConfigExample', '設定例（.mcp.json）')} style={{ marginTop: 12 }}>
+            <pre style={{ fontSize: 12, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{`{
+  "mcpServers": {
+    "nemakiware": {
+      "url": "http://localhost:8080/core/mcp/message",
+      "headers": {
+        "Authorization": "Basic YWRtaW46YWRtaW4="
+      }
+    }
+  }
+}`}</pre>
+          </Card>
+
+          {/* --- Cursor --- */}
+          <Divider />
+          <Title level={5}>{t('help.admin.mcpCursor', 'Cursor')}</Title>
+          <Steps direction="vertical" size="small" items={[
+            { title: t('help.admin.mcpCursorStep1', '1. .cursor/mcp.json を作成'), description: t('help.admin.mcpCursorStep1Desc', 'プロジェクトルートに .cursor/mcp.json を作成します（Cursor の GUI から追加する場合は「Settings」→「MCP」タブ）') },
+            { title: t('help.admin.mcpCursorStep2', '2. NemakiWare サーバーを追加'), description: t('help.admin.mcpCursorStep2Desc', '下記の JSON 設定を追加します。Cursor は HTTP トランスポートに対応しているため直接接続できます。') },
+            { title: t('help.admin.mcpCursorStep3', '3. Cursor を再起動'), description: t('help.admin.mcpCursorStep3Desc', 'Cursor を再起動し、「Settings」→「MCP」タブで nemakiware が接続済みになっていれば成功です') },
+          ]} />
+          <Card size="small" title={t('help.admin.mcpCursorConfig', '設定例（.cursor/mcp.json）')} style={{ marginTop: 12 }}>
+            <pre style={{ fontSize: 12, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{`{
+  "mcpServers": {
+    "nemakiware": {
+      "url": "http://localhost:8080/core/mcp/message",
+      "headers": {
+        "Authorization": "Basic YWRtaW46YWRtaW4="
+      }
+    }
+  }
+}`}</pre>
+          </Card>
+
+          {/* --- Windsurf --- */}
+          <Divider />
+          <Title level={5}>{t('help.admin.mcpWindsurf', 'Windsurf (Codeium)')}</Title>
+          <Steps direction="vertical" size="small" items={[
+            { title: t('help.admin.mcpWindsurfStep1', '1. Windsurf の MCP 設定を開く'), description: t('help.admin.mcpWindsurfStep1Desc', '「Cascade」→「MCP」アイコンをクリックするか、~/.codeium/windsurf/mcp_config.json を編集します') },
+            { title: t('help.admin.mcpWindsurfStep2', '2. NemakiWare サーバーを追加'), description: t('help.admin.mcpWindsurfStep2Desc', '下記の設定を mcp_config.json に追加します') },
+            { title: t('help.admin.mcpWindsurfStep3', '3. Windsurf を再起動'), description: t('help.admin.mcpWindsurfStep3Desc', 'Cascade パネルでツール一覧に nemakiware が表示されれば接続成功です') },
+          ]} />
+          <Card size="small" title={t('help.admin.mcpWindsurfConfig', '設定例（mcp_config.json）')} style={{ marginTop: 12 }}>
+            <pre style={{ fontSize: 12, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{`{
+  "mcpServers": {
+    "nemakiware": {
+      "serverUrl": "http://localhost:8080/core/mcp/message",
+      "headers": {
+        "Authorization": "Basic YWRtaW46YWRtaW4="
+      }
+    }
+  }
+}`}</pre>
+          </Card>
+
+          {/* --- ChatGPT Desktop --- */}
+          <Divider />
+          <Title level={5}>{t('help.admin.mcpChatGPT', 'ChatGPT Desktop')}</Title>
+          <Paragraph>{t('help.admin.mcpChatGPTIntro', 'ChatGPT Desktop アプリは MCP をサポートしていますが、stdio トランスポートのみ対応です。NemakiWare の HTTP MCP サーバーに接続するには mcp-remote プロキシを使用します。')}</Paragraph>
+          <Steps direction="vertical" size="small" items={[
+            { title: t('help.admin.mcpChatGPTStep1', '1. mcp-remote をインストール'), description: t('help.admin.mcpChatGPTStep1Desc', 'npx で直接実行するため事前インストールは不要です（Node.js 18+ が必要）') },
+            { title: t('help.admin.mcpChatGPTStep2', '2. ChatGPT の MCP 設定を開く'), description: t('help.admin.mcpChatGPTStep2Desc', 'ChatGPT Desktop → 「Settings」→「Beta features」→「MCP servers」を有効化 →「Configure」をクリック') },
+            { title: t('help.admin.mcpChatGPTStep3', '3. NemakiWare サーバーを追加'), description: t('help.admin.mcpChatGPTStep3Desc', '「+ Add Server」→ Name: nemakiware、Command: 下記の command 値を入力します') },
+          ]} />
+          <Card size="small" title={t('help.admin.mcpChatGPTConfig', '設定例（ChatGPT MCP settings.json）')} style={{ marginTop: 12 }}>
+            <pre style={{ fontSize: 12, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{`{
+  "mcpServers": {
+    "nemakiware": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "http://localhost:8080/core/mcp/message",
+        "--header",
+        "Authorization: Basic YWRtaW46YWRtaW4="
+      ]
+    }
+  }
+}`}</pre>
+          </Card>
+
+          {/* --- Gemini CLI --- */}
+          <Divider />
+          <Title level={5}>{t('help.admin.mcpGemini', 'Gemini CLI')}</Title>
+          <Paragraph>{t('help.admin.mcpGeminiIntro', 'Google の Gemini CLI は MCP をサポートしていますが、stdio トランスポートのみ対応です。ChatGPT と同様に mcp-remote プロキシを使用します。')}</Paragraph>
+          <Steps direction="vertical" size="small" items={[
+            { title: t('help.admin.mcpGeminiStep1', '1. Gemini CLI の設定ファイルを開く'), description: t('help.admin.mcpGeminiStep1Desc', '~/.gemini/settings.json を作成・編集します') },
+            { title: t('help.admin.mcpGeminiStep2', '2. mcp-remote 経由で NemakiWare を追加'), description: t('help.admin.mcpGeminiStep2Desc', '下記の設定を追加します') },
+            { title: t('help.admin.mcpGeminiStep3', '3. Gemini CLI を再起動'), description: t('help.admin.mcpGeminiStep3Desc', 'gemini コマンドを再起動し、/tools コマンドで nemakiware ツールが表示されれば接続成功です') },
+          ]} />
+          <Card size="small" title={t('help.admin.mcpGeminiConfig', '設定例（~/.gemini/settings.json）')} style={{ marginTop: 12 }}>
+            <pre style={{ fontSize: 12, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{`{
+  "mcpServers": {
+    "nemakiware": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "http://localhost:8080/core/mcp/message",
+        "--header",
+        "Authorization: Basic YWRtaW46YWRtaW4="
+      ]
+    }
+  }
+}`}</pre>
+          </Card>
+
+          {/* --- その他 --- */}
+          <Divider />
+          <Title level={5}>{t('help.admin.mcpOther', 'その他の MCP クライアント')}</Title>
+          <Paragraph>{t('help.admin.mcpOtherDesc', 'MCP プロトコル対応の任意のクライアントから接続できます。以下の情報を設定してください:')}</Paragraph>
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label={t('help.admin.mcpOtherUrl', 'エンドポイント URL')}>
+              http://&lt;{t('help.admin.mcpOtherHost', 'サーバー')}&gt;:8080/core/mcp/message
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.mcpOtherTransport', 'トランスポート')}>
+              {t('help.admin.mcpOtherTransportDesc', 'Streamable HTTP（HTTP POST）')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.mcpOtherAuthHeader', '認証ヘッダー')}>
+              Authorization: Basic &lt;base64(username:password)&gt;
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.mcpOtherProtocol', 'プロトコルバージョン')}>
+              2024-11-05
+            </Descriptions.Item>
+          </Descriptions>
+          <Alert type="warning" showIcon style={{ marginTop: 12 }}
+            message={t('help.admin.mcpStdioNote', 'stdio トランスポートのクライアントについて')}
+            description={t('help.admin.mcpStdioNoteDesc', 'NemakiWare の MCP サーバーは HTTP ベースです。stdio（標準入出力）トランスポートのみ対応のクライアント（Claude Desktop、Gemini CLI 等）からは mcp-remote プロキシを使用してください: npx mcp-remote http://localhost:8080/core/mcp/message --header "Authorization: Basic YWRtaW46YWRtaW4="')}
+          />
+
+          {/* --- 利用可能なツール --- */}
+          <Divider />
+          <Title level={5}>{t('help.admin.mcpTools', '利用可能なツール')}</Title>
+          <Table size="small" pagination={false}
+            dataSource={[
+              { key: '1', tool: 'nemakiware_login', auth: '-', desc: t('help.admin.mcpToolLogin', 'ユーザー名/パスワードでログインしセッショントークンを取得') },
+              { key: '2', tool: 'nemakiware_apikey_login', auth: '-', desc: t('help.admin.mcpToolApikey', 'API Key でログイン') },
+              { key: '3', tool: 'nemakiware_cloud_login', auth: '-', desc: t('help.admin.mcpToolCloud', 'OIDC（Google / Microsoft）クラウドログインを開始') },
+              { key: '4', tool: 'nemakiware_cloud_login_status', auth: '-', desc: t('help.admin.mcpToolCloudStatus', 'クラウドログインのステータス確認') },
+              { key: '5', tool: 'nemakiware_logout', auth: '-', desc: t('help.admin.mcpToolLogout', 'ログアウト') },
+              { key: '6', tool: 'nemakiware_search', auth: t('help.admin.mcpToolAuthReq', '要'), desc: t('help.admin.mcpToolSearch', 'CMIS SQL クエリによるドキュメント検索') },
+              { key: '7', tool: 'nemakiware_rag_search', auth: t('help.admin.mcpToolAuthReq', '要'), desc: t('help.admin.mcpToolRag', 'セマンティック（RAG）検索。自然文で関連ドキュメントを検索') },
+              { key: '8', tool: 'nemakiware_similar_documents', auth: t('help.admin.mcpToolAuthReq', '要'), desc: t('help.admin.mcpToolSimilar', '指定ドキュメントに類似するドキュメントを検索') },
+              { key: '9', tool: 'nemakiware_get_document_content', auth: t('help.admin.mcpToolAuthReq', '要'), desc: t('help.admin.mcpToolContent', 'ドキュメントの本文テキストを取得') },
+            ]}
+            columns={[
+              { title: t('help.admin.mcpToolNameCol', 'ツール名'), dataIndex: 'tool', width: 280 },
+              { title: t('help.admin.mcpToolAuthCol', '認証'), dataIndex: 'auth', width: 50 },
+              { title: t('help.admin.mcpDescCol', '説明'), dataIndex: 'desc' },
+            ]}
+          />
+
+          {/* --- 使い方の例 --- */}
+          <Divider />
+          <Title level={5}>{t('help.admin.mcpUsage', '使い方の例')}</Title>
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label={t('help.admin.mcpUsageSearch', 'ドキュメント検索')}>
+              {t('help.admin.mcpUsageSearchDesc', 'Claude Code で「NemakiWare から四半期レポートを検索して」と依頼すると、nemakiware_search または nemakiware_rag_search ツールが自動的に呼び出されます。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.mcpUsageContent', '内容の取得')}>
+              {t('help.admin.mcpUsageContentDesc', '「このドキュメントの内容を要約して」と依頼すると、nemakiware_get_document_content でテキストを取得し、AI が要約を生成します。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.mcpUsageSimilar', '類似検索')}>
+              {t('help.admin.mcpUsageSimilarDesc', '「この契約書に関連するドキュメントを探して」と依頼すると、nemakiware_similar_documents で意味的に類似するドキュメントを検索します（RAG 有効時）。')}
+            </Descriptions.Item>
+          </Descriptions>
+          <Alert type="info" showIcon style={{ marginTop: 12 }}
+            message={t('help.admin.mcpRagNote', 'RAG 検索について')}
+            description={t('help.admin.mcpRagNoteDesc', 'nemakiware_rag_search と nemakiware_similar_documents はツール一覧に常に表示されますが、RAG（ベクトル検索）が有効でない環境で実行すると「Vector search is not enabled」エラーになります。RAG が無効の場合は nemakiware_search（CMIS SQL）をご利用ください。')}
           />
         </>
       ),

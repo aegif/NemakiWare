@@ -7,19 +7,9 @@ import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.model.Property;
-import jp.aegif.nemaki.rest.purview.journal.LineageConfig;
-import jp.aegif.nemaki.rest.purview.journal.LineageEvent;
-import jp.aegif.nemaki.rest.purview.journal.LineageEmitter;
-import jp.aegif.nemaki.rest.purview.journal.LineageEventBuilder;
-import jp.aegif.nemaki.rest.purview.journal.LineageMode;
-import jp.aegif.nemaki.rest.purview.journal.LineageProcessType;
-import jp.aegif.nemaki.rest.purview.journal.LineageJournalStore;
-import jp.aegif.nemaki.rest.purview.journal.LineageTargetSink;
-import jp.aegif.nemaki.util.spring.SpringContext;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
-import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
@@ -68,6 +58,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private NemakiCachePool nemakiCachePool;
     private IngestJobService ingestJobService;
     private jp.aegif.nemaki.cmis.service.RelationshipService relationshipService;
+    // Optional beans — injected via setter to avoid SpringContext service locator
+    private jp.aegif.nemaki.audit.AuditLogger auditLogger;
+    private jp.aegif.nemaki.rest.controller.IntegrationSettingsService integrationSettingsService;
+    private IngestMetadataService ingestMetadataService;
+    private IngestLineageEmitter ingestLineageEmitter;
 
     // --- DI setters ---
 
@@ -105,6 +100,22 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
     public void setRelationshipService(jp.aegif.nemaki.cmis.service.RelationshipService relationshipService) {
         this.relationshipService = relationshipService;
+    }
+
+    public void setAuditLogger(jp.aegif.nemaki.audit.AuditLogger auditLogger) {
+        this.auditLogger = auditLogger;
+    }
+
+    public void setIntegrationSettingsService(jp.aegif.nemaki.rest.controller.IntegrationSettingsService service) {
+        this.integrationSettingsService = service;
+    }
+
+    public void setIngestMetadataService(IngestMetadataService ingestMetadataService) {
+        this.ingestMetadataService = ingestMetadataService;
+    }
+
+    public void setIngestLineageEmitter(IngestLineageEmitter ingestLineageEmitter) {
+        this.ingestLineageEmitter = ingestLineageEmitter;
     }
 
     /**
@@ -184,11 +195,41 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             return ExternalIngestResult.error(requestId, "Content stream (.eml file) is required for mail import");
         }
 
+        // Early validation: check profile AND connector BEFORE expensive EML parsing
+        if (request.getProfileId() != null && importProfileDefinitionService != null) {
+            ImportProfileDefinition profile = importProfileDefinitionService.get(request.getProfileId());
+            if (profile == null) {
+                return ExternalIngestResult.error(requestId, "Import profile not found: " + request.getProfileId());
+            }
+            if (!profile.isEnabled()) {
+                return ExternalIngestResult.error(requestId, "Import profile is disabled: " + request.getProfileId());
+            }
+            String repositoryId = request.getRepositoryId();
+            if (profile.getRepositoryId() != null && !profile.getRepositoryId().equals(repositoryId)) {
+                return ExternalIngestResult.error(requestId, "Profile repository mismatch");
+            }
+            if (request.getConnectorId() != null && connectorDefinitionService != null) {
+                ConnectorDefinition conn = connectorDefinitionService.get(request.getConnectorId());
+                if (conn == null) {
+                    return ExternalIngestResult.error(requestId, "Connector not found: " + request.getConnectorId());
+                }
+                if (!conn.isEnabled()) {
+                    return ExternalIngestResult.error(requestId, "Connector is disabled: " + request.getConnectorId());
+                }
+                if (!profile.isConnectorAllowed(conn.getConnectorId())) {
+                    return ExternalIngestResult.error(requestId, "Connector not allowed for this profile");
+                }
+            }
+        }
+
         try {
             // 1. Buffer raw .eml bytes before parsing (for optional original preservation)
-            ByteArrayOutputStream rawEmlBuffer = new ByteArrayOutputStream();
-            request.getContentStream().transferTo(rawEmlBuffer);
-            byte[] rawEmlBytes = rawEmlBuffer.toByteArray();
+            byte[] rawEmlBytes;
+            try (java.io.InputStream emlIn = request.getContentStream()) {
+                ByteArrayOutputStream rawEmlBuffer = new ByteArrayOutputStream();
+                emlIn.transferTo(rawEmlBuffer);
+                rawEmlBytes = rawEmlBuffer.toByteArray();
+            }
 
             // 1b. Parse .eml from buffered bytes
             MailMessageParser parser = new MailMessageParser();
@@ -234,7 +275,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             // 4. Apply nemaki:messageMetadata secondary type
             List<String> warnings = new ArrayList<>(messageResult.warnings());
-            String metaError = applyMessageMetadata(request.getRepositoryId(), messageObjectId, callContext, parsed, request);
+            String metaError = ingestMetadataService.applyMessageMetadata(request.getRepositoryId(), messageObjectId, callContext, parsed, request);
             if (metaError != null) warnings.add(metaError);
 
             // 4b. Preserve raw .eml as a separate document if profile requests it
@@ -289,12 +330,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     attReq.setMetadata(attMeta);
 
                     ExternalIngestResult attResult = execute(callContext, attReq);
-                    if (attResult.isSuccess()) {
+                    if (attResult.isSuccess() || attResult.skipped()) {
                         attachmentCount++;
-                        // Create typed relationship (not dependent on profile policy)
-                        String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
-                                messageObjectId, attResult.objectId(), "nemaki:hasAttachment");
-                        if (relErr != null) warnings.add(relErr);
+                        // Create/update typed relationship
+                        String existingId = attResult.isSuccess() ? attResult.objectId()
+                                : (attResult.skipped() ? attResult.objectId() : null);
+                        if (existingId != null) {
+                            String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                                    messageObjectId, existingId, "nemaki:hasAttachment");
+                            if (relErr != null) warnings.add(relErr);
+                        }
                     } else {
                         warnings.add("Attachment '" + att.filename() + "' import failed: "
                                 + String.join(", ", attResult.errors()));
@@ -336,7 +381,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         List<String> warnings = new ArrayList<>(pageResult.warnings());
 
         // Apply nemaki:noteMetadata
-        String metaError = applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
+        String metaError = ingestMetadataService.applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
         if (metaError != null) warnings.add(metaError);
 
         // Import attachments from metadata if provided
@@ -370,11 +415,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         continue;
                     }
                     ExternalIngestResult attResult = execute(callContext, attReq);
-                    if (attResult.isSuccess()) {
+                    if (attResult.isSuccess() || attResult.skipped()) {
                         attachmentCount++;
-                        String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
-                                pageObjectId, attResult.objectId(), "nemaki:hasAttachment");
-                        if (relErr != null) warnings.add(relErr);
+                        String attObjectId = attResult.objectId();
+                        if (attObjectId != null) {
+                            String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                                    pageObjectId, attObjectId, "nemaki:hasAttachment");
+                            if (relErr != null) warnings.add(relErr);
+                        }
                     } else {
                         warnings.add("Attachment import failed: " + String.join(", ", attResult.errors()));
                     }
@@ -392,60 +440,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 List.of(), warnings);
     }
 
-    /**
-     * Apply nemaki:noteMetadata secondary type from request metadata.
-     */
-    private String applyNoteMetadata(String repositoryId, String objectId, CallContext callContext,
-                                     ExternalIngestRequest request) {
-        try {
-            Content content = contentService.getContent(repositoryId, objectId);
-            if (content == null) return "Content not found: " + objectId;
-
-            List<Aspect> aspects = content.getAspects();
-            if (aspects == null) aspects = new ArrayList<>();
-
-            List<Property> noteProps = new ArrayList<>();
-            Map<String, Object> meta = request.getMetadata();
-            if (meta != null) {
-                addStringProp(noteProps, "nemaki:notePageId", meta.get("pageId"));
-                addStringProp(noteProps, "nemaki:notePageUrl", meta.get("pageUrl"));
-                addStringProp(noteProps, "nemaki:noteParentPageId", meta.get("parentPageId"));
-                addStringProp(noteProps, "nemaki:noteWorkspaceId", meta.get("workspaceId"));
-                addStringProp(noteProps, "nemaki:noteAuthor", meta.get("author"));
-                addStringProp(noteProps, "nemaki:noteLastEditedBy", meta.get("lastEditedBy"));
-            }
-
-            if (!noteProps.isEmpty()) {
-                Aspect existingNote = aspects.stream()
-                        .filter(a -> "nemaki:noteMetadata".equals(a.getName())).findFirst().orElse(null);
-                if (existingNote != null) {
-                    Map<String, Property> m = new LinkedHashMap<>();
-                    if (existingNote.getProperties() != null) for (Property p : existingNote.getProperties()) m.put(p.getKey(), p);
-                    for (Property p : noteProps) m.put(p.getKey(), p);
-                    existingNote.setProperties(new ArrayList<>(m.values()));
-                } else {
-                    aspects.add(new Aspect("nemaki:noteMetadata", noteProps));
-                }
-                List<String> secondaryIds = content.getSecondaryIds();
-                if (secondaryIds == null) secondaryIds = new ArrayList<>();
-                if (!secondaryIds.contains("nemaki:noteMetadata")) {
-                    secondaryIds.add("nemaki:noteMetadata");
-                }
-                content.setSecondaryIds(secondaryIds);
-                content.setAspects(aspects);
-                contentService.update(callContext, repositoryId, content);
-
-                if (nemakiCachePool != null) {
-                    try { nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId); }
-                    catch (Exception e) { /* ignore */ }
-                }
-            }
-            return null;
-        } catch (Exception e) {
-            logger.warn("Failed to apply noteMetadata to {}: {}", objectId, e.getMessage());
-            return "Note metadata failed: " + e.getMessage();
-        }
-    }
+    // applyNoteMetadata → delegated to IngestMetadataService
 
     @Override
     public ExternalIngestResult executeBusinessRecordImport(CallContext callContext, ExternalIngestRequest request) {
@@ -456,12 +451,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (!result.isSuccess()) return result;
 
         List<String> warnings = new ArrayList<>(result.warnings());
-        String metaError = applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
-                "nemaki:businessRecordMetadata", request, new String[][]{
-                        {"nemaki:recordType", "recordType"}, {"nemaki:recordId", "recordId"},
-                        {"nemaki:recordUrl", "recordUrl"}, {"nemaki:recordStatus", "recordStatus"},
-                        {"nemaki:recordOwner", "recordOwner"}, {"nemaki:processInstanceId", "processInstanceId"},
-                });
+        String[][] brFields = {
+                {"nemaki:recordType", "recordType"}, {"nemaki:recordId", "recordId"},
+                {"nemaki:recordUrl", "recordUrl"}, {"nemaki:recordStatus", "recordStatus"},
+                {"nemaki:recordOwner", "recordOwner"}, {"nemaki:processInstanceId", "processInstanceId"},
+        };
+        String metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
+                "nemaki:businessRecordMetadata", request, brFields);
         if (metaError != null) warnings.add(metaError);
 
         // Create attachedToRecord relationship if parentRecordId is provided
@@ -487,14 +483,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (!result.isSuccess()) return result;
 
         List<String> warnings = new ArrayList<>(result.warnings());
-        String metaError = applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
-                "nemaki:chatContextMetadata", request, new String[][]{
-                        {"nemaki:chatWorkspaceId", "workspaceId"}, {"nemaki:chatChannelId", "channelId"},
-                        {"nemaki:chatChannelName", "channelName"}, {"nemaki:chatThreadId", "threadId"},
-                        {"nemaki:chatMessageId", "messageId"}, {"nemaki:chatParticipants", "participants"},
-                        {"nemaki:chatSelectionReason", "selectionReason"},
-                        {"nemaki:chatEvidenceScope", "evidenceScope"},
-                });
+        String[][] chatFields = {
+                {"nemaki:chatWorkspaceId", "workspaceId"}, {"nemaki:chatChannelId", "channelId"},
+                {"nemaki:chatChannelName", "channelName"}, {"nemaki:chatThreadId", "threadId"},
+                {"nemaki:chatMessageId", "messageId"}, {"nemaki:chatParticipants", "participants"},
+                {"nemaki:chatSelectionReason", "selectionReason"},
+                {"nemaki:chatEvidenceScope", "evidenceScope"},
+        };
+        String metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
+                "nemaki:chatContextMetadata", request, chatFields);
         if (metaError != null) warnings.add(metaError);
 
         // Apply capture window datetime properties if provided in metadata
@@ -549,64 +546,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * Generic archetype metadata applicator — attaches a secondary type with
      * properties read from request metadata.
      */
-    private String applyArchetypeMetadata(String repositoryId, String objectId, CallContext callContext,
-                                          String secondaryTypeId, ExternalIngestRequest request,
-                                          String[][] fieldMappings) {
-        try {
-            Content content = contentService.getContent(repositoryId, objectId);
-            if (content == null) return "Content not found: " + objectId;
-
-            List<Aspect> aspects = content.getAspects();
-            if (aspects == null) aspects = new ArrayList<>();
-
-            List<Property> props = new ArrayList<>();
-            Map<String, Object> meta = request.getMetadata();
-            if (meta != null) {
-                for (String[] mapping : fieldMappings) {
-                    addStringProp(props, mapping[0], meta.get(mapping[1]));
-                }
-            }
-            if (!props.isEmpty()) {
-                // Update existing aspect or add new one
-                Aspect existingAspect = aspects.stream()
-                        .filter(a -> secondaryTypeId.equals(a.getName()))
-                        .findFirst().orElse(null);
-                if (existingAspect != null) {
-                    // Merge: preserve existing, overwrite with new
-                    Map<String, Property> merged = new LinkedHashMap<>();
-                    if (existingAspect.getProperties() != null) {
-                        for (Property p : existingAspect.getProperties()) merged.put(p.getKey(), p);
-                    }
-                    for (Property p : props) merged.put(p.getKey(), p);
-                    existingAspect.setProperties(new ArrayList<>(merged.values()));
-                } else {
-                    aspects.add(new Aspect(secondaryTypeId, props));
-                }
-                List<String> secondaryIds = content.getSecondaryIds();
-                if (secondaryIds == null) secondaryIds = new ArrayList<>();
-                if (!secondaryIds.contains(secondaryTypeId)) secondaryIds.add(secondaryTypeId);
-                content.setSecondaryIds(secondaryIds);
-                content.setAspects(aspects);
-                contentService.update(callContext, repositoryId, content);
-                if (nemakiCachePool != null) {
-                    try { nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId); }
-                    catch (Exception e) { /* */ }
-                }
-            }
-            return null;
-        } catch (Exception e) {
-            logger.warn("Failed to apply {} to {}: {}", secondaryTypeId, objectId, e.getMessage());
-            return secondaryTypeId + " metadata failed: " + e.getMessage();
-        }
-    }
+    // applyArchetypeMetadata → delegated to IngestMetadataService
 
     /**
      * Creates a CMIS relationship unconditionally (not dependent on profile policy).
      * Used by specialized import flows (mail, note) where parent-child relationships
      * are inherent to the archetype.
      */
-    String createDirectRelationship(CallContext callContext, String repositoryId,
-                                            String sourceId, String targetId) {
+    @Override
+    public String createDirectRelationship(CallContext callContext, String repositoryId,
+                                           String sourceId, String targetId) {
         return createDirectRelationship(callContext, repositoryId, sourceId, targetId, "cmis:relationship");
     }
 
@@ -647,19 +596,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
     }
 
-    private static void addStringProp(List<Property> props, String key, Object value) {
-        if (value instanceof String s && !s.isBlank()) {
-            props.add(new Property(key, s));
-        }
-    }
+    // addStringProp → moved to IngestMetadataService
 
     /** Emit audit event for external ingest operations. */
     private void emitAuditEvent(String repositoryId, String objectId,
                                 CallContext callContext, boolean success, String error) {
         try {
-            var ctx = jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
-            if (ctx == null) return;
-            var audit = ctx.getBean("auditLogger", jp.aegif.nemaki.audit.AuditLogger.class);
+            var audit = this.auditLogger;
             if (audit == null) return;
             String userId = callContext != null ? callContext.getUsername() : "system";
             jp.aegif.nemaki.audit.AuditOperation op = success
@@ -832,7 +775,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
     private String sanitizeFilename(String name) {
         if (name == null) return "untitled";
-        return name.replaceAll("[/\\\\:*?\"<>|]", "_").trim();
+        return name.replaceAll("[/\\\\:*?\"<>|\\x00]", "_").trim();
     }
 
     /**
@@ -858,75 +801,27 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return result;
     }
 
-    /**
-     * Apply nemaki:messageMetadata secondary type to a message document.
-     */
-    private String applyMessageMetadata(String repositoryId, String objectId, CallContext callContext,
-                                        ParsedMailMessage parsed, ExternalIngestRequest request) {
-        try {
-            Content content = contentService.getContent(repositoryId, objectId);
-            if (content == null) return "Content not found: " + objectId;
+    // applyMessageMetadata → delegated to IngestMetadataService
 
-            List<Aspect> aspects = content.getAspects();
-            if (aspects == null) aspects = new ArrayList<>();
-
-            List<Property> msgProps = new ArrayList<>();
-            if (parsed.messageId() != null) msgProps.add(new Property("nemaki:internetMessageId", parsed.messageId()));
-            if (parsed.subject() != null) msgProps.add(new Property("nemaki:mailSubject", parsed.subject()));
-            if (parsed.from() != null) msgProps.add(new Property("nemaki:mailFrom", parsed.from()));
-            if (parsed.to() != null) msgProps.add(new Property("nemaki:mailTo", parsed.to()));
-            if (parsed.cc() != null) msgProps.add(new Property("nemaki:mailCc", parsed.cc()));
-            if (parsed.inReplyTo() != null) msgProps.add(new Property("nemaki:mailInReplyTo", parsed.inReplyTo()));
-            if (parsed.references() != null) msgProps.add(new Property("nemaki:mailReferences", parsed.references()));
-            if (parsed.sentDate() != null) {
-                GregorianCalendar cal = new GregorianCalendar();
-                cal.setTime(parsed.sentDate());
-                msgProps.add(new Property("nemaki:mailSentAt", cal));
-            }
-            if (parsed.receivedDate() != null) {
-                GregorianCalendar cal = new GregorianCalendar();
-                cal.setTime(parsed.receivedDate());
-                msgProps.add(new Property("nemaki:mailReceivedAt", cal));
-            }
-            String mailboxId = resolveMetadataString(request, "mailboxId");
-            if (mailboxId != null) msgProps.add(new Property("nemaki:mailboxId", mailboxId));
-            String messageStableId = resolveMetadataString(request, "messageStableId");
-            if (messageStableId != null) msgProps.add(new Property("nemaki:messageStableId", messageStableId));
-
-            Aspect existingMsg = aspects.stream()
-                    .filter(a -> "nemaki:messageMetadata".equals(a.getName())).findFirst().orElse(null);
-            if (existingMsg != null) {
-                Map<String, Property> m = new LinkedHashMap<>();
-                if (existingMsg.getProperties() != null) for (Property p : existingMsg.getProperties()) m.put(p.getKey(), p);
-                for (Property p : msgProps) m.put(p.getKey(), p);
-                existingMsg.setProperties(new ArrayList<>(m.values()));
-            } else {
-                aspects.add(new Aspect("nemaki:messageMetadata", msgProps));
-            }
-
-            List<String> secondaryIds = content.getSecondaryIds();
-            if (secondaryIds == null) secondaryIds = new ArrayList<>();
-            if (!secondaryIds.contains("nemaki:messageMetadata")) {
-                secondaryIds.add("nemaki:messageMetadata");
-            }
-            content.setSecondaryIds(secondaryIds);
-            content.setAspects(aspects);
-            contentService.update(callContext, repositoryId, content);
-
-            if (nemakiCachePool != null) {
-                try { nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId); }
-                catch (Exception e) { logger.debug("Cache invalidation: {}", e.getMessage()); }
-            }
-            return null;
-        } catch (Exception e) {
-            logger.warn("Failed to apply messageMetadata to {}: {}", objectId, e.getMessage());
-            return "Message metadata failed: " + e.getMessage();
-        }
-    }
+    private static final int MAX_METADATA_SIZE = 1_000_000; // 1 MB
+    private static final int MAX_METADATA_DEPTH = 10;
 
     @Override
     public ExternalIngestResult execute(CallContext callContext, ExternalIngestRequest request) {
         String requestId = request.getRequestId();
+
+        // 0. Validate metadata size and depth to prevent DoS
+        if (request.getMetadata() != null) {
+            try {
+                byte[] metaBytes = JSON_MAPPER.writeValueAsBytes(request.getMetadata());
+                if (metaBytes.length > MAX_METADATA_SIZE) {
+                    return ExternalIngestResult.error(requestId,
+                            "Metadata exceeds max size of " + (MAX_METADATA_SIZE / 1024) + " KB");
+                }
+            } catch (Exception e) {
+                return ExternalIngestResult.error(requestId, "Invalid metadata format");
+            }
+        }
 
         // 1. Resolve profile
         ImportProfileDefinition profile = importProfileDefinitionService.get(request.getProfileId());
@@ -965,7 +860,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
         // 3b. Archetype-specific validation
         if (connector.getSourceArchetype() == SourceArchetype.CHAT_CONTEXT) {
-            String channelId = resolveChannelId(request);
+            String channelId = resolveMetadataString(request, "channelId");
             if (channelId == null) {
                 return ExternalIngestResult.error(requestId,
                         "metadata.channelId is required for CHAT_CONTEXT archetype");
@@ -978,7 +873,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         "metadata.mailboxId is required for MESSAGE_CONTEXT archetype");
             }
             // Require messageStableId for attachment imports to prevent non-canonical URIs
-            if (isAttachmentObjectType(request.getSourceObjectType())) {
+            if (IngestLineageEmitter.isAttachmentObjectType(request.getSourceObjectType())) {
                 String msgStableId = resolveMetadataString(request, "messageStableId");
                 if (msgStableId == null) {
                     return ExternalIngestResult.error(requestId,
@@ -1014,30 +909,35 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (request.getContentStream() != null) {
                 String mimeType = request.getMimeType() != null ? request.getMimeType() : "application/octet-stream";
                 // Buffer content to compute hash for dedupe and persistence
-                ByteArrayOutputStream contentBuf = new ByteArrayOutputStream();
-                request.getContentStream().transferTo(contentBuf);
-                byte[] contentBytes = contentBuf.toByteArray();
+                byte[] contentBytes;
+                try (java.io.InputStream rawIn = request.getContentStream()) {
+                    ByteArrayOutputStream contentBuf = new ByteArrayOutputStream();
+                    rawIn.transferTo(contentBuf);
+                    contentBytes = contentBuf.toByteArray();
+                }
                 bufferedContent = contentBytes; // retain for DLQ if this import fails
                 computedHash = computeContentHash(contentBytes);
                 contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(contentBytes.length),
                         mimeType, new ByteArrayInputStream(contentBytes));
             }
 
-            // 5a. Dedupe: check for existing document by source identity
-            String dedupePolicy = profile.getDedupePolicy() != null ? profile.getDedupePolicy() : "create_new_version";
+            // 5a. Dedupe: check for existing document by source identity (or filename)
+            String dedupePolicy = profile.getDedupePolicy() != null ? profile.getDedupePolicy() : "skip_if_same_version";
+            String dedupeMatchBy = profile.getDedupeMatchBy() != null ? profile.getDedupeMatchBy() : "source_id";
             Content existingDoc = findExistingDocument(repositoryId, targetFolderId, fileName,
-                    connector.getSourceSystem(), request.getSourceObjectId(), request.getSourceObjectType());
+                    connector.getSourceSystem(), request.getSourceObjectId(), request.getSourceObjectType(),
+                    dedupeMatchBy);
 
             // 5b. Idempotency check: skip if same key already succeeded
             if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
                 // Check persisted idempotency record (works for all dedupe modes).
                 // Value format: "objectId|epochMillis" — TTL is 7 days.
-                String idempKey = "ingest.idempotency." + request.getIdempotencyKey();
+                // Namespace by repository + profile to prevent cross-scope collisions
+                String idempKey = "ingest.idempotency." + repositoryId + "." + profile.getProfileId()
+                        + "." + request.getIdempotencyKey();
                 try {
-                    var ctx = jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
-                    if (ctx != null) {
-                        var settings = ctx.getBean(jp.aegif.nemaki.rest.controller.IntegrationSettingsService.class);
-                        String existing = settings.readSetting(idempKey);
+                    if (integrationSettingsService != null) {
+                        String existing = integrationSettingsService.readSetting(idempKey);
                         if (existing != null && !existing.isBlank()) {
                             String existingObjectId = existing;
                             // Parse TTL: if value contains "|", extract objectId and timestamp
@@ -1050,7 +950,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                                     if (ageMs > IDEMPOTENCY_TTL_MS) {
                                         logger.info("Idempotency key expired after {}h, allowing re-import: {}",
                                                 ageMs / 3_600_000, request.getIdempotencyKey());
-                                        settings.deleteSettings(java.util.Set.of(idempKey));
+                                        integrationSettingsService.deleteSettings(java.util.Set.of(idempKey));
                                         // Fall through to normal import
                                     } else {
                                         return ExternalIngestResult.skipped(requestId, existingObjectId,
@@ -1089,8 +989,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 if ("skip_if_same_version".equals(dedupePolicy)) {
                     return ExternalIngestResult.skipped(requestId, existingDoc.getId(),
                             "Document already exists with same source identity");
-                }
-                if ("replace".equals(dedupePolicy)) {
+                } else if ("replace".equals(dedupePolicy)) {
                     // Delete existing and create fresh
                     try {
                         objectService.deleteObject(callContext, repositoryId, existingDoc.getId(), true, null);
@@ -1099,15 +998,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         logger.warn("Dedupe replace: failed to delete {}: {}", existingDoc.getId(), e.getMessage());
                     }
                     existingDoc = null; // Fall through to create new
-                }
-                if ("create_new_if_parent_context_changed".equals(dedupePolicy)) {
+                } else if ("create_new_if_parent_context_changed".equals(dedupePolicy)) {
                     // Compare parent context fields — if changed, create new document
                     if (hasParentContextChanged(existingDoc, request)) {
                         logger.info("Dedupe: parent context changed for {}, creating new document", existingDoc.getId());
                         existingDoc = null; // Fall through to create new
                     }
-                }
-                if ("replace_relationships_on_resync".equals(dedupePolicy) && existingDoc != null) {
+                } else if ("replace_relationships_on_resync".equals(dedupePolicy) && existingDoc != null) {
                     // Delete existing relationships before re-import
                     removeExistingRelationships(callContext, repositoryId, existingDoc.getId());
                 }
@@ -1196,14 +1093,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 warnings.add(metadataError);
             }
 
-            // 6b. Create relationship if parentObjectId is provided and policy allows
+            // 6b. Create relationship if parentObjectId is provided and policy allows.
+            // Relationship failures are warnings, not errors — the document was already
+            // created/versioned, so the import is a partial success, not a hard failure.
             String relError = applyRelationship(callContext, repositoryId, objectId, profile, request);
             if (relError != null) {
                 warnings.add(relError);
             }
 
             // 7. Emit lineage event
-            String lineageEventId = emitLineageEvent(repositoryId, objectId, targetFolderId, connector, request);
+            String lineageEventId = ingestLineageEmitter != null
+                    ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId, connector, request)
+                    : null;
 
             logger.info("Canonical import completed: requestId={}, objectId={}, profile={}, connector={}",
                     requestId, objectId, profile.getProfileId(), connector.getConnectorId());
@@ -1211,10 +1112,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // Save idempotency record if key was provided
             if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
                 try {
-                    var ctx = jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
-                    if (ctx != null) {
-                        var settings = ctx.getBean(jp.aegif.nemaki.rest.controller.IntegrationSettingsService.class);
-                        settings.writeSetting("ingest.idempotency." + request.getIdempotencyKey(),
+                    if (integrationSettingsService != null) {
+                        integrationSettingsService.writeSetting("ingest.idempotency." + repositoryId + "."
+                                + profile.getProfileId() + "." + request.getIdempotencyKey(),
                                 objectId + "|" + System.currentTimeMillis());
                     }
                 } catch (Exception e) {
@@ -1244,7 +1144,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                             (isTransient ? "[transient] " : "[permanent] ") + e.getMessage(),
                             bufferedContent);
                 } catch (Exception dlqErr) {
-                    logger.debug("Failed to save to DLQ: {}", dlqErr.getMessage());
+                    logger.warn("Failed to save to DLQ — item may be lost: {}", dlqErr.getMessage());
                 }
             }
             return ExternalIngestResult.error(requestId,
@@ -1267,28 +1167,48 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * type definition errors, permission denied.
      */
     /* package */ boolean isTransientError(Exception e) {
-        // Walk the cause chain looking for known transient signals
+        // Walk the cause chain looking for known transient signals.
+        // Permanent errors (SSL cert, auth, schema) are explicitly excluded.
         Throwable t = e;
-        for (int depth = 0; t != null && depth < 5; depth++, t = t.getCause()) {
+        for (int depth = 0; t != null && depth < 8; depth++, t = t.getCause()) {
+            // --- Definitely permanent ---
+            if (t instanceof javax.net.ssl.SSLHandshakeException
+                    || t instanceof java.security.cert.CertificateException) {
+                return false; // Certificate issues don't self-heal
+            }
+
             String name = t.getClass().getName();
-            // Network / I/O
+            // --- Definitely transient: network / I/O ---
             if (t instanceof java.net.SocketTimeoutException
+                    || t instanceof java.net.SocketException
                     || t instanceof java.net.ConnectException
-                    || t instanceof java.net.NoRouteToHostException
-                    || t instanceof java.net.UnknownHostException) {
+                    || t instanceof java.net.NoRouteToHostException) {
+                return true;
+            }
+            // UnknownHostException is usually permanent (DNS), but may be
+            // transient in container environments where DNS updates propagate
+            if (t instanceof java.net.UnknownHostException) {
                 return true;
             }
             // CouchDB / HTTP 409 conflict (optimistic lock)
             if (name.contains("UpdateConflictException") || name.contains("DocumentConflict")) {
                 return true;
             }
-            // HTTP status in message (crude but catches adapter wrappers)
+            // HTTP status in message (catches adapter RuntimeException wrappers)
             String msg = t.getMessage();
             if (msg != null) {
-                if (msg.contains("429") || msg.contains("503") || msg.contains("502")
+                // Transient HTTP statuses
+                if (msg.contains("429") || msg.contains("502") || msg.contains("503")
                         || msg.contains("504") || msg.contains("Read timed out")
-                        || msg.contains("Connection reset") || msg.contains("Connection refused")) {
+                        || msg.contains("Connection reset") || msg.contains("Connection refused")
+                        || msg.contains("rate limit")) {
                     return true;
+                }
+                // Permanent HTTP statuses — explicit exclusion
+                if (msg.contains("401") || msg.contains("403") || msg.contains("404")
+                        || msg.contains("auth error") || msg.contains("Unauthorized")
+                        || msg.contains("Forbidden")) {
+                    return false;
                 }
             }
         }
@@ -1486,59 +1406,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
     }
 
-    private String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
-                                    ConnectorDefinition connector, ExternalIngestRequest request) {
-        try {
-            LineageProcessType processType = resolveProcessType(connector.getSourceArchetype(), request.getSourceObjectType());
-            String sourceUri = buildCanonicalSourceUri(connector, request);
-
-            LineageEventBuilder builder = new LineageEventBuilder()
-                    .repositoryId(repositoryId)
-                    .processType(processType)
-                    .addInput(sourceUri)
-                    .addOutputObject(repositoryId, objectId)
-                    .correlationId(request.getCorrelationId())
-                    .snapshotAttribute("sourceSystem", connector.getSourceSystem())
-                    .snapshotAttribute("sourceArchetype",
-                            connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : "")
-                    .snapshotAttribute("sourceObjectId", request.getSourceObjectId());
-
-            if (request.getSourceObjectType() != null) {
-                builder.snapshotAttribute("sourceObjectType", request.getSourceObjectType());
-            }
-            if (targetFolderId != null) {
-                builder.snapshotAttribute("targetFolderId", targetFolderId);
-            }
-
-            LineageEvent event = builder.build();
-            emitViaJournal(event);
-            return event.eventId();
-        } catch (Exception e) {
-            logger.warn("Failed to emit lineage event for {}: {}", objectId, e.getMessage());
-            return null;
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private void emitViaJournal(LineageEvent event) {
-        try {
-            var ctx = SpringContext.getApplicationContext();
-            if (ctx == null) return;
-            LineageConfig config = ctx.getBean(LineageConfig.class);
-            if (config == null) return;
-            LineageMode mode = config.getModeForRepository(event.repositoryId());
-            if (mode == LineageMode.DISABLED) return;
-            LineageJournalStore store = ctx.getBean(LineageJournalStore.class);
-            java.util.List<LineageTargetSink> sinks = (java.util.List<LineageTargetSink>)
-                    (java.util.List<?>) ctx.getBeansOfType(LineageTargetSink.class).values().stream().toList();
-            LineageEmitter emitter = config.createEmitterForMode(mode, store, sinks);
-            if (emitter.isActive()) {
-                emitter.emit(event);
-            }
-        } catch (Exception e) {
-            logger.warn("Lineage event emission failed (non-fatal): {}", e.getMessage());
-        }
-    }
+    // emitLineageEvent / emitViaJournal → delegated to IngestLineageEmitter
 
     /**
      * Creates a CMIS relationship from parentObjectId to the imported document
@@ -1576,37 +1444,70 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * Priority: sourceSystem + sourceObjectId match > filename match.
      * Only considers documents (not folders) in the target folder.
      */
+    /**
+     * Find an existing document for deduplication.
+     *
+     * <p>Matching strategy is controlled by {@code dedupeMatchBy}:
+     * <ul>
+     *   <li>{@code source_id} (default) — match by sourceObjectId + sourceSystem aspect</li>
+     *   <li>{@code filename} — match by cmis:name within the target folder</li>
+     *   <li>{@code source_id_or_filename} — try source_id first, fall back to filename</li>
+     * </ul>
+     *
+     * <p>The {@code filename} strategy is designed for chat attachments and similar
+     * scenarios where the external system assigns a new ID every time the same file
+     * is re-uploaded.
+     */
     private Content findExistingDocument(String repositoryId, String targetFolderId,
                                          String fileName, String sourceSystem, String sourceObjectId,
-                                         String sourceObjectType) {
+                                         String sourceObjectType, String dedupeMatchBy) {
         if (contentDaoService == null) return null;
 
-        // First pass: search by sourceObjectId in target folder children
-        if (sourceObjectId != null && !sourceObjectId.isBlank()) {
+        boolean trySourceId = !"filename".equals(dedupeMatchBy);
+        boolean tryFilename = "filename".equals(dedupeMatchBy) || "source_id_or_filename".equals(dedupeMatchBy);
+
+        // Load children once (shared by both passes)
+        List<Content> children = null;
+        if (trySourceId || tryFilename) {
             try {
-                List<Content> children = contentDaoService.getChildren(repositoryId, targetFolderId);
-                if (children != null) {
-                    for (Content child : children) {
-                        if (child == null || !child.isDocument()) continue;
-                        String existingSourceId = getAspectProperty(child, "nemaki:externalIntegration", "nemaki:sourceObjectId");
-                        String existingSourceSystem = getAspectProperty(child, "nemaki:externalIntegration", "nemaki:sourceSystem");
-                        String existingSourceType = getAspectProperty(child, "nemaki:externalIntegration", "nemaki:sourceObjectType");
-                        if (sourceObjectId.equals(existingSourceId)
-                                && (sourceSystem == null || sourceSystem.equals(existingSourceSystem))
-                                && (sourceObjectType == null || sourceObjectType.equals(existingSourceType))) {
-                            logger.debug("Dedupe: found existing document {} by sourceObjectId={}", child.getId(), sourceObjectId);
-                            return child;
-                        }
-                    }
-                }
+                children = contentDaoService.getChildren(repositoryId, targetFolderId);
             } catch (Exception e) {
-                logger.debug("Dedupe source-identity search failed: {}", e.getMessage());
+                logger.debug("Dedupe: failed to load children for {}: {}", targetFolderId, e.getMessage());
+                return null;
+            }
+        }
+        if (children == null) return null;
+
+        // Pass 1: search by sourceObjectId (unless filename-only mode)
+        if (trySourceId && sourceObjectId != null && !sourceObjectId.isBlank()) {
+            for (Content child : children) {
+                if (child == null || !child.isDocument()) continue;
+                String existingSourceId = getAspectProperty(child, "nemaki:externalIntegration", "nemaki:sourceObjectId");
+                String existingSourceSystem = getAspectProperty(child, "nemaki:externalIntegration", "nemaki:sourceSystem");
+                String existingSourceType = getAspectProperty(child, "nemaki:externalIntegration", "nemaki:sourceObjectType");
+                if (sourceObjectId.equals(existingSourceId)
+                        && (sourceSystem == null || sourceSystem.equals(existingSourceSystem))
+                        && (sourceObjectType == null || sourceObjectType.equals(existingSourceType))) {
+                    logger.debug("Dedupe: found existing document {} by sourceObjectId={}", child.getId(), sourceObjectId);
+                    return child;
+                }
             }
         }
 
-        // No source-identity match found — return null (new document will be created).
-        // Filename-based fallback was removed to prevent conflating distinct external
-        // objects that happen to share the same name.
+        // Pass 2: fallback to filename matching (only for filename / source_id_or_filename modes).
+        // If multiple documents share the same filename in the target folder,
+        // the first match in iteration order is returned (non-deterministic).
+        // This is acceptable for chat attachments where duplicate filenames are rare.
+        if (tryFilename && fileName != null && !fileName.isBlank()) {
+            for (Content child : children) {
+                if (child == null || !child.isDocument()) continue;
+                if (fileName.equals(child.getName())) {
+                    logger.debug("Dedupe: found existing document {} by filename='{}'", child.getId(), fileName);
+                    return child;
+                }
+            }
+        }
+
         return null;
     }
 
@@ -1631,11 +1532,21 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * <p>Results are cached for 5 minutes per (repositoryId, folderPath)
      * pair to avoid repeated CMIS calls during scheduled batch imports.</p>
      */
-    private static final java.util.concurrent.ConcurrentHashMap<String, String> folderPathCache =
-            new java.util.concurrent.ConcurrentHashMap<>();
-    private static final java.util.concurrent.ConcurrentHashMap<String, Long> folderPathCacheTime =
+    private record CachedFolderId(String folderId, long cachedAt) {}
+    private static final java.util.concurrent.ConcurrentHashMap<String, CachedFolderId> folderPathCache =
             new java.util.concurrent.ConcurrentHashMap<>();
     private static final long FOLDER_PATH_CACHE_TTL_MS = 5 * 60 * 1000L;
+    private static final int FOLDER_PATH_CACHE_MAX_SIZE = 1000;
+
+    /** Evict expired entries and enforce max size to prevent unbounded growth. */
+    private static void evictExpiredFolderPathCache() {
+        long now = System.currentTimeMillis();
+        folderPathCache.entrySet().removeIf(e -> now - e.getValue().cachedAt > FOLDER_PATH_CACHE_TTL_MS);
+        // Hard cap: if still too large, clear all
+        if (folderPathCache.size() > FOLDER_PATH_CACHE_MAX_SIZE) {
+            folderPathCache.clear();
+        }
+    }
 
     private String resolveTargetFolderId(ImportProfileDefinition profile, String repositoryId,
                                          CallContext callContext) {
@@ -1645,12 +1556,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
         String folderPath = profile.getTargetFolderPath();
         if (folderPath != null && !folderPath.isBlank()) {
+            evictExpiredFolderPathCache();
             // Check cache
             String cacheKey = repositoryId + "|" + folderPath;
-            Long cachedAt = folderPathCacheTime.get(cacheKey);
-            if (cachedAt != null && System.currentTimeMillis() - cachedAt < FOLDER_PATH_CACHE_TTL_MS) {
-                String cached = folderPathCache.get(cacheKey);
-                if (cached != null) return cached;
+            CachedFolderId cached = folderPathCache.get(cacheKey);
+            if (cached != null && System.currentTimeMillis() - cached.cachedAt < FOLDER_PATH_CACHE_TTL_MS) {
+                return cached.folderId;
             }
 
             try {
@@ -1670,8 +1581,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         return null;
                     }
                     logger.debug("Resolved targetFolderPath '{}' to folderId '{}'", folderPath, objectData.getId());
-                    folderPathCache.put(cacheKey, objectData.getId());
-                    folderPathCacheTime.put(cacheKey, System.currentTimeMillis());
+                    folderPathCache.put(cacheKey, new CachedFolderId(objectData.getId(), System.currentTimeMillis()));
                     return objectData.getId();
                 }
             } catch (Exception e) {
@@ -1682,63 +1592,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return null;
     }
 
-    /**
-     * Builds a canonical source URI using the archetype-specific helper,
-     * normalizing the object type path segment by archetype rather than
-     * passing raw caller-supplied values.
-     */
-    private static String buildCanonicalSourceUri(ConnectorDefinition connector, ExternalIngestRequest request) {
-        String system = connector.getSourceSystem();
-        String tenant = connector.getTenantId();
-        String objectId = request.getSourceObjectId();
-        SourceArchetype archetype = connector.getSourceArchetype();
-
-        if (archetype == null) {
-            return ExternalSourceUri.build(system, tenant, request.getSourceObjectType(), objectId);
-        }
-        boolean isAttachment = isAttachmentObjectType(request.getSourceObjectType());
-        return switch (archetype) {
-            case FILE_SHARE -> ExternalSourceUri.forFileShare(system, tenant, objectId);
-            case COMPOUND_NOTE -> {
-                // Attachments within notes use the note system's files path
-                if (isAttachment) {
-                    yield ExternalSourceUri.build(system, tenant, "files", objectId);
-                }
-                yield ExternalSourceUri.forNotePage(system, tenant, objectId);
-            }
-            case CHAT_CONTEXT -> {
-                String channelId = resolveChannelId(request);
-                if (isAttachment) {
-                    yield ExternalSourceUri.build(system, tenant,
-                            "channels/" + channelId + "/files", objectId);
-                }
-                yield ExternalSourceUri.forChatMessage(system, tenant, channelId, objectId);
-            }
-            case BUSINESS_RECORD -> ExternalSourceUri.forBusinessRecord(system, tenant,
-                    request.getSourceObjectType() != null ? request.getSourceObjectType() : "record", objectId);
-            case MESSAGE_CONTEXT -> {
-                String mailboxId = resolveMetadataString(request, "mailboxId");
-                if (isAttachment) {
-                    String msgId = resolveMetadataString(request, "messageStableId");
-                    yield ExternalSourceUri.forMailAttachment(system, tenant,
-                            mailboxId != null ? mailboxId : "default",
-                            msgId != null ? msgId : "unknown", objectId);
-                }
-                yield ExternalSourceUri.forMailMessage(system, tenant,
-                        mailboxId != null ? mailboxId : "default", objectId);
-            }
-        };
-    }
-
-    private static boolean isAttachmentObjectType(String sourceObjectType) {
-        if (sourceObjectType == null) return false;
-        String lower = sourceObjectType.toLowerCase();
-        return "attachment".equals(lower) || "file".equals(lower);
-    }
-
-    private static String resolveChannelId(ExternalIngestRequest request) {
-        return resolveMetadataString(request, "channelId");
-    }
+    // buildCanonicalSourceUri, isAttachmentObjectType, resolveProcessType
+    // → moved to IngestLineageEmitter
 
     private static String resolveMetadataString(ExternalIngestRequest request, String key) {
         if (request.getMetadata() != null) {
@@ -1746,30 +1601,5 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (val instanceof String s && !s.isBlank()) return s;
         }
         return null;
-    }
-
-    /**
-     * Resolves the lineage process type from archetype and sourceObjectType.
-     * If sourceObjectType indicates an attachment (e.g. "attachment", "file"),
-     * uses EXTERNAL_ATTACHMENT_IMPORT regardless of archetype.
-     */
-    private static LineageProcessType resolveProcessType(SourceArchetype archetype, String sourceObjectType) {
-        boolean isAttachment = isAttachmentObjectType(sourceObjectType);
-        if (archetype == null) {
-            return isAttachment ? LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT : LineageProcessType.IMPORT_UPLOADED;
-        }
-        return switch (archetype) {
-            case FILE_SHARE -> LineageProcessType.FILE_SHARE_SYNC_DOWNLOAD;
-            case COMPOUND_NOTE -> isAttachment
-                    ? LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT
-                    : LineageProcessType.EXTERNAL_NOTE_IMPORT;
-            case CHAT_CONTEXT -> isAttachment
-                    ? LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT
-                    : LineageProcessType.CHAT_ATTACHMENT_IMPORT;
-            case BUSINESS_RECORD -> LineageProcessType.BUSINESS_RECORD_IMPORT;
-            case MESSAGE_CONTEXT -> isAttachment
-                    ? LineageProcessType.MAIL_ATTACHMENT_IMPORT
-                    : LineageProcessType.MAIL_MESSAGE_IMPORT;
-        };
     }
 }

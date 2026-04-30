@@ -18,7 +18,6 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/v1/admin/ingest")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class IngestDlqController {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();

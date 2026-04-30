@@ -4,10 +4,12 @@ import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import {
   ConnectorDefinition,
+  AdapterDescriptor,
   listConnectors,
   createConnector,
   updateConnector,
   deleteConnector,
+  fetchAdapterRegistry,
 } from '../../services/externalIngest';
 
 const ARCHETYPE_OPTIONS = [
@@ -22,6 +24,7 @@ export function ConnectorManagementTab() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ConnectorDefinition | null>(null);
   const [form] = Form.useForm();
+  const [adapterRegistry, setAdapterRegistry] = useState<AdapterDescriptor[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -35,6 +38,11 @@ export function ConnectorManagementTab() {
   }, [message, t]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load adapter registry for sourceSystem dropdown
+  useEffect(() => {
+    fetchAdapterRegistry().then(setAdapterRegistry).catch(() => {});
+  }, []);
 
   const openCreate = () => {
     setEditing(null);
@@ -186,7 +194,20 @@ export function ConnectorManagementTab() {
           </Form.Item>
           <Form.Item name="sourceSystem" label={t('connectorManagement.form.sourceSystem')}
             rules={[{ required: true }]}>
-            <Input placeholder={t('connectorManagement.form.sourceSystemHint')} />
+            <Select
+              showSearch
+              placeholder={t('connectorManagement.form.sourceSystemHint')}
+              options={adapterRegistry.map(a => ({
+                value: a.sourceSystem,
+                label: `${a.displayName} (${a.sourceSystem})`,
+              }))}
+              onChange={(val: string) => {
+                const adapter = adapterRegistry.find(a => a.sourceSystem === val);
+                if (adapter) {
+                  form.setFieldsValue({ sourceArchetype: adapter.archetype });
+                }
+              }}
+            />
           </Form.Item>
           <Form.Item name="authType" label={t('connectorManagement.form.authType')}>
             <Select allowClear options={[

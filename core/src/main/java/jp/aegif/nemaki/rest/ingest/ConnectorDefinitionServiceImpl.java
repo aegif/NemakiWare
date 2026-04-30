@@ -103,18 +103,53 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         return candidates.isEmpty() ? null : candidates.get(0);
     }
 
+    private static final int MAX_ID_LENGTH = 255;
+    private static final int MAX_NAME_LENGTH = 1024;
+    private static final int MAX_URL_LENGTH = 2048;
+
     private void validateRequiredFields(ConnectorDefinition def) {
         if (def.getConnectorId() == null || def.getConnectorId().isBlank()) {
             throw new IllegalArgumentException("connectorId is required");
+        }
+        if (def.getConnectorId().length() > MAX_ID_LENGTH) {
+            throw new IllegalArgumentException("connectorId exceeds max length of " + MAX_ID_LENGTH);
+        }
+        if (def.getDisplayName() != null && def.getDisplayName().length() > MAX_NAME_LENGTH) {
+            throw new IllegalArgumentException("displayName exceeds max length of " + MAX_NAME_LENGTH);
+        }
+        if (def.getEndpoint() != null && def.getEndpoint().length() > MAX_URL_LENGTH) {
+            throw new IllegalArgumentException("endpoint URL exceeds max length of " + MAX_URL_LENGTH);
+        }
+        // SSRF prevention: reject private/loopback endpoint URLs
+        if (def.getEndpoint() != null && !def.getEndpoint().isBlank()) {
+            try {
+                AdapterHttpClient.validateExternalUrl(def.getEndpoint());
+            } catch (SecurityException se) {
+                throw new IllegalArgumentException("endpoint: " + se.getMessage());
+            }
         }
         if (def.getSourceArchetype() == null) {
             throw new IllegalArgumentException("sourceArchetype is required. Valid values: "
                     + java.util.Arrays.toString(SourceArchetype.values()));
         }
         if (def.getSourceSystem() == null || def.getSourceSystem().isBlank()) {
-            throw new IllegalArgumentException("sourceSystem is required (e.g. imap, gmail_mail, m365_mail, "
-                    + "slack, teams, mattermost, chatwork, notion, salesforce, box, dropbox, "
-                    + "google, google_drive, microsoft, onedrive)");
+            throw new IllegalArgumentException("sourceSystem is required. Valid values: "
+                    + String.join(", ", AdapterRegistry.allSourceSystems()));
+        }
+        // Normalize legacy short aliases before registry validation
+        String system = def.getSourceSystem();
+        if ("google".equals(system)) { def.setSourceSystem("google_drive"); system = "google_drive"; }
+        else if ("microsoft".equals(system)) { def.setSourceSystem("onedrive"); system = "onedrive"; }
+        // Validate sourceSystem against adapter registry — reject unknown values
+        if (!AdapterRegistry.isRegistered(system)) {
+            throw new IllegalArgumentException("Unknown sourceSystem '" + def.getSourceSystem()
+                    + "'. Valid values: " + String.join(", ", AdapterRegistry.allSourceSystems()));
+        }
+        AdapterDescriptor desc = AdapterRegistry.get(def.getSourceSystem());
+        if (desc.archetype() != def.getSourceArchetype()) {
+            throw new IllegalArgumentException("sourceSystem '" + def.getSourceSystem()
+                    + "' expects archetype " + desc.archetype()
+                    + " but connector declares " + def.getSourceArchetype());
         }
     }
 

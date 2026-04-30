@@ -1,8 +1,8 @@
 package jp.aegif.nemaki.rest.ingest;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.Test;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 import java.util.Map;
@@ -10,12 +10,12 @@ import java.util.Map;
 /**
  * Unit tests for ImportProfileDefinition serialization and validation logic.
  */
-public class ImportProfileDefinitionTest {
+class ImportProfileDefinitionTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Test
-    public void testJsonRoundTrip() throws Exception {
+    void testJsonRoundTrip() throws Exception {
         ImportProfileDefinition def = new ImportProfileDefinition();
         def.setProfileId("test-profile");
         def.setRepositoryId("bedroom");
@@ -46,14 +46,14 @@ public class ImportProfileDefinitionTest {
     }
 
     @Test
-    public void testIsConnectorAllowed_emptyList() {
+    void testIsConnectorAllowed_emptyList() {
         ImportProfileDefinition def = new ImportProfileDefinition();
         // null or empty allowedConnectorIds means any connector is allowed
         assertTrue(def.isConnectorAllowed("any-connector"));
     }
 
     @Test
-    public void testIsConnectorAllowed_specificList() {
+    void testIsConnectorAllowed_specificList() {
         ImportProfileDefinition def = new ImportProfileDefinition();
         def.setAllowedConnectorIds(List.of("conn-a", "conn-b"));
         assertTrue(def.isConnectorAllowed("conn-a"));
@@ -61,13 +61,13 @@ public class ImportProfileDefinitionTest {
     }
 
     @Test
-    public void testIsArchetypeAllowed_emptyList() {
+    void testIsArchetypeAllowed_emptyList() {
         ImportProfileDefinition def = new ImportProfileDefinition();
         assertTrue(def.isArchetypeAllowed(SourceArchetype.FILE_SHARE));
     }
 
     @Test
-    public void testIsArchetypeAllowed_specificList() {
+    void testIsArchetypeAllowed_specificList() {
         ImportProfileDefinition def = new ImportProfileDefinition();
         def.setAllowedArchetypes(List.of(SourceArchetype.MESSAGE_CONTEXT));
         assertTrue(def.isArchetypeAllowed(SourceArchetype.MESSAGE_CONTEXT));
@@ -75,7 +75,7 @@ public class ImportProfileDefinitionTest {
     }
 
     @Test
-    public void testDedupeDefaults() {
+    void testDedupeDefaults() {
         ImportProfileDefinition def = new ImportProfileDefinition();
         assertEquals("skip_if_same_version", def.getDedupePolicy());
         assertEquals("version_up_on_content_change", def.getUpdatePolicy());
@@ -84,7 +84,27 @@ public class ImportProfileDefinitionTest {
     }
 
     @Test
-    public void testNewDedupePolicies() throws Exception {
+    void testDedupeMatchByDefault() {
+        ImportProfileDefinition def = new ImportProfileDefinition();
+        assertEquals("source_id", def.getDedupeMatchBy(),
+                "Default dedupeMatchBy must be source_id for backward compatibility");
+    }
+
+    @Test
+    void testDedupeMatchByJsonRoundTrip() throws Exception {
+        for (String matchBy : List.of("source_id", "filename", "source_id_or_filename")) {
+            ImportProfileDefinition def = new ImportProfileDefinition();
+            def.setProfileId("p-" + matchBy);
+            def.setDedupeMatchBy(matchBy);
+            String json = MAPPER.writeValueAsString(def);
+            ImportProfileDefinition parsed = MAPPER.readValue(json, ImportProfileDefinition.class);
+            assertEquals(matchBy, parsed.getDedupeMatchBy(),
+                    "dedupeMatchBy should survive JSON round-trip: " + matchBy);
+        }
+    }
+
+    @Test
+    void testNewDedupePolicies() throws Exception {
         ImportProfileDefinition def = new ImportProfileDefinition();
         def.setProfileId("p");
         def.setDedupePolicy("create_new_if_parent_context_changed");

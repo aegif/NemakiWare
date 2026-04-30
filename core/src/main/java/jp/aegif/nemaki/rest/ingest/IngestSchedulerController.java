@@ -3,7 +3,7 @@ package jp.aegif.nemaki.rest.ingest;
 import jakarta.servlet.http.HttpServletRequest;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import jp.aegif.nemaki.rest.ingest.IngestSchedulerService.FetchResult;
+// FetchResult is now a top-level record in the same package
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,7 +19,6 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/v1/admin/ingest-scheduler")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class IngestSchedulerController {
 
     @Autowired
@@ -115,7 +114,7 @@ public class IngestSchedulerController {
         // Dispatch to appropriate adapter via unified method, using persisted scope params
         Map<String, String> params = profile.getSchedulerParams() != null
                 ? profile.getSchedulerParams() : Map.of();
-        IngestSchedulerService.FetchResult fetchResult =
+        FetchResult fetchResult =
                 schedulerService.executeFetch(callContext, profile, connector, params);
 
         response.put("status", fetchResult.hasErrors() ? "partial" : "success");

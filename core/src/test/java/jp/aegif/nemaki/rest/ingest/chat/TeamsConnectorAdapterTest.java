@@ -30,8 +30,14 @@ class TeamsConnectorAdapterTest {
     @BeforeEach
     void setUp() {
         wireMock.resetAll();
+        System.setProperty("nemaki.ingest.allowLocalhost", "true");
         adapter = new TeamsConnectorAdapter("test-graph-token",
                 "http://localhost:" + wireMock.port());
+    }
+
+    @AfterEach
+    void tearDown() {
+        System.clearProperty("nemaki.ingest.allowLocalhost");
     }
 
     // ── Auth contract ────────────────────────────────────────────
@@ -159,5 +165,43 @@ class TeamsConnectorAdapterTest {
         wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels/C1/messages"))
                 .willReturn(aResponse().withStatus(500)));
         assertThrows(RuntimeException.class, () -> adapter.getMessages("T1", "C1", 50));
+    }
+
+    // ── Pagination contract ──────────────────────────────────────
+
+    @Test
+    void getMessagesRespectsLimitCap() throws Exception {
+        wireMock.stubFor(get(urlPathMatching("/teams/.*/channels/.*/messages.*"))
+                .willReturn(okJson("""
+                    {"value":[
+                        {"id":"m1","body":{"content":"a"},"createdDateTime":"2026-01-01T00:00:00Z"},
+                        {"id":"m2","body":{"content":"b"},"createdDateTime":"2026-01-01T00:01:00Z"},
+                        {"id":"m3","body":{"content":"c"},"createdDateTime":"2026-01-01T00:02:00Z"}
+                    ]}
+                    """)));
+
+        var messages = adapter.getMessages("T1", "C1", 2);
+        assertEquals(2, messages.size(), "Should respect limit cap of 2");
+    }
+
+    @Test
+    void getMessagesFollowsNextLink() throws Exception {
+        // Page 1 with @odata.nextLink
+        wireMock.stubFor(get(urlPathMatching("/teams/.*/channels/.*/messages"))
+                .withQueryParam("$top", matching(".*"))
+                .willReturn(okJson("""
+                    {"value":[{"id":"m1","body":{"content":"a"},"createdDateTime":"2026-01-01T00:00:00Z"}],
+                     "@odata.nextLink":"http://localhost:%d/teams/T1/channels/C1/messages?$skiptoken=page2"}
+                    """.formatted(wireMock.port()))));
+
+        // Page 2 (no nextLink)
+        wireMock.stubFor(get(urlPathMatching("/teams/.*/channels/.*/messages"))
+                .withQueryParam("$skiptoken", equalTo("page2"))
+                .willReturn(okJson("""
+                    {"value":[{"id":"m2","body":{"content":"b"},"createdDateTime":"2026-01-01T00:01:00Z"}]}
+                    """)));
+
+        var messages = adapter.getMessages("T1", "C1", 50);
+        assertEquals(2, messages.size());
     }
 }

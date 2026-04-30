@@ -11,8 +11,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
+
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -110,5 +110,50 @@ class IngestWebhookGraphValidationTest {
                         .content("")
                         .param("validationToken", "must-not-echo"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // ── parseGraphResourceScope tests ──
+
+    @Test
+    void parseGraphResourceScope_Teams() {
+        var scope = IngestWebhookController.parseGraphResourceScope(
+                "teams('T01ABC')/channels('C02DEF')/messages");
+        assertEquals("T01ABC", scope.get("teamId"));
+        assertEquals("C02DEF", scope.get("channelId"));
+        assertNull(scope.get("userId"));
+    }
+
+    @Test
+    void parseGraphResourceScope_M365MailWithFolder() {
+        var scope = IngestWebhookController.parseGraphResourceScope(
+                "users/admin@contoso.com/mailFolders('inbox')/messages");
+        assertEquals("admin@contoso.com", scope.get("userId"));
+        assertEquals("inbox", scope.get("folderId"));
+        assertNull(scope.get("teamId"));
+    }
+
+    @Test
+    void parseGraphResourceScope_M365MailNoFolder() {
+        var scope = IngestWebhookController.parseGraphResourceScope(
+                "users/admin@contoso.com/messages");
+        assertEquals("admin@contoso.com", scope.get("userId"));
+        // M365 Mail without explicit mailFolder defaults to "inbox"
+        assertEquals("inbox", scope.get("folderId"));
+    }
+
+    @Test
+    void parseGraphResourceScope_NullResource() {
+        var scope = IngestWebhookController.parseGraphResourceScope(null);
+        assertTrue(scope.isEmpty());
+    }
+
+    @Test
+    void parseGraphResourceScope_NoOverlapWithShortIds() {
+        // "ann" should NOT match "joann" — parsed from structured path, not substring
+        var scope = IngestWebhookController.parseGraphResourceScope(
+                "users/joann@contoso.com/mailFolders('inbox')/messages");
+        assertEquals("joann@contoso.com", scope.get("userId"));
+        // A profile with userId="ann" should NOT match this — the caller compares
+        // parsed scope values with exact equals, not contains.
     }
 }

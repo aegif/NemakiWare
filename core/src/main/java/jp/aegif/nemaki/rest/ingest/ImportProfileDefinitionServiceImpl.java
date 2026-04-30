@@ -141,9 +141,14 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         return null;
     }
 
+    private static final int MAX_ID_LENGTH = 255;
+
     private void validateRequiredFields(ImportProfileDefinition def) {
         if (def.getProfileId() == null || def.getProfileId().isBlank()) {
             throw new IllegalArgumentException("profileId is required");
+        }
+        if (def.getProfileId().length() > MAX_ID_LENGTH) {
+            throw new IllegalArgumentException("profileId exceeds max length of " + MAX_ID_LENGTH);
         }
         if (def.getRepositoryId() == null || def.getRepositoryId().isBlank()) {
             throw new IllegalArgumentException("repositoryId is required");
@@ -153,12 +158,16 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         if (!hasFolderId && !hasFolderPath) {
             throw new IllegalArgumentException("Either targetFolderId or targetFolderPath is required");
         }
-        // Validate scheduler-enabled profiles have required source-scope parameters
+        // Validate scheduler-enabled profiles have required source-scope and connector params.
+        // Manual/import-only profiles (schedulerEnabled=false) are not validated for scope params
+        // since they don't participate in scheduled fetches or webhook dispatch.
         if (def.isSchedulerEnabled()) {
             validateSchedulerParams(def);
         }
-        // Validate auto-resolve uniqueness invariants at save time
-        validateAutoResolveUniqueness(def);
+        // Validate auto-resolve uniqueness invariants at save time (only for enabled profiles)
+        if (def.isEnabled()) {
+            validateAutoResolveUniqueness(def);
+        }
     }
 
     /**
@@ -234,40 +243,21 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
      * Only checks params that have no meaningful default — adapters like IMAP, Gmail,
      * M365, Notion, Salesforce work with built-in defaults.
      */
+    /**
+     * Validate adapter-specific required schedulerParams using the
+     * {@link AdapterRegistry} as the single source of truth.
+     */
     private void validateAdapterRequiredParams(String sourceSystem, Map<String, String> params) {
         if (sourceSystem == null) return;
-        Map<String, String> p = params != null ? params : Map.of();
-        switch (sourceSystem) {
-            case "slack" -> {
-                if (isBlank(p.get("channelId"))) {
-                    throw new IllegalArgumentException(
-                            "schedulerParams.channelId is required for Slack adapter");
-                }
-            }
-            case "teams" -> {
-                if (isBlank(p.get("teamId"))) {
-                    throw new IllegalArgumentException(
-                            "schedulerParams.teamId is required for Teams adapter");
-                }
-                if (isBlank(p.get("channelId"))) {
-                    throw new IllegalArgumentException(
-                            "schedulerParams.channelId is required for Teams adapter");
-                }
-            }
-            case "mattermost" -> {
-                if (isBlank(p.get("channelId"))) {
-                    throw new IllegalArgumentException(
-                            "schedulerParams.channelId is required for Mattermost adapter");
-                }
-            }
-            case "chatwork" -> {
-                if (isBlank(p.get("roomId"))) {
-                    throw new IllegalArgumentException(
-                            "schedulerParams.roomId is required for Chatwork adapter");
-                }
-            }
-            // imap, gmail_mail, m365_mail, notion, salesforce: all have usable defaults
-            default -> { /* no required params */ }
+        AdapterDescriptor descriptor = AdapterRegistry.get(sourceSystem);
+        if (descriptor == null) {
+            // Unknown adapter — warn but don't block (forward-compatible)
+            logger.warn("Unknown sourceSystem '{}' — no parameter validation applied", sourceSystem);
+            return;
+        }
+        var errors = descriptor.validateParams(params);
+        if (!errors.isEmpty()) {
+            throw new IllegalArgumentException(String.join("; ", errors));
         }
     }
 

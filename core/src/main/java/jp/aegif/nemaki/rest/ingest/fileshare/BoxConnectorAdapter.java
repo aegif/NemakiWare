@@ -49,27 +49,38 @@ public class BoxConnectorAdapter {
      * @return list of files (excludes sub-folders)
      */
     public List<BoxFile> listFiles(String folderId, int limit) throws Exception {
-        String url = BOX_API + "/folders/" + folderId + "/items?fields=id,name,type,size,modified_at,parent"
-                + "&limit=" + limit;
+        int pageSize = Math.min(limit, 1000); // Box max: 1000
+        List<BoxFile> allFiles = new ArrayList<>();
+        int offset = 0;
 
-        HttpResponse<String> response = get(url);
-        JsonNode root = MAPPER.readTree(response.body());
-        JsonNode entries = root.get("entries");
-        if (entries == null || !entries.isArray()) return List.of();
+        for (int page = 0; page < 50; page++) { // Hard cap
+            String url = BOX_API + "/folders/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(folderId) + "/items?fields=id,name,type,size,modified_at,parent"
+                    + "&limit=" + pageSize + "&offset=" + offset;
 
-        List<BoxFile> files = new ArrayList<>();
-        for (JsonNode entry : entries) {
-            if (!"file".equals(entry.path("type").asText())) continue;
-            files.add(new BoxFile(
-                    entry.path("id").asText(),
-                    entry.path("name").asText(),
-                    entry.path("type").asText(),
-                    entry.path("size").asLong(0),
-                    entry.path("modified_at").asText(null),
-                    entry.path("parent").path("id").asText(null)
-            ));
+            HttpResponse<String> response = get(url);
+            JsonNode root = MAPPER.readTree(response.body());
+            JsonNode entries = root.get("entries");
+            if (entries == null || !entries.isArray() || entries.isEmpty()) break;
+
+            for (JsonNode entry : entries) {
+                if (!"file".equals(entry.path("type").asText())) continue;
+                allFiles.add(new BoxFile(
+                        entry.path("id").asText(),
+                        entry.path("name").asText(),
+                        entry.path("type").asText(),
+                        entry.path("size").asLong(0),
+                        entry.path("modified_at").asText(null),
+                        entry.path("parent").path("id").asText(null)
+                ));
+                if (allFiles.size() >= limit) break;
+            }
+            if (allFiles.size() >= limit) break;
+
+            int totalCount = root.path("total_count").asInt(0);
+            offset += pageSize; // Box API: advance by requested limit, not by entries.size()
+            if (offset >= totalCount) break;
         }
-        return files;
+        return allFiles;
     }
 
     /**
@@ -80,7 +91,7 @@ public class BoxConnectorAdapter {
      * @return list of matching files
      */
     public List<BoxFile> searchFiles(String query, int limit) throws Exception {
-        String url = BOX_API + "/search?query=" + java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8)
+        String url = BOX_API + "/search?query=" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(query)
                 + "&type=file&fields=id,name,type,size,modified_at,parent&limit=" + limit;
 
         HttpResponse<String> response = get(url);
@@ -110,26 +121,23 @@ public class BoxConnectorAdapter {
      */
     public InputStream downloadFile(String fileId) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(BOX_API + "/files/" + fileId + "/content"))
+                .uri(URI.create(BOX_API + "/files/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(fileId) + "/content"))
                 .header("Authorization", "Bearer " + accessToken)
                 .timeout(Duration.ofSeconds(60))
                 .GET()
                 .build();
-        // Box returns 302 redirect — shared HttpClient is configured to
-        // follow redirects (see AdapterHttpClient).
-        HttpResponse<InputStream> response = httpClient
-                .send(request, HttpResponse.BodyHandlers.ofInputStream());
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("Box file download error " + response.statusCode());
-        }
-        return response.body();
+        // Box returns 302 redirect to CDN. Use SSRF-safe redirect validation
+        // to prevent redirects to private/loopback addresses.
+        HttpResponse<InputStream> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient
+                .sendWithRedirectValidation(request, HttpResponse.BodyHandlers.ofInputStream(), 5);
+        return jp.aegif.nemaki.rest.ingest.AdapterHttpClient.requireOkOrClose(response, "Box file download");
     }
 
     /**
      * Get file metadata.
      */
     public BoxFile getFileInfo(String fileId) throws Exception {
-        HttpResponse<String> response = get(BOX_API + "/files/" + fileId + "?fields=id,name,type,size,modified_at,parent");
+        HttpResponse<String> response = get(BOX_API + "/files/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(fileId) + "?fields=id,name,type,size,modified_at,parent");
         JsonNode entry = MAPPER.readTree(response.body());
         return new BoxFile(
                 entry.path("id").asText(),
@@ -149,9 +157,9 @@ public class BoxConnectorAdapter {
                 .timeout(Duration.ofSeconds(30))
                 .GET()
                 .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(httpClient, request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            throw new RuntimeException("Box API error " + response.statusCode() + ": " + response.body());
+            throw new RuntimeException("Box API error " + response.statusCode() + ": " + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.truncateBody(response.body()));
         }
         return response;
     }

@@ -31,6 +31,17 @@ public class GmailConnectorAdapter {
 
     private final Gmail gmailService;
 
+    /**
+     * Create a Gmail adapter with an access token.
+     *
+     * <p>The token expiry is set to 1 hour from now as a safety bound.
+     * For scheduled fetches, the scheduler creates a fresh adapter instance
+     * each cycle, so tokens are renewed per cycle via {@code resolvePassword()}.
+     * For service accounts with domain-wide delegation, the underlying Google
+     * HTTP transport handles token refresh automatically.
+     *
+     * @param accessToken OAuth2 access token or service account credential
+     */
     public GmailConnectorAdapter(String accessToken) throws Exception {
         GoogleCredentials credentials = GoogleCredentials.create(
                 new AccessToken(accessToken, new Date(System.currentTimeMillis() + 3600_000)));
@@ -53,47 +64,64 @@ public class GmailConnectorAdapter {
             long internalDate) {}
 
     /**
-     * List messages matching a query.
+     * List messages matching a query with nextPageToken pagination.
      *
-     * @param query Gmail search query (e.g. "in:inbox is:unread", "newer_than:1d")
-     * @param maxResults max messages to return
+     * <p>Follows {@code nextPageToken} across multiple pages until
+     * {@code maxResults} messages are collected or no more pages remain.
+     *
+     * @param query      Gmail search query (e.g. "in:inbox is:unread", "newer_than:1d")
+     * @param maxResults max total messages to return
      */
     public List<GmailMessageSummary> listMessages(String query, int maxResults) throws Exception {
-        ListMessagesResponse response = gmailService.users().messages()
-                .list(USER_ME)
-                .setQ(query != null ? query : "in:inbox")
-                .setMaxResults((long) maxResults)
-                .execute();
-
-        List<Message> messages = response.getMessages();
-        if (messages == null || messages.isEmpty()) {
-            return List.of();
-        }
-
         List<GmailMessageSummary> summaries = new ArrayList<>();
-        for (Message msgRef : messages) {
-            try {
-                Message msg = gmailService.users().messages()
-                        .get(USER_ME, msgRef.getId())
-                        .setFormat("metadata")
-                        .setMetadataHeaders(List.of("Subject", "From"))
-                        .execute();
+        String pageToken = null;
+        int pageSize = Math.min(maxResults, 100); // Gmail max per page: 500, but keep reasonable
 
-                String subject = null;
-                String from = null;
-                if (msg.getPayload() != null && msg.getPayload().getHeaders() != null) {
-                    for (var header : msg.getPayload().getHeaders()) {
-                        if ("Subject".equalsIgnoreCase(header.getName())) subject = header.getValue();
-                        if ("From".equalsIgnoreCase(header.getName())) from = header.getValue();
+        for (int page = 0; page < 50; page++) { // Hard cap on pages
+            var req = gmailService.users().messages()
+                    .list(USER_ME)
+                    .setQ(query != null ? query : "in:inbox")
+                    .setMaxResults((long) pageSize);
+            if (pageToken != null) req.setPageToken(pageToken);
+
+            ListMessagesResponse response = req.execute();
+
+            List<Message> messages = response.getMessages();
+            if (messages == null || messages.isEmpty()) break;
+
+            for (Message msgRef : messages) {
+                if (summaries.size() >= maxResults) break; // Respect total cap
+                try {
+                    Message msg = gmailService.users().messages()
+                            .get(USER_ME, msgRef.getId())
+                            .setFormat("metadata")
+                            .setMetadataHeaders(List.of("Subject", "From"))
+                            .execute();
+
+                    String subject = null;
+                    String from = null;
+                    if (msg.getPayload() != null && msg.getPayload().getHeaders() != null) {
+                        for (var header : msg.getPayload().getHeaders()) {
+                            if ("Subject".equalsIgnoreCase(header.getName())) subject = header.getValue();
+                            if ("From".equalsIgnoreCase(header.getName())) from = header.getValue();
+                        }
                     }
+                    summaries.add(new GmailMessageSummary(
+                            msg.getId(), msg.getThreadId(), subject, from,
+                            msg.getInternalDate() != null ? msg.getInternalDate() : 0));
+                } catch (Exception e) {
+                    logger.warn("Failed to get Gmail message metadata {}: {}", msgRef.getId(), e.getMessage());
                 }
-                summaries.add(new GmailMessageSummary(
-                        msg.getId(), msg.getThreadId(), subject, from,
-                        msg.getInternalDate() != null ? msg.getInternalDate() : 0));
-            } catch (Exception e) {
-                logger.warn("Failed to get Gmail message metadata {}: {}", msgRef.getId(), e.getMessage());
             }
+            if (summaries.size() >= maxResults) break;
+
+            pageToken = response.getNextPageToken();
+            if (pageToken == null || pageToken.isEmpty()) break;
+
+            logger.debug("Gmail pagination: page {}, fetched {} of {} max", page + 1, summaries.size(), maxResults);
         }
+
+        logger.info("Gmail listMessages: query='{}', fetched={}, limit={}", query, summaries.size(), maxResults);
         return summaries;
     }
 

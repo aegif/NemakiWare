@@ -162,4 +162,40 @@ class MattermostConnectorAdapterTest {
                 .willReturn(aResponse().withStatus(401)));
         assertThrows(RuntimeException.class, () -> adapter.getPosts("ch1", 50));
     }
+
+    // ── Pagination contract ──────────────────────────────────────
+
+    @Test
+    void getPostsRespectsLimitCap() throws Exception {
+        wireMock.stubFor(get(urlPathMatching("/api/v4/channels/.*/posts.*"))
+                .willReturn(okJson("""
+                    {"order":["p1","p2","p3"],"posts":{
+                        "p1":{"id":"p1","message":"a","user_id":"u1","create_at":1000},
+                        "p2":{"id":"p2","message":"b","user_id":"u1","create_at":2000},
+                        "p3":{"id":"p3","message":"c","user_id":"u1","create_at":3000}
+                    }}
+                    """)));
+
+        var posts = adapter.getPosts("ch1", 2);
+        assertEquals(2, posts.size(), "Should respect limit cap of 2");
+    }
+
+    @Test
+    void getPostsPaginatesAcrossPages() throws Exception {
+        // Page 0: full page
+        wireMock.stubFor(get(urlPathMatching("/api/v4/channels/.*/posts.*"))
+                .withQueryParam("page", equalTo("0"))
+                .willReturn(okJson("""
+                    {"order":["p1"],"posts":{"p1":{"id":"p1","message":"a","user_id":"u1","create_at":1000}}}
+                    """)));
+        // Page 1: empty (end)
+        wireMock.stubFor(get(urlPathMatching("/api/v4/channels/.*/posts.*"))
+                .withQueryParam("page", equalTo("1"))
+                .willReturn(okJson("""
+                    {"order":[],"posts":{}}
+                    """)));
+
+        var posts = adapter.getPosts("ch1", 200);
+        assertEquals(1, posts.size());
+    }
 }

@@ -48,8 +48,18 @@ public class SalesforceConnectorAdapter {
 
     /**
      * Query records using SOQL.
+     * SOQL is passed as a query parameter to Salesforce REST API, which handles
+     * its own validation. However, we reject obviously malicious patterns.
      */
     public List<SalesforceRecord> query(String soql) throws Exception {
+        // Basic safety: reject SOQL with suspicious patterns
+        if (soql != null) {
+            String upper = soql.toUpperCase();
+            if (upper.contains("DELETE") || upper.contains("UPDATE") || upper.contains("INSERT")
+                    || upper.contains("--") || upper.contains(";")) {
+                throw new IllegalArgumentException("SOQL contains prohibited keywords");
+            }
+        }
         String url = instanceUrl + "/services/data/" + API_VERSION + "/query?q=" +
                 java.net.URLEncoder.encode(soql, java.nio.charset.StandardCharsets.UTF_8);
 
@@ -95,14 +105,30 @@ public class SalesforceConnectorAdapter {
      * List attachments for a record.
      */
     public List<SalesforceRecord> getAttachments(String parentId) throws Exception {
-        String soql = "SELECT Id, Name, ContentType, BodyLength FROM Attachment WHERE ParentId = '" + escapeSoql(parentId) + "'";
+        String soql = "SELECT Id, Name, ContentType, BodyLength FROM Attachment WHERE ParentId = '" + validateSalesforceId(parentId) + "'";
         return query(soql);
     }
 
-    /** Escape single quotes in SOQL string literals to prevent injection. */
+    /** Validate that a value is a Salesforce ID (15 or 18 alphanumeric chars). */
+    private static String validateSalesforceId(String value) {
+        if (value == null || !value.matches("[a-zA-Z0-9]{15,18}")) {
+            throw new IllegalArgumentException("Invalid Salesforce ID format: " + (value != null ? value.substring(0, Math.min(value.length(), 20)) : "null"));
+        }
+        return value;
+    }
+
+    /**
+     * Escape a value for inclusion in a SOQL string literal.
+     * Handles backslash, single quote, and null byte to prevent SOQL injection.
+     */
     private static String escapeSoql(String value) {
         if (value == null) return "";
-        return value.replace("\\", "\\\\").replace("'", "\\'");
+        return value
+                .replace("\\", "\\\\")
+                .replace("'", "\\'")
+                .replace("\0", "")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
     }
 
     private HttpResponse<String> get(String url) throws Exception {
@@ -113,9 +139,13 @@ public class SalesforceConnectorAdapter {
                 .timeout(Duration.ofSeconds(30))
                 .GET()
                 .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(
+                httpClient, request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() == 429) {
+            throw new RuntimeException("Salesforce API rate limited (HTTP 429) after retries");
+        }
         if (response.statusCode() != 200) {
-            throw new RuntimeException("Salesforce API error " + response.statusCode() + ": " + response.body());
+            throw new RuntimeException("Salesforce API error " + response.statusCode() + ": " + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.truncateBody(response.body()));
         }
         return response;
     }

@@ -97,7 +97,7 @@ public class IngestJobService {
         return stuckCount;
     }
 
-    public void completeJob(IngestJobRecord job, IngestSchedulerService.FetchResult result) {
+    public void completeJob(IngestJobRecord job, FetchResult result) {
         job.setCompletedAt(Instant.now().toString());
         job.setFetched(result.fetched());
         job.setImported(result.imported());
@@ -161,7 +161,7 @@ public class IngestJobService {
                     dlq.getDlqId(), request.getSourceObjectId(),
                     contentBytes != null ? contentBytes.length : 0);
         } catch (Exception e) {
-            logger.error("Failed to save to DLQ: {}", e.getMessage());
+            logger.error("Failed to save to DLQ: {}", e.getMessage(), e);
         }
     }
 
@@ -180,6 +180,13 @@ public class IngestJobService {
             // Get the first attachment
             if (doc.getAttachments() == null || doc.getAttachments().isEmpty()) return null;
             String attName = doc.getAttachments().keySet().iterator().next();
+
+            // Check attachment size before loading to prevent OOM
+            var attMeta = doc.getAttachments().get(attName);
+            if (attMeta != null && attMeta.length() != null && attMeta.length() > 100L * 1024 * 1024) {
+                logger.warn("DLQ attachment too large ({} bytes) for {}, skipping", attMeta.length(), dlqId);
+                return null;
+            }
 
             var getAttOpts = new com.ibm.cloud.cloudant.v1.model.GetAttachmentOptions.Builder()
                     .db(dbName).docId(doc.getId()).attachmentName(attName).build();

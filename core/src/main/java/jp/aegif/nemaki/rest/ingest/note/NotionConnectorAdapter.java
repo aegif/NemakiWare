@@ -24,7 +24,7 @@ public class NotionConnectorAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(NotionConnectorAdapter.class);
     private static final String DEFAULT_API = "https://api.notion.com/v1";
-    private static final String NOTION_VERSION = "2022-06-28";
+    private static final String NOTION_VERSION = "2022-06-28"; // Stable version; upgrade to newer when needed
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final String token;
@@ -48,46 +48,65 @@ public class NotionConnectorAdapter {
     public record NotionPageSummary(String id, String title, String url, String parentId, String lastEditedTime) {}
 
     /**
-     * Search for pages in the workspace.
+     * Search for pages in the workspace with {@code start_cursor} pagination.
+     *
+     * <p>Notion API supports max {@code page_size} of 100.  This method
+     * follows {@code next_cursor} across pages until {@code limit} results
+     * are collected or no more pages remain.
      */
     public List<NotionPageSummary> searchPages(String query, int limit) throws Exception {
-        // Build JSON body safely using ObjectMapper to prevent injection
-        var bodyNode = MAPPER.createObjectNode();
-        if (query != null && !query.isBlank()) {
-            bodyNode.put("query", query);
+        int pageSize = Math.min(limit, 100); // Notion max page_size: 100
+        List<NotionPageSummary> allPages = new ArrayList<>();
+        String cursor = null;
+
+        for (int page = 0; page < 50; page++) { // Hard cap on pages
+            var bodyNode = MAPPER.createObjectNode();
+            if (query != null && !query.isBlank()) {
+                bodyNode.put("query", query);
+            }
+            bodyNode.putObject("filter").put("value", "page").put("property", "object");
+            bodyNode.put("page_size", pageSize);
+            if (cursor != null) bodyNode.put("start_cursor", cursor);
+            String body = MAPPER.writeValueAsString(bodyNode);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(apiBase + "/search"))
+                    .header("Authorization", "Bearer " + token)
+                    .header("Notion-Version", NOTION_VERSION)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .timeout(Duration.ofSeconds(30))
+                    .build();
+
+            HttpResponse<String> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(httpClient, request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("Notion API error " + response.statusCode() + ": " + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.truncateBody(response.body()));
+            }
+
+            JsonNode root = MAPPER.readTree(response.body());
+            JsonNode results = root.get("results");
+            if (results == null || !results.isArray() || results.isEmpty()) break;
+
+            for (JsonNode pageNode : results) {
+                String id = pageNode.path("id").asText();
+                String url = pageNode.path("url").asText();
+                String lastEdited = pageNode.path("last_edited_time").asText();
+                String title = extractTitle(pageNode);
+                String parentId = extractParentId(pageNode);
+                allPages.add(new NotionPageSummary(id, title, url, parentId, lastEdited));
+                if (allPages.size() >= limit) break;
+            }
+            if (allPages.size() >= limit) break;
+
+            // Notion pagination: has_more + next_cursor
+            if (!root.path("has_more").asBoolean(false)) break;
+            String nextCursor = root.path("next_cursor").asText(null);
+            if (nextCursor == null || nextCursor.isEmpty()) break;
+            cursor = nextCursor;
         }
-        bodyNode.putObject("filter").put("value", "page").put("property", "object");
-        bodyNode.put("page_size", limit);
-        String body = MAPPER.writeValueAsString(bodyNode);
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(apiBase + "/search"))
-                .header("Authorization", "Bearer " + token)
-                .header("Notion-Version", NOTION_VERSION)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-                .timeout(Duration.ofSeconds(30))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("Notion API error " + response.statusCode() + ": " + response.body());
-        }
-
-        JsonNode root = MAPPER.readTree(response.body());
-        JsonNode results = root.get("results");
-        if (results == null || !results.isArray()) return List.of();
-
-        List<NotionPageSummary> pages = new ArrayList<>();
-        for (JsonNode page : results) {
-            String id = page.path("id").asText();
-            String url = page.path("url").asText();
-            String lastEdited = page.path("last_edited_time").asText();
-            String title = extractTitle(page);
-            String parentId = extractParentId(page);
-            pages.add(new NotionPageSummary(id, title, url, parentId, lastEdited));
-        }
-        return pages;
+        logger.info("Notion searchPages: query='{}', fetched={}, limit={}", query, allPages.size(), limit);
+        return allPages;
     }
 
     /**
@@ -129,9 +148,10 @@ public class NotionConnectorAdapter {
     private List<JsonNode> fetchAllBlocks(String pageId) throws Exception {
         List<JsonNode> allBlocks = new ArrayList<>();
         String cursor = null;
-        do {
-            String url = apiBase + "/blocks/" + pageId + "/children?page_size=100";
-            if (cursor != null) url += "&start_cursor=" + cursor;
+        String prevCursor = null;
+        for (int page = 0; page < 100; page++) { // Hard cap to prevent infinite loops
+            String url = apiBase + "/blocks/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(pageId) + "/children?page_size=100";
+            if (cursor != null) url += "&start_cursor=" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(cursor);
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -141,7 +161,7 @@ public class NotionConnectorAdapter {
                     .GET()
                     .build();
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(httpClient, request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() != 200) break;
 
             JsonNode root = MAPPER.readTree(response.body());
@@ -150,7 +170,14 @@ public class NotionConnectorAdapter {
                 for (JsonNode block : results) allBlocks.add(block);
             }
             cursor = root.path("has_more").asBoolean(false) ? root.path("next_cursor").asText(null) : null;
-        } while (cursor != null);
+            // Detect repeated cursor to prevent infinite loop
+            if (cursor != null && cursor.equals(prevCursor)) {
+                logger.warn("Notion block pagination: repeated cursor detected, stopping");
+                break;
+            }
+            prevCursor = cursor;
+            if (cursor == null) break;
+        }
         return allBlocks;
     }
 
@@ -158,16 +185,14 @@ public class NotionConnectorAdapter {
      * Download a file from a URL.
      */
     public InputStream downloadFile(String url) throws Exception {
+        jp.aegif.nemaki.rest.ingest.AdapterHttpClient.validateExternalUrl(url);
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .timeout(Duration.ofSeconds(60))
                 .GET()
                 .build();
-        HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("File download error " + response.statusCode());
-        }
-        return response.body();
+        HttpResponse<InputStream> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRedirectValidation(request, HttpResponse.BodyHandlers.ofInputStream(), 5);
+        return jp.aegif.nemaki.rest.ingest.AdapterHttpClient.requireOkOrClose(response, "Notion file download");
     }
 
     public record NotionFile(String blockId, String name, String url, String type) {}

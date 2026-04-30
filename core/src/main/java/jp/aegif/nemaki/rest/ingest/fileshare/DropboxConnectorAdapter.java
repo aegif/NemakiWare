@@ -50,29 +50,44 @@ public class DropboxConnectorAdapter {
      * @return list of files (excludes sub-folders)
      */
     public List<DropboxFile> listFiles(String folderPath, int limit) throws Exception {
+        int pageSize = Math.min(limit, 2000); // Dropbox max: 2000
         String body = MAPPER.writeValueAsString(java.util.Map.of(
                 "path", folderPath != null ? folderPath : "",
                 "recursive", false,
-                "limit", Math.min(limit, 2000)
+                "limit", pageSize
         ));
 
         HttpResponse<String> response = post(DROPBOX_API + "/files/list_folder", body);
         JsonNode root = MAPPER.readTree(response.body());
-        JsonNode entries = root.get("entries");
-        if (entries == null || !entries.isArray()) return List.of();
 
-        List<DropboxFile> files = new ArrayList<>();
-        for (JsonNode entry : entries) {
-            if (!"file".equals(entry.path(".tag").asText())) continue;
-            files.add(new DropboxFile(
-                    entry.path("id").asText(),
-                    entry.path("name").asText(),
-                    entry.path("path_display").asText(),
-                    entry.path("size").asLong(0),
-                    entry.path("server_modified").asText(null)
-            ));
+        List<DropboxFile> allFiles = new ArrayList<>();
+        for (int page = 0; page < 50; page++) { // Hard cap
+            JsonNode entries = root.get("entries");
+            if (entries == null || !entries.isArray()) break;
+
+            for (JsonNode entry : entries) {
+                if (!"file".equals(entry.path(".tag").asText())) continue;
+                allFiles.add(new DropboxFile(
+                        entry.path("id").asText(),
+                        entry.path("name").asText(),
+                        entry.path("path_display").asText(),
+                        entry.path("size").asLong(0),
+                        entry.path("server_modified").asText(null)
+                ));
+                if (allFiles.size() >= limit) break;
+            }
+            if (allFiles.size() >= limit) break;
+
+            // Dropbox uses has_more + cursor for pagination
+            if (!root.path("has_more").asBoolean(false)) break;
+            String cursor = root.path("cursor").asText(null);
+            if (cursor == null || cursor.isEmpty()) break;
+
+            String continueBody = MAPPER.writeValueAsString(java.util.Map.of("cursor", cursor));
+            response = post(DROPBOX_API + "/files/list_folder/continue", continueBody);
+            root = MAPPER.readTree(response.body());
         }
-        return files;
+        return allFiles;
     }
 
     /**
@@ -122,11 +137,8 @@ public class DropboxConnectorAdapter {
                 .timeout(Duration.ofSeconds(60))
                 .POST(HttpRequest.BodyPublishers.noBody())
                 .build();
-        HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("Dropbox download error " + response.statusCode());
-        }
-        return response.body();
+        HttpResponse<InputStream> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(httpClient, request, HttpResponse.BodyHandlers.ofInputStream());
+        return jp.aegif.nemaki.rest.ingest.AdapterHttpClient.requireOkOrClose(response, "Dropbox download");
     }
 
     /**
@@ -153,9 +165,9 @@ public class DropboxConnectorAdapter {
                 .timeout(Duration.ofSeconds(30))
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(httpClient, request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            throw new RuntimeException("Dropbox API error " + response.statusCode() + ": " + response.body());
+            throw new RuntimeException("Dropbox API error " + response.statusCode() + ": " + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.truncateBody(response.body()));
         }
         return response;
     }

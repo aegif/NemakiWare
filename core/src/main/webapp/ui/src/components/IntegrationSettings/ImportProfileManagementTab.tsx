@@ -4,11 +4,14 @@ import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import {
   ImportProfileDefinition,
+  AdapterDescriptor,
   listProfiles,
   createProfile,
   updateProfile,
   deleteProfile,
   getProfile,
+  listConnectors,
+  fetchAdapterRegistry,
 } from '../../services/externalIngest';
 
 const ARCHETYPE_OPTIONS = [
@@ -32,6 +35,11 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
     { value: 'replace', label: t('importProfileManagement.dedupePolicies.replace') },
     { value: 'create_new_if_parent_context_changed', label: t('importProfileManagement.dedupePolicies.parentContextChanged') },
     { value: 'replace_relationships_on_resync', label: t('importProfileManagement.dedupePolicies.replaceRelationships') },
+  ];
+  const DEDUPE_MATCH_OPTIONS = [
+    { value: 'source_id', label: t('importProfileManagement.dedupeMatchBy.sourceId', 'ソースID（デフォルト）') },
+    { value: 'filename', label: t('importProfileManagement.dedupeMatchBy.filename', 'ファイル名') },
+    { value: 'source_id_or_filename', label: t('importProfileManagement.dedupeMatchBy.sourceIdOrFilename', 'ソースID → ファイル名（フォールバック）') },
   ];
   const VERSIONING_OPTIONS = [
     { value: 'major', label: t('importProfileManagement.versioningPolicies.major') },
@@ -58,6 +66,11 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
   const [editing, setEditing] = useState<ImportProfileDefinition | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [form] = Form.useForm();
+  const [adapterRegistry, setAdapterRegistry] = useState<AdapterDescriptor[]>([]);
+  const [connectorMap, setConnectorMap] = useState<Record<string, string>>({}); // connectorId → sourceSystem
+  const [selectedAdapter, setSelectedAdapter] = useState<AdapterDescriptor | null>(null);
+  const [jsonMode, setJsonMode] = useState(false);
+  const schedulerEnabled = Form.useWatch('schedulerEnabled', form) ?? false;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,14 +85,27 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Load adapter registry and connector map for structured schedulerParams form
+  useEffect(() => {
+    fetchAdapterRegistry().then(setAdapterRegistry).catch(() => {});
+    listConnectors().then(conns => {
+      const map: Record<string, string> = {};
+      for (const c of conns) map[c.connectorId] = c.sourceSystem;
+      setConnectorMap(map);
+    }).catch(() => {});
+  }, []);
+
   const openCreate = () => {
     setEditing(null);
     setWarnings([]);
+    setSelectedAdapter(null);
+    setJsonMode(false);
     form.resetFields();
     form.setFieldsValue({
       repositoryId,
       enabled: true,
-      dedupePolicy: 'create_new_version',
+      dedupePolicy: 'skip_if_same_version',
+      dedupeMatchBy: 'source_id',
       versioningPolicy: 'major',
       defaultObjectTypeId: 'cmis:document',
     });
@@ -88,10 +114,21 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
 
   const openEdit = async (record: ImportProfileDefinition) => {
     setEditing(record);
-    const formValues = {
+    setJsonMode(false);
+    // Reset form fully before applying record values to avoid stale fields
+    form.resetFields();
+    // Resolve adapter from connector
+    const sourceSystem = record.defaultConnectorId ? connectorMap[record.defaultConnectorId] : null;
+    const desc = sourceSystem ? adapterRegistry.find(a => a.sourceSystem === sourceSystem) : null;
+    setSelectedAdapter(desc || null);
+    const formValues: Record<string, unknown> = {
       ...record,
       schedulerParams: record.schedulerParams ? JSON.stringify(record.schedulerParams, null, 2) : '',
     };
+    // Populate structured fields if adapter is known
+    if (desc && record.schedulerParams) {
+      formValues._schedulerParamsFields = record.schedulerParams;
+    }
     form.setFieldsValue(formValues);
     setModalOpen(true);
     // Fetch warnings from backend
@@ -107,8 +144,16 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
     try {
       const values = await form.validateFields();
       values.repositoryId = repositoryId;
-      // Parse schedulerParams from JSON string to object
-      if (typeof values.schedulerParams === 'string' && values.schedulerParams.trim()) {
+      // Build schedulerParams from structured fields or JSON string
+      if (!jsonMode && values._schedulerParamsFields) {
+        const fields = values._schedulerParamsFields as Record<string, string>;
+        const params: Record<string, string> = {};
+        for (const [k, v] of Object.entries(fields)) {
+          if (v != null && String(v).trim()) params[k] = String(v).trim();
+        }
+        values.schedulerParams = Object.keys(params).length > 0 ? params : undefined;
+        delete values._schedulerParamsFields;
+      } else if (typeof values.schedulerParams === 'string' && values.schedulerParams.trim()) {
         try {
           values.schedulerParams = JSON.parse(values.schedulerParams);
         } catch {
@@ -118,6 +163,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
       } else {
         values.schedulerParams = undefined;
       }
+      delete values._schedulerParamsFields;
       // Parse retentionDays from string to number
       if (values.retentionDays != null && values.retentionDays !== '') {
         values.retentionDays = Number(values.retentionDays);
@@ -181,7 +227,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
       title: t('importProfileManagement.columns.dedupePolicy'),
       dataIndex: 'dedupePolicy',
       key: 'dedupePolicy',
-      render: (v: string) => <Tag>{v || 'create_new_version'}</Tag>,
+      render: (v: string) => <Tag>{v || 'skip_if_same_version'}</Tag>,
     },
     {
       title: t('importProfileManagement.columns.enabled'),
@@ -270,7 +316,12 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
             <Select mode="tags" allowClear placeholder={t('importProfileManagement.form.allowedConnectorIdsHint')} />
           </Form.Item>
           <Form.Item name="defaultConnectorId" label={t('importProfileManagement.form.defaultConnectorId')}>
-            <Input />
+            <Input onChange={(e) => {
+              const connId = e.target.value;
+              const sourceSystem = connectorMap[connId];
+              const desc = sourceSystem ? adapterRegistry.find(a => a.sourceSystem === sourceSystem) : null;
+              setSelectedAdapter(desc || null);
+            }} />
           </Form.Item>
           <Form.Item name="secondaryTypeIds" label={t('importProfileManagement.form.secondaryTypeIds')}
             extra={t('importProfileManagement.form.secondaryTypeIdsHint')}>
@@ -278,6 +329,10 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
           </Form.Item>
           <Form.Item name="dedupePolicy" label={t('importProfileManagement.form.dedupePolicy')}>
             <Select options={DEDUPE_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="dedupeMatchBy" label={t('importProfileManagement.form.dedupeMatchBy', '同一文書の判定方法')}
+            extra={t('importProfileManagement.form.dedupeMatchByHint', 'チャット添付ファイルなど外部IDが不安定なソースでは「ファイル名」を選択してください')}>
+            <Select options={DEDUPE_MATCH_OPTIONS} />
           </Form.Item>
           <Form.Item name="versioningPolicy" label={t('importProfileManagement.form.versioningPolicy')}>
             <Select options={VERSIONING_OPTIONS} />
@@ -299,9 +354,34 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
             valuePropName="checked" extra={t('importProfileManagement.form.schedulerEnabledHint')}>
             <Switch />
           </Form.Item>
-          <Form.Item name="schedulerParams" label={t('importProfileManagement.form.schedulerParams')}
-            extra={t('importProfileManagement.form.schedulerParamsHint')}>
-            <Input.TextArea rows={3} placeholder='{"channelId": "C12345", "query": "in:inbox"}' />
+          <Form.Item label={t('importProfileManagement.form.schedulerParams', 'スケジューラパラメータ')}
+            extra={<><a onClick={() => setJsonMode(!jsonMode)}>{jsonMode ? t('importProfileManagement.form.switchToStructured', '構造化入力に切替') : t('importProfileManagement.form.switchToJson', 'JSON入力に切替')}</a>
+              {selectedAdapter && <span style={{marginLeft:8,color:'#888'}}>{selectedAdapter.displayName}: {selectedAdapter.paramsExample}</span>}
+            </>}>
+            {jsonMode ? (
+              <Form.Item name="schedulerParams" noStyle>
+                <Input.TextArea rows={3} placeholder={selectedAdapter?.paramsExample || '{"key": "value"}'} />
+              </Form.Item>
+            ) : selectedAdapter ? (
+              <Space direction="vertical" style={{width:'100%'}}>
+                {[...selectedAdapter.requiredParams, ...selectedAdapter.optionalParams]
+                  .filter(k => k !== 'limit')
+                  .map(key => (
+                    <Form.Item key={key} name={['_schedulerParamsFields', key]}
+                      label={key}
+                      rules={selectedAdapter.requiredParams.includes(key)
+                        ? [{required: schedulerEnabled, message: `${key} is required when scheduler is enabled`}]
+                        : []}
+                      style={{marginBottom:4}}>
+                      <Input placeholder={key} />
+                    </Form.Item>
+                  ))}
+              </Space>
+            ) : (
+              <Form.Item name="schedulerParams" noStyle>
+                <Input.TextArea rows={3} placeholder={t('importProfileManagement.form.schedulerParamsHint', 'コネクタを選択するとフィールドが表示されます')} />
+              </Form.Item>
+            )}
           </Form.Item>
           <Form.Item name="defaultClassification" label={t('importProfileManagement.form.defaultClassification')}
             extra={t('importProfileManagement.form.defaultClassificationHint')}>

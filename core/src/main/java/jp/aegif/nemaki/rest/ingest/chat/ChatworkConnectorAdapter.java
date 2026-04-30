@@ -91,7 +91,7 @@ public class ChatworkConnectorAdapter {
      * @return list of messages (max 100)
      */
     public List<ChatworkMessage> getMessages(String roomId, boolean force) throws Exception {
-        String url = "/rooms/" + roomId + "/messages?force=" + (force ? "1" : "0");
+        String url = "/rooms/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(roomId) + "/messages?force=" + (force ? "1" : "0");
         HttpResponse<String> response = get(url);
 
         // Chatwork returns 204 No Content when there are no new messages
@@ -122,7 +122,7 @@ public class ChatworkConnectorAdapter {
      * @return list of files (max 100)
      */
     public List<ChatworkFile> listFiles(String roomId) throws Exception {
-        String url = "/rooms/" + roomId + "/files";
+        String url = "/rooms/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(roomId) + "/files";
         HttpResponse<String> response = get(url);
 
         if (response.statusCode() == 204) return List.of();
@@ -151,7 +151,7 @@ public class ChatworkConnectorAdapter {
      * @return temporary download URL
      */
     public String getFileDownloadUrl(String roomId, String fileId) throws Exception {
-        String url = "/rooms/" + roomId + "/files/" + fileId + "?create_download_url=1";
+        String url = "/rooms/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(roomId) + "/files/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(fileId) + "?create_download_url=1";
         HttpResponse<String> response = get(url);
         JsonNode root = MAPPER.readTree(response.body());
         return root.path("download_url").asText(null);
@@ -161,16 +161,14 @@ public class ChatworkConnectorAdapter {
      * Download a file by its temporary URL.
      */
     public InputStream downloadFile(String downloadUrl) throws Exception {
+        jp.aegif.nemaki.rest.ingest.AdapterHttpClient.validateExternalUrl(downloadUrl);
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(downloadUrl))
                 .timeout(Duration.ofSeconds(60))
                 .GET()
                 .build();
-        HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("Chatwork file download error " + response.statusCode());
-        }
-        return response.body();
+        HttpResponse<InputStream> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRedirectValidation(request, HttpResponse.BodyHandlers.ofInputStream(), 5);
+        return jp.aegif.nemaki.rest.ingest.AdapterHttpClient.requireOkOrClose(response, "Chatwork file download");
     }
 
     private HttpResponse<String> get(String path) throws Exception {
@@ -181,9 +179,9 @@ public class ChatworkConnectorAdapter {
                 .timeout(Duration.ofSeconds(30))
                 .GET()
                 .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(httpClient, request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200 && response.statusCode() != 204) {
-            throw new RuntimeException("Chatwork API error " + response.statusCode() + ": " + response.body());
+            throw new RuntimeException("Chatwork API error " + response.statusCode() + ": " + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.truncateBody(response.body()));
         }
         return response;
     }

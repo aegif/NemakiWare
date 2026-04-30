@@ -15,7 +15,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/v1/admin/import-profiles")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class ImportProfileDefinitionController {
 
     @Autowired

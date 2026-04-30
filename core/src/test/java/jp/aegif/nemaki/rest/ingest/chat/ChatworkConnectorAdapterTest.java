@@ -31,8 +31,14 @@ class ChatworkConnectorAdapterTest {
     @BeforeEach
     void setUp() {
         wireMock.resetAll();
+        System.setProperty("nemaki.ingest.allowLocalhost", "true");
         adapter = new ChatworkConnectorAdapter("test-cw-token",
                 "http://localhost:" + wireMock.port());
+    }
+
+    @AfterEach
+    void tearDown() {
+        System.clearProperty("nemaki.ingest.allowLocalhost");
     }
 
     // ── Auth contract ───────────────────────────────────────────

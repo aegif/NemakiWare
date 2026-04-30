@@ -19,6 +19,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * REST endpoint for receiving inbound webhooks from external sources.
@@ -36,7 +37,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/v1/ingest-webhook")
-@CrossOrigin(origins = "*", maxAge = 3600)
+// No @CrossOrigin — webhook endpoints are server-to-server, not browser-accessible
 public class IngestWebhookController {
 
     private static final Logger logger = LoggerFactory.getLogger(IngestWebhookController.class);
@@ -53,6 +54,29 @@ public class IngestWebhookController {
         return "teams".equals(sourceSystem) || "m365_mail".equals(sourceSystem);
     }
 
+    /** Per-connector rate limiter: max 100 webhook calls per minute. */
+    private static final java.util.concurrent.ConcurrentHashMap<String, long[]> webhookRateCounters =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final int WEBHOOK_MAX_PER_MINUTE = 100;
+
+    private boolean isWebhookRateLimited(String connectorId) {
+        long now = System.currentTimeMillis();
+        // Periodic cleanup: remove entries older than 1 hour to prevent unbounded growth
+        if (webhookRateCounters.size() > 500) {
+            webhookRateCounters.entrySet().removeIf(e -> now - e.getValue()[1] > 3_600_000);
+        }
+        long[] counter = webhookRateCounters.computeIfAbsent(connectorId, k -> new long[]{0, now});
+        synchronized (counter) {
+            if (now - counter[1] > 60_000) {
+                counter[0] = 1;
+                counter[1] = now;
+                return false;
+            }
+            counter[0]++;
+            return counter[0] > WEBHOOK_MAX_PER_MINUTE;
+        }
+    }
+
     @Autowired
     private ConnectorDefinitionService connectorDefinitionService;
 
@@ -64,6 +88,9 @@ public class IngestWebhookController {
 
     @Autowired
     private HttpServletRequest httpRequest;
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.util.PropertyManager propertyManager;
 
     /**
      * Receive webhook from external source.
@@ -79,6 +106,11 @@ public class IngestWebhookController {
             @RequestBody(required = false) String rawBody) {
         if (rawBody == null) {
             rawBody = "";
+        }
+        // Payload size limit (10 MB) to prevent OOM from oversized webhook payloads
+        if (rawBody.length() > 10_000_000) {
+            return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                    .body(Map.of("error", "Webhook payload too large"));
         }
 
         // 1. Resolve connector — return uniform 401 for not-found/disabled to prevent
@@ -108,6 +140,12 @@ public class IngestWebhookController {
                     .body(Map.of("error", "Signature verification failed"));
         }
 
+        // 4. Rate limit AFTER signature verification to prevent unauthenticated exhaustion
+        if (isWebhookRateLimited(connectorId)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(Map.of("error", "Webhook rate limit exceeded"));
+        }
+
         // 4. Parse and dispatch payload
         try {
             JsonNode payload = MAPPER.readTree(rawBody);
@@ -130,7 +168,7 @@ public class IngestWebhookController {
         } catch (Exception e) {
             logger.error("Webhook processing failed for {}: {}", connectorId, e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Processing failed: " + e.getMessage()));
+                    .body(Map.of("error", "Webhook processing failed"));
         }
     }
 
@@ -148,22 +186,25 @@ public class IngestWebhookController {
             return ResponseEntity.ok(Map.of("status", "ignored", "reason", "no channel"));
         }
 
-        // Find all profiles for this connector (supports many-to-many)
-        List<ImportProfileDefinition> profiles = findAllProfilesForConnector(connector);
-        if (profiles.isEmpty()) {
-            logger.warn("No profile found for Slack webhook connector {}", connector.getConnectorId());
-            return ResponseEntity.ok(Map.of("status", "no_profile"));
+        // Find profiles whose scope keys match the event context.
+        // Uses the adapter registry's webhookScopeKeys as the single source of truth.
+        Map<String, String> eventScope = Map.of("channelId", channelId);
+        List<ImportProfileDefinition> matchingProfiles = filterProfilesByScope(connector, eventScope);
+
+        if (matchingProfiles.isEmpty()) {
+            logger.info("Slack webhook: no profile matches channel {} on connector {}", channelId, connector.getConnectorId());
+            return ResponseEntity.ok(Map.of("status", "no_matching_profile", "channel", channelId));
         }
 
-        // Trigger async fetch for each profile
-        for (ImportProfileDefinition profile : profiles) {
+        // Trigger async fetch for each matching profile
+        for (ImportProfileDefinition profile : matchingProfiles) {
             Map<String, String> params = new LinkedHashMap<>();
             params.put("channelId", channelId);
             params.put("limit", "10");
             triggerFetchAsync(profile, connector, params);
         }
 
-        return ResponseEntity.ok(Map.of("status", "accepted", "channel", channelId, "profiles", profiles.size()));
+        return ResponseEntity.ok(Map.of("status", "accepted", "channel", channelId, "profiles", matchingProfiles.size()));
     }
 
     /**
@@ -181,16 +222,70 @@ public class IngestWebhookController {
             return ResponseEntity.ok(Map.of("status", "no_profile"));
         }
 
-        // Process each notification × each profile
+        // Process each notification — match to the profile whose schedulerParams
+        // Match each notification's resource against profile scope keys using the registry.
+        // Graph resources contain scope values inline (e.g., "teams('T01')/channels('C01')/messages").
+        AdapterDescriptor desc = AdapterRegistry.get(connector.getSourceSystem());
+        java.util.List<String> scopeKeys = (desc != null) ? desc.webhookScopeKeys() : List.of();
+
         int triggered = 0;
+        int notifCount = 0;
+        final int MAX_NOTIFICATIONS = 100;
         for (JsonNode notification : notifications) {
+            if (++notifCount > MAX_NOTIFICATIONS) {
+                logger.warn("Graph webhook truncated at {} notifications", MAX_NOTIFICATIONS);
+                break;
+            }
             String resource = notification.path("resource").asText(null);
-            if (resource != null) {
-                for (ImportProfileDefinition profile : profiles) {
-                    Map<String, String> params = profile.getSchedulerParams() != null
-                            ? new LinkedHashMap<>(profile.getSchedulerParams()) : new LinkedHashMap<>();
-                    params.put("limit", "10");
-                    triggerFetchAsync(profile, connector, params);
+            if (resource == null) continue;
+
+            // Parse scope values from the Graph resource path.
+            // Teams: "teams('T01')/channels('C01')/messages" → {teamId=T01, channelId=C01}
+            // M365:  "users/user@co.com/mailFolders('inbox')/messages" → {userId=user@co.com, folderId=inbox}
+            Map<String, String> resourceScope = parseGraphResourceScope(resource);
+
+            for (ImportProfileDefinition profile : profiles) {
+                Map<String, String> sp = profile.getSchedulerParams();
+                // Skip profiles without params when adapter requires scope keys
+                if ((sp == null || sp.isEmpty()) && !scopeKeys.isEmpty()) continue;
+                if (sp == null) sp = Map.of();
+
+                // Must declare at least one scope key
+                Set<String> requiredScopeKeys = (desc != null) ? desc.requiredParams() : Set.of();
+                final Map<String, String> params = sp;
+                boolean hasAnyScopeKey = scopeKeys.stream()
+                        .anyMatch(k -> { String v = params.get(k); return v != null && !v.isBlank(); });
+                if (!scopeKeys.isEmpty() && !hasAnyScopeKey) continue;
+
+                boolean matches = true;
+                for (String key : scopeKeys) {
+                    String profileVal = sp.get(key);
+                    // Apply runtime defaults for optional scope keys instead of wildcard.
+                    // This ensures a profile without explicit folderId matches only "inbox"
+                    // notifications, not all folders.
+                    if (profileVal == null || profileVal.isBlank()) {
+                        if (requiredScopeKeys.contains(key)) { matches = false; break; }
+                        // For M365 Mail: omitted userId means /me, omitted folderId means inbox.
+                        // These must NOT wildcard-match — a profile without userId should only
+                        // match notifications that also lack userId (i.e., /me subscriptions).
+                        if ("userId".equals(key)) {
+                            // Profile uses /me → only match if resource also has no userId
+                            if (resourceScope.containsKey("userId")) { matches = false; break; }
+                            continue;
+                        }
+                        if ("folderId".equals(key)) { profileVal = "inbox"; }
+                        else continue; // Other optional keys: true wildcard
+                    }
+                    String resourceVal = resourceScope.get(key);
+                    if (resourceVal == null || !profileVal.equals(resourceVal)) {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (matches) {
+                    Map<String, String> fetchParams = new LinkedHashMap<>(sp);
+                    fetchParams.put("limit", "10");
+                    triggerFetchAsync(profile, connector, fetchParams);
                     triggered++;
                 }
             }
@@ -216,28 +311,20 @@ public class IngestWebhookController {
             return ResponseEntity.ok(Map.of("status", "ignored", "reason", "no room_id"));
         }
 
-        List<ImportProfileDefinition> profiles = findAllProfilesForConnector(connector);
-        if (profiles.isEmpty()) {
-            return ResponseEntity.ok(Map.of("status", "no_profile"));
+        Map<String, String> eventScope = Map.of("roomId", roomId);
+        List<ImportProfileDefinition> matchingProfiles = filterProfilesByScope(connector, eventScope);
+
+        if (matchingProfiles.isEmpty()) {
+            return ResponseEntity.ok(Map.of("status", "no_matching_profile", "room", roomId));
         }
 
-        // Filter profiles by room scope — only trigger profiles whose schedulerParams.roomId
-        // matches the event's room, or profiles with no roomId restriction
         int triggered = 0;
-        for (ImportProfileDefinition profile : profiles) {
-            String profileRoomId = profile.getSchedulerParams() != null
-                    ? profile.getSchedulerParams().get("roomId") : null;
-            if (profileRoomId != null && !profileRoomId.equals(roomId)) continue;
-
+        for (ImportProfileDefinition profile : matchingProfiles) {
             Map<String, String> params = new LinkedHashMap<>();
             params.put("roomId", roomId);
             params.put("limit", "10");
             triggerFetchAsync(profile, connector, params);
             triggered++;
-        }
-
-        if (triggered == 0) {
-            return ResponseEntity.ok(Map.of("status", "no_matching_profile", "room", roomId));
         }
         return ResponseEntity.ok(Map.of("status", "accepted", "room", roomId, "profiles", triggered));
     }
@@ -268,8 +355,14 @@ public class IngestWebhookController {
     }
 
     /**
-     * Find ALL enabled profiles that accept this connector — either as their
-     * defaultConnectorId or via allowedConnectorIds (many-to-many model).
+     * Find ALL enabled profiles explicitly linked to this connector.
+     *
+     * <p>For webhook dispatch, we require an explicit link: either
+     * {@code defaultConnectorId == connectorId} or the connector appears
+     * in {@code allowedConnectorIds}.  The broad "empty list → accept all"
+     * semantics of {@link ImportProfileDefinition#isConnectorAllowed(String)}
+     * is intentionally NOT used here to prevent unrelated profiles from
+     * receiving webhook events.
      */
     private List<ImportProfileDefinition> findAllProfilesForConnector(ConnectorDefinition connector) {
         if (profileService == null) return List.of();
@@ -277,9 +370,126 @@ public class IngestWebhookController {
         return profileService.list().stream()
                 .filter(ImportProfileDefinition::isEnabled)
                 .filter(p -> connId.equals(p.getDefaultConnectorId())
-                        || p.isConnectorAllowed(connId))
+                        || (p.getAllowedConnectorIds() != null
+                            && !p.getAllowedConnectorIds().isEmpty()
+                            && p.getAllowedConnectorIds().contains(connId)))
                 .filter(p -> p.isArchetypeAllowed(connector.getSourceArchetype()))
                 .toList();
+    }
+
+    /**
+     * Filter profiles for a connector by matching event scope values against
+     * the profile's schedulerParams, using the adapter registry's
+     * {@link AdapterDescriptor#webhookScopeKeys()} as the key set.
+     *
+     * <p>A profile matches if, for every scope key that the profile declares,
+     * the event's value equals the profile's value.  Profiles that don't declare
+     * a scope key (null or blank) accept any event value for that key.
+     */
+    private List<ImportProfileDefinition> filterProfilesByScope(ConnectorDefinition connector,
+                                                                 Map<String, String> eventScope) {
+        List<ImportProfileDefinition> profiles = findAllProfilesForConnector(connector);
+        AdapterDescriptor desc = AdapterRegistry.get(connector.getSourceSystem());
+        java.util.List<String> scopeKeys = (desc != null) ? desc.webhookScopeKeys() : List.of();
+
+        // Scope key enforcement:
+        // - Keys in adapter.requiredParams: profile MUST declare them (e.g., Slack channelId)
+        // - Keys only in webhookScopeKeys but NOT requiredParams: optional (e.g., M365 userId)
+        //   If declared, must match; if omitted, treated as wildcard.
+        Set<String> requiredScopeKeys = (desc != null) ? desc.requiredParams() : Set.of();
+
+        return profiles.stream().filter(p -> {
+            Map<String, String> sp = p.getSchedulerParams();
+            if (sp == null || sp.isEmpty()) {
+                return scopeKeys.isEmpty();
+            }
+            // Profile must declare at least one scope key to participate in webhook dispatch.
+            // This prevents profiles with only non-scope params (e.g., {limit:10}) from matching.
+            if (!scopeKeys.isEmpty()) {
+                boolean hasAnyScopeKey = scopeKeys.stream()
+                        .anyMatch(k -> { String v = sp.get(k); return v != null && !v.isBlank(); });
+                if (!hasAnyScopeKey) return false;
+            }
+            for (String key : scopeKeys) {
+                String profileVal = sp.get(key);
+                if (profileVal == null || profileVal.isBlank()) {
+                    if (requiredScopeKeys.contains(key)) return false;
+                    // userId omission means /me — must not wildcard-match explicit users
+                    if ("userId".equals(key)) {
+                        if (eventScope.containsKey("userId")) return false;
+                        continue;
+                    }
+                    // folderId omission means inbox — apply default, not wildcard
+                    if ("folderId".equals(key)) {
+                        profileVal = "inbox";
+                    } else {
+                        continue; // True wildcard for keys without defaults
+                    }
+                }
+                String eventVal = eventScope.get(key);
+                if (eventVal != null && !eventVal.isBlank() && !profileVal.equals(eventVal)) {
+                    return false; // Value mismatch
+                }
+            }
+            return true;
+        }).toList();
+    }
+
+    /**
+     * Parse scope values from a Graph notification resource path.
+     *
+     * <p>Examples:
+     * <ul>
+     *   <li>{@code teams('T01')/channels('C01')/messages} → {teamId=T01, channelId=C01}</li>
+     *   <li>{@code users/user@co.com/mailFolders('inbox')/messages} → {userId=user@co.com, folderId=inbox}</li>
+     * </ul>
+     */
+    /** Escape a value for use inside a Graph OData resource literal (single-quoted segments). */
+    private static String escapeGraphId(String value) {
+        if (value == null) return "";
+        // OData single-quoted literals: escape ' as ''
+        return value.replace("'", "''");
+    }
+
+    /** Unescape OData single-quoted literal (reverse of escapeGraphId). */
+    private static String unescapeODataLiteral(String value) {
+        return value != null ? value.replace("''", "'") : null;
+    }
+
+    static Map<String, String> parseGraphResourceScope(String resource) {
+        Map<String, String> scope = new LinkedHashMap<>();
+        if (resource == null) return scope;
+
+        // Teams: teams('...')/channels('...')
+        // Pattern accepts '' (escaped quotes) inside the literal
+        java.util.regex.Matcher teamsMatcher = java.util.regex.Pattern
+                .compile("teams\\('((?:[^']|'')+)'\\)/channels\\('((?:[^']|'')+)'\\)")
+                .matcher(resource);
+        if (teamsMatcher.find()) {
+            scope.put("teamId", unescapeODataLiteral(teamsMatcher.group(1)));
+            scope.put("channelId", unescapeODataLiteral(teamsMatcher.group(2)));
+        }
+
+        // M365 Mail: users/{userId}/mailFolders('...')
+        java.util.regex.Matcher userMatcher = java.util.regex.Pattern
+                .compile("users/([^/]+)")
+                .matcher(resource);
+        if (userMatcher.find()) {
+            // Decode path-segment encoding (preserves literal + unlike URLDecoder)
+            scope.put("userId", AdapterHttpClient.decodePathSegment(userMatcher.group(1)));
+        }
+        java.util.regex.Matcher folderMatcher = java.util.regex.Pattern
+                .compile("mailFolders\\('((?:[^']|'')+)'\\)")
+                .matcher(resource);
+        if (folderMatcher.find()) {
+            scope.put("folderId", unescapeODataLiteral(folderMatcher.group(1)));
+        } else if (scope.containsKey("userId")) {
+            // M365 Mail resource without explicit mailFolder → default to inbox
+            // to match the runtime default in executeM365MailFetch
+            scope.put("folderId", "inbox");
+        }
+
+        return scope;
     }
 
     /**
@@ -454,11 +664,48 @@ public class IngestWebhookController {
         String token = resolveToken(connector);
         if (token == null) return badRequest("No access token for connector");
 
-        // Build Graph subscription
-        String resource = params.getOrDefault("resource", "me/mailfolders('inbox')/messages");
+        // Build Graph subscription — derive default resource from connector type
+        String resource = params.get("resource");
+        if (resource == null || resource.isBlank()) {
+            if ("teams".equals(system)) {
+                String teamId = params.get("teamId");
+                String channelId = params.get("channelId");
+                if (teamId == null || channelId == null) {
+                    return badRequest("Teams subscription requires teamId and channelId (or explicit resource)");
+                }
+                resource = "teams('" + escapeGraphId(teamId) + "')/channels('" + escapeGraphId(channelId) + "')/messages";
+            } else {
+                // m365_mail: use /users/{userId} for client-credentials, /me for delegated
+                String userId = params.get("userId");
+                String folderId = params.getOrDefault("folderId", "inbox");
+                if (userId != null && !userId.isBlank()) {
+                    // userId is a path segment (not OData literal), use path encoding
+                    resource = "users/" + AdapterHttpClient.encodePathSegment(userId) + "/mailFolders('" + escapeGraphId(folderId) + "')/messages";
+                } else {
+                    resource = "me/mailFolders('" + escapeGraphId(folderId) + "')/messages";
+                }
+            }
+        }
         String notificationUrl = params.get("notificationUrl");
         if (notificationUrl == null || notificationUrl.isBlank()) {
             return badRequest("notificationUrl is required");
+        }
+        // SSRF prevention: only HTTPS public URLs allowed for webhook callbacks
+        try {
+            java.net.URI uri = java.net.URI.create(notificationUrl);
+            if (!"https".equals(uri.getScheme())) {
+                return badRequest("notificationUrl must use HTTPS");
+            }
+            AdapterHttpClient.validateExternalUrl(notificationUrl);
+        } catch (SecurityException se) {
+            return badRequest("notificationUrl rejected: " + se.getMessage());
+        } catch (Exception e) {
+            return badRequest("Invalid notificationUrl");
+        }
+        // Require webhookSecret to be configured — without it, receiveWebhook will
+        // reject all incoming notifications, making the subscription useless.
+        if (connector.getWebhookSecret() == null || connector.getWebhookSecret().isBlank()) {
+            return badRequest("webhookSecret must be configured on the connector before creating a subscription");
         }
 
         try {
@@ -475,9 +722,10 @@ public class IngestWebhookController {
                     .uri(java.net.URI.create("https://graph.microsoft.com/v1.0/subscriptions"))
                     .header("Authorization", "Bearer " + token)
                     .header("Content-Type", "application/json")
+                    .timeout(java.time.Duration.ofSeconds(30))
                     .POST(java.net.http.HttpRequest.BodyPublishers.ofString(body))
                     .build();
-            var response = httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+            var response = AdapterHttpClient.sendWithRetry(httpClient, request, java.net.http.HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() == 201 || response.statusCode() == 200) {
                 JsonNode result = MAPPER.readTree(response.body());
@@ -488,10 +736,10 @@ public class IngestWebhookController {
                 ));
             }
             return ResponseEntity.status(response.statusCode())
-                    .body(Map.of("error", "Graph subscription failed: " + response.body()));
+                    .body(Map.of("error", "Graph subscription failed: " + AdapterHttpClient.truncateBody(response.body())));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", e.getMessage()));
+                    .body(Map.of("error", "Internal error"));
         }
     }
 
@@ -510,29 +758,27 @@ public class IngestWebhookController {
             var request = java.net.http.HttpRequest.newBuilder()
                     .uri(java.net.URI.create("https://graph.microsoft.com/v1.0/subscriptions/" + subscriptionId))
                     .header("Authorization", "Bearer " + token)
+                    .timeout(java.time.Duration.ofSeconds(30))
                     .DELETE()
                     .build();
-            var response = httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+            var response = AdapterHttpClient.sendWithRetry(httpClient, request, java.net.http.HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 204) {
                 return ResponseEntity.ok(Map.of("status", "success"));
             }
             return ResponseEntity.status(response.statusCode())
-                    .body(Map.of("error", response.body()));
+                    .body(Map.of("error", AdapterHttpClient.truncateBody(response.body())));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", e.getMessage()));
+                    .body(Map.of("error", "Internal error"));
         }
     }
 
     private String resolveToken(ConnectorDefinition connector) {
         if (connector.getCredentialRef() == null) return null;
-        try {
-            var ctx = jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
-            if (ctx != null) {
-                var pm = ctx.getBean(jp.aegif.nemaki.util.PropertyManager.class);
-                return pm.readValue(connector.getCredentialRef());
-            }
-        } catch (Exception e) { /* ignore */ }
+        if (propertyManager != null) {
+            try { return propertyManager.readValue(connector.getCredentialRef()); }
+            catch (Exception e) { /* ignore */ }
+        }
         return null;
     }
 

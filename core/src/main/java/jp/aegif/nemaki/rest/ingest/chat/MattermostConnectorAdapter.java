@@ -52,7 +52,7 @@ public class MattermostConnectorAdapter {
      * List channels in a team.
      */
     public List<MattermostChannel> listChannels(String teamId) throws Exception {
-        String url = baseUrl + "/api/v4/teams/" + teamId + "/channels?per_page=100";
+        String url = baseUrl + "/api/v4/teams/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(teamId) + "/channels?per_page=100";
         JsonNode root = mmGet(url);
         if (!root.isArray()) return List.of();
 
@@ -68,40 +68,55 @@ public class MattermostConnectorAdapter {
     }
 
     /**
-     * Fetch posts from a channel.
+     * Fetch posts from a channel with page-based pagination.
+     *
+     * <p>Mattermost uses {@code page} + {@code per_page} parameters.
+     * Fetches until {@code perPage} total posts are collected or no more
+     * results remain.
+     *
+     * @param channelId channel ID
+     * @param perPage   max total posts to return
      */
     public List<MattermostPost> getPosts(String channelId, int perPage) throws Exception {
-        String url = baseUrl + "/api/v4/channels/" + channelId + "/posts?per_page=" + perPage;
-        JsonNode root = mmGet(url);
-        JsonNode order = root.get("order");
-        JsonNode posts = root.get("posts");
-        if (order == null || posts == null) return List.of();
+        int pageSize = Math.min(perPage, 200); // Mattermost max: 200
+        List<MattermostPost> allPosts = new ArrayList<>();
 
-        List<MattermostPost> result = new ArrayList<>();
-        for (JsonNode postId : order) {
-            JsonNode post = posts.get(postId.asText());
-            if (post == null) continue;
-            List<String> fileIds = new ArrayList<>();
-            JsonNode fids = post.get("file_ids");
-            if (fids != null && fids.isArray()) {
-                for (JsonNode fid : fids) fileIds.add(fid.asText());
+        for (int page = 0; page < 50; page++) { // Hard cap
+            String url = baseUrl + "/api/v4/channels/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(channelId)
+                    + "/posts?per_page=" + pageSize + "&page=" + page;
+            JsonNode root = mmGet(url);
+            JsonNode order = root.get("order");
+            JsonNode posts = root.get("posts");
+            if (order == null || posts == null || order.isEmpty()) break;
+
+            for (JsonNode postId : order) {
+                JsonNode post = posts.get(postId.asText());
+                if (post == null) continue;
+                List<String> fileIds = new ArrayList<>();
+                JsonNode fids = post.get("file_ids");
+                if (fids != null && fids.isArray()) {
+                    for (JsonNode fid : fids) fileIds.add(fid.asText());
+                }
+                allPosts.add(new MattermostPost(
+                        post.path("id").asText(),
+                        post.path("message").asText(),
+                        post.path("user_id").asText(),
+                        post.path("create_at").asLong(0),
+                        post.has("root_id") ? post.path("root_id").asText("") : "",
+                        fileIds));
+                if (allPosts.size() >= perPage) break;
             }
-            result.add(new MattermostPost(
-                    post.path("id").asText(),
-                    post.path("message").asText(),
-                    post.path("user_id").asText(),
-                    post.path("create_at").asLong(0),
-                    post.has("root_id") ? post.path("root_id").asText("") : "",
-                    fileIds));
+            if (allPosts.size() >= perPage) break;
+            if (order.size() < pageSize) break; // Last page
         }
-        return result;
+        return allPosts;
     }
 
     /**
      * Get file metadata.
      */
     public MattermostFile getFileInfo(String fileId) throws Exception {
-        String url = baseUrl + "/api/v4/files/" + fileId + "/info";
+        String url = baseUrl + "/api/v4/files/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(fileId) + "/info";
         JsonNode root = mmGet(url);
         return new MattermostFile(
                 root.path("id").asText(),
@@ -114,18 +129,15 @@ public class MattermostConnectorAdapter {
      * Download a file.
      */
     public InputStream downloadFile(String fileId) throws Exception {
-        String url = baseUrl + "/api/v4/files/" + fileId;
+        String url = baseUrl + "/api/v4/files/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(fileId) + "?download=1";
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Authorization", "Bearer " + token)
                 .timeout(Duration.ofSeconds(60))
                 .GET()
                 .build();
-        HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("Mattermost file download error " + response.statusCode());
-        }
-        return response.body();
+        HttpResponse<InputStream> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(httpClient, request, HttpResponse.BodyHandlers.ofInputStream());
+        return jp.aegif.nemaki.rest.ingest.AdapterHttpClient.requireOkOrClose(response, "Mattermost file download");
     }
 
     /**
@@ -161,9 +173,9 @@ public class MattermostConnectorAdapter {
                 .timeout(Duration.ofSeconds(30))
                 .GET()
                 .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(httpClient, request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            throw new RuntimeException("Mattermost API error " + response.statusCode() + ": " + response.body());
+            throw new RuntimeException("Mattermost API error " + response.statusCode() + ": " + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.truncateBody(response.body()));
         }
         return MAPPER.readTree(response.body());
     }

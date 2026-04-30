@@ -29,7 +29,6 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/v1/admin/lineage-journal")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class LineageJournalController {
 
     private static final Logger logger = LoggerFactory.getLogger(LineageJournalController.class);

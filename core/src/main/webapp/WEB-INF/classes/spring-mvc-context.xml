@@ -18,13 +18,16 @@
 	</bean>
 	-->
 
-	<!-- Enable CORS for API endpoints -->
+	<!-- Enable CORS for API endpoints (DispatcherServlet-relative paths) -->
+	<!-- In production, same-origin requests do not need CORS.
+	     This setting allows the Vite dev server (localhost:5173) to
+	     proxy requests to the backend during development. -->
 	<mvc:cors>
-		<mvc:mapping path="/api/**" 
-			allowed-origins="*" 
-			allowed-methods="GET,POST,PUT,DELETE,OPTIONS" 
-			allowed-headers="*" 
-			allow-credentials="false" 
+		<mvc:mapping path="/v1/**"
+			allowed-origins="*"
+			allowed-methods="GET,POST,PUT,DELETE,OPTIONS"
+			allowed-headers="*"
+			allow-credentials="false"
 			max-age="3600" />
 	</mvc:cors>
 

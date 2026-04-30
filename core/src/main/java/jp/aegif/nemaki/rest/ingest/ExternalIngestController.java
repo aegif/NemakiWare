@@ -7,7 +7,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import jp.aegif.nemaki.util.spring.SpringContext;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -22,7 +21,6 @@ import org.springframework.web.multipart.MultipartFile;
  */
 @RestController
 @RequestMapping("/v1/repo/{repositoryId}/ingest")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class ExternalIngestController {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -32,6 +30,9 @@ public class ExternalIngestController {
 
     @Autowired
     private HttpServletRequest httpRequest;
+
+    @Autowired(required = false)
+    private ConnectorDefinitionService connectorDefinitionService;
 
     /** JSON-only ingest (metadata-only, no file content). */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -66,7 +67,7 @@ public class ExternalIngestController {
             return doIngest(repositoryId, request);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(ExternalIngestResult.error("unknown", "Invalid request: " + e.getMessage()));
+                    .body(ExternalIngestResult.error("unknown", "Invalid request"));
         }
     }
 
@@ -135,10 +136,8 @@ public class ExternalIngestController {
     private SourceArchetype resolveConnectorArchetype(String connectorId) {
         if (connectorId == null) return null;
         try {
-            var ctx = jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
-            if (ctx != null) {
-                ConnectorDefinitionService connSvc = ctx.getBean(ConnectorDefinitionService.class);
-                ConnectorDefinition connector = connSvc.get(connectorId);
+            if (connectorDefinitionService != null) {
+                ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
                 if (connector != null) return connector.getSourceArchetype();
             }
         } catch (Exception e) {

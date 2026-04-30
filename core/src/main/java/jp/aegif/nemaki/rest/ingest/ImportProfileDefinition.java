@@ -40,6 +40,16 @@ public class ImportProfileDefinition {
     private List<String> allowedConnectorIds;
     private String defaultConnectorId;
     private String dedupePolicy = "skip_if_same_version";
+    /**
+     * Controls how an existing document is identified for deduplication.
+     * <ul>
+     *   <li>{@code source_id} (default) — match by sourceObjectId + sourceSystem</li>
+     *   <li>{@code filename} — match by filename within target folder (useful for chat
+     *       attachments where external IDs are unstable)</li>
+     *   <li>{@code source_id_or_filename} — try source_id first, fall back to filename</li>
+     * </ul>
+     */
+    private String dedupeMatchBy = "source_id";
     private String updatePolicy = "version_up_on_content_change";
     private String versioningPolicy = "major";
     private String relationshipPolicy;
@@ -92,6 +102,9 @@ public class ImportProfileDefinition {
 
     public String getDedupePolicy() { return dedupePolicy; }
     public void setDedupePolicy(String dedupePolicy) { this.dedupePolicy = dedupePolicy; }
+
+    public String getDedupeMatchBy() { return dedupeMatchBy; }
+    public void setDedupeMatchBy(String dedupeMatchBy) { this.dedupeMatchBy = dedupeMatchBy; }
 
     public String getUpdatePolicy() { return updatePolicy; }
     public void setUpdatePolicy(String updatePolicy) { this.updatePolicy = updatePolicy; }

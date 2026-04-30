@@ -97,26 +97,26 @@ class SalesforceConnectorAdapterTest {
     // ── SOQL injection prevention ────────────────────────────────
 
     @Test
-    void shouldEscapeSingleQuoteInAttachmentParentId() throws Exception {
-        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
-                .willReturn(aResponse().withBody("{\"records\":[]}")));
-
-        adapter.getAttachments("001'XX--inject");
-
-        // The single quote must be escaped as \' in the SOQL
-        wireMock.verify(getRequestedFor(urlPathEqualTo("/services/data/v59.0/query"))
-                .withQueryParam("q", containing("001\\'XX--inject")));
+    void shouldRejectInvalidParentIdWithSingleQuote() {
+        // SOQL injection attempt: invalid Salesforce ID format must be rejected
+        assertThrows(IllegalArgumentException.class,
+                () -> adapter.getAttachments("001'XX--inject"));
     }
 
     @Test
-    void shouldEscapeBackslashInParentId() throws Exception {
+    void shouldRejectInvalidParentIdWithBackslash() {
+        assertThrows(IllegalArgumentException.class,
+                () -> adapter.getAttachments("001\\XX"));
+    }
+
+    @Test
+    void shouldAcceptValidSalesforceId() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
                 .willReturn(aResponse().withBody("{\"records\":[]}")));
-
-        adapter.getAttachments("001\\XX");
-
+        // Valid 18-char Salesforce ID
+        adapter.getAttachments("001000000000001AAA");
         wireMock.verify(getRequestedFor(urlPathEqualTo("/services/data/v59.0/query"))
-                .withQueryParam("q", containing("001\\\\XX")));
+                .withQueryParam("q", containing("001000000000001AAA")));
     }
 
     // ── Empty results ────────────────────────────────────────────

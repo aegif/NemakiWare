@@ -14,7 +14,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/v1/admin/connectors")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class ConnectorDefinitionController {
 
     @Autowired
@@ -140,6 +139,31 @@ public class ConnectorDefinitionController {
         copy.setWebhookSecret(src.getWebhookSecret() != null && !src.getWebhookSecret().isBlank()
                 ? "[configured]" : null);
         return copy;
+    }
+
+    /**
+     * Return the adapter registry — all supported source systems with their
+     * required/optional params, archetype, and webhook scope keys.
+     * Used by the UI for dynamic form generation and Help documentation.
+     */
+    @GetMapping("/adapter-registry")
+    public ResponseEntity<?> getAdapterRegistry() {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
+        if (forbidden != null) return forbidden;
+        var result = new java.util.ArrayList<Map<String, Object>>();
+        for (AdapterDescriptor desc : AdapterRegistry.all()) {
+            var entry = new LinkedHashMap<String, Object>();
+            entry.put("sourceSystem", desc.sourceSystem());
+            entry.put("displayName", desc.displayName());
+            entry.put("archetype", desc.archetype().name());
+            entry.put("requiredParams", desc.requiredParams());
+            entry.put("optionalParams", desc.optionalParams());
+            entry.put("webhookScopeKeys", desc.webhookScopeKeys());
+            entry.put("apiCallsPerItem", desc.apiCallsPerItem());
+            entry.put("paramsExample", desc.paramsExample());
+            result.add(entry);
+        }
+        return ResponseEntity.ok(result);
     }
 
     private ResponseEntity<Map<String, Object>> errorResponse(HttpStatus status, String message) {

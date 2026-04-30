@@ -806,6 +806,11 @@
         <property name="connectorPool" ref="connectorPool" />
         <property name="connectorDefinitionService" ref="connectorDefinitionService" />
     </bean>
+    <bean id="ingestLineageEmitter" class="jp.aegif.nemaki.rest.ingest.IngestLineageEmitter" />
+    <bean id="ingestMetadataService" class="jp.aegif.nemaki.rest.ingest.IngestMetadataService">
+        <property name="contentService" ref="ContentService" />
+        <property name="nemakiCachePool" ref="nemakiCachePool" />
+    </bean>
     <bean id="canonicalImportService" class="jp.aegif.nemaki.rest.ingest.CanonicalImportServiceImpl">
         <property name="connectorDefinitionService" ref="connectorDefinitionService" />
         <property name="importProfileDefinitionService" ref="importProfileDefinitionService" />
@@ -816,10 +821,102 @@
         <property name="nemakiCachePool" ref="nemakiCachePool" />
         <property name="ingestJobService" ref="ingestJobService" />
         <property name="relationshipService" ref="RelationshipService" />
+        <property name="integrationSettingsService" ref="integrationSettingsService" />
+        <property name="auditLogger" ref="auditLogger" />
+        <property name="ingestMetadataService" ref="ingestMetadataService" />
+        <property name="ingestLineageEmitter" ref="ingestLineageEmitter" />
     </bean>
 
     <bean id="ingestJobService" class="jp.aegif.nemaki.rest.ingest.IngestJobService">
         <property name="connectorPool" ref="connectorPool" />
+    </bean>
+    <bean id="fetchSupport" class="jp.aegif.nemaki.rest.ingest.FetchSupport">
+        <property name="propertyManager" ref="propertyManager" />
+        <property name="ingestJobService" ref="ingestJobService" />
+        <property name="canonicalImportService" ref="canonicalImportService" />
+    </bean>
+    <bean id="checkpointManager" class="jp.aegif.nemaki.rest.ingest.CheckpointManager">
+        <property name="settingsService" ref="integrationSettingsService" />
+        <property name="profileService" ref="importProfileDefinitionService" />
+    </bean>
+    <!-- Fetch Orchestrators (11 adapters) -->
+    <bean id="boxOrchestrator" class="jp.aegif.nemaki.rest.ingest.fileshare.BoxFetchOrchestrator">
+        <property name="fetchSupport" ref="fetchSupport" />
+        <property name="checkpointManager" ref="checkpointManager" />
+        <property name="canonicalImportService" ref="canonicalImportService" />
+    </bean>
+    <bean id="dropboxOrchestrator" class="jp.aegif.nemaki.rest.ingest.fileshare.DropboxFetchOrchestrator">
+        <property name="fetchSupport" ref="fetchSupport" />
+        <property name="checkpointManager" ref="checkpointManager" />
+        <property name="canonicalImportService" ref="canonicalImportService" />
+    </bean>
+    <bean id="imapOrchestrator" class="jp.aegif.nemaki.rest.ingest.mail.ImapFetchOrchestrator">
+        <property name="fetchSupport" ref="fetchSupport" />
+        <property name="checkpointManager" ref="checkpointManager" />
+        <property name="canonicalImportService" ref="canonicalImportService" />
+    </bean>
+    <bean id="gmailOrchestrator" class="jp.aegif.nemaki.rest.ingest.mail.GmailFetchOrchestrator">
+        <property name="fetchSupport" ref="fetchSupport" />
+        <property name="checkpointManager" ref="checkpointManager" />
+        <property name="canonicalImportService" ref="canonicalImportService" />
+    </bean>
+    <bean id="m365MailOrchestrator" class="jp.aegif.nemaki.rest.ingest.mail.M365MailFetchOrchestrator">
+        <property name="fetchSupport" ref="fetchSupport" />
+        <property name="checkpointManager" ref="checkpointManager" />
+        <property name="canonicalImportService" ref="canonicalImportService" />
+    </bean>
+    <bean id="slackOrchestrator" class="jp.aegif.nemaki.rest.ingest.chat.SlackFetchOrchestrator">
+        <property name="fetchSupport" ref="fetchSupport" />
+        <property name="checkpointManager" ref="checkpointManager" />
+        <property name="canonicalImportService" ref="canonicalImportService" />
+    </bean>
+    <bean id="teamsOrchestrator" class="jp.aegif.nemaki.rest.ingest.chat.TeamsFetchOrchestrator">
+        <property name="fetchSupport" ref="fetchSupport" />
+        <property name="checkpointManager" ref="checkpointManager" />
+        <property name="canonicalImportService" ref="canonicalImportService" />
+    </bean>
+    <bean id="mattermostOrchestrator" class="jp.aegif.nemaki.rest.ingest.chat.MattermostFetchOrchestrator">
+        <property name="fetchSupport" ref="fetchSupport" />
+        <property name="checkpointManager" ref="checkpointManager" />
+        <property name="canonicalImportService" ref="canonicalImportService" />
+    </bean>
+    <bean id="chatworkOrchestrator" class="jp.aegif.nemaki.rest.ingest.chat.ChatworkFetchOrchestrator">
+        <property name="fetchSupport" ref="fetchSupport" />
+        <property name="checkpointManager" ref="checkpointManager" />
+        <property name="canonicalImportService" ref="canonicalImportService" />
+    </bean>
+    <bean id="notionOrchestrator" class="jp.aegif.nemaki.rest.ingest.note.NotionFetchOrchestrator">
+        <property name="fetchSupport" ref="fetchSupport" />
+        <property name="checkpointManager" ref="checkpointManager" />
+        <property name="canonicalImportService" ref="canonicalImportService" />
+    </bean>
+    <bean id="salesforceOrchestrator" class="jp.aegif.nemaki.rest.ingest.record.SalesforceFetchOrchestrator">
+        <property name="fetchSupport" ref="fetchSupport" />
+        <property name="checkpointManager" ref="checkpointManager" />
+        <property name="canonicalImportService" ref="canonicalImportService" />
+    </bean>
+    <bean id="fetchOrchestratorRegistry" class="jp.aegif.nemaki.rest.ingest.FetchOrchestratorRegistry">
+        <property name="orchestrators">
+            <map>
+                <entry key="box" value-ref="boxOrchestrator" />
+                <entry key="dropbox" value-ref="dropboxOrchestrator" />
+                <entry key="imap" value-ref="imapOrchestrator" />
+                <entry key="gmail_mail" value-ref="gmailOrchestrator" />
+                <entry key="m365_mail" value-ref="m365MailOrchestrator" />
+                <entry key="slack" value-ref="slackOrchestrator" />
+                <entry key="teams" value-ref="teamsOrchestrator" />
+                <entry key="mattermost" value-ref="mattermostOrchestrator" />
+                <entry key="chatwork" value-ref="chatworkOrchestrator" />
+                <entry key="notion" value-ref="notionOrchestrator" />
+                <entry key="salesforce" value-ref="salesforceOrchestrator" />
+            </map>
+        </property>
+    </bean>
+    <bean id="imapIdleMonitor" class="jp.aegif.nemaki.rest.ingest.mail.ImapIdleMonitor">
+        <property name="profileService" ref="importProfileDefinitionService" />
+        <property name="connectorService" ref="connectorDefinitionService" />
+        <property name="fetchSupport" ref="fetchSupport" />
+        <property name="canonicalImportService" ref="canonicalImportService" />
     </bean>
     <bean id="ingestSchedulerService" class="jp.aegif.nemaki.rest.ingest.IngestSchedulerService">
         <property name="profileService" ref="importProfileDefinitionService" />
@@ -829,6 +926,11 @@
         <property name="propertyManager" ref="propertyManager" />
         <property name="repositoryInfoMap" ref="repositoryInfoMap" />
         <property name="ingestJobService" ref="ingestJobService" />
+        <property name="cloudantClientPool" ref="connectorPool" />
+        <property name="checkpointManager" ref="checkpointManager" />
+        <property name="fetchSupport" ref="fetchSupport" />
+        <property name="orchestratorRegistry" ref="fetchOrchestratorRegistry" />
+        <property name="imapIdleMonitor" ref="imapIdleMonitor" />
     </bean>
 
     <!-- Password Policy Service -->

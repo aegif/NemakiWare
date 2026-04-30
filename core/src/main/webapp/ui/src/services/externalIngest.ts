@@ -27,6 +27,31 @@ async function parseJsonOrThrow<T>(res: Response, context: string): Promise<T> {
   return data as T;
 }
 
+// ── Adapter Registry ──────────────────────────────────────────────
+
+export interface AdapterDescriptor {
+  sourceSystem: string;
+  displayName: string;
+  archetype: string;
+  requiredParams: string[];
+  optionalParams: string[];
+  webhookScopeKeys: string[];
+  apiCallsPerItem: number;
+  paramsExample: string;
+}
+
+let adapterRegistryCache: AdapterDescriptor[] | null = null;
+
+/** Fetch the adapter registry (cached after first successful call). */
+export async function fetchAdapterRegistry(): Promise<AdapterDescriptor[]> {
+  if (adapterRegistryCache) return adapterRegistryCache;
+  const res = await fetchWithAuth('/core/api/v1/admin/connectors/adapter-registry');
+  if (!res.ok) return []; // Don't cache failures
+  const data = await res.json();
+  adapterRegistryCache = data as AdapterDescriptor[];
+  return adapterRegistryCache;
+}
+
 // ── Connector Types ────────────────────────────────────────────────
 
 export interface ConnectorDefinition {
@@ -60,6 +85,7 @@ export interface ImportProfileDefinition {
   allowedConnectorIds?: string[];
   defaultConnectorId?: string;
   dedupePolicy?: string;
+  dedupeMatchBy?: string;
   updatePolicy?: string;
   versioningPolicy?: string;
   relationshipPolicy?: string;
