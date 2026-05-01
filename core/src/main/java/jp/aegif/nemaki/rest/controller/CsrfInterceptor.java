@@ -61,11 +61,19 @@ public class CsrfInterceptor implements HandlerInterceptor {
     /**
      * Check if this is a webhook receiver path (HMAC-verified, not CSRF-protected).
      * Matches /v1/ingest-webhook/{connectorId} but NOT /v1/ingest-webhook/{connectorId}/subscribe.
+     *
+     * <p>Uses pathInfo (preferred, set by DispatcherServlet mapped to /api/*)
+     * with servletPath fallback for test environments where pathInfo may be null.
      */
-    private static boolean isWebhookReceiverPath(HttpServletRequest request) {
-        String path = request.getServletPath() + (request.getPathInfo() != null ? request.getPathInfo() : "");
-        // DispatcherServlet strips the /api prefix, so path is /v1/ingest-webhook/...
-        if (!path.startsWith("/v1/ingest-webhook/")) return false;
+    static boolean isWebhookReceiverPath(HttpServletRequest request) {
+        // DispatcherServlet mapped to /api/* sets servletPath=/api, pathInfo=/v1/...
+        // In Spring MVC interceptors, pathInfo contains the controller-relative path.
+        String path = request.getPathInfo();
+        if (path == null || path.isEmpty()) {
+            // Fallback: some test/mock setups put the full path in servletPath
+            path = request.getServletPath();
+        }
+        if (path == null || !path.startsWith("/v1/ingest-webhook/")) return false;
         // /subscribe sub-path is an admin mutation — keep CSRF
         return !path.contains("/subscribe");
     }

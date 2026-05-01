@@ -121,10 +121,21 @@ class CsrfInterceptorTest {
     // ── Webhook path exemption ──
 
     @Test
-    void webhookReceiver_exemptFromCsrf() throws Exception {
+    void webhookReceiver_exemptFromCsrf_servletPathStyle() throws Exception {
+        // Test environment: full path in servletPath, no pathInfo
         MockHttpServletRequest req = post("/v1/ingest-webhook/slack-1");
         req.setServletPath("/v1/ingest-webhook/slack-1");
-        // No CSRF headers — should still pass (HMAC-verified)
+        var interceptor = new CsrfInterceptor();
+        var response = new org.springframework.mock.web.MockHttpServletResponse();
+        assertTrue(interceptor.preHandle(req, response, null));
+    }
+
+    @Test
+    void webhookReceiver_exemptFromCsrf_dispatcherServletStyle() throws Exception {
+        // Real DispatcherServlet: servletPath=/api, pathInfo=/v1/...
+        MockHttpServletRequest req = post("/api/v1/ingest-webhook/slack-1");
+        req.setServletPath("/api");
+        req.setPathInfo("/v1/ingest-webhook/slack-1");
         var interceptor = new CsrfInterceptor();
         var response = new org.springframework.mock.web.MockHttpServletResponse();
         assertTrue(interceptor.preHandle(req, response, null));
@@ -132,9 +143,9 @@ class CsrfInterceptorTest {
 
     @Test
     void webhookSubscribe_requiresCsrf() throws Exception {
-        MockHttpServletRequest req = post("/v1/ingest-webhook/slack-1/subscribe");
-        req.setServletPath("/v1/ingest-webhook/slack-1/subscribe");
-        // No CSRF headers — should be rejected
+        MockHttpServletRequest req = post("/api/v1/ingest-webhook/slack-1/subscribe");
+        req.setServletPath("/api");
+        req.setPathInfo("/v1/ingest-webhook/slack-1/subscribe");
         var interceptor = new CsrfInterceptor();
         var response = new org.springframework.mock.web.MockHttpServletResponse();
         assertFalse(interceptor.preHandle(req, response, null));
@@ -143,8 +154,9 @@ class CsrfInterceptorTest {
 
     @Test
     void webhookSubscribe_withXRequestedWith_passes() throws Exception {
-        MockHttpServletRequest req = post("/v1/ingest-webhook/slack-1/subscribe");
-        req.setServletPath("/v1/ingest-webhook/slack-1/subscribe");
+        MockHttpServletRequest req = post("/api/v1/ingest-webhook/slack-1/subscribe");
+        req.setServletPath("/api");
+        req.setPathInfo("/v1/ingest-webhook/slack-1/subscribe");
         req.addHeader("X-Requested-With", "XMLHttpRequest");
         var interceptor = new CsrfInterceptor();
         var response = new org.springframework.mock.web.MockHttpServletResponse();
