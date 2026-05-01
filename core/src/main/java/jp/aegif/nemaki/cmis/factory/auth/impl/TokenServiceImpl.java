@@ -30,42 +30,34 @@ public class TokenServiceImpl implements TokenService{
 	private RepositoryInfoMap repositoryInfoMap;
 	
 	private TokenMap tokenMap = new TokenMap();
-	private Map<String, List<String>> admins = new HashMap<String, List<String>>();
+	private final Map<String, List<String>> admins = new java.util.concurrent.ConcurrentHashMap<>();
 	
 	private class TokenMap {
-		private Map<String, Map<String, Map<String, Token>>> map = new HashMap<String, Map<String,Map<String,Token>>>();
-		
+		// ConcurrentHashMap at all levels for thread-safe concurrent access
+		// from multiple servlet request threads.
+		private final java.util.concurrent.ConcurrentHashMap<String,
+				java.util.concurrent.ConcurrentHashMap<String,
+						java.util.concurrent.ConcurrentHashMap<String, Token>>> map =
+				new java.util.concurrent.ConcurrentHashMap<>();
+
 		private Token get(String app, String repositoryId, String userName){
-			Map<String, Map<String, Token>> appMap = map.get(app);
+			var appMap = map.get(app);
 			if(appMap == null){
 				log.warn(String.format("No such app(%s) registered for AuthToken", app));
 				return null;
-			}else{
-				 Map<String, Token> repoMap = appMap.get(repositoryId);
-				 if(repoMap == null){
-					 log.warn(String.format("No such repositoryId(%s) registered for AuthToken", repositoryId));
-					 log.warn("app: " + app + " user: " + userName);
-					 log.warn("appMap: "+appMap.toString());
-					 return null;
-				 }else{
-					 return repoMap.get(userName);
-				 }
 			}
-		}
-		
-		private Token set(String app, String repositoryId, String userName){
-			Map<String, Map<String, Token>> appMap = map.get(app);
-			if(appMap == null){
-				map.put(app, new HashMap<String, Map<String, Token>>());
-				appMap = map.get(app);
-			}
-			
-			Map<String, Token> repoMap = appMap.get(repositoryId);
+			var repoMap = appMap.get(repositoryId);
 			if(repoMap == null){
-				appMap.put(repositoryId, new HashMap<String, Token>());
-				repoMap = appMap.get(repositoryId);
+				log.warn(String.format("No such repositoryId(%s) registered for AuthToken", repositoryId));
+				return null;
 			}
-			
+			return repoMap.get(userName);
+		}
+
+		private Token set(String app, String repositoryId, String userName){
+			var appMap = map.computeIfAbsent(app, k -> new java.util.concurrent.ConcurrentHashMap<>());
+			var repoMap = appMap.computeIfAbsent(repositoryId, k -> new java.util.concurrent.ConcurrentHashMap<>());
+
 			String token = UUID.randomUUID().toString();
 
 			String expirationConfig = propertyManager.readValue(PropertyKey.AUTH_TOKEN_EXPIRATION);
@@ -78,52 +70,42 @@ public class TokenServiceImpl implements TokenService{
 						+ ", expires in: " + (expirationMillis / 60000) + " minutes");
 			}
 
-			repoMap.put(userName, new Token(userName, token, expiration));
-
-			return repoMap.get(userName);
+			Token newToken = new Token(userName, token, expiration);
+			repoMap.put(userName, newToken);
+			return newToken;
 		}
-		
+
 		private void remove(String app, String repositoryId, String userName){
-			Map<String, Map<String, Token>> appMap = map.get(app);
-			if(appMap == null){
-				return;
-			}
-			Map<String, Token> repoMap = appMap.get(repositoryId);
-			if(repoMap == null){
-				return;
-			}
+			var appMap = map.get(app);
+			if(appMap == null) return;
+			var repoMap = appMap.get(repositoryId);
+			if(repoMap == null) return;
 			repoMap.remove(userName);
 			log.info("Token removed for user: " + userName + ", repository: " + repositoryId + ", app: " + app);
 		}
-		
+
 		private String validate(String app, String repositoryId, String tokenString){
-			if (tokenString == null) {
-				return null;
-			}
-			Map<String, Map<String, Token>> appMap = map.get(app);
-			if(appMap == null){
-				return null;
-			}
-			Map<String, Token> repoMap = appMap.get(repositoryId);
-			if(repoMap == null){
-				return null;
-			}
+			if (tokenString == null) return null;
+			var appMap = map.get(app);
+			if(appMap == null) return null;
+			var repoMap = appMap.get(repositoryId);
+			if(repoMap == null) return null;
+
 			long currentTime = System.currentTimeMillis();
-			// Prune expired tokens opportunistically during validation to avoid
-			// unbounded in-memory growth in long-running processes.
-			Iterator<Map.Entry<String, Token>> it = repoMap.entrySet().iterator();
-			while (it.hasNext()) {
-				Map.Entry<String, Token> entry = it.next();
+			String matchedUser = null;
+			// ConcurrentHashMap.entrySet() is weakly consistent — safe to
+			// iterate and remove concurrently without ConcurrentModificationException.
+			for (var entry : repoMap.entrySet()) {
 				Token token = entry.getValue();
 				if (token != null && token.getExpiration() <= currentTime) {
-					it.remove();
+					repoMap.remove(entry.getKey());
 					continue;
 				}
-				if(token != null && tokenString.equals(token.getToken())){
-					return entry.getKey();
+				if (token != null && tokenString.equals(token.getToken())) {
+					matchedUser = entry.getKey();
 				}
 			}
-			return null;
+			return matchedUser;
 		}
 	}
 	

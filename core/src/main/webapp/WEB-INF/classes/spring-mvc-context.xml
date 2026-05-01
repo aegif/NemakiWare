@@ -31,6 +31,17 @@
 			max-age="3600" />
 	</mvc:cors>
 
+	<!-- CSRF protection for state-changing Spring MVC endpoints -->
+	<!-- Mirrors ResourceBase.validateCsrfProtection() used by Jersey resources -->
+	<mvc:interceptors>
+		<mvc:interceptor>
+			<mvc:mapping path="/v1/**" />
+			<!-- Webhook endpoints use HMAC signature verification, not CSRF -->
+			<mvc:exclude-mapping path="/v1/ingest-webhook/**" />
+			<bean class="jp.aegif.nemaki.rest.controller.CsrfInterceptor" />
+		</mvc:interceptor>
+	</mvc:interceptors>
+
 	<!-- Component scanning for REST controllers only -->
 	<!-- Purview @Service beans are in root context (serviceContext.xml) and visible to MVC via parent -->
 	<context:component-scan base-package="jp.aegif.nemaki.rest.controller" />
