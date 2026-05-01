@@ -443,12 +443,12 @@ const AdminGuide: React.FC = () => {
           <Title level={5}>{t('help.admin.ingestConcepts', '基本概念')}</Title>
           <Descriptions bordered size="small" column={1}>
             <Descriptions.Item label={t('help.admin.ingestConceptConnector', 'コネクタ (Connector)')}>
-              {t('help.admin.ingestConceptConnectorDesc', '外部システムへの接続情報を定義します。接続先URL、認証トークン、対象アーキタイプ（FILE_SHARE / MESSAGE_CONTEXT / CHAT_CONTEXT 等）を設定します。1つのコネクタは1つの外部システムに対応します。')}
+              {t('help.admin.ingestConceptConnectorDesc', '外部システムへの接続情報を定義します。接続先URL、認証トークン、類型（FILE_SHARE / MESSAGE_CONTEXT / CHAT_CONTEXT 等）を設定します。1つのコネクタは1つの外部システムに対応します。')}
             </Descriptions.Item>
             <Descriptions.Item label={t('help.admin.ingestConceptProfile', 'インポートプロファイル (Import Profile)')}>
               {t('help.admin.ingestConceptProfileDesc', 'コネクタに紐づく取り込みルールです。保存先フォルダ、重複検出ポリシー、バージョニング方針、スケジューラの有効/無効を設定します。1つのコネクタに複数のプロファイルを作成できます（例: Slack の複数チャンネル）。')}
             </Descriptions.Item>
-            <Descriptions.Item label={t('help.admin.ingestConceptArchetype', 'ソースアーキタイプ (Source Archetype)')}>
+            <Descriptions.Item label={t('help.admin.ingestConceptArchetype', '類型 (Source Archetype)')}>
               {t('help.admin.ingestConceptArchetypeDesc', '取り込み元データの種類を分類します。FILE_SHARE（ファイル）、MESSAGE_CONTEXT（メール）、COMPOUND_NOTE（ノート）、CHAT_CONTEXT（チャット）、BUSINESS_RECORD（業務レコード）の5種類があり、それぞれ専用のメタデータ（セカンダリタイプ）が自動付与されます。')}
             </Descriptions.Item>
             <Descriptions.Item label={t('help.admin.ingestConceptScheduler', 'スケジューラ')}>
@@ -476,7 +476,7 @@ const AdminGuide: React.FC = () => {
               }))}
             columns={[
               { title: t('help.admin.adapterCol', 'アダプタ'), dataIndex: 'adapter', width: 120 },
-              { title: t('help.admin.ingestArchetypeCol', 'アーキタイプ'), dataIndex: 'archetype', width: 170 },
+              { title: t('help.admin.ingestArchetypeCol', '類型'), dataIndex: 'archetype', width: 170 },
               { title: t('help.admin.ingestParamsCol', '主要パラメータ'), dataIndex: 'params' },
             ]}
           />
@@ -488,8 +488,8 @@ const AdminGuide: React.FC = () => {
             { title: t('help.admin.ingestConnStep1', '「管理」→「連携設定」→「コネクタ」タブを開く') },
             { title: t('help.admin.ingestConnStep2', '「新規コネクタ」をクリック') },
             { title: t('help.admin.ingestConnStep3', 'コネクタID を入力（必須）'), description: t('help.admin.ingestConnStep3Desc', '一意の識別子です（例: "slack-workspace-1"）。作成後は変更できません。表示名（displayName）は任意で設定できます。') },
-            { title: t('help.admin.ingestConnStep4', 'ソースシステムを選択（必須）'), description: t('help.admin.ingestConnStep4Desc', 'ドロップダウンから選択します。対応システム: IMAP / Gmail / M365 Mail / Slack / Microsoft Teams / Mattermost / Chatwork / Notion / Salesforce / Box / Dropbox。選択するとアーキタイプが自動設定されます。') },
-            { title: t('help.admin.ingestConnStep5', 'ソースアーキタイプを選択（必須）'), description: t('help.admin.ingestConnStep5Desc', 'ドロップダウンから FILE_SHARE / COMPOUND_NOTE / CHAT_CONTEXT / BUSINESS_RECORD / MESSAGE_CONTEXT を選択します。新規作成時は FILE_SHARE が初期値です。') },
+            { title: t('help.admin.ingestConnStep4', 'ソースシステムを選択（必須）'), description: t('help.admin.ingestConnStep4Desc', 'ドロップダウンから選択します。対応システム: IMAP / Gmail / M365 Mail / Slack / Microsoft Teams / Mattermost / Chatwork / Notion / Salesforce / Box / Dropbox。選択すると類型が自動設定されます。') },
+            { title: t('help.admin.ingestConnStep5', '類型を選択（必須）'), description: t('help.admin.ingestConnStep5Desc', 'ドロップダウンから FILE_SHARE / COMPOUND_NOTE / CHAT_CONTEXT / BUSINESS_RECORD / MESSAGE_CONTEXT を選択します。ソースシステムを先に選択すると自動設定されます。新規作成時は FILE_SHARE が初期値です。') },
             { title: t('help.admin.ingestConnStep6', '認証方式・接続先を設定'), description: t('help.admin.ingestConnStep6Desc', '認証方式（authType）を oauth2 / api_key / service_account / none から選択し、エンドポイント（endpoint）にAPIのURLを入力します。Microsoft 系の場合はテナントID（tenantId）も設定します。Webhook を使う場合は webhookSecret を設定します。') },
             { title: t('help.admin.ingestConnStep7', '「作成」をクリック') },
           ]} />
@@ -606,7 +606,7 @@ const AdminGuide: React.FC = () => {
           </Descriptions>
           <Alert type="info" showIcon style={{ marginTop: 12 }}
             message={t('help.admin.ingestDlqRetry', 'DLQ リトライ')}
-            description={t('help.admin.ingestDlqRetryDesc', '「ジョブ履歴」タブで失敗ジョブの DLQ アイテムを確認し、「リトライ」をクリックします。アーキタイプに応じた取り込みフローが自動選択されます。60秒のクールダウンがあります。')}
+            description={t('help.admin.ingestDlqRetryDesc', '「ジョブ履歴」タブで失敗ジョブの DLQ アイテムを確認し、「リトライ」をクリックします。類型に応じた取り込みフローが自動選択されます。60秒のクールダウンがあります。')}
           />
 
           {/* --- 具体例 --- */}
@@ -614,7 +614,7 @@ const AdminGuide: React.FC = () => {
           <Title level={5}>{t('help.admin.ingestExample', '設定例: Slack チャンネルの取り込み')}</Title>
           <Steps direction="vertical" size="small" items={[
             { title: t('help.admin.ingestExStep1', '1. Slack Bot Token を取得'), description: t('help.admin.ingestExStep1Desc', 'Slack App を作成し、channels:history, channels:read, files:read のスコープを持つ Bot Token (xoxb-...) を取得します') },
-            { title: t('help.admin.ingestExStep2', '2. コネクタを作成'), description: t('help.admin.ingestExStep2Desc', 'ソースシステム: slack、アーキタイプ: CHAT_CONTEXT、認証方式: api_key を選択。Bot Token はサーバー側プロパティで管理します。') },
+            { title: t('help.admin.ingestExStep2', '2. コネクタを作成'), description: t('help.admin.ingestExStep2Desc', 'ソースシステム: slack を選択すると類型 CHAT_CONTEXT が自動設定されます。認証方式: api_key を選択。Bot Token はサーバー側プロパティで管理します。') },
             { title: t('help.admin.ingestExStep3', '3. インポートプロファイルを作成'), description: t('help.admin.ingestExStep3Desc', 'defaultConnectorId にコネクタIDを設定、schedulerParams: {"channelId":"C01ABCD2345"}、dedupePolicy: skip_if_same_version、targetFolderId: 保存先フォルダID') },
             { title: t('help.admin.ingestExStep4', '4. スケジューラを有効化'), description: t('help.admin.ingestExStep4Desc', 'schedulerEnabled をオンにすると、5分ごとにチャンネルの新着メッセージと添付ファイルが自動取り込みされます') },
             { title: t('help.admin.ingestExStep5', '5. Webhook（オプション）'), description: t('help.admin.ingestExStep5Desc', 'webhookSecret を設定し、Slack Events API の Request URL に「コネクタ」タブに表示される Webhook URL を登録すると、メッセージ投稿時に即座に取り込みが実行されます') },

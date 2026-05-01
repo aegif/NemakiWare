@@ -1009,8 +1009,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     removeExistingRelationships(callContext, repositoryId, existingDoc.getId());
                 }
 
-                // "create_new_version" (default): no special dedupe action — falls through
-                // to updatePolicy which governs whether a new version is actually created
+                // Other policies (including "create_new_version"): no special dedupe action — falls through
+                // to updatePolicy which governs whether a new version is actually created.
+                // Note: default dedupePolicy is "skip_if_same_version" (set at line 925).
             }
 
             // Re-check existingDoc: dedupe policies (replace, parent_context_changed)
