@@ -39,6 +39,12 @@ public class CsrfInterceptor implements HandlerInterceptor {
             return true;
         }
 
+        // Webhook receiver endpoints use HMAC signature verification, not CSRF.
+        // But /subscribe admin mutations MUST keep CSRF protection.
+        if (isWebhookReceiverPath(request)) {
+            return true;
+        }
+
         String error = validateCsrf(request);
         if (error == null) {
             return true;
@@ -50,6 +56,18 @@ public class CsrfInterceptor implements HandlerInterceptor {
         response.setContentType("application/json");
         response.getWriter().write("{\"error\":\"CSRF validation failed: " + error + "\"}");
         return false;
+    }
+
+    /**
+     * Check if this is a webhook receiver path (HMAC-verified, not CSRF-protected).
+     * Matches /v1/ingest-webhook/{connectorId} but NOT /v1/ingest-webhook/{connectorId}/subscribe.
+     */
+    private static boolean isWebhookReceiverPath(HttpServletRequest request) {
+        String path = request.getServletPath() + (request.getPathInfo() != null ? request.getPathInfo() : "");
+        // DispatcherServlet strips the /api prefix, so path is /v1/ingest-webhook/...
+        if (!path.startsWith("/v1/ingest-webhook/")) return false;
+        // /subscribe sub-path is an admin mutation — keep CSRF
+        return !path.contains("/subscribe");
     }
 
     /**

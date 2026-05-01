@@ -118,6 +118,39 @@ class CsrfInterceptorTest {
         assertNull(CsrfInterceptor.validateCsrf(req));
     }
 
+    // ── Webhook path exemption ──
+
+    @Test
+    void webhookReceiver_exemptFromCsrf() throws Exception {
+        MockHttpServletRequest req = post("/v1/ingest-webhook/slack-1");
+        req.setServletPath("/v1/ingest-webhook/slack-1");
+        // No CSRF headers — should still pass (HMAC-verified)
+        var interceptor = new CsrfInterceptor();
+        var response = new org.springframework.mock.web.MockHttpServletResponse();
+        assertTrue(interceptor.preHandle(req, response, null));
+    }
+
+    @Test
+    void webhookSubscribe_requiresCsrf() throws Exception {
+        MockHttpServletRequest req = post("/v1/ingest-webhook/slack-1/subscribe");
+        req.setServletPath("/v1/ingest-webhook/slack-1/subscribe");
+        // No CSRF headers — should be rejected
+        var interceptor = new CsrfInterceptor();
+        var response = new org.springframework.mock.web.MockHttpServletResponse();
+        assertFalse(interceptor.preHandle(req, response, null));
+        assertEquals(403, response.getStatus());
+    }
+
+    @Test
+    void webhookSubscribe_withXRequestedWith_passes() throws Exception {
+        MockHttpServletRequest req = post("/v1/ingest-webhook/slack-1/subscribe");
+        req.setServletPath("/v1/ingest-webhook/slack-1/subscribe");
+        req.addHeader("X-Requested-With", "XMLHttpRequest");
+        var interceptor = new CsrfInterceptor();
+        var response = new org.springframework.mock.web.MockHttpServletResponse();
+        assertTrue(interceptor.preHandle(req, response, null));
+    }
+
     // ── HTTPS port normalization ──
 
     @Test

@@ -2,14 +2,14 @@ name: NemakiWare UI Tests with Playwright
 
 on:
   push:
-    branches: [ master, main, develop ]
+    branches: [ master, main, develop, 'release/**' ]
     paths:
       - 'core/src/main/webapp/ui/**'
       - 'core/src/main/java/**'
       - 'core/pom.xml'
       - '.github/workflows/ui-tests.yml'
   pull_request:
-    branches: [ master, main, develop ]
+    branches: [ master, main, develop, 'release/**' ]
     paths:
       - 'core/src/main/webapp/ui/**'
       - 'core/src/main/java/**'

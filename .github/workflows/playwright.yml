@@ -2,11 +2,11 @@ name: Playwright Tests
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, 'release/**' ]
     paths:
       - 'core/src/main/webapp/ui/**'
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, 'release/**' ]
     paths:
       - 'core/src/main/webapp/ui/**'
 
@@ -55,7 +55,11 @@ jobs:
         echo "Building solr module..."
         mvn clean install -f solr/pom.xml -DskipTests -q
 
-    - name: Build NemakiWare Core
+    - name: Build UI
+      working-directory: core/src/main/webapp/ui
+      run: npm run build
+
+    - name: Build NemakiWare Core (includes UI assets)
       run: |
         mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 
@@ -74,10 +78,6 @@ jobs:
         '
 
         echo "✅ NemakiWare backend is ready"
-
-    - name: Build UI
-      working-directory: core/src/main/webapp/ui
-      run: npm run build
 
     - name: Run Playwright tests
       working-directory: core/src/main/webapp/ui

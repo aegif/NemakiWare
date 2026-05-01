@@ -33,11 +33,11 @@
 
 	<!-- CSRF protection for state-changing Spring MVC endpoints -->
 	<!-- Mirrors ResourceBase.validateCsrfProtection() used by Jersey resources -->
+	<!-- Webhook receiver paths (/v1/ingest-webhook/{id}) are HMAC-verified and
+	     exempted inside CsrfInterceptor, but /subscribe admin mutations are protected. -->
 	<mvc:interceptors>
 		<mvc:interceptor>
 			<mvc:mapping path="/v1/**" />
-			<!-- Webhook endpoints use HMAC signature verification, not CSRF -->
-			<mvc:exclude-mapping path="/v1/ingest-webhook/**" />
 			<bean class="jp.aegif.nemaki.rest.controller.CsrfInterceptor" />
 		</mvc:interceptor>
 	</mvc:interceptors>
