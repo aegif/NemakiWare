@@ -452,7 +452,13 @@ const AdminGuide: React.FC = () => {
               {t('help.admin.ingestConceptArchetypeDesc', '取り込み元データの種類を分類します。FILE_SHARE（ファイル）、MESSAGE_CONTEXT（メール）、COMPOUND_NOTE（ノート）、CHAT_CONTEXT（チャット）、BUSINESS_RECORD（業務レコード）の5種類があり、それぞれ専用のメタデータ（セカンダリタイプ）が自動付与されます。')}
             </Descriptions.Item>
             <Descriptions.Item label={t('help.admin.ingestConceptScheduler', 'スケジューラ')}>
-              {t('help.admin.ingestConceptSchedulerDesc', '有効なプロファイルを5分間隔でポーリング実行します（cron 式ではなく固定間隔）。前回の取り込み位置（チェックポイント）を記憶しており、差分のみを取り込みます。')}
+              {t('help.admin.ingestConceptSchedulerDesc', '有効なプロファイルをポーリング実行します（デフォルト5分間隔、ingest.scheduler.pollIntervalSeconds で変更可能）。前回の取り込み位置（チェックポイント）を記憶しており、差分のみを取り込みます。cron 式ではなく固定間隔です。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestConceptCircuitBreaker', 'サーキットブレーカー')}>
+              {t('help.admin.ingestConceptCircuitBreakerDesc', 'コネクタが連続して失敗すると自動的にスキップされます（デフォルト5回、ingest.scheduler.circuitBreakerThreshold で変更可能）。次のポーリングサイクルでリトライ（HALF_OPEN）し、成功すればリセットされます。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestConceptIdempotency', '冪等性 (Idempotency)')}>
+              {t('help.admin.ingestConceptIdempotencyDesc', '同一の idempotencyKey を持つリクエストは7日間の TTL で重複排除されます。期限切れのキーは1時間ごとに自動パージされます。')}
             </Descriptions.Item>
           </Descriptions>
 
@@ -482,7 +488,7 @@ const AdminGuide: React.FC = () => {
             { title: t('help.admin.ingestConnStep1', '「管理」→「連携設定」→「コネクタ」タブを開く') },
             { title: t('help.admin.ingestConnStep2', '「新規コネクタ」をクリック') },
             { title: t('help.admin.ingestConnStep3', 'コネクタID を入力（必須）'), description: t('help.admin.ingestConnStep3Desc', '一意の識別子です（例: "slack-workspace-1"）。作成後は変更できません。表示名（displayName）は任意で設定できます。') },
-            { title: t('help.admin.ingestConnStep4', 'ソースシステムを入力（必須）'), description: t('help.admin.ingestConnStep4Desc', '自由入力のテキストフィールドです。slack / gmail_mail / m365_mail / imap / notion / salesforce / teams / mattermost / chatwork / box / dropbox などを入力します。') },
+            { title: t('help.admin.ingestConnStep4', 'ソースシステムを選択（必須）'), description: t('help.admin.ingestConnStep4Desc', 'ドロップダウンから選択します。対応システム: IMAP / Gmail / M365 Mail / Slack / Microsoft Teams / Mattermost / Chatwork / Notion / Salesforce / Box / Dropbox。選択するとアーキタイプが自動設定されます。') },
             { title: t('help.admin.ingestConnStep5', 'ソースアーキタイプを選択（必須）'), description: t('help.admin.ingestConnStep5Desc', 'ドロップダウンから FILE_SHARE / COMPOUND_NOTE / CHAT_CONTEXT / BUSINESS_RECORD / MESSAGE_CONTEXT を選択します。新規作成時は FILE_SHARE が初期値です。') },
             { title: t('help.admin.ingestConnStep6', '認証方式・接続先を設定'), description: t('help.admin.ingestConnStep6Desc', '認証方式（authType）を oauth2 / api_key / service_account / none から選択し、エンドポイント（endpoint）にAPIのURLを入力します。Microsoft 系の場合はテナントID（tenantId）も設定します。Webhook を使う場合は webhookSecret を設定します。') },
             { title: t('help.admin.ingestConnStep7', '「作成」をクリック') },
@@ -503,7 +509,7 @@ const AdminGuide: React.FC = () => {
             { title: t('help.admin.ingestProfStep4', '保存先フォルダを指定'), description: t('help.admin.ingestProfStep4Desc', 'targetFolderId に CMIS フォルダIDを設定します。省略するとルートフォルダに保存されます。') },
             { title: t('help.admin.ingestProfStep5', 'ポリシーを設定'), description: t('help.admin.ingestProfStep5Desc', '重複検出（dedupePolicy）、更新（updatePolicy）、バージョニング（versioningPolicy）の各ポリシーを設定します（後述）') },
             { title: t('help.admin.ingestProfStep6', 'スケジューラパラメータを設定'), description: t('help.admin.ingestProfStep6Desc', 'アダプタ固有のパラメータ（channelId 等）を schedulerParams に JSON 形式で入力します') },
-            { title: t('help.admin.ingestProfStep7', 'スケジューラを有効化'), description: t('help.admin.ingestProfStep7Desc', 'schedulerEnabled をオンにすると5分間隔の自動取り込みが開始されます。defaultConnectorId の設定が必須です。') },
+            { title: t('help.admin.ingestProfStep7', 'スケジューラを有効化'), description: t('help.admin.ingestProfStep7Desc', 'schedulerEnabled をオンにすると定期自動取り込みが開始されます（デフォルト5分間隔）。defaultConnectorId の設定が必須です。') },
           ]} />
 
           {/* --- ポリシー説明 --- */}
@@ -518,8 +524,17 @@ const AdminGuide: React.FC = () => {
             <Descriptions.Item label={t('help.admin.ingestVersionPolicy', 'バージョニング (versioningPolicy)')}>
               {t('help.admin.ingestVersionPolicyDesc', 'major: メジャーバージョン（1.0 → 2.0）。minor: マイナーバージョン（1.0 → 1.1）。none: バージョニングなし。')}
             </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestDedupeMatchBy', '重複マッチング基準 (dedupeMatchBy)')}>
+              {t('help.admin.ingestDedupeMatchByDesc', 'source_id（デフォルト）: ソースシステムのID（sourceObjectId + sourceSystem + sourceObjectType）で同一文書を判定。filename: ファイル名の一致で判定（チャット添付ファイルなど、外部IDが安定しない場合に有効）。source_id_or_filename: まずソースIDで検索し、見つからなければファイル名でフォールバック。')}
+            </Descriptions.Item>
             <Descriptions.Item label={t('help.admin.ingestAclPolicy', 'ACL同期 (aclSyncPolicy)')}>
               {t('help.admin.ingestAclPolicyDesc', 'inherit_from_folder（デフォルト）: 親フォルダの権限を継承（CMIS標準動作）。none: 親フォルダからの継承を切断し独立した権限を設定。copy_from_source: ソース側のACLを NemakiWare のローカルACEとしてコピー。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestPreserveEml', 'EML保存 (preserveOriginalEml)')}>
+              {t('help.admin.ingestPreserveEmlDesc', '有効にすると、メール取り込み時に元の .eml ファイルを別ドキュメントとして保存し、nemaki:hasAttachment リレーションシップでメッセージ本文にリンクします。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestClassification', '分類 (defaultClassification)')}>
+              {t('help.admin.ingestClassificationDesc', '設定すると、取り込み時に nemaki:classificationInfo セカンダリタイプが自動付与されます（例: "confidential", "internal"）。')}
             </Descriptions.Item>
           </Descriptions>
 
@@ -527,13 +542,16 @@ const AdminGuide: React.FC = () => {
           <Title level={5} style={{ marginTop: 24 }}>{t('help.admin.ingestExecution', '実行パターン')}</Title>
           <Descriptions bordered size="small" column={1}>
             <Descriptions.Item label={t('help.admin.ingestExecScheduled', '① 定期ポーリング（スケジューラ）')}>
-              {t('help.admin.ingestExecScheduledDesc', 'プロファイルの schedulerEnabled をオンにすると、5分間隔で自動実行されます。前回のチェックポイント（タイムスタンプやメッセージID）から差分のみを取り込みます。cron式ではなく固定間隔です。レート制限（rateLimitRpm）でAPI呼び出し頻度を制御できます。')}
+              {t('help.admin.ingestExecScheduledDesc', 'プロファイルの schedulerEnabled をオンにすると、定期的に自動実行されます（デフォルト5分間隔、ingest.scheduler.pollIntervalSeconds で変更可能）。前回のチェックポイント（タイムスタンプやメッセージID）から差分のみを取り込みます。cron式ではなく固定間隔です。レート制限（rateLimitRpm）でAPI呼び出し頻度を制御できます。フェッチのタイムアウトはデフォルト30分です（ingest.scheduler.fetchTimeoutMinutes で変更可能）。')}
             </Descriptions.Item>
             <Descriptions.Item label={t('help.admin.ingestExecManual', '② 手動実行')}>
               {t('help.admin.ingestExecManualDesc', '「手動インポート」タブからプロファイルを選択して即時実行できます。スケジューラが無効でも実行可能です。テストや初回の大量取り込みに便利です。')}
             </Descriptions.Item>
             <Descriptions.Item label={t('help.admin.ingestExecWebhook', '③ Webhook（イベント駆動）')}>
               {t('help.admin.ingestExecWebhookDesc', 'Slack Events API、Microsoft Graph changeNotification、汎用 HMAC Webhook に対応しています。コネクタに webhookSecret を設定すると、外部システムからのイベント通知で即座に取り込みが実行されます。「コネクタ」タブに Webhook URL が表示されます。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestExecIdle', '④ IMAP IDLE（リアルタイム監視）')}>
+              {t('help.admin.ingestExecIdleDesc', 'IMAP コネクタ専用のリアルタイム監視モードです。管理 API の /idle/start/{profileId} で開始します。IMAP IDLE コマンドにより、メールボックスに新着メッセージが届くと即座に取り込みが実行されます。接続エラー時は指数バックオフで自動再接続します。')}
             </Descriptions.Item>
           </Descriptions>
 
@@ -565,7 +583,7 @@ const AdminGuide: React.FC = () => {
           <Paragraph>{t('help.admin.ingestJobManagementDesc', 'スケジューラ実行のたびにジョブレコードが作成され、進捗がリアルタイムで追跡されます。')}</Paragraph>
           <Descriptions bordered size="small" column={1}>
             <Descriptions.Item label={t('help.admin.ingestJobStatus', 'ジョブステータス')}>
-              {t('help.admin.ingestJobStatusDesc', 'RUNNING: 実行中（ハートビートで進捗監視）。COMPLETED: 正常完了。PARTIAL: 一部成功・一部失敗。FAILED: 全件失敗。30分以上ハートビートがないジョブは自動的にFAILED（スタック検出）になります。')}
+              {t('help.admin.ingestJobStatusDesc', 'RUNNING: 実行中（ハートビートで進捗監視）。COMPLETED: 正常完了。PARTIAL: 一部成功・一部失敗。FAILED: 全件失敗。タイムアウト（デフォルト30分、ingest.scheduler.fetchTimeoutMinutes で変更可能）を超えるとスレッドが中断され FAILED になります。コネクタが連続失敗するとサーキットブレーカーが発動し、次サイクルまでスキップされます。')}
             </Descriptions.Item>
             <Descriptions.Item label={t('help.admin.ingestCheckpoint', 'チェックポイント')}>
               {t('help.admin.ingestCheckpointDesc', '各プロファイルの最後に正常取得した位置を記憶します。次回実行時はこの位置から差分取り込みを行います。チェックポイントはアダプタごとに異なります（Gmail: 日付、Slack: メッセージts、IMAP: UID等）。管理APIでチェックポイントのリセット（全件再取り込み）が可能です。')}
