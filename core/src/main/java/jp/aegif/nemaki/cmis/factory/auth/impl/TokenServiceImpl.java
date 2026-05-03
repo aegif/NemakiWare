@@ -5,19 +5,12 @@ import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
-import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
-import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public class TokenServiceImpl implements TokenService{
@@ -30,7 +23,6 @@ public class TokenServiceImpl implements TokenService{
 	private RepositoryInfoMap repositoryInfoMap;
 	
 	private TokenMap tokenMap = new TokenMap();
-	private final Map<String, List<String>> admins = new java.util.concurrent.ConcurrentHashMap<>();
 	
 	private class TokenMap {
 		// ConcurrentHashMap at all levels for thread-safe concurrent access
@@ -110,18 +102,8 @@ public class TokenServiceImpl implements TokenService{
 	}
 	
 	public void init() {
-		for(String key : repositoryInfoMap.keys()){
-			//extract admin ids
-			List<User>admins = principalService.getAdmins(key);
-			List<String>userIds = new ArrayList<String>();
-			if(CollectionUtils.isNotEmpty(admins)){
-				for(User admin : admins){
-					userIds.add(admin.getUserId());
-				}
-			}
-
-			this.admins.put(key, userIds);
-		}
+		// Admin status is evaluated live via isAdmin() at request time,
+		// so no startup caching is needed.
 	}
 
 	@Override

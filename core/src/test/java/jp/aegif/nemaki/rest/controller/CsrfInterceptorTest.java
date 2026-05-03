@@ -42,6 +42,20 @@ class CsrfInterceptorTest {
     }
 
     @Test
+    void legacyAuthToken_bypassesCsrf() {
+        MockHttpServletRequest req = post("/api/v1/admin/connectors");
+        req.addHeader("nemaki_auth_token", "token123");
+        assertNull(CsrfInterceptor.validateCsrf(req));
+    }
+
+    @Test
+    void legacyAuthTokenApp_bypassesCsrf() {
+        MockHttpServletRequest req = post("/api/v1/admin/connectors");
+        req.addHeader("nemaki_auth_token_app", "app123");
+        assertNull(CsrfInterceptor.validateCsrf(req));
+    }
+
+    @Test
     void basicAuth_doesNotBypass() {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
         req.addHeader("Authorization", "Basic YWRtaW46YWRtaW4=");

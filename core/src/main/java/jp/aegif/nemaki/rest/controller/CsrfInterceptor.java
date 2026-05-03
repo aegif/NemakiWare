@@ -73,7 +73,7 @@ public class CsrfInterceptor implements HandlerInterceptor {
             // Fallback: some test/mock setups put the full path in servletPath
             path = request.getServletPath();
         }
-        if (path == null || !path.startsWith("/v1/ingest-webhook/")) return false;
+        if (!path.startsWith("/v1/ingest-webhook/")) return false;
         // /subscribe sub-path is an admin mutation — keep CSRF
         return !path.contains("/subscribe");
     }
@@ -92,8 +92,8 @@ public class CsrfInterceptor implements HandlerInterceptor {
         String scheme = request.getScheme();
         String serverHost = request.getServerName();
         int serverPort = request.getServerPort();
-        if (scheme != null) scheme = scheme.toLowerCase(Locale.ROOT);
-        if (serverHost != null) serverHost = serverHost.toLowerCase(Locale.ROOT);
+        if (scheme != null) scheme = scheme.trim().toLowerCase(Locale.ROOT);
+        if (serverHost != null) serverHost = serverHost.trim().toLowerCase(Locale.ROOT);
 
         String origin = request.getHeader("Origin");
         if (origin != null && !origin.isEmpty()) {
@@ -112,6 +112,8 @@ public class CsrfInterceptor implements HandlerInterceptor {
                 String rScheme = refererUri.getScheme();
                 String rHost = refererUri.getHost();
                 int rPort = refererUri.getPort();
+                if (rScheme != null) rScheme = rScheme.toLowerCase(Locale.ROOT);
+                if (rHost != null) rHost = rHost.toLowerCase(Locale.ROOT);
                 int normReferer = normalizePort(rScheme, rPort);
                 int normServer = normalizePort(scheme, serverPort);
 
@@ -138,9 +140,11 @@ public class CsrfInterceptor implements HandlerInterceptor {
         if (auth != null && !auth.isEmpty() && !auth.trim().regionMatches(true, 0, "Basic ", 0, 6)) {
             return true;
         }
-        // AUTH_TOKEN / AUTH_TOKEN_APP / X-API-Key
+        // AUTH_TOKEN / AUTH_TOKEN_APP (both modern and legacy header names) / X-API-Key
         return nonEmpty(request, "AUTH_TOKEN")
+                || nonEmpty(request, "nemaki_auth_token")
                 || nonEmpty(request, "AUTH_TOKEN_APP")
+                || nonEmpty(request, "nemaki_auth_token_app")
                 || nonEmpty(request, "X-API-Key");
     }
 
