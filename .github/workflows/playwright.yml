@@ -69,21 +69,21 @@ jobs:
         cp ../core/target/core.war core/core.war
         docker compose -f docker-compose-simple.yml up -d --build
 
-        # Wait for backend to be ready
-        timeout 120s bash -c '
-          while ! curl -f -u admin:admin http://localhost:8080/core/atom/bedroom >/dev/null 2>&1; do
-            echo "Waiting for NemakiWare backend..."
+        # Wait for backend + UI to be ready (checks UI assets are served)
+        timeout 300s bash -c '
+          while ! curl -f http://localhost:8080/core/ui/ >/dev/null 2>&1; do
+            echo "Waiting for NemakiWare server..."
             sleep 5
           done
         '
 
-        echo "✅ NemakiWare backend is ready"
+        echo "✅ NemakiWare server is ready"
 
     - name: Run Playwright tests
       working-directory: core/src/main/webapp/ui
       env:
         PLAYWRIGHT_BASE_URL: http://localhost:8080
-      run: npm run test
+      run: npx playwright test --reporter=github
 
     - name: Upload Playwright Report
       uses: actions/upload-artifact@v4

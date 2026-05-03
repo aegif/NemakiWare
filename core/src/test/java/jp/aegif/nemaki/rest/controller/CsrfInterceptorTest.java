@@ -24,35 +24,35 @@ class CsrfInterceptorTest {
     void bearerToken_bypassesCsrf() {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
         req.addHeader("Authorization", "Bearer abc123");
-        assertNull(CsrfInterceptor.validateCsrf(req));
+        assertNull(jp.aegif.nemaki.rest.CsrfValidator.validate(req));
     }
 
     @Test
     void authToken_bypassesCsrf() {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
         req.addHeader("AUTH_TOKEN", "token123");
-        assertNull(CsrfInterceptor.validateCsrf(req));
+        assertNull(jp.aegif.nemaki.rest.CsrfValidator.validate(req));
     }
 
     @Test
     void apiKey_bypassesCsrf() {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
         req.addHeader("X-API-Key", "key123");
-        assertNull(CsrfInterceptor.validateCsrf(req));
+        assertNull(jp.aegif.nemaki.rest.CsrfValidator.validate(req));
     }
 
     @Test
     void legacyAuthToken_bypassesCsrf() {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
         req.addHeader("nemaki_auth_token", "token123");
-        assertNull(CsrfInterceptor.validateCsrf(req));
+        assertNull(jp.aegif.nemaki.rest.CsrfValidator.validate(req));
     }
 
     @Test
     void legacyAuthTokenApp_bypassesCsrf() {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
         req.addHeader("nemaki_auth_token_app", "app123");
-        assertNull(CsrfInterceptor.validateCsrf(req));
+        assertNull(jp.aegif.nemaki.rest.CsrfValidator.validate(req));
     }
 
     @Test
@@ -60,7 +60,7 @@ class CsrfInterceptorTest {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
         req.addHeader("Authorization", "Basic YWRtaW46YWRtaW4=");
         // Basic auth is ambient credential — should NOT bypass
-        String error = CsrfInterceptor.validateCsrf(req);
+        String error = jp.aegif.nemaki.rest.CsrfValidator.validate(req);
         assertNotNull(error, "Basic auth must not bypass CSRF");
     }
 
@@ -70,14 +70,14 @@ class CsrfInterceptorTest {
     void matchingOrigin_passes() {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
         req.addHeader("Origin", "http://localhost:8080");
-        assertNull(CsrfInterceptor.validateCsrf(req));
+        assertNull(jp.aegif.nemaki.rest.CsrfValidator.validate(req));
     }
 
     @Test
     void mismatchedOrigin_rejected() {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
         req.addHeader("Origin", "http://evil.com");
-        assertEquals("invalid origin", CsrfInterceptor.validateCsrf(req));
+        assertEquals("invalid origin", jp.aegif.nemaki.rest.CsrfValidator.validate(req));
     }
 
     @Test
@@ -85,7 +85,7 @@ class CsrfInterceptorTest {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
         req.setServerPort(80);
         req.addHeader("Origin", "http://localhost");
-        assertNull(CsrfInterceptor.validateCsrf(req));
+        assertNull(jp.aegif.nemaki.rest.CsrfValidator.validate(req));
     }
 
     // ── Bypass: Referer header ──
@@ -94,14 +94,14 @@ class CsrfInterceptorTest {
     void matchingReferer_passes() {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
         req.addHeader("Referer", "http://localhost:8080/core/ui/");
-        assertNull(CsrfInterceptor.validateCsrf(req));
+        assertNull(jp.aegif.nemaki.rest.CsrfValidator.validate(req));
     }
 
     @Test
     void mismatchedReferer_rejected() {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
         req.addHeader("Referer", "http://evil.com/page");
-        assertEquals("invalid referer", CsrfInterceptor.validateCsrf(req));
+        assertEquals("invalid referer", jp.aegif.nemaki.rest.CsrfValidator.validate(req));
     }
 
     // ── Bypass: X-Requested-With ──
@@ -110,7 +110,7 @@ class CsrfInterceptorTest {
     void xRequestedWith_passes() {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
         req.addHeader("X-Requested-With", "XMLHttpRequest");
-        assertNull(CsrfInterceptor.validateCsrf(req));
+        assertNull(jp.aegif.nemaki.rest.CsrfValidator.validate(req));
     }
 
     // ── No bypass headers ──
@@ -118,7 +118,7 @@ class CsrfInterceptorTest {
     @Test
     void noHeaders_rejected() {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
-        String error = CsrfInterceptor.validateCsrf(req);
+        String error = jp.aegif.nemaki.rest.CsrfValidator.validate(req);
         assertEquals("missing origin verification headers", error);
     }
 
@@ -129,7 +129,7 @@ class CsrfInterceptorTest {
         MockHttpServletRequest req = post("/api/v1/admin/connectors");
         req.setServerName("127.0.0.1");
         req.addHeader("Origin", "http://localhost:8080");
-        assertNull(CsrfInterceptor.validateCsrf(req));
+        assertNull(jp.aegif.nemaki.rest.CsrfValidator.validate(req));
     }
 
     // ── Webhook path exemption ──
@@ -186,6 +186,6 @@ class CsrfInterceptorTest {
         req.setServerName("example.com");
         req.setServerPort(443);
         req.addHeader("Origin", "https://example.com");
-        assertNull(CsrfInterceptor.validateCsrf(req));
+        assertNull(jp.aegif.nemaki.rest.CsrfValidator.validate(req));
     }
 }

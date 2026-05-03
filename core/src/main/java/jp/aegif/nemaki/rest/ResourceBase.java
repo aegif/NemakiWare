@@ -34,7 +34,6 @@ import org.springframework.stereotype.Component;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.GregorianCalendar;
-import java.util.Locale;
 import java.util.TimeZone;
 
 public class ResourceBase {
@@ -215,163 +214,12 @@ public class ResourceBase {
 	 * Validate Origin/Referer/X-Requested-With for state-changing requests.
 	 * Returns null when valid, otherwise an error key string.
 	 */
-	protected String validateCsrfProtection(HttpServletRequest request) {
-		// Non-Basic Authorization (Bearer, etc.), Auth-Token, and API-Key headers are
-		// set explicitly by application code, not auto-attached by browsers, so they
-		// are not ambient credentials and can safely bypass CSRF checks.  Basic auth
-		// is excluded: browsers cache and auto-send it, making it CSRF-relevant.
-		// Shell/Python clients using Basic auth must add X-Requested-With or Origin.
-		if (hasExplicitAuthHeaders(request)) {
-			return null;
-		}
-
-		OriginParts expected = getEffectiveOriginFromRequest(request);
-		String serverHost = expected.host;
-		int serverPort = expected.port;
-		String scheme = expected.scheme;
-
-		String origin = request.getHeader("Origin");
-		if (origin != null && !origin.isEmpty()) {
-			if (isOriginValid(origin, scheme, serverHost, serverPort)) {
-				return null;
-			}
-			return "invalid origin";
-		}
-
-		String referer = request.getHeader("Referer");
-		if (referer != null && !referer.isEmpty()) {
-			if (scheme == null || serverHost == null) {
-				return "invalid referer";
-			}
-			try {
-				java.net.URI refererUri = new java.net.URI(referer);
-				String refererScheme = refererUri.getScheme();
-				String refererHost = refererUri.getHost();
-				int refererPort = refererUri.getPort();
-				int normalizedRefererPort = normalizePort(refererScheme, refererPort);
-				int normalizedServerPort = normalizePort(scheme, serverPort);
-
-				if (scheme.equals(refererScheme)
-						&& serverHost.equals(refererHost)
-						&& normalizedServerPort == normalizedRefererPort) {
-					return null;
-				}
-				if (isLocalhostDev(serverHost, refererHost)
-						&& normalizedServerPort == normalizedRefererPort) {
-					return null;
-				}
-			} catch (Exception ignored) {
-				// ignore
-			}
-			return "invalid referer";
-		}
-
-		String xRequestedWith = request.getHeader("X-Requested-With");
-		if ("XMLHttpRequest".equals(xRequestedWith)) {
-			return null;
-		}
-		return "missing origin verification headers";
-	}
-
-	private boolean isOriginValid(String origin, String expectedScheme, String expectedHost, int expectedPort) {
-		try {
-			java.net.URI originUri = new java.net.URI(origin);
-			String originScheme = originUri.getScheme();
-			String originHost = originUri.getHost();
-			int originPort = originUri.getPort();
-			if (originScheme == null || originHost == null || expectedScheme == null || expectedHost == null) {
-				return false;
-			}
-			originScheme = originScheme.toLowerCase(Locale.ROOT);
-			originHost = originHost.toLowerCase(Locale.ROOT);
-			expectedScheme = expectedScheme.toLowerCase(Locale.ROOT);
-			expectedHost = expectedHost.toLowerCase(Locale.ROOT);
-
-			int normalizedOriginPort = normalizePort(originScheme, originPort);
-			int normalizedExpectedPort = normalizePort(expectedScheme, expectedPort);
-			if (!expectedScheme.equals(originScheme)) return false;
-			if (!expectedHost.equals(originHost) && !isLocalhostDev(expectedHost, originHost)) return false;
-			return normalizedExpectedPort == normalizedOriginPort;
-		} catch (Exception e) {
-			return false;
-		}
-	}
-
-	private boolean hasExplicitAuthHeaders(HttpServletRequest request) {
-		return hasNonBasicAuthorization(request)
-				|| nonEmptyHeader(request, CallContextKey.AUTH_TOKEN)
-				|| nonEmptyHeader(request, "AUTH_TOKEN")
-				|| nonEmptyHeader(request, CallContextKey.AUTH_TOKEN_APP)
-				|| nonEmptyHeader(request, "AUTH_TOKEN_APP")
-				|| nonEmptyHeader(request, "X-API-Key");
-	}
-
-	private boolean hasNonBasicAuthorization(HttpServletRequest request) {
-		String auth = request.getHeader("Authorization");
-		if (auth == null || auth.isEmpty()) return false;
-		String trimmed = auth.trim();
-		// Browsers cache HTTP Basic credentials per realm and attach
-		// "Authorization: Basic ..." automatically on subsequent requests to
-		// the same origin — even on cross-site form POSTs.  That makes Basic
-		// auth an ambient credential, just like cookies, so it must NOT bypass
-		// CSRF validation.  Non-Basic schemes (Bearer, etc.) are set
-		// explicitly by application code and are safe to bypass.
-		return !trimmed.regionMatches(true, 0, "Basic ", 0, 6);
-	}
-
-	private boolean nonEmptyHeader(HttpServletRequest request, String headerName) {
-		String value = request.getHeader(headerName);
-		return value != null && !value.isEmpty();
-	}
-
 	/**
-	 * Derive the expected origin (scheme + host + port) from the servlet request.
-	 *
-	 * <p><strong>Important:</strong> This method uses only the servlet API values
-	 * ({@code getScheme()}, {@code getServerName()}, {@code getServerPort()}).
-	 * It does <em>not</em> parse {@code X-Forwarded-*} or {@code Forwarded}
-	 * headers itself, because those headers can be spoofed by any direct client.
-	 * Instead, Tomcat's {@code RemoteIpValve} (configured in {@code server.xml})
-	 * transparently rewrites the servlet values when the request originates from
-	 * a trusted internal proxy, so the servlet API already reflects the correct
-	 * public-facing origin.</p>
+	 * CSRF protection — delegates to {@link CsrfValidator} (shared with Spring MVC).
+	 * @return null if valid, error string if rejected
 	 */
-	private OriginParts getEffectiveOriginFromRequest(HttpServletRequest request) {
-		String scheme = request.getScheme();
-		String host = request.getServerName();
-		int port = request.getServerPort();
-
-		return new OriginParts(
-				scheme != null ? scheme.trim().toLowerCase(Locale.ROOT) : null,
-				host != null ? host.trim().toLowerCase(Locale.ROOT) : null,
-				port);
-	}
-
-	private static final class OriginParts {
-		private final String scheme;
-		private final String host;
-		private final int port;
-
-		private OriginParts(String scheme, String host, int port) {
-			this.scheme = scheme;
-			this.host = host;
-			this.port = port;
-		}
-	}
-
-	private int normalizePort(String scheme, int port) {
-		if ("https".equalsIgnoreCase(scheme)) {
-			return (port == -1 || port == 443) ? 443 : port;
-		}
-		if ("http".equalsIgnoreCase(scheme)) {
-			return (port == -1 || port == 80) ? 80 : port;
-		}
-		return port;
-	}
-
-	private boolean isLocalhostDev(String host1, String host2) {
-		return (("localhost".equals(host1) || "127.0.0.1".equals(host1))
-				&& ("localhost".equals(host2) || "127.0.0.1".equals(host2)));
+	protected String validateCsrfProtection(HttpServletRequest request) {
+		return CsrfValidator.validate(request);
 	}
 
 	protected boolean isAdmin(HttpServletRequest request) {
