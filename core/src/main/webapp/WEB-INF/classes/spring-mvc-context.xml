@@ -18,7 +18,8 @@
 	</bean>
 	-->
 
-	<!-- CORS is configured via CorsConfig.java (reads api.cors.allowedOrigins property) -->
+	<!-- CORS is handled by SimpleCorsFilter (web.xml), not Spring MVC.
+	     Configure via system property: api.cors.allowedOrigins (default: *) -->
 
 	<!-- CSRF protection for state-changing Spring MVC endpoints -->
 	<!-- Mirrors ResourceBase.validateCsrfProtection() used by Jersey resources -->
