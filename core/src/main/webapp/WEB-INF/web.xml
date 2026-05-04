@@ -103,9 +103,14 @@
 		<load-on-startup>2</load-on-startup>
 	</servlet>
 	<!-- CORS filter - must be first to handle preflight requests -->
+	<!-- Uses DelegatingFilterProxy so PropertyManager can inject allowed origins -->
 	<filter>
 		<filter-name>corsFilter</filter-name>
-		<filter-class>jp.aegif.nemaki.rest.SimpleCorsFilter</filter-class>
+		<filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
+		<init-param>
+			<param-name>targetBeanName</param-name>
+			<param-value>simpleCorsFilter</param-value>
+		</init-param>
 	</filter>
 	
 	<!-- Audit request context filter - captures client IP and request metadata for audit logging -->

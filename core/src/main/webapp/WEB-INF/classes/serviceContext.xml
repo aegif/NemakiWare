@@ -768,6 +768,11 @@
     <!-- SpringContext bean definition for utility access -->
     <bean id="springContext" class="jp.aegif.nemaki.util.spring.SpringContext" />
     
+    <!-- CORS filter bean — exposed to servlet container via DelegatingFilterProxy in web.xml -->
+    <bean id="simpleCorsFilter" class="jp.aegif.nemaki.rest.SimpleCorsFilter">
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
     <!-- AuthenticationFilter bean definition with explicit dependencies -->
     <bean id="restAuthenticationFilter" class="jp.aegif.nemaki.rest.AuthenticationFilter">
         <property name="propertyManager" ref="propertyManager" />

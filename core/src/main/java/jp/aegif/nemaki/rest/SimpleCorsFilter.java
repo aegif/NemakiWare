@@ -8,6 +8,7 @@ import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jp.aegif.nemaki.util.PropertyManager;
 import java.io.IOException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -16,27 +17,50 @@ import org.apache.commons.logging.LogFactory;
  * CORS filter for all API endpoints (/rest/*, /api/*, /odata/*, /saml/*).
  *
  * <p>Runs as the first filter in the chain (before authentication) to handle
- * preflight OPTIONS requests. Reads allowed origins from the system property
- * {@code api.cors.allowedOrigins} (default: {@code *}).
+ * preflight OPTIONS requests. Reads allowed origins from PropertyManager
+ * via the key {@code api.cors.allowedOrigins} (default: {@code *}).
  *
- * <p>In production, set {@code -Dapi.cors.allowedOrigins=https://ecm.example.com}
- * or configure via nemakiware.properties to restrict cross-origin access.
+ * <p>This bean is wired by Spring (serviceContext.xml) and exposed to the
+ * servlet container via {@code DelegatingFilterProxy} in web.xml, giving
+ * it access to PropertyManager for configuration.
+ *
+ * <p>In production, set {@code api.cors.allowedOrigins=https://ecm.example.com}
+ * in nemakiware.properties to restrict cross-origin access.
+ * Multiple origins can be comma-separated.
  */
 public class SimpleCorsFilter implements Filter {
 
     private static final Log log = LogFactory.getLog(SimpleCorsFilter.class);
     private static final String PROP_KEY = "api.cors.allowedOrigins";
 
+    private PropertyManager propertyManager;
     private String allowedOrigins = "*";
+
+    /** Injected by Spring via serviceContext.xml. */
+    public void setPropertyManager(PropertyManager propertyManager) {
+        this.propertyManager = propertyManager;
+    }
 
     @Override
     public void init(FilterConfig filterConfig) throws ServletException {
-        // Read from system property (set via -D or nemakiware.properties → System.setProperty)
-        String configured = System.getProperty(PROP_KEY);
-        if (configured != null && !configured.isBlank()) {
-            allowedOrigins = configured.trim();
-        }
+        resolveOrigins();
         log.info("SimpleCorsFilter initialized (allowedOrigins=" + allowedOrigins + ")");
+    }
+
+    /** Read the configured origins from PropertyManager (or fall back to default). */
+    private void resolveOrigins() {
+        if (propertyManager != null) {
+            String configured = propertyManager.readValue(PROP_KEY);
+            if (configured != null && !configured.isBlank()) {
+                allowedOrigins = configured.trim();
+                return;
+            }
+        }
+        // Fallback: system property (for environments where PropertyManager is not yet available)
+        String sysProp = System.getProperty(PROP_KEY);
+        if (sysProp != null && !sysProp.isBlank()) {
+            allowedOrigins = sysProp.trim();
+        }
     }
 
     @Override
@@ -46,7 +70,6 @@ public class SimpleCorsFilter implements Filter {
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         HttpServletResponse httpResponse = (HttpServletResponse) response;
 
-        // Determine the correct Access-Control-Allow-Origin value
         String originHeader = httpRequest.getHeader("Origin");
         String allowOrigin = resolveAllowOrigin(originHeader);
 
@@ -58,7 +81,6 @@ public class SimpleCorsFilter implements Filter {
             httpResponse.setHeader("Access-Control-Max-Age", "3600");
         }
 
-        // Handle preflight OPTIONS requests
         if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod())) {
             httpResponse.setStatus(HttpServletResponse.SC_OK);
             return;
@@ -68,27 +90,24 @@ public class SimpleCorsFilter implements Filter {
     }
 
     /**
-     * Resolve the Access-Control-Allow-Origin value based on the request's Origin header.
-     * Returns null if the origin is not allowed (no CORS headers will be sent).
+     * Resolve the Access-Control-Allow-Origin value.
+     * Returns null if the origin is not allowed.
      */
     private String resolveAllowOrigin(String originHeader) {
         if ("*".equals(allowedOrigins)) {
             return "*";
         }
         if (originHeader == null || originHeader.isBlank()) {
-            return null; // No Origin header → no CORS headers needed
+            return null;
         }
-        // Check against comma-separated allowed origins
         for (String allowed : allowedOrigins.split("\\s*,\\s*")) {
             if (allowed.equalsIgnoreCase(originHeader)) {
-                return originHeader; // Echo back the matched origin
+                return originHeader;
             }
         }
-        return null; // Origin not allowed
+        return null;
     }
 
     @Override
-    public void destroy() {
-        // no-op
-    }
+    public void destroy() { }
 }
