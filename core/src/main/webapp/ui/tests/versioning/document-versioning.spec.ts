@@ -504,25 +504,22 @@ test.describe('Document Versioning', () => {
       await versionHistoryButton.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
 
-      // Verify version history modal/panel appears
+      // Version history modal/panel must appear after clicking the button
       const versionHistoryModal = page.locator('.ant-modal, .ant-drawer').filter({
         has: page.locator('text=/バージョン履歴|Version.*History/i')
       });
+      await expect(versionHistoryModal).toBeVisible({ timeout: 10000 });
 
-      if (await versionHistoryModal.count() > 0) {
-        await expect(versionHistoryModal).toBeVisible();
+      // Verify at least one version is listed (initial version 1.0)
+      const versionListItems = page.locator('.ant-table-tbody tr, .ant-list-item').filter({
+        hasText: /1\.0|v1/i
+      });
+      await expect(versionListItems.first()).toBeVisible({ timeout: 5000 });
 
-        // Verify at least one version is listed (initial version 1.0)
-        const versionListItems = page.locator('.ant-table-tbody tr, .ant-list-item').filter({
-          hasText: /1\.0|v1/i
-        });
-        await expect(versionListItems.first()).toBeVisible();
-
-        // Close the modal
-        const closeButton = page.locator('.ant-modal-close, button').filter({ hasText: /閉じる|Close|キャンセル/i }).first();
-        if (await closeButton.count() > 0) {
-          await closeButton.click();
-        }
+      // Close the modal
+      const closeButton = page.locator('.ant-modal-close, button').filter({ hasText: /閉じる|Close|キャンセル/i }).first();
+      if (await closeButton.count() > 0) {
+        await closeButton.click();
       }
     } else {
       // UPDATED (2025-12-26): Version history button IS implemented in DocumentList.tsx lines 983-989

@@ -89,20 +89,31 @@ test.describe('Archive Management Enhanced', () => {
       await page.goto(`${BASE_URL}/core/ui/#/archive`);
       await waitForUiStable(page);
 
-      // Click on pending archives tab
-      const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: /期限切れ未アーカイブ|Pending/i });
+      // Click on pending archives tab — must show Japanese label
+      const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: '期限切れ未アーカイブ' });
       if (await pendingTab.count() === 0) {
         test.skip('ENV: Pending archives tab not available — feature may not be deployed');
         return;
       }
+      // Verify Japanese tab label
+      await expect(pendingTab).toBeVisible();
       await pendingTab.click();
       await waitForUiStable(page);
 
-      // Either empty state or table should exist
-      const emptyMessage = page.locator('.ant-empty-description');
+      // Verify Japanese content: empty message OR table with Japanese column headers
+      const emptyMessage = page.locator('.ant-empty-description').filter({
+        hasText: '期限切れ'
+      });
       const pendingTable = page.locator('.ant-tabs-tabpane-active .ant-table');
-      const hasContent = (await emptyMessage.count() > 0) || (await pendingTable.count() > 0);
-      expect(hasContent).toBe(true);
+      const hasJapaneseEmpty = await emptyMessage.count() > 0;
+      const hasTable = await pendingTable.count() > 0;
+      expect(hasJapaneseEmpty || hasTable).toBe(true);
+
+      if (hasTable) {
+        // Verify at least one Japanese column header
+        const jaHeader = pendingTable.locator('th').filter({ hasText: /名前|有効期限|アクション/ });
+        expect(await jaHeader.count()).toBeGreaterThan(0);
+      }
     });
 
     test('should display Japanese labels on settings tab', async ({ page }) => {

@@ -509,9 +509,9 @@ test.describe('Advanced Search', () => {
     // Wait for search to complete
     await waitForUiStable(page);
 
-    // Verify the search input value after search — must not contain leaked CMIS query
+    // Verify search input is cleared after execution (not leaked CMIS query, not stale keyword)
     const inputValueAfter = await searchInput.first().inputValue();
-    expect(inputValueAfter).not.toContain('SELECT');
+    expect(inputValueAfter).toBe('');
 
     // Verify CMIS query display (i18n-safe)
     const queryDisplay = page.locator(':has-text("実行したCMISクエリ"), :has-text("Executed CMIS Query")');
