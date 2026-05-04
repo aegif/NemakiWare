@@ -230,7 +230,7 @@ test.describe('Bug Fix Verification Tests', () => {
     const viewportSize = page.viewportSize();
     const isMobile = viewportSize && viewportSize.width <= 414;
     if (isMobile) {
-      test.skip('Folder navigation differs on mobile');
+      test.skip('ENV: Folder navigation differs on mobile');
       return;
     }
 
@@ -510,7 +510,7 @@ test.describe('Bug Fix Verification Tests', () => {
       // Skip test if secondary type not available in this repository
       if (errorText.includes('typeNotFound') || errorText.includes('commentable')) {
         // UPDATED (2025-12-26): Secondary types ARE implemented - nemaki:commentable may not be registered in test repository
-        test.skip('Secondary type nemaki:commentable not found in repository - type system IS implemented');
+        test.skip('ENV: Secondary type nemaki:commentable not found in repository - type system IS implemented');
         return;
       }
       throw new Error(`Failed to update properties: ${errorText}`);
@@ -609,7 +609,7 @@ test.describe('Bug Fix Verification Tests', () => {
       const errorText = await checkoutResponse.text();
       console.log('Checkout failed:', errorText);
       if (errorText.includes('not versionable')) {
-        test.skip('Document type not versionable');
+        test.skip('ENV: Document type not versionable');
         return;
       }
       throw new Error(`Failed to checkout: ${errorText}`);
@@ -716,7 +716,7 @@ test.describe('Bug Fix Verification Tests', () => {
     if (!checkoutResponse.ok()) {
       const errorText = await checkoutResponse.text();
       if (errorText.includes('not versionable')) {
-        test.skip('Document type not versionable');
+        test.skip('ENV: Document type not versionable');
         return;
       }
       throw new Error(`Failed to checkout: ${errorText}`);

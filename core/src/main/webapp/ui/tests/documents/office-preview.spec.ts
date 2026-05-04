@@ -144,7 +144,7 @@ test.describe('Office Document Preview', () => {
 
       if (await uploadButton.count() === 0) {
         // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-        test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+        await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 });
         return;
       }
 
@@ -307,7 +307,7 @@ test.describe('Office Document Preview', () => {
 
       if (await uploadButton.count() === 0) {
         // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-        test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+        await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 });
         return;
       }
 
@@ -435,7 +435,7 @@ test.describe('Office Document Preview', () => {
     }).first();
 
     if (await excelRow.count() === 0) {
-      test.skip('No existing Excel file found');
+      test.skip('ENV: No existing Excel file found');
       return;
     }
 
@@ -648,7 +648,7 @@ test.describe('Office Document Preview', () => {
 
     if (apiResponse.error) {
       console.log(`⚠️ API Error (skipping): ${apiResponse.error}`);
-      test.skip(true, apiResponse.error);
+      test.skip(true, 'ENV: ' + (apiResponse.error || 'API error'));
       return;
     }
 

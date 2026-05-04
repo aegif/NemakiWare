@@ -103,7 +103,7 @@ test.beforeAll(async ({ request }) => {
 test.describe('Keycloak OIDC - Keycloak Connectivity', () => {
 
   test.beforeEach(async () => {
-    test.skip(!keycloakReachable, 'Keycloak server not reachable');
+    test.skip(!keycloakReachable, 'ENV: Keycloak server not reachable');
   });
 
   test('Keycloak health endpoint returns ready', async ({ request }) => {
@@ -138,7 +138,7 @@ test.describe('Keycloak OIDC - Keycloak Connectivity', () => {
   });
 
   test('nemakiware-oidc-client is configured', async ({ request }) => {
-    test.skip(!keycloakClientConfigured, 'Keycloak OIDC client not configured');
+    test.skip(!keycloakClientConfigured, 'ENV: Keycloak OIDC client not configured');
     // Verify client exists by attempting token grant
     const response = await request.post(OIDC_TOKEN_URL, {
       form: {
@@ -159,7 +159,7 @@ test.describe('Keycloak OIDC - Keycloak Connectivity', () => {
 test.describe('Keycloak OIDC - LDAP User Authentication via Keycloak', () => {
 
   test.beforeEach(async () => {
-    test.skip(!keycloakClientConfigured, 'Keycloak OIDC client not configured');
+    test.skip(!keycloakClientConfigured, 'ENV: Keycloak OIDC client not configured');
   });
 
   test('LDAP user ldapuser1 can authenticate via Keycloak', async ({ request }) => {
@@ -232,7 +232,7 @@ test.describe('Keycloak OIDC - LDAP User Authentication via Keycloak', () => {
 test.describe('Keycloak OIDC - NemakiWare OIDC Auth Flow', () => {
 
   test.beforeEach(async () => {
-    test.skip(!keycloakClientConfigured, 'Keycloak OIDC client not configured');
+    test.skip(!keycloakClientConfigured, 'ENV: Keycloak OIDC client not configured');
   });
 
   test('Full OIDC flow: Keycloak token → NemakiWare auth token (ldapuser1)', async ({ request }) => {

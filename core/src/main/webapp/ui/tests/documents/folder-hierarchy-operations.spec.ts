@@ -529,7 +529,7 @@ test.describe('Folder Hierarchy Operations', () => {
     const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
     if (await createFolderButton.count() === 0) {
       // UPDATED (2025-12-26): Folder creation IS implemented in DocumentList.tsx
-      test.skip('Folder creation button not visible - IS implemented in DocumentList.tsx');
+      await expect(page.getByRole('button', { name: /新規フォルダ|New Folder/i }).first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -569,7 +569,7 @@ test.describe('Folder Hierarchy Operations', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented but hidden on mobile viewports
-      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx');
+      test.skip('BROWSER: Folder tree hidden on mobile - IS implemented in FolderTree.tsx');
       return;
     }
 
@@ -580,7 +580,7 @@ test.describe('Folder Hierarchy Operations', () => {
     const folderTree = page.locator('.ant-tree');
     if (await folderTree.count() === 0) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx
-      test.skip('Folder tree not visible - IS implemented in FolderTree.tsx');
+      test.skip('ENV: Folder tree not visible - IS implemented in FolderTree.tsx');
       return;
     }
 
@@ -588,7 +588,7 @@ test.describe('Folder Hierarchy Operations', () => {
     const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
     if (await createFolderButton.count() === 0) {
       // UPDATED (2025-12-26): Folder creation IS implemented in DocumentList.tsx
-      test.skip('Folder creation button not visible - IS implemented in DocumentList.tsx');
+      await expect(page.getByRole('button', { name: /新規フォルダ|New Folder/i }).first()).toBeVisible({ timeout: 10000 });
       return;
     }
 

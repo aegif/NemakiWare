@@ -69,7 +69,7 @@ import { TestHelper, generateTestId } from '../utils/test-helper';
  *
  * 5. Smart Conditional Skipping Pattern (Lines 169, 200, 225, 286, 314, 372, 416, 500, 506, 545):
  *    - Tests check for feature availability before execution: if (await element.count() > 0)
- *    - Graceful skip with informative messages: test.skip('Feature not found')
+ *    - Graceful skip with informative messages: test.skip('ENV: Feature not found')
  *    - Self-healing: Tests automatically pass when UI features become available
  *    - Better than test.describe() which requires manual re-enable
  *    - Rationale: UI features may not be implemented or temporarily unavailable

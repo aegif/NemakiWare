@@ -137,7 +137,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
 
     if (await uploadButton.count() === 0) {
       // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+      await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -174,7 +174,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     // Find the test document row
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('Test document not found');
+      test.skip('ENV: Test document not found');
       return;
     }
 
@@ -240,7 +240,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     // Find and click on the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('Test document not found');
+      test.skip('ENV: Test document not found');
       return;
     }
 
@@ -312,7 +312,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     // Find and open the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('Test document not found after navigation');
+      test.skip('ENV: Test document not found after navigation');
       return;
     }
 

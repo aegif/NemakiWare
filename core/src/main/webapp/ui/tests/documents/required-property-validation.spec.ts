@@ -297,7 +297,7 @@ test.describe('Required Property Validation Tests', () => {
     test('should show validation error when required custom property is empty, then succeed after filling', async ({ page, browserName }) => {
       test.setTimeout(90000);  // Allow extra time for type selection and validation
       // Skip if document type wasn't created
-      test.skip(!typesCreated.document, 'Test document type not available');
+      test.skip(!typesCreated.document, 'ENV: Test document type not available');
 
       const isMobile = testHelper.isMobile(browserName);
       const testFileName = `test-required-doc-${generateTestId()}.txt`;
@@ -394,7 +394,7 @@ test.describe('Required Property Validation Tests', () => {
       } else {
         await page.keyboard.press('Escape');
         console.log('Test document type not found even after search. Skipping test.');
-        test.skip('Test document type not found in selector');
+        test.skip('ENV: Test document type not found in selector');
         return;
       }
 
@@ -421,7 +421,7 @@ test.describe('Required Property Validation Tests', () => {
         const formItems = modal.locator('.ant-form-item');
         console.log(`  Total form items in modal: ${await formItems.count()}`);
 
-        test.skip('Custom properties section not appearing - type definition incomplete');
+        test.skip('ENV: Custom properties section not appearing - type definition incomplete');
         return;
       }
 
@@ -524,7 +524,7 @@ test.describe('Required Property Validation Tests', () => {
   test.describe('Folder Creation with Required Properties', () => {
     test('should show validation error when required custom property is empty, then succeed after filling', async ({ page, browserName }) => {
       // Skip if folder type wasn't created
-      test.skip(!typesCreated.folder, 'Test folder type not available');
+      test.skip(!typesCreated.folder, 'ENV: Test folder type not available');
 
       const isMobile = testHelper.isMobile(browserName);
       const testFolderName = `test-required-folder-${generateTestId()}`;
@@ -569,7 +569,7 @@ test.describe('Required Property Validation Tests', () => {
 
       if (await testTypeOption.count() === 0) {
         await page.keyboard.press('Escape');
-        test.skip('Test folder type not found in selector - type may not have been created');
+        test.skip('ENV: Test folder type not found in selector - type may not have been created');
         return;
       }
 
@@ -660,7 +660,7 @@ test.describe('Required Property Validation Tests', () => {
 
   test.describe('Required Indicator Consistency', () => {
     test('should only show required indicators for properties with required=true', async ({ page, browserName }) => {
-      test.skip(!typesCreated.document, 'Test document type not available');
+      test.skip(!typesCreated.document, 'ENV: Test document type not available');
 
       const isMobile = testHelper.isMobile(browserName);
 
@@ -699,7 +699,7 @@ test.describe('Required Property Validation Tests', () => {
 
       if (await testTypeOption.count() === 0) {
         await page.keyboard.press('Escape');
-        test.skip('Test document type not found even after search');
+        test.skip('ENV: Test document type not found even after search');
         return;
       }
 

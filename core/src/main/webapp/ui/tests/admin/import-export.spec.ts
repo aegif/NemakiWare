@@ -683,7 +683,7 @@ test.describe.serial('Import/Export Feature', () => {
         // Only skip for 404 (feature not deployed) or 503 (service unavailable)
         // Auth errors (401/403) and server errors (500) should fail the test
         if (status === 404 || status === 503) {
-          test.skip(true, `Filesystem export not available in this environment (${status})`);
+          test.skip(true, `ENV: Filesystem export not available in this environment (${status})`);
           return;
         }
         expect.soft(exportRes.ok(), `Export failed with status ${status}: ${body}`).toBeTruthy();

@@ -3,7 +3,7 @@ import { test, expect, CDPSession, Page } from '@playwright/test';
 
 test.describe.serial('Passkey (WebAuthn) Management', () => {
   // CDP (Chrome DevTools Protocol) is only available in Chromium
-  test.skip(({ browserName }) => browserName !== 'chromium', 'CDP WebAuthn requires Chromium');
+  test.skip(({ browserName }) => browserName !== 'chromium', 'BROWSER: CDP WebAuthn requires Chromium');
   const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
   const UI_URL = `${BASE_URL}/core/ui`;
   const REST_BASE = `${BASE_URL}/core/rest/repo/bedroom`;
@@ -141,7 +141,7 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
     try {
       await setupVirtualAuthenticator(page);
     } catch (e) {
-      test.skip(true, 'WebAuthn virtual authenticator not available: ' + String(e).substring(0, 100));
+      test.skip(true, 'BROWSER: WebAuthn virtual authenticator not available: ' + String(e).substring(0, 100));
       return;
     }
 

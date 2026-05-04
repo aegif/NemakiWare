@@ -176,7 +176,7 @@ test.describe('Document Versioning', () => {
     const filename = `versioning-test-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0 content', isMobile);
     if (!uploadSuccess) {
-      test.skip('Upload failed');
+      test.skip('ENV: Upload failed');
       return;
     }
 
@@ -244,13 +244,13 @@ test.describe('Document Versioning', () => {
         if (checkinButtonVisible) {
           console.log('Test: Document successfully checked out - checkin button is now visible');
         } else {
-          test.skip('Checkout failed - neither PWC tag nor checkin button found');
+          test.skip('ENV: Checkout failed - neither PWC tag nor checkin button found');
         }
       }
     } else {
       // UPDATED (2025-12-26): Versioning IS implemented in DocumentList.tsx lines 955-962
       // Button uses EditOutlined icon, only visible for versionable documents that aren't PWC
-      test.skip('Check-out button not visible - document may not be versionable or is already checked out');
+      test.skip('ENV: Check-out button not visible - document may not be versionable or is already checked out');
       return;
     }
 
@@ -285,7 +285,7 @@ test.describe('Document Versioning', () => {
     const filename = `checkin-test-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0 content', isMobile);
     if (!uploadSuccess) {
-      test.skip('Upload failed');
+      test.skip('ENV: Upload failed');
       return;
     }
 
@@ -298,7 +298,7 @@ test.describe('Document Versioning', () => {
     // Step 1: Check-out using icon button in the row (EditOutlined = aria-label="edit")
     const checkoutButton = documentRow.locator('button').filter({ has: page.locator('span[role="img"][aria-label="edit"]') }).first();
     if (await checkoutButton.count() === 0) {
-      test.skip('Check-out button not visible in document row');
+      test.skip('ENV: Check-out button not visible in document row');
       return;
     }
 
@@ -408,7 +408,7 @@ test.describe('Document Versioning', () => {
     const filename = `cancel-checkout-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Original content', isMobile);
     if (!uploadSuccess) {
-      test.skip('Upload failed');
+      test.skip('ENV: Upload failed');
       return;
     }
 
@@ -443,7 +443,7 @@ test.describe('Document Versioning', () => {
       }
     } else {
       // UPDATED (2025-12-26): Cancel button IS implemented in DocumentList.tsx lines 974-980
-      test.skip('Cancel button not visible - document may not be a PWC (cancel only shown for checked-out documents)');
+      test.skip('ENV: Cancel button not visible - document may not be a PWC (cancel only shown for checked-out documents)');
       return;
     }
 
@@ -484,7 +484,7 @@ test.describe('Document Versioning', () => {
     const filename = `version-history-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0', isMobile);
     if (!uploadSuccess) {
-      test.skip('Upload failed');
+      test.skip('ENV: Upload failed');
       return;
     }
 
@@ -530,7 +530,7 @@ test.describe('Document Versioning', () => {
       }
     } else {
       // UPDATED (2025-12-26): Version history button IS implemented in DocumentList.tsx lines 983-989
-      test.skip('Version history button not visible - document may not be versionable (folders don\'t have version history)');
+      test.skip('ENV: Version history button not visible - document may not be versionable');
       return;
     }
 
@@ -570,7 +570,7 @@ test.describe('Document Versioning', () => {
     const filename = `version-download-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0 for download', isMobile);
     if (!uploadSuccess) {
-      test.skip('Upload failed');
+      test.skip('ENV: Upload failed');
       return;
     }
 
@@ -624,11 +624,11 @@ test.describe('Document Versioning', () => {
         }
       } else {
         // Version download functionality is part of version history modal/drawer
-        test.skip('Version download button not visible - version history UI may need different selector');
+        test.skip('ENV: Version download button not visible - version history UI may need different selector');
         return;
       }
     } else {
-      test.skip('Version history not accessible');
+      test.skip('ENV: Version history not accessible');
       return;
     }
 

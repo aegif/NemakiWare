@@ -132,7 +132,7 @@ test.describe('Bulk Delete Improvements', () => {
 
     const deleteButton = docRow.locator('button:has(.anticon-delete, [aria-label="delete"])');
     if (await deleteButton.count() === 0) {
-      test.skip(true, 'Delete button not found in document list');
+      test.skip(true, 'ENV: Delete button not found in document list');
       return;
     }
 
@@ -384,7 +384,7 @@ test.describe('Bulk Delete Improvements', () => {
 
     const deleteButton = parentRow.locator('button:has(.anticon-delete, [aria-label="delete"])');
     if (await deleteButton.count() === 0) {
-      test.skip(true, 'Delete button not found');
+      test.skip(true, 'ENV: Delete button not found');
       return;
     }
 
@@ -452,7 +452,7 @@ test.describe('Bulk Delete Improvements', () => {
     // Look for bulk selection checkboxes
     const selectAllCheckbox = page.locator('.ant-table-thead th.ant-table-selection-column input[type="checkbox"]');
     if (await selectAllCheckbox.count() === 0) {
-      test.skip(true, 'Bulk selection not available - rowSelection may not be configured');
+      test.skip(true, 'ENV: Bulk selection not available - rowSelection may not be configured');
       return;
     }
 
@@ -477,7 +477,7 @@ test.describe('Bulk Delete Improvements', () => {
     });
 
     if (await bulkDeleteButton.count() === 0) {
-      test.skip(true, 'Bulk delete button not found');
+      test.skip(true, 'ENV: Bulk delete button not found');
       return;
     }
 

@@ -204,7 +204,7 @@ test.describe('Secondary Type Management', () => {
     // FIX 2025-12-24: Use shared helper with graceful skip
     const navResult = await navigateToAnyDocument(page);
     if (!navResult) {
-      test.skip('No document found in table for navigation');
+      test.skip('ENV: No document found in table for navigation');
       return;
     }
 
@@ -475,7 +475,7 @@ test.describe('Relationship Management', () => {
     await login(page);
     const navResult = await navigateToAnyDocument(page);
     if (!navResult) {
-      test.skip('No document found in table for navigation');
+      test.skip('ENV: No document found in table for navigation');
       return;
     }
 
@@ -485,7 +485,7 @@ test.describe('Relationship Management', () => {
     const relationshipsTab = page.getByRole('tab', { name: 'リレーションシップ' }).or(page.getByRole('tab', { name: 'Relationships' }));
     const tabVisible = await relationshipsTab.isVisible({ timeout: 10000 }).catch(() => false);
     if (!tabVisible) {
-      test.skip('DocumentViewer tabs not loaded - possible page load issue');
+      test.skip('ENV: DocumentViewer tabs not loaded - possible page load issue');
       return;
     }
     await expect(relationshipsTab).toBeVisible({ timeout: 10000 });
@@ -507,7 +507,7 @@ test.describe('UI Integration Tests', () => {
     // FIX 2025-12-24: Handle graceful skip if no document found
     const navResult = await navigateToAnyDocument(page);
     if (!navResult) {
-      test.skip('No document found in table for navigation');
+      test.skip('ENV: No document found in table for navigation');
       return;
     }
 
@@ -528,7 +528,7 @@ test.describe('UI Integration Tests', () => {
     // FIX 2025-12-24: Handle graceful skip if no document found
     const navResult = await navigateToAnyDocument(page);
     if (!navResult) {
-      test.skip('No document found in table for navigation');
+      test.skip('ENV: No document found in table for navigation');
       return;
     }
 

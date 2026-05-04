@@ -205,7 +205,7 @@ test.describe('Multilingual Search Tests', () => {
   });
 
   test.beforeEach(async () => {
-    test.skip(!solrAvailable, 'Solr indexing is not operational in this environment');
+    test.skip(!solrAvailable, 'ENV: Solr indexing is not operational in this environment');
   });
 
   // ========================================
@@ -223,7 +223,7 @@ test.describe('Multilingual Search Tests', () => {
         `この文書は${keyword}のための文書です。`);
 
       const indexed = await waitForSolrIndex(request, docName);
-      test.skip(!indexed, 'Solr indexing timeout');
+      test.skip(!indexed, 'ENV: Solr indexing timeout');
 
       const results = await searchContains(request, keyword);
       expect(results).toContain(docId);
@@ -254,7 +254,7 @@ test.describe('Multilingual Search Tests', () => {
 
       const idx1 = await waitForSolrIndex(request, docName);
       const idx2 = await waitForSolrIndex(request, docNameNoMatch);
-      test.skip(!idx1 || !idx2, 'Solr indexing timeout');
+      test.skip(!idx1 || !idx2, 'ENV: Solr indexing timeout');
 
       // 原形「実行」で検索 → 活用形「実行しています」を含む文書がヒットするはず
       const results = await searchContains(request, `${uniqueMarker} 実行`);
@@ -281,7 +281,7 @@ test.describe('Multilingual Search Tests', () => {
         `This document contains ${keyword} for search verification.`);
 
       const indexed = await waitForSolrIndex(request, docName);
-      test.skip(!indexed, 'Solr indexing timeout');
+      test.skip(!indexed, 'ENV: Solr indexing timeout');
 
       const results = await searchContains(request, keyword);
       expect(results).toContain(docId);
@@ -312,7 +312,7 @@ test.describe('Multilingual Search Tests', () => {
 
       const idx1 = await waitForSolrIndex(request, docNameInflected);
       const idx2 = await waitForSolrIndex(request, docNameNoMatch);
-      test.skip(!idx1 || !idx2, 'Solr indexing timeout');
+      test.skip(!idx1 || !idx2, 'ENV: Solr indexing timeout');
 
       // Search with marker + base form "run" — should match "running" via stemming
       const results = await searchContains(request, `${uniqueMarker} run`);
@@ -335,7 +335,7 @@ test.describe('Multilingual Search Tests', () => {
         `The ${keyword} value should be found regardless of case.`);
 
       const indexed = await waitForSolrIndex(request, docName);
-      test.skip(!indexed, 'Solr indexing timeout');
+      test.skip(!indexed, 'ENV: Solr indexing timeout');
 
       // Search with different casing
       const results = await searchContains(request, keyword.toLowerCase());
@@ -360,7 +360,7 @@ test.describe('Multilingual Search Tests', () => {
         `This is a mixed language document. ${jaKeyword}を含む文書です。The end.`);
 
       const indexed = await waitForSolrIndex(request, docName);
-      test.skip(!indexed, 'Solr indexing timeout');
+      test.skip(!indexed, 'ENV: Solr indexing timeout');
 
       const results = await searchContains(request, jaKeyword);
       expect(results).toContain(docId);
@@ -380,7 +380,7 @@ test.describe('Multilingual Search Tests', () => {
         `この文書は日本語と英語が混在しています。${enKeyword} is the identifier.`);
 
       const indexed = await waitForSolrIndex(request, docName);
-      test.skip(!indexed, 'Solr indexing timeout');
+      test.skip(!indexed, 'ENV: Solr indexing timeout');
 
       const results = await searchContains(request, enKeyword);
       expect(results).toContain(docId);
@@ -404,7 +404,7 @@ test.describe('Multilingual Search Tests', () => {
         `This document is entirely in English with no Japanese text. Marker: NEGTEST${uid}`);
 
       const indexed = await waitForSolrIndex(request, docNameEn);
-      test.skip(!indexed, 'Solr indexing timeout');
+      test.skip(!indexed, 'ENV: Solr indexing timeout');
 
       const results = await searchContains(request, jaKeyword);
       expect(results).not.toContain(docIdEn);
@@ -430,7 +430,7 @@ test.describe('Multilingual Search Tests', () => {
         `${jaMarker} この文書は日本語で書かれています。`);
 
       const indexed1 = await waitForSolrIndex(request, docName);
-      test.skip(!indexed1, 'Solr indexing timeout');
+      test.skip(!indexed1, 'ENV: Solr indexing timeout');
 
       // Verify Japanese content is searchable
       let results = await searchContains(request, jaMarker);
@@ -456,7 +456,7 @@ test.describe('Multilingual Search Tests', () => {
         }
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
-      test.skip(!reindexed, 'Re-indexing timeout after content update');
+      test.skip(!reindexed, 'ENV: Re-indexing timeout after content update');
 
       // Verify English content is searchable
       results = await searchContains(request, enMarker);
@@ -499,7 +499,7 @@ test.describe('Multilingual Search Tests', () => {
       const idx1 = await waitForSolrIndex(request, docNameJa);
       const idx2 = await waitForSolrIndex(request, docNameEn);
       const idx3 = await waitForSolrIndex(request, docNameMixed);
-      test.skip(!idx1 || !idx2 || !idx3, 'Solr indexing timeout');
+      test.skip(!idx1 || !idx2 || !idx3, 'ENV: Solr indexing timeout');
 
       // Japanese keyword: should match JA doc and mixed doc, not EN doc
       let results = await searchContains(request, jaOnly);

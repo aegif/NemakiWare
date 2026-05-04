@@ -175,7 +175,7 @@ test.describe('Rendition API - Get Renditions', () => {
   });
 
   test('should return renditions for a document', async ({ request }) => {
-    test.skip(!testDocumentId, 'Test document was not created');
+    test.skip(!testDocumentId, 'ENV: Test document was not created');
 
     const response = await request.get(`${API_BASE}/${testDocumentId}`, {
       headers: getAuthHeader()
@@ -209,7 +209,7 @@ test.describe('Rendition API - Get Renditions', () => {
   });
 
   test('should reject unauthenticated requests for renditions', async ({ playwright }) => {
-    test.skip(!testDocumentId, 'Test document was not created');
+    test.skip(!testDocumentId, 'ENV: Test document was not created');
 
     // Create a new request context without default credentials
     const noAuthContext = await playwright.request.newContext({
@@ -253,7 +253,7 @@ test.describe('Rendition API - Generate Rendition', () => {
   });
 
   test('should handle rendition generation request', async ({ request }) => {
-    test.skip(!testDocumentId, 'Test document was not created');
+    test.skip(!testDocumentId, 'ENV: Test document was not created');
 
     const response = await request.post(`${API_BASE}/generate?objectId=${testDocumentId}`, {
       headers: getAuthHeader()
@@ -277,7 +277,7 @@ test.describe('Rendition API - Generate Rendition', () => {
   });
 
   test('should reject force regeneration for non-admin users', async ({ request }) => {
-    test.skip(!testDocumentId, 'Test document was not created');
+    test.skip(!testDocumentId, 'ENV: Test document was not created');
 
     // This test verifies the force=true parameter requires admin privileges
     // Note: With admin credentials, this should succeed
@@ -298,7 +298,7 @@ test.describe('Rendition API - Generate Rendition', () => {
   });
 
   test('should reject unauthenticated generation requests', async ({ playwright }) => {
-    test.skip(!testDocumentId, 'Test document was not created');
+    test.skip(!testDocumentId, 'ENV: Test document was not created');
 
     // Create a new request context without default credentials
     const noAuthContext = await playwright.request.newContext({
@@ -357,7 +357,7 @@ test.describe('Rendition API - Batch Generation', () => {
   });
 
   test('should handle batch generation request with admin credentials', async ({ request }) => {
-    test.skip(testDocumentIds.length === 0, 'No test documents created');
+    test.skip(testDocumentIds.length === 0, 'ENV: No test documents created');
 
     const batchRequest = {
       objectIds: testDocumentIds,
@@ -500,7 +500,7 @@ test.describe('Rendition API - Permission Checks', () => {
       'Permission test content'
     );
 
-    test.skip(!testDocId, 'Test document was not created');
+    test.skip(!testDocId, 'ENV: Test document was not created');
 
     try {
       // Try batch with the created document

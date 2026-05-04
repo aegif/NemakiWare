@@ -246,7 +246,7 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     if (await uploadButton.count() === 0) {
       // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+      await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -292,7 +292,7 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     if (await searchInput.count() === 0) {
       // UPDATED (2025-12-26): Search IS implemented in Layout.tsx
-      test.skip('Search input not visible - IS implemented in Layout.tsx lines 313-314');
+      test.skip('ENV: Search input not visible - IS implemented in Layout.tsx lines 313-314');
       return;
     }
 
@@ -410,7 +410,7 @@ test.describe('Solr Indexing Regression Tests', () => {
       }
     } else {
       // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-      test.skip('File input not visible - IS implemented in DocumentList.tsx upload modal');
+      test.skip('ENV: File input not visible - IS implemented in DocumentList.tsx upload modal');
       return;
     }
 
@@ -509,7 +509,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     const documentRow = page.locator('.ant-table tbody tr').first();
 
     if (await documentRow.count() === 0) {
-      test.skip('No documents available for move testing');
+      test.skip('ENV: No documents available for move testing');
       return;
     }
 

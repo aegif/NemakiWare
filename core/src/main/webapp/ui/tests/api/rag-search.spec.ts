@@ -126,7 +126,7 @@ test.describe('RAG Input Validation', () => {
   });
 
   test('POST /rag/search without auth returns error', async ({ request }) => {
-    test.skip(!ragSearchReachable, 'RAG search endpoint not reachable (TEI backend unavailable)');
+    test.skip(!ragSearchReachable, 'ENV: RAG search endpoint not reachable (TEI backend unavailable)');
     const response = await request.post(`${RAG_BASE}/search`, {
       headers: { 'Content-Type': 'application/json' },
       data: { query: 'test' },
@@ -160,7 +160,7 @@ test.describe('RAG Input Validation', () => {
 test.describe('RAG Search (TEI required)', () => {
 
   test.beforeEach(async () => {
-    test.skip(!ragSearchReachable, 'RAG search not reachable - TEI service unavailable or not responding');
+    test.skip(!ragSearchReachable, 'ENV: RAG search not reachable - TEI service unavailable or not responding');
   });
 
   test('POST /rag/search with valid query returns results', async ({ request }) => {

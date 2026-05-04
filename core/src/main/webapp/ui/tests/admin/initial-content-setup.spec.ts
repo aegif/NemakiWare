@@ -222,7 +222,7 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
   });
 
   test('Sites folder should exist in root folder', async () => {
-    test.skip(!sitesExists, 'Sites folder not found - may have been deleted by other tests');
+    test.skip(!sitesExists, 'ENV: Sites folder not found - may have been deleted by other tests');
     const response = await fetch(
       `${CMIS_BASE_URL}/browser/${REPOSITORY_ID}/root?cmisselector=children`,
       {
@@ -258,7 +258,7 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
   });
 
   test('Technical Documents folder should exist in root folder', async () => {
-    test.skip(!techDocsExists, 'Technical Documents folder not found - may have been deleted by other tests');
+    test.skip(!techDocsExists, 'ENV: Technical Documents folder not found - may have been deleted by other tests');
     const response = await fetch(
       `${CMIS_BASE_URL}/browser/${REPOSITORY_ID}/root?cmisselector=children`,
       {
@@ -294,7 +294,7 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
   });
 
   test('Sites folder should have correct ACL (admin:all, GROUP_EVERYONE:read, system:all)', async () => {
-    test.skip(!sitesExists, 'Sites folder not found - may have been deleted by other tests');
+    test.skip(!sitesExists, 'ENV: Sites folder not found - may have been deleted by other tests');
     // First, get folder ID
     const childrenResponse = await fetch(
       `${CMIS_BASE_URL}/browser/${REPOSITORY_ID}/root?cmisselector=children`,
@@ -364,7 +364,7 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
   });
 
   test('Technical Documents folder should have correct ACL (admin:all, GROUP_EVERYONE:read, system:all)', async () => {
-    test.skip(!techDocsExists, 'Technical Documents folder not found - may have been deleted by other tests');
+    test.skip(!techDocsExists, 'ENV: Technical Documents folder not found - may have been deleted by other tests');
     // First, get folder ID
     const childrenResponse = await fetch(
       `${CMIS_BASE_URL}/browser/${REPOSITORY_ID}/root?cmisselector=children`,
@@ -431,7 +431,7 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
   });
 
   test('Regression test: Folders should NOT have only system principal', async () => {
-    test.skip(!sitesExists, 'Sites folder not found - may have been deleted by other tests');
+    test.skip(!sitesExists, 'ENV: Sites folder not found - may have been deleted by other tests');
     // This test specifically catches the regression where PatchService.createInitialFolders()
     // was creating folders with ACL=null, resulting in only system principal
 

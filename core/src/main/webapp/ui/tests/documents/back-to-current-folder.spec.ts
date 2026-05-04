@@ -68,7 +68,7 @@ test.describe('Back to Current Folder Navigation', () => {
     console.log(`Found ${docCount} documents in root`);
 
     if (docCount === 0) {
-      test.skip(true, 'No documents available for test');
+      test.skip(true, 'ENV: No documents available for test');
       return;
     }
 
@@ -172,7 +172,7 @@ test.describe('Back to Current Folder Navigation', () => {
     });
 
     if (await folderRows.count() === 0) {
-      test.skip(true, 'No folders and not enough root documents');
+      test.skip(true, 'ENV: No folders and not enough root documents');
       return;
     }
 
@@ -205,7 +205,7 @@ test.describe('Back to Current Folder Navigation', () => {
     }
 
     if (!foundFolder) {
-      test.skip(true, 'No folder with documents found');
+      test.skip(true, 'ENV: No folder with documents found');
       return;
     }
 

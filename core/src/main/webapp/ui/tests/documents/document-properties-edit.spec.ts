@@ -226,7 +226,7 @@ test.describe('Document Properties Edit and Persistence', () => {
       await expect(uploadedDoc).toBeVisible({ timeout: 5000 });
     } else {
       // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+      await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 });
     }
   });
 
@@ -247,7 +247,7 @@ test.describe('Document Properties Edit and Persistence', () => {
     // Find the test document row
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('Test document not found in table');
+      test.skip('ENV: Test document not found in table');
       return;
     }
 
@@ -264,7 +264,7 @@ test.describe('Document Properties Edit and Persistence', () => {
     const editButtonVisible = await editButton.isVisible({ timeout: 5000 }).catch(() => false);
 
     if (!editButtonVisible) {
-      test.skip('Edit button not visible - PropertyEditor may not be loaded');
+      test.skip('ENV: Edit button not visible - PropertyEditor may not be loaded');
       return;
     }
 
@@ -278,7 +278,7 @@ test.describe('Document Properties Edit and Persistence', () => {
     const fieldCount = await formFields.count();
 
     if (fieldCount === 0) {
-      test.skip('No editable form fields found - document may have no updatable properties');
+      test.skip('ENV: No editable form fields found - document may have no updatable properties');
       return;
     }
 
@@ -360,7 +360,7 @@ test.describe('Document Properties Edit and Persistence', () => {
         }
       }
     } else {
-      test.skip('Test document not found after reload');
+      test.skip('ENV: Test document not found after reload');
     }
   });
 

@@ -41,10 +41,10 @@
  *    - Implementation: generateTestId() for concise uniqueness
  *
  * 4. Smart Conditional Skipping with Informative Messages (Lines 158-160, 185-187, 252-261, 353-361):
- *    - Skip if create button not found: test.skip('Create type button not found - UI may not be implemented')
- *    - Skip if edit button missing: test.skip('Edit button not found')
- *    - Skip if property tab unavailable: test.skip('Property tab not available')
- *    - Skip if type selector missing: test.skip('Type selector not visible - implemented in DocumentList.tsx lines 1236-1254')
+ *    - Skip if create button not found: test.skip('ENV: Create type button not found - UI may not be implemented')
+ *    - Skip if edit button missing: test.skip('ENV: Edit button not found')
+ *    - Skip if property tab unavailable: test.skip('ENV: Property tab not available')
+ *    - Skip if type selector missing: test.skip('ENV: Type selector not visible - implemented in DocumentList.tsx lines 1236-1254')
  *    - Rationale: Tests adapt to UI implementation state with clear diagnostic messages
  *    - Self-healing: Tests pass automatically when features become available
  *

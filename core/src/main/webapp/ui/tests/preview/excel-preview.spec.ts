@@ -128,7 +128,7 @@ test.describe('Excel Preview Tests', () => {
 
   test('should have rendition generated for Excel file', async ({ page }) => {
     // Skip if no xlsx file was uploaded
-    test.skip(!testContext.files.xlsx, 'Excel file not uploaded');
+    test.skip(!testContext.files.xlsx, 'ENV: Excel file not uploaded');
 
     // Check renditions API directly
     const response = await page.request.get(

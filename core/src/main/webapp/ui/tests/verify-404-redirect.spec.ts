@@ -22,7 +22,7 @@
  *
  * 1. Product Bug Investigation Pattern (Lines 15-22, 47-51, 69-73):
  *    - Documents known product bugs directly in test code
- *    - Uses test.skip(true, 'reason') when bug prevents test success
+ *    - Uses test.skip(true, 'ENV: reason') when bug prevents test success
  *    - Includes detailed expected vs actual behavior
  *    - Example: "PRODUCT BUG: CMIS backend errors not redirecting to login"
  *    - Rationale: Tests serve as specification and bug documentation
@@ -72,7 +72,7 @@
  *    - Helps developers understand redirect flow without browser inspection
  *
  * 8. Conditional Test Skipping for Known Bugs (Lines 71-73):
- *    - Uses test.skip(true, 'reason') to skip tests blocked by product bugs
+ *    - Uses test.skip(true, 'ENV: reason') to skip tests blocked by product bugs
  *    - Includes specific bug description in skip message
  *    - Allows test suite to pass while documenting known issues
  *    - Rationale: Tests document expected behavior even when bugs exist

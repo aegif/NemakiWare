@@ -85,7 +85,7 @@ async function checkAtlasAvailable(request: APIRequestContext): Promise<boolean>
 
 function skipIfNoAtlas(available: boolean) {
   if (!available) {
-    test.skip(true, 'Atlas not available — skipping');
+    test.skip(true, 'ENV: Atlas not available — skipping');
   }
 }
 
@@ -448,7 +448,7 @@ test.describe('Group 2: Incremental Sync → Atlas', () => {
   test('2.2 Property update → re-sync', async ({ request }) => {
     const available = await checkAtlasAvailable(request);
     skipIfNoAtlas(available);
-    test.skip(!testDocId, 'Depends on 2.1');
+    test.skip(!testDocId, 'ENV: Depends on 2.1');
 
     const newName = `atlas-e2e-doc-renamed-${randomSuffix()}`;
     await updateCmisProperties(request, testDocId!, { 'cmis:name': newName });
@@ -489,7 +489,7 @@ test.describe('Group 2: Incremental Sync → Atlas', () => {
   test('2.4 Delete → Delete Resolution', async ({ request }) => {
     const available = await checkAtlasAvailable(request);
     skipIfNoAtlas(available);
-    test.skip(!testDocId, 'Depends on 2.1');
+    test.skip(!testDocId, 'ENV: Depends on 2.1');
 
     const qn = `nemaki://${REPOSITORY_ID}/objects/${testDocId}`;
     await deleteCmisObject(request, testDocId!);
@@ -511,7 +511,7 @@ test.describe('Group 2: Incremental Sync → Atlas', () => {
   test('2.5 Rename → qualifiedName unchanged', async ({ request }) => {
     const available = await checkAtlasAvailable(request);
     skipIfNoAtlas(available);
-    test.skip(!testFolderId, 'Depends on 2.3');
+    test.skip(!testFolderId, 'ENV: Depends on 2.3');
 
     const qn = `nemaki://${REPOSITORY_ID}/objects/${testFolderId}`;
 
@@ -545,7 +545,7 @@ test.describe('Group 3: Governance Tab', () => {
   test('3.1 Governance API response', async ({ request }) => {
     const available = await checkAtlasAvailable(request);
     skipIfNoAtlas(available);
-    test.skip(!testFolderId, 'Depends on synced folder from Group 2');
+    test.skip(!testFolderId, 'ENV: Depends on synced folder from Group 2');
 
     const data = await getGovernanceApi(request, REPOSITORY_ID, testFolderId!);
     expect(data).not.toBeNull();
@@ -559,7 +559,7 @@ test.describe('Group 3: Governance Tab', () => {
   test('3.2 qualifiedName format', async ({ request }) => {
     const available = await checkAtlasAvailable(request);
     skipIfNoAtlas(available);
-    test.skip(!testFolderId, 'Depends on synced folder from Group 2');
+    test.skip(!testFolderId, 'ENV: Depends on synced folder from Group 2');
 
     const data = await getGovernanceApi(request, REPOSITORY_ID, testFolderId!);
     expect(data.qualifiedName).toMatch(/^nemaki:\/\/bedroom\/objects\//);
@@ -569,7 +569,7 @@ test.describe('Group 3: Governance Tab', () => {
   test('3.3 UI Governance tab display', async ({ page, request }) => {
     const available = await checkAtlasAvailable(request);
     skipIfNoAtlas(available);
-    test.skip(!testFolderId, 'Depends on synced folder from Group 2');
+    test.skip(!testFolderId, 'ENV: Depends on synced folder from Group 2');
 
     const authHelper = new AuthHelper(page);
     await authHelper.login();
@@ -980,7 +980,7 @@ test.describe('Group 7: Dead-Letter & Replay', () => {
   test('7.2 Re-enable → replay single event', async ({ request }) => {
     const available = await checkAtlasAvailable(request);
     skipIfNoAtlas(available);
-    test.skip(!failedEventId, 'Depends on 7.1');
+    test.skip(!failedEventId, 'ENV: Depends on 7.1');
 
     // Replay the failed event
     const replayRes = await request.post(

@@ -186,7 +186,7 @@ test.describe('Search Tokenization Bug Verification', () => {
   });
 
   test.beforeEach(async () => {
-    test.skip(!solrIndexingAvailable, 'Solr indexing is not operational in this environment');
+    test.skip(!solrIndexingAvailable, 'ENV: Solr indexing is not operational in this environment');
   });
 
   /**
@@ -252,7 +252,7 @@ test.describe('Search Tokenization Bug Verification', () => {
       const indexed3 = await waitForSolrIndex(request, docWithPartialMatch);
       if (!indexed1 || !indexed2 || !indexed3) {
         console.log('[SKIP] Solr indexing did not complete in time');
-        test.skip(true, 'Solr indexing did not complete in time');
+        test.skip(true, 'ENV: Solr indexing did not complete in time');
         return;
       }
 
@@ -341,7 +341,7 @@ test.describe('Search Tokenization Bug Verification', () => {
       const indexed2 = await waitForSolrIndex(request, docWithCommentableNoMatch);
       if (!indexed1 || !indexed2) {
         console.log('[SKIP] Solr indexing did not complete in time');
-        test.skip(true, 'Solr indexing did not complete in time');
+        test.skip(true, 'ENV: Solr indexing did not complete in time');
         return;
       }
 
@@ -394,7 +394,7 @@ test.describe('Search Tokenization Bug Verification', () => {
       const indexed2 = await waitForSolrIndex(request, docWithPartial);
       if (!indexed1 || !indexed2) {
         console.log('[SKIP] Solr indexing did not complete in time');
-        test.skip(true, 'Solr indexing did not complete in time');
+        test.skip(true, 'ENV: Solr indexing did not complete in time');
         return;
       }
 

@@ -144,7 +144,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
 
     if (await uploadButton.count() === 0) {
       // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+      await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -187,7 +187,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     // Find and click on the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('Test document not found');
+      test.skip('ENV: Test document not found');
       return;
     }
 
@@ -319,7 +319,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     // Find and open the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('Test document not found after navigation');
+      test.skip('ENV: Test document not found after navigation');
       return;
     }
 
@@ -397,7 +397,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     // Click on the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('Test document not found');
+      test.skip('ENV: Test document not found');
       return;
     }
 
@@ -557,7 +557,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
       uploadBtn = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
     }
     // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-    if (await uploadBtn.count() === 0) { test.skip('Upload button not visible - IS implemented in DocumentList.tsx'); return; }
+    if (await uploadBtn.count() === 0) { await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 }); return; }
 
     await uploadBtn.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
@@ -587,7 +587,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
       uploadBtn = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
     }
     // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-    if (await uploadBtn.count() === 0) { test.skip('Upload button not visible - IS implemented in DocumentList.tsx'); return; }
+    if (await uploadBtn.count() === 0) { await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 }); return; }
 
     await uploadBtn.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
@@ -622,7 +622,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
 
     // Enter search term
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]').first();
-    if (await searchInput.count() === 0) { test.skip('Search input not found'); return; }
+    if (await searchInput.count() === 0) { test.skip('ENV: Search input not found'); return; }
 
     await searchInput.fill(EXACT_PHRASE);
 

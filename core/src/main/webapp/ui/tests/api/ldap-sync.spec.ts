@@ -105,7 +105,7 @@ test.describe('LDAP Sync - Endpoint Availability', () => {
 test.describe('LDAP Sync - Connection Validation (LDAP required)', () => {
 
   test.beforeEach(async () => {
-    test.skip(!ldapConnected, 'LDAP not connected - skipping connection tests');
+    test.skip(!ldapConnected, 'ENV: LDAP not connected - skipping connection tests');
   });
 
   test('test-connection reports success when LDAP is available', async ({ request }) => {
@@ -135,7 +135,7 @@ test.describe('LDAP Sync - Connection Validation (LDAP required)', () => {
 test.describe('LDAP Sync - Preview & Dry Run (LDAP required)', () => {
 
   test.beforeEach(async () => {
-    test.skip(!ldapConnected, 'LDAP not connected - skipping sync tests');
+    test.skip(!ldapConnected, 'ENV: LDAP not connected - skipping sync tests');
   });
 
   test('preview detects LDAP users to sync', async ({ request }) => {
@@ -184,7 +184,7 @@ test.describe('LDAP Sync - Preview & Dry Run (LDAP required)', () => {
 test.describe.serial('LDAP Sync - Full Sync Execution (LDAP required)', () => {
 
   test.beforeEach(async () => {
-    test.skip(!ldapConnected, 'LDAP not connected - skipping full sync tests');
+    test.skip(!ldapConnected, 'ENV: LDAP not connected - skipping full sync tests');
   });
 
   test('POST /sync/trigger (actual sync) creates users and groups', async ({ request }) => {

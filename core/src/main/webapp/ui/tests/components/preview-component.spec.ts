@@ -306,7 +306,7 @@ test.describe('PreviewComponent Image Preview', () => {
         }
       } else {
         // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-        test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+        await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 });
       }
     } finally {
       // Cleanup temp file
@@ -402,7 +402,7 @@ test.describe('PreviewComponent Text Preview', () => {
         }
       } else {
         // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-        test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+        await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 });
       }
     } finally {
       // Cleanup temp file
@@ -511,7 +511,7 @@ test.describe('PreviewComponent Error Handling', () => {
         }
       } else {
         // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-        test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+        await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 });
       }
     } finally {
       // Cleanup temp file

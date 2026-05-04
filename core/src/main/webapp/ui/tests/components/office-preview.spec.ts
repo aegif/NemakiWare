@@ -83,7 +83,7 @@ test.describe('Office Preview Component', () => {
       }
     } else {
       // No documents in the system - skip this test
-      test.skip('No documents in the system');
+      test.skip('ENV: No documents in the system');
     }
   });
 

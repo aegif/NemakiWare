@@ -874,12 +874,12 @@ test.describe('Access Control and Permissions', () => {
         );
         if (!userCheckResponse.ok()) {
           console.log(`Test: User ${testUsername} does not exist (HTTP ${userCheckResponse.status()})`);
-          test.skip(true, `Test user ${testUsername} not found — user creation may have failed`);
+          test.skip(true, `ENV: Test user ${testUsername} not found — user creation may have failed`);
           return;
         }
       } catch (e) {
         console.log(`Test: User check failed:`, e);
-        test.skip(true, `Cannot verify test user ${testUsername} — API unreachable`);
+        test.skip(true, `ENV: Cannot verify test user ${testUsername} — API unreachable`);
         return;
       }
 
@@ -890,7 +890,7 @@ test.describe('Access Control and Permissions', () => {
         await authHelper.login(testUsername, testUserPassword);
       } catch (error) {
         console.log(`Test: Test user login failed:`, error);
-        test.skip(true, `Test user ${testUsername} login failed (password may be incorrect)`);
+        test.skip(true, `ENV: Test user ${testUsername} login failed (password may be incorrect)`);
         return;
       }
 

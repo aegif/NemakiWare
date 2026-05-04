@@ -74,7 +74,7 @@ test.describe('Cloud Drive Import', () => {
 		} else {
 			// On some views (e.g., search results), upload might not be available
 			console.log('Upload button not found - may be expected based on current view/permissions');
-			test.skip(true, 'Upload button not available in current view');
+			test.skip(true, 'ENV: Upload button not available in current view');
 		}
 	});
 

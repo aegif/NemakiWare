@@ -382,7 +382,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       console.log('✅ Custom type created successfully');
     } else {
       // UPDATED (2025-12-26): Type management IS implemented in TypeManagement.tsx
-      test.skip('Type management menu not visible - IS implemented in TypeManagement.tsx');
+      test.skip('ENV: Type management menu not visible - IS implemented in TypeManagement.tsx');
     }
   });
 
@@ -502,7 +502,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       }
     } else {
       // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+      await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 });
     }
   });
 
@@ -510,7 +510,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     if (!testDocumentId) {
-      test.skip('Test document not created in previous test');
+      test.skip('ENV: Test document not created in previous test');
       return;
     }
 

@@ -413,7 +413,7 @@ test.describe('PropertyEditor Component Tests', () => {
           console.log('PropertyEditor Test: Read-only indicators found - test passed');
         } else {
           console.log('PropertyEditor Test: No read-only indicators found - all properties may be updatable');
-          test.skip('Read-only property indicators not found - PropertyEditor may display read-only as plain text');
+          test.skip('ENV: Read-only property indicators not found - PropertyEditor may display read-only as plain text');
         }
       }
     }
@@ -473,7 +473,7 @@ test.describe('PropertyEditor Component Tests', () => {
           }
         } else {
           console.log('PropertyEditor Test: No required field indicators found');
-          test.skip('Required field indicators not found - PropertyEditor may use different validation display');
+          test.skip('ENV: Required field indicators not found - PropertyEditor may use different validation display');
         }
       }
     }
@@ -517,7 +517,7 @@ test.describe('PropertyEditor Component Tests', () => {
           }
         } else {
           console.log('PropertyEditor Test: No select components found - may not have choice-based or multi-value properties');
-          test.skip('Multi-value properties not found - standard CMIS documents may not have multi-value properties');
+          test.skip('ENV: Multi-value properties not found - standard CMIS documents may not have multi-value properties');
         }
       }
     }

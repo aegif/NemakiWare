@@ -299,8 +299,8 @@ test.describe('Session Management - Concurrent Traditional Sessions', () => {
 
 test.describe('Session Management - OIDC Auth', () => {
   test.beforeEach(async () => {
-    test.skip(!keycloakReachable, 'Keycloak server not reachable');
-    test.skip(!keycloakClientConfigured, 'Keycloak OIDC client not configured');
+    test.skip(!keycloakReachable, 'ENV: Keycloak server not reachable');
+    test.skip(!keycloakClientConfigured, 'ENV: Keycloak OIDC client not configured');
   });
 
   test('S9: OIDC login returns valid NemakiWare token', async ({ request }) => {
@@ -326,8 +326,8 @@ test.describe('Session Management - OIDC Auth', () => {
 
 test.describe('Session Management - OIDC + Traditional Coexistence', () => {
   test.beforeEach(async () => {
-    test.skip(!keycloakReachable, 'Keycloak server not reachable');
-    test.skip(!keycloakClientConfigured, 'Keycloak OIDC client not configured');
+    test.skip(!keycloakReachable, 'ENV: Keycloak server not reachable');
+    test.skip(!keycloakClientConfigured, 'ENV: Keycloak OIDC client not configured');
   });
 
   test('S12: Traditional and OIDC tokens work independently', async ({ request }) => {
@@ -536,13 +536,13 @@ test.describe('Session Management - CMIS Operations with Different Auth', () => 
   test('S22: Create document with OIDC auth token (requires Keycloak)', async ({ request }) => {
     // Skip if Keycloak OIDC client not configured
     if (!keycloakClientConfigured) {
-      test.skip(true, 'Keycloak OIDC client not configured');
+      test.skip(true, 'ENV: Keycloak OIDC client not configured');
       return;
     }
 
     const token = await oidcLogin(request, 'admin', 'admin');
     if (!token) {
-      test.skip(true, 'Could not get OIDC token');
+      test.skip(true, 'ENV: Could not get OIDC token');
       return;
     }
 

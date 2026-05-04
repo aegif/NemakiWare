@@ -150,7 +150,7 @@ test.describe('Search Results Detailed Verification', () => {
     const rowCount = await rows.count();
 
     // Skip if no search results (test data dependent)
-    test.skip(rowCount === 0, 'No documents matching "test" found in repository');
+    test.skip(rowCount === 0, 'ENV: No documents matching "test" found in repository');
 
     // Verify objectType column shows Japanese label (ドキュメント or フォルダ) or CMIS type
     const firstRow = rows.first();
@@ -188,7 +188,7 @@ test.describe('Search Results Detailed Verification', () => {
     const rowCount = await rows.count();
 
     // Skip if no search results (test data dependent)
-    test.skip(rowCount === 0, 'No documents matching "test" found in repository');
+    test.skip(rowCount === 0, 'ENV: No documents matching "test" found in repository');
 
     const firstRow = rows.first();
 

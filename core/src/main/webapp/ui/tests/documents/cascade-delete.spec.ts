@@ -231,7 +231,7 @@ test.describe('Cascade Delete Functionality', () => {
       await expect(modal).not.toBeVisible({ timeout: 5000 });
     } else {
       // Skip if delete button not found
-      test.skip(true, 'Delete button not found in document list');
+      test.skip(true, 'ENV: Delete button not found in document list');
     }
   });
 
@@ -311,7 +311,7 @@ test.describe('Cascade Delete Functionality', () => {
 
     const deleteButton = parentRow.locator('button:has(.anticon-delete, [aria-label="delete"])');
     if (await deleteButton.count() === 0) {
-      test.skip(true, 'Delete button not found in document list');
+      test.skip(true, 'ENV: Delete button not found in document list');
       return;
     }
 
@@ -412,7 +412,7 @@ test.describe('Cascade Delete Functionality', () => {
 
     const deleteButton = docRow.locator('button:has(.anticon-delete, [aria-label="delete"])');
     if (await deleteButton.count() === 0) {
-      test.skip(true, 'Delete button not found in document list');
+      test.skip(true, 'ENV: Delete button not found in document list');
       return;
     }
 

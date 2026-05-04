@@ -147,7 +147,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
 
     if (await uploadButton.count() === 0) {
       // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+      await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -195,7 +195,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
 
     if (await uploadButton.count() === 0) {
       // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+      await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -244,7 +244,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
 
     if (await uploadButton.count() === 0) {
       // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+      await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -293,7 +293,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
     if (await searchInput.count() === 0) {
       // UPDATED (2025-12-26): Search input IS implemented in SearchForm.tsx
-      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
+      await expect(page.locator('input[placeholder*="検索"], input[placeholder*="Search"]').first()).toBeVisible({ timeout: 10000 });
       return;
     }
 

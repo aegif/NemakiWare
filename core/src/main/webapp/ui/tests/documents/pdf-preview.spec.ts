@@ -116,7 +116,7 @@ test.describe('PDF Preview Functionality', () => {
     const pdfInfo = await findPdfDocument(page);
 
     if (!pdfInfo) {
-      test.skip(true, 'No PDF document found in repository');
+      test.skip(true, 'ENV: No PDF document found in repository');
       return;
     }
 
@@ -129,7 +129,7 @@ test.describe('PDF Preview Functionality', () => {
   test('should open PDF preview in DocumentViewer', async ({ page, browserName }) => {
     const pdfInfo = await findPdfDocument(page);
     if (!pdfInfo) {
-      test.skip(true, 'No PDF document found in repository');
+      test.skip(true, 'ENV: No PDF document found in repository');
       return;
     }
 
@@ -172,7 +172,7 @@ test.describe('PDF Preview Functionality', () => {
   test('should verify PDF content stream is accessible via CMIS API', async ({ page }) => {
     const pdfInfo = await findPdfDocument(page);
     if (!pdfInfo) {
-      test.skip(true, 'No PDF document found in repository');
+      test.skip(true, 'ENV: No PDF document found in repository');
       return;
     }
 
@@ -197,7 +197,7 @@ test.describe('PDF Preview Functionality', () => {
     }, { objectId: pdfInfo.objectId });
 
     if (apiResponse.error) {
-      test.skip(true, `API error: ${apiResponse.error}`);
+      test.skip(true, `ENV: API error: ${apiResponse.error}`);
       return;
     }
 
@@ -210,7 +210,7 @@ test.describe('PDF Preview Functionality', () => {
     const isMobile = testHelper.isMobile(browserName);
     const pdfInfo = await findPdfDocument(page);
     if (!pdfInfo) {
-      test.skip(true, 'No PDF document found in repository');
+      test.skip(true, 'ENV: No PDF document found in repository');
       return;
     }
 
@@ -284,7 +284,7 @@ test.describe('PDF Preview Functionality', () => {
     const isMobile = testHelper.isMobile(browserName);
     const pdfInfo = await findPdfDocument(page);
     if (!pdfInfo) {
-      test.skip(true, 'No PDF document found in repository');
+      test.skip(true, 'ENV: No PDF document found in repository');
       return;
     }
 

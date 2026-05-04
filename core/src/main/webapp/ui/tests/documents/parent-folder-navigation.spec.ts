@@ -344,7 +344,7 @@ test.describe('Parent Folder Navigation', () => {
     const isFolderVisible = await folderIcon.isVisible().catch(() => false);
 
     if (!isFolderVisible) {
-      test.skip('No folder found in repository');
+      test.skip('ENV: No folder found in repository');
       return;
     }
 
@@ -391,7 +391,7 @@ test.describe('Parent Folder Navigation', () => {
     const isFolderVisible = await folderIcon.isVisible().catch(() => false);
 
     if (!isFolderVisible) {
-      test.skip('No folder found in repository');
+      test.skip('ENV: No folder found in repository');
       return;
     }
 
@@ -434,7 +434,7 @@ test.describe('Parent Folder Navigation', () => {
     const isFolderVisible = await folderRow.isVisible().catch(() => false);
 
     if (!isFolderVisible) {
-      test.skip('No folder found in repository');
+      test.skip('ENV: No folder found in repository');
       return;
     }
 
@@ -467,7 +467,7 @@ test.describe('Parent Folder Navigation', () => {
       } else if (await techDocsFolder.isVisible().catch(() => false)) {
         await techDocsFolder.locator('button.ant-btn-link').first().click();
       } else {
-        test.skip('No folder with subfolders found');
+        test.skip('ENV: No folder with subfolders found');
         return;
       }
       await waitForUiStable(page);
@@ -507,7 +507,7 @@ test.describe('Parent Folder Navigation', () => {
 
       console.log('Multi-level navigation test completed successfully');
     } else {
-      test.skip('Current folder has no subfolders for multi-level navigation');
+      test.skip('ENV: Current folder has no subfolders for multi-level navigation');
     }
   });
 
@@ -517,7 +517,7 @@ test.describe('Parent Folder Navigation', () => {
     const isFolderVisible = await folderIcon.isVisible().catch(() => false);
 
     if (!isFolderVisible) {
-      test.skip('No folder found in repository');
+      test.skip('ENV: No folder found in repository');
       return;
     }
 
@@ -561,7 +561,7 @@ test.describe('Parent Folder Navigation', () => {
     const isFolderVisible = await folderIcon.isVisible().catch(() => false);
 
     if (!isFolderVisible) {
-      test.skip('No folder found in repository');
+      test.skip('ENV: No folder found in repository');
       return;
     }
 

@@ -49,7 +49,7 @@ test.describe('Cloud Directory Sync', () => {
 
     if (await cloudSyncMenuItem.count() === 0) {
       // Feature not enabled in this deployment - legitimate skip
-      test.skip(true, 'Cloud directory sync feature not enabled (menu item not present)');
+      test.skip(true, 'ENV: Cloud directory sync feature not enabled (menu item not present)');
       return;
     }
 
@@ -65,7 +65,7 @@ test.describe('Cloud Directory Sync', () => {
 
     // If page redirected away (feature not enabled), skip
     if (!page.url().includes('/cloud-directory-sync')) {
-      test.skip(true, 'Cloud directory sync page not available');
+      test.skip(true, 'ENV: Cloud directory sync page not available');
       return;
     }
 
@@ -84,7 +84,7 @@ test.describe('Cloud Directory Sync', () => {
     await waitForUiStable(page);
 
     if (!page.url().includes('/cloud-directory-sync')) {
-      test.skip(true, 'Cloud directory sync page not available');
+      test.skip(true, 'ENV: Cloud directory sync page not available');
       return;
     }
 
@@ -104,7 +104,7 @@ test.describe('Cloud Directory Sync', () => {
     await waitForUiStable(page);
 
     if (!page.url().includes('/cloud-directory-sync')) {
-      test.skip(true, 'Cloud directory sync page not available');
+      test.skip(true, 'ENV: Cloud directory sync page not available');
       return;
     }
 
@@ -129,7 +129,7 @@ test.describe('Cloud Directory Sync', () => {
     await waitForUiStable(page);
 
     if (!page.url().includes('/cloud-directory-sync')) {
-      test.skip(true, 'Cloud directory sync page not available');
+      test.skip(true, 'ENV: Cloud directory sync page not available');
       return;
     }
 
@@ -150,7 +150,7 @@ test.describe('Cloud Directory Sync', () => {
     await waitForUiStable(page);
 
     if (!page.url().includes('/cloud-directory-sync')) {
-      test.skip(true, 'Cloud directory sync page not available');
+      test.skip(true, 'ENV: Cloud directory sync page not available');
       return;
     }
 

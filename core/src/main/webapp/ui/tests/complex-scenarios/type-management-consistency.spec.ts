@@ -74,7 +74,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
       await typeManagementItem.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
     } else {
-      test.skip('Type Management menu not available');
+      test.skip('ENV: Type Management menu not available');
       return;
     }
 
@@ -83,7 +83,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     // Click create type button
     const newTypeButton = page.locator('button').filter({ hasText: /新規タイプ|新規.*作成|Create.*Type/ });
     if (await newTypeButton.count() === 0) {
-      test.skip('Create type button not found');
+      test.skip('ENV: Create type button not found');
       return;
     }
 
@@ -196,7 +196,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     // Upload document
     const uploadButton = page.locator('button').filter({ hasText: /アップロード|Upload/ }).first();
     if (await uploadButton.count() === 0) {
-      test.skip('Upload button not found');
+      test.skip('ENV: Upload button not found');
       return;
     }
 
@@ -328,7 +328,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     // Find the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('Test document not found');
+      test.skip('ENV: Test document not found');
       return;
     }
 

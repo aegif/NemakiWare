@@ -66,7 +66,7 @@ test.describe('Office Preview E2E Tests', () => {
   });
 
   test('should display PowerPoint file preview tab', async ({ page }) => {
-    test.skip(!testContext.files.pptx, 'PowerPoint file not uploaded');
+    test.skip(!testContext.files.pptx, 'ENV: PowerPoint file not uploaded');
 
     // Navigate directly to document viewer for the PowerPoint file
     await page.goto(`http://localhost:8080/core/ui/index.html#/documents/${testContext.files.pptx}`);
@@ -112,7 +112,7 @@ test.describe('Office Preview E2E Tests', () => {
   });
 
   test('should display Word file preview tab', async ({ page }) => {
-    test.skip(!testContext.files.docx, 'Word file not uploaded');
+    test.skip(!testContext.files.docx, 'ENV: Word file not uploaded');
 
     // Navigate directly to document viewer for the Word file
     await page.goto(`http://localhost:8080/core/ui/index.html#/documents/${testContext.files.docx}`);
@@ -155,7 +155,7 @@ test.describe('Office Preview E2E Tests', () => {
   });
 
   test('should verify renditions API is accessible', async ({ page }) => {
-    test.skip(!testContext.files.pptx, 'PowerPoint file not uploaded');
+    test.skip(!testContext.files.pptx, 'ENV: PowerPoint file not uploaded');
 
     // Check renditions exist for PowerPoint
     const response = await page.request.get(
