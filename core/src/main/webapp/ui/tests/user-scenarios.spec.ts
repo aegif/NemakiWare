@@ -140,19 +140,17 @@ test.describe('User Scenario Tests', () => {
       await detailButton.click();
       await waitForUiStable(page);
 
-      // Find and click セカンダリタイプ tab
-      const secondaryTypeTab = page.locator('.ant-tabs-tab').filter({ hasText: 'セカンダリタイプ' });
-      // Tab may not exist for all document types — genuinely optional
-      if (await secondaryTypeTab.count() > 0) {
-        await secondaryTypeTab.click();
-        await waitForRender(page);
+      // セカンダリタイプ tab is always present in DocumentViewer
+      const secondaryTypeTab = page.getByRole('tab', { name: /セカンダリタイプ|Secondary/i });
+      await expect(secondaryTypeTab).toBeVisible({ timeout: 10000 });
+      await secondaryTypeTab.click();
+      await waitForRender(page);
 
-        const tabContent = page.locator('.ant-tabs-tabpane-active');
-        await expect(tabContent).toBeVisible();
+      const tabContent = page.locator('.ant-tabs-tabpane-active');
+      await expect(tabContent).toBeVisible();
 
-        const includesErrors = errors.filter(e => e.includes('includes is not a function'));
-        expect(includesErrors).toHaveLength(0);
-      }
+      const includesErrors = errors.filter(e => e.includes('includes is not a function'));
+      expect(includesErrors).toHaveLength(0);
     });
 
     test('should display relationships tab without errors', async ({ page }) => {
@@ -175,22 +173,20 @@ test.describe('User Scenario Tests', () => {
       await detailButton.click();
       await waitForUiStable(page);
 
-      // Find and click 関係 tab (Implemented in DocumentViewer.tsx line 917)
-      const relationshipTab = page.locator('.ant-tabs-tab').filter({ hasText: '関係' });
-      // Tab may not exist for all document types
-      if (await relationshipTab.count() > 0) {
-        await relationshipTab.click();
-        await waitForRender(page);
+      // リレーションシップ tab is always present in DocumentViewer
+      const relationshipTab = page.getByRole('tab', { name: /リレーションシップ|Relationships/i });
+      await expect(relationshipTab).toBeVisible({ timeout: 10000 });
+      await relationshipTab.click();
+      await waitForRender(page);
 
-        const tabContent = page.locator('.ant-tabs-tabpane-active');
-        await expect(tabContent).toBeVisible();
+      const tabContent = page.locator('.ant-tabs-tabpane-active');
+      await expect(tabContent).toBeVisible();
 
-        const criticalErrors = errors.filter(e =>
-          e.includes('TypeError') ||
-          e.includes('Cannot read properties')
-        );
-        expect(criticalErrors).toHaveLength(0);
-      }
+      const criticalErrors = errors.filter(e =>
+        e.includes('TypeError') ||
+        e.includes('Cannot read properties')
+      );
+      expect(criticalErrors).toHaveLength(0);
     });
 
     test('should display preview tab for documents with content', async ({ page }) => {
@@ -198,52 +194,25 @@ test.describe('User Scenario Tests', () => {
       await page.waitForSelector('.ant-table', { timeout: 10000 });
       await waitForUiStable(page);
 
-      // Find a document (not folder) - look for document icon or .txt extension
-      const documentRows = page.locator('.ant-table-row');
-      const rowCount = await documentRows.count();
+      // Use the test document created by ensureTestDocument (.txt with content)
+      const documentRow = page.locator('.ant-table-row').filter({ hasText: testDocName }).first();
+      await expect(documentRow).toBeVisible({ timeout: 10000 });
 
-      let foundDocument = false;
-      for (let i = 0; i < rowCount; i++) {
-        const row = documentRows.nth(i);
-        const rowText = await row.textContent();
+      const detailButton = documentRow.locator('button').filter({ has: page.locator('.anticon-eye') });
+      await expect(detailButton).toBeVisible({ timeout: 10000 });
 
-        // Skip folders and system files
-        if (rowText?.includes('.txt') || rowText?.includes('.pdf') || rowText?.includes('Document')) {
-          const detailButton = row.locator('button').filter({ has: page.locator('.anticon-eye') });
+      await detailButton.click();
+      await waitForUiStable(page);
 
-          if (await detailButton.count() > 0) {
-            await detailButton.click();
-            await waitForUiStable(page);
+      // プレビュー tab should be present for a .txt document with content
+      const previewTab = page.getByRole('tab', { name: /プレビュー|Preview/i });
+      await expect(previewTab).toBeVisible({ timeout: 10000 });
 
-            // Find プレビュー tab
-            const previewTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プレビュー' });
+      await previewTab.click();
+      await waitForUiStable(page);
 
-            if (await previewTab.count() > 0) {
-              console.log('Preview tab found - document has content stream');
-
-              await previewTab.click();
-              await waitForUiStable(page);
-
-              // Verify preview content area is visible
-              const previewContent = page.locator('.ant-tabs-tabpane-active');
-              await expect(previewContent).toBeVisible();
-
-              console.log('Preview tab loaded successfully');
-              foundDocument = true;
-              break;
-            } else {
-              console.log('Preview tab not visible for this document');
-              // Go back and try another document
-              await page.goBack();
-              await waitForRender(page);
-            }
-          }
-        }
-      }
-
-      if (!foundDocument) {
-        console.log('No document with preview tab found');
-      }
+      const previewContent = page.locator('.ant-tabs-tabpane-active');
+      await expect(previewContent).toBeVisible();
     });
   });
 
