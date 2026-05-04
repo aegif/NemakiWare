@@ -562,7 +562,7 @@ test.describe('Document Management', () => {
       expect(searchSuccessful).toBe(true);
     } else {
       // Fallback: use Enter key to trigger search
-      await searchInput.press('Enter');
+      await activeSearchInput.first().press('Enter');
       await waitForUiStable(page);
     }
   });

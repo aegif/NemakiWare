@@ -215,39 +215,20 @@ test.describe('Solr Index Maintenance', () => {
       hasText: /^再インデクシング$|^Reindex$/i
     }).first();
 
-    if (await reindexTab.count() > 0) {
-      await reindexTab.click(isMobile ? { force: true } : {});
-      await waitForRender(page);
+    await expect(reindexTab).toBeVisible({ timeout: 10000 });
+    await reindexTab.click(isMobile ? { force: true } : {});
+    await waitForRender(page);
 
-      // Check for full reindex button
-      const fullReindexButton = page.locator('button').filter({
-        hasText: /全体再インデクシング|Full Reindex/i
-      });
+    // Verify reindex UI elements
+    const fullReindexButton = page.locator('button').filter({
+      hasText: /全体再インデクシング|Full Reindex/i
+    });
+    await expect(fullReindexButton).toBeVisible({ timeout: 10000 });
 
-      expect(await fullReindexButton.count()).toBeGreaterThan(0);
-      console.log('Full reindex button found');
-
-      // Check for folder reindex input
-      const folderIdInput = page.locator('input[placeholder*="フォルダID"], input[placeholder*="Folder ID"]');
-      if (await folderIdInput.count() > 0) {
-        console.log('Folder ID input found');
-      }
-
-      // Check for index management buttons
-      const clearButton = page.locator('button').filter({
-        hasText: /インデックスクリア|Clear Index/i
-      });
-      const optimizeButton = page.locator('button').filter({
-        hasText: /インデックス最適化|Optimize Index/i
-      });
-
-      if (await clearButton.count() > 0) {
-        console.log('Index clear button found');
-      }
-      if (await optimizeButton.count() > 0) {
-        console.log('Index optimize button found');
-      }
-    }
+    const clearButton = page.locator('button').filter({
+      hasText: /インデックスクリア|Clear Index/i
+    });
+    await expect(clearButton).toBeVisible({ timeout: 5000 });
   });
 
   test('should show Solr query tab with query interface', async ({ page, browserName }) => {
@@ -262,28 +243,18 @@ test.describe('Solr Index Maintenance', () => {
       hasText: /Solrクエリ|Solr Query/i
     });
 
-    if (await queryTab.count() > 0) {
-      await queryTab.click(isMobile ? { force: true } : {});
-      await waitForRender(page);
+    await expect(queryTab).toBeVisible({ timeout: 10000 });
+    await queryTab.click(isMobile ? { force: true } : {});
+    await waitForRender(page);
 
-      // Check for query form elements
-      const queryTextArea = page.locator('textarea');
-      expect(await queryTextArea.count()).toBeGreaterThan(0);
-      console.log('Query textarea found');
+    // Verify query UI elements
+    const queryTextArea = page.locator('textarea');
+    await expect(queryTextArea.first()).toBeVisible({ timeout: 10000 });
 
-      // Check for query parameters
-      const startInput = page.locator('.ant-input-number').first();
-      if (await startInput.count() > 0) {
-        console.log('Query parameter inputs found');
-      }
-
-      // Check for execute button
-      const executeButton = page.locator('button').filter({
-        hasText: /クエリ実行|Execute Query/i
-      });
-      expect(await executeButton.count()).toBeGreaterThan(0);
-      console.log('Query execute button found');
-    }
+    const executeButton = page.locator('button').filter({
+      hasText: /クエリ実行|Execute Query/i
+    });
+    await expect(executeButton).toBeVisible({ timeout: 5000 });
   });
 
   test('should execute simple Solr query', async ({ page, browserName }) => {

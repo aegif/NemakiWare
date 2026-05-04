@@ -1033,40 +1033,17 @@ test.describe('Advanced Search', () => {
     // Wait for search results
     await waitForUiStable(page, { timeout: 15000 });
 
-    // Check the executed CMIS query display
-    const queryDisplay = page.locator(':has-text("実行したCMISクエリ")');
-    if (await queryDisplay.count() > 0) {
-      const queryText = await queryDisplay.first().textContent();
-      if (queryText) {
-        // Verify query contains OR conditions for metadata properties
-        const hasOrConditions = queryText.includes(' OR ');
-        const hasNameLike = queryText.includes('cmis:name LIKE');
-        const hasDescriptionLike = queryText.includes('cmis:description LIKE');
-
-        if (hasOrConditions && (hasNameLike || hasDescriptionLike)) {
-          console.log('✅ CMIS query includes metadata property conditions (OR clauses)');
-          console.log(`Query: ${queryText.substring(0, 200)}...`);
-        } else {
-          console.log('⚠️ CMIS query may not include expected metadata conditions');
-          console.log(`Query: ${queryText}`);
-        }
-      }
-    }
+    // Verify CMIS query display — with checkbox unchecked, query should include
+    // metadata properties (OR conditions with cmis:name LIKE, cmis:description LIKE)
+    const queryDisplay = page.locator(':has-text("実行したCMISクエリ"), :has-text("Executed CMIS Query")');
+    await expect(queryDisplay.first()).toBeVisible({ timeout: 10000 });
+    const queryText = await queryDisplay.first().textContent() || '';
+    expect(queryText).toContain(' OR ');
+    expect(queryText).toMatch(/cmis:name LIKE|cmis:description LIKE/);
 
     // Verify results table appears
     const resultsTable = page.locator('.ant-table, .search-results');
-    if (await resultsTable.count() > 0) {
-      await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
-      console.log('✅ Search results table is visible');
-
-      // Look for CMIS specification PDF (should match by filename)
-      const pdfResult = page.locator('tr').filter({ hasText: 'CMIS-v1.1-Specification-Sample.pdf' });
-      if (await pdfResult.count() > 0) {
-        console.log('✅ PDF found by filename match (metadata search working)');
-      } else {
-        console.log('ℹ️ CMIS spec PDF not found - may need to be uploaded first');
-      }
-    }
+    await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
 
     console.log('✅ Metadata search (checkbox unchecked) verification complete');
   });
@@ -1123,35 +1100,17 @@ test.describe('Advanced Search', () => {
     // Wait for search results
     await waitForUiStable(page, { timeout: 15000 });
 
-    // Check the executed CMIS query display
-    const queryDisplay = page.locator(':has-text("実行したCMISクエリ")');
-    if (await queryDisplay.count() > 0) {
-      const queryText = await queryDisplay.first().textContent();
-      if (queryText) {
-        // Verify query does NOT contain OR conditions for metadata properties
-        const hasOrConditions = queryText.includes(' OR ');
-        const hasContains = queryText.includes("CONTAINS('");
-
-        if (hasContains && !hasOrConditions) {
-          console.log('✅ CMIS query only uses CONTAINS (metadata excluded correctly)');
-          console.log(`Query: ${queryText}`);
-        } else if (hasOrConditions) {
-          console.log('❌ PRODUCT BUG: CMIS query still includes metadata conditions despite checkbox being checked');
-          console.log(`Query: ${queryText}`);
-          // This is a product bug - checkbox should exclude metadata
-          expect(hasOrConditions).toBe(false);
-        }
-      }
-    }
+    // Verify CMIS query display — with checkbox checked, query should NOT include
+    // metadata OR conditions (only CONTAINS fulltext search)
+    const queryDisplay = page.locator(':has-text("実行したCMISクエリ"), :has-text("Executed CMIS Query")');
+    await expect(queryDisplay.first()).toBeVisible({ timeout: 10000 });
+    const queryText = await queryDisplay.first().textContent() || '';
+    expect(queryText).toContain("CONTAINS('");
+    expect(queryText).not.toContain(' OR ');
 
     // Verify results table appears
     const resultsTable = page.locator('.ant-table, .search-results');
-    if (await resultsTable.count() > 0) {
-      await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
-      console.log('✅ Search results table is visible');
-    }
-
-    console.log('✅ Metadata exclusion (checkbox checked) verification complete');
+    await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
   });
 
   test('should find Japanese PDF by full-text search', async ({ page, browserName }) => {
