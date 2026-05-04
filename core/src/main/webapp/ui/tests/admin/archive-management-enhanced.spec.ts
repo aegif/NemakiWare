@@ -90,37 +90,19 @@ test.describe('Archive Management Enhanced', () => {
       await waitForUiStable(page);
 
       // Click on pending archives tab
-      const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: '期限切れ未アーカイブ' });
-      if (await pendingTab.count() > 0) {
-        await pendingTab.click();
-        await waitForUiStable(page);
-
-        // Check for empty state or table content
-        const emptyMessage = page.locator('.ant-empty-description').filter({
-          hasText: '期限切れの未アーカイブドキュメントはありません'
-        });
-        const pendingTable = page.locator('.ant-tabs-tabpane-active .ant-table');
-
-        const hasEmptyMessage = await emptyMessage.count() > 0;
-        const hasTable = await pendingTable.count() > 0;
-
-        // Either empty state or table should exist
-        expect(hasEmptyMessage || hasTable).toBe(true);
-
-        if (hasTable) {
-          // Verify pending table column headers
-          const tableHeader = pendingTable.locator('.ant-table-thead');
-          const expectedColumns = ['名前', '有効期限', '最終更新者', 'アクション'];
-          for (const col of expectedColumns) {
-            const header = tableHeader.locator('th').filter({ hasText: col });
-            if (await header.count() > 0) {
-              console.log(`Japanese pending column found: ${col}`);
-            }
-          }
-        }
-
-        console.log(`Pending archives: empty=${hasEmptyMessage}, table=${hasTable}`);
+      const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: /期限切れ未アーカイブ|Pending/i });
+      if (await pendingTab.count() === 0) {
+        test.skip('ENV: Pending archives tab not available — feature may not be deployed');
+        return;
       }
+      await pendingTab.click();
+      await waitForUiStable(page);
+
+      // Either empty state or table should exist
+      const emptyMessage = page.locator('.ant-empty-description');
+      const pendingTable = page.locator('.ant-tabs-tabpane-active .ant-table');
+      const hasContent = (await emptyMessage.count() > 0) || (await pendingTable.count() > 0);
+      expect(hasContent).toBe(true);
     });
 
     test('should display Japanese labels on settings tab', async ({ page }) => {

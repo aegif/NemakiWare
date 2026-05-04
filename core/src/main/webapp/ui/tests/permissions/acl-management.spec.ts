@@ -567,9 +567,6 @@ test.describe('Advanced ACL Management', () => {
 
         if (aclXml1.includes('testuser') && aclXml1.includes('cmis:all')) {
           console.log('Test: Verified ACL contains testuser with cmis:all permission');
-        } else {
-          console.log('Test: WARNING - ACL may not contain testuser permission');
-          console.log('ACL XML excerpt:', aclXml1.substring(0, 1000));
         }
 
         // CRITICAL TEST: Try to access as testuser (SHOULD work but currently fails)
@@ -628,9 +625,6 @@ test.describe('Advanced ACL Management', () => {
 
         if (aclXml2.includes('testuser') && aclXml2.includes('cmis:read')) {
           console.log('Test: Verified ACL contains testuser with cmis:read permission');
-        } else {
-          console.log('Test: WARNING - ACL may not show updated permission');
-          console.log('ACL XML excerpt:', aclXml2.substring(0, 1000));
         }
 
         // CRITICAL TEST: Try to access as testuser (SHOULD work with cmis:read)

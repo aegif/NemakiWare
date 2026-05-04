@@ -593,9 +593,6 @@ test.describe('Type REST API - NemakiWare Custom Types', () => {
         expect(showBody.type.id).toBe('nemaki:parentChildRelationship');
         console.log('Show endpoint also returned type successfully');
       }
-    } else {
-      console.log('nemaki:parentChildRelationship not found in type list - may not be initialized');
-      // This is acceptable - the type may not exist in this environment
     }
   });
 

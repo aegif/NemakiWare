@@ -509,40 +509,17 @@ test.describe('Advanced Search', () => {
     // Wait for search to complete
     await waitForUiStable(page);
 
-    // Verify the search input is now empty (cleared after search)
+    // Verify the search input value after search — must not contain leaked CMIS query
     const inputValueAfter = await searchInput.first().inputValue();
-    if (inputValueAfter === '') {
-      console.log('✅ Search input correctly cleared after search');
-    } else if (inputValueAfter.includes('SELECT')) {
-      console.log(`❌ PRODUCT BUG: CMIS query leaked into search input: "${inputValueAfter.substring(0, 50)}..."`);
-      expect(inputValueAfter).not.toContain('SELECT');
-    }
+    expect(inputValueAfter).not.toContain('SELECT');
 
-    // Check for CMIS query reference display (should show the executed query separately)
-    // Use getByText with exact match for the label to avoid strict mode violations
-    const queryReferenceLabel = page.getByText('実行したCMISクエリ:', { exact: false });
-    if (await queryReferenceLabel.count() > 0) {
-      console.log('✅ CMIS query reference area is displayed');
-
-      // Verify the reference element is visible and contains a CMIS query
-      await expect(queryReferenceLabel.first()).toBeVisible({ timeout: 5000 });
-
-      // Get the parent container to check for SELECT keyword
-      const parentContainer = queryReferenceLabel.first().locator('..');
-      const refText = await parentContainer.textContent();
-      if (refText && refText.includes('SELECT')) {
-        console.log('✅ CMIS query reference shows executed SQL query');
-      }
-    }
+    // Verify CMIS query display (i18n-safe)
+    const queryDisplay = page.locator(':has-text("実行したCMISクエリ"), :has-text("Executed CMIS Query")');
+    await expect(queryDisplay.first()).toBeVisible({ timeout: 10000 });
 
     // Verify results table is displayed (search actually executed)
     const resultsTable = page.locator('.ant-table, .search-results');
-    if (await resultsTable.count() > 0) {
-      await expect(resultsTable.first()).toBeVisible({ timeout: 5000 });
-      console.log('✅ Search results table is visible');
-    }
-
-    console.log('✅ Search input clearing verification complete');
+    await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
   });
 
   /**

@@ -523,10 +523,6 @@ test.describe('Document Versioning', () => {
         if (await closeButton.count() > 0) {
           await closeButton.click();
         }
-      } else {
-        // UPDATED (2025-12-26): Version history modal IS implemented in DocumentList.tsx lines 685-697
-        // handleViewVersionHistory() opens modal via setVersionHistoryModalVisible(true)
-        console.log('Version history modal not visible - IS implemented in DocumentList.tsx lines 685-697');
       }
     } else {
       // UPDATED (2025-12-26): Version history button IS implemented in DocumentList.tsx lines 983-989

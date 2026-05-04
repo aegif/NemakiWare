@@ -447,7 +447,7 @@ test.describe('Bug Fix Verification Tests', () => {
       // Try to find relationship in document details drawer
       const drawer = page.locator('.ant-drawer');
       if (await drawer.count() > 0) {
-        const relTab = drawer.locator('text=/関連|Relationship/i');
+        const relTab = drawer.locator('text=/リレーションシップ|Relationships/i');
         if (await relTab.count() > 0) {
           await relTab.click();
           await waitForRender(page);

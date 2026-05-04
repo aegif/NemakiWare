@@ -100,9 +100,6 @@ test.describe('Cloud Drive Import', () => {
 		if (result) {
 			console.log('i18n translation check:', result);
 			// At least some keys should exist if translations are loaded
-		} else {
-			console.log('i18n system not directly accessible via window object');
-			// This is acceptable - translations may be bundled differently
 		}
 	});
 
