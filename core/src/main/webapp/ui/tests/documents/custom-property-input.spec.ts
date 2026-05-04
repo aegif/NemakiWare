@@ -596,8 +596,8 @@ test.describe('Custom Property Input Feature', () => {
       // Wait for document viewer to load (hash-based routing)
       await waitForUiStable(page);
 
-      // Look for relationship tab
-      const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
+      // Verify relationship tab is visible (i18n-safe)
+      const relationshipTab = page.getByRole('tab', { name: /リレーションシップ|Relationships/i });
       await expect(relationshipTab).toBeVisible({ timeout: 10000 });
     });
 
@@ -613,34 +613,23 @@ test.describe('Custom Property Input Feature', () => {
       await documentLink.click();
       await waitForUiStable(page);
 
-      // Click relationship tab
-      const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
-      if (await relationshipTab.count() === 0) {
-        await expect(page.getByRole('tab', { name: /リレーションシップ|Relationships/i })).toBeVisible({ timeout: 10000 });
-        return;
-      }
+      // Click relationship tab (i18n-safe)
+      const relationshipTab = page.getByRole('tab', { name: /リレーションシップ|Relationships/i });
+      await expect(relationshipTab).toBeVisible({ timeout: 10000 });
       await relationshipTab.click();
       await waitForRender(page);
 
-      // Look for "Add Relationship" button
-      const addButton = page.locator('button:has-text("関係を追加")');
-      if (await addButton.count() === 0) {
-        await expect(page.getByRole('button', { name: /追加|Add/i }).first()).toBeVisible({ timeout: 10000 });
-        return;
-      }
-
+      // Click "Add Relationship" button (i18n-safe)
+      const addButton = page.getByRole('button', { name: /関係を追加|リレーションシップ.*追加|Add.*Relationship/i }).first();
+      await expect(addButton).toBeVisible({ timeout: 10000 });
       await addButton.click();
 
-      // Verify modal opens with type selection
-      const modal = page.locator('.ant-modal').filter({ hasText: '関係を追加' });
+      // Verify modal opens
+      const modal = page.locator('.ant-modal:visible');
       await expect(modal).toBeVisible({ timeout: 5000 });
 
-      // Check for type dropdown
-      const typeLabel = modal.locator('text=関係タイプ');
-      await expect(typeLabel).toBeVisible();
-
       // Close modal
-      const cancelButton = modal.locator('button:has-text("キャンセル")');
+      const cancelButton = modal.getByRole('button', { name: /キャンセル|Cancel/i });
       if (await cancelButton.count() > 0) {
         await cancelButton.click();
       } else {
@@ -693,24 +682,18 @@ test.describe('Custom Property Input Feature', () => {
       await documentLink.click();
       await waitForUiStable(page);
 
-      // Click relationship tab
-      const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
-      if (await relationshipTab.count() === 0) {
-        await expect(page.getByRole('tab', { name: /リレーションシップ|Relationships/i })).toBeVisible({ timeout: 10000 });
-        return;
-      }
+      // Click relationship tab (i18n-safe)
+      const relationshipTab = page.getByRole('tab', { name: /リレーションシップ|Relationships/i });
+      await expect(relationshipTab).toBeVisible({ timeout: 10000 });
       await relationshipTab.click();
       await waitForRender(page);
 
-      // Open add relationship modal
-      const addButton = page.locator('button:has-text("関係を追加")');
-      if (await addButton.count() === 0) {
-        await expect(page.getByRole('button', { name: /追加|Add/i }).first()).toBeVisible({ timeout: 10000 });
-        return;
-      }
+      // Open add relationship modal (i18n-safe)
+      const addButton = page.getByRole('button', { name: /関係を追加|リレーションシップ.*追加|Add.*Relationship/i }).first();
+      await expect(addButton).toBeVisible({ timeout: 10000 });
       await addButton.click();
 
-      const modal = page.locator('.ant-modal').filter({ hasText: '関係' });
+      const modal = page.locator('.ant-modal:visible');
       await expect(modal).toBeVisible({ timeout: 5000 });
 
       // Select the custom relationship type
@@ -748,24 +731,18 @@ test.describe('Custom Property Input Feature', () => {
       await documentLink.click();
       await waitForUiStable(page);
 
-      // Click relationship tab
-      const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
-      if (await relationshipTab.count() === 0) {
-        await expect(page.getByRole('tab', { name: /リレーションシップ|Relationships/i })).toBeVisible({ timeout: 10000 });
-        return;
-      }
+      // Click relationship tab (i18n-safe)
+      const relationshipTab = page.getByRole('tab', { name: /リレーションシップ|Relationships/i });
+      await expect(relationshipTab).toBeVisible({ timeout: 10000 });
       await relationshipTab.click();
       await waitForRender(page);
 
-      // Open add relationship modal
-      const addButton = page.locator('button:has-text("関係を追加")');
-      if (await addButton.count() === 0) {
-        await expect(page.getByRole('button', { name: /追加|Add/i }).first()).toBeVisible({ timeout: 10000 });
-        return;
-      }
+      // Open add relationship modal (i18n-safe)
+      const addButton = page.getByRole('button', { name: /関係を追加|リレーションシップ.*追加|Add.*Relationship/i }).first();
+      await expect(addButton).toBeVisible({ timeout: 10000 });
       await addButton.click();
 
-      const modal = page.locator('.ant-modal').filter({ hasText: '関係' });
+      const modal = page.locator('.ant-modal:visible');
       await expect(modal).toBeVisible({ timeout: 5000 });
 
       // Fill target object ID if field exists

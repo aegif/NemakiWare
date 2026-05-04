@@ -642,36 +642,38 @@ test.describe('Internationalization Tests', () => {
     // Wait for all uploads to complete
     await waitForUiStable(page);
 
-    // Test search with Japanese characters
-    const searchInput = page.locator('input[placeholder*="検索"]').first();
-
-    if (await searchInput.count() === 0) {
-      await expect(page.locator('input[placeholder*="検索"], input[placeholder*="Search"]').first()).toBeVisible({ timeout: 10000 });
-      return;
+    // Test search with Japanese characters (i18n-safe input selector)
+    let activeSearchInput = page.locator('input[placeholder*="検索"]').first();
+    if (await activeSearchInput.count() === 0) {
+      activeSearchInput = page.locator('input[placeholder*="Search"]').first();
     }
+    await expect(activeSearchInput).toBeVisible({ timeout: 10000 });
 
-    // Search for Japanese text
-    await searchInput.fill('検索テスト');
+    await activeSearchInput.fill('検索テスト');
 
-    // Look for search button
+    // Trigger search
     const searchButton = page.locator('button.search-button').first();
-
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
-      await waitForUiStable(page);
-
-      // Verify Japanese file appears in search results
-      const japaneseResult = page.locator('.ant-table-tbody tr').filter({ hasText: '検索テスト' });
-      if (await japaneseResult.count() > 0) {
-        await expect(japaneseResult).toBeVisible();
-      } else {
-        console.log('Search results may not be displaying - checking if search executed');
-      }
     } else {
-      // If no search button, pressing Enter might trigger search
-      await searchInput.press('Enter');
+      await activeSearchInput.press('Enter');
+    }
+    await waitForUiStable(page);
+
+    // Verify Japanese file appears in search results (file was uploaded above via API)
+    const japaneseResult = page.locator('.ant-table-tbody tr').filter({ hasText: '検索テスト' });
+    // Solr indexing may take time — retry once after short wait
+    if (await japaneseResult.count() === 0) {
+      await page.waitForTimeout(3000);
+      await activeSearchInput.fill('検索テスト');
+      if (await searchButton.count() > 0) {
+        await searchButton.click(isMobile ? { force: true } : {});
+      } else {
+        await activeSearchInput.press('Enter');
+      }
       await waitForUiStable(page);
     }
+    await expect(japaneseResult.first()).toBeVisible({ timeout: 10000 });
 
     // Clear search
     const clearButton = page.locator('button:has-text("クリア")').first();
