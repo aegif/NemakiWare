@@ -43,12 +43,21 @@ public class SimpleCorsFilter implements Filter {
 
     @Override
     public void init(FilterConfig filterConfig) throws ServletException {
-        resolveOrigins();
+        // When used via DelegatingFilterProxy (targetFilterLifecycle=false),
+        // this method is NOT called. Origins are resolved by the Spring
+        // init-method instead. This serves as a fallback for direct instantiation.
+        if ("*".equals(allowedOrigins)) {
+            resolveOrigins();
+        }
         log.info("SimpleCorsFilter initialized (allowedOrigins=" + allowedOrigins + ")");
     }
 
-    /** Read the configured origins from PropertyManager (or fall back to default). */
-    private void resolveOrigins() {
+    /**
+     * Read the configured origins from PropertyManager.
+     * Called as Spring init-method (serviceContext.xml) to ensure PropertyManager
+     * is available, since DelegatingFilterProxy does not call Filter.init() by default.
+     */
+    public void resolveOrigins() {
         if (propertyManager != null) {
             String configured = propertyManager.readValue(PROP_KEY);
             if (configured != null && !configured.isBlank()) {

@@ -769,7 +769,7 @@
     <bean id="springContext" class="jp.aegif.nemaki.util.spring.SpringContext" />
     
     <!-- CORS filter bean — exposed to servlet container via DelegatingFilterProxy in web.xml -->
-    <bean id="simpleCorsFilter" class="jp.aegif.nemaki.rest.SimpleCorsFilter">
+    <bean id="simpleCorsFilter" class="jp.aegif.nemaki.rest.SimpleCorsFilter" init-method="resolveOrigins">
         <property name="propertyManager" ref="propertyManager" />
     </bean>
 
