@@ -247,9 +247,6 @@ test.describe('Solr Index Maintenance', () => {
       if (await optimizeButton.count() > 0) {
         console.log('Index optimize button found');
       }
-    } else {
-      // Masking skip removed — element should be present
-      // test.skip('ENV: Reindexing tab not found - Solr may not be enabled');
     }
   });
 
@@ -286,9 +283,6 @@ test.describe('Solr Index Maintenance', () => {
       });
       expect(await executeButton.count()).toBeGreaterThan(0);
       console.log('Query execute button found');
-    } else {
-      // Masking skip removed — element should be present
-      // test.skip('ENV: Solr query tab not found - Solr may not be enabled');
     }
   });
 
@@ -361,11 +355,7 @@ test.describe('Solr Index Maintenance', () => {
       hasText: /全体再インデクシング|Full Reindex/i
     }).first();
 
-    if (await fullReindexButton.count() === 0) {
-      // Masking skip removed — element should be present
-      // test.skip('Full reindex button not found');
-      return;
-    }
+    await expect(fullReindexButton).toBeVisible({ timeout: 10000 });
 
     await fullReindexButton.click(isMobile ? { force: true } : {});
     await waitForRender(page);
@@ -418,11 +408,7 @@ test.describe('Solr Index Maintenance', () => {
       hasText: /インデックスクリア|Clear Index/i
     }).first();
 
-    if (await clearButton.count() === 0) {
-      // Masking skip removed — element should be present
-      // test.skip('Index clear button not found');
-      return;
-    }
+    await expect(clearButton).toBeVisible({ timeout: 10000 });
 
     await clearButton.click(isMobile ? { force: true } : {});
     await waitForRender(page);
@@ -544,11 +530,7 @@ test.describe('Solr Index Maintenance', () => {
     // Find folder ID input
     const folderIdInput = page.locator('input[placeholder*="フォルダID"], input[placeholder*="Folder ID"]');
 
-    if (await folderIdInput.count() === 0) {
-      // Masking skip removed — element should be present
-      // test.skip('Folder ID input not found');
-      return;
-    }
+    await expect(folderIdInput).toBeVisible({ timeout: 10000 });
 
     // Fill in a test folder ID
     await folderIdInput.fill('test-folder-id-123');

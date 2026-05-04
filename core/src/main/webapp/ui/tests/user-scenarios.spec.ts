@@ -396,8 +396,7 @@ test.describe('User Scenario Tests', () => {
   });
 
   test.describe('Secondary Type Operations (Critical Bug Fix 2025-12-13)', () => {
-    test('should add secondary type without y.includes error', async ({ page }) => {
-      // login is handled by beforeEach
+    test('should open secondary types tab without y.includes error', async ({ page }) => {
       await page.waitForSelector('.ant-table', { timeout: 10000 });
       await waitForUiStable(page);
 
@@ -405,62 +404,75 @@ test.describe('User Scenario Tests', () => {
       await expect(documentRow).toBeVisible({ timeout: 10000 });
 
       const jsErrors: string[] = [];
-      page.on('pageerror', error => {
-        jsErrors.push(error.message);
-      });
+      page.on('pageerror', error => { jsErrors.push(error.message); });
 
       const detailButton = documentRow.locator('button').filter({ has: page.locator('.anticon-eye') });
       await expect(detailButton).toBeVisible({ timeout: 10000 });
       await detailButton.click();
       await waitForUiStable(page);
 
-      // Click on secondary types tab
-      const secondaryTab = page.locator('.ant-tabs-tab').filter({ hasText: 'セカンダリタイプ' });
+      const secondaryTab = page.getByRole('tab', { name: /セカンダリタイプ|Secondary/i });
       await expect(secondaryTab).toBeVisible({ timeout: 10000 });
       await secondaryTab.click();
       await waitForUiStable(page);
 
-      // Check for initial errors (before operation)
-      const initialErrors = jsErrors.filter(e =>
+      // The specific bug: y.includes error when opening secondary types tab
+      const tabErrors = jsErrors.filter(e =>
         e.includes('includes is not a function') ||
         e.includes('y.includes is not a function')
       );
-      expect(initialErrors).toHaveLength(0);
-      console.log('Secondary types tab opened without errors');
+      expect(tabErrors).toHaveLength(0);
+    });
 
-      // SecondaryTypeSelector renders a Select only when unassigned types exist.
-      // If all types are assigned, only a message is shown — both states are valid.
+    test('should add secondary type without y.includes error', async ({ page }) => {
+      await page.waitForSelector('.ant-table', { timeout: 10000 });
+      await waitForUiStable(page);
+
+      const documentRow = page.locator('.ant-table-row').first();
+      await expect(documentRow).toBeVisible({ timeout: 10000 });
+
+      const jsErrors: string[] = [];
+      page.on('pageerror', error => { jsErrors.push(error.message); });
+
+      const detailButton = documentRow.locator('button').filter({ has: page.locator('.anticon-eye') });
+      await expect(detailButton).toBeVisible({ timeout: 10000 });
+      await detailButton.click();
+      await waitForUiStable(page);
+
+      const secondaryTab = page.getByRole('tab', { name: /セカンダリタイプ|Secondary/i });
+      await expect(secondaryTab).toBeVisible({ timeout: 10000 });
+      await secondaryTab.click();
+      await waitForUiStable(page);
+
+      // SecondaryTypeSelector renders Select only when unassigned types exist
       const selector = page.locator('.ant-select').first();
-      if (await selector.count() > 0 && await selector.isVisible()) {
-        await selector.click();
-        await waitForRender(page);
-
-        const options = page.locator('.ant-select-dropdown:visible .ant-select-item-option');
-        if (await options.count() > 0) {
-          await options.first().click();
-          await waitForRender(page);
-
-          const addButton = page.getByRole('button', { name: /追加|Add/i });
-          await expect(addButton).toBeVisible({ timeout: 5000 });
-          await addButton.click();
-          await waitForUiStable(page);
-
-          // THE CRITICAL CHECK: no y.includes error after add
-          const afterAddErrors = jsErrors.filter(e =>
-            e.includes('includes is not a function') ||
-            e.includes('y.includes is not a function')
-          );
-          expect(afterAddErrors).toHaveLength(0);
-        }
+      if (await selector.count() === 0 || !(await selector.isVisible())) {
+        test.skip('ENV: All secondary types already assigned — no add operation possible');
+        return;
       }
-      // No selector visible: all types already assigned — tab content still verified above
 
-      // Final verification - no JavaScript errors
-      const criticalErrors = jsErrors.filter(e =>
-        e.includes('includes is not a function')
+      await selector.click();
+      await waitForRender(page);
+
+      const options = page.locator('.ant-select-dropdown:visible .ant-select-item-option');
+      if (await options.count() === 0) {
+        test.skip('ENV: No unassigned secondary types available in dropdown');
+        return;
+      }
+
+      await options.first().click();
+      await waitForRender(page);
+
+      const addButton = page.getByRole('button', { name: /追加|Add/i });
+      await expect(addButton).toBeVisible({ timeout: 5000 });
+      await addButton.click();
+      await waitForUiStable(page);
+
+      const afterAddErrors = jsErrors.filter(e =>
+        e.includes('includes is not a function') ||
+        e.includes('y.includes is not a function')
       );
-      expect(criticalErrors).toHaveLength(0);
-      console.log('Test completed without y.includes errors');
+      expect(afterAddErrors).toHaveLength(0);
     });
   });
 });

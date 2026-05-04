@@ -966,37 +966,17 @@ test.describe('Advanced Search', () => {
     // Wait for page to load
     await waitForUiStable(page);
 
-    // Look for the checkbox with the Japanese label
-    const metadataCheckbox = page.locator('input[type="checkbox"]').filter({
-      has: page.locator('..').filter({ hasText: '標準メタデータを検索対象から外す' })
-    });
-
-    // Alternative: Look for checkbox by its parent label text
+    // Metadata exclusion checkbox — find by i18n label
     const checkboxLabel = page.locator('label, span').filter({
-      hasText: '標準メタデータを検索対象から外す'
+      hasText: /メタデータを検索対象から外す|Exclude.*metadata/i
     });
+    await expect(checkboxLabel.first()).toBeVisible({ timeout: 10000 });
 
-    if (await checkboxLabel.count() > 0) {
-      await expect(checkboxLabel.first()).toBeVisible({ timeout: 5000 });
-      console.log('✅ Metadata exclusion checkbox label is visible');
-
-      // Verify checkbox is unchecked by default (metadata included in search)
-      const checkbox = page.locator('.ant-checkbox-input, input[type="checkbox"]').first();
-      if (await checkbox.count() > 0) {
-        const isChecked = await checkbox.isChecked();
-        if (!isChecked) {
-          console.log('✅ Checkbox is unchecked by default (metadata included in search)');
-        } else {
-          console.log('⚠️ Checkbox is checked by default (unexpected)');
-        }
-      }
-
-      console.log('✅ Metadata exclusion checkbox UI verification complete');
-    } else {
-      // UPDATED (2025-12-26): Checkbox IS implemented in SearchResults.tsx lines 725-733
-      // Label: "標準メタデータを検索対象から外す（ファイル名・説明などを除く）"
-      await expect(page.locator('input[type=checkbox]').first()).toBeVisible({ timeout: 10000 });
-    }
+    // Verify checkbox is unchecked by default (metadata included in search)
+    const checkbox = checkboxLabel.locator('input[type="checkbox"], .ant-checkbox-input').first();
+    await expect(checkbox).toBeAttached();
+    const isChecked = await checkbox.isChecked();
+    expect(isChecked).toBe(false);
   });
 
   /**
@@ -1025,19 +1005,14 @@ test.describe('Advanced Search', () => {
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
     await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
-    // Verify metadata checkbox exists and is unchecked (default)
+    // Verify metadata checkbox exists (i18n-safe)
     const checkboxLabel = page.locator('label, span').filter({
-      hasText: '標準メタデータを検索対象から外す'
+      hasText: /メタデータを検索対象から外す|Exclude.*metadata/i
     });
-
-    if (await checkboxLabel.count() === 0) {
-      // UPDATED (2025-12-26): IS implemented in SearchResults.tsx lines 725-733
-      await expect(page.locator('input[type=checkbox]').first()).toBeVisible({ timeout: 10000 });
-      return;
-    }
+    await expect(checkboxLabel.first()).toBeVisible({ timeout: 10000 });
 
     // Ensure checkbox is unchecked (default state)
-    const checkbox = page.locator('.ant-checkbox-input, input[type="checkbox"]').first();
+    const checkbox = checkboxLabel.locator('input[type="checkbox"], .ant-checkbox-input').first();
     if (await checkbox.count() > 0 && await checkbox.isChecked()) {
       // Uncheck if checked
       await checkboxLabel.first().click();
@@ -1121,19 +1096,14 @@ test.describe('Advanced Search', () => {
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
     await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
-    // Find and check the metadata exclusion checkbox
+    // Find and check the metadata exclusion checkbox (i18n-safe)
     const checkboxLabel = page.locator('label, span').filter({
-      hasText: '標準メタデータを検索対象から外す'
+      hasText: /メタデータを検索対象から外す|Exclude.*metadata/i
     });
-
-    if (await checkboxLabel.count() === 0) {
-      // UPDATED (2025-12-26): IS implemented in SearchResults.tsx lines 725-733
-      await expect(page.locator('input[type=checkbox]').first()).toBeVisible({ timeout: 10000 });
-      return;
-    }
+    await expect(checkboxLabel.first()).toBeVisible({ timeout: 10000 });
 
     // Check the checkbox (click the label to toggle)
-    const checkbox = page.locator('.ant-checkbox-input, input[type="checkbox"]').first();
+    const checkbox = checkboxLabel.locator('input[type="checkbox"], .ant-checkbox-input').first();
     if (await checkbox.count() > 0 && !(await checkbox.isChecked())) {
       await checkboxLabel.first().click();
       await waitForRender(page);

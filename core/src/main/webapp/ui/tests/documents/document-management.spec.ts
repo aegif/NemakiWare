@@ -531,21 +531,15 @@ test.describe('Document Management', () => {
     // Detect mobile browsers
     const isMobile = testHelper.isMobile(browserName);
 
-    // Look for search input (.search-input is the class on DocumentList's Input)
-    const searchInput = page.locator('.search-input');
-    try {
-      await expect(searchInput).toBeVisible({ timeout: 10000 });
-    } catch {
-      // Fallback: try placeholder-based selector
-      const altInput = page.locator('input[placeholder*="検索"], input[placeholder*="Search"]');
-      if (await altInput.count() === 0) {
-        // Search may not be visible on all layouts
-        return;
-      }
+    // Look for search input — try class selector first, then placeholder fallback
+    let activeSearchInput = page.locator('.search-input');
+    if (await activeSearchInput.count() === 0) {
+      activeSearchInput = page.locator('input[placeholder*="検索"], input[placeholder*="Search"]');
     }
+    await expect(activeSearchInput.first()).toBeVisible({ timeout: 10000 });
 
     // Fill search query
-    await searchInput.fill('test');
+    await activeSearchInput.first().fill('test');
     await waitForRender(page);
 
     // Click search button (.search-button is the class on DocumentList's Button)
