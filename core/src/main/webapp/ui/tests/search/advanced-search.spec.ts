@@ -350,9 +350,6 @@ test.describe('Advanced Search', () => {
       if (await resultsContainer.count() > 0) {
         await expect(resultsContainer.first()).toBeVisible({ timeout: 5000 });
       }
-    } else {
-      // UPDATED (2025-12-26): Search IS implemented in SearchForm.tsx
-      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
     }
   });
 
@@ -421,9 +418,6 @@ test.describe('Advanced Search', () => {
 
       // Verify we're still on search page (not redirected due to error)
       expect(page.url()).toContain('/search');
-    } else {
-      // UPDATED (2025-12-26): Search IS implemented in Layout.tsx lines 313-314
-      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
     }
   });
 
@@ -453,9 +447,6 @@ test.describe('Advanced Search', () => {
           expect(await errorMessage.count()).toBe(0);
         }
       }
-    } else {
-      // UPDATED (2025-12-26): Search IS implemented in Layout.tsx lines 313-314
-      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
     }
   });
 
@@ -498,12 +489,7 @@ test.describe('Advanced Search', () => {
 
     // Find search input
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
-
-    if (await searchInput.count() === 0) {
-      // UPDATED (2025-12-26): Search IS implemented in SearchForm.tsx
-      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
-      return;
-    }
+    await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
     // Enter a search keyword
     const searchKeyword = 'test-keyword-clear';
@@ -611,10 +597,7 @@ test.describe('Advanced Search', () => {
     // Note: CMIS CONTAINS + name LIKE will match filename even if PDF has no extractable text
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
 
-    if (await searchInput.count() === 0) {
-      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
-      return;
-    }
+    await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
     await searchInput.first().fill('Specification'); // Matches PDF filename
 
@@ -685,12 +668,7 @@ test.describe('Advanced Search', () => {
     // Japanese text analyzer (text_ja) tokenizes "keyword123" into "keyword" and "123"
     // "123" exists in many PDFs (page numbers, version numbers), causing false matches
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
-
-    if (await searchInput.count() === 0) {
-      // UPDATED (2025-12-26): Search IS implemented in SearchForm.tsx
-      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
-      return;
-    }
+    await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
     await searchInput.first().fill('xyznonexistentkeywordxyz');
 
@@ -739,10 +717,7 @@ test.describe('Advanced Search', () => {
     // Search for 'CMIS-v1.1-Specification' — matches PDF filename via name LIKE
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
 
-    if (await searchInput.count() === 0) {
-      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
-      return;
-    }
+    await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
     await searchInput.first().fill('CMIS-v1.1-Specification');
 
@@ -857,7 +832,7 @@ test.describe('Advanced Search', () => {
       console.log('✅ Search result details and navigation verification complete');
     } else {
       // If PDF still not found after retry, skip test (PDF may not be uploaded yet)
-      test.skip('CMIS specification PDF not found with "content stream" keyword - may not be uploaded or indexed yet');
+      test.skip('ENV: CMIS specification PDF not found - may not be uploaded or indexed yet');
     }
   });
 
@@ -878,7 +853,7 @@ test.describe('Advanced Search', () => {
       expect(queryRes.ok(), `CMIS query failed with status ${queryRes.status()}`).toBeTruthy();
       const queryData = await queryRes.json();
       if (!queryData.results || queryData.results.length === 0) {
-        test.skip(true, 'CMIS spec PDF not available in this environment');
+        test.skip(true, 'ENV: CMIS spec PDF not available in this environment');
         return;
       }
     }
@@ -891,12 +866,7 @@ test.describe('Advanced Search', () => {
 
     // Search for PDF filename (without extension first)
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
-
-    if (await searchInput.count() === 0) {
-      // UPDATED (2025-12-26): Search IS implemented in SearchForm.tsx
-      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
-      return;
-    }
+    await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
     // Test filename search without extension
     await searchInput.first().fill('CMIS-v1.1-Specification-Sample');
@@ -973,7 +943,7 @@ test.describe('Advanced Search', () => {
       console.log('✅ Filename search verification complete');
     } else {
       // If PDF still not found, skip test (PDF may not be uploaded yet)
-      test.skip('CMIS specification PDF not found by filename search - may not be uploaded or indexed yet');
+      test.skip('ENV: CMIS specification PDF not found by filename search - may not be uploaded or indexed yet');
     }
   });
 
@@ -1025,7 +995,7 @@ test.describe('Advanced Search', () => {
     } else {
       // UPDATED (2025-12-26): Checkbox IS implemented in SearchResults.tsx lines 725-733
       // Label: "標準メタデータを検索対象から外す（ファイル名・説明などを除く）"
-      test.skip('Metadata exclusion checkbox not visible - IS implemented in SearchResults.tsx lines 725-733');
+      await expect(page.locator('input[type=checkbox]').first()).toBeVisible({ timeout: 10000 });
     }
   });
 
@@ -1053,12 +1023,7 @@ test.describe('Advanced Search', () => {
 
     // Find search input
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
-
-    if (await searchInput.count() === 0) {
-      // UPDATED (2025-12-26): Search IS implemented in SearchForm.tsx
-      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
-      return;
-    }
+    await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
     // Verify metadata checkbox exists and is unchecked (default)
     const checkboxLabel = page.locator('label, span').filter({
@@ -1067,7 +1032,7 @@ test.describe('Advanced Search', () => {
 
     if (await checkboxLabel.count() === 0) {
       // UPDATED (2025-12-26): IS implemented in SearchResults.tsx lines 725-733
-      test.skip('Metadata exclusion checkbox not visible - IS implemented in SearchResults.tsx');
+      await expect(page.locator('input[type=checkbox]').first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -1154,12 +1119,7 @@ test.describe('Advanced Search', () => {
 
     // Find search input
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
-
-    if (await searchInput.count() === 0) {
-      // UPDATED (2025-12-26): Search IS implemented in SearchForm.tsx
-      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
-      return;
-    }
+    await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
     // Find and check the metadata exclusion checkbox
     const checkboxLabel = page.locator('label, span').filter({
@@ -1168,7 +1128,7 @@ test.describe('Advanced Search', () => {
 
     if (await checkboxLabel.count() === 0) {
       // UPDATED (2025-12-26): IS implemented in SearchResults.tsx lines 725-733
-      test.skip('Metadata exclusion checkbox not visible - IS implemented in SearchResults.tsx');
+      await expect(page.locator('input[type=checkbox]').first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -1244,12 +1204,7 @@ test.describe('Advanced Search', () => {
 
     // Search for Japanese keyword (common in Japanese PDFs)
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
-
-    if (await searchInput.count() === 0) {
-      // UPDATED (2025-12-26): Search IS implemented in SearchForm.tsx
-      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
-      return;
-    }
+    await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
     const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
 
