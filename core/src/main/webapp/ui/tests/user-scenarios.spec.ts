@@ -428,62 +428,34 @@ test.describe('User Scenario Tests', () => {
       expect(initialErrors).toHaveLength(0);
       console.log('Secondary types tab opened without errors');
 
-      // Try to add a secondary type - use placeholder text to find the selector
-      // The select has placeholder="追加するセカンダリタイプを選択..."
-      const typeSelector = page.locator('.ant-select').filter({ has: page.locator('.ant-select-selection-placeholder:has-text("追加するセカンダリタイプを選択")') });
+      // Find secondary type selector (always present on this tab)
+      const selector = page.locator('.ant-select').first();
+      await expect(selector).toBeVisible({ timeout: 10000 });
 
-      // Alternative: look for the select within Space.Compact near the 追加 button
-      const addButtonArea = page.locator('button:has-text("追加")').locator('..');
-      const typeSelectorAlt = addButtonArea.locator('.ant-select');
+      await selector.click();
+      await waitForRender(page);
 
-      const selector = (await typeSelector.count() > 0) ? typeSelector : typeSelectorAlt;
-      const selectorVisible = await selector.count() > 0 && await selector.isVisible().catch(() => false);
+      const options = page.locator('.ant-select-dropdown:visible .ant-select-item-option');
+      const optionCount = await options.count();
 
-      if (selectorVisible) {
-        console.log('Found secondary type selector');
-
-        // Open dropdown
-        await selector.click();
+      if (optionCount > 0) {
+        // Select first available option and add
+        await options.first().click();
         await waitForRender(page);
 
-        // Check if there are options in the dropdown
-        const options = page.locator('.ant-select-dropdown:visible .ant-select-item-option');
-        const optionCount = await options.count();
-        console.log(`Found ${optionCount} secondary type options`);
+        const addButton = page.getByRole('button', { name: /追加|Add/i });
+        await expect(addButton).toBeVisible({ timeout: 5000 });
+        await addButton.click();
+        await waitForUiStable(page);
 
-        if (optionCount > 0) {
-          // Select first available option
-          await options.first().click();
-          await waitForRender(page);
-
-          // Click add button
-          const addButton = page.locator('button').filter({ hasText: '追加' });
-          if (await addButton.count() > 0) {
-            console.log('Clicking add button...');
-            await addButton.click();
-            await waitForUiStable(page);
-
-            // Check for errors AFTER the add operation - THIS IS THE CRITICAL CHECK
-            const afterAddErrors = jsErrors.filter(e =>
-              e.includes('includes is not a function') ||
-              e.includes('y.includes is not a function')
-            );
-
-            if (afterAddErrors.length > 0) {
-              console.error('CRITICAL: y.includes error occurred after adding secondary type:', afterAddErrors);
-            }
-
-            expect(afterAddErrors).toHaveLength(0);
-            console.log('Secondary type added successfully without y.includes error');
-          } else {
-            console.log('Add button not found - possibly all types assigned');
-          }
-        } else {
-          console.log('No secondary type options available');
-        }
-      } else {
-        console.log('Secondary type selector not found - may be read-only');
+        // THE CRITICAL CHECK: no y.includes error after add
+        const afterAddErrors = jsErrors.filter(e =>
+          e.includes('includes is not a function') ||
+          e.includes('y.includes is not a function')
+        );
+        expect(afterAddErrors).toHaveLength(0);
       }
+      // optionCount === 0: all types already assigned — legitimate, no action needed
 
       // Final verification - no JavaScript errors
       const criticalErrors = jsErrors.filter(e =>
