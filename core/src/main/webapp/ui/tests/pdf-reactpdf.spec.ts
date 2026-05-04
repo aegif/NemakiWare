@@ -63,8 +63,6 @@ test.beforeAll(async ({ browser }) => {
       const data = await uploadResp.json();
       uploadedPdfId = data?.properties?.['cmis:objectId']?.value || '';
       console.log(`Uploaded test PDF: ${testPdfName}, ID: ${uploadedPdfId}`);
-    } else {
-      console.log(`PDF upload failed: ${uploadResp.status()}`);
     }
   } catch (e) {
     console.log(`PDF upload error: ${e}`);

@@ -212,8 +212,6 @@ test.describe('Type Management - Custom Types Display', () => {
       if (isVisible) {
         console.log(`✅ Custom type found: ${typeId}`);
         await expect(typeRow).toBeVisible({ timeout: 5000 });
-      } else {
-        console.log(`❌ Custom type NOT found: ${typeId}`);
       }
     }
 
@@ -289,8 +287,6 @@ test.describe('Type Management - Custom Types Display', () => {
           await closeButton.first().click();
           await waitForRender(page);
         }
-      } else {
-        console.log('ℹ️ Type details modal not implemented yet - skipping');
       }
     }
   });

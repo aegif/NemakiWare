@@ -101,8 +101,6 @@ test.describe('Required Property Validation Tests', () => {
         if (responseText.includes('already exists') || responseText.includes('Conflict')) {
           console.log('Test document type already exists, will use existing');
           typesCreated.document = true;
-        } else {
-          console.log('Failed to create document type:', createDocTypeResponse.status(), responseText.substring(0, 200));
         }
       }
     } catch (error) {
@@ -165,8 +163,6 @@ test.describe('Required Property Validation Tests', () => {
         if (responseText.includes('already exists') || responseText.includes('Conflict')) {
           console.log('Test folder type already exists, will use existing');
           typesCreated.folder = true;
-        } else {
-          console.log('Failed to create folder type:', createFolderTypeResponse.status(), responseText.substring(0, 200));
         }
       }
     } catch (error) {
@@ -207,8 +203,6 @@ test.describe('Required Property Validation Tests', () => {
 
         if (deleteDocResponse.status() === 200 || deleteDocResponse.status() === 204) {
           console.log('✓ Test document type deleted');
-        } else {
-          console.log('Could not delete document type (may have instances):', deleteDocResponse.status());
         }
       } catch (error) {
         console.error('Error deleting document type:', error);
@@ -229,8 +223,6 @@ test.describe('Required Property Validation Tests', () => {
 
         if (deleteFolderResponse.status() === 200 || deleteFolderResponse.status() === 204) {
           console.log('✓ Test folder type deleted');
-        } else {
-          console.log('Could not delete folder type (may have instances):', deleteFolderResponse.status());
         }
       } catch (error) {
         console.error('Error deleting folder type:', error);

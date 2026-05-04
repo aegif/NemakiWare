@@ -209,8 +209,6 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
           }
         }
       }
-    } else {
-      console.log('ACL button not found - ACL management may not be available in UI');
     }
   });
 
@@ -261,8 +259,6 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
         }
 
         console.log('ACL inheritance broken');
-      } else {
-        console.log('Break inheritance button not found');
       }
     }
   });
@@ -381,8 +377,6 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
         console.warn('The following items could not be deleted automatically:');
         failedCleanups.forEach(item => console.warn(`  - ${item}`));
         console.warn('=================================================');
-      } else {
-        console.log('=== Cleanup completed successfully ===');
       }
     }
   });

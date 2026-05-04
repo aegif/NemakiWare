@@ -590,8 +590,6 @@ test.describe('Group 3: Governance Tab', () => {
       const pageText = await page.locator('.ant-tabs-tabpane-active').textContent();
       expect(pageText).toBeTruthy();
       console.log('Governance tab text (first 200):', pageText?.substring(0, 200));
-    } else {
-      console.log('Governance tab not visible — UI may not include it for this object type');
     }
   });
 
@@ -850,8 +848,6 @@ test.describe('Group 6: Lineage Journal UI', () => {
         await closeBtn.click();
         await waitForRender(page);
       }
-    } else {
-      console.log('No detail button found — no events in table');
     }
   });
 

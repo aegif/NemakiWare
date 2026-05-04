@@ -470,8 +470,6 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
         if (match) {
           testDocumentId = match[1];
           console.log('✅ Document created with ID:', testDocumentId);
-        } else {
-          console.log('⚠️ URL does not match /documents/{id} pattern');
         }
 
         // Verify document type in details (regardless of ID extraction)
@@ -493,12 +491,8 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
           if (await customPropField.count() > 0) {
             await expect(customPropField).toBeVisible();
             console.log('✅ Custom attribute field displayed in PropertyEditor');
-          } else {
-            console.log('⚠️ Custom attribute not visible (may require custom type assignment)');
           }
         }
-      } else {
-        console.log('⚠️ Document link not found in table');
       }
     } else {
       // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
@@ -559,8 +553,6 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
         const savedValue = await reloadedInput.inputValue();
         expect(savedValue).toBe(testValue);
         console.log('✅ Custom attribute value persisted after reload');
-      } else {
-        console.log('⚠️ Custom attribute not editable or not found');
       }
     }
   });

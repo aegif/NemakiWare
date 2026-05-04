@@ -348,8 +348,6 @@ test.describe('CMIS Versioning API', () => {
     if (isCheckedOut) {
       console.log('Document is checked out by:', objectData.properties['cmis:versionSeriesCheckedOutBy']?.value);
       expect(objectData.properties['cmis:versionSeriesCheckedOutId']?.value).toBe(pwcId);
-    } else {
-      console.log('⚠ Warning: Document checkout status unclear (expected for non-versionable documents)');
     }
   });
 

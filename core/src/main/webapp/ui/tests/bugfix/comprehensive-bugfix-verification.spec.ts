@@ -237,14 +237,8 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
               console.log(`[TEST 2] ✅ Secondary type added successfully`);
             }
           }
-        } else {
-          console.log(`[TEST 2] No secondary type options available`);
         }
-      } else {
-        console.log(`[TEST 2] Secondary type select dropdown not visible`);
       }
-    } else {
-      console.log(`[TEST 2] Secondary type section not accessible`);
     }
 
     // Now look for properties tab to set description
@@ -350,8 +344,6 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
         const fieldValue = await descField.inputValue();
         if (fieldValue.includes(UNIQUE_ID)) {
           console.log(`[TEST 3] ✅ Description found in field: ${fieldValue.substring(0, 50)}...`);
-        } else {
-          console.log(`[TEST 3] ⚠️ Field value: ${fieldValue}`);
         }
       }
     }
@@ -430,8 +422,6 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
 
         if (finalFolderId) {
           console.log(`[TEST 4] ✅ Back button preserved folder context: ${finalFolderId}`);
-        } else {
-          console.log(`[TEST 4] ⚠️ Folder ID not in URL (may be using root folder)`);
         }
 
         // Verify the test document is still visible (same folder)
@@ -440,11 +430,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
         if (await docStillVisible.count() > 0) {
           console.log(`[TEST 4] ✅ Test document visible in returned folder`);
         }
-      } else {
-        console.log(`[TEST 4] ❌ Did not navigate back to documents page`);
       }
-    } else {
-      console.log(`[TEST 4] Back button not found`);
     }
 
     await page.screenshot({ path: 'test-results/screenshots/test4-back-navigation.png', fullPage: true });
@@ -648,8 +634,6 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
 
     if (partialFound) {
       console.log(`[SEARCH S4] ❌ BUG: Partial match incorrectly returned!`);
-    } else {
-      console.log(`[SEARCH S4] ✅ BUG FIXED: Partial match correctly excluded`);
     }
 
     await page.screenshot({ path: 'test-results/screenshots/search-tokenization-results.png', fullPage: true });
@@ -692,8 +676,6 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
             console.log(`[SEARCH S5] Popconfirm not visible for ${docName}, skipping`);
           }
         }
-      } else {
-        console.log(`[SEARCH S5] Document ${docName} not found, may be already deleted`);
       }
     }
   });

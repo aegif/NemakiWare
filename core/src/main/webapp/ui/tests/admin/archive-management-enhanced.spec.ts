@@ -67,8 +67,6 @@ test.describe('Archive Management Enhanced', () => {
       const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: '期限切れ未アーカイブ' });
       if (await pendingTab.count() > 0) {
         console.log('Pending archives tab visible (backend deployed)');
-      } else {
-        console.log('Pending archives tab not visible (backend endpoint may not be deployed yet)');
       }
 
       // Verify table column headers
@@ -184,8 +182,6 @@ test.describe('Archive Management Enhanced', () => {
       const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: 'Pending Archives' });
       if (await pendingTab.count() > 0) {
         console.log('Pending Archives tab visible (backend deployed)');
-      } else {
-        console.log('Pending Archives tab not visible (backend endpoint may not be deployed yet)');
       }
     });
 
@@ -283,8 +279,6 @@ test.describe('Archive Management Enhanced', () => {
       const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: /期限切れ未アーカイブ|Pending Archives/i });
       if (await pendingTab.count() > 0) {
         console.log('Pending archives tab visible (backend deployed)');
-      } else {
-        console.log('Pending archives tab not visible (backend endpoint may not be deployed yet)');
       }
     });
   });
@@ -348,8 +342,6 @@ test.describe('Archive Management Enhanced', () => {
         console.log('Badge count visible on pending archives tab');
         const badgeText = await badge.textContent();
         console.log(`Badge value: ${badgeText}`);
-      } else {
-        console.log('No badge on pending archives tab (no pending items or not yet loaded)');
       }
     });
   });
@@ -564,8 +556,6 @@ test.describe('Archive Management Enhanced', () => {
           await cancelButton.click();
           await waitForRender(page);
         }
-      } else {
-        console.log('No extend expiration button found (no pending archives or tab empty)');
       }
     });
   });
@@ -630,8 +620,6 @@ test.describe('Archive Management - Non-Admin User', () => {
     // Ideally, non-admin should not see admin-only tabs
     if (!hasSettings && !hasLogs && !hasPending) {
       console.log('Admin tabs correctly hidden for non-admin user');
-    } else {
-      console.log('NOTE: Admin tabs visible to non-admin - isAdmin detection may need server-side support');
     }
 
     // Archives tab should always be visible
@@ -686,9 +674,6 @@ test.describe('Archive Management - REST API Edge Cases', () => {
           console.log(`First pending archive: ${item.name} (expires: ${item.expirationDate})`);
         }
       }
-    } else {
-      // 404 or 500 - endpoint might not exist yet
-      console.log(`Pending archives API returned ${response.status()} - endpoint may not be deployed`);
     }
   });
 
@@ -909,8 +894,6 @@ test.describe('Archive Management - Restore Edge Cases', () => {
           const hasParentError = errorText?.match(/復元先のフォルダが削除されている|Cannot restore.*destination folder/i);
           if (hasParentError) {
             console.log('Correctly shows parent-not-found error message');
-          } else {
-            console.log('Shows generic restore error (parent-not-found detection may not be active)');
           }
         } else {
           // Check for success message (restore might have succeeded to root)

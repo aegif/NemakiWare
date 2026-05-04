@@ -249,8 +249,6 @@ test.describe('Access Control and Permissions', () => {
 
       if (response.ok()) {
         console.log(`Setup: Root folder ACL applied successfully for ${testUsername}`);
-      } else {
-        console.log(`Setup: Root folder ACL application failed: ${response.status()} - ${await response.text()}`);
       }
     } catch (error) {
       console.log('Setup: Root folder ACL error:', error);
@@ -506,8 +504,6 @@ test.describe('Access Control and Permissions', () => {
           await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
           console.log(`BeforeEach: Successfully created ${restrictedFolderName}`);
         }
-      } else {
-        console.log(`BeforeEach: ${restrictedFolderName} already exists`);
       }
 
       await testHelper.closeMobileSidebar(browserName);
@@ -822,8 +818,6 @@ test.describe('Access Control and Permissions', () => {
 
           if (aclResponse.ok()) {
             console.log(`Setup: Applied ACL for ${testUsername} to folder ${restrictedFolderName}`);
-          } else {
-            console.log(`Setup: ACL application failed: ${await aclResponse.text()}`);
           }
 
           // Create a test document inside the restricted folder
@@ -846,11 +840,7 @@ test.describe('Access Control and Permissions', () => {
 
           if (docResponse.ok()) {
             console.log(`Setup: Document ${testDocName} created successfully in ${restrictedFolderName}`);
-          } else {
-            console.log(`Setup: Document creation failed: ${await docResponse.text()}`);
           }
-        } else {
-          console.log(`Setup: Folder creation failed: ${await response.text()}`);
         }
       } catch (error) {
         console.log(`Setup: Error creating restricted folder:`, error);
@@ -1023,8 +1013,6 @@ test.describe('Access Control and Permissions', () => {
         });
         if (deleteResponse.ok()) {
           console.log('Test: Cleanup completed successfully');
-        } else {
-          console.log(`Test: Cleanup warning - deleteTree returned ${deleteResponse.status()}`);
         }
       } catch (cleanupError) {
         console.log(`Test: Cleanup warning - ${cleanupError}`);
@@ -1185,11 +1173,7 @@ test.describe('Access Control and Permissions', () => {
         
         if (deleteResponse.ok()) {
           console.log(`Cleanup: Successfully deleted folder: ${restrictedFolderName}`);
-        } else {
-          console.log(`Cleanup: Failed to delete folder: ${deleteResponse.status()}`);
         }
-      } else {
-        console.log(`Cleanup: Folder not found: ${restrictedFolderName}`);
       }
     });
   });

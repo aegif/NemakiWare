@@ -533,8 +533,6 @@ test.describe('PropertyEditor Component Tests', () => {
 
     if (deleted) {
       console.log('PropertyEditor Cleanup: Document deleted successfully');
-    } else {
-      console.log('PropertyEditor Cleanup: Could not delete document (may not exist or delete failed)');
     }
   });
 });

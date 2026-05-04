@@ -88,8 +88,6 @@ test.describe('System Folders (/.system)', () => {
     // Groups folder is optional - may not exist in all database states
     if (childNames.includes('groups')) {
       console.log('Found groups folder in .system');
-    } else {
-      console.log('Groups folder not found (may not exist in this database)');
     }
   });
 

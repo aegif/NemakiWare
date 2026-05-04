@@ -602,8 +602,6 @@ test.describe('Office Document Preview', () => {
       if (contentExists) {
         console.log('✓ Preview content area is present');
       }
-    } else {
-      console.log('[INFO] Preview tab not visible for this document type - document viewer loaded correctly');
     }
   });
 });

@@ -172,8 +172,6 @@ test.describe('Search Tokenization Bug Verification', () => {
       if (!indexed) {
         console.log('[SOLR-PROBE] Solr indexing is not operational - all search tests will be skipped');
         solrIndexingAvailable = false;
-      } else {
-        console.log('[SOLR-PROBE] Solr indexing is operational');
       }
     } catch (e) {
       console.log(`[SOLR-PROBE] Error during probe: ${e}`);

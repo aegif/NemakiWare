@@ -592,8 +592,6 @@ test.describe('Type REST API - NemakiWare Custom Types', () => {
         const showBody = await showResponse.json();
         expect(showBody.type.id).toBe('nemaki:parentChildRelationship');
         console.log('Show endpoint also returned type successfully');
-      } else {
-        console.log('Show endpoint returned', showResponse.status(), '- type may be in different storage');
       }
     } else {
       console.log('nemaki:parentChildRelationship not found in type list - may not be initialized');
@@ -1713,8 +1711,6 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
       if (propertyIds.includes(prop)) {
         inheritedCount++;
         console.log(`✅ Inherited: ${prop}`);
-      } else {
-        console.log(`⚠️ Missing: ${prop}`);
       }
     }
 
@@ -1792,8 +1788,6 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
       if (propertyIds.includes(prop)) {
         inheritedCount++;
         console.log(`✅ Inherited: ${prop}`);
-      } else {
-        console.log(`⚠️ Missing: ${prop}`);
       }
     }
 
@@ -1842,8 +1836,6 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
       console.log(`nemaki:parentChildRelationship has ${nemakiProps.length} custom properties:`, nemakiProps);
     } else if (cmisTypeResponse.status() === 404) {
       console.log('nemaki:parentChildRelationship not found - may not be initialized');
-    } else {
-      console.log('Unexpected status:', cmisTypeResponse.status());
     }
   });
 });

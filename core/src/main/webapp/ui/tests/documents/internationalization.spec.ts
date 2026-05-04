@@ -404,8 +404,6 @@ test.describe('Internationalization Tests', () => {
       const breadcrumbText = await breadcrumb.textContent().catch(() => '');
       if (breadcrumbText && breadcrumbText.includes('日本語')) {
         console.log('Breadcrumb correctly shows Japanese folder name');
-      } else {
-        console.log('Breadcrumb does not contain Japanese text (may have navigated away):', breadcrumbText);
       }
     }
 
@@ -622,8 +620,6 @@ test.describe('Internationalization Tests', () => {
 
         if (createResponse.ok()) {
           filesUploaded++;
-        } else {
-          console.log(`⚠️ API upload failed for ${filename}: ${createResponse.status()}`);
         }
       } catch (e) {
         console.log(`⚠️ Failed to upload ${filename}: ${e}`);
@@ -676,11 +672,11 @@ test.describe('Internationalization Tests', () => {
     await expect(japaneseResult.first()).toBeVisible({ timeout: 10000 });
 
     // Clear search
-    const clearButton = page.locator('button:has-text("クリア")').first();
+    const clearButton = page.getByRole('button', { name: /クリア|Clear/i }).first();
     if (await clearButton.isVisible().catch(() => false)) {
       await clearButton.click(isMobile ? { force: true } : {});
     } else {
-      await searchInput.clear();
+      await activeSearchInput.first().clear();
     }
     await waitForRender(page);
 

@@ -70,8 +70,6 @@ test.beforeAll(async ({ browser }) => {
       const data = await uploadResp.json();
       suiteOwnedPdfId = data?.properties?.['cmis:objectId']?.value || '';
       console.log(`[pdf-preview] Created suite PDF: ${suiteOwnedPdfName}, ID: ${suiteOwnedPdfId}`);
-    } else {
-      console.log(`[pdf-preview] PDF upload failed: ${uploadResp.status()}`);
     }
   } catch (e) {
     console.log(`[pdf-preview] PDF upload error: ${e}`);
@@ -337,8 +335,6 @@ test.describe('PDF Preview Functionality', () => {
         }
 
         console.log('PDF content quality verification complete');
-      } else {
-        console.log('Canvas element not found - PDF may use different rendering method');
       }
     } else {
       // PDF viewer not rendered - but document info should still be displayed

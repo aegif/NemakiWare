@@ -609,8 +609,6 @@ test.describe('Version Property Inheritance', () => {
       console.log('Verifying custom property inheritance...');
       expect(newCustomProp).toBe(initialCustomProp);
       console.log('Custom property successfully inherited via setContentStream');
-    } else {
-      console.log('Custom type not available - skipping custom property verification');
     }
 
     // Update testDocumentId to the new version for subsequent tests
@@ -672,8 +670,6 @@ test.describe('Version Property Inheritance', () => {
       console.log('Verifying custom property inheritance...');
       expect(newCustomProp).toBe(currentCustomProp);
       console.log('Custom property successfully inherited via check-in');
-    } else {
-      console.log('Custom type not available - skipping custom property verification');
     }
 
     // Update testDocumentId to the new version

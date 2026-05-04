@@ -265,8 +265,6 @@ test.describe('CMIS API 404 Error Handling', () => {
       await expect(page.locator('input[placeholder*="パスワード"]')).toBeVisible();
     } else if (hasErrorMessage) {
       console.log('⚠️  404 error showed error message but user can continue (acceptable)');
-    } else {
-      console.log('❌ User stuck on error screen (bad UX)');
     }
 
     expect(isHandledGracefully).toBe(true);
@@ -360,8 +358,6 @@ test.describe('CMIS API 404 Error Handling', () => {
       console.log('✅ Redirected to login after 404 (good)');
     } else if (hasDocumentsTable) {
       console.log('✅ UI remains functional after 404 (acceptable)');
-    } else {
-      console.log('❌ UI is broken/stuck after 404 (bad)');
     }
 
     expect(isUIFunctional).toBe(true);

@@ -298,8 +298,6 @@ test.describe('Parent Folder Navigation', () => {
 
             if (remainingCount === 0) {
               console.log('[CLEANUP DEBUG] Cleanup completed successfully via CMIS API');
-            } else {
-              console.log('[CLEANUP DEBUG] WARNING: TestParent still exists after CMIS delete');
             }
           } else {
             const body = await response.text();
@@ -308,11 +306,7 @@ test.describe('Parent Folder Navigation', () => {
         } catch (error) {
           console.log('[CLEANUP DEBUG] CMIS API error:', error);
         }
-      } else {
-        console.log('[CLEANUP DEBUG] Could not get objectId from data-row-key attribute');
       }
-    } else {
-      console.log('[CLEANUP DEBUG] No TestParent found - cleanup not needed');
     }
   });
 

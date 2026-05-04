@@ -284,8 +284,6 @@ async function createFolder(page: Page, folderName: string, isMobile: boolean): 
       if (!modalStillOpen) {
         console.log(`[FOLDER] ✅ Created: ${folderName} (modal no longer visible)`);
         success = true;
-      } else {
-        console.log(`[FOLDER] ❌ Failed: Modal still open, unknown error`);
       }
     }
   }
@@ -324,8 +322,6 @@ async function createFolder(page: Page, folderName: string, isMobile: boolean): 
     folderInTable = await page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).isVisible().catch(() => false);
     if (folderInTable) {
       console.log(`[FOLDER] Folder "${folderName}" visible after page reload`);
-    } else {
-      console.log(`[FOLDER] Folder "${folderName}" still NOT visible after page reload`);
     }
   }
 

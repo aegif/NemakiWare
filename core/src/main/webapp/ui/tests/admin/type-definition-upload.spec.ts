@@ -354,8 +354,6 @@ test.describe('Type Definition Upload and JSON Editing', () => {
         test.skip('ENV: Type upload failed - neither message nor table entry found');
         return;
       }
-    } else {
-      console.log('✅ Type definition uploaded successfully');
     }
 
     // Wait for table to finish loading (loadTypes() is async)
@@ -462,8 +460,6 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     const successElement = await successMessagePromise;
     if (successElement) {
       console.log('✅ Type definition overwritten successfully');
-    } else {
-      console.log('✅ Conflict resolved (message may have been missed)');
     }
   });
 
@@ -570,8 +566,6 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     const successElement = await successMessagePromise;
     if (successElement) {
       console.log('✅ Type definition updated via JSON editing');
-    } else {
-      console.log('✅ JSON edit completed (message may have been missed)');
     }
 
     // Wait for table to finish loading
@@ -804,8 +798,6 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     const successElement = await successMessagePromise;
     if (successElement) {
       console.log('✅ Type deleted successfully');
-    } else {
-      console.log('✅ Type deletion completed (message may have been missed)');
     }
 
     // Wait for table to finish loading after delete

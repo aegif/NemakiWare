@@ -415,8 +415,6 @@ test.describe('Document Viewer Authentication', () => {
           console.log(`  Has drawer: ${hasDrawer}`);
 
           expect(hasAnyDocumentDetails).toBe(true);
-        } else {
-          console.log(`✅ Document ${i + 1}: Loaded successfully`);
         }
 
         // Return to list

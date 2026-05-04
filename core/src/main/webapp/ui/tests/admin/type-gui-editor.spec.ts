@@ -226,8 +226,6 @@ test.describe('Type GUI Editor', () => {
         const anyError = page.locator('.ant-message-error, .ant-form-item-explain-error, .ant-alert-error').first();
         if (await anyError.count() > 0) {
           console.log('Error message found');
-        } else {
-          console.log('No validation error shown - form may have default values');
         }
       }
     } else {
@@ -251,8 +249,6 @@ test.describe('Type GUI Editor', () => {
       const guiEditButton = typeRow.locator('button:has-text("GUI編集")');
       await expect(guiEditButton).toBeVisible({ timeout: 5000 });
       console.log('GUI edit button found for custom type');
-    } else {
-      console.log('Custom type not found - skipping GUI edit button check');
     }
   });
 

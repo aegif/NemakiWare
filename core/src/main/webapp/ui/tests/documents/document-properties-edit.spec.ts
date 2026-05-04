@@ -398,8 +398,6 @@ test.describe('Document Properties Edit and Persistence', () => {
           if (!deleteResponse.ok) {
             const errorText = await deleteResponse.text().catch(() => '');
             errors.push(`Failed to delete ${objectId}: HTTP ${deleteResponse.status} ${errorText}`);
-          } else {
-            console.log(`Cleanup: ✅ Deleted ${objectId}`);
           }
         }
       }

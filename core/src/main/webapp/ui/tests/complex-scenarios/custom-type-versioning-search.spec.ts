@@ -94,8 +94,6 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
               }
             }
           }
-        } else {
-          console.log('[Pre-cleanup] No leftover SearchTestDoc documents found');
         }
       }
 
@@ -137,8 +135,6 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
               console.log(`[Pre-cleanup] Failed to delete type ${typeId}: ${e}`);
             }
           }
-        } else {
-          console.log('[Pre-cleanup] No leftover test types found');
         }
       }
     } catch (error) {
@@ -439,8 +435,6 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
           await searchablePropInput.fill(initialSearchValue);
           console.log(`Filled searchable property with: ${initialSearchValue}`);
         }
-      } else {
-        console.log('Custom type not found in dropdown - using default type');
       }
     }
 
@@ -475,8 +469,6 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
         testDocumentId = rowKey;
         console.log(`Document ID: ${testDocumentId}`);
       }
-    } else {
-      console.log(`Document ${testDocumentName} not found in table`);
     }
 
     expect(docExists).toBe(true);
@@ -586,8 +578,6 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
         await saveButton.click(isMobile ? { force: true } : {});
         await waitForUiStable(page);
       }
-    } else {
-      console.log('Searchable property input not found - property editing may not be available');
     }
 
     // Wait for Solr indexing
@@ -707,14 +697,8 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
             await waitForUiStable(page);
             console.log('Check-in submitted');
           }
-        } else {
-          console.log('Check-in modal did not appear');
         }
-      } else {
-        console.log('Check-in button not found after checkout');
       }
-    } else {
-      console.log('Checkout did not succeed - skipping check-in');
     }
 
     // Wait for Solr indexing
@@ -792,8 +776,6 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
           console.log('Deleted latest version');
         }
       }
-    } else {
-      console.log('Version history button not found');
     }
 
     // Wait for Solr indexing
@@ -866,8 +848,6 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
                 console.log(`[Cleanup] Successfully deleted document: ${testDocumentName}`);
               }
             }
-          } else {
-            console.log(`[Cleanup] Document not found (may have been deleted already): ${testDocumentName}`);
           }
         }
       } catch (docError) {
@@ -903,8 +883,6 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
                   console.log(`[Cleanup] Successfully deleted type: ${customTypeId}`);
                 }
               }
-            } else {
-              console.log(`[Cleanup] Type not found (may have been deleted already): ${customTypeId}`);
             }
           }
         }
@@ -925,8 +903,6 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
         console.warn('The following items could not be deleted automatically:');
         failedCleanups.forEach(item => console.warn(`  - ${item}`));
         console.warn('=================================================');
-      } else {
-        console.log('=== Cleanup completed successfully ===');
       }
     }
   });

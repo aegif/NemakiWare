@@ -63,8 +63,6 @@ test.beforeAll(async ({ browser }) => {
       const data = await uploadResp.json();
       suiteDocId = data?.properties?.['cmis:objectId']?.value || '';
       console.log(`[type-migration] Created suite doc: ${suiteDocName}, ID: ${suiteDocId}`);
-    } else {
-      console.log(`[type-migration] Doc upload failed: ${uploadResp.status()}`);
     }
   } catch (e) {
     console.log(`[type-migration] Doc upload error: ${e}`);

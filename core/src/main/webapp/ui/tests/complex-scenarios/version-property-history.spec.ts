@@ -157,11 +157,7 @@ test.describe('Version and Property History Consistency', () => {
             console.log(`Version 2.0 created`);
           }
         }
-      } else {
-        console.log('Check-in button not found');
       }
-    } else {
-      console.log('Checkout button not found - versioning may not be available');
     }
   });
 
@@ -265,8 +261,6 @@ test.describe('Version and Property History Consistency', () => {
       console.log(`Version 1.0 present: ${hasVersion1}`);
       console.log(`Version 2.0 present: ${hasVersion2}`);
       console.log(`Version 3.0 present: ${hasVersion3}`);
-    } else {
-      console.log('Version history button not found');
     }
   });
 
@@ -311,8 +305,6 @@ test.describe('Version and Property History Consistency', () => {
           await waitForUiStable(page);
           console.log('Latest version deleted');
         }
-      } else {
-        console.log('Delete version button not found');
       }
 
       // Verify current version is now 2.0
@@ -361,8 +353,6 @@ test.describe('Version and Property History Consistency', () => {
       if (await closeButton.count() > 0) {
         await closeButton.click();
       }
-    } else {
-      console.log('Preview button not found');
     }
 
     // Verify version label shows 2.0
@@ -414,8 +404,6 @@ test.describe('Version and Property History Consistency', () => {
         console.warn('The following items could not be deleted automatically:');
         failedCleanups.forEach(item => console.warn(`  - ${item}`));
         console.warn('=================================================');
-      } else {
-        console.log('=== Cleanup completed successfully ===');
       }
     }
   });

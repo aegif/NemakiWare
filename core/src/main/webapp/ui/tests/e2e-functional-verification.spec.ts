@@ -604,8 +604,6 @@ test.describe('Secondary Type Feature Verification', () => {
       // This is informational - property might be in a different location
       if (hasCommentProperty) {
         console.log('✓ Comment property visible in properties tab');
-      } else {
-        console.log('ℹ Comment property not found in properties tab (may be displayed elsewhere)');
       }
 
     } finally {

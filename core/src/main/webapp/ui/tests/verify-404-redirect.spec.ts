@@ -207,8 +207,6 @@ test.describe('404 Error Handling Verification', () => {
 
     if (isOnLoginPage) {
       console.log('Auth error correctly redirected to login page');
-    } else {
-      console.log('Warning: Page may still show authenticated content');
     }
 
     expect(isOnLoginPage).toBe(true);
@@ -241,8 +239,6 @@ test.describe('404 Error Handling Verification', () => {
 
     if (isGraceful) {
       console.log('✅ Non-existent page handled gracefully');
-    } else {
-      console.log('❌ Showing raw error page:', bodyText?.substring(0, 200));
     }
 
     expect(isGraceful).toBe(true);

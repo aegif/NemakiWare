@@ -118,8 +118,6 @@ test.describe('Config Viewer - Admin Access', () => {
     // There should be at least one masked value (e.g., db.password)
     if (maskedCount > 0) {
       console.log('Sensitive values are properly masked');
-    } else {
-      console.log('No masked values found (may not have password-type properties)');
     }
   });
 
@@ -243,8 +241,6 @@ test.describe('Config Viewer - Navigation', () => {
       // Should navigate to config-viewer page
       expect(page.url()).toContain('config-viewer');
       console.log('Config Viewer menu item works correctly');
-    } else {
-      console.log('Config Viewer menu item not found in sidebar');
     }
   });
 });
@@ -286,8 +282,6 @@ test.describe('Config Viewer - API', () => {
           console.log(`Password property ${p.key} correctly masked`);
         }
       }
-    } else {
-      console.log(`Config properties API returned ${response.status()}`);
     }
   });
 

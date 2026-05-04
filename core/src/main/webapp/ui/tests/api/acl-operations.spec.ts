@@ -345,8 +345,6 @@ test.describe('ACL Operations - API Direct Tests', () => {
         const { exists: stillExists } = verifyUserInACL(aclAfterRemove, testUsername);
         expect(stillExists).toBeFalsy();
         console.log(`Test: ✓ Verified ${testUsername} is no longer in ACL`);
-      } else {
-        console.log(`Test: ✓ Confirmed ${testUsername} is not in ACL`);
       }
 
       // Step 2: Restore test user to ACL with original permissions using helper function

@@ -239,8 +239,6 @@ test.describe('Office Document Preview', () => {
           if (await errorAlert.count() > 0) {
             const errorText = await errorAlert.textContent();
             console.log(`⚠️ Preview generation error: ${errorText}`);
-          } else {
-            console.log('⚠️ PDF preview not available, but no error shown');
           }
         }
       } else {
@@ -249,8 +247,6 @@ test.describe('Office Document Preview', () => {
         if (await infoAlert.count() > 0) {
           const alertText = await infoAlert.textContent();
           console.log(`ℹ️ Preview info: ${alertText}`);
-        } else {
-          console.log('⚠️ No PDF preview or retry button found');
         }
       }
 
@@ -386,12 +382,8 @@ test.describe('Office Document Preview', () => {
           const textContent = await textLayer.textContent();
           if (textContent && textContent.includes('日本語')) {
             console.log('✅ Japanese text found in PDF text layer');
-          } else {
-            console.log('ℹ️ Japanese text layer not detected (may be rendered as image)');
           }
         }
-      } else {
-        console.log('⚠️ PDF preview not displayed for Japanese content');
       }
 
     } finally {
@@ -516,8 +508,6 @@ test.describe('Office Document Preview', () => {
             const infoAlert = page.locator('.ant-alert-info');
             if (await infoAlert.count() > 0) {
               console.log('Info:', await infoAlert.textContent());
-            } else {
-              console.log('⚠️ No PDF preview or retry button found');
             }
           }
         } else {
@@ -535,8 +525,6 @@ test.describe('Office Document Preview', () => {
         if (await closeBtn.count() > 0) {
           await closeBtn.click({ timeout: 3000 }).catch(() => {});
         }
-      } else {
-        console.log('No modal opened, preview might be inline or not supported');
       }
     } else {
       console.log('Eye button not found, trying to click the file name directly...');
@@ -661,8 +649,6 @@ test.describe('Office Document Preview', () => {
       console.log('✅ PDF rendition is available for Office document');
     } else if (apiResponse.generateStatus === 200 || apiResponse.generateStatus === 202) {
       console.log('✅ Rendition generation request accepted (may still be processing)');
-    } else {
-      console.log(`⚠️ Rendition generation returned status: ${apiResponse.generateStatus}`);
     }
   });
 });

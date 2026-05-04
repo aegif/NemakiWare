@@ -158,8 +158,6 @@ test.describe('PreviewComponent File Type Routing', () => {
               console.log('✅ Tabs container is visible after clicking file name');
             }
           }
-        } else {
-          console.log('⚠️ Document row not found after upload');
         }
       }
     } finally {
@@ -203,8 +201,6 @@ test.describe('PreviewComponent File Type Routing', () => {
           await waitForRender(page);
           console.log('✅ Created test folder for navigation test');
         }
-      } else {
-        console.log('⚠️ No folder or create button found - test validates folder absence handling');
       }
     }
   });
@@ -575,8 +571,6 @@ test.describe('PreviewComponent Error Handling', () => {
             const cardWrapper = page.locator('.ant-card');
             await expect(cardWrapper).toBeVisible({ timeout: 5000 });
             console.log('✅ Preview component renders with card wrapper');
-          } else {
-            console.log('✅ No preview tab - document viewer works without preview');
           }
         }
       }
@@ -693,8 +687,6 @@ startxref
             const pdfContainer = page.locator('.ant-card .react-pdf__Document, .ant-card canvas, .ant-card .ant-alert');
             await expect(pdfContainer.first()).toBeVisible({ timeout: 15000 });
             console.log('✅ PDF preview component rendered');
-          } else {
-            console.log('✅ No preview tab for PDF - document viewer works');
           }
         }
       }
@@ -808,8 +800,6 @@ test.describe('PreviewComponent Video Preview', () => {
             const videoElement = page.locator('.ant-card video, .ant-card .ant-alert');
             await expect(videoElement.first()).toBeVisible({ timeout: 10000 });
             console.log('✅ Video preview component rendered');
-          } else {
-            console.log('✅ No preview tab for video - document viewer works');
           }
         }
       }

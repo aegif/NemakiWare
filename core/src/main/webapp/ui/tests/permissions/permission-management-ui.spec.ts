@@ -244,8 +244,6 @@ test.describe('Permission Management UI - ACL Display', () => {
           console.log('❌ ERROR: "データの読み込みに失敗しました" message appeared!');
           console.log('This indicates ACL endpoint is still failing.');
           await expect(errorMessage).not.toBeVisible();
-        } else {
-          console.log('✅ SUCCESS: No error message - ACL data loaded successfully');
         }
 
         // Wait for navigation or UI change
@@ -295,11 +293,7 @@ test.describe('Permission Management UI - ACL Display', () => {
 
           if (entryCount > 0) {
             console.log('✅ ACL entries found - ACL data successfully retrieved');
-          } else {
-            console.log('ℹ️ No ACL entries (empty ACL is valid)');
           }
-        } else {
-          console.log('ℹ️ ACL table/list not found - may use different UI structure');
         }
 
         // Navigate back to documents
@@ -474,8 +468,6 @@ test.describe('Permission Management UI - ACL Display', () => {
 
           expect(hasWrongUrl).toBe(false);
           console.log('✅ Wrong Browser Binding URL NOT used');
-        } else {
-          console.log('ℹ️ No ACL requests detected - may need to trigger permissions UI differently');
         }
       }
     }

@@ -541,8 +541,6 @@ test.describe('Import/Export Advanced Scenarios', () => {
       // At least 2 older versions should be exported
       if (versionFiles.length >= 2) {
         console.log('✅ Version history files found in ZIP');
-      } else {
-        console.log('⚠️ Version files count:', versionFiles.length, '(expected >= 2)');
       }
 
       // Check for version metadata
@@ -643,8 +641,6 @@ test.describe('Import/Export Advanced Scenarios', () => {
         expect(v1.department).toBe('Sales');
         expect(Number(v1.priority)).toBe(1);
         console.log('✅ Properties correctly differ across versions');
-      } else {
-        console.log('⚠️ V1.0 properties not accessible (may be CMIS implementation limitation)');
       }
     });
 
@@ -744,8 +740,6 @@ test.describe('Import/Export Advanced Scenarios', () => {
           console.log('✅ ACL for "anyone" found in export metadata');
           expect(anyoneAce.permissions).toContain('cmis:read');
         }
-      } else {
-        console.log('⚠️ No ACL entries found in metadata (ACL may not have been set)');
       }
     });
 
@@ -793,8 +787,6 @@ test.describe('Import/Export Advanced Scenarios', () => {
             );
             if (anyoneAce) {
               console.log('✅ ACL restored on imported document');
-            } else {
-              console.log('⚠️ ACL not found on imported document (may require ACL import support)');
             }
           }
         }

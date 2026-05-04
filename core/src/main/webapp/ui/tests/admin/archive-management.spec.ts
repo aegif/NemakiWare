@@ -290,8 +290,6 @@ test.describe('Archive Management', () => {
     if (inArchive) {
       console.log(`Document ${filename} found in archive - deletion to archive works correctly`);
       await expect(archiveRow.first()).toBeVisible();
-    } else {
-      console.log('Deleted document not found in archive - archive feature may work differently');
     }
   });
 
@@ -393,11 +391,7 @@ test.describe('Archive Management', () => {
 
       if (await stillInArchive.count() === 0) {
         console.log(`Object "${objectName}" successfully restored and removed from archive`);
-      } else {
-        console.log('Object still in archive after restore - may be expected behavior');
       }
-    } else {
-      console.log('Restore confirmation not found - restore may work differently');
     }
   });
 
@@ -492,8 +486,6 @@ test.describe('Archive Management', () => {
     if (navigatedToDetail) {
       console.log('Successfully navigated to detail view');
       expect(navigatedToDetail).toBe(true);
-    } else {
-      console.log('Detail view navigation may work differently');
     }
   });
 
@@ -524,8 +516,6 @@ test.describe('Archive Management', () => {
 
     if (hasEmptyState) {
       console.log('Archive shows empty state - no archived objects');
-    } else {
-      console.log(`Archive shows ${rowCount} archived objects`);
     }
   });
 });

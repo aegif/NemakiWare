@@ -83,8 +83,6 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
               }
             }
           }
-        } else {
-          console.log('[Pre-cleanup] No leftover hierarchy-root folders found');
         }
       }
 
@@ -303,11 +301,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
       console.log(`Document 1 creation response: ${createResponse1.status()}`);
       if (createResponse1.ok()) {
         console.log(`Document 1 created successfully in subfolder 1`);
-      } else {
-        console.log(`Document 1 creation failed: ${await createResponse1.text()}`);
       }
-    } else {
-      console.log('Subfolder 1 ID not available - skipping document 1 creation');
     }
 
     // Create document 2 in subfolder 2 via CMIS API
@@ -334,11 +328,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
       console.log(`Document 2 creation response: ${createResponse2.status()}`);
       if (createResponse2.ok()) {
         console.log(`Document 2 created successfully in subfolder 2`);
-      } else {
-        console.log(`Document 2 creation failed: ${await createResponse2.text()}`);
       }
-    } else {
-      console.log('Subfolder 2 ID not available - skipping document 2 creation');
     }
 
     // Wait for Solr indexing
@@ -473,8 +463,6 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
           }
         }
       }
-    } else {
-      console.log('Move button not found - move operation may not be available in UI');
     }
   });
 
@@ -637,8 +625,6 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
         console.warn('The following items could not be deleted automatically:');
         failedCleanups.forEach(item => console.warn(`  - ${item}`));
         console.warn('=================================================');
-      } else {
-        console.log('=== Cleanup completed successfully ===');
       }
     }
   });

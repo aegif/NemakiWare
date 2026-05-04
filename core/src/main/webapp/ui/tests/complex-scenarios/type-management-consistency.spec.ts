@@ -310,8 +310,6 @@ test.describe('Type Management Consistency with Document Operations', () => {
 
       // Type should still exist because documents are using it
       expect(typeStillExists).toBe(true);
-    } else {
-      console.log('Delete button not found for type');
     }
   });
 
@@ -354,8 +352,6 @@ test.describe('Type Management Consistency with Document Operations', () => {
           await waitForRender(page);
         }
       }
-    } else {
-      console.log('Preview button not found');
     }
 
     // Verify custom property is displayed
@@ -485,8 +481,6 @@ test.describe('Type Management Consistency with Document Operations', () => {
                   console.log(`[Cleanup] Successfully deleted type: ${customTypeId}`);
                 }
               }
-            } else {
-              console.log(`[Cleanup] Type not found (may have been deleted in test): ${customTypeId}`);
             }
           }
         }
@@ -507,8 +501,6 @@ test.describe('Type Management Consistency with Document Operations', () => {
         console.warn('The following items could not be deleted automatically:');
         failedCleanups.forEach(item => console.warn(`  - ${item}`));
         console.warn('=================================================');
-      } else {
-        console.log('=== Cleanup completed successfully ===');
       }
     }
   });

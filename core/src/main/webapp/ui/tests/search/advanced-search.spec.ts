@@ -410,8 +410,6 @@ test.describe('Advanced Search', () => {
         const errorText = await errorMessage.first().textContent();
         console.log(`❌ Search error message appeared: "${errorText}"`);
         console.log(`PRODUCT BUG: Search operation returned error despite valid query`);
-      } else {
-        console.log('✅ No error messages - search executed successfully');
       }
 
       expect(errorCount).toBe(0);
@@ -518,8 +516,6 @@ test.describe('Advanced Search', () => {
     } else if (inputValueAfter.includes('SELECT')) {
       console.log(`❌ PRODUCT BUG: CMIS query leaked into search input: "${inputValueAfter.substring(0, 50)}..."`);
       expect(inputValueAfter).not.toContain('SELECT');
-    } else {
-      console.log(`ℹ️ Search input value after search: "${inputValueAfter}" (may be expected if retaining keyword)`);
     }
 
     // Check for CMIS query reference display (should show the executed query separately)
@@ -537,8 +533,6 @@ test.describe('Advanced Search', () => {
       if (refText && refText.includes('SELECT')) {
         console.log('✅ CMIS query reference shows executed SQL query');
       }
-    } else {
-      console.log('ℹ️ CMIS query reference area not found (may use different display pattern)');
     }
 
     // Verify results table is displayed (search actually executed)
@@ -776,16 +770,12 @@ test.describe('Advanced Search', () => {
       const fileSizePattern = /\d+\s*(KB|MB|bytes|B)/i;
       if (resultText && fileSizePattern.test(resultText)) {
         console.log('✅ Search result displays file size information');
-      } else {
-        console.log('ℹ️ File size not displayed in search results (optional)');
       }
 
       // Verify PDF icon/type indicator (if present)
       const pdfIcon = pdfResult.first().locator('.anticon-file-pdf, [aria-label="file-pdf"], .pdf-icon, [class*="pdf"], img[alt*="pdf"]');
       if (await pdfIcon.count() > 0) {
         console.log('✅ PDF file type icon displayed');
-      } else {
-        console.log('ℹ️ PDF icon not found (may use text indicator only)');
       }
 
       // Test navigation to PDF preview/download from search result
@@ -824,8 +814,6 @@ test.describe('Advanced Search', () => {
           // Navigate back to search
           await page.goBack();
           await waitForUiStable(page);
-        } else {
-          console.log('ℹ️ PDF preview/navigation behavior differs from expected pattern');
         }
       }
 

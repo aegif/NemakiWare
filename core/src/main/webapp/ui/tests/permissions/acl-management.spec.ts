@@ -347,8 +347,6 @@ test.describe('Advanced ACL Management', () => {
 
                   if (hasInheritedPermission) {
                     console.log('Test: Permission inheritance verified - child folder has inherited ACL');
-                  } else {
-                    console.log('Test: Permission inheritance not found - may not be supported or configured differently');
                   }
                 }
               }
@@ -392,8 +390,6 @@ test.describe('Advanced ACL Management', () => {
 
           if (deleteResponse.ok()) {
             console.log('Test 2 Cleanup: Test folder deleted successfully via API');
-          } else {
-            console.log('Test 2 Cleanup: Folder deletion failed - may have been already deleted');
           }
         }
       }
@@ -543,8 +539,6 @@ test.describe('Advanced ACL Management', () => {
           console.log('ERROR: applyACL failed!');
           console.log('Response:', errorBody);
           // Still continue to see what happens
-        } else {
-          console.log('Test: Granted cmis:all permission to testuser');
         }
 
         // Wait for ACL to propagate
@@ -595,8 +589,6 @@ test.describe('Advanced ACL Management', () => {
           console.log('Expected: HTTP 200, Actual: HTTP ' + testuserAccessResponse1.status());
           const errorBody = await testuserAccessResponse1.text();
           console.log('Error response:', errorBody.substring(0, 500));
-        } else {
-          console.log('Test: SUCCESS - testuser can access folder with cmis:all permission');
         }
 
         // For now, we'll check that ACL contains testuser (not that access works)
@@ -656,8 +648,6 @@ test.describe('Advanced ACL Management', () => {
         if (!testuserAccessResponse2.ok()) {
           console.log('PRODUCT BUG: testuser still cannot access folder despite cmis:read permission');
           console.log('Expected: HTTP 200, Actual: HTTP ' + testuserAccessResponse2.status());
-        } else {
-          console.log('Test: SUCCESS - testuser can access folder with cmis:read permission');
         }
 
         // For now, we'll check that ACL contains testuser (not that access works)

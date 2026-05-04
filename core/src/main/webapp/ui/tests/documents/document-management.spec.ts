@@ -413,8 +413,6 @@ test.describe('Document Management', () => {
         } catch (e) {
           console.log(`DEBUG: Could not read response body`);
         }
-      } else {
-        console.log('DEBUG: No upload API response captured - form may not have submitted');
       }
 
       // Wait a moment and check for validation errors

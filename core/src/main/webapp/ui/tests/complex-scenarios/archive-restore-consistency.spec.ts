@@ -81,8 +81,6 @@ test.describe('Archive and Restore Consistency', () => {
               }
             }
           }
-        } else {
-          console.log('[Pre-cleanup] No leftover archive-test folders found');
         }
       }
 
@@ -237,8 +235,6 @@ test.describe('Archive and Restore Consistency', () => {
         console.log('Found delete icon, clicking parent button');
         await anyDeleteButton.locator('..').click(isMobile ? { force: true } : {});
         await waitForUiStable(page);
-      } else {
-        console.log('No delete button found anywhere on page');
       }
     }
 
@@ -278,8 +274,6 @@ test.describe('Archive and Restore Consistency', () => {
           console.log('Viewing archived document properties');
         }
       }
-    } else {
-      console.log('Archive menu not found - archive view may not be available');
     }
   });
 
@@ -313,8 +307,6 @@ test.describe('Archive and Restore Consistency', () => {
             await waitForUiStable(page);
             console.log('Document restored');
           }
-        } else {
-          console.log('Restore button not found');
         }
       }
     }
@@ -413,8 +405,6 @@ test.describe('Archive and Restore Consistency', () => {
             await waitForUiStable(page);
             console.log('Document permanently deleted');
           }
-        } else {
-          console.log('Permanent delete button not found');
         }
       }
     }
@@ -470,8 +460,6 @@ test.describe('Archive and Restore Consistency', () => {
         console.warn('The following items could not be deleted automatically:');
         failedCleanups.forEach(item => console.warn(`  - ${item}`));
         console.warn('=================================================');
-      } else {
-        console.log('=== Cleanup completed successfully ===');
       }
     }
   });

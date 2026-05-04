@@ -249,8 +249,6 @@ test.describe('Bulk Operations', () => {
         if (resp.ok()) {
           createdNames.push(filename);
           console.log(`createTestDocuments: Created ${filename}`);
-        } else {
-          console.log(`createTestDocuments: Failed ${filename}: ${resp.status()}`);
         }
       } catch (e) {
         console.log(`createTestDocuments: Exception creating ${filename}:`, e);
@@ -684,8 +682,6 @@ test.describe('Bulk Operations', () => {
 
         testDocumentNames.length = 0;
       }
-    } else {
-      console.log('Bulk delete confirmation modal not found');
     }
   });
 });

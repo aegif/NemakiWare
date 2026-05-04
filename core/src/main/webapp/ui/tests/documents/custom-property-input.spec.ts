@@ -624,9 +624,11 @@ test.describe('Custom Property Input Feature', () => {
       await expect(addButton).toBeVisible({ timeout: 10000 });
       await addButton.click();
 
-      // Verify modal opens
+      // Verify modal opens with type selection dropdown
       const modal = page.locator('.ant-modal:visible');
       await expect(modal).toBeVisible({ timeout: 5000 });
+      const typeSelector = modal.locator('.ant-select').first();
+      await expect(typeSelector).toBeVisible({ timeout: 5000 });
 
       // Close modal
       const cancelButton = modal.getByRole('button', { name: /キャンセル|Cancel/i });

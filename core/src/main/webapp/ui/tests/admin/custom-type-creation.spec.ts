@@ -501,8 +501,6 @@ test.describe('Custom Type Creation and Property Management', () => {
               }
 
               console.log('Test: JSON-based property addition completed');
-            } else {
-              console.log('ℹ️ Save button not found (neither primary nor text-based)');
             }
           } catch (parseError) {
             console.log(`⚠️ Failed to parse JSON: ${parseError}`);

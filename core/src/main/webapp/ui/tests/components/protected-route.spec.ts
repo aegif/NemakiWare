@@ -283,8 +283,6 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
       // Log result (loading state may be too fast to catch)
       if (loadingSpinnerSeen) {
         console.log('✅ Loading state was visible during auth check');
-      } else {
-        console.log('⚠️ Loading state too brief to capture (expected for fast localStorage reads)');
       }
 
       // Final state should be either login form or authenticated content

@@ -307,8 +307,6 @@ test.describe('Group Management CRUD Operations', () => {
         const groupRow = page.locator('.ant-table-tbody tr').filter({ hasText: TEST_GROUP_NAME });
         if (await groupRow.count() > 0) {
           console.log('[DEBUG] Test 1: Group also found in UI search');
-        } else {
-          console.log('[DEBUG] Test 1: Group not found in UI search (may be paginated) - API verification passed');
         }
       }
     }
@@ -495,8 +493,6 @@ test.describe('Group Management CRUD Operations', () => {
       } catch {
         console.log('Modal did not close after description edit');
       }
-    } else {
-      console.log('Description field not found in modal');
     }
   });
 

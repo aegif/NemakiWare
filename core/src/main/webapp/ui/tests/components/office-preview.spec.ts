@@ -210,8 +210,6 @@ test.describe('Office Preview - File Type Support', () => {
 
         console.log(`PDF preview elements found: ${previewCount}`);
       }
-    } else {
-      console.log('No PDF files found in document list');
     }
 
     expect(true).toBe(true);
@@ -367,8 +365,6 @@ test.describe('Office Preview - Rendition Integration', () => {
         // Log any rendition requests made
         if (renditionRequests.length > 0) {
           console.log('Rendition API requests:', renditionRequests);
-        } else {
-          console.log('No rendition API requests detected');
         }
       }
     }

@@ -147,8 +147,6 @@ test.describe('FolderTree Navigation', () => {
       if (hasLegend) {
         await expect(legendText).toBeVisible();
         console.log('Folder tree legend is displayed');
-      } else {
-        console.log('No instruction text found - feature may use different UI pattern');
       }
     }
   });
@@ -320,8 +318,6 @@ test.describe('FolderTree Navigation', () => {
 
       expect(contentChanged).toBe(true);
       console.log('Main content pane updated after folder selection');
-    } else {
-      console.log('Test folder not visible in tree - may need to expand parent');
     }
   });
 
@@ -490,8 +486,6 @@ test.describe('FolderTree Navigation', () => {
 
       // The behavior depends on implementation - either styling changes
       // or tree structure changes (child becomes root of visible tree)
-    } else {
-      console.log('Child folder not visible in tree - may need to expand parent first');
     }
   });
 
@@ -599,12 +593,8 @@ test.describe('FolderTree Navigation', () => {
 
           expect(childVisible).toBe(true);
           console.log('Child folder loaded on expansion');
-        } else {
-          console.log('Parent folder shows as leaf in tree - children may not be detected');
         }
       }
-    } else {
-      console.log('Parent folder not found in tree');
     }
   });
 });

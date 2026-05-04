@@ -277,8 +277,6 @@ test.describe('Secondary Type with Custom Properties', () => {
           }
         }
       }
-    } else {
-      console.log('Aspect/Secondary type management not available in UI');
     }
   });
 
@@ -450,8 +448,6 @@ test.describe('Secondary Type with Custom Properties', () => {
                   console.log(`[Cleanup] Successfully deleted secondary type: ${secondaryTypeId}`);
                 }
               }
-            } else {
-              console.log(`[Cleanup] Secondary type not found (may have been deleted already): ${secondaryTypeId}`);
             }
           }
         }
@@ -472,8 +468,6 @@ test.describe('Secondary Type with Custom Properties', () => {
         console.warn('The following items could not be deleted automatically:');
         failedCleanups.forEach(item => console.warn(`  - ${item}`));
         console.warn('=================================================');
-      } else {
-        console.log('=== Cleanup completed successfully ===');
       }
     }
   });

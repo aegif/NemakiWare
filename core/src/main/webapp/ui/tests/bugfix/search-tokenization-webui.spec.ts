@@ -340,14 +340,10 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
     if (partialMatchFound) {
       console.log(`[TEST] ❌ BUG STILL EXISTS: Partial match document was incorrectly returned!`);
       console.log(`[TEST] This means the search term was tokenized and individual tokens matched`);
-    } else {
-      console.log(`[TEST] ✅ BUG FIXED: Partial match document was correctly excluded`);
     }
 
     if (exactMatchFound) {
       console.log(`[TEST] ✅ Exact phrase match is working correctly`);
-    } else {
-      console.log(`[TEST] ⚠️ Warning: Exact match document not found - Solr may need more indexing time`);
     }
 
     // THE CRITICAL BUG ASSERTION
@@ -397,8 +393,6 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
             console.log(`[TEST] ✅ Deleted: ${docName}`);
           }
         }
-      } else {
-        console.log(`[TEST] Document not found for cleanup: ${docName}`);
       }
     }
 

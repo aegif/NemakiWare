@@ -120,9 +120,6 @@ test.describe('Rendition API - Supported Types', () => {
       const data = await response.json();
       expect(data.status).toBe('error');
       expect(data.message).toBe('Authentication required');
-    } else {
-      // Log unexpected status for debugging
-      console.log('Unexpected status:', response.status(), await response.text());
     }
   });
 

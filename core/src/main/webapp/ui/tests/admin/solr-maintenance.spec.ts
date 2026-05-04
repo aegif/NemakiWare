@@ -198,8 +198,6 @@ test.describe('Solr Index Maintenance', () => {
       const descriptions = statusCard.locator('.ant-descriptions-item');
       const descCount = await descriptions.count();
       console.log(`Found ${descCount} status description items`);
-    } else {
-      console.log('Reindex status card not visible - may be idle state');
     }
   });
 
@@ -349,8 +347,6 @@ test.describe('Solr Index Maintenance', () => {
         await cancelButton.click();
         console.log('Cancelled reindex operation');
       }
-    } else {
-      console.log('Popconfirm not shown - button may trigger directly');
     }
   });
 
@@ -402,8 +398,6 @@ test.describe('Solr Index Maintenance', () => {
         await cancelButton.click();
         console.log('Cancelled index clear operation');
       }
-    } else {
-      console.log('Popconfirm not shown - button may trigger directly');
     }
   });
 
@@ -473,8 +467,6 @@ test.describe('Solr Index Maintenance', () => {
         console.log(`Solr URL: ${url}`);
         expect(url).toContain('solr');
       }
-    } else {
-      console.log('Solr URL not displayed - may be hidden or not implemented');
     }
   });
 

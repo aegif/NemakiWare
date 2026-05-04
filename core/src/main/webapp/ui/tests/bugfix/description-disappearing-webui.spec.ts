@@ -95,8 +95,6 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
           });
           if (!deleteResponse.ok) {
             console.warn(`[CLEANUP] Failed to delete ${name} (${objectId}): HTTP ${deleteResponse.status}`);
-          } else {
-            console.log(`[CLEANUP] Deleted: ${name} (${objectId})`);
           }
         }
       }
@@ -212,8 +210,6 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
             await waitForUiStable(page);
             console.log(`[TEST] Clicked add button for secondary type`);
           }
-        } else {
-          console.log(`[TEST] commentable option not found in dropdown`);
         }
       }
     } else {
@@ -262,8 +258,6 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
       await descriptionField.first().clear();
       await descriptionField.first().fill(testDescription);
       console.log(`[TEST] Description set: ${testDescription}`);
-    } else {
-      console.log(`[TEST] Description field not found`);
     }
 
     // Find and fill comment field (secondary type property)
@@ -272,8 +266,6 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
       await commentField.first().clear();
       await commentField.first().fill(testComment);
       console.log(`[TEST] Comment set: ${testComment}`);
-    } else {
-      console.log(`[TEST] Comment field not found`);
     }
 
     // Save changes
@@ -396,8 +388,6 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
           if (!deleteResponse.ok) {
             const errorText = await deleteResponse.text().catch(() => '');
             errors.push(`Failed to delete ${objectId}: HTTP ${deleteResponse.status} ${errorText}`);
-          } else {
-            console.log(`[TEST] ✅ Document deleted via API: ${objectId}`);
           }
         }
       }

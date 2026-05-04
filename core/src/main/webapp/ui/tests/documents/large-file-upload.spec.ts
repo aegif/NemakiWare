@@ -232,8 +232,6 @@ test.describe('Large File Upload', () => {
             }
           }
         }
-      } else {
-        console.log('Test: No progress indicator found - upload may be instant or background');
       }
 
       // Wait for success message
@@ -279,8 +277,6 @@ test.describe('Large File Upload', () => {
             console.log('Test: Large file deleted');
           }
         }
-      } else {
-        console.log('Test: Large file not found in document list - upload may have failed or still processing');
       }
     } finally {
       // Cleanup temp file

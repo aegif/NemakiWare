@@ -733,11 +733,7 @@ test.describe('Document Versioning', () => {
         const versionCount = await versionRows.count();
         console.log(`Test: Version history entries: ${versionCount}`);
         expect(versionCount).toBeGreaterThanOrEqual(1);
-      } else {
-        console.log('Test: Version history tab not found');
       }
-    } else {
-      console.log('Test: Eye button not found, verifying document count only');
     }
 
     // Cleanup: Delete the test document via API
