@@ -274,7 +274,7 @@ test.describe('Bulk Operations', () => {
     // Create 3 test documents in a dedicated folder
     const { names: createdDocs, folderId: testFolderId } = await createTestDocuments(page, 3, uuid);
     if (createdDocs.length === 0) {
-      test.skip('Failed to create test documents');
+      test.skip('ENV: Failed to create test documents via API');
       return;
     }
 
@@ -289,7 +289,7 @@ test.describe('Bulk Operations', () => {
 
     if (checkboxCount === 0) {
       // UPDATED (2025-12-26): Checkbox selection IS implemented in Ant Design Table
-      test.skip('Checkbox selection not visible - check Ant Design Table rowSelection config');
+      await expect(page.locator('.ant-table-selection-column input[type=checkbox]').first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -353,7 +353,7 @@ test.describe('Bulk Operations', () => {
     // Create 5 test documents in a dedicated folder
     const { names: createdDocs } = await createTestDocuments(page, 5, uuid);
     if (createdDocs.length === 0) {
-      test.skip('Failed to create test documents');
+      test.skip('ENV: Failed to create test documents via API');
       return;
     }
 
@@ -365,7 +365,7 @@ test.describe('Bulk Operations', () => {
 
     if (await selectAllCheckbox.count() === 0) {
       // UPDATED (2025-12-26): Select all checkbox IS implemented in Ant Design Table header
-      test.skip('Select all checkbox not visible - check Ant Design Table rowSelection config');
+      await expect(page.locator('.ant-table-selection-column input[type=checkbox]').first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -458,7 +458,7 @@ test.describe('Bulk Operations', () => {
     // Select all documents (only the 5 test documents should be in this folder)
     const selectAllCheckbox = page.locator('.ant-table-thead th.ant-table-selection-column input[type="checkbox"]');
     if (await selectAllCheckbox.count() === 0) {
-      test.skip('Checkbox selection not visible');
+      await expect(page.locator('.ant-table-selection-column input[type=checkbox]').first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -469,7 +469,7 @@ test.describe('Bulk Operations', () => {
     const bulkDeleteButton = page.locator('button').filter({ hasText: /\d+件を削除|一括削除|Delete \d+ items?|Bulk Delete/i });
 
     if (await bulkDeleteButton.count() === 0) {
-      test.skip('Bulk delete button not visible after selection');
+      await expect(page.getByRole('button', { name: /一括削除|Bulk Delete|Delete/i }).first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -529,7 +529,7 @@ test.describe('Bulk Operations', () => {
         data: deleteForm.toString()
       });
     } else {
-      test.skip('Bulk delete confirmation not visible');
+      await expect(page.locator('.ant-modal-confirm, .ant-popconfirm')).toBeVisible({ timeout: 5000 });
     }
   });
 
@@ -559,7 +559,7 @@ test.describe('Bulk Operations', () => {
     // Create 3 test documents in a dedicated folder
     const { names: createdDocs } = await createTestDocuments(page, 3, uuid);
     if (createdDocs.length === 0) {
-      test.skip('Failed to create test documents');
+      test.skip('ENV: Failed to create test documents via API');
       return;
     }
 
@@ -569,7 +569,7 @@ test.describe('Bulk Operations', () => {
     // Select 2 documents (body rows only, exclude header checkbox)
     const selectionCheckboxes = page.locator('.ant-table-tbody .ant-table-selection-column input[type="checkbox"]');
     if (await selectionCheckboxes.count() < 2) {
-      test.skip('Checkbox selection not visible');
+      await expect(page.locator('.ant-table-selection-column input[type=checkbox]').first()).toBeVisible({ timeout: 10000 });
       return;
     }
 

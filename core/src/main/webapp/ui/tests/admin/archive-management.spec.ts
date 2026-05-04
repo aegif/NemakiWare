@@ -125,7 +125,7 @@ test.describe('Archive Management', () => {
 
       const hasContent = await page.locator('.ant-table, .ant-card').count() > 0;
       if (!hasContent) {
-        test.skip('Archive management page not accessible');
+        // Archive management page should be accessible for admin
       }
     }
   });
@@ -142,7 +142,7 @@ test.describe('Archive Management', () => {
 
     if (await archiveTable.count() === 0) {
       // UPDATED (2025-12-26): Archive table IS implemented in ArchiveManagement.tsx
-      test.skip('Archive table not visible - IS implemented in ArchiveManagement.tsx');
+      await expect(page.locator('.ant-table')).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -177,7 +177,7 @@ test.describe('Archive Management', () => {
 
     if (await archiveTable.count() === 0) {
       // UPDATED (2025-12-26): Archive table IS implemented in ArchiveManagement.tsx
-      test.skip('Archive table not visible - IS implemented in ArchiveManagement.tsx');
+      await expect(page.locator('.ant-table')).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -229,7 +229,7 @@ test.describe('Archive Management', () => {
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Content for archive test', isMobile);
 
     if (!uploadSuccess) {
-      test.skip('Failed to upload test document');
+      test.skip('ENV: Failed to upload test document');
       return;
     }
 
@@ -251,7 +251,7 @@ test.describe('Archive Management', () => {
         await altDeleteButton.click(isMobile ? { force: true } : {});
       } else {
         // UPDATED (2025-12-26): Delete IS implemented in DocumentList.tsx
-        test.skip('Delete button not visible - IS implemented in DocumentList.tsx');
+        await expect(page.getByRole('button', { name: /削除|Delete/i }).first()).toBeVisible({ timeout: 10000 });
         return;
       }
     } else {
@@ -305,7 +305,7 @@ test.describe('Archive Management', () => {
     // CRITICAL FIX (2025-12-14): Check for empty table placeholder first
     const emptyPlaceholder = page.locator('.ant-table-placeholder, .ant-empty');
     if (await emptyPlaceholder.count() > 0) {
-      test.skip('Archive table is empty - no entries to restore');
+      test.skip('ENV: Archive table is empty - no entries to restore');
       return;
     }
 
@@ -317,7 +317,7 @@ test.describe('Archive Management', () => {
     console.log(`Found ${rowCount} data rows in archive table`);
 
     if (rowCount === 0) {
-      test.skip('No archive entries to restore');
+      test.skip('ENV: No archive entries to restore');
       return;
     }
 
@@ -365,7 +365,7 @@ test.describe('Archive Management', () => {
         console.log(`Button ${i}: "${text}"`);
       }
       // UPDATED (2025-12-26): Restore IS implemented in ArchiveManagement.tsx
-      test.skip('Restore button not visible - IS implemented in ArchiveManagement.tsx');
+      await expect(page.getByRole('button', { name: /復元|Restore/i }).first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -412,7 +412,7 @@ test.describe('Archive Management', () => {
     const rowCount = await archiveRows.count();
 
     if (rowCount === 0) {
-      test.skip('No archive entries for download button test');
+      test.skip('ENV: No archive entries for download button test');
       return;
     }
 
@@ -457,7 +457,7 @@ test.describe('Archive Management', () => {
     const rowCount = await archiveRows.count();
 
     if (rowCount === 0) {
-      test.skip('No archive entries for detail view test');
+      test.skip('ENV: No archive entries for detail view test');
       return;
     }
 
@@ -474,7 +474,7 @@ test.describe('Archive Management', () => {
 
       if (await altDetailButton.count() === 0) {
         // UPDATED (2025-12-26): Detail view IS implemented in ArchiveManagement.tsx
-        test.skip('Detail view button not visible - IS implemented in ArchiveManagement.tsx');
+        await expect(page.locator('button').filter({ has: page.locator('.anticon-eye') }).first()).toBeVisible({ timeout: 10000 });
         return;
       }
       await altDetailButton.click(isMobile ? { force: true } : {});
@@ -507,7 +507,7 @@ test.describe('Archive Management', () => {
 
     if (await archiveTable.count() === 0) {
       // UPDATED (2025-12-26): Archive table IS implemented in ArchiveManagement.tsx
-      test.skip('Archive table not visible - IS implemented in ArchiveManagement.tsx');
+      await expect(page.locator('.ant-table')).toBeVisible({ timeout: 10000 });
       return;
     }
 

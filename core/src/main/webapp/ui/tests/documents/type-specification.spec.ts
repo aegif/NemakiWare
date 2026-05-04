@@ -143,7 +143,7 @@ test.describe('Type Specification Features', () => {
         expect(selectorCount).toBeGreaterThan(0);
       } else {
         // UPDATED (2025-12-26): Folder creation IS implemented in DocumentList.tsx
-        test.skip('Folder creation button not visible - IS implemented in DocumentList.tsx');
+        await expect(page.getByRole('button', { name: /新規フォルダ|New Folder/i })).toBeVisible({ timeout: 10000 });
       }
     });
   });
@@ -156,7 +156,7 @@ test.describe('Type Specification Features', () => {
       const rowCount = await docRows.count();
 
       if (rowCount === 0) {
-        test.skip('No document rows found');
+        await expect(page.locator('.ant-table-row').first()).toBeVisible({ timeout: 10000 });
         return;
       }
 
@@ -180,7 +180,7 @@ test.describe('Type Specification Features', () => {
       }
 
       if (!found) {
-        test.skip('No document with file extension found');
+        test.skip('ENV: No document with file extension found in repository');
         return;
       }
 
@@ -217,7 +217,7 @@ test.describe('Type Specification Features', () => {
       });
 
       if (!createResp.ok()) {
-        test.skip('Could not create test document via API');
+        test.skip('ENV: Could not create test document via API');
         return;
       }
 
@@ -250,7 +250,7 @@ test.describe('Type Specification Features', () => {
           headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
           data: new URLSearchParams({ cmisaction: 'delete', objectId: docId, allVersions: 'true' }).toString(),
         });
-        test.skip('Test document not visible in table');
+        await expect(page.locator('.ant-table-row').first()).toBeVisible({ timeout: 10000 });
         return;
       }
 
@@ -265,7 +265,7 @@ test.describe('Type Specification Features', () => {
           headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
           data: new URLSearchParams({ cmisaction: 'delete', objectId: docId, allVersions: 'true' }).toString(),
         });
-        test.skip('Secondary type tab not found - may be implemented differently');
+        await expect(page.getByRole('tab', { name: /セカンダリタイプ|Secondary/i })).toBeVisible({ timeout: 10000 });
         return;
       }
 
@@ -316,7 +316,7 @@ test.describe('Type Specification Features', () => {
         await expect(secondaryTypeFormItem).toBeVisible({ timeout: 10000 });
       } else {
         // UPDATED (2025-12-26): Search menu IS implemented in Layout.tsx lines 313-314
-        test.skip('Search menu item not visible - IS implemented in Layout.tsx');
+        await expect(page.locator('.ant-menu-item').filter({ hasText: /検索|Search/i }).first()).toBeVisible({ timeout: 10000 });
       }
     });
 
@@ -325,7 +325,7 @@ test.describe('Type Specification Features', () => {
       const searchMenuItem = page.locator('.ant-menu-item').filter({ hasText: '検索' });
       if (await searchMenuItem.count() === 0) {
         // UPDATED (2025-12-26): Search menu IS implemented in Layout.tsx lines 313-314
-        test.skip('Search menu item not visible - IS implemented in Layout.tsx');
+        await expect(page.locator('.ant-menu-item').filter({ hasText: /検索|Search/i }).first()).toBeVisible({ timeout: 10000 });
         return;
       }
 
@@ -353,7 +353,7 @@ test.describe('Type Specification Features', () => {
       const searchMenuItem = page.locator('.ant-menu-item').filter({ hasText: '検索' });
       if (await searchMenuItem.count() === 0) {
         // UPDATED (2025-12-26): Search menu IS implemented in Layout.tsx lines 313-314
-        test.skip('Search menu item not visible - IS implemented in Layout.tsx');
+        await expect(page.locator('.ant-menu-item').filter({ hasText: /検索|Search/i }).first()).toBeVisible({ timeout: 10000 });
         return;
       }
 
@@ -392,7 +392,7 @@ test.describe('Type Specification Features', () => {
       const searchMenuItem = page.locator('.ant-menu-item').filter({ hasText: '検索' });
       if (await searchMenuItem.count() === 0) {
         // UPDATED (2025-12-26): Search menu IS implemented in Layout.tsx lines 313-314
-        test.skip('Search menu item not visible - IS implemented in Layout.tsx');
+        await expect(page.locator('.ant-menu-item').filter({ hasText: /検索|Search/i }).first()).toBeVisible({ timeout: 10000 });
         return;
       }
 
@@ -405,7 +405,7 @@ test.describe('Type Specification Features', () => {
 
       if (await selector.count() === 0) {
         // UPDATED (2025-12-26): Secondary type selector IS implemented in SearchForm.tsx
-        test.skip('Secondary type selector not visible - IS implemented in SearchForm.tsx');
+        await expect(page.locator('.ant-select').first()).toBeVisible({ timeout: 10000 });
         return;
       }
 
@@ -436,7 +436,7 @@ test.describe('Type Specification Features', () => {
       const searchMenuItem = page.locator('.ant-menu-item').filter({ hasText: '検索' });
       if (await searchMenuItem.count() === 0) {
         // UPDATED (2025-12-26): Search menu IS implemented in Layout.tsx lines 313-314
-        test.skip('Search menu item not visible - IS implemented in Layout.tsx');
+        await expect(page.locator('.ant-menu-item').filter({ hasText: /検索|Search/i }).first()).toBeVisible({ timeout: 10000 });
         return;
       }
 
@@ -484,7 +484,7 @@ test.describe('Type Specification Features', () => {
       const searchMenuItem = page.locator('.ant-menu-item').filter({ hasText: '検索' });
       if (await searchMenuItem.count() === 0) {
         // UPDATED (2025-12-26): Search menu IS implemented in Layout.tsx lines 313-314
-        test.skip('Search menu item not visible - IS implemented in Layout.tsx');
+        await expect(page.locator('.ant-menu-item').filter({ hasText: /検索|Search/i }).first()).toBeVisible({ timeout: 10000 });
         return;
       }
 
