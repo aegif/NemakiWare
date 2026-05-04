@@ -262,7 +262,7 @@ test.describe('Custom Type Creation and Property Management', () => {
 
       if (!typeIdFilled) {
         console.log('⚠️ Type ID input not found - skipping test');
-        test.skip('Type ID input not found in modal');
+        await expect(page.locator('input#typeId, input[placeholder*="タイプID"], input[placeholder*="Type ID"]').first()).toBeVisible({ timeout: 10000 });
         return;
       }
 
@@ -389,7 +389,7 @@ test.describe('Custom Type Creation and Property Management', () => {
 
       console.log('Test: Custom type creation verified successfully');
     } else {
-      test.skip('Create type button not found - UI may not be implemented');
+      await expect(page.getByRole('button', { name: /タイプ作成|Create Type/i }).first()).toBeVisible({ timeout: 10000 });
     }
   });
 
@@ -514,7 +514,7 @@ test.describe('Custom Type Creation and Property Management', () => {
           }
         } else {
           console.log('ℹ️ JSON TextArea not found');
-          test.skip('JSON editor TextArea not found');
+          test.skip('ENV: JSON editor TextArea not found in modal');
         }
       } else {
         // Not JSON edit modal - might be form-based (unexpected)
@@ -523,11 +523,11 @@ test.describe('Custom Type Creation and Property Management', () => {
         if (await cancelButton.count() > 0) {
           await cancelButton.click();
         }
-        test.skip('JSON editor modal not found - UI may have changed');
+        test.skip('ENV: JSON editor modal not found');
       }
     } else {
       console.log('ℹ️ No editable custom types found in table');
-      test.skip('No editable custom types available (cmis: types are read-only)');
+      test.skip('ENV: No editable custom types available');
     }
   });
 
@@ -637,11 +637,11 @@ test.describe('Custom Type Creation and Property Management', () => {
         // UPDATED (2025-12-26): Type selector IS implemented in DocumentList.tsx lines 1236-1254
         // Skip message updated to reflect implementation status
         console.log('ℹ️ Type selector not visible in upload modal');
-        test.skip('Type selector not visible - implemented in DocumentList.tsx lines 1236-1254');
+        await expect(page.locator('.ant-select').first()).toBeVisible({ timeout: 10000 });
       }
     } else {
       // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+      await expect(page.getByRole('button', { name: /アップロード|Upload/i }).first()).toBeVisible({ timeout: 10000 });
     }
   });
 });

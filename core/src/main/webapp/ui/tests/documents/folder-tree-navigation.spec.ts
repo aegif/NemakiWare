@@ -100,7 +100,7 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
+      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 
@@ -127,7 +127,7 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
+      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 
@@ -159,14 +159,14 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
+      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 
     const folderTree = page.locator('.ant-tree');
     if (await folderTree.count() === 0) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx
-      test.skip('Folder tree not visible - IS implemented in FolderTree.tsx');
+      await expect(page.locator('.folder-tree, .ant-tree')).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -215,14 +215,14 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
+      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 
     const folderTree = page.locator('.ant-tree');
     if (await folderTree.count() === 0) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx
-      test.skip('Folder tree not visible - IS implemented in FolderTree.tsx');
+      await expect(page.locator('.folder-tree, .ant-tree')).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -265,7 +265,7 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
+      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 
@@ -276,7 +276,7 @@ test.describe('FolderTree Navigation', () => {
     const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
     if (await createFolderButton.count() === 0) {
       // UPDATED (2025-12-26): Folder creation IS implemented in DocumentList.tsx
-      test.skip('Folder creation button not visible - IS implemented in DocumentList.tsx');
+      await expect(page.getByRole('button', { name: /新規フォルダ|New Folder/i }).first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -331,14 +331,14 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
+      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 
     const folderTree = page.locator('.ant-tree');
     if (await folderTree.count() === 0) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx
-      test.skip('Folder tree not visible - IS implemented in FolderTree.tsx');
+      await expect(page.locator('.folder-tree, .ant-tree')).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -410,7 +410,7 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
+      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 
@@ -422,7 +422,7 @@ test.describe('FolderTree Navigation', () => {
     const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
     if (await createFolderButton.count() === 0) {
       // UPDATED (2025-12-26): Folder creation IS implemented in DocumentList.tsx
-      test.skip('Folder creation button not visible - IS implemented in DocumentList.tsx');
+      await expect(page.getByRole('button', { name: /新規フォルダ|New Folder/i }).first()).toBeVisible({ timeout: 10000 });
       return;
     }
 
@@ -522,7 +522,7 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
+      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 
@@ -534,7 +534,7 @@ test.describe('FolderTree Navigation', () => {
     const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
     if (await createFolderButton.count() === 0) {
       // UPDATED (2025-12-26): Folder creation IS implemented in DocumentList.tsx
-      test.skip('Folder creation button not visible - IS implemented in DocumentList.tsx');
+      await expect(page.getByRole('button', { name: /新規フォルダ|New Folder/i }).first()).toBeVisible({ timeout: 10000 });
       return;
     }
 

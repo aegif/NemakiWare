@@ -106,7 +106,7 @@ test.describe('Type Migration Features', () => {
     test('should display type migration button in document viewer', async ({ page }) => {
       const docName = await navigateToDocument(page);
       if (!docName) {
-        test.skip(true, 'No document found via CMIS API');
+        test.skip(true, 'ENV: No document found via CMIS API');
         return;
       }
 
@@ -119,7 +119,7 @@ test.describe('Type Migration Features', () => {
     test('should open type migration modal when button clicked', async ({ page }) => {
       const docName = await navigateToDocument(page);
       if (!docName) {
-        test.skip(true, 'No document found via CMIS API');
+        test.skip(true, 'ENV: No document found via CMIS API');
         return;
       }
 
@@ -139,7 +139,7 @@ test.describe('Type Migration Features', () => {
     test('should display object information in modal', async ({ page }) => {
       const docName = await navigateToDocument(page);
       if (!docName) {
-        test.skip(true, 'No document found via CMIS API');
+        test.skip(true, 'ENV: No document found via CMIS API');
         return;
       }
 
@@ -169,7 +169,7 @@ test.describe('Type Migration Features', () => {
     test('should show CMIS non-standard warning', async ({ page }) => {
       const docName = await navigateToDocument(page);
       if (!docName) {
-        test.skip(true, 'No document found via CMIS API');
+        test.skip(true, 'ENV: No document found via CMIS API');
         return;
       }
 
@@ -190,7 +190,7 @@ test.describe('Type Migration Features', () => {
     test('should display type selector with compatible types', async ({ page }) => {
       const docName = await navigateToDocument(page);
       if (!docName) {
-        test.skip(true, 'No document found via CMIS API');
+        test.skip(true, 'ENV: No document found via CMIS API');
         return;
       }
 
@@ -218,7 +218,7 @@ test.describe('Type Migration Features', () => {
     test('should disable OK button when no type selected', async ({ page }) => {
       const docName = await navigateToDocument(page);
       if (!docName) {
-        test.skip(true, 'No document found via CMIS API');
+        test.skip(true, 'ENV: No document found via CMIS API');
         return;
       }
 
@@ -240,7 +240,7 @@ test.describe('Type Migration Features', () => {
     test('should close modal on cancel', async ({ page }) => {
       const docName = await navigateToDocument(page);
       if (!docName) {
-        test.skip(true, 'No document found via CMIS API');
+        test.skip(true, 'ENV: No document found via CMIS API');
         return;
       }
 
@@ -277,7 +277,7 @@ test.describe('Type Migration - Error Handling', () => {
   test('should handle case when no compatible types available', async ({ page }) => {
     const docName = await navigateToDocument(page);
     if (!docName) {
-      test.skip(true, 'No document found via CMIS API');
+      test.skip(true, 'ENV: No document found via CMIS API');
       return;
     }
 
