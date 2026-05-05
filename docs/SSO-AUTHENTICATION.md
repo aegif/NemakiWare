@@ -12,7 +12,7 @@ NemakiWare supports three authentication methods:
 
 > **CSRF Protection**: REST mutating endpoints (POST/PUT/DELETE under `/core/rest/repo/...` and `/core/api/v1/...`)
 > are CSRF-protected via `CsrfValidator`. Bypass with any of: `X-Requested-With: XMLHttpRequest`,
-> `Authorization: Bearer <token>`, `AUTH_TOKEN`, or `X-API-Key` header.
+> `Authorization: Bearer <token>`, `AUTH_TOKEN` / `nemaki_auth_token`, `AUTH_TOKEN_APP` / `nemaki_auth_token_app`, or `X-API-Key` header.
 > Basic auth alone requires `X-Requested-With`. See [CLAUDE.md CSRF section](../CLAUDE.md#csrf保護-rest-api).
 
 ## Prerequisites
@@ -247,7 +247,7 @@ npx playwright test tests/auth/saml-login.spec.ts
 **Solution**: The SSO token-conversion endpoints bypass *authentication* (AuthenticationFilter), meaning they do not require Basic auth or a pre-existing session. However, they still enforce *CSRF protection* via `CsrfValidator.validate()` (shared by both Jersey and Spring MVC endpoints). CLI callers must include one of:
 - `X-Requested-With: XMLHttpRequest`
 - `Authorization: Bearer <token>` (non-Basic)
-- `AUTH_TOKEN` / `X-API-Key` header
+- `AUTH_TOKEN` / `nemaki_auth_token` / `AUTH_TOKEN_APP` / `nemaki_auth_token_app` / `X-API-Key` header
 
 Basic auth alone is NOT sufficient for CSRF bypass. Check that the AuthenticationFilter is correctly configured to allow `/authtoken/saml/convert` and `/authtoken/oidc/convert` paths.
 

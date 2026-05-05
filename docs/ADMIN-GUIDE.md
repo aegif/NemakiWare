@@ -431,7 +431,7 @@ Google / Microsoft / Keycloak 等の OIDC プロバイダとの連携設定。
 > CLI/curl からは以下のいずれかのヘッダーで CSRF バイパスできます:
 > - `X-Requested-With: XMLHttpRequest`
 > - `Authorization: Bearer <token>` (非 Basic)
-> - `AUTH_TOKEN: <token>` / `X-API-Key: <key>`
+> - `AUTH_TOKEN` / `nemaki_auth_token` / `AUTH_TOKEN_APP` / `nemaki_auth_token_app` / `X-API-Key`
 >
 > **Basic 認証のみの場合は `X-Requested-With` が必須です**（ブラウザが自動付与する ambient credential のため）。
 > 詳細: [CLAUDE.md の CSRF セクション](../CLAUDE.md#csrf保護-rest-api)
