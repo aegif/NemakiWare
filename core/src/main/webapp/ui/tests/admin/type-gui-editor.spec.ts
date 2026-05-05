@@ -6,9 +6,9 @@ import { TestHelper } from '../utils/test-helper';
 /**
  * Type GUI Editor E2E Tests
  *
- * Tests for the GUI-based type definition editor functionality:
- * and working.
- * However, tests fail due to the following issues:
+ * Tests for the GUI-based type definition editor functionality.
+ *
+ * Known limitations:
  *
  * 1. MODAL DETECTION TIMING:
  *    - GUI editor modal uses async loading

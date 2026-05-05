@@ -10,10 +10,10 @@ NemakiWare supports three authentication methods:
 2. **OIDC (OpenID Connect)** - OAuth 2.0 based authentication with identity providers like Keycloak, Google, Azure AD
 3. **SAML 2.0** - Enterprise SSO authentication with identity providers like Keycloak, Okta, ADFS
 
-> **CSRF Protection**: REST mutating endpoints (POST/PUT/DELETE under `/core/rest/repo/...`)
-> require an explicit CSRF marker. CLI/curl callers using Basic auth must add
-> `X-Requested-With: XMLHttpRequest`. See [CLAUDE.md CSRF section](../CLAUDE.md#csrf保護-rest-api)
-> for the canonical contract.
+> **CSRF Protection**: REST mutating endpoints (POST/PUT/DELETE under `/core/rest/repo/...` and `/core/api/v1/...`)
+> are CSRF-protected via `CsrfValidator`. Bypass with any of: `X-Requested-With: XMLHttpRequest`,
+> `Authorization: Bearer <token>`, `AUTH_TOKEN`, or `X-API-Key` header.
+> Basic auth alone requires `X-Requested-With`. See [CLAUDE.md CSRF section](../CLAUDE.md#csrf保護-rest-api).
 
 ## Prerequisites
 
@@ -244,7 +244,12 @@ npx playwright test tests/auth/saml-login.spec.ts
 
 **Problem**: Token conversion fails with 401 Unauthorized
 
-**Solution**: The SSO token-conversion endpoints bypass *authentication* (AuthenticationFilter), meaning they do not require Basic auth or a pre-existing session. However, they still enforce *CSRF protection* (ResourceBase.validateCsrfProtection). CLI callers must include `X-Requested-With: XMLHttpRequest` or a valid `Origin` header. Check that the AuthenticationFilter is correctly configured to allow `/authtoken/saml/convert` and `/authtoken/oidc/convert` paths.
+**Solution**: The SSO token-conversion endpoints bypass *authentication* (AuthenticationFilter), meaning they do not require Basic auth or a pre-existing session. However, they still enforce *CSRF protection* via `CsrfValidator.validate()` (shared by both Jersey and Spring MVC endpoints). CLI callers must include one of:
+- `X-Requested-With: XMLHttpRequest`
+- `Authorization: Bearer <token>` (non-Basic)
+- `AUTH_TOKEN` / `X-API-Key` header
+
+Basic auth alone is NOT sufficient for CSRF bypass. Check that the AuthenticationFilter is correctly configured to allow `/authtoken/saml/convert` and `/authtoken/oidc/convert` paths.
 
 ### SAML Issues
 

@@ -459,7 +459,7 @@
       "apiTitle": "API Documentation",
       "apiDesc": "Open \"Admin\" → \"API Documentation\" to view and try REST APIs via Swagger UI.",
       "apiCsrf": "CSRF Protection",
-      "apiCsrfDesc": "REST API POST/PUT/DELETE requests are CSRF-protected. When accessing from CLI or curl, add the X-Requested-With: XMLHttpRequest header.",
+      "apiCsrfDesc": "REST API POST/PUT/DELETE requests are CSRF-protected. When accessing from CLI or curl, use one of: X-Requested-With: XMLHttpRequest header, Bearer token, AUTH_TOKEN header, or X-API-Key header. These are non-ambient credentials and bypass CSRF checks. Basic auth alone is NOT sufficient — browsers auto-attach it, so X-Requested-With is required alongside Basic auth.",
       "mcpTitle": "MCP Server (AI Integration)",
       "mcpIntro": "NemakiWare includes a built-in MCP (Model Context Protocol) server. MCP-compatible AI clients like Claude Code can search, retrieve, and semantically search documents. No special configuration is required — it is automatically available when NemakiWare Core is running.",
       "mcpEndpoints": "Endpoints",

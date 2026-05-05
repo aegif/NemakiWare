@@ -427,7 +427,13 @@ Google / Microsoft / Keycloak 等の OIDC プロバイダとの連携設定。
 - `/core/rest/repo/{repositoryId}/...` — レガシー REST
 - `/core/api/v1/...` — Spring MVC API
 
-> REST API の POST/PUT/DELETE は CSRF 保護されています。CLI/curl からは `X-Requested-With: XMLHttpRequest` ヘッダーを付与してください。
+> REST API の POST/PUT/DELETE は CSRF 保護されています（Jersey `/core/rest/` と Spring MVC `/core/api/v1/` の両方）。
+> CLI/curl からは以下のいずれかのヘッダーで CSRF バイパスできます:
+> - `X-Requested-With: XMLHttpRequest`
+> - `Authorization: Bearer <token>` (非 Basic)
+> - `AUTH_TOKEN: <token>` / `X-API-Key: <key>`
+>
+> **Basic 認証のみの場合は `X-Requested-With` が必須です**（ブラウザが自動付与する ambient credential のため）。
 > 詳細: [CLAUDE.md の CSRF セクション](../CLAUDE.md#csrf保護-rest-api)
 
 ### MCP (Model Context Protocol)

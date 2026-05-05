@@ -61,9 +61,9 @@ import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
  *    - Graceful fallback if sidebar toggle unavailable
  *    - Consistent with other test suites' mobile support pattern
  *
- * 7. Smart Conditional Navigation (Lines 31-41):
- *    and working.
- * However, tests fail due to the following issues:
+ * 7. Smart Conditional Navigation (Lines 31-41)
+ *
+ * Known limitations:
  *
  * 1. TABLE LOADING:
  *    - Type table uses hierarchical data structure
