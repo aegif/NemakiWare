@@ -218,10 +218,13 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ## CSRF保護 (REST API)
 
-`/core/rest/repo/...` 配下のstate-changing request (POST/PUT/DELETE) は `ResourceBase.validateCsrfProtection()` でCSRF検証される。
+`/core/rest/repo/...` (Jersey) および `/core/api/v1/...` (Spring MVC) 配下のstate-changing request (POST/PUT/DELETE) は `CsrfValidator.validate()` でCSRF検証される（共通ロジック）。
 
 **バイパス条件** (いずれか1つで通過):
-- `Authorization: Bearer ...` / `AUTH_TOKEN` / `X-API-Key` ヘッダー (非ambient credential)
+- `Authorization: Bearer ...` ヘッダー (非ambient credential)
+- `AUTH_TOKEN` / `nemaki_auth_token` ヘッダー
+- `AUTH_TOKEN_APP` / `nemaki_auth_token_app` ヘッダー
+- `X-API-Key` ヘッダー
 - `Origin` ヘッダーがサーバーと一致
 - `Referer` ヘッダーがサーバーと一致
 - `X-Requested-With: XMLHttpRequest` ヘッダー
@@ -237,7 +240,7 @@ curl -u admin:admin -X POST -H "X-Requested-With: XMLHttpRequest" \
 requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest"})
 ```
 
-**注意**: `/core/browser/...` (CMIS Browser Binding) と `/core/api/v1/...` (Spring MVC) はResourceBaseを通らないためCSRF検証なし。
+**注意**: `/core/browser/...` (CMIS Browser Binding) はCSRF検証なし。`/core/api/v1/...` (Spring MVC) は `CsrfInterceptor` (HandlerInterceptor) で検証される（Webhook receiver パスを除く）。
 
 **Tomcat RemoteIpValve**: `docker/core/server.xml` に設定済み。信頼proxyからのX-Forwarded-Proto/Host/PortをservletAPI値に反映する。アプリ側ではforwardedヘッダーを自前パースしない。
 

@@ -430,7 +430,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     if (!conflictModalVisible) {
       // Conflict detection IS implemented - if modal not visible, type may not exist in system yet
       console.log('⚠️ Conflict modal not displayed - type may not exist in system for conflict to occur');
-      test.skip('ENV: Conflict modal not visible - type may not exist in system (conflict feature IS implemented)');
+      test.skip('ENV: Conflict modal not visible - type may not exist in system');
       return;
     }
 
@@ -694,7 +694,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
       console.log('⚠️ Edit conflict modal not displayed - target type may not exist for conflict');
       // Cleanup temp file
       try { fs.unlinkSync(newTypePath); } catch (e) { /* ignore */ }
-      test.skip('ENV: Edit conflict modal not visible - target type may not exist (feature IS implemented)');
+      test.skip('ENV: Edit conflict modal not visible - target type may not exist');
       return;
     }
 

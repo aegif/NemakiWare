@@ -4,9 +4,7 @@
  * Tests that Excel documents can be previewed through PDF rendition.
  * Uses proper test fixture setup with beforeAll/afterAll hooks.
  *
- * SKIPPED (2025-12-23) - Office Rendition Generation Issues
- *
- * Investigation Result: Excel preview via PDF rendition IS implemented.
+ * SKIPPED (2025-12-23).
  * However, tests fail due to the following issues:
  *
  * 1. RENDITION GENERATION:

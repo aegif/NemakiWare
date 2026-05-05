@@ -565,7 +565,7 @@ test.describe('Folder Hierarchy Operations', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented but hidden on mobile viewports
-      test.skip('BROWSER: Folder tree hidden on mobile - IS implemented in FolderTree.tsx');
+      test.skip('BROWSER: Folder tree hidden on mobile');
       return;
     }
 
@@ -576,7 +576,7 @@ test.describe('Folder Hierarchy Operations', () => {
     const folderTree = page.locator('.ant-tree');
     if (await folderTree.count() === 0) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx
-      test.skip('ENV: Folder tree not visible - IS implemented in FolderTree.tsx');
+      test.skip('ENV: Folder tree not visible');
       return;
     }
 

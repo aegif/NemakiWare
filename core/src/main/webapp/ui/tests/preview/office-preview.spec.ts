@@ -5,9 +5,7 @@
  * through PDF rendition generation and display.
  * Uses proper test fixture setup.
  *
- * SKIPPED (2025-12-23) - Office Rendition Generation Issues
- *
- * Investigation Result: Office preview via PDF rendition IS implemented.
+ * SKIPPED (2025-12-23).
  * However, tests fail due to the following issues:
  *
  * 1. RENDITION GENERATION:

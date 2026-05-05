@@ -326,7 +326,7 @@ test.describe('Permission Management UI - ACL Display', () => {
           console.log('✅ No error message after clicking permissions button');
         } else {
           // Permissions button IS implemented but may not be visible due to table column rendering or viewport
-          test.skip('ENV: Permissions button not visible in current viewport - button IS implemented in DocumentList.tsx');
+          test.skip('ENV: Permissions button not visible in current viewport in DocumentList.tsx');
         }
       }
     } else {

@@ -534,7 +534,7 @@ test.describe('Error Recovery Tests', () => {
           }
         } else {
           // UPDATED (2025-12-26): Delete IS implemented in DocumentList.tsx lines 550-595
-          test.skip('ENV: Delete button not visible - IS implemented in DocumentList.tsx lines 550-595');
+          test.skip('ENV: Delete button not visible');
         }
       } else {
         test.skip('ENV: No documents available for testing');

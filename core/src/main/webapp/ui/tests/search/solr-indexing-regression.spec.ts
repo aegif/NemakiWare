@@ -292,7 +292,7 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     if (await searchInput.count() === 0) {
       // UPDATED (2025-12-26): Search IS implemented in Layout.tsx
-      test.skip('ENV: Search input not visible - IS implemented in Layout.tsx lines 313-314');
+      test.skip('ENV: Search input not visible');
       return;
     }
 
@@ -410,7 +410,7 @@ test.describe('Solr Indexing Regression Tests', () => {
       }
     } else {
       // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-      test.skip('ENV: File input not visible - IS implemented in DocumentList.tsx upload modal');
+      test.skip('ENV: File input not visible');
       return;
     }
 

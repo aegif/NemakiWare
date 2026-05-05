@@ -1,7 +1,5 @@
 /**
- * SKIPPED (2025-12-23) - Test Environment Pollution & TypeManager Cache Issues
- *
- * Investigation Result: The form-based type creation UI IS implemented in TypeManagement.tsx.
+ * SKIPPED (2025-12-23) in TypeManagement.tsx.
  * However, tests fail due to the following issues:
  *
  * 1. TYPE CREATION SUCCEEDS BUT CACHE DOESN'T UPDATE:
@@ -382,7 +380,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       console.log('✅ Custom type created successfully');
     } else {
       // UPDATED (2025-12-26): Type management IS implemented in TypeManagement.tsx
-      test.skip('ENV: Type management menu not visible - IS implemented in TypeManagement.tsx');
+      test.skip('ENV: Type management menu not visible');
     }
   });
 

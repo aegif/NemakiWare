@@ -39,9 +39,7 @@ async function fetchRootFolderId(): Promise<string> {
 }
 
 /**
- * SKIPPED (2025-12-23) - Cascade Delete UI and API Timing Issues
- *
- * Investigation Result: Cascade delete via parentChildRelationship IS implemented.
+ * SKIPPED (2025-12-23).
  * However, tests fail due to the following issues:
  *
  * 1. RELATIONSHIP CREATION TIMING:

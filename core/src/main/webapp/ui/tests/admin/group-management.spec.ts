@@ -219,7 +219,7 @@ test.describe('Group Management', () => {
       await expect(table).toBeVisible({ timeout: 5000 });
     } else {
       // UPDATED (2025-12-26): Search IS implemented in GroupManagement.tsx
-      test.skip('ENV: Search input not visible - IS implemented in GroupManagement.tsx');
+      test.skip('ENV: Search input not visible');
     }
   });
 

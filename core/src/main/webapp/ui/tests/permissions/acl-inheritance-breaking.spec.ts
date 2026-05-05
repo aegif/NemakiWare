@@ -82,9 +82,7 @@ async function waitForTableRow(page: any, folderName: string, maxAttempts = 10):
   throw new Error(`Folder row for "${folderName}" not found in table after ${maxAttempts} attempts`);
 }
 /**
- * SKIPPED (2025-12-23) - ACL UI State Detection and Timing Issues
- *
- * Investigation Result: ACL inheritance breaking IS implemented.
+ * SKIPPED (2025-12-23).
  * However, tests fail due to the following issues:
  *
  * 1. FOLDER ROW DETECTION:

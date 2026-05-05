@@ -205,7 +205,7 @@ test.describe('User Management', () => {
       await expect(adminResult.first()).toBeVisible({ timeout: 5000 });
     } else {
       // UPDATED (2025-12-26): Search IS implemented in UserManagement.tsx lines 517-524
-      test.skip('ENV: Search input not visible - IS implemented in UserManagement.tsx lines 517-524');
+      test.skip('ENV: Search input not visible');
     }
   });
 

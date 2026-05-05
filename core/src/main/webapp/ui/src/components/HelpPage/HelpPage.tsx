@@ -701,7 +701,7 @@ const AdminGuide: React.FC = () => {
           <Paragraph>{t('help.admin.apiDesc', '「管理」→「API ドキュメント」から Swagger UI で REST API の一覧と試行が可能です。')}</Paragraph>
           <Alert type="warning" showIcon
             message={t('help.admin.apiCsrf', 'CSRF 保護')}
-            description={t('help.admin.apiCsrfDesc', 'REST API の POST/PUT/DELETE は CSRF 保護されています。CLI や curl からアクセスする場合は X-Requested-With: XMLHttpRequest ヘッダーを付与してください。')}
+            description={t('help.admin.apiCsrfDesc', 'REST API の POST/PUT/DELETE は CSRF 保護されています。CLI や curl からアクセスする場合は X-Requested-With: XMLHttpRequest ヘッダーを付与するか、Bearer トークン / AUTH_TOKEN / X-API-Key ヘッダーで認証してください（これらは非 ambient credential のため CSRF バイパスされます）。Basic 認証のみの場合は X-Requested-With が必要です。')}
           />
         </>
       ),

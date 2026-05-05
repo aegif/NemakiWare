@@ -7,20 +7,7 @@ import { TestHelper } from '../utils/test-helper';
  * Type GUI Editor E2E Tests
  *
  * Tests for the GUI-based type definition editor functionality:
- * - Opening GUI editor for new type creation
- * - GUI editor form elements and validation
- * - Tab switching between GUI and JSON editors
- * - Property prefix auto-insertion
- * - Relationship type settings panel
- *
- * NOTE: Tests for confirmation dialogs when editing existing definitions
- * are intentionally minimal as the service side may be modified in the future.
- */
-
-/**
- * SKIPPED (2025-12-23) - Type GUI Editor Modal Detection Issues
- *
- * Investigation Result: Type GUI editor IS implemented and working.
+ * and working.
  * However, tests fail due to the following issues:
  *
  * 1. MODAL DETECTION TIMING:
@@ -231,7 +218,7 @@ test.describe('Type GUI Editor', () => {
     } else {
       // UPDATED (2025-12-26): GUI editor IS implemented in TypeGUIEditor.tsx
       console.log('Create button not found - skipping validation test');
-      test.skip('ENV: Create button not visible - IS implemented in TypeGUIEditor.tsx');
+      test.skip('ENV: Create button not visible');
     }
   });
 

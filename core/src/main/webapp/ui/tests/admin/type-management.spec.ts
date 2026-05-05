@@ -62,54 +62,7 @@ import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
  *    - Consistent with other test suites' mobile support pattern
  *
  * 7. Smart Conditional Navigation (Lines 31-41):
- *    - Checks for admin menu existence before clicking
- *    - Checks for type management menu item before navigation
- *    - Prevents test failures if admin features restricted for test user
- *    - Better than hard-coded navigation that assumes menu structure
- *    - Rationale: Maintains test suite flexibility across different user permission scenarios
- *
- * 8. Type Editing Test (Lines 244-315 - Currently Skipped):
- *    - WIP: Type editing functionality not fully implemented or restricted by CMIS spec
- *    - Test structure prepared for future type description editing
- *    - Validates edit modal opening, description field update, and submission
- *    - Currently skipped with test.skip() until UI implements full type editing
- *    - Rationale: CMIS 1.1 spec restricts modifying base type definitions
- *
- * Test Coverage:
- * 1. ✅ Base CMIS Types Display (6 types)
- * 2. ✅ Custom Types Display (2 nemaki: types)
- * 3. ✅ Type Information Display (display name, base type)
- * 4. ✅ Type Details View (modal/drawer)
- * 5. ✅ CMIS API Verification (base + child types)
- * 6. ⊘ Type Editing (skipped - WIP)
- *
- * CMIS Browser Binding API Usage:
- * - Base types query: cmisselector=typeChildren (no typeId parameter)
- * - Child types query: cmisselector=typeChildren&typeId={baseTypeId}
- * - Response format: { types: [{ id, localName, displayName, baseId, ... }] }
- * - Authentication: Basic auth with admin:admin credentials
- *
- * Expected Test Results:
- * - Base types count: 6 (CMIS 1.1 standard)
- * - Child types count: ≥2 (nemaki: custom types)
- * - Total types count: ≥8 (base + custom)
- * - Type row selectors: data-row-key attribute for precise matching
- *
- * Known Limitations:
- * - Type editing currently skipped (WIP - UI implementation pending)
- * - Type details modal may not be implemented in all UI versions
- * - Custom type editing restricted by CMIS 1.1 spec (base types immutable)
- *
- * Performance Optimizations:
- * - Uses data-row-key attribute for O(1) type row lookup
- * - API verification uses parallel fetching (Promise.all) for child types
- * - Extended timeout (15s) for table loading to accommodate slow networks
- */
-
-/**
- * SKIPPED (2025-12-23) - Type Management Table Loading Issues
- *
- * Investigation Result: Type management page IS implemented and working.
+ *    and working.
  * However, tests fail due to the following issues:
  *
  * 1. TABLE LOADING:
@@ -376,7 +329,7 @@ test.describe('Type Management - Custom Types Display', () => {
     const jsonEditButton = typeRow.locator('button:has-text("JSON")');
     if (await jsonEditButton.count() === 0) {
       // UPDATED (2025-12-26): JSON edit IS implemented in TypeManagement.tsx lines 256-313
-      test.skip('ENV: JSON edit button not visible - IS implemented in TypeManagement.tsx');
+      test.skip('ENV: JSON edit button not visible');
       return;
     }
     await expect(jsonEditButton).toBeVisible({ timeout: 5000 });
@@ -404,7 +357,7 @@ test.describe('Type Management - Custom Types Display', () => {
 
     if (!modalFound) {
       // UPDATED (2025-12-26): JSON edit modal IS implemented in TypeManagement.tsx lines 774-798
-      test.skip('ENV: JSON edit modal not visible - IS implemented in TypeManagement.tsx lines 774-798');
+      test.skip('ENV: JSON edit modal not visible');
       return;
     }
     console.log('✅ JSON edit modal opened');

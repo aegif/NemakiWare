@@ -95,11 +95,7 @@ test.describe('FolderTree Navigation', () => {
   });
 
   test('should display folder tree with visual hierarchy', async ({ page, browserName }) => {
-    // Skip on mobile - folder tree is hidden
-    const isMobile = testHelper.isMobile(browserName);
-
-    if (isMobile) {
-      // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
+    // Skip on mobile in FolderTree.tsx but hidden on mobile viewports
       test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
