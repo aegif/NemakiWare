@@ -94,6 +94,26 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		String proxyHeaderKey = propertyManager.readValue(PropertyKey.EXTERNAL_AUTHENTICATION_PROXY_HEADER);
 		if(StringUtils.isBlank(proxyHeaderKey)) return false;
 
+		// Trusted proxy check: only accept the proxy header from configured IPs.
+		// If trustedProxies is not configured, proxy header auth is disabled for safety.
+		String trustedProxies = propertyManager.readValue(PropertyKey.EXTERNAL_AUTHENTICATION_TRUSTED_PROXIES);
+		if (StringUtils.isBlank(trustedProxies)) {
+			log.warn("Proxy header authentication is configured (proxyHeader=" + proxyHeaderKey + ") but external.authentication.trustedProxies is not set — rejecting for safety");
+			return false;
+		}
+		String remoteAddr = (String) callContext.get("remoteAddress");
+		if (remoteAddr == null) {
+			// Fallback: try HttpServletRequest if available in context
+			Object httpReq = callContext.get("httpServletRequest");
+			if (httpReq instanceof jakarta.servlet.http.HttpServletRequest req) {
+				remoteAddr = req.getRemoteAddr();
+			}
+		}
+		if (remoteAddr != null && !isTrustedProxy(remoteAddr, trustedProxies)) {
+			log.warn("Proxy header auth rejected: remote address " + remoteAddr + " is not in trustedProxies");
+			return false;
+		}
+
 		String proxyUserId = (String) callContext.get(proxyHeaderKey);
 		if (StringUtils.isBlank(proxyUserId)) {
 			return false;
@@ -120,6 +140,20 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			log.debug("Header Authenticated. UserId=" + userItem.getUserId());
 			return true;
 		}
+	}
+
+	/** Check if remoteAddr is in the comma-separated trustedProxies list. */
+	private static boolean isTrustedProxy(String remoteAddr, String trustedProxies) {
+		if (remoteAddr == null || trustedProxies == null) return false;
+		for (String trusted : trustedProxies.split("\\s*,\\s*")) {
+			if (trusted.equals(remoteAddr)) return true;
+			// Allow localhost variants
+			if (("127.0.0.1".equals(trusted) || "localhost".equals(trusted))
+					&& ("127.0.0.1".equals(remoteAddr) || "::1".equals(remoteAddr) || "0:0:0:0:0:0:0:1".equals(remoteAddr))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean loginWithToken(CallContext callContext) {

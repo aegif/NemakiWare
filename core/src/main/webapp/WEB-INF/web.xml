@@ -166,6 +166,10 @@
 		<filter-name>auditRequestContextFilter</filter-name>
 		<url-pattern>/atom/*</url-pattern>
 	</filter-mapping>
+	<filter-mapping>
+		<filter-name>auditRequestContextFilter</filter-name>
+		<url-pattern>/mcp/*</url-pattern>
+	</filter-mapping>
 
 	<!-- DeleteType filter mapping - TEMPORARILY DISABLED to allow query action support -->
 	<!-- CRITICAL FIX: This filter mapping prevents cmisaction=query from working in TCK tests -->
@@ -234,6 +238,16 @@
 	</filter-mapping>
 	<!-- Note: /rest/all/repositories bypasses authentication (needed for login page) -->
 	
+	<!-- Apply authentication to /rest/type-register/* (was missing) -->
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/type-register/*</url-pattern>
+	</filter-mapping>
+	<!-- Apply audit context to /mcp/* (MCP has its own auth handler, but needs audit logging) -->
+	<filter-mapping>
+		<filter-name>corsFilter</filter-name>
+		<url-pattern>/mcp/*</url-pattern>
+	</filter-mapping>
 	<!-- Apply authentication to /api/* endpoints (Spring MVC controllers) -->
 	<filter-mapping>
 		<filter-name>restAuthenticationFilter</filter-name>

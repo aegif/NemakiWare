@@ -307,6 +307,9 @@ public interface PropertyKey {
 	//External authentication
 	final String EXTERNAL_AUTHENTICATION_PROXY_HEADER = "external.authenticaion.proxyHeader";
 	final String EXTERNAL_AUTHENTICATION_AUTO_CREATE_USER = "external.authenticaion.isAutoCreateUser";
+	/** Comma-separated list of trusted proxy IPs allowed to send the proxy auth header.
+	 *  If empty/unset, proxy header authentication is disabled for safety. */
+	final String EXTERNAL_AUTHENTICATION_TRUSTED_PROXIES = "external.authentication.trustedProxies";
 
 	//SSO (Single Sign-On) configuration
 	/** Enable/disable OIDC login button on login page. Default: false */
