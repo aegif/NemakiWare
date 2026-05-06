@@ -43,7 +43,7 @@ public class NemakiwareMcpServer {
     private final McpToolResultFactory resultFactory;
     private final ObjectMapper objectMapper;
     private final String defaultRepository;
-    private final boolean toolsListPublic;
+    private final jp.aegif.nemaki.util.PropertyManager propertyManager;
 
     @Autowired
     public NemakiwareMcpServer(
@@ -52,18 +52,20 @@ public class NemakiwareMcpServer {
             McpToolResultFactory resultFactory,
             ObjectMapper objectMapper,
             @Value("${cmis.server.default.repository:bedroom}") String defaultRepository,
-            @Value("${mcp.tools.list.public:true}") boolean toolsListPublic) {
+            jp.aegif.nemaki.util.PropertyManager propertyManager) {
         this.toolsProvider = toolsProvider;
         this.authHandler = authHandler;
         this.resultFactory = resultFactory;
         this.objectMapper = objectMapper;
         this.defaultRepository = defaultRepository;
-        this.toolsListPublic = toolsListPublic;
+        this.propertyManager = propertyManager;
     }
 
-    /** Whether tools/list is publicly accessible without authentication. */
+    /** Whether tools/list is publicly accessible — reads live from PropertyManager
+     *  so admin UI changes take effect immediately without restart. */
     private boolean isToolsListPublic() {
-        return toolsListPublic;
+        String value = propertyManager.readValue("mcp.tools.list.public");
+        return value == null || value.isBlank() || "true".equalsIgnoreCase(value.trim());
     }
 
     /**

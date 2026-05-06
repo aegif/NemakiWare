@@ -120,6 +120,10 @@ export const testAtlasConnection = (formValues?: Record<string, string>) =>
 export const getDataplexSettings = () => getSettings('dataplex');
 export const updateDataplexSettings = (settings: Record<string, string>) => updateSettings('dataplex', settings);
 
+// MCP
+export const getMcpSettings = () => getSettings('mcp');
+export const updateMcpSettings = (settings: Record<string, string>) => updateSettings('mcp', settings);
+
 // Property Mappings
 export interface PropertyMappingEntry {
   enabled: boolean;

@@ -116,6 +116,10 @@ public class IntegrationSettingsController {
 			"dataplex.credentials-file"
 	));
 
+	private static final Set<String> MCP_KEYS = new LinkedHashSet<>(Arrays.asList(
+			"mcp.tools.list.public"
+	));
+
 	/**
 	 * Runtime defaults for lineage keys (mirrors @Value defaults in LineageConfig).
 	 * Used to surface the effective value in the UI when no explicit configuration exists.
@@ -306,6 +310,26 @@ public class IntegrationSettingsController {
 		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
 		if (forbidden != null) return forbidden;
 		return handleUpdate(DATAPLEX_KEYS, body);
+	}
+
+	// ==================== MCP ====================
+
+	private static final Map<String, String> MCP_DEFAULTS = Map.of(
+			"mcp.tools.list.public", "true"
+	);
+
+	@GetMapping("/mcp")
+	public ResponseEntity<Map<String, Object>> getMcpSettings() {
+		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+		if (forbidden != null) return forbidden;
+		return ResponseEntity.ok(buildSettingsResponseWithDefaults(MCP_KEYS, MCP_DEFAULTS));
+	}
+
+	@PutMapping("/mcp")
+	public ResponseEntity<Map<String, Object>> updateMcpSettings(@RequestBody Map<String, String> body) {
+		ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+		if (forbidden != null) return forbidden;
+		return handleUpdate(MCP_KEYS, body, MCP_DEFAULTS);
 	}
 
 	// ==================== Connection Tests ====================

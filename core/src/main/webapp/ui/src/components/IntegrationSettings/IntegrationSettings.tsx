@@ -15,6 +15,7 @@ import { ImportProfileManagementTab } from './ImportProfileManagementTab';
 import { ManualIngestTab } from './ManualIngestTab';
 import { IngestJobsTab } from './IngestJobsTab';
 import { SchedulerStatusTab } from './SchedulerStatusTab';
+import { McpSettingsTab } from './McpSettingsTab';
 
 const { Title } = Typography;
 
@@ -100,6 +101,11 @@ export function IntegrationSettings({ repositoryId }: IntegrationSettingsProps) 
       key: 'scheduler-status',
       label: <Space size={4}>{t('integrationSettings.tabs.schedulerStatus')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
       children: <SchedulerStatusTab />,
+    },
+    {
+      key: 'mcp',
+      label: t('integrationSettings.tabs.mcp', 'MCP'),
+      children: <McpSettingsTab />,
     },
   ];
 
