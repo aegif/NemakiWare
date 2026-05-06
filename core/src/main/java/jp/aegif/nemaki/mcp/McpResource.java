@@ -94,7 +94,8 @@ public class McpResource {
     /**
      * Get MCP server information.
      *
-     * Returns server info, capabilities, and available tools.
+     * Returns server info and capabilities only. Tools are available
+     * via JSON-RPC tools/list (subject to mcp.tools.list.public setting).
      */
     @GET
     @Path("/info")
@@ -103,7 +104,6 @@ public class McpResource {
         Map<String, Object> info = new HashMap<>();
         info.put("serverInfo", mcpServer.getServerInfo());
         info.put("capabilities", mcpServer.getCapabilities());
-        info.put("tools", mcpServer.listTools());
 
         return Response.ok(info).build();
     }

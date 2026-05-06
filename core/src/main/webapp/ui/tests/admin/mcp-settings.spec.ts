@@ -60,6 +60,16 @@ test.describe('MCP Settings', () => {
     expect(restoredBody.result.tools.length).toBeGreaterThan(0);
   });
 
+  test('/mcp/info should not expose tools list', async ({ request }) => {
+    const res = await request.get(`${BASE_URL}/core/mcp/info`);
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    // /info should return serverInfo and capabilities, but NOT tools
+    expect(body).toHaveProperty('serverInfo');
+    expect(body).toHaveProperty('capabilities');
+    expect(body).not.toHaveProperty('tools');
+  });
+
   // ── UI Test ──
 
   test('should show MCP settings tab in admin UI', async ({ page }) => {
