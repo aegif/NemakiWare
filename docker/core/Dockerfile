@@ -23,17 +23,15 @@ COPY repositories.yml /usr/local/tomcat/conf/repositories.yml
 COPY log4j.properties /usr/local/tomcat/conf/log4j.properties
 COPY server.xml /usr/local/tomcat/conf/server.xml
 
-# Java options — CouchDB credentials are injected via environment variables
-# at runtime (docker-compose env_file or -e flags), NOT baked into the image.
+# Java heap and general options (no credentials here)
 ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Djava.net.preferIPv4Stack=true -Djava.net.preferIPv6Addresses=false -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties"
-# CouchDB connection — override via docker-compose environment or env_file
-ENV COUCHDB_URL="http://couchdb:5984" \
-    COUCHDB_AUTH_ENABLED="true" \
-    COUCHDB_USERNAME="admin" \
-    COUCHDB_PASSWORD="password"
-# Pass CouchDB config as system properties at startup
-# Expose Tomcat port
+
+# CouchDB connection — NO default credentials in the image.
+# Must be provided at runtime via docker-compose environment, env_file, or -e flags.
+# Example: docker run -e COUCHDB_URL=http://couchdb:5984 -e COUCHDB_USERNAME=admin -e COUCHDB_PASSWORD=secret ...
+
 EXPOSE 8080
 
-# Start Tomcat with CouchDB system properties from environment variables
-CMD ["sh", "-c", "catalina.sh run -Ddb.couchdb.url=${COUCHDB_URL} -Ddb.couchdb.auth.enabled=${COUCHDB_AUTH_ENABLED} -Ddb.couchdb.auth.username=${COUCHDB_USERNAME} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD}"]
+# Build CATALINA_OPTS from environment variables at container start, then exec Tomcat.
+# This ensures -D properties are passed to the JVM, not to catalina.sh as arguments.
+CMD ["sh", "-c", "export CATALINA_OPTS=\"$CATALINA_OPTS -Ddb.couchdb.url=${COUCHDB_URL:-http://couchdb:5984} -Ddb.couchdb.auth.enabled=${COUCHDB_AUTH_ENABLED:-true} -Ddb.couchdb.auth.username=${COUCHDB_USERNAME:-admin} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:-password}\"; exec catalina.sh run"]
