@@ -65,7 +65,10 @@ public class NemakiAuthCallContextHandler extends org.apache.chemistry.opencmis.
 		
 		// Initialize context map
 		Map<String, String> ctxMap = new HashMap<String, String>();
-		
+
+		// Store remote address for trusted proxy verification (SSO header auth)
+		ctxMap.put("remoteAddress", request.getRemoteAddr());
+
 		// Extract Basic Authentication manually for Jakarta EE compatibility
 		String authHeader = request.getHeader("Authorization");
 		if (authHeader != null && authHeader.startsWith("Basic ")) {

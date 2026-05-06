@@ -109,7 +109,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 				remoteAddr = req.getRemoteAddr();
 			}
 		}
-		if (remoteAddr != null && !isTrustedProxy(remoteAddr, trustedProxies)) {
+		if (remoteAddr == null) {
+			log.warn("Proxy header auth rejected: remote address is unknown (not in CallContext) — cannot verify trusted proxy");
+			return false;
+		}
+		if (!isTrustedProxy(remoteAddr, trustedProxies)) {
 			log.warn("Proxy header auth rejected: remote address " + remoteAddr + " is not in trustedProxies");
 			return false;
 		}
@@ -145,7 +149,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	/** Check if remoteAddr is in the comma-separated trustedProxies list. */
 	private static boolean isTrustedProxy(String remoteAddr, String trustedProxies) {
 		if (remoteAddr == null || trustedProxies == null) return false;
-		for (String trusted : trustedProxies.split("\\s*,\\s*")) {
+		for (String raw : trustedProxies.split(",")) {
+			String trusted = raw.trim();
+			if (trusted.isEmpty()) continue;
 			if (trusted.equals(remoteAddr)) return true;
 			// Allow localhost variants
 			if (("127.0.0.1".equals(trusted) || "localhost".equals(trusted))
