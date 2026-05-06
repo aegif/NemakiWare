@@ -33,15 +33,18 @@ ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Djava.net.preferIPv4St
 EXPOSE 8080
 
 # Validate required credentials at startup, then inject via CATALINA_OPTS.
+# Supports both COUCHDB_USER (compose convention) and COUCHDB_USERNAME.
 CMD ["sh", "-c", "\
-  if [ -z \"$COUCHDB_USERNAME\" ] || [ -z \"$COUCHDB_PASSWORD\" ]; then \
-    echo 'ERROR: COUCHDB_USERNAME and COUCHDB_PASSWORD must be set via environment variables.'; \
-    echo 'Example: docker run -e COUCHDB_USERNAME=admin -e COUCHDB_PASSWORD=secret ...'; \
+  DB_USER=${COUCHDB_USER:-$COUCHDB_USERNAME}; \
+  DB_PASS=$COUCHDB_PASSWORD; \
+  if [ -z \"$DB_USER\" ] || [ -z \"$DB_PASS\" ]; then \
+    echo 'ERROR: COUCHDB_USER and COUCHDB_PASSWORD must be set via environment variables.'; \
+    echo 'Example: docker run -e COUCHDB_USER=admin -e COUCHDB_PASSWORD=secret ...'; \
     exit 1; \
   fi; \
   export CATALINA_OPTS=\"$CATALINA_OPTS \
     -Ddb.couchdb.url=${COUCHDB_URL:-http://couchdb:5984} \
     -Ddb.couchdb.auth.enabled=${COUCHDB_AUTH_ENABLED:-true} \
-    -Ddb.couchdb.auth.username=$COUCHDB_USERNAME \
-    -Ddb.couchdb.auth.password=$COUCHDB_PASSWORD\"; \
+    -Ddb.couchdb.auth.username=$DB_USER \
+    -Ddb.couchdb.auth.password=$DB_PASS\"; \
   exec catalina.sh run"]

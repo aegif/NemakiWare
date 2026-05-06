@@ -258,6 +258,25 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 - SAML署名ラッピング攻撃: 対応済み (Reference URI DOM解決 + duplicate-ID防御)
 - SAML DEFLATE DoS: 対応済み (10MB上限 + ByteArrayOutputStream)
 - Setup Wizard設定上書き防止: 対応済み (ハイドレーションゲート + エラーリトライ)
+- getAdmins() fail-open: 対応済み (CouchDB障害時の合成admin返却を廃止、fail-closed)
+- BigInteger depth検証: 対応済み (== 参照比較 → compareTo 値比較)
+- HMAC空文字返却: 対応済み (hmacSha256 例外時にRuntimeException throw)
+- プロキシヘッダー認証: 対応済み (trustedProxies 必須化 + remoteAddr null 拒否)
+- Docker資格情報: 対応済み (ENV層から除去、起動時必須環境変数)
+
+### MCP 認証方針
+
+- `/mcp/health`, `/mcp/info`: 匿名アクセス可（監視ツール・クライアント互換性）
+- `initialize`: 匿名アクセス可（MCP プロトコル仕様上、セッション確立前に呼ばれる）
+- `tools/list`: デフォルト匿名公開。`mcp.tools.list.public=false` で認証必須に変更可能
+- `tools/call` (search, get_document_content 等): `McpAuthenticationHandler` で認証必須
+- 監査: `auditRequestContextFilter` で `/mcp/*` の全リクエストをログ記録
+
+```properties
+# nemakiware.properties — MCP ツール一覧の公開設定
+mcp.tools.list.public=true   # デフォルト: 公開（MCP クライアント互換性優先）
+mcp.tools.list.public=false  # インターネット公開環境向け: 認証必須
+```
 
 ---
 

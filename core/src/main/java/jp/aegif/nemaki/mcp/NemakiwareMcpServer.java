@@ -43,6 +43,7 @@ public class NemakiwareMcpServer {
     private final McpToolResultFactory resultFactory;
     private final ObjectMapper objectMapper;
     private final String defaultRepository;
+    private final boolean toolsListPublic;
 
     @Autowired
     public NemakiwareMcpServer(
@@ -50,12 +51,19 @@ public class NemakiwareMcpServer {
             McpAuthenticationHandler authHandler,
             McpToolResultFactory resultFactory,
             ObjectMapper objectMapper,
-            @Value("${cmis.server.default.repository:bedroom}") String defaultRepository) {
+            @Value("${cmis.server.default.repository:bedroom}") String defaultRepository,
+            @Value("${mcp.tools.list.public:true}") boolean toolsListPublic) {
         this.toolsProvider = toolsProvider;
         this.authHandler = authHandler;
         this.resultFactory = resultFactory;
         this.objectMapper = objectMapper;
         this.defaultRepository = defaultRepository;
+        this.toolsListPublic = toolsListPublic;
+    }
+
+    /** Whether tools/list is publicly accessible without authentication. */
+    private boolean isToolsListPublic() {
+        return toolsListPublic;
     }
 
     /**
@@ -224,6 +232,10 @@ public class NemakiwareMcpServer {
             // Expected error: unknown method or invalid parameters
             log.warn("Invalid MCP request: {}", e.getMessage());
             return createErrorResponse(id, ERROR_METHOD_NOT_FOUND, e.getMessage(), null);
+        } catch (SecurityException e) {
+            // Authentication required
+            log.info("MCP authentication required: {}", e.getMessage());
+            return createErrorResponse(id, ERROR_INVALID_REQUEST, e.getMessage(), null);
         } catch (ClassCastException e) {
             // Invalid request structure
             log.warn("Invalid request structure: {}", e.getMessage());
@@ -245,6 +257,13 @@ public class NemakiwareMcpServer {
                 return handleInitialize(params);
 
             case "tools/list":
+                if (!isToolsListPublic()) {
+                    // When mcp.tools.list.public=false, require authentication
+                    var authResult = authHandler.authenticate(defaultRepository, headers);
+                    if (!authResult.isSuccess()) {
+                        throw new SecurityException("Authentication required to list tools (mcp.tools.list.public=false)");
+                    }
+                }
                 return Map.of("tools", listTools());
 
             case "tools/call":
