@@ -167,10 +167,12 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void invalidArgumentDepth(BigInteger depth) {
-		if (depth == BigInteger.ZERO) {
-			invalidArgument("Depth must not be zero");
-		} else if (depth == BigInteger.valueOf(-1)) {
-			invalidArgument("Depth must not be less than -1");
+		if (depth != null) {
+			if (depth.compareTo(BigInteger.ZERO) == 0) {
+				invalidArgument("Depth must not be zero");
+			} else if (depth.compareTo(BigInteger.valueOf(-1)) < 0) {
+				invalidArgument("Depth must not be less than -1");
+			}
 		}
 	}
 

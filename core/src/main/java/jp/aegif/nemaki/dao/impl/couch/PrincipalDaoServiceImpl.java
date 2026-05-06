@@ -108,24 +108,11 @@ public class PrincipalDaoServiceImpl implements
 				admins.add(u);
 			}
 		} catch (Exception e) {
-			// Fallback: Create a minimal admin user if view query fails
-			User adminUser = new User();
-			adminUser.setId("admin");
-			adminUser.setUserId("admin");
-			adminUser.setName("Administrator");
-			adminUser.setFirstName("Admin");
-			adminUser.setLastName("User");
-			adminUser.setEmail("admin@localhost");
-			adminUser.setAdmin(true);
-			adminUser.setType("user");
-
-			// Set basic timestamps
-			adminUser.setCreated(new GregorianCalendar());
-			adminUser.setModified(new GregorianCalendar());
-			adminUser.setCreator("system");
-			adminUser.setModifier("system");
-
-			admins.add(adminUser);
+			// Fail closed: do NOT grant admin on CouchDB failure.
+			// The previous fallback created a synthetic admin user, which meant
+			// any transient DB outage would silently grant admin privileges.
+			org.slf4j.LoggerFactory.getLogger(PrincipalDaoServiceImpl.class)
+					.error("Failed to query admin users from CouchDB — returning empty list (fail-closed)", e);
 		}
 
 		return admins;

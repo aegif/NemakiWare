@@ -639,7 +639,9 @@ public class IngestWebhookController {
             mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             return HexFormat.of().formatHex(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
-            return "";
+            // Fail closed: never return empty string from a crypto operation.
+            // Callers compare the result; an empty string could match an empty header.
+            throw new RuntimeException("HMAC-SHA256 computation failed", e);
         }
     }
 
