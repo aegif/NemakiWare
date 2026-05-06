@@ -534,6 +534,8 @@
       "mcpStdioNoteDesc": "NemakiWare's MCP server is HTTP-based. Clients that only support stdio transport (Claude Desktop, Gemini CLI, etc.) should use the mcp-remote proxy: npx mcp-remote http://localhost:8080/core/mcp/message --header \"Authorization: Basic YWRtaW46YWRtaW4=\"",
       "mcpAuthNote": "About authentication",
       "mcpAuthNoteDesc": "The Basic auth header value is the Base64-encoded \"username:password\". Example: admin:admin → YWRtaW46YWRtaW4=. After connecting, you can also use the nemakiware_login tool to obtain a session token and switch to Bearer authentication.",
+      "mcpToolsListNote": "Tools List Visibility",
+      "mcpToolsListNoteDesc": "By default, the MCP tools list (tools/list) is publicly accessible without authentication. For internet-facing deployments, go to Admin → Integration Settings → MCP tab and turn off 'Tools List Public'. When disabled, tools/list requires authentication.",
       "mcpTools": "Available Tools",
       "mcpToolLogin": "Log in with username/password and obtain a session token",
       "mcpToolApikey": "Log in with an API Key",

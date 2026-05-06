@@ -736,6 +736,10 @@ const AdminGuide: React.FC = () => {
             message={t('help.admin.mcpAuthNote', '認証について')}
             description={t('help.admin.mcpAuthNoteDesc', 'Basic 認証のヘッダー値は「ユーザー名:パスワード」を Base64 エンコードしたものです。例: admin:admin → YWRtaW46YWRtaW4=。接続後は nemakiware_login ツールでセッショントークンを取得し、Bearer 認証に切り替えることも可能です。')}
           />
+          <Alert type="warning" showIcon style={{ marginBottom: 16 }}
+            message={t('help.admin.mcpToolsListNote', 'ツールリスト公開設定')}
+            description={t('help.admin.mcpToolsListNoteDesc', 'デフォルトでは MCP ツール一覧（tools/list）は認証なしで公開されています。インターネット公開環境では「管理」→「連携設定」→「MCP」タブで「ツールリスト公開」をオフにすることを推奨します。オフにすると、ツール一覧の取得にも認証が必要になります。')}
+          />
 
           {/* --- Claude Desktop --- */}
           <Title level={5}>{t('help.admin.mcpClaudeDesktop', 'Claude Desktop')}</Title>
