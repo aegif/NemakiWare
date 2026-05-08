@@ -1281,12 +1281,19 @@
 					<jettyXmls>
 						<jettyXml>${project.basedir}/src/main/webapp/WEB-INF/jetty-forwarded.xml</jettyXml>
 					</jettyXmls>
-					<!-- Development environment variables (Jetty 12 flat key-value format) -->
+					<!-- Development environment variables (Jetty 12 flat key-value format).
+					     CouchDB credentials default to admin/password to match the local
+					     dev CouchDB container (start-jetty-dev.sh assumes the same).
+					     Override at the command line if your dev CouchDB uses other creds:
+					       mvn jetty:run -Pdevelopment \
+					         -Ddb.couchdb.auth.username=foo -Ddb.couchdb.auth.password=bar -->
 					<systemProperties>
 						<nemakiware.properties>file:${project.basedir}/src/main/webapp/WEB-INF/classes/nemakiware-jetty.properties</nemakiware.properties>
 						<repositories.yml>file:${project.basedir}/src/main/webapp/WEB-INF/classes/repositories.yml</repositories.yml>
 						<log4j.configuration>file:${project.basedir}/src/main/webapp/WEB-INF/classes/log4j-jetty.properties</log4j.configuration>
 						<db.couchdb.url>http://localhost:5984</db.couchdb.url>
+						<db.couchdb.auth.username>admin</db.couchdb.auth.username>
+						<db.couchdb.auth.password>password</db.couchdb.auth.password>
 						<spring.profiles.active>development</spring.profiles.active>
 						<org.ektorp.support.AutoUpdateViewOnChange>false</org.ektorp.support.AutoUpdateViewOnChange>
 						<org.ektorp.http.IdleConnectionMonitor.enabled>false</org.ektorp.http.IdleConnectionMonitor.enabled>

@@ -4,9 +4,15 @@
 #
 # Domain: dc=nemakiware,dc=example,dc=com
 # Admin DN: cn=admin,dc=nemakiware,dc=example,dc=com
-# Admin Password: adminpassword
+#
+# Required env (must be set before `docker compose up`):
+#   COUCHDB_USER, COUCHDB_PASSWORD       — CouchDB admin (NemakiWare uses these)
+#   LDAP_ADMIN_PASSWORD                  — OpenLDAP admin password (test fixture)
+#   LDAP_CONFIG_PASSWORD                 — OpenLDAP config DB password (test fixture)
 #
 # Usage:
+#   COUCHDB_USER=admin COUCHDB_PASSWORD=secret \
+#   LDAP_ADMIN_PASSWORD=ldapsecret LDAP_CONFIG_PASSWORD=cfgsecret \
 #   docker compose -f docker-compose-ldap.yml up -d
 #
 # =============================================================================
@@ -20,10 +26,10 @@ services:
     volumes:
       - couchdb_data:/opt/couchdb/data
     environment:
-      - COUCHDB_USER=${COUCHDB_USER:-admin}
-      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
+      - COUCHDB_USER=${COUCHDB_USER:?COUCHDB_USER must be set}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:?COUCHDB_PASSWORD must be set}
     healthcheck:
-      test: ["CMD", "curl", "-f", "-u", "${COUCHDB_USER:-admin}:${COUCHDB_PASSWORD:-password}", "http://localhost:5984/_all_dbs"]
+      test: ["CMD", "curl", "-f", "-u", "${COUCHDB_USER}:${COUCHDB_PASSWORD}", "http://localhost:5984/_all_dbs"]
       interval: 5s
       timeout: 10s
       retries: 20
@@ -62,7 +68,7 @@ services:
         condition: service_healthy
     environment:
       - JAVA_OPTS=-Dorg.ektorp.support.AutoUpdateViewOnChange=false -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false -Dorg.ektorp.support.DesignDocument.UPDATE_ON_DIFF=false -Dorg.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE=true -Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
-      - "CATALINA_OPTS=-Xms1g -Xmx3g -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:-admin} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:-password} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http -Ddirectory.sync.enabled=true -Ddirectory.sync.ldap.url=ldap://openldap:389 -Ddirectory.sync.ldap.base.dn=dc=nemakiware,dc=example,dc=com -Ddirectory.sync.ldap.bind.dn=cn=admin,dc=nemakiware,dc=example,dc=com -Ddirectory.sync.ldap.bind.password=adminpassword -Ddirectory.sync.group.search.base=ou=groups '-Ddirectory.sync.group.search.filter=(objectClass=groupOfNames)' -Ddirectory.sync.user.search.base=ou=users '-Ddirectory.sync.user.search.filter=(objectClass=inetOrgPerson)' -Ddirectory.sync.group.id.attribute=cn -Ddirectory.sync.group.name.attribute=cn -Ddirectory.sync.group.member.attribute=member -Ddirectory.sync.user.id.attribute=uid -Ddirectory.sync.group.prefix=ldap_ -Ddirectory.sync.user.prefix= -Ddirectory.sync.create.missing.users=true -Ddirectory.sync.update.existing.users=true"
+      - "CATALINA_OPTS=-Xms1g -Xmx3g -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:?COUCHDB_USER must be set} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:?COUCHDB_PASSWORD must be set} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http -Ddirectory.sync.enabled=true -Ddirectory.sync.ldap.url=ldap://openldap:389 -Ddirectory.sync.ldap.base.dn=dc=nemakiware,dc=example,dc=com -Ddirectory.sync.ldap.bind.dn=cn=admin,dc=nemakiware,dc=example,dc=com -Ddirectory.sync.ldap.bind.password=${LDAP_ADMIN_PASSWORD:?LDAP_ADMIN_PASSWORD must be set} -Ddirectory.sync.group.search.base=ou=groups '-Ddirectory.sync.group.search.filter=(objectClass=groupOfNames)' -Ddirectory.sync.user.search.base=ou=users '-Ddirectory.sync.user.search.filter=(objectClass=inetOrgPerson)' -Ddirectory.sync.group.id.attribute=cn -Ddirectory.sync.group.name.attribute=cn -Ddirectory.sync.group.member.attribute=member -Ddirectory.sync.user.id.attribute=uid -Ddirectory.sync.group.prefix=ldap_ -Ddirectory.sync.user.prefix= -Ddirectory.sync.create.missing.users=true -Ddirectory.sync.update.existing.users=true"
     restart: on-failure
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/core"]
@@ -82,8 +88,8 @@ services:
       - LDAP_ORGANISATION=NemakiWare Test
       - LDAP_DOMAIN=nemakiware.example.com
       - LDAP_BASE_DN=dc=nemakiware,dc=example,dc=com
-      - LDAP_ADMIN_PASSWORD=adminpassword
-      - LDAP_CONFIG_PASSWORD=configpassword
+      - LDAP_ADMIN_PASSWORD=${LDAP_ADMIN_PASSWORD:?LDAP_ADMIN_PASSWORD must be set}
+      - LDAP_CONFIG_PASSWORD=${LDAP_CONFIG_PASSWORD:?LDAP_CONFIG_PASSWORD must be set}
       - LDAP_READONLY_USER=false
       - LDAP_TLS=false
       - LDAP_SEED_INTERNAL_LDIF_PATH=/ldif-seed
@@ -92,7 +98,7 @@ services:
       - ldap_config:/etc/ldap/slapd.d
       - ./ldap/bootstrap:/ldif-seed:ro
     healthcheck:
-      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost:389", "-b", "dc=nemakiware,dc=example,dc=com", "-D", "cn=admin,dc=nemakiware,dc=example,dc=com", "-w", "adminpassword"]
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost:389", "-b", "dc=nemakiware,dc=example,dc=com", "-D", "cn=admin,dc=nemakiware,dc=example,dc=com", "-w", "${LDAP_ADMIN_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 10

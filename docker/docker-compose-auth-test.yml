@@ -24,6 +24,7 @@
 
 services:
   # CouchDB 3.x - Document Database
+  # COUCHDB_USER / COUCHDB_PASSWORD must be set in the host environment.
   couchdb:
     image: couchdb:3.3.3
     ports:
@@ -31,10 +32,10 @@ services:
     volumes:
       - couchdb_auth_data:/opt/couchdb/data
     environment:
-      - COUCHDB_USER=${COUCHDB_USER:-admin}
-      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
+      - COUCHDB_USER=${COUCHDB_USER:?COUCHDB_USER must be set}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:?COUCHDB_PASSWORD must be set}
     healthcheck:
-      test: ["CMD", "curl", "-f", "-u", "${COUCHDB_USER:-admin}:${COUCHDB_PASSWORD:-password}", "http://localhost:5984/_all_dbs"]
+      test: ["CMD", "curl", "-f", "-u", "${COUCHDB_USER}:${COUCHDB_PASSWORD}", "http://localhost:5984/_all_dbs"]
       interval: 5s
       timeout: 10s
       retries: 20
@@ -71,7 +72,7 @@ services:
         condition: service_healthy
     environment:
       - JAVA_OPTS=-Dorg.ektorp.support.AutoUpdateViewOnChange=false -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false -Dorg.ektorp.support.DesignDocument.UPDATE_ON_DIFF=false -Dorg.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE=true -Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
-      - CATALINA_OPTS=-Xms1g -Xmx3g -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:-admin} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:-password} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http
+      - CATALINA_OPTS=-Xms1g -Xmx3g -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:?COUCHDB_USER must be set} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:?COUCHDB_PASSWORD must be set} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http
     restart: on-failure
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/core"]

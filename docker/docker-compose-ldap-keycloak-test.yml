@@ -15,8 +15,8 @@ services:
       LDAP_ORGANISATION: "NemakiWare Test"
       LDAP_DOMAIN: "nemakiware.example.com"
       LDAP_BASE_DN: "dc=nemakiware,dc=example,dc=com"
-      LDAP_ADMIN_PASSWORD: "adminpassword"
-      LDAP_CONFIG_PASSWORD: "configpassword"
+      LDAP_ADMIN_PASSWORD: "${LDAP_ADMIN_PASSWORD:?LDAP_ADMIN_PASSWORD must be set}"
+      LDAP_CONFIG_PASSWORD: "${LDAP_CONFIG_PASSWORD:?LDAP_CONFIG_PASSWORD must be set}"
       LDAP_READONLY_USER: "false"
       LDAP_TLS: "false"
       LDAP_SEED_INTERNAL_LDIF_PATH: "/ldif-seed"
@@ -30,7 +30,7 @@ services:
     networks:
       - nemaki-network
     healthcheck:
-      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost", "-b", "dc=nemakiware,dc=example,dc=com", "-D", "cn=admin,dc=nemakiware,dc=example,dc=com", "-w", "adminpassword"]
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost", "-b", "dc=nemakiware,dc=example,dc=com", "-D", "cn=admin,dc=nemakiware,dc=example,dc=com", "-w", "${LDAP_ADMIN_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -69,8 +69,8 @@ services:
     image: couchdb:3
     container_name: docker-couchdb-1
     environment:
-      COUCHDB_USER: admin
-      COUCHDB_PASSWORD: password
+      COUCHDB_USER: "${COUCHDB_USER:?COUCHDB_USER must be set}"
+      COUCHDB_PASSWORD: "${COUCHDB_PASSWORD:?COUCHDB_PASSWORD must be set}"
     ports:
       - "5984:5984"
     volumes:
@@ -92,8 +92,8 @@ services:
     environment:
       COUCHDB_HOST: couchdb
       COUCHDB_PORT: 5984
-      COUCHDB_USER: admin
-      COUCHDB_PASSWORD: password
+      COUCHDB_USER: "${COUCHDB_USER:?COUCHDB_USER must be set}"
+      COUCHDB_PASSWORD: "${COUCHDB_PASSWORD:?COUCHDB_PASSWORD must be set}"
       SOLR_HOST: solr
       SOLR_PORT: 8983
       # LDAP Sync Configuration
@@ -101,7 +101,7 @@ services:
       DIRECTORY_SYNC_LDAP_URL: "ldap://openldap:389"
       DIRECTORY_SYNC_LDAP_BASE_DN: "dc=nemakiware,dc=example,dc=com"
       DIRECTORY_SYNC_LDAP_BIND_DN: "cn=admin,dc=nemakiware,dc=example,dc=com"
-      DIRECTORY_SYNC_LDAP_BIND_PASSWORD: "adminpassword"
+      DIRECTORY_SYNC_LDAP_BIND_PASSWORD: "${LDAP_ADMIN_PASSWORD:?LDAP_ADMIN_PASSWORD must be set}"
       DIRECTORY_SYNC_GROUP_SEARCH_BASE: "ou=groups"
       DIRECTORY_SYNC_GROUP_SEARCH_FILTER: "(objectClass=groupOfNames)"
       DIRECTORY_SYNC_USER_SEARCH_BASE: "ou=users"
