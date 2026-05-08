@@ -100,12 +100,12 @@
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-core</artifactId>
-			<version>1.5.16</version>
+			<version>1.5.19</version>
 		</dependency>
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-classic</artifactId>
-			<version>1.5.16</version>
+			<version>1.5.19</version>
 		</dependency>
 		<!-- logback-contrib 0.1.5 is incompatible with logback 1.5.x;
 		     JSON logging is provided by logstash-logback-encoder instead -->

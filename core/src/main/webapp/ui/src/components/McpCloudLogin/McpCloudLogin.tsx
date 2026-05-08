@@ -319,7 +319,7 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
                 icon={<LoginOutlined />}
                 onClick={() => {
                   // Open login in new tab so user can return to this page
-                  window.open('/core/ui/#/', '_blank');
+                  window.open('/core/ui/#/', '_blank', 'noopener,noreferrer');
                 }}
               >
                 {t('mcpCloudLogin.openLoginPage', 'ログインページを新しいタブで開く')}

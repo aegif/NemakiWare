@@ -559,7 +559,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
 
   const handleDownload = (objectId: string) => {
     const url = cmisService.getDownloadUrl(repositoryId, objectId);
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const columns = [

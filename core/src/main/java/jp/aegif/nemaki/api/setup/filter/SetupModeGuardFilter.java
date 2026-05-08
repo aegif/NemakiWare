@@ -70,7 +70,7 @@ public class SetupModeGuardFilter implements ContainerRequestFilter {
         // The token is generated at startup and logged to the console (Jupyter-style).
         String token = requestContext.getHeaderString("X-Setup-Token");
         String expectedToken = startupProbeService.getSetupToken();
-        if (expectedToken == null || !expectedToken.equals(token)) {
+        if (!constantTimeEquals(expectedToken, token)) {
             logger.warning("Setup API request rejected: invalid or missing X-Setup-Token for " + path);
             requestContext.abortWith(
                     Response.status(Response.Status.UNAUTHORIZED)
@@ -78,5 +78,14 @@ public class SetupModeGuardFilter implements ContainerRequestFilter {
                             .entity("{\"error\":\"Valid X-Setup-Token header is required\"}")
                             .build());
         }
+    }
+
+    private static boolean constantTimeEquals(String expected, String actual) {
+        if (expected == null || actual == null) {
+            return false;
+        }
+        return java.security.MessageDigest.isEqual(
+                expected.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                actual.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 }

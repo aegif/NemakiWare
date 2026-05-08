@@ -278,7 +278,7 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
               <Button
                 type="primary"
                 icon={<DownloadOutlined />}
-                onClick={() => window.open(url, '_blank')}
+                onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
                 size="large"
               >
                 {t('common.download')}

@@ -304,7 +304,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 				return false;
 			} else {
 				String _registeredToken = registeredToken.getToken();
-				boolean isValid = StringUtils.isNotEmpty(_registeredToken) && _registeredToken.equals(token);
+				boolean isValid = StringUtils.isNotEmpty(_registeredToken)
+						&& StringUtils.isNotEmpty(token)
+						&& java.security.MessageDigest.isEqual(
+								_registeredToken.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+								token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 				if (log.isDebugEnabled()) {
 					log.debug("Token validation result for user=" + userName
 							+ " in repository=" + repositoryId + ": " + isValid);

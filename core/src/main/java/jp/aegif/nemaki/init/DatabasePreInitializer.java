@@ -73,28 +73,26 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
     // AtomicBoolean to ensure database initialization happens only once even if ContextRefreshedEvent fires multiple times
     private final AtomicBoolean initialized = new AtomicBoolean(false);
 
-    // Configuration properties for database initialization with default values
+    // Configuration properties for database initialization.
+    // No default credentials — must be supplied via -D system properties
+    // (Docker compose sets these via CATALINA_OPTS; Jetty dev via pom.xml).
+    // Fail-closed: missing credentials trigger IllegalStateException at startup.
     private String couchdbUrl = "http://couchdb:5984";
-    private String couchdbUsername = "admin";
-    private String couchdbPassword = "password";
+    private String couchdbUsername;
+    private String couchdbPassword;
 
     public DatabasePreInitializer() {
-        // Override XML defaults from system properties when present.
-        // Docker compose sets these via CATALINA_OPTS; Jetty dev sets
-        // them via pom.xml <systemProperties>.  Without this override,
-        // Jetty would try to connect to "http://couchdb:5984" which
-        // does not resolve outside Docker compose.
         String urlOverride = System.getProperty("db.couchdb.url");
         if (urlOverride != null && !urlOverride.isEmpty()) {
             this.couchdbUrl = urlOverride;
         }
-        String userOverride = System.getProperty("db.couchdb.auth.username");
-        if (userOverride != null && !userOverride.isEmpty()) {
-            this.couchdbUsername = userOverride;
-        }
-        String passOverride = System.getProperty("db.couchdb.auth.password");
-        if (passOverride != null && !passOverride.isEmpty()) {
-            this.couchdbPassword = passOverride;
+        this.couchdbUsername = System.getProperty("db.couchdb.auth.username");
+        this.couchdbPassword = System.getProperty("db.couchdb.auth.password");
+        if (couchdbUsername == null || couchdbUsername.isEmpty()
+                || couchdbPassword == null || couchdbPassword.isEmpty()) {
+            throw new IllegalStateException(
+                "CouchDB credentials missing: -Ddb.couchdb.auth.username and "
+                + "-Ddb.couchdb.auth.password must be set (e.g. via CATALINA_OPTS).");
         }
         log.info("DatabasePreInitializer bean created (couchdbUrl=" + this.couchdbUrl + ")");
     }

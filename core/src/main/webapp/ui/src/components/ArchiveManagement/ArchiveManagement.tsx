@@ -138,7 +138,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
 
   const handleDownload = (archiveId: string) => {
     const url = cmisService.getArchiveDownloadUrl(repositoryId, archiveId);
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const handleForceArchive = async (objectId: string) => {

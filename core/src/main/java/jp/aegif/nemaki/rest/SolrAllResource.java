@@ -138,9 +138,19 @@ public class SolrAllResource extends ResourceBase {
 	private boolean checkSuccess(String xml) throws Exception{
 		//sanitize
 		xml = xml.replace("\n", "");
-		
-		//parse
-		DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance(); 
+
+		//parse (XXE-safe — disable DTDs and external entities)
+		DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+		dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+		dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+		dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+		dbf.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
+		try {
+			dbf.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
+			dbf.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+		} catch (IllegalArgumentException ignored) {
+			// older parsers may not support these attributes
+		}
 		DocumentBuilder db = dbf.newDocumentBuilder();
 		
 		//traverse

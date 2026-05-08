@@ -32,7 +32,7 @@ import java.util.TimeZone;
 @Path("/all/build-info")
 public class BuildInfoResource {
 
-    private static final String VERSION = "3.1.0";
+    private static final String VERSION = "3.1.1";
 
     /**
      * Returns the current NemakiWare version.

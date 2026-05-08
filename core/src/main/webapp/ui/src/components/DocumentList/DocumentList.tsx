@@ -1090,7 +1090,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
   const handleDownload = (objectId: string) => {
     const url = cmisService.getDownloadUrl(repositoryId, objectId);
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const handleCheckOut = async (objectId: string) => {

@@ -643,7 +643,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       // Open cloud file in new tab
       if (result.cloudFileUrl) {
         console.log('[CloudDrive] Opening URL:', result.cloudFileUrl);
-        window.open(result.cloudFileUrl, '_blank');
+        window.open(result.cloudFileUrl, '_blank', 'noopener,noreferrer');
       } else {
         console.warn('[CloudDrive] No cloudFileUrl in result');
       }
@@ -675,7 +675,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               setCloudMetadata({ provider, cloudFileId: result.cloudFileId, cloudFileUrl: result.cloudFileUrl });
               message.success(t('documentViewer.messages.cloudFileRecoverySuccess'));
               if (result.cloudFileUrl) {
-                window.open(result.cloudFileUrl, '_blank');
+                window.open(result.cloudFileUrl, '_blank', 'noopener,noreferrer');
               }
             } catch (retryError) {
               console.error('Cloud push force new failed:', retryError);
@@ -1516,7 +1516,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                               console.warn('[CloudDrive] Failed to resolve OneDrive URL, using stored URL:', e);
                             }
                           }
-                          window.open(url, '_blank');
+                          window.open(url, '_blank', 'noopener,noreferrer');
                         }}
                       >
                         {t('documentViewer.openInCloud', 'クラウドで開く')}

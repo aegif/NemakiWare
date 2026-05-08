@@ -211,7 +211,7 @@ export const CadPreview: React.FC<CadPreviewProps> = ({
                   {t('common.retry')}
                 </Button>
               )}
-              <Button type="primary" icon={<DownloadOutlined />} onClick={() => window.open(url, '_blank')} size="large">
+              <Button type="primary" icon={<DownloadOutlined />} onClick={() => window.open(url, '_blank', 'noopener,noreferrer')} size="large">
                 {t('common.download')}
               </Button>
             </Space>

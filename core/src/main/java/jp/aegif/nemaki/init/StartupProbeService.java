@@ -823,25 +823,26 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
         return "http://couchdb:5984";
     }
 
+    private static final String CONFIG_PLACEHOLDER = "OVERRIDE_VIA_SYSTEM_PROPERTY";
+
     private String resolveCouchDbUser() {
-        if (propertyManager != null) {
-            // Key matches nemakiware.properties: db.couchdb.auth.username
-            String val = propertyManager.readValue("db.couchdb.auth.username");
-            if (val != null && !val.trim().isEmpty()) {
-                return val.trim();
-            }
-        }
-        return "admin";
+        return resolveRequiredCredential("db.couchdb.auth.username");
     }
 
     private String resolveCouchDbPassword() {
+        return resolveRequiredCredential("db.couchdb.auth.password");
+    }
+
+    private String resolveRequiredCredential(String key) {
         if (propertyManager != null) {
-            // Key matches nemakiware.properties: db.couchdb.auth.password
-            String val = propertyManager.readValue("db.couchdb.auth.password");
-            if (val != null && !val.trim().isEmpty()) {
+            String val = propertyManager.readValue(key);
+            if (val != null && !val.trim().isEmpty()
+                    && !CONFIG_PLACEHOLDER.equals(val.trim())) {
                 return val.trim();
             }
         }
-        return "password";
+        throw new IllegalStateException(
+            key + " not configured: must be set via -D system property, env var, "
+            + "or nemakiware.properties (placeholder values are rejected).");
     }
 }
