@@ -54,6 +54,9 @@ mvn clean package -DskipTests
 # Step 2: Navigate to docker directory
 cd docker
 
+# RC13 以降、compose は CouchDB credential を必須とします:
+export COUCHDB_USER=admin COUCHDB_PASSWORD=password
+
 # Step 3: Rebuild Docker image with new WAR
 docker compose -f docker-compose-simple.yml build core
 

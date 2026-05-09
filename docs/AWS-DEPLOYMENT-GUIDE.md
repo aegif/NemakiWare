@@ -291,6 +291,12 @@ mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 ```bash
 cp core/target/core.war docker/core/core.war
 cd docker
+
+# RC13 以降、compose は COUCHDB_USER/PASSWORD を必須とします。
+# 本番では必ず強いパスワードを使ってください（.env / Secrets Manager 等）。
+export COUCHDB_USER=admin
+export COUCHDB_PASSWORD='<強固なパスワードに置換>'
+
 docker compose -f docker-compose-simple.yml up -d --build --force-recreate
 ```
 
@@ -562,6 +568,11 @@ sso.saml.enabled=false
 
 ```bash
 # docker/.env
+# RC13 以降は CouchDB credential が必須:
+COUCHDB_USER=admin
+COUCHDB_PASSWORD=<強固なパスワード>
+
+# 任意: クラウド認証
 CLOUD_AUTH_GOOGLE_ENABLED=true
 CLOUD_AUTH_GOOGLE_CLIENT_ID=YOUR_CLIENT_ID.apps.googleusercontent.com
 ```

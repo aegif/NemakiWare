@@ -281,7 +281,10 @@ mvn clean package -f core/pom.xml -Pdevelopment -DskipTests
 cp core/target/core.war docker/core/core.war
 
 # 4. Deploy via Docker
+#    NOTE: Compose requires COUCHDB_USER and COUCHDB_PASSWORD to be set
+#    in the host environment (RC13+). Production must use strong values.
 cd docker
+export COUCHDB_USER=admin COUCHDB_PASSWORD=password
 docker compose -f docker-compose-simple.yml down
 docker compose -f docker-compose-simple.yml up -d --build --force-recreate
 
@@ -294,10 +297,12 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/index.html
 ```
 
 ### Docker Environment
-- Full stack via Docker: `docker compose -f docker/docker-compose-simple.yml up -d`.
+- Full stack via Docker (with required env):
+  `COUCHDB_USER=admin COUCHDB_PASSWORD=password docker compose -f docker/docker-compose-simple.yml up -d`
 - Services: CouchDB (5984), Solr (8983), Tomcat Core (8080)
 - Check status: `docker compose -f docker/docker-compose-simple.yml ps`
 - View logs: `docker compose -f docker/docker-compose-simple.yml logs core`
+- LDAP/Keycloak overlay (`--profile idp`) additionally requires `LDAP_ADMIN_PASSWORD`
 
 ### E2E Test Environment Setup and Prevention (2025-11-22) ⚠️
 
@@ -320,7 +325,9 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/index.html
 make reset-test-env  # One-command solution
 # OR manually:
 mvn clean package -DskipTests
-cd docker && docker-compose -f docker-compose-simple.yml build core
+cd docker
+export COUCHDB_USER=admin COUCHDB_PASSWORD=password   # required env
+docker-compose -f docker-compose-simple.yml build core
 docker-compose -f docker-compose-simple.yml down -v  # IMPORTANT: -v wipes volumes
 docker-compose -f docker-compose-simple.yml up -d    # Healthchecks enforce startup order
 ```
@@ -506,7 +513,8 @@ mvn clean package -f core/pom.xml -Pdevelopment -DskipTests
 # 3. Copy WAR (verify 118MB size)
 cp core/target/core.war docker/core/core.war
 
-# 4. Force recreate containers
+# 4. Force recreate containers (compose requires COUCHDB env)
+export COUCHDB_USER=admin COUCHDB_PASSWORD=password
 docker compose -f docker/docker-compose-simple.yml up -d --build --force-recreate
 
 # 5. Wait for initialization
@@ -643,8 +651,10 @@ sleep 90
 docker ps
 
 # If not running, start Docker Desktop (macOS) or systemctl (Linux)
-# Then restart containers
-cd docker && docker compose -f docker-compose-simple.yml up -d
+# Then restart containers (compose requires COUCHDB env)
+cd docker
+export COUCHDB_USER=admin COUCHDB_PASSWORD=password
+docker compose -f docker-compose-simple.yml up -d
 ```
 
 **UI not accessible**:

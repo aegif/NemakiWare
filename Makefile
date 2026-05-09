@@ -20,6 +20,13 @@ UI_DIR := core/src/main/webapp/ui
 DOCKER_DIR := docker
 COMPOSE := docker compose -f $(DOCKER_DIR)/docker-compose-simple.yml
 
+# Compose requires CouchDB credentials (RC13+). The Makefile defaults
+# them to admin/password for local development convenience; production
+# deployments must NOT use these — see docs/AWS-DEPLOYMENT-GUIDE.md.
+# Override on the command line: `make deploy COUCHDB_PASSWORD=secret`.
+export COUCHDB_USER ?= admin
+export COUCHDB_PASSWORD ?= password
+
 # ---- Build ----
 
 ui:

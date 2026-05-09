@@ -196,7 +196,51 @@ jobs:
             fi
           done
 
+          # No jars should appear under nemaki/lib or token/lib. Solr 9
+          # auto-loads these directories, and any bundled jar (including
+          # the legacy solr-with-dependencies.jar fat jar) reintroduces
+          # the stale logback/netty/cxf/jackson-databind classes the
+          # remediation tried to remove.
+          stray_jars=$(find docker/solr/solr/nemaki/lib docker/solr/solr/token/lib -name '*.jar' 2>/dev/null || true)
+          if [ -n "$stray_jars" ]; then
+            echo "::error title=Solr lib regression::Jar files appeared under docker/solr/solr/{nemaki,token}/lib — these are auto-loaded by Solr and may carry stale dependency classes"
+            echo "$stray_jars" | sed 's/^/  /'
+            fail=1
+          fi
+
           if [ $fail -ne 0 ]; then
             exit 1
           fi
           echo "✅ Config credential checks passed."
+
+  bundled-jar-scan:
+    name: Bundled jar staleness scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect any checked-in or stray jars under docker/solr
+        run: |
+          set -e
+          fail=0
+          # Look anywhere in docker/solr (not just core lib/) for jars.
+          # If found, peek at META-INF/maven/**/pom.properties and fail if
+          # they reference known-bad legacy versions (kept in lockstep with
+          # the maven-dep-check job above).
+          while IFS= read -r jar; do
+            echo "Inspecting: $jar"
+            stale=$(unzip -p "$jar" 2>/dev/null \
+                    | strings \
+                    | grep -E '(logback-classic.*1\.4\.|netty-common.*4\.1\.(0|1[0-1][0-9])\.Final|commons-io.*2\.1[0-9]\.|cxf-core.*[123]\..*|jackson-databind.*2\.([0-9]|1[0-9]|20)\.)' \
+                    | head -10 || true)
+            if [ -n "$stale" ]; then
+              echo "::error title=Bundled stale jar::$jar contains classes from a vulnerable legacy version"
+              echo "$stale" | sed 's/^/  /'
+              fail=1
+            fi
+          done < <(find docker/solr -name '*.jar' -type f 2>/dev/null)
+
+          if [ $fail -ne 0 ]; then
+            exit 1
+          fi
+          echo "✅ Bundled jar scan passed (no stale shaded classes detected)."

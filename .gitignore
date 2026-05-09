@@ -70,7 +70,6 @@ test-crud-fix.sh
 *.war
 *.tgz
 *.tar.gz
-*solr-with-dependencies*.jar
 
 # Docker build contexts and WAR files
 docker/core/core*.war
@@ -80,7 +79,10 @@ docker/*/core*.war
 core/core*.war
 ui/target/scala-*/ui*.war
 
-# Solr dependencies and large JARs  
+# Legacy Solr fat-jar paths kept blocked so build artefacts cannot
+# accidentally re-introduce stale dependency classes (RC13). These
+# directories are also enforced empty by the security-scan workflow.
+*solr-with-dependencies*.jar
 solr/solr/*/lib/solr-with-dependencies*.jar
 docker/solr/solr/*/lib/solr-with-dependencies*.jar
 lib/jakarta-converted/solr-with-dependencies*.jar

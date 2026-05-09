@@ -41,6 +41,11 @@ cp core/target/core.war docker/core/core.war
 ```bash
 cd docker
 
+# Required env (compose fails fast if these are unset).
+# Use strong values in any non-disposable deployment.
+export COUCHDB_USER=admin
+export COUCHDB_PASSWORD=password
+
 # Core services (CouchDB + Solr + NemakiWare)
 docker compose -f docker-compose-simple.yml up -d --build
 
@@ -254,7 +259,9 @@ cd core/src/main/webapp/ui && npm run dev
 cd core/src/main/webapp/ui && npm run build && cd ../../../..
 mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 cp core/target/core.war docker/core/core.war
-cd docker && docker compose -f docker-compose-simple.yml up -d --build --force-recreate core
+cd docker
+export COUCHDB_USER=admin COUCHDB_PASSWORD=password   # required env
+docker compose -f docker-compose-simple.yml up -d --build --force-recreate core
 ```
 
 ### Testing
