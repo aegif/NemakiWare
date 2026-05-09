@@ -90,6 +90,15 @@
 				<version>4.13.2</version>
 				<scope>test</scope>
 			</dependency>
+			<!-- Bump legacy Apache HttpClient (4.x) to 4.5.14 to address
+			     CVE-2020-13956 (URI parsing). rest-assured 5.4.0 declares
+			     4.5.13 at compile scope; without this DM override, several
+			     other deps that prefer 4.5.14 get downgraded. -->
+			<dependency>
+				<groupId>org.apache.httpcomponents</groupId>
+				<artifactId>httpclient</artifactId>
+				<version>4.5.14</version>
+			</dependency>
 			<!-- Override transitive guava 32.1.3-jre to latest stable.
 			     32.x has no critical CVEs but 33.x fixes several moderate
 			     issues and is requested by azure-identity / microsoft-graph
@@ -236,45 +245,11 @@
 			<artifactId>jcl-over-slf4j</artifactId>
 			<version>2.0.12</version>
 		</dependency>
-		<!-- Logback依存関係をコメントアウト - Log4j2-SLF4J実装を使用 -->
-		<!--
-		<dependency>
-			<groupId>ch.qos.logback</groupId>
-			<artifactId>logback-core</artifactId>
-			<version>1.4.14</version>
-		</dependency>
-		<dependency>
-			<groupId>ch.qos.logback</groupId>
-			<artifactId>logback-classic</artifactId>
-			<version>1.4.14</version>
-		</dependency>
-		-->
-		
-		<!-- SLF4J実装バインディング - logback-classic を単一バインディングとして使用。
-		     solr-core 由来の log4j-slf4j2-impl は exclusion で除外済み。
-		     以下の logback-contrib はコメントアウト（直接依存不要） -->
-		<!--
-		<dependency>
-			<groupId>ch.qos.logback.contrib</groupId>
-			<artifactId>logback-json-core</artifactId>
-			<version>0.1.5</version>
-		</dependency>
-		<dependency>
-			<groupId>ch.qos.logback.contrib</groupId>
-			<artifactId>logback-json-classic</artifactId>
-			<version>0.1.5</version>
-		</dependency>
-		<dependency>
-			<groupId>ch.qos.logback.contrib</groupId>
-			<artifactId>logback-jackson</artifactId>
-			<version>0.1.5</version>
-		</dependency>
-		<dependency>
-			<groupId>net.logstash.logback</groupId>
-			<artifactId>logstash-logback-encoder</artifactId>
-			<version>7.4</version>
-		</dependency>
-		-->
+		<!-- Logback bindings: managed transitively via solr-core (logback-classic
+		     1.5.19 forced in dependencyManagement above). logback-contrib
+		     0.1.5 is incompatible with logback 1.5.x; JSON logging is
+		     provided by logstash-logback-encoder via solr instead. -->
+
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-core</artifactId>
@@ -311,11 +286,10 @@
 		<!-- NOTE: jackson-annotations 2.20+ uses major.minor versioning only (no patch version) -->
 
 
-		<dependency>
-		    <groupId>xml-apis</groupId>
-		    <artifactId>xml-apis</artifactId>
-		    <version>1.4.01</version>
-		</dependency>
+		<!-- xml-apis 1.4.01 removed (2026-05-09): Java 9+ ships the same APIs
+		     in the java.xml module, which Spring 7 / CXF 4 / OpenCMIS Jakarta
+		     EE all consume directly. The dom4j exclusion below prevents the
+		     legacy artifact from leaking back in transitively. -->
 
 		<!-- Jakarta EE servlet API for Spring 7.x, Jersey 4.x and OpenCMIS compatibility -->
 		<dependency>

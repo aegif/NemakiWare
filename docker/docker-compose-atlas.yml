@@ -3,8 +3,12 @@
 # Usage:
 #   docker compose -f docker-compose-simple.yml -f docker-compose-atlas.yml up -d --build
 #
-# Atlas UI: http://localhost:21000  (admin:admin)
-# Wait for healthy: until curl -sf http://localhost:21000/api/atlas/v2/types/typedefs/headers -u admin:admin; do sleep 10; done
+# Atlas UI: http://localhost:21000
+#
+# NOTE: ATLAS_USER / ATLAS_PASSWORD default to "admin" / "admin" because the
+#       sburn/apache-atlas:2.3.0 image hardcodes those credentials in its
+#       baked-in user store — they cannot be overridden inside the container.
+#       Override these env vars only if you swap the Atlas image.
 
 services:
   atlas:
@@ -12,7 +16,7 @@ services:
     ports:
       - "21000:21000"
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:21000/api/atlas/v2/types/typedefs/headers", "-u", "admin:admin"]
+      test: ["CMD", "curl", "-sf", "http://localhost:21000/api/atlas/v2/types/typedefs/headers", "-u", "${ATLAS_USER:-admin}:${ATLAS_PASSWORD:-admin}"]
       interval: 30s
       timeout: 10s
       retries: 10
@@ -23,4 +27,4 @@ services:
       atlas:
         condition: service_healthy
     environment:
-      - CATALINA_OPTS=${CATALINA_OPTS} -Dpurview.enabled=true -Dpurview.endpoint=http://atlas:21000 -Dpurview.auth.type=basic -Dpurview.basic.username=admin -Dpurview.basic.password=admin -Dpurview.atlas.base-path=api/atlas/v2 -Datlas.enabled=true -Datlas.endpoint=http://atlas:21000 -Datlas.username=admin -Datlas.password=admin -Dlineage.mode=journaled -Dlineage.targets=atlas
+      - CATALINA_OPTS=${CATALINA_OPTS} -Dpurview.enabled=true -Dpurview.endpoint=http://atlas:21000 -Dpurview.auth.type=basic -Dpurview.basic.username=${ATLAS_USER:-admin} -Dpurview.basic.password=${ATLAS_PASSWORD:-admin} -Dpurview.atlas.base-path=api/atlas/v2 -Datlas.enabled=true -Datlas.endpoint=http://atlas:21000 -Datlas.username=${ATLAS_USER:-admin} -Datlas.password=${ATLAS_PASSWORD:-admin} -Dlineage.mode=journaled -Dlineage.targets=atlas

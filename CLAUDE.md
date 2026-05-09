@@ -63,9 +63,16 @@ mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 
 ⚠️ **重要**: `docker compose restart` は使用禁止！WARはイメージビルド時にコピーされるため、`restart` では古いWARのまま動作します。必ず `--build --force-recreate` を使用してください。
 
+⚠️ **必須 env**: 全 compose 構成で `COUCHDB_USER` と `COUCHDB_PASSWORD` を環境変数として設定する必要があります (RC13 以降、`${VAR:?...}` で fail-fast)。LDAP / Keycloak profile では `LDAP_ADMIN_PASSWORD` / `LDAP_CONFIG_PASSWORD` も必須。
+
 ```bash
 cp core/target/core.war docker/core/core.war
 cd docker
+
+# 必須環境変数 (.env ファイルか shell でセット)
+export COUCHDB_USER=admin
+export COUCHDB_PASSWORD=password   # 本番では必ず強いパスワードに
+
 # 全コンテナ再構築（初回・完全リセット時）
 docker compose -f docker-compose-simple.yml down
 docker compose -f docker-compose-simple.yml up -d --build --force-recreate
@@ -246,10 +253,11 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 
 ---
 
-## セキュリティステータス (2026-03-16)
+## セキュリティステータス (2026-05-09)
 
-- npm脆弱性: 0件 (dompurify 3.3.2 overrides適用、immutable 3.8.3 へ更新)
-- Maven要注意: netty 4.1.97 (odata-server-core経由、CVE-2025-24970/58056)、logback 1.4.14 (CVE-2025-11226/CVE-2026-1225)
+- npm脆弱性: 0件 (axios 1.15.2, postcss 8.5.10 など更新)
+- Maven主要依存: netty 4.1.124, logback 1.5.19, commons-io 2.20.0, HttpClient 4.5.14
+- xml-apis 1.4.01: 削除 (Java 9+ の java.xml で代替)
 - PDF.js CVE-2024-4367: 対応済み (react-pdf 10.0.1)
 - エクスポートACLリーク: 対応済み (CAN_GET_ACL権限チェック追加)
 - アーカイブDAO例外伝播: 対応済み (null返却→CmisRuntimeException)
@@ -262,7 +270,12 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 - BigInteger depth検証: 対応済み (== 参照比較 → compareTo 値比較)
 - HMAC空文字返却: 対応済み (hmacSha256 例外時にRuntimeException throw)
 - プロキシヘッダー認証: 対応済み (trustedProxies 必須化 + remoteAddr null 拒否)
-- Docker資格情報: 対応済み (ENV層から除去、起動時必須環境変数)
+- Docker資格情報: 対応済み (ENV層から除去、全 compose の COUCHDB/LDAP env 必須化)
+- CouchDB credential fail-closed: 対応済み (DatabasePreInitializer/StartupProbeService の admin/password fallback 撤去)
+- Token 定数時間比較: 対応済み (AuthenticationServiceImpl + SetupModeGuardFilter, MessageDigest.isEqual)
+- XXE hardening: 対応済み (SolrResource/SolrAllResource の checkSuccess に disallow-doctype-decl 等を適用)
+- UI reverse tabnabbing 防止: 対応済み (window.open に noopener,noreferrer 明示)
+- Legacy 設定削除: docker/nemakiware.properties, docker/log4j.properties, docker/ui-war/, docker/solr/solr/conf/ (admin/admin 残骸)
 
 ### MCP 認証方針
 
@@ -283,6 +296,39 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 ## 現在のバージョン
 
 **3.1.1** (2026-04-02)
+
+### RC13 (2026-05-09) — Security hardening
+- 依存脆弱性対応:
+  - axios 1.15.0→1.15.2 (13 CVE: prototype pollution / SSRF / CRLF / null byte 等)
+  - postcss 8.5.6→8.5.10 (XSS in CSS Stringify, CVE-2026-41305)
+  - netty 4.1.118→4.1.124.Final (CVE-2025-55163 HTTP/2 MadeYouReset DoS)
+  - logback 1.5.16→1.5.19 (core/solr/cloudant-init/docker-solr 統一, CVE-2025-11226 / CVE-2026-1225)
+  - commons-io 2.18.0→2.20.0 (CVE-2024-47554 ReDoS)
+  - Apache HttpClient 4.5.13→4.5.14 (CVE-2020-13956 URI 解析、rest-assured 経由 leak の DM 抑え込み)
+  - xml-apis 1.4.01 削除 (Java 9+ の java.xml モジュールに統合済み)
+  - logback-contrib 0.1.5 (commented-out) を pom から整理
+- Java fail-closed credential:
+  - DatabasePreInitializer/StartupProbeService の admin/password fallback 撤去
+  - placeholder 値 (OVERRIDE_VIA_SYSTEM_PROPERTY) を明示的に拒否
+  - Jetty dev は core/pom.xml の jetty-maven-plugin systemProperties で admin/password を明示
+- 定数時間トークン比較:
+  - AuthenticationServiceImpl: session token を MessageDigest.isEqual に置換
+  - SetupModeGuardFilter: X-Setup-Token を MessageDigest.isEqual に置換
+- XXE hardening:
+  - SolrResource.checkSuccess / SolrAllResource.checkSuccess に disallow-doctype-decl + SECURE_PROCESSING + ACCESS_EXTERNAL_DTD/SCHEMA disabled を適用
+- Docker / 設定:
+  - docker-compose-simple/ldap/ldap-keycloak-test/auth-test の COUCHDB_USER/PASSWORD を `${VAR:?...}` 必須化
+  - LDAP_ADMIN_PASSWORD / LDAP_CONFIG_PASSWORD も同様 (idp profile 含む全 compose)
+  - Atlas overlay: ATLAS_USER/PASSWORD 環境変数化 (Atlas image の admin/admin デフォルトに合わせて :- 形式)
+  - docker/core/nemakiware.properties: 旧 hardcoded LDAP "adminpassword" を空文字に
+  - 未使用 legacy 削除: docker/nemakiware.properties, docker/log4j.properties, docker/ui-war/, docker/solr/solr/conf/ (admin/admin 残骸)
+- Test scope cleanup:
+  - solr/pom.xml の junit:junit を test scope に修正
+  - core dependencyManagement に junit:test を強制、mockwebserver の transitive を exclusion で除去
+- UI hardening:
+  - window.open(_blank) 11 箇所すべてに 'noopener,noreferrer' 明示 (reverse tabnabbing 防止)
+- 検証: Maven build SUCCESS, 36 unit tests PASS, QA 94/94 PASS, npm audit 0件
+- 残置 (master マージ後に再評価): Dependabot の 32 件は default branch ベース集計
 
 ### RC12 (2026-04-05)
 - External Ingestion Phase 4 完成:

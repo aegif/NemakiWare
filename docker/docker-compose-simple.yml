@@ -22,6 +22,13 @@ services:
 
   # OpenLDAP Server (for LDAP sync & Keycloak federation tests)
   # Enable with: docker compose --profile idp up -d
+  #
+  # When using --profile idp, LDAP_ADMIN_PASSWORD must be set in the host
+  # environment. We use ${LDAP_ADMIN_PASSWORD:-} (empty fallback) here
+  # rather than ${VAR:?...} so that compose parsing succeeds for non-idp
+  # invocations (compose evaluates interpolation eagerly even for
+  # profile-gated services). The osixia/openldap image rejects an empty
+  # admin password and exits, providing fail-fast at container startup.
   openldap:
     image: osixia/openldap:1.5.0
     profiles:
@@ -32,7 +39,7 @@ services:
       LDAP_ORGANISATION: "NemakiWare Test"
       LDAP_DOMAIN: "nemakiware.example.com"
       LDAP_BASE_DN: "dc=nemakiware,dc=example,dc=com"
-      LDAP_ADMIN_PASSWORD: "adminpassword"
+      LDAP_ADMIN_PASSWORD: "${LDAP_ADMIN_PASSWORD:-}"
       LDAP_TLS: "false"
       LDAP_SEED_INTERNAL_LDIF_PATH: "/ldif-seed"
     volumes:
@@ -40,7 +47,7 @@ services:
       - ldap_data:/var/lib/ldap
       - ldap_config:/etc/ldap/slapd.d
     healthcheck:
-      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost", "-b", "dc=nemakiware,dc=example,dc=com", "-D", "cn=admin,dc=nemakiware,dc=example,dc=com", "-w", "adminpassword"]
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost", "-b", "dc=nemakiware,dc=example,dc=com", "-D", "cn=admin,dc=nemakiware,dc=example,dc=com", "-w", "${LDAP_ADMIN_PASSWORD:-}"]
       interval: 10s
       timeout: 5s
       retries: 10
