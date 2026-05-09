@@ -98,12 +98,33 @@ public class SamlSignatureVerifier {
 	/**
 	 * Verify a SAML Response document.
 	 *
-	 * @param document       parsed XML Document of the SAML Response
-	 * @param idpCertificate IdP's X.509 signing certificate
-	 * @param spEntityId     expected SP Entity ID (for AudienceRestriction check)
-	 * @return VerificationResult indicating success or failure with error message
+	 * <p>Equivalent to {@code verify(document, idpCertificate, spEntityId, false)} —
+	 * non-strict InResponseTo handling for backward compatibility.
 	 */
 	public static VerificationResult verify(Document document, X509Certificate idpCertificate, String spEntityId) {
+		return verify(document, idpCertificate, spEntityId, false);
+	}
+
+	/**
+	 * Verify a SAML Response document with optional strict InResponseTo
+	 * enforcement.
+	 *
+	 * @param document             parsed XML Document of the SAML Response
+	 * @param idpCertificate       IdP's X.509 signing certificate
+	 * @param spEntityId           expected SP Entity ID (for AudienceRestriction check)
+	 * @param requireInResponseTo  when true, the Response must carry
+	 *                             {@code InResponseTo} matching an outstanding
+	 *                             ID in {@link SamlAuthnRequestRegistry}; the
+	 *                             matched ID is consumed on success. Enable
+	 *                             via {@code saml.require.inResponseTo=true}
+	 *                             once the SP-initiated flow registers
+	 *                             AuthnRequest IDs server-side (the React UI
+	 *                             does this via
+	 *                             {@code POST /rest/all/saml/register-request}).
+	 * @return VerificationResult indicating success or failure with error message
+	 */
+	public static VerificationResult verify(Document document, X509Certificate idpCertificate, String spEntityId,
+			boolean requireInResponseTo) {
 		try {
 			PublicKey publicKey = idpCertificate.getPublicKey();
 
@@ -207,20 +228,39 @@ public class SamlSignatureVerifier {
 				return replayResult;
 			}
 
-			// 7. InResponseTo diagnostic. NemakiWare currently does not track issued
-			// AuthnRequest IDs (the SP-initiated flow is delegated to the IdP-issued
-			// redirect), so we cannot fully validate the binding. Surfacing the field
-			// to the log lets operators correlate with their IdP and is the foundation
-			// for a future strict-mode check (saml.require.inResponseTo).
+			// 7. InResponseTo binding. NemakiWare's React UI registers each
+			// AuthnRequest ID via POST /rest/all/saml/register-request before
+			// redirecting to the IdP; the entry sits in
+			// SamlAuthnRequestRegistry until consumed here.
+			//
+			// Default: log only (back-compat, since older UIs may not yet
+			// register). Strict (saml.require.inResponseTo=true): the Response
+			// MUST carry InResponseTo and it MUST be in the registry — closes
+			// the unsolicited-Response injection vector.
 			Element response = SAML_PROTOCOL_NS.equals(signedElement.getNamespaceURI())
 					&& "Response".equals(signedElement.getLocalName())
 					? signedElement
 					: findResponseAncestor(signedElement);
-			if (response != null) {
-				String inResponseTo = response.getAttribute("InResponseTo");
-				if (inResponseTo != null && !inResponseTo.isEmpty()) {
-					logger.info("SAML Response InResponseTo='{}' (not enforced — SP-side AuthnRequest tracking not implemented)", inResponseTo);
+			String inResponseTo = response == null ? null : response.getAttribute("InResponseTo");
+			boolean hasInResponseTo = inResponseTo != null && !inResponseTo.isEmpty();
+			if (requireInResponseTo) {
+				if (!hasInResponseTo) {
+					logger.warn("Strict mode rejected SAML Response: missing InResponseTo");
+					return VerificationResult.failure("SAML Response missing InResponseTo (strict mode)");
 				}
+				if (!SamlAuthnRequestRegistry.getInstance().consume(inResponseTo)) {
+					logger.warn("Strict mode rejected SAML Response: InResponseTo='{}' did not match an outstanding AuthnRequest", inResponseTo);
+					return VerificationResult.failure("SAML Response InResponseTo did not match an outstanding AuthnRequest");
+				}
+				if (logger.isDebugEnabled()) {
+					logger.debug("Strict mode accepted SAML Response InResponseTo='{}'", inResponseTo);
+				}
+			} else if (hasInResponseTo) {
+				// Even in non-strict mode, opportunistically consume so that
+				// once strict mode is turned on later there is no flood of
+				// expired entries. Failure here is informational only.
+				boolean consumed = SamlAuthnRequestRegistry.getInstance().consume(inResponseTo);
+				logger.info("SAML Response InResponseTo='{}' (strict-mode disabled; registry-match={})", inResponseTo, consumed);
 			}
 
 			logger.info("SAML response signature verified successfully");

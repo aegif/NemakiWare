@@ -488,9 +488,15 @@ public class AuthTokenResource extends ResourceBase{
 			DocumentBuilder builder = factory.newDocumentBuilder();
 			Document document = builder.parse(new ByteArrayInputStream(xmlBytes));
 
-			// Verify SAML signature, conditions, and audience
+			// Verify SAML signature, conditions, and audience.
+			// Strict InResponseTo mode is opt-in; when enabled, the React UI
+			// must register each AuthnRequest ID via
+			// POST /rest/all/saml/register-request before redirecting the
+			// user to the IdP, otherwise legitimate logins will be rejected.
+			boolean requireInResponseTo = Boolean.parseBoolean(
+					String.valueOf(pm.readValue(repositoryId, PropertyKey.SAML_REQUIRE_IN_RESPONSE_TO)));
 			SamlSignatureVerifier.VerificationResult verifyResult =
-					SamlSignatureVerifier.verify(document, idpCert, spEntityId);
+					SamlSignatureVerifier.verify(document, idpCert, spEntityId, requireInResponseTo);
 			if (!verifyResult.isValid()) {
 				logger.warn("SAML signature verification failed: {}", verifyResult.getError());
 				addErrMsg(errMsg, "saml", "SAML signature verification failed");

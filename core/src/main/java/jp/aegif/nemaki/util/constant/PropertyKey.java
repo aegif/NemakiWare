@@ -328,6 +328,14 @@ public interface PropertyKey {
 	final String SAML_SLO_URL = "saml.slo.url";
 	/** Username attribute mapping (optional, default: NameID) */
 	final String SAML_ATTRIBUTE_MAPPING = "saml.attribute.mapping";
+	/**
+	 * When true, SAML Responses are rejected unless they carry an
+	 * InResponseTo attribute matching an AuthnRequest ID that this SP
+	 * has registered via {@code POST /rest/all/saml/register-request}.
+	 * Default false for backward compatibility with older UIs that do
+	 * not yet register IDs server-side.
+	 */
+	final String SAML_REQUIRE_IN_RESPONSE_TO = "saml.require.inResponseTo";
 
 	//OIDC configuration
 	/** OIDC issuer URL (e.g. http://keycloak:8080/realms/nemakiware). Used for token validation. */

@@ -137,8 +137,14 @@ public class ODataServlet extends HttpServlet {
                     new ArrayList<EdmxReference>()
             );
             
-            // Create OData handler implementation
-            ODataHandlerImpl handler = new ODataHandlerImpl(odata, serviceMetadata, null);
+            // Create OData handler implementation. The 3rd argument is a
+            // ServerCoreDebugger; passing null here causes a NullPointerException
+            // inside startRuntimeMeasurement on every request. We construct a
+            // real (non-debug-mode) debugger — its overhead is negligible and
+            // the NPE was masking the OData binding entirely.
+            org.apache.olingo.server.core.debug.ServerCoreDebugger debugger =
+                    new org.apache.olingo.server.core.debug.ServerCoreDebugger(odata);
+            ODataHandlerImpl handler = new ODataHandlerImpl(odata, serviceMetadata, debugger);
             
             // Register processors
             handler.register(new CmisEntityCollectionProcessor(

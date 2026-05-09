@@ -475,6 +475,26 @@
   <url-pattern>/rest/all/repositories</url-pattern>
  </servlet-mapping>
 
+ <!-- Public endpoint for the React UI to register a SAML AuthnRequest ID
+      before redirecting the user to the IdP. The ID is stored in the
+      in-memory SamlAuthnRequestRegistry with a 15-minute TTL; later, when
+      saml.require.inResponseTo=true, SamlSignatureVerifier consults the
+      registry to enforce that incoming Responses correspond to a request
+      this SP actually issued.
+
+      Bypasses restAuthenticationFilter on purpose: the user has not
+      authenticated yet at the start of an SSO flow, but rate-limit /
+      payload-cap protections live inside the servlet itself. -->
+ <servlet>
+  <servlet-name>saml-register-request</servlet-name>
+  <servlet-class>jp.aegif.nemaki.rest.SamlRequestRegistrationServlet</servlet-class>
+ </servlet>
+
+ <servlet-mapping>
+  <servlet-name>saml-register-request</servlet-name>
+  <url-pattern>/rest/all/saml/register-request</url-pattern>
+ </servlet-mapping>
+
  <!-- Type registration servlet - bypasses Jersey routing issues -->
  <servlet>
   <servlet-name>type-registration</servlet-name>

@@ -218,24 +218,50 @@ export class SAMLService {
     this.config = config;
   }
 
-  initiateLogin(repositoryId?: string): void {
+  async initiateLogin(repositoryId?: string): Promise<void> {
+    const id = '_' + this.generateUUID();
+    // Register the AuthnRequest ID with the SP server BEFORE redirecting
+    // to the IdP. When the SP later receives the SAML Response and
+    // saml.require.inResponseTo=true, SamlSignatureVerifier consults
+    // SamlAuthnRequestRegistry to confirm that InResponseTo matches a
+    // request this SP actually issued — closing the unsolicited-Response
+    // injection vector.
+    //
+    // Best-effort: a registry failure must not block login when
+    // strict-mode is disabled (the default), so we proceed regardless of
+    // outcome but surface the error in the console for diagnostics.
+    try {
+      const res = await fetch('/core/rest/all/saml/register-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId: id }),
+      });
+      if (!res.ok) {
+        // eslint-disable-next-line no-console
+        console.warn('SAML AuthnRequest registration returned', res.status);
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('SAML AuthnRequest registration failed (continuing):', err);
+    }
+
     const relayState = repositoryId ? `repositoryId=${repositoryId}` : '';
     const params = new URLSearchParams({
-      SAMLRequest: this.generateSAMLRequest(),
+      SAMLRequest: this.generateSAMLRequest(id),
       RelayState: relayState
     });
-    
+
     window.location.href = `${this.config.sso_url}?${params.toString()}`;
   }
 
-  private generateSAMLRequest(): string {
-    const id = '_' + this.generateUUID();
+  private generateSAMLRequest(id?: string): string {
+    const requestId = id ?? ('_' + this.generateUUID());
     const issueInstant = new Date().toISOString();
-    
+
     const samlRequest = `<?xml version="1.0" encoding="UTF-8"?>
 <samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"
                     xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"
-                    ID="${id}"
+                    ID="${requestId}"
                     Version="2.0"
                     IssueInstant="${issueInstant}"
                     Destination="${this.config.sso_url}"

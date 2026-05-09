@@ -402,6 +402,20 @@ public class AuthenticationFilter implements Filter {
 		String[] pathFragments = pathInfo.split("/");
 		log.debug("=== AUTH: pathFragments=" + java.util.Arrays.toString(pathFragments) + " ===");
 
+        // OData binding (servlet mapped to /odata/*): pathInfo is
+        // {repositoryId}/{rest...}. Detect via requestURI because pathInfo
+        // alone has the same shape as /user/{repo} below, and we'd otherwise
+        // pick the second fragment ("$metadata", "Documents", ...) as the
+        // repositoryId — which is what made every authenticated OData call
+        // 401 before this branch existed.
+        String requestUri = request.getRequestURI();
+        if (requestUri != null && requestUri.contains("/odata/")
+                && pathFragments.length > 0 && StringUtils.isNotBlank(pathFragments[0])) {
+            String repositoryId = pathFragments[0];
+            log.debug("=== AUTH: Found repositoryId from /odata/ path=" + repositoryId + " ===");
+            return repositoryId;
+        }
+
         if(pathFragments.length > 0){
         	// Handle API v1 path pattern: /v1/repo/{repositoryId}/...
         	// pathFragments = ["v1", "repo", "bedroom", "renditions", ...]
