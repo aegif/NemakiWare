@@ -936,6 +936,9 @@
         <property name="fetchSupport" ref="fetchSupport" />
         <property name="orchestratorRegistry" ref="fetchOrchestratorRegistry" />
         <property name="imapIdleMonitor" ref="imapIdleMonitor" />
+        <!-- Multi-replica safety: only the leader replica polls. Component-
+             scanned bean from jp.aegif.nemaki.rest.purview.journal. -->
+        <property name="leaderElection" ref="leaderElection" />
     </bean>
 
     <!-- Password Policy Service -->
@@ -1043,6 +1046,8 @@
           init-method="init" destroy-method="destroy">
         <property name="cloudDirectorySyncService" ref="cloudDirectorySyncService" />
         <property name="propertyManager" ref="propertyManager" />
+        <!-- Multi-replica safety: defer to LeaderElection. -->
+        <property name="leaderElection" ref="leaderElection" />
     </bean>
 
     <!-- Cloud Directory Sync REST API -->
@@ -1121,6 +1126,8 @@
         <property name="retentionLogDaoService" ref="retentionLogDaoService" />
         <property name="threadLockService" ref="threadLockService" />
         <property name="nemakiCachePool" ref="nemakiCachePool" />
+        <!-- Multi-replica safety: defer to LeaderElection. -->
+        <property name="leaderElection" ref="leaderElection" />
     </bean>
 
     <!-- Archive Search Resource -->

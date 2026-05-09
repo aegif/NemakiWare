@@ -22,6 +22,9 @@ import jp.aegif.nemaki.cmis.service.NavigationService;
 import jp.aegif.nemaki.cmis.service.ObjectService;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
 import jp.aegif.nemaki.cmis.service.VersioningService;
+import jp.aegif.nemaki.rest.CsrfValidator;
+
+import java.util.Set;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -53,9 +56,14 @@ import java.util.regex.Pattern;
 public class ODataServlet extends HttpServlet {
     
     private static final long serialVersionUID = 1L;
-    
+
     // Pattern to extract repositoryId from the URL path
     private static final Pattern REPO_ID_PATTERN = Pattern.compile("/odata/([^/]+)(/.*)?");
+
+    // HTTP methods that mutate state and therefore require CSRF validation.
+    // Aligned with ResourceBase / CsrfInterceptor on the Jersey + Spring MVC paths.
+    private static final Set<String> STATE_CHANGING_METHODS =
+            Set.of("POST", "PUT", "PATCH", "DELETE");
     
     private RepositoryService repositoryService;
     private ObjectService objectService;
@@ -99,11 +107,27 @@ public class ODataServlet extends HttpServlet {
                 return;
             }
             
-            // Get CallContext from request attribute (set by AuthenticationFilter)
-            CallContext callContext = (CallContext) request.getAttribute("callContext");
+            // Get CallContext from request attribute (set by ApiAuthenticationFilter
+            // / restAuthenticationFilter, both of which use the canonical "CallContext"
+            // key — the historical lowercase variant always read null and silently
+            // 401'd, masking a CSRF gap if a future patch ever relaxed the null check).
+            CallContext callContext = (CallContext) request.getAttribute("CallContext");
             if (callContext == null) {
                 response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Authentication required");
                 return;
+            }
+
+            // CSRF validation for state-changing methods. OData was previously
+            // unprotected because the lowercase callContext lookup short-circuited
+            // every request to 401 before the body reached any processor; once the
+            // attribute name is correct, writes would otherwise bypass the
+            // CsrfValidator that Jersey (ResourceBase) and Spring MVC enforce.
+            if (STATE_CHANGING_METHODS.contains(request.getMethod())) {
+                String csrfError = CsrfValidator.validate(request);
+                if (csrfError != null) {
+                    response.sendError(HttpServletResponse.SC_FORBIDDEN, "CSRF: " + csrfError);
+                    return;
+                }
             }
             
             // Create OData handler

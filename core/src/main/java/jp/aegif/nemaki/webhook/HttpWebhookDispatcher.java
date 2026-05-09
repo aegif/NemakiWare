@@ -70,6 +70,75 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
         "metadata.google.internal",  // GCP metadata
         "metadata.google.com"
     );
+
+    /**
+     * Header names that admins must NOT be able to override via the
+     * webhook configuration's custom-headers map. Allowing any of these
+     * would let an attacker (or compromised admin token) smuggle a
+     * second request, point Host at a different vhost behind the
+     * resolved IP (defeating the SSRF mitigation), exfiltrate stored
+     * credentials by setting Authorization to a different value, or
+     * confuse upstream proxies via Connection / Proxy-* manipulation.
+     * Compared case-insensitively.
+     */
+    private static final Set<String> FORBIDDEN_CUSTOM_HEADERS = Set.of(
+        "host",
+        "content-length",
+        "content-type",
+        "transfer-encoding",
+        "connection",
+        "upgrade",
+        "expect",
+        "te",
+        "trailer",
+        "proxy-connection",
+        "proxy-authorization",
+        "proxy-authenticate",
+        "authorization"
+    );
+
+    /**
+     * RFC 7230 token characters for header field-name validation.
+     * Reject anything else (including CR/LF/space/control chars).
+     */
+    private static boolean isValidHeaderName(String name) {
+        if (name == null || name.isEmpty() || name.length() > 256) {
+            return false;
+        }
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            // RFC 7230: token = 1*tchar
+            // tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
+            //         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
+            boolean ok = (c >= '0' && c <= '9')
+                    || (c >= 'A' && c <= 'Z')
+                    || (c >= 'a' && c <= 'z')
+                    || "!#$%&'*+-.^_`|~".indexOf(c) >= 0;
+            if (!ok) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Reject CR/LF/NUL anywhere in the header value (header smuggling). */
+    private static boolean isValidHeaderValue(String value) {
+        if (value == null || value.length() > 8192) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '\r' || c == '\n' || c == '\0') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String abbreviate(String s) {
+        if (s == null) return "null";
+        return s.length() > 64 ? s.substring(0, 64) + "..." : s;
+    }
     
     private int connectTimeout = DEFAULT_CONNECT_TIMEOUT;
     private int readTimeout = DEFAULT_READ_TIMEOUT;
@@ -180,12 +249,31 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
         connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
         connection.setRequestProperty("User-Agent", "NemakiWare-Webhook/1.0");
 
-        // Set custom headers
+        // Set custom headers — validated to prevent CRLF injection / header
+        // smuggling and to forbid overriding security-critical headers that
+        // the dispatcher itself controls (Host already pinned to the
+        // resolved-IP URL above, Authorization could exfiltrate stored
+        // tokens to an unintended recipient, etc.).
         if (headers != null) {
             for (Map.Entry<String, String> header : headers.entrySet()) {
-                if (header.getKey() != null && header.getValue() != null) {
-                    connection.setRequestProperty(header.getKey(), header.getValue());
+                String name = header.getKey();
+                String value = header.getValue();
+                if (name == null || value == null) {
+                    continue;
                 }
+                if (!isValidHeaderName(name)) {
+                    log.warn("Webhook delivery: rejecting custom header with invalid name (CRLF / non-token chars): " + abbreviate(name));
+                    continue;
+                }
+                if (!isValidHeaderValue(value)) {
+                    log.warn("Webhook delivery: rejecting custom header '" + name + "' — value contains CR/LF/NUL (header smuggling attempt?)");
+                    continue;
+                }
+                if (FORBIDDEN_CUSTOM_HEADERS.contains(name.toLowerCase(java.util.Locale.ROOT))) {
+                    log.warn("Webhook delivery: ignoring attempt to override security-critical header via custom-headers: " + name);
+                    continue;
+                }
+                connection.setRequestProperty(name, value);
             }
         }
 

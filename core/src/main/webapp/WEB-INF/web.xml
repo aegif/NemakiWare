@@ -156,7 +156,14 @@
 		<filter-name>corsFilter</filter-name>
 		<url-pattern>/saml/*</url-pattern>
 	</filter-mapping>
-	
+	<!-- CMIS Web Services (SOAP) binding: include in CORS so browser-based
+	     diagnostics tools can inspect /services/* endpoints, and (more
+	     importantly) ensure the audit context filter below applies. -->
+	<filter-mapping>
+		<filter-name>corsFilter</filter-name>
+		<url-pattern>/services/*</url-pattern>
+	</filter-mapping>
+
 	<!-- Audit request context filter mapping - CMIS binding paths -->
 	<filter-mapping>
 		<filter-name>auditRequestContextFilter</filter-name>
@@ -169,6 +176,21 @@
 	<filter-mapping>
 		<filter-name>auditRequestContextFilter</filter-name>
 		<url-pattern>/mcp/*</url-pattern>
+	</filter-mapping>
+	<!-- CMIS Web Services (SOAP) /services/* — audit every SOAP request.
+	     Authentication on this binding is enforced inside the OpenCMIS
+	     stack via NemakiAuthCallContextHandler (CallContextHandler bound
+	     to the cmisws servlet above), so the audit filter is the only
+	     way these requests reach the audit trail. Without this mapping
+	     SOAP traffic was invisible to the audit pipeline.
+
+	     We deliberately do NOT add restAuthenticationFilter here: that
+	     filter expects to populate a CallContext for /api/* / /rest/* /
+	     /odata/* and would clash with OpenCMIS' own auth handling on
+	     the SOAP path. -->
+	<filter-mapping>
+		<filter-name>auditRequestContextFilter</filter-name>
+		<url-pattern>/services/*</url-pattern>
 	</filter-mapping>
 
 	<!-- DeleteType filter mapping - TEMPORARILY DISABLED to allow query action support -->

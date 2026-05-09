@@ -25,6 +25,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.TrustedProxyResolver;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.Properties;
@@ -100,6 +101,15 @@ public class AuditLogger {
     private static final java.util.concurrent.atomic.AtomicLong auditEventFailed = new java.util.concurrent.atomic.AtomicLong(0);
 
     private PropertyManager propertyManager;
+
+    /**
+     * Static mirror of {@link #propertyManager} so the static
+     * {@link #setRequestContext(HttpServletRequest)} entry point — invoked
+     * from servlet filters before any instance method runs — can consult
+     * the trusted-proxy configuration via {@link TrustedProxyResolver}.
+     * Set via the Spring bean's {@link #setPropertyManager(PropertyManager)}.
+     */
+    private static volatile PropertyManager propertyManagerStatic;
 
     // Server metadata initialization methods
 
@@ -1103,21 +1113,20 @@ public class AuditLogger {
     }
 
     /**
-     * Gets the client IP address from the request.
+     * Resolve the client IP for audit purposes.
+     *
+     * <p>Honours {@code X-Forwarded-For} / {@code X-Real-IP} only when the
+     * direct caller is listed in
+     * {@code external.authentication.trustedProxies}; otherwise records
+     * {@link HttpServletRequest#getRemoteAddr()}. Sanitises CR/LF to prevent
+     * audit log injection.
+     *
+     * <p>Previously this method blindly trusted the forwarded headers from any
+     * client, which let an attacker inject a fake source IP into the audit
+     * trail merely by sending {@code X-Forwarded-For: 10.0.0.5}.
      */
-    private static String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        // If multiple IPs (X-Forwarded-For chain), take the first one
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip;
+    static String getClientIp(HttpServletRequest request) {
+        return TrustedProxyResolver.resolveClientIp(request, propertyManagerStatic);
     }
 
     // Configuration management
@@ -1151,6 +1160,7 @@ public class AuditLogger {
 
     public void setPropertyManager(PropertyManager propertyManager) {
         this.propertyManager = propertyManager;
+        propertyManagerStatic = propertyManager;
     }
 
     public PropertyManager getPropertyManager() {

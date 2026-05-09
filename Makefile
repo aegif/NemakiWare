@@ -14,18 +14,19 @@
 #   make verify        # quick: unit + guards + qa
 #   make verify-full   # verify + tck-clean + e2e
 
-.PHONY: ui war deploy qa tck-clean tck e2e e2e-quick unit guards verify verify-full clean health
+.PHONY: ui war deploy deploy-local qa tck-clean tck e2e e2e-quick unit guards verify verify-full clean health env-check
 
 UI_DIR := core/src/main/webapp/ui
 DOCKER_DIR := docker
 COMPOSE := docker compose -f $(DOCKER_DIR)/docker-compose-simple.yml
 
-# Compose requires CouchDB credentials (RC13+). The Makefile defaults
-# them to admin/password for local development convenience; production
-# deployments must NOT use these — see docs/AWS-DEPLOYMENT-GUIDE.md.
-# Override on the command line: `make deploy COUCHDB_PASSWORD=secret`.
-export COUCHDB_USER ?= admin
-export COUCHDB_PASSWORD ?= password
+# Compose requires CouchDB credentials (RC13+). The Makefile no longer
+# provides defaults — that masked the security gain of compose's
+# `${VAR:?...}` fail-fast and let `make deploy` re-introduce the legacy
+# admin/password pair on production hosts. Set them in the calling shell
+# (or .env) before running any docker target. For local-only convenience
+# use `make deploy-local`, which sets harmless dev credentials inline
+# and is intended only for the developer workstation.
 
 # ---- Build ----
 
@@ -35,15 +36,32 @@ ui:
 war: ui
 	mvn package -f core/pom.xml -Pdevelopment -DskipTests -q
 
-deploy: war
+# Verify required env is set before any docker target runs.
+env-check:
+	@if [ -z "$$COUCHDB_USER" ] || [ -z "$$COUCHDB_PASSWORD" ]; then \
+		echo "ERROR: COUCHDB_USER and COUCHDB_PASSWORD must be set in the environment."; \
+		echo "       Production: provide strong values via your secret store / .env."; \
+		echo "       Local dev:   use 'make deploy-local' to set dev credentials inline."; \
+		exit 1; \
+	fi
+
+deploy: env-check war
 	cp core/target/core.war $(DOCKER_DIR)/core/core.war
 	cd $(DOCKER_DIR) && $(COMPOSE) up -d --build --force-recreate core
 	@echo "Waiting for core to be healthy..."
 	@for i in $$(seq 1 24); do \
-		if curl -sf -u admin:admin http://localhost:8080/core/atom/bedroom > /dev/null 2>&1; then \
+		if curl -sf -u "$$COUCHDB_USER:$$COUCHDB_PASSWORD" http://localhost:8080/core/atom/bedroom > /dev/null 2>&1 \
+		   || curl -sf -u admin:admin http://localhost:8080/core/atom/bedroom > /dev/null 2>&1; then \
 			echo "Ready"; break; \
 		fi; sleep 5; \
 	done
+
+# Convenience target for local development on the developer workstation.
+# Uses the well-known admin/password pair that the dev CouchDB container
+# also defaults to. Never use this on a server that anyone else can reach.
+deploy-local: war
+	@echo "[deploy-local] Using DEV CouchDB credentials admin/password (workstation only)."
+	COUCHDB_USER=admin COUCHDB_PASSWORD=password $(MAKE) deploy
 
 # ---- Test (assume already deployed) ----
 

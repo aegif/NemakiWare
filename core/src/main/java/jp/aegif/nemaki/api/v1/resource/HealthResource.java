@@ -119,10 +119,22 @@ public class HealthResource {
         try {
             String url = propertyManager != null ? propertyManager.readValue("db.couchdb.url") : null;
             if (url == null || url.trim().isEmpty()) url = "http://couchdb:5984";
-            String user = propertyManager != null ? propertyManager.readValue("db.couchdb.auth.username") : "admin";
-            if (user == null || user.trim().isEmpty()) user = "admin";
-            String pass = propertyManager != null ? propertyManager.readValue("db.couchdb.auth.password") : "password";
-            if (pass == null || pass.trim().isEmpty()) pass = "password";
+            String user = propertyManager != null ? propertyManager.readValue("db.couchdb.auth.username") : null;
+            String pass = propertyManager != null ? propertyManager.readValue("db.couchdb.auth.password") : null;
+            // Reject the placeholder value used by the shipped properties files
+            // so a misconfigured deployment fails the health check rather than
+            // silently authenticating with the legacy admin/password fallback.
+            if (user == null || user.trim().isEmpty()
+                    || "OVERRIDE_VIA_SYSTEM_PROPERTY".equals(user.trim())
+                    || pass == null || pass.trim().isEmpty()
+                    || "OVERRIDE_VIA_SYSTEM_PROPERTY".equals(pass.trim())) {
+                result.setStatus("config_error");
+                result.setError("CouchDB credentials not configured: "
+                        + "db.couchdb.auth.username / .password must be supplied "
+                        + "via -D system property, env var, or nemakiware.properties");
+                logger.warning("CouchDB health check: credentials unset — failing config_error");
+                return result;
+            }
 
             CouchDbConnectionResult conn = startupProbeService.testConnection(url, user, pass);
             result.setResponseTimeMs(conn.getResponseTimeMs());

@@ -113,7 +113,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			log.warn("Proxy header auth rejected: remote address is unknown (not in CallContext) — cannot verify trusted proxy");
 			return false;
 		}
-		if (!isTrustedProxy(remoteAddr, trustedProxies)) {
+		if (!jp.aegif.nemaki.util.TrustedProxyResolver.isTrusted(remoteAddr, trustedProxies)) {
 			log.warn("Proxy header auth rejected: remote address " + remoteAddr + " is not in trustedProxies");
 			return false;
 		}
@@ -146,21 +146,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		}
 	}
 
-	/** Check if remoteAddr is in the comma-separated trustedProxies list. */
-	private static boolean isTrustedProxy(String remoteAddr, String trustedProxies) {
-		if (remoteAddr == null || trustedProxies == null) return false;
-		for (String raw : trustedProxies.split(",")) {
-			String trusted = raw.trim();
-			if (trusted.isEmpty()) continue;
-			if (trusted.equals(remoteAddr)) return true;
-			// Allow localhost variants
-			if (("127.0.0.1".equals(trusted) || "localhost".equals(trusted))
-					&& ("127.0.0.1".equals(remoteAddr) || "::1".equals(remoteAddr) || "0:0:0:0:0:0:0:1".equals(remoteAddr))) {
-				return true;
-			}
-		}
-		return false;
-	}
+	// trusted-proxy logic centralised in jp.aegif.nemaki.util.TrustedProxyResolver
+	// (also used by AuditLogger.getClientIp). Keep them in lockstep so a future
+	// trustedProxies policy update applies to both auth and audit consistently.
 
 	private boolean loginWithToken(CallContext callContext) {
 		String userName = callContext.getUsername();

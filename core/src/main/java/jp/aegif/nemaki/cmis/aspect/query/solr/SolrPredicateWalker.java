@@ -980,7 +980,13 @@ public class SolrPredicateWalker{
 
 		SolrQuery query = new SolrQuery();
 
-		query.setQuery(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID) + ":" + folderId + " AND "
+		// Escape folderId before splicing into the Solr query string. CMIS
+		// object IDs are typically UUIDs, but External Ingest derives IDs
+		// from sourceObjectId values that are caller-supplied; characters
+		// such as ':' '*' '\\' '(' ')' would otherwise inject Solr query
+		// syntax (DoS via wildcards or unintended result shaping).
+		query.setQuery(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID)
+				+ ":" + ClientUtils.escapeQueryChars(folderId) + " AND "
 				+ solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.BASE_TYPE_ID) + ":cmis\\:folder"); // only "folder" nodes
 
 		// Connect to SolrServer and add subfolder ids to the list

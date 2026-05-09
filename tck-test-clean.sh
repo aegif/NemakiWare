@@ -5,17 +5,20 @@
 # This script performs a complete TCK test execution with proper database cleanup
 # to ensure clean test conditions and prevent test data accumulation issues.
 #
-# For detailed documentation, see:
-#   - README.md: "Testing" section
-#   - CLAUDE.md: "TCK Test Execution (Standard Procedure)" section
+# WARNING: This script DROPS the configured CouchDB database. Run it ONLY
+# against a local development / CI environment. Multiple safety guards must
+# be cleared before any destructive action runs:
+#
+#   1. CouchDB endpoint must be on localhost / 127.0.0.1 (refuses remote URLs).
+#   2. REPOSITORY_NAME must look like a test repository (override only via
+#      explicit env override that includes "test" or "dev" in the name).
+#   3. CONFIRM_DELETE_BEDROOM=yes must be set (or --confirm passed) to allow
+#      the DELETE step. The default behaviour is REFUSE.
 #
 # Usage:
-#   ./tck-test-clean.sh [test-group]
-#
-# Examples:
-#   ./tck-test-clean.sh                    # Run all TCK tests
-#   ./tck-test-clean.sh QueryTestGroup     # Run specific test group
-#   ./tck-test-clean.sh QueryTestGroup#queryLikeTest  # Run specific test method
+#   CONFIRM_DELETE_BEDROOM=yes ./tck-test-clean.sh                    # Run all TCK tests
+#   CONFIRM_DELETE_BEDROOM=yes ./tck-test-clean.sh QueryTestGroup     # Run specific test group
+#   CONFIRM_DELETE_BEDROOM=yes ./tck-test-clean.sh QueryTestGroup#queryLikeTest
 #
 
 set -e  # Exit on error
@@ -27,15 +30,52 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
-COUCHDB_HOST="localhost"
-COUCHDB_PORT="5984"
-COUCHDB_USER="admin"
-COUCHDB_PASSWORD="password"
-REPOSITORY_NAME="bedroom"
-DOCKER_COMPOSE_FILE="docker/docker-compose-simple.yml"
-CORE_CONTAINER="docker-core-1"
+# Configuration — overridable via env, defaults match the local dev compose stack.
+COUCHDB_HOST="${COUCHDB_HOST:-localhost}"
+COUCHDB_PORT="${COUCHDB_PORT:-5984}"
+COUCHDB_USER="${COUCHDB_USER:-admin}"
+COUCHDB_PASSWORD="${COUCHDB_PASSWORD:-password}"
+REPOSITORY_NAME="${REPOSITORY_NAME:-bedroom}"
+DOCKER_COMPOSE_FILE="${DOCKER_COMPOSE_FILE:-docker/docker-compose-simple.yml}"
+CORE_CONTAINER="${CORE_CONTAINER:-docker-core-1}"
 TEST_TARGET="${1:-}"  # Optional test target (e.g., QueryTestGroup)
+if [ "$TEST_TARGET" = "--confirm" ]; then
+    CONFIRM_DELETE_BEDROOM=yes
+    TEST_TARGET=""
+fi
+
+# ── Safety gate ────────────────────────────────────────────────────────
+case "$COUCHDB_HOST" in
+    localhost|127.0.0.1|::1)
+        ;;
+    *)
+        echo -e "${RED}REFUSING TO RUN: COUCHDB_HOST='$COUCHDB_HOST' is not a loopback address.${NC}"
+        echo "This script DROPS the CouchDB database '$REPOSITORY_NAME'. It is only"
+        echo "safe to use against a local development / CI environment. If you really"
+        echo "want to clean a different host, do it by hand."
+        exit 2
+        ;;
+esac
+
+# Allow obvious test-pattern names; refuse anything that looks like a real repo.
+case "$REPOSITORY_NAME" in
+    bedroom|canopy|*test*|*dev*|*ci*)
+        ;;
+    *)
+        echo -e "${RED}REFUSING TO RUN: REPOSITORY_NAME='$REPOSITORY_NAME' does not look like a test/dev repo.${NC}"
+        echo "Set REPOSITORY_NAME to a name containing 'test' / 'dev' / 'ci', or to"
+        echo "the canonical 'bedroom' / 'canopy' fixtures, before re-running."
+        exit 2
+        ;;
+esac
+
+if [ "${CONFIRM_DELETE_BEDROOM:-}" != "yes" ]; then
+    echo -e "${RED}REFUSING TO RUN: CONFIRM_DELETE_BEDROOM=yes is required.${NC}"
+    echo "This script will DROP the CouchDB database '$REPOSITORY_NAME' on $COUCHDB_HOST:$COUCHDB_PORT."
+    echo "Re-run as:"
+    echo "  CONFIRM_DELETE_BEDROOM=yes ./tck-test-clean.sh ${TEST_TARGET:-}"
+    exit 2
+fi
 
 echo -e "${BLUE}================================================${NC}"
 echo -e "${BLUE}  TCK Test Execution with Database Cleanup${NC}"
@@ -78,10 +118,14 @@ else
     exit 1
 fi
 
-# Restart core container to reinitialize database
-echo "Restarting core container for database reinitialization..."
+# Recreate the core container to reinitialise the database. CLAUDE.md
+# explicitly forbids `docker compose restart` here because it leaves the
+# previously-built WAR running; we always force a recreate so the latest
+# WAR is what serves the test run.
+echo "Recreating core container for database reinitialization..."
 cd "$(dirname "$0")"
-docker compose -f "$DOCKER_COMPOSE_FILE" restart core > /dev/null 2>&1
+COUCHDB_USER="$COUCHDB_USER" COUCHDB_PASSWORD="$COUCHDB_PASSWORD" \
+    docker compose -f "$DOCKER_COMPOSE_FILE" up -d --force-recreate core > /dev/null 2>&1
 
 # Wait for server to be ready
 echo "Waiting for server initialization (90 seconds)..."

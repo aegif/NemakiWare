@@ -122,7 +122,14 @@ public class NemakiwareMcpServer {
      * @return Tool execution result
      */
     public McpToolResult executeTool(String toolName, Map<String, Object> arguments, Map<String, String> headers) {
-        log.debug("Executing MCP tool: {} with arguments: {}", toolName, arguments);
+        // Never log full arguments — login / apikey_login / cloud_login carry
+        // password / apiKey / sessionToken in plaintext, and any future tool
+        // could add a credential-shaped argument. Log only the tool name and
+        // the (sanitised) set of argument keys so a debug session retains
+        // tracing value without leaking secrets to log aggregators.
+        if (log.isDebugEnabled()) {
+            log.debug("Executing MCP tool: {} with arguments: {}", toolName, redactArguments(arguments));
+        }
 
         switch (toolName) {
             case "nemakiware_login":
@@ -339,5 +346,66 @@ public class NemakiwareMcpServer {
         Object value = args.get(key);
         if (value == null) return defaultValue;
         return value.toString();
+    }
+
+    /**
+     * Argument keys whose values are credential-shaped and must never be
+     * logged. Compared lower-case. The set is intentionally generous —
+     * anything that walks like a secret is masked, even if a particular
+     * tool uses it for something else (e.g., a "secret" used as a label).
+     */
+    private static final java.util.Set<String> SENSITIVE_ARG_KEYS = java.util.Set.of(
+        "password",
+        "passwd",
+        "pwd",
+        "apikey",
+        "api_key",
+        "secret",
+        "token",
+        "sessiontoken",
+        "session_token",
+        "accesstoken",
+        "access_token",
+        "refreshtoken",
+        "refresh_token",
+        "credential",
+        "credentials",
+        "authorization",
+        "clientsecret",
+        "client_secret",
+        "privatekey",
+        "private_key"
+    );
+
+    /**
+     * Build a map suitable for logging from the raw MCP tool arguments:
+     * sensitive keys are replaced with the literal "[REDACTED]"; long
+     * values are abbreviated. Returning a Map (rather than a single
+     * String) keeps the log output structured for downstream parsing.
+     */
+    static Map<String, Object> redactArguments(Map<String, Object> args) {
+        if (args == null || args.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+        Map<String, Object> redacted = new java.util.LinkedHashMap<>();
+        for (Map.Entry<String, Object> e : args.entrySet()) {
+            String key = e.getKey();
+            if (key != null && SENSITIVE_ARG_KEYS.contains(key.toLowerCase(java.util.Locale.ROOT))) {
+                redacted.put(key, "[REDACTED]");
+            } else {
+                Object v = e.getValue();
+                if (v == null) {
+                    redacted.put(key, null);
+                } else if (v instanceof Map<?, ?> nested) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> nestedMap = (Map<String, Object>) nested;
+                    redacted.put(key, redactArguments(nestedMap));
+                } else {
+                    String s = v.toString();
+                    redacted.put(key, s.length() > 200 ? s.substring(0, 200) + "..." : s);
+                }
+            }
+        }
+        return redacted;
     }
 }

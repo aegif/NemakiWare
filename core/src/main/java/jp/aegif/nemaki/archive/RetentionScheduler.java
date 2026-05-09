@@ -68,6 +68,15 @@ public class RetentionScheduler {
     private RetentionLogDaoService retentionLogDaoService;
     private ThreadLockService threadLockService;
     private NemakiCachePool nemakiCachePool;
+    /**
+     * Optional. When wired and lineage.leader-election.enabled=true,
+     * retention runs only on the leader. Otherwise behaves single-replica.
+     */
+    private jp.aegif.nemaki.rest.purview.journal.LeaderElection leaderElection;
+
+    public void setLeaderElection(jp.aegif.nemaki.rest.purview.journal.LeaderElection leaderElection) {
+        this.leaderElection = leaderElection;
+    }
 
     private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> localArchiveTask;
@@ -94,7 +103,9 @@ public class RetentionScheduler {
                 TimeUnit.SECONDS);
 
         log.info("Retention scheduler initialized (activeLocalCron=" + activeLocalCron
-                + ", activeColdCron=" + activeColdCron + ")");
+                + ", activeColdCron=" + activeColdCron
+                + ", leaderElection=" + (leaderElection != null && leaderElection.isEnabled() ? "enabled" : "disabled")
+                + ")");
     }
 
     void reconcileSchedule() {
@@ -220,6 +231,12 @@ public class RetentionScheduler {
             log.debug("Retention local-archive skipped: disabled (dynamic check)");
             return;
         }
+        // Multi-replica safety: only the leader performs retention. Without
+        // this gate every replica would race on archive moves / deletes.
+        if (leaderElection != null && !leaderElection.isLeader("retention-local-archive")) {
+            log.debug("Retention local-archive skipped: not leader for 'retention-local-archive'");
+            return;
+        }
 
         log.info("Starting scheduled local-archive job");
 
@@ -337,6 +354,14 @@ public class RetentionScheduler {
     }
 
     private void executeColdMove() {
+        if (leaderElection != null && !leaderElection.isLeader("retention-cold-move")) {
+            log.debug("Retention cold-move skipped: not leader for 'retention-cold-move'");
+            return;
+        }
+        executeColdMoveInternal();
+    }
+
+    private void executeColdMoveInternal() {
         if (!propertyManager.readBoolean(PropertyKey.RETENTION_ENABLED)) {
             log.debug("Retention cold-move skipped: disabled (dynamic check)");
             return;

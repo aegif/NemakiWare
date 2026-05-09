@@ -198,6 +198,31 @@ public class SamlSignatureVerifier {
 				return conditionsResult;
 			}
 
+			// 6. Anti-replay: refuse to consume the same Response or Assertion twice.
+			// Both IDs must be tracked because a replay could come in either as a full
+			// captured Response or as a re-wrapped Assertion in a fresh-looking Response.
+			SamlReplayCache cache = SamlReplayCache.getInstance();
+			VerificationResult replayResult = checkReplay(document, signedElement, cache);
+			if (!replayResult.isValid()) {
+				return replayResult;
+			}
+
+			// 7. InResponseTo diagnostic. NemakiWare currently does not track issued
+			// AuthnRequest IDs (the SP-initiated flow is delegated to the IdP-issued
+			// redirect), so we cannot fully validate the binding. Surfacing the field
+			// to the log lets operators correlate with their IdP and is the foundation
+			// for a future strict-mode check (saml.require.inResponseTo).
+			Element response = SAML_PROTOCOL_NS.equals(signedElement.getNamespaceURI())
+					&& "Response".equals(signedElement.getLocalName())
+					? signedElement
+					: findResponseAncestor(signedElement);
+			if (response != null) {
+				String inResponseTo = response.getAttribute("InResponseTo");
+				if (inResponseTo != null && !inResponseTo.isEmpty()) {
+					logger.info("SAML Response InResponseTo='{}' (not enforced — SP-side AuthnRequest tracking not implemented)", inResponseTo);
+				}
+			}
+
 			logger.info("SAML response signature verified successfully");
 			return VerificationResult.success(signedElement);
 
@@ -205,6 +230,60 @@ public class SamlSignatureVerifier {
 			logger.error("SAML signature verification error", e);
 			return VerificationResult.failure("Signature verification error: " + e.getMessage());
 		}
+	}
+
+	/**
+	 * Anti-replay check: collect the Response ID and every Assertion ID
+	 * inside the signed subtree, and refuse if the cache has seen any of
+	 * them before. Recording only happens on first use, so a permanent
+	 * deny on duplicate is symmetric with the validity window.
+	 */
+	private static VerificationResult checkReplay(Document document, Element signedElement, SamlReplayCache cache) {
+		// Always check the top-level Response ID even when the IdP only
+		// signs the Assertion — that's the outermost replay surface.
+		NodeList responses = document.getElementsByTagNameNS(SAML_PROTOCOL_NS, "Response");
+		for (int i = 0; i < responses.getLength(); i++) {
+			Element resp = (Element) responses.item(i);
+			String id = resp.getAttribute("ID");
+			if (id != null && !id.isEmpty() && cache.isReplayAndRecord("response:" + id)) {
+				logger.warn("Rejecting replayed SAML Response ID: {}", id);
+				return VerificationResult.failure("SAML Response ID already consumed (replay)");
+			}
+		}
+
+		// Then every Assertion within the signed element (typical IdP-signs-Assertion pattern).
+		NodeList assertions = signedElement.getElementsByTagNameNS(SAML_ASSERTION_NS, "Assertion");
+		// If the signedElement itself is the Assertion, also include it.
+		if (SAML_ASSERTION_NS.equals(signedElement.getNamespaceURI())
+				&& "Assertion".equals(signedElement.getLocalName())) {
+			String id = signedElement.getAttribute("ID");
+			if (id != null && !id.isEmpty() && cache.isReplayAndRecord("assertion:" + id)) {
+				logger.warn("Rejecting replayed SAML Assertion ID: {}", id);
+				return VerificationResult.failure("SAML Assertion ID already consumed (replay)");
+			}
+		}
+		for (int i = 0; i < assertions.getLength(); i++) {
+			Element a = (Element) assertions.item(i);
+			String id = a.getAttribute("ID");
+			if (id != null && !id.isEmpty() && cache.isReplayAndRecord("assertion:" + id)) {
+				logger.warn("Rejecting replayed SAML Assertion ID: {}", id);
+				return VerificationResult.failure("SAML Assertion ID already consumed (replay)");
+			}
+		}
+		return VerificationResult.success();
+	}
+
+	/** Walk up to find the enclosing samlp:Response element, if any. */
+	private static Element findResponseAncestor(Element start) {
+		org.w3c.dom.Node n = start.getParentNode();
+		while (n instanceof Element) {
+			Element e = (Element) n;
+			if (SAML_PROTOCOL_NS.equals(e.getNamespaceURI()) && "Response".equals(e.getLocalName())) {
+				return e;
+			}
+			n = e.getParentNode();
+		}
+		return null;
 	}
 
 	/**

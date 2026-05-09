@@ -58,7 +58,9 @@ public class IngestSchedulerService {
         });
         scheduler.scheduleWithFixedDelay(this::pollScheduledProfiles,
                 pollIntervalSeconds, pollIntervalSeconds, java.util.concurrent.TimeUnit.SECONDS);
-        logger.info("Ingest scheduler started (interval={}s)", pollIntervalSeconds);
+        logger.info("Ingest scheduler started (interval={}s, leaderElection={})",
+                pollIntervalSeconds,
+                (leaderElection != null && leaderElection.isEnabled()) ? "enabled" : "disabled");
 
         // Separate thread for stuck job detection — cannot share the main
         // scheduler thread because if executeFetch() hangs, the scheduler
@@ -133,6 +135,14 @@ public class IngestSchedulerService {
 
     private void pollScheduledProfiles() {
         try {
+            // Multi-replica safety: only the leader replica polls. When leader
+            // election is disabled (default), isLeader returns true so the
+            // existing single-replica behaviour is preserved.
+            if (leaderElection != null && !leaderElection.isLeader("ingest-scheduler")) {
+                logger.debug("Ingest scheduler skipped: not leader for 'ingest-scheduler'");
+                return;
+            }
+
             // Half-open circuit breakers: allow one retry per cycle for each
             // connector that was previously tripped. If the retry succeeds,
             // the counter is cleared; if it fails again, it remains open.
@@ -373,6 +383,19 @@ public class IngestSchedulerService {
     private CheckpointManager checkpointManager;
     private FetchSupport fetchSupport;
     private FetchOrchestratorRegistry orchestratorRegistry;
+    /**
+     * Optional. When wired (and lineage.leader-election.enabled=true), the
+     * scheduler executes its polling cycle only on the leader replica. If
+     * unwired or disabled, isLeader() returns true and behaviour falls back
+     * to single-replica semantics — preserving the existing single-node
+     * deployment while preventing the multi-replica stampede where every
+     * core container would independently poll the same external systems.
+     */
+    private jp.aegif.nemaki.rest.purview.journal.LeaderElection leaderElection;
+
+    public void setLeaderElection(jp.aegif.nemaki.rest.purview.journal.LeaderElection leaderElection) {
+        this.leaderElection = leaderElection;
+    }
 
     public void setProfileService(ImportProfileDefinitionService profileService) {
         this.profileService = profileService;

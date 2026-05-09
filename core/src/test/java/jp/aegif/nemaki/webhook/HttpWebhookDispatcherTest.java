@@ -415,4 +415,61 @@ public class HttpWebhookDispatcherTest {
             }
         }
     }
+
+    // ========================================
+    // Custom Header Validation Tests (CRLF / smuggling / forbidden names)
+    // ========================================
+
+    private boolean invokeIsValidHeaderName(String name) throws Exception {
+        Method m = HttpWebhookDispatcher.class.getDeclaredMethod("isValidHeaderName", String.class);
+        m.setAccessible(true);
+        return (Boolean) m.invoke(null, name);
+    }
+
+    private boolean invokeIsValidHeaderValue(String value) throws Exception {
+        Method m = HttpWebhookDispatcher.class.getDeclaredMethod("isValidHeaderValue", String.class);
+        m.setAccessible(true);
+        return (Boolean) m.invoke(null, value);
+    }
+
+    @Test
+    public void testHeaderNameAcceptsRfc7230Tokens() throws Exception {
+        assertTrue(invokeIsValidHeaderName("X-Custom-Header"));
+        assertTrue(invokeIsValidHeaderName("X-Trace-ID"));
+        assertTrue(invokeIsValidHeaderName("Idempotency-Key"));
+        assertTrue(invokeIsValidHeaderName("If-Match"));
+    }
+
+    @Test
+    public void testHeaderNameRejectsCrlfAndSpaces() throws Exception {
+        assertFalse(invokeIsValidHeaderName("X-Custom\r\nFake: line"));
+        assertFalse(invokeIsValidHeaderName("X-Custom\nFake"));
+        assertFalse(invokeIsValidHeaderName("X-Custom\rFake"));
+        assertFalse(invokeIsValidHeaderName("X Custom"));
+        assertFalse(invokeIsValidHeaderName(""));
+        assertFalse(invokeIsValidHeaderName(null));
+    }
+
+    @Test
+    public void testHeaderValueRejectsCrlfNul() throws Exception {
+        assertTrue(invokeIsValidHeaderValue("normal-value"));
+        assertTrue(invokeIsValidHeaderValue("with spaces and = signs"));
+        assertFalse(invokeIsValidHeaderValue("inject\r\nFake-Header: bad"));
+        assertFalse(invokeIsValidHeaderValue("inject\nFake"));
+        assertFalse(invokeIsValidHeaderValue("inject\rFake"));
+        assertFalse(invokeIsValidHeaderValue("with nul"));
+    }
+
+    @Test
+    public void testForbiddenHeadersConstantContainsCriticalNames() throws Exception {
+        java.lang.reflect.Field f = HttpWebhookDispatcher.class.getDeclaredField("FORBIDDEN_CUSTOM_HEADERS");
+        f.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Set<String> forbidden = (java.util.Set<String>) f.get(null);
+        for (String h : new String[]{"host", "content-length", "authorization",
+                "transfer-encoding", "connection", "proxy-authorization"}) {
+            assertTrue(forbidden.contains(h),
+                    "FORBIDDEN_CUSTOM_HEADERS must include " + h + " (compared lower-case)");
+        }
+    }
 }

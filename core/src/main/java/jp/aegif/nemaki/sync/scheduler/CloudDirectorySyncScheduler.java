@@ -28,6 +28,12 @@ public class CloudDirectorySyncScheduler {
 
 	private CloudDirectorySyncService cloudDirectorySyncService;
 	private PropertyManager propertyManager;
+	/**
+	 * Optional. When wired and lineage.leader-election.enabled=true, the
+	 * sync runs only on the leader replica. Otherwise isLeader() returns
+	 * true and the scheduler behaves as a single-replica process.
+	 */
+	private jp.aegif.nemaki.rest.purview.journal.LeaderElection leaderElection;
 
 	private ScheduledExecutorService scheduler;
 	private ScheduledFuture<?> syncTask;
@@ -49,7 +55,9 @@ public class CloudDirectorySyncScheduler {
 				CONFIG_CHECK_INTERVAL_SECONDS,
 				TimeUnit.SECONDS);
 
-		log.info("Cloud directory sync scheduler initialized (activeCron=" + activeCron + ")");
+		log.info("Cloud directory sync scheduler initialized (activeCron=" + activeCron
+				+ ", leaderElection=" + (leaderElection != null && leaderElection.isEnabled() ? "enabled" : "disabled")
+				+ ")");
 	}
 
 	void reconcileSchedule() {
@@ -156,6 +164,14 @@ public class CloudDirectorySyncScheduler {
 			return;
 		}
 
+		// Multi-replica safety: defer to leader. Without leader election
+		// every replica would independently delta-sync the same directory,
+		// double-charging the upstream API and racing on CouchDB writes.
+		if (leaderElection != null && !leaderElection.isLeader("directory-sync")) {
+			log.debug("Cloud directory sync skipped: not leader for 'directory-sync'");
+			return;
+		}
+
 		log.info("Starting scheduled cloud directory delta sync");
 
 		String providers = propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS);
@@ -223,5 +239,9 @@ public class CloudDirectorySyncScheduler {
 
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
+	}
+
+	public void setLeaderElection(jp.aegif.nemaki.rest.purview.journal.LeaderElection leaderElection) {
+		this.leaderElection = leaderElection;
 	}
 }
