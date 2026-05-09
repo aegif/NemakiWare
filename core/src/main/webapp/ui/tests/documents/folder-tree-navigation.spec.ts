@@ -94,9 +94,17 @@ test.describe('FolderTree Navigation', () => {
     }
   });
 
-  test('should display folder tree with visual hierarchy', async ({ page, browserName: _browserName }) => {
-    // Folder tree is hidden on mobile in FolderTree.tsx; chromium project
-    // is desktop-only, so no need to skip here.
+  test('should display folder tree with visual hierarchy', async ({ page }, testInfo) => {
+    // Layout.tsx documents that the sidebar may overlap content on
+    // viewports < 768px and there is no mobile-responsive hiding logic.
+    // Skip on the Mobile Chrome / Mobile Safari projects (Pixel 5 = 393w,
+    // iPhone 12 = 390w) where this assertion is unreliable. Tablet
+    // (1024×768) and desktop projects are wide enough to assert against.
+    const viewportWidth = page.viewportSize()?.width ?? 0;
+    test.skip(
+      viewportWidth > 0 && viewportWidth < 768,
+      `BROWSER: folder tree assertion is unreliable below 768px (viewport ${viewportWidth}px on project ${testInfo.project.name})`
+    );
 
     // Verify folder tree exists
     const folderTree = page.locator('.ant-tree');

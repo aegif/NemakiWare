@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, request as apiRequest } from '@playwright/test';
 
 /**
  * MCP (Model Context Protocol) E2E Tests
@@ -59,22 +59,40 @@ test.describe('MCP Info & Health', () => {
     expect(data.service).toBe('nemakiware-mcp');
   });
 
-  test('JSON-RPC tools/list returns tools with inputSchema (default public)', async ({ request }) => {
-    // Tool discovery now requires the JSON-RPC tools/list method on
-    // /mcp/message rather than the anonymous /mcp/info endpoint.
-    // tools/list itself is anonymous unless mcp.tools.list.public=false.
-    const response = await request.post(`${MCP_BASE}/message`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
-    });
-    expect(response.status()).toBe(200);
-    const body = await response.json();
-    expect(body.result).toBeDefined();
-    expect(Array.isArray(body.result.tools)).toBeTruthy();
-    expect(body.result.tools.length).toBeGreaterThan(0);
-    const firstTool = body.result.tools[0];
-    expect(firstTool.name).toBeDefined();
-    expect(firstTool.description || firstTool.inputSchema).toBeDefined();
+  test('JSON-RPC tools/list is reachable anonymously and exposes inputSchema for every tool', async () => {
+    // Discovery moved from /mcp/info to JSON-RPC tools/list. This test
+    // verifies the *default-public* contract — i.e. the call must work
+    // without any Authorization header. The shared `request` fixture
+    // would otherwise inject Basic auth via playwright.config.ts'
+    // extraHTTPHeaders, masking a regression to mcp.tools.list.public=false.
+    // We allocate a fresh APIRequestContext with no global headers to
+    // make the anonymous path explicit.
+    const anonRequest = await apiRequest.newContext();
+    try {
+      const response = await anonRequest.post(`${MCP_BASE}/message`, {
+        headers: { 'Content-Type': 'application/json' },
+        data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      });
+      expect(response.status()).toBe(200);
+      const body = await response.json();
+      expect(body.result, `tools/list response: ${JSON.stringify(body)}`).toBeDefined();
+      expect(Array.isArray(body.result.tools)).toBeTruthy();
+      expect(body.result.tools.length).toBeGreaterThan(0);
+
+      // Every tool MUST advertise an inputSchema — Claude/Claude Code
+      // and other MCP clients rely on it to render argument forms.
+      // A description-only tool is a contract regression.
+      for (const tool of body.result.tools) {
+        expect(tool.name, `unnamed tool in tools/list: ${JSON.stringify(tool)}`).toBeDefined();
+        expect(
+          tool.inputSchema,
+          `tool '${tool.name}' is missing inputSchema`,
+        ).toBeDefined();
+        expect(typeof tool.inputSchema).toBe('object');
+      }
+    } finally {
+      await anonRequest.dispose();
+    }
   });
 });
 
