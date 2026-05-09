@@ -80,6 +80,12 @@ jobs:
         ls -la core/target/core.war
 
     - name: Start NemakiWare Server
+      env:
+        # docker-compose-simple.yml requires these to be set (?:- fail-fast).
+        # CI uses fixed test credentials; production deployments must
+        # supply strong values via secrets / .env.
+        COUCHDB_USER: admin
+        COUCHDB_PASSWORD: password
       run: |
         # Copy WAR to docker directory
         cd docker

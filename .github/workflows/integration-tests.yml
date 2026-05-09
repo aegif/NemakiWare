@@ -76,6 +76,9 @@ jobs:
           mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 
       - name: Start NemakiWare Server
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: password
         run: |
           cd docker
           cp ../core/target/core.war core/core.war
@@ -129,6 +132,9 @@ jobs:
           mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 
       - name: Start NemakiWare Server
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: password
         run: |
           cd docker
           cp ../core/target/core.war core/core.war

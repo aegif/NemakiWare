@@ -64,6 +64,12 @@ jobs:
         mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 
     - name: Start NemakiWare Backend
+      env:
+        # docker-compose-simple.yml requires these to be set (?:- fail-fast).
+        # CI uses fixed test credentials; production deployments must
+        # supply strong values via secrets / .env.
+        COUCHDB_USER: admin
+        COUCHDB_PASSWORD: password
       run: |
         cd docker
         cp ../core/target/core.war core/core.war
