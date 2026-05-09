@@ -37,15 +37,18 @@ async function sendJsonRpc(request: any, method: string, params?: any, auth = tr
 
 test.describe('MCP Info & Health', () => {
 
-  test('GET /mcp/info returns serverInfo, capabilities, tools', async ({ request }) => {
+  test('GET /mcp/info returns serverInfo and capabilities (tools intentionally absent)', async ({ request }) => {
+    // /mcp/info is anonymous-public for client compatibility, so it must
+    // not enumerate tools — discovery happens via JSON-RPC tools/list,
+    // which can be gated by mcp.tools.list.public. Removed in commit
+    // bb2f9b72f (security: remove tools from /mcp/info to close enumeration bypass).
     const response = await request.get(`${MCP_BASE}/info`);
     expect(response.status()).toBe(200);
     const data = await response.json();
     expect(data.serverInfo).toBeDefined();
     expect(data.serverInfo.name).toBeDefined();
     expect(data.capabilities).toBeDefined();
-    expect(data.tools).toBeDefined();
-    expect(Array.isArray(data.tools)).toBeTruthy();
+    expect(data.tools).toBeUndefined();
   });
 
   test('GET /mcp/health returns status=healthy', async ({ request }) => {
@@ -56,14 +59,21 @@ test.describe('MCP Info & Health', () => {
     expect(data.service).toBe('nemakiware-mcp');
   });
 
-  test('GET /mcp/info tools have inputSchema', async ({ request }) => {
-    const response = await request.get(`${MCP_BASE}/info`);
+  test('JSON-RPC tools/list returns tools with inputSchema (default public)', async ({ request }) => {
+    // Tool discovery now requires the JSON-RPC tools/list method on
+    // /mcp/message rather than the anonymous /mcp/info endpoint.
+    // tools/list itself is anonymous unless mcp.tools.list.public=false.
+    const response = await request.post(`${MCP_BASE}/message`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    });
     expect(response.status()).toBe(200);
-    const data = await response.json();
-    expect(data.tools.length).toBeGreaterThan(0);
-    const firstTool = data.tools[0];
+    const body = await response.json();
+    expect(body.result).toBeDefined();
+    expect(Array.isArray(body.result.tools)).toBeTruthy();
+    expect(body.result.tools.length).toBeGreaterThan(0);
+    const firstTool = body.result.tools[0];
     expect(firstTool.name).toBeDefined();
-    // inputSchema may be present for tools that accept parameters
     expect(firstTool.description || firstTool.inputSchema).toBeDefined();
   });
 });

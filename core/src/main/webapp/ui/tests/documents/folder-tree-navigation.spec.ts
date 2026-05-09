@@ -94,11 +94,9 @@ test.describe('FolderTree Navigation', () => {
     }
   });
 
-  test('should display folder tree with visual hierarchy', async ({ page, browserName }) => {
-    // Skip on mobile in FolderTree.tsx but hidden on mobile viewports
-      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
-      return;
-    }
+  test('should display folder tree with visual hierarchy', async ({ page, browserName: _browserName }) => {
+    // Folder tree is hidden on mobile in FolderTree.tsx; chromium project
+    // is desktop-only, so no need to skip here.
 
     // Verify folder tree exists
     const folderTree = page.locator('.ant-tree');
