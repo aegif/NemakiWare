@@ -125,11 +125,11 @@
     </lst>
   </initParams>
 
-  <!-- NemakiWare custom handler for init and index actions -->
-  <requestHandler name="/nemaki" class="jp.aegif.nemaki.NemakiCoreAdminHandler" startup="lazy">
-    <lst name="defaults">
-      <str name="echoParams">explicit</str>
-    </lst>
-  </requestHandler>
+  <!-- NemakiWare custom /nemaki request handler removed (RC13).
+       The legacy NemakiCoreAdminHandler used a Quartz-driven CMIS pull
+       tracker that the modern push-based core/SolrUtil pipeline replaced.
+       It was never invoked from any current code path; removing it lets
+       us drop the bundled nemaki/lib/ shaded jars (368MB of stale
+       logback/netty/cxf/jackson) that Solr would otherwise auto-load. -->
 
 </config>
