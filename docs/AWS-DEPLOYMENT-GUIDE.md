@@ -92,21 +92,37 @@ parse エラーで停止します。これは弱いデフォルトを忍び込�
 
 ### スケーラビリティの注意
 
-このリリースは **single replica 前提** です。複数 core レプリカを動かす場合の制約:
+このリリースは **single replica posture** で出荷しています。multi-replica
+での運用に必要な条件・制限・初期化手順は専用ドキュメント **[`docs/MULTI-REPLICA-DEPLOYMENT.md`](MULTI-REPLICA-DEPLOYMENT.md)** に集約してあります。本番で N≥2 で動かす前に必ず通読してください。
 
-| サブシステム | multi-replica で必要な対応 |
-|------------|------------------------|
-| SAML strict mode (`saml.require.inResponseTo=true`) | **Sticky session 必須**。`SamlAuthnRequestRegistry` / `SamlReplayCache` は JVM ローカル — IdP callback が AuthnRequest を発行した replica と別 replica に届くと strict 検証失敗、replay 防御が replica 間で共有されない。LB の cookie ベース sticky を有効化し、`-Dnemakiware.deployment.singleReplica=false -Dnemakiware.deployment.stickySession=true` を設定して startup warning を抑止 |
-| Cron スケジューラ (Cloud Directory Sync / Ingest / Retention) | `LeaderElection` が leader だけで実行するように 3 scheduler 全て対応済み (`lineage.leader-election.enabled=true` で有効化) |
-| Audit log / Solr / RAG embedding | サブシステム単位で独立しているため自動共有 (各々が CouchDB / Solr / 共有 store を参照) |
+要点 (詳細はリンク先):
 
-multi-replica + sticky session の構成例 (ALB):
+- **R1**: ALB / NLB で cookie-based **sticky session** を `auth.token.expiration`
+  以上の TTL で有効化 (例: 86400s = 24h)
+- **R2**: `lineage.leader-election.enabled=true` を全 replica で設定
+  (Cron scheduler の二重実行を防ぐ)
+- **R3**: `nemakiware.deployment.singleReplica=false` AND
+  `nemakiware.deployment.stickySession=true` を全 replica の env にセット
+- **R4-R6**: 全 replica が同一 properties / 同一 CouchDB cluster /
+  同一 Solr cluster を参照
+
+JVM-local 状態 10 サブシステム (auth token, passkey challenge, MCP session,
+SAML binding+replay, Setup token, rate limit, webhook queue, ingest CB,
+EhCache, scheduler) の取り扱いは `docs/MULTI-REPLICA-DEPLOYMENT.md` §1。
+sticky なしで multi-replica にすると、ログイン / SAML / passkey / MCP すべてが
+intermittent に壊れます。
+
+Bootstrap: Setup Wizard は **issuing replica でしか動かない** ため、
+最初は 1 replica で起動 → setup 完了 → scale out という順序が必須
+(`docs/MULTI-REPLICA-DEPLOYMENT.md` §3.3)。
+
+multi-replica + sticky session の AWS ALB 構成例:
 ```
 Application Load Balancer
   ├─ Target Group: nemakiware-core
-  │    Stickiness: enabled (lb_cookie, duration 1h+)
+  │    Stickiness: lb_cookie, duration ≥ 86400s (auth.token.expiration)
   │    Health check: /core/rest/all/repositories
-  └─ Routing: → Core × 2+
+  └─ Routing: → Core × N
 ```
 
 ---

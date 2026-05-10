@@ -155,26 +155,22 @@ docker compose restart <service-name>
 
 ### Multi-replica deployments
 
-This compose file targets **a single core replica**. If you scale `core`
-horizontally (e.g. `docker compose up -d --scale core=N` or in a
-Kubernetes/ECS deployment), be aware:
+This compose file is **single-replica** by design. For multi-replica
+deployments (ECS, Kubernetes, `docker compose --scale core=N`, etc.)
+follow the dedicated checklist:
 
-- **SAML strict mode** (`saml.require.inResponseTo=true`) needs **cookie-
-  based sticky sessions** on the load balancer. The
-  `SamlAuthnRequestRegistry` and `SamlReplayCache` are JVM-local, so an
-  IdP callback that lands on a different replica than the one that
-  issued the AuthnRequest will fail strict validation, and replay
-  protection is not shared across replicas. Set
-  `-Dnemakiware.deployment.singleReplica=false` AND
-  `-Dnemakiware.deployment.stickySession=true` to silence the loud
-  startup warning once sticky sessions are in place.
-- **Cron schedulers** (Cloud Directory Sync, Ingest, Retention,
-  Lineage*) are leader-election gated. Set
-  `lineage.leader-election.enabled=true` so only the leader replica
-  performs the work.
-- The plain compose-up path here is **single-replica only**. For HA
-  configurations see `docs/AWS-DEPLOYMENT-GUIDE.md` §1
-  (スケーラビリティの注意).
+→ **[`../docs/MULTI-REPLICA-DEPLOYMENT.md`](../docs/MULTI-REPLICA-DEPLOYMENT.md)**
+
+That document lists every JVM-local subsystem (auth tokens, WebAuthn
+challenges, MCP session tokens, SAML binding/replay, Setup token,
+rate limiter, webhook queue, ingest circuit breaker, EhCache,
+schedulers — 10 in total), the six required conditions (R1-R6),
+strongly-recommended hardening (S1-S4), known limitations (L1-L4),
+the bootstrap order (Setup Wizard runs only at N=1), and a quick
+failure-mode lookup table.
+
+Skipping any of R1-R6 means sessions break, replay protection
+weakens, or scheduled jobs duplicate.
 
 ### Development Workflow
 

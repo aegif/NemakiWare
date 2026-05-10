@@ -277,18 +277,18 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 - UI reverse tabnabbing 防止: 対応済み (window.open に noopener,noreferrer 明示)
 - Legacy 設定削除: docker/nemakiware.properties, docker/log4j.properties, docker/ui-war/, docker/solr/solr/conf/ (admin/admin 残骸)
 
-### SAML strict-mode + multi-replica
+### Multi-replica deployment
 
-`saml.require.inResponseTo=true` とすると `SamlAuthnRequestRegistry` (binding cookie ⇄ AuthnRequest ID) と `SamlReplayCache` を JVM ローカルで使うため、**multi-replica デプロイでは sticky session が必須**:
+NemakiWare 3.1.1 は **single-replica posture** で出荷。multi-replica で運用する場合の必要条件・制限・セットアップ手順は **[`docs/MULTI-REPLICA-DEPLOYMENT.md`](docs/MULTI-REPLICA-DEPLOYMENT.md)** に集約してあります。
 
-- IdP からの callback が AuthnRequest を発行した replica と別 replica に着くと strict 検証が失敗してログイン不可
-- 別 replica で同じ Response が来た場合 replay 防御が効かない
+要点:
 
-対応:
-- ロードバランサで sticky session (cookie ベース) を有効にし `nemakiware.deployment.stickySession=true` を設定して startup warning を抑止
-- もしくは single replica で運用 (default)
-
-明示的な multi-replica + sticky なし設定 (`-Dnemakiware.deployment.singleReplica=false` AND `nemakiware.deployment.stickySession` 未設定) は startup で大きな WARN が出ます。
+- JVM ローカル状態: 認証トークン / WebAuthn challenge / MCP session / SAML binding+replay / Setup token / SAML rate limit / Webhook queue / Ingest circuit breaker / EhCache (10 サブシステム)
+- 必要条件 (R1-R6): LB cookie-based sticky session、`lineage.leader-election.enabled=true`、`nemakiware.deployment.singleReplica=false` AND `stickySession=true`、全 replica で同一 properties / CouchDB / Solr
+- 強く推奨 (S1-S4): `nemakiware.public.scheme=https`、RemoteIpValve、LB sticky cookie TTL ≥ `auth.token.expiration`
+- 未対応 (L1-L4): Setup Wizard (single-replica で初期化)、EhCache cluster、IP rate limit (per-replica)、IMAP IDLE (leader のみ)
+- bootstrap 順: 1 replica で setup wizard → 完了後 scale out
+- 失敗症状からの逆引き表あり (§5)
 
 ### MCP 認証方針
 

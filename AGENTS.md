@@ -305,21 +305,25 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/index.html
 - LDAP/Keycloak overlay (`--profile idp`) additionally requires `LDAP_ADMIN_PASSWORD`
 
 ### Scalability — single replica vs multi-replica
-NemakiWare 3.1.1 is **single-replica by default**. Run multiple core
-replicas only with these provisos:
-- **SAML strict mode** (`saml.require.inResponseTo=true`) requires the
-  load balancer to enable cookie-based **sticky sessions**. Both
-  `SamlAuthnRequestRegistry` and `SamlReplayCache` are JVM-local; the
-  IdP callback that completes a SAML SSO flow must land on the same
-  replica that issued the AuthnRequest. Set
-  `-Dnemakiware.deployment.singleReplica=false`
-  `-Dnemakiware.deployment.stickySession=true` to silence the startup
-  warning once your LB is configured. Without sticky sessions, strict
-  mode rejects valid logins and replay protection breaks across replicas.
-- **Cron schedulers** (Cloud Directory Sync, Ingest, Retention,
-  LineagePurge, LineageProjection) gate on the existing
-  `LeaderElection`. Enable via `lineage.leader-election.enabled=true`
-  so only the leader replica polls / syncs / retains.
+NemakiWare 3.1.1 is **single-replica by default**. Multi-replica
+deployments are supported but require explicit configuration. The
+authoritative checklist is **[`docs/MULTI-REPLICA-DEPLOYMENT.md`](docs/MULTI-REPLICA-DEPLOYMENT.md)** —
+read it end to end before scaling out, especially the §1 inventory of
+JVM-local state (10 subsystems including auth tokens, passkey
+challenges, MCP sessions, SAML binding) and the §3.3 bootstrap order
+(Setup Wizard must run while N=1).
+
+Quick summary of the must-haves:
+- **R1**: cookie-based sticky sessions on the load balancer
+- **R2**: `lineage.leader-election.enabled=true`
+- **R3**: `nemakiware.deployment.singleReplica=false` AND
+  `nemakiware.deployment.stickySession=true` on every replica
+- **R4-R6**: identical `nemakiware.properties`, single CouchDB cluster,
+  single Solr cluster across all replicas
+
+Without sticky sessions, every session-bound interaction breaks
+intermittently (login, SAML strict mode, passkey, MCP). Without leader
+election, cron schedulers duplicate work N×.
 
 ### E2E Test Environment Setup and Prevention (2025-11-22) ⚠️
 
