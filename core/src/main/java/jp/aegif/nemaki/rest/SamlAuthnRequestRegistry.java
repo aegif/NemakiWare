@@ -97,7 +97,12 @@ public final class SamlAuthnRequestRegistry {
      * </ul>
      *
      * <p>Knobs (system property or env, env name uppercased with dots
-     * mapped to underscores):
+     * mapped to underscores). <b>These two are NOT honoured from
+     * {@code nemakiware.properties}</b> — this registry is constructed
+     * during static class initialisation, before Spring DI has wired
+     * {@link jp.aegif.nemaki.util.PropertyManager}, so we consult
+     * {@link System#getProperty(String)} and {@link System#getenv()}
+     * directly. See {@code docs/MULTI-REPLICA-DEPLOYMENT.md} §3.2 (b).
      * <ul>
      *   <li>{@code nemakiware.deployment.singleReplica}: default
      *       {@code true}. Set to {@code false} when scaling out.</li>
@@ -128,6 +133,8 @@ public final class SamlAuthnRequestRegistry {
             logger.warn("  (a) configure sticky sessions in your load balancer and set");
             logger.warn("      nemakiware.deployment.stickySession=true to silence this warning, or");
             logger.warn("  (b) deploy as a single replica.");
+            logger.warn("Note: nemakiware.deployment.{singleReplica,stickySession} must be");
+            logger.warn("set as -D system properties or env vars; nemakiware.properties is NOT read.");
             logger.warn("============================================================");
         } else if (explicitMulti) {
             logger.info("Deployment posture: multi-replica + sticky session declared. "
@@ -140,7 +147,9 @@ public final class SamlAuthnRequestRegistry {
                     + "If you scale this service to N>=2 replicas, set "
                     + "nemakiware.deployment.singleReplica=false and "
                     + "nemakiware.deployment.stickySession=true (cookie-based "
-                    + "sticky session at the LB) — see CLAUDE.md \"SAML strict-mode + multi-replica\".");
+                    + "sticky session at the LB). NOTE: these two knobs are env "
+                    + "vars / -D system properties only — NOT honoured from "
+                    + "nemakiware.properties. See docs/MULTI-REPLICA-DEPLOYMENT.md.");
         }
     }
 

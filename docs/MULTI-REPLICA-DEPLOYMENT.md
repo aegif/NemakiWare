@@ -54,7 +54,7 @@ To run N≥2 core replicas safely, **all** of the following must hold:
 |---|-----------|--------------|
 | **R1** | **Cookie-based sticky sessions** are enabled at the load balancer for the entire `/core/*` path tree | LB config inspection. The browser must keep talking to the same replica for the lifetime of an authenticated session. Required by every row in §1 except cron schedulers and EhCache |
 | **R2** | `lineage.leader-election.enabled=true` is set in `nemakiware.properties` | Each cron scheduler logs `leaderElection=enabled` at startup |
-| **R3** | `nemakiware.deployment.singleReplica=false` AND `nemakiware.deployment.stickySession=true` are set as system properties or env vars on every replica | Suppresses the loud startup WARN from `SamlAuthnRequestRegistry`; absence reverts to the default-single-replica WARN/INFO behaviour |
+| **R3** | `nemakiware.deployment.singleReplica=false` AND `nemakiware.deployment.stickySession=true` are set **as JVM system properties (`-D...`) or environment variables only** | Suppresses the loud startup WARN from `SamlAuthnRequestRegistry`; absence reverts to the default-single-replica WARN/INFO behaviour. **These two keys are NOT read from `nemakiware.properties`** — `SamlAuthnRequestRegistry` is constructed during static class initialisation, before Spring DI has wired the `PropertyManager` that reads the properties file, so the registry consults `System.getProperty()` and `System.getenv()` directly. Putting them in the properties file is silently ignored |
 | **R4** | All replicas read **the same** `nemakiware.properties` (file mount or shared S3/SSM-managed config). Drift between replicas causes intermittent behaviour | Compare the file at `/usr/local/tomcat/conf/nemakiware.properties` on every replica |
 | **R5** | All replicas point at **the same CouchDB cluster** (single source of truth). CouchDB itself can be clustered/replicated, but every NemakiWare replica must have one logical view | `db.couchdb.url` is identical |
 | **R6** | All replicas point at **the same Solr cluster** for both the `nemaki` and `token` cores | `solr.host` / `solr.port` identical, or all replicas use the same external Solr URL |
@@ -65,7 +65,7 @@ To run N≥2 core replicas safely, **all** of the following must hold:
 |---|-----------|-----------|
 | **S1** | Set `nemakiware.public.scheme=https` whenever the public URL is HTTPS, regardless of replica count | Forces Secure cookie flag even if a single hop loses `X-Forwarded-Proto`; misconfig surfaces as WARN instead of silently downgrading |
 | **S2** | Tomcat's `RemoteIpValve` is configured (`docker/core/server.xml`) so `X-Forwarded-Proto` and `X-Forwarded-For` are honoured only from the trusted LB IP range | Already shipped as default; verify if a custom server.xml is in use |
-| **S3** | All Java clients of `/api/*` and `/rest/*` send `X-Requested-With: XMLHttpRequest` or a non-Basic `Authorization` header, so they survive the LB sticky cookie eviction | CSRF policy expects this; React UI complies |
+| **S3** | All non-browser clients of `/api/*` and `/rest/*` send `X-Requested-With: XMLHttpRequest` or a non-Basic `Authorization` header (Bearer / `AUTH_TOKEN` / `X-API-Key`) | This satisfies the CSRF policy enforced by `CsrfValidator` for state-changing methods. **It does NOT survive sticky-cookie eviction** — if the LB drops a target, switches stickiness, or the browser clears the sticky cookie, the JVM-local auth token / passkey challenge / MCP session held on the previous replica is gone, and the user must re-authenticate (or the in-flight SAML / passkey flow fails). React UI complies; review any custom REST client to add the header |
 | **S4** | `auth.token.expiration` (default 24h) and the LB sticky cookie TTL are aligned (LB ≥ NemakiWare token TTL) | Otherwise sticky drops mid-session and the user is silently re-authenticated as a different identity |
 
 ### What multi-replica is NOT supported for in 3.1.1
@@ -89,29 +89,45 @@ To run N≥2 core replicas safely, **all** of the following must hold:
 
 ### 3.2 Per-replica configuration
 
-Add to the JVM args / `CATALINA_OPTS` of every replica:
+Two distinct configuration channels — they are **not** interchangeable.
+
+#### (a) Spring-loaded properties (read by `PropertyManager`)
+
+These work in `nemakiware.properties` (or as `-D` system properties /
+env vars — `PropertyManager.readValue` checks system → env → CouchDB
+dynamic config → properties file in that order):
 
 ```properties
-# In nemakiware.properties (or as -D system properties):
+# nemakiware.properties — read via PropertyManager
 lineage.leader-election.enabled=true
 nemakiware.public.scheme=https
 saml.require.inResponseTo=true        # Enable strict mode after migrating
                                       # all SAML clients to /saml/initiate
-
-# Suppress the multi-replica startup WARN
-nemakiware.deployment.singleReplica=false
-nemakiware.deployment.stickySession=true
 ```
 
-Or equivalent env vars (uppercased, dots → underscores):
+#### (b) Process-bound deployment knobs (env or `-D` only)
+
+These are consumed by `SamlAuthnRequestRegistry` during static class
+initialisation, before the Spring `PropertyManager` is wired. They
+**must** be set as JVM system properties or env vars on every replica;
+writing them in `nemakiware.properties` has no effect:
 
 ```bash
-export LINEAGE_LEADER_ELECTION_ENABLED=true
-export NEMAKIWARE_PUBLIC_SCHEME=https
-export SAML_REQUIRE_INRESPONSETO=true
+# As env vars (uppercased, dots → underscores)
 export NEMAKIWARE_DEPLOYMENT_SINGLEREPLICA=false
 export NEMAKIWARE_DEPLOYMENT_STICKYSESSION=true
+
+# Or as JVM system properties via CATALINA_OPTS
+export CATALINA_OPTS="$CATALINA_OPTS \
+  -Dnemakiware.deployment.singleReplica=false \
+  -Dnemakiware.deployment.stickySession=true"
 ```
+
+Verification: each replica must log `Deployment posture: multi-replica
++ sticky session declared.` (rather than the default
+`single-replica (default).`) shortly after Tomcat startup. If you see
+the default INFO line — or worse, the WARN block — the env knobs were
+not picked up.
 
 ### 3.3 Initial bootstrap
 
@@ -138,7 +154,12 @@ Deployment posture: multi-replica + sticky session declared.
 SAML strict mode will rely on the LB to keep IdP callbacks on the issuing replica.
 ```
 
-(Not the default `single-replica (default)` line.)
+(Not the default `single-replica (default)` line.) If the default line
+appears even after you set the two env knobs in §3.2 (b), the most
+common cause is putting them in `nemakiware.properties` instead of
+exporting them as env vars or passing them via `-D` flags —
+`SamlAuthnRequestRegistry` does **not** read the properties file for
+these keys.
 
 Each scheduler should log:
 
@@ -201,4 +222,6 @@ then, follow the recipe above.
 | External Ingest fetches duplicated across replicas | Same — leader election off |
 | Setup Wizard returns 401 or "invalid token" | You're hitting a replica other than the one that issued the setup token (L1) |
 | Stale ACL behaviour between replicas after permission change | EhCache local invalidation (L2). Wait out TTL or roll the replicas |
-| Loud startup WARN about "multi-replica WITHOUT sticky session" | R3 not configured. Set both env vars after enabling LB sticky |
+| Loud startup WARN about "multi-replica WITHOUT sticky session" | R3 not configured. Set both as env vars or `-D` system properties after enabling LB sticky — these two keys are NOT honoured from `nemakiware.properties` |
+| Startup INFO line still says `single-replica (default)` even though you set `nemakiware.deployment.singleReplica=false` in `nemakiware.properties` | R3 mis-applied. The two `nemakiware.deployment.*` keys are env / system-property only (see §3.2 b); rewrite as `-D` flags or env vars |
+| Sticky session is enabled at the LB but users still occasionally have to re-login mid-session | Either S4 (sticky cookie TTL < `auth.token.expiration`) or LB target removed. Note that S3 (`X-Requested-With`) does NOT prevent this — it only satisfies the CSRF policy |
