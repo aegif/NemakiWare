@@ -8,11 +8,13 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.context.ApplicationContext;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
 
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.TrustedProxyResolver;
+import jp.aegif.nemaki.util.spring.SpringContext;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -113,16 +115,18 @@ public class SamlInitiateServlet extends HttpServlet {
         // — Strict would drop the cookie and break the flow.
         Cookie cookie = new Cookie(SamlAuthnRequestRegistry.BINDING_COOKIE_NAME, issued.getBindingToken());
         cookie.setHttpOnly(true);
-        // Cookie Secure flag is determined by TrustedProxyResolver, which
-        // honours nemakiware.public.scheme=https (force-fail-closed). Plain
-        // request.isSecure() can silently weaken behind a misconfigured
-        // proxy that doesn't propagate X-Forwarded-Proto into the Tomcat
-        // RemoteIpValve mapping.
-        cookie.setSecure(TrustedProxyResolver.isPublicRequestSecure(request, getPropertyManager()));
+        // Cookie Secure flag: under nemakiware.public.scheme=https this is
+        // ALWAYS true regardless of what request.isSecure() says, so a
+        // misconfigured proxy that loses X-Forwarded-Proto cannot silently
+        // serve a non-Secure binding cookie over an HTTPS public URL.
+        // The misconfig itself surfaces via the warning below.
+        PropertyManager pm = getPropertyManager();
+        cookie.setSecure(TrustedProxyResolver.shouldFlagCookiesSecure(request, pm));
         cookie.setPath(buildContextPath(request));
         cookie.setMaxAge((int) (issued.getTtlMillis() / 1000L));
         cookie.setAttribute("SameSite", "Lax");
         response.addCookie(cookie);
+        warnIfPublicSchemeMisconfigured(request, pm);
 
         if (log.isDebugEnabled()) {
             log.debug("SAML initiate: issued AuthnRequest id (length=" + issued.getAuthnRequestId().length() + ")");
@@ -188,6 +192,33 @@ public class SamlInitiateServlet extends HttpServlet {
     }
 
     /**
+     * Log a single warning per minute when the operator has declared
+     * {@code nemakiware.public.scheme=https} but the actual request does
+     * not look secure (proxy chain dropped the scheme). The cookie is
+     * still set Secure — see {@link TrustedProxyResolver#shouldFlagCookiesSecure} —
+     * but the operator needs to know the proxy is misconfigured.
+     */
+    private final java.util.concurrent.atomic.AtomicLong lastMisconfigWarnAtMillis = new java.util.concurrent.atomic.AtomicLong(0);
+
+    private void warnIfPublicSchemeMisconfigured(HttpServletRequest request, PropertyManager pm) {
+        if (!TrustedProxyResolver.isPublicSchemeMisconfigured(request, pm)) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long last = lastMisconfigWarnAtMillis.get();
+        if (now - last < 60_000L) {
+            return;
+        }
+        if (lastMisconfigWarnAtMillis.compareAndSet(last, now)) {
+            log.warn("nemakiware.public.scheme=https but request.isSecure()=false on /saml/initiate "
+                    + "(remote=" + request.getRemoteAddr() + "). The proxy in front of NemakiWare is "
+                    + "not propagating the TLS scheme to Tomcat. Configure RemoteIpValve to trust the "
+                    + "proxy IP, or set X-Forwarded-Proto from the proxy. SAML binding cookie was "
+                    + "Secure-flagged anyway to avoid silent downgrade.");
+        }
+    }
+
+    /**
      * Resolve PropertyManager from the Spring context. Returns null when
      * not yet wired so the cookie code falls back to {@code request.isSecure()}
      * via TrustedProxyResolver's "auto" mode. Cached per servlet instance.
@@ -200,10 +231,24 @@ public class SamlInitiateServlet extends HttpServlet {
             return pm;
         }
         try {
+            // First try the per-servlet-context lookup (works when the
+            // ContextLoaderListener finished before this servlet ran).
             WebApplicationContext ctx = WebApplicationContextUtils
                     .getWebApplicationContext(getServletContext());
             if (ctx != null && ctx.containsBean("propertyManager")) {
                 pm = ctx.getBean("propertyManager", PropertyManager.class);
+            }
+            // Fall back to the static SpringContext bridge — Jersey-based
+            // resources use this and it works even when the servlet was
+            // initialised before the WebApplicationContext was published
+            // to the ServletContext attribute.
+            if (pm == null) {
+                ApplicationContext sc = SpringContext.getApplicationContext();
+                if (sc != null && sc.containsBean("propertyManager")) {
+                    pm = sc.getBean("propertyManager", PropertyManager.class);
+                }
+            }
+            if (pm != null) {
                 cachedPropertyManager = pm;
             }
         } catch (Exception e) {

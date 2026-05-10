@@ -1742,16 +1742,40 @@ public class AuthTokenResource extends ResourceBase{
 	/**
 	 * Determine if the current connection is secure (HTTPS).
 	 *
-	 * <p>Delegates to {@link jp.aegif.nemaki.util.TrustedProxyResolver#isPublicRequestSecure}
-	 * which respects the {@code nemakiware.public.scheme} property.
-	 * Operators with bespoke proxy stacks should set
-	 * {@code nemakiware.public.scheme=https} so a misconfigured proxy
-	 * that fails to propagate {@code X-Forwarded-Proto} produces a
-	 * non-Secure cookie ⇒ obvious browser breakage at staging instead
-	 * of a silent loss of cookie security in production.</p>
+	 * <p>Delegates to {@link jp.aegif.nemaki.util.TrustedProxyResolver#shouldFlagCookiesSecure}.
+	 * Under {@code nemakiware.public.scheme=https} this always returns
+	 * true so that a proxy hop that drops {@code X-Forwarded-Proto}
+	 * cannot silently serve a non-Secure auth-token cookie over an HTTPS
+	 * public URL. The misconfig itself is surfaced via
+	 * {@link #warnIfPublicSchemeMisconfigured}.</p>
 	 */
 	private boolean isSecureConnection(jakarta.servlet.http.HttpServletRequest req) {
-		return jp.aegif.nemaki.util.TrustedProxyResolver.isPublicRequestSecure(req, getPropertyManager());
+		jp.aegif.nemaki.util.PropertyManager pm = getPropertyManager();
+		boolean secure = jp.aegif.nemaki.util.TrustedProxyResolver.shouldFlagCookiesSecure(req, pm);
+		warnIfPublicSchemeMisconfigured(req, pm);
+		return secure;
+	}
+
+	/** One warn per minute when public scheme is https but request isSecure()=false. */
+	private static final java.util.concurrent.atomic.AtomicLong LAST_PUBLIC_SCHEME_WARN_AT = new java.util.concurrent.atomic.AtomicLong(0);
+
+	private void warnIfPublicSchemeMisconfigured(jakarta.servlet.http.HttpServletRequest req,
+			jp.aegif.nemaki.util.PropertyManager pm) {
+		if (!jp.aegif.nemaki.util.TrustedProxyResolver.isPublicSchemeMisconfigured(req, pm)) {
+			return;
+		}
+		long now = System.currentTimeMillis();
+		long last = LAST_PUBLIC_SCHEME_WARN_AT.get();
+		if (now - last < 60_000L) {
+			return;
+		}
+		if (LAST_PUBLIC_SCHEME_WARN_AT.compareAndSet(last, now)) {
+			logger.warn("nemakiware.public.scheme=https but request.isSecure()=false on auth path "
+					+ "(remote={}). The proxy in front of NemakiWare is not propagating the TLS "
+					+ "scheme to Tomcat. Configure RemoteIpValve to trust the proxy IP, or set "
+					+ "X-Forwarded-Proto from the proxy. Cookies were Secure-flagged anyway to "
+					+ "avoid silent downgrade.", req == null ? "?" : req.getRemoteAddr());
+		}
 	}
 
 	/**

@@ -159,10 +159,19 @@ docker compose restart <service-name>
 # Make changes to source code
 vim ../core/src/main/java/...
 
-# Rebuild and redeploy core
+# Rebuild and redeploy core.
+#
+# IMPORTANT: never use `docker compose restart core` here. The WAR is
+# baked into the image at build time, so `restart` would re-launch the
+# old container with the previous WAR and your changes would not take
+# effect (this is what bit RC13 — see CLAUDE.md "重要" notice).
 mvn clean package -f ../core/pom.xml
 cp ../core/target/core.war core/core.war
-docker compose restart core
+export COUCHDB_USER=admin COUCHDB_PASSWORD=password   # required env
+docker compose -f docker-compose-simple.yml up -d --build --force-recreate core
+
+# Or, from the repo root, the convenience target:
+#   COUCHDB_USER=admin COUCHDB_PASSWORD=password make deploy
 
 # Test changes
 curl -u admin:admin http://localhost:8080/core/atom/bedroom

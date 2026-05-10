@@ -277,6 +277,19 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 - UI reverse tabnabbing 防止: 対応済み (window.open に noopener,noreferrer 明示)
 - Legacy 設定削除: docker/nemakiware.properties, docker/log4j.properties, docker/ui-war/, docker/solr/solr/conf/ (admin/admin 残骸)
 
+### SAML strict-mode + multi-replica
+
+`saml.require.inResponseTo=true` とすると `SamlAuthnRequestRegistry` (binding cookie ⇄ AuthnRequest ID) と `SamlReplayCache` を JVM ローカルで使うため、**multi-replica デプロイでは sticky session が必須**:
+
+- IdP からの callback が AuthnRequest を発行した replica と別 replica に着くと strict 検証が失敗してログイン不可
+- 別 replica で同じ Response が来た場合 replay 防御が効かない
+
+対応:
+- ロードバランサで sticky session (cookie ベース) を有効にし `nemakiware.deployment.stickySession=true` を設定して startup warning を抑止
+- もしくは single replica で運用 (default)
+
+明示的な multi-replica + sticky なし設定 (`-Dnemakiware.deployment.singleReplica=false` AND `nemakiware.deployment.stickySession` 未設定) は startup で大きな WARN が出ます。
+
 ### MCP 認証方針
 
 - `/mcp/health`, `/mcp/info`: 匿名アクセス可（監視ツール・クライアント互換性）

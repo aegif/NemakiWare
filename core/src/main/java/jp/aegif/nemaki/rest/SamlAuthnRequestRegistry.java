@@ -76,6 +76,42 @@ public final class SamlAuthnRequestRegistry {
             return t;
         });
         this.sweeper.scheduleWithFixedDelay(this::sweep, 60, 60, TimeUnit.SECONDS);
+        warnIfMultiReplica();
+    }
+
+    /**
+     * Surface the single-replica assumption at startup. Both this registry
+     * and {@link SamlReplayCache} are JVM-local; multi-replica deployments
+     * MUST run sticky sessions (or a shared backing store, not yet
+     * implemented) or SAML strict mode and replay protection break across
+     * replicas.
+     *
+     * <p>Operators who knowingly run sticky sessions can suppress the
+     * warning by setting {@code nemakiware.deployment.singleReplica=true}
+     * (default) or {@code nemakiware.deployment.stickySession=true}.
+     */
+    private void warnIfMultiReplica() {
+        String single = System.getProperty("nemakiware.deployment.singleReplica",
+                System.getenv().getOrDefault("NEMAKIWARE_DEPLOYMENT_SINGLEREPLICA", ""));
+        String sticky = System.getProperty("nemakiware.deployment.stickySession",
+                System.getenv().getOrDefault("NEMAKIWARE_DEPLOYMENT_STICKYSESSION", ""));
+        // Default is "single replica assumed" — only warn when operator
+        // has explicitly declared multi-replica without sticky sessions.
+        boolean explicitMulti = "false".equalsIgnoreCase(single);
+        boolean stickyOk      = "true".equalsIgnoreCase(sticky);
+        if (explicitMulti && !stickyOk) {
+            logger.warn("============================================================");
+            logger.warn("SAML strict mode + multi-replica deployment WITHOUT sticky session");
+            logger.warn("SamlAuthnRequestRegistry and SamlReplayCache are JVM-local;");
+            logger.warn("an IdP callback that lands on a different replica than the one");
+            logger.warn("which issued the AuthnRequest will fail strict-mode validation,");
+            logger.warn("and replay protection is not shared across replicas.");
+            logger.warn("Either:");
+            logger.warn("  (a) configure sticky sessions in your load balancer and set");
+            logger.warn("      nemakiware.deployment.stickySession=true to silence this warning, or");
+            logger.warn("  (b) deploy as a single replica.");
+            logger.warn("============================================================");
+        }
     }
 
     /**

@@ -96,62 +96,98 @@ public final class TrustedProxyResolver {
     }
 
     /**
-     * Property key consumed by {@link #isPublicRequestSecure(HttpServletRequest, PropertyManager)}.
-     * Values: {@code auto} (default — trust {@link HttpServletRequest#isSecure()},
-     * which Tomcat's RemoteIpValve rewrites for trusted proxies); {@code https}
-     * (force-fail closed if the request appears insecure even when behind a
-     * proxy — recommended for any deployment whose public URL is HTTPS);
-     * {@code http} (development only, never use in production).
+     * Property key consumed by {@link #shouldFlagCookiesSecure(HttpServletRequest, PropertyManager)}.
+     * Values:
+     * <ul>
+     *   <li>{@code auto} — default. Trust {@link HttpServletRequest#isSecure()},
+     *       which Tomcat's {@code RemoteIpValve} rewrites for requests from
+     *       trusted proxies that set {@code X-Forwarded-Proto: https}.</li>
+     *   <li>{@code https} — operator declares the public URL is HTTPS.
+     *       Cookies are ALWAYS flagged Secure regardless of what the
+     *       inbound servlet request reports, so a broken proxy hop cannot
+     *       silently downgrade cookie security. Mismatches between the
+     *       declared scheme and the actual request are surfaced via
+     *       {@link #isPublicSchemeMisconfigured(HttpServletRequest, PropertyManager)}
+     *       and logged loudly so operators notice the proxy bug.</li>
+     *   <li>{@code http} — explicit HTTP-only deployment. Development only.</li>
+     * </ul>
      */
     public static final String PUBLIC_SCHEME_KEY = "nemakiware.public.scheme";
 
+    private static final String MODE_AUTO  = "auto";
+    private static final String MODE_HTTPS = "https";
+    private static final String MODE_HTTP  = "http";
+
     /**
-     * Decide whether the *public-facing* request that arrived here was
-     * carried over HTTPS, in a way that respects trusted-proxy boundaries.
+     * Decide whether to flag cookies issued for this request with the
+     * {@code Secure} attribute.
      *
-     * <p>The naive {@link HttpServletRequest#isSecure()} check is correct
-     * when Tomcat's {@code RemoteIpValve} is configured (it rewrites
-     * isSecure based on {@code X-Forwarded-Proto} from a trusted proxy
-     * IP). But operators with bespoke proxy stacks may inadvertently lose
-     * that mapping — and then SAML / cookie security will silently
-     * weaken to "Secure flag absent over public HTTPS". Setting
-     * {@code nemakiware.public.scheme=https} forces this method to
-     * return false (i.e. demand TLS) until the request truly looks
-     * secure, so misconfigured stacks fail closed instead of degrading.
+     * <p><b>Important asymmetry.</b> Under {@code mode=https} this method
+     * returns true unconditionally — even when {@link HttpServletRequest#isSecure()}
+     * reports false, which can happen behind a misconfigured proxy that
+     * strips {@code X-Forwarded-Proto} or whose IP isn't in
+     * {@code RemoteIpValve.internalProxies}. Returning false in that
+     * scenario would mean we omit the {@code Secure} attribute on cookies
+     * served via an HTTPS-terminated public URL, and the browser would
+     * happily accept (and later replay over HTTP) a non-Secure cookie —
+     * the exact silent downgrade we are trying to prevent. The operator
+     * has declared the public URL is HTTPS, so cookies must always be
+     * Secure-flagged.
+     *
+     * <p>The companion {@link #isPublicSchemeMisconfigured} surfaces the
+     * misconfig itself (proxy not propagating the scheme correctly) so
+     * operators can see and fix it loudly, without paying for that
+     * detection by weakening cookie security in the meantime.
      */
-    public static boolean isPublicRequestSecure(HttpServletRequest request, PropertyManager propertyManager) {
+    public static boolean shouldFlagCookiesSecure(HttpServletRequest request, PropertyManager propertyManager) {
+        String mode = readMode(propertyManager);
+        switch (mode) {
+            case MODE_HTTPS:
+                return true;            // operator-declared HTTPS — always Secure
+            case MODE_HTTP:
+                return false;           // explicit dev-only HTTP
+            case MODE_AUTO:
+            default:
+                return request != null && request.isSecure();
+        }
+    }
+
+    /**
+     * True when the operator declared the public URL is HTTPS but the
+     * actual request does not look secure — i.e. a proxy hop is dropping
+     * the {@code X-Forwarded-Proto} signal or {@code RemoteIpValve} has
+     * not been configured to trust the proxy's IP.
+     *
+     * <p>Use to log a warning, raise a health-check alert, or fail-close
+     * a particularly sensitive operation. Always returns false outside
+     * {@code mode=https} so that {@code auto} / {@code http} deployments
+     * are never spuriously flagged.
+     */
+    public static boolean isPublicSchemeMisconfigured(HttpServletRequest request, PropertyManager propertyManager) {
         if (request == null) {
             return false;
         }
+        if (!MODE_HTTPS.equals(readMode(propertyManager))) {
+            return false;
+        }
+        if (request.isSecure()) {
+            return false; // RemoteIpValve already corrected the scheme
+        }
+        // Honour an X-Forwarded-Proto: https only when it came from a trusted
+        // proxy. If neither isSecure nor a trusted forwarded header, the
+        // proxy chain is misconfigured.
+        String forwarded = sanitize(request.getHeader("X-Forwarded-Proto"));
+        if (forwarded != null && "https".equalsIgnoreCase(forwarded.trim())
+                && isTrusted(sanitize(request.getRemoteAddr()), propertyManager)) {
+            return false;
+        }
+        return true;
+    }
+
+    private static String readMode(PropertyManager propertyManager) {
         String configured = propertyManager == null ? null : propertyManager.readValue(PUBLIC_SCHEME_KEY);
-        String mode = configured == null ? "auto" : configured.trim().toLowerCase(java.util.Locale.ROOT);
-        if (mode.isEmpty()) {
-            mode = "auto";
-        }
-        switch (mode) {
-            case "https":
-                // Strict mode: trust ONLY request.isSecure() (the RemoteIpValve
-                // path) AND verify that any X-Forwarded-Proto, if present,
-                // came from a trusted proxy and matches.
-                if (!request.isSecure()) {
-                    return false;
-                }
-                String forwarded = sanitize(request.getHeader("X-Forwarded-Proto"));
-                if (forwarded == null || forwarded.isEmpty()) {
-                    return true;
-                }
-                // forwarded header was stamped by *something* upstream; only honour
-                // it when the immediate caller is in trustedProxies.
-                if (!isTrusted(sanitize(request.getRemoteAddr()), propertyManager)) {
-                    return false;
-                }
-                return "https".equalsIgnoreCase(forwarded.trim());
-            case "http":
-                return false; // explicit HTTP-only: never set Secure
-            case "auto":
-            default:
-                return request.isSecure();
-        }
+        String mode = configured == null ? MODE_AUTO : configured.trim().toLowerCase(java.util.Locale.ROOT);
+        return mode.isEmpty() ? MODE_AUTO : mode;
     }
 
     /**
