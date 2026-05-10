@@ -834,12 +834,26 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
     }
 
     private String resolveRequiredCredential(String key) {
+        // Prefer the propertyManager when wired (production path) so the
+        // resolution honours all PropertyManager precedence (system → env →
+        // CouchDB dynamic → properties file). When propertyManager is not
+        // wired (e.g. unit tests that instantiate StartupProbeService
+        // directly), fall back to System.getProperty / getenv so the same
+        // precedence still works for the first two layers — otherwise this
+        // would throw immediately even when a perfectly valid -D system
+        // property has been supplied.
+        String val = null;
         if (propertyManager != null) {
-            String val = propertyManager.readValue(key);
-            if (val != null && !val.trim().isEmpty()
-                    && !CONFIG_PLACEHOLDER.equals(val.trim())) {
-                return val.trim();
+            val = propertyManager.readValue(key);
+        } else {
+            val = System.getProperty(key);
+            if (val == null || val.isEmpty()) {
+                val = System.getenv(key.toUpperCase().replace('.', '_'));
             }
+        }
+        if (val != null && !val.trim().isEmpty()
+                && !CONFIG_PLACEHOLDER.equals(val.trim())) {
+            return val.trim();
         }
         throw new IllegalStateException(
             key + " not configured: must be set via -D system property, env var, "

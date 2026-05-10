@@ -66,6 +66,25 @@ NemakiWare は以下の4サービスで構成されます。すべて Docker Com
 | **Solr** | カスタムビルド | 8983 | 全文検索エンジン |
 | **TEI** | ghcr.io/huggingface/text-embeddings-inference:cpu-1.6 | 8081 | ベクトル埋め込みサーバー (RAG) |
 
+### スケーラビリティの注意
+
+このリリースは **single replica 前提** です。複数 core レプリカを動かす場合の制約:
+
+| サブシステム | multi-replica で必要な対応 |
+|------------|------------------------|
+| SAML strict mode (`saml.require.inResponseTo=true`) | **Sticky session 必須**。`SamlAuthnRequestRegistry` / `SamlReplayCache` は JVM ローカル — IdP callback が AuthnRequest を発行した replica と別 replica に届くと strict 検証失敗、replay 防御が replica 間で共有されない。LB の cookie ベース sticky を有効化し、`-Dnemakiware.deployment.singleReplica=false -Dnemakiware.deployment.stickySession=true` を設定して startup warning を抑止 |
+| Cron スケジューラ (Cloud Directory Sync / Ingest / Retention) | `LeaderElection` が leader だけで実行するように 3 scheduler 全て対応済み (`lineage.leader-election.enabled=true` で有効化) |
+| Audit log / Solr / RAG embedding | サブシステム単位で独立しているため自動共有 (各々が CouchDB / Solr / 共有 store を参照) |
+
+multi-replica + sticky session の構成例 (ALB):
+```
+Application Load Balancer
+  ├─ Target Group: nemakiware-core
+  │    Stickiness: enabled (lb_cookie, duration 1h+)
+  │    Health check: /core/rest/all/repositories
+  └─ Routing: → Core × 2+
+```
+
 ---
 
 ## 2. 前提条件

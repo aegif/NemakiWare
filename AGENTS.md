@@ -304,6 +304,23 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/index.html
 - View logs: `docker compose -f docker/docker-compose-simple.yml logs core`
 - LDAP/Keycloak overlay (`--profile idp`) additionally requires `LDAP_ADMIN_PASSWORD`
 
+### Scalability — single replica vs multi-replica
+NemakiWare 3.1.1 is **single-replica by default**. Run multiple core
+replicas only with these provisos:
+- **SAML strict mode** (`saml.require.inResponseTo=true`) requires the
+  load balancer to enable cookie-based **sticky sessions**. Both
+  `SamlAuthnRequestRegistry` and `SamlReplayCache` are JVM-local; the
+  IdP callback that completes a SAML SSO flow must land on the same
+  replica that issued the AuthnRequest. Set
+  `-Dnemakiware.deployment.singleReplica=false`
+  `-Dnemakiware.deployment.stickySession=true` to silence the startup
+  warning once your LB is configured. Without sticky sessions, strict
+  mode rejects valid logins and replay protection breaks across replicas.
+- **Cron schedulers** (Cloud Directory Sync, Ingest, Retention,
+  LineagePurge, LineageProjection) gate on the existing
+  `LeaderElection`. Enable via `lineage.leader-election.enabled=true`
+  so only the leader replica polls / syncs / retains.
+
 ### E2E Test Environment Setup and Prevention (2025-11-22) ⚠️
 
 **IMPORTANT**: Before running Playwright tests, always ensure a clean test environment to prevent failures.

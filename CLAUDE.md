@@ -310,6 +310,32 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC14 (2026-05-10) — SAML strict-mode redesign + production hardening posture
+
+- **SAML strict mode** (`saml.require.inResponseTo`):
+  - **デフォルト `false`** (back-compat 優先 — 旧 SP-initiated UI / モバイル / スクリプトクライアント互換)
+  - **本番 production posture では `true` を強く推奨**:
+    - サーバ側で `POST /rest/all/saml/initiate` が AuthnRequest ID を発行 + HttpOnly+Secure+SameSite=Lax binding cookie をセット
+    - 受信した SAML Response の `InResponseTo` を cookie 内 binding と照合
+    - 一致しない unsolicited Response / captured Response の replay を拒否
+  - 移行手順:
+    1. 全 SAML クライアント (UI / モバイル / スクリプト) が `/saml/initiate` を経由する flow に移行済みか確認
+    2. shipped React UI は自動対応済み
+    3. property を `true` に切替
+- **multi-replica deployment**:
+  - `SamlAuthnRequestRegistry` と `SamlReplayCache` は JVM ローカル
+  - **multi-replica + SAML strict mode = sticky session 必須** (load balancer の cookie ベース sticky を有効化)
+  - sticky なしで multi-replica にすると IdP callback が別 replica に届いて strict 検証失敗 + replay 防御が replica 間で共有されない
+  - 警告抑止: `nemakiware.deployment.singleReplica=false` AND `nemakiware.deployment.stickySession=true` を設定
+- **`nemakiware.public.scheme`** (新):
+  - `auto` (default): `request.isSecure()` を信頼 (Tomcat `RemoteIpValve` 想定)
+  - `https`: 公開 URL が HTTPS であることを宣言。Cookie Secure flag を**常時付与**。proxy が `X-Forwarded-Proto` を落とす misconfig は per-minute throttled WARN で surface (cookie 強度を犠牲にしない)
+  - `http`: 開発専用
+- **OData**:
+  - `/odata/{repositoryId}/` の URL pattern を `AuthenticationFilter` が認識するように修正 (それまでは常に 401)
+  - `OData servlet` で CSRF 検証 + `ODataHandlerImpl` の null debugger NPE 修正
+- **その他 (RC13 から継続)**: 依存版数 (axios/postcss/netty/logback/CXF/HttpClient/commons-io/xml-apis 削除), Audit IP spoofing 防止, Webhook header injection 防止, MCP arguments redaction, Solr query injection 防止, Docker compose CouchDB credential 必須化, scheduler leader election (3 scheduler), tck-test-clean.sh 安全化, etc.
+
 ### RC13 (2026-05-09) — Security hardening
 - 依存脆弱性対応:
   - axios 1.15.0→1.15.2 (13 CVE: prototype pollution / SSRF / CRLF / null byte 等)

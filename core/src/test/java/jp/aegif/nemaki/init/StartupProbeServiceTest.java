@@ -20,6 +20,29 @@ import org.junit.jupiter.api.io.TempDir;
 public class StartupProbeServiceTest {
 
     private StartupProbeService service;
+    private static String savedDbUser;
+    private static String savedDbPass;
+
+    @org.junit.jupiter.api.BeforeAll
+    public static void setupCredentials() {
+        // RC13+: resolveCouchDbUser/Password fail-close when neither system
+        // property nor properties file supplies a value. These unit tests
+        // never want to actually authenticate (testConnection targets an
+        // unreachable host); set harmless dev credentials so the resolvers
+        // succeed and the probe returns DB_UNREACHABLE as the tests expect.
+        savedDbUser = System.getProperty("db.couchdb.auth.username");
+        savedDbPass = System.getProperty("db.couchdb.auth.password");
+        System.setProperty("db.couchdb.auth.username", "test");
+        System.setProperty("db.couchdb.auth.password", "test");
+    }
+
+    @org.junit.jupiter.api.AfterAll
+    public static void restoreCredentials() {
+        if (savedDbUser != null) System.setProperty("db.couchdb.auth.username", savedDbUser);
+        else System.clearProperty("db.couchdb.auth.username");
+        if (savedDbPass != null) System.setProperty("db.couchdb.auth.password", savedDbPass);
+        else System.clearProperty("db.couchdb.auth.password");
+    }
 
     @BeforeEach
     public void setUp() throws Exception {

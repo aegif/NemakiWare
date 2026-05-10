@@ -153,6 +153,29 @@ docker compose restart <service-name>
 
 ## Advanced Usage
 
+### Multi-replica deployments
+
+This compose file targets **a single core replica**. If you scale `core`
+horizontally (e.g. `docker compose up -d --scale core=N` or in a
+Kubernetes/ECS deployment), be aware:
+
+- **SAML strict mode** (`saml.require.inResponseTo=true`) needs **cookie-
+  based sticky sessions** on the load balancer. The
+  `SamlAuthnRequestRegistry` and `SamlReplayCache` are JVM-local, so an
+  IdP callback that lands on a different replica than the one that
+  issued the AuthnRequest will fail strict validation, and replay
+  protection is not shared across replicas. Set
+  `-Dnemakiware.deployment.singleReplica=false` AND
+  `-Dnemakiware.deployment.stickySession=true` to silence the loud
+  startup warning once sticky sessions are in place.
+- **Cron schedulers** (Cloud Directory Sync, Ingest, Retention,
+  Lineage*) are leader-election gated. Set
+  `lineage.leader-election.enabled=true` so only the leader replica
+  performs the work.
+- The plain compose-up path here is **single-replica only**. For HA
+  configurations see `docs/AWS-DEPLOYMENT-GUIDE.md` §1
+  (スケーラビリティの注意).
+
 ### Development Workflow
 
 ```bash

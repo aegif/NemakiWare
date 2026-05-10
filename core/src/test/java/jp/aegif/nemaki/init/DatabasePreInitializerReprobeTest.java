@@ -30,6 +30,28 @@ public class DatabasePreInitializerReprobeTest {
     private StartupProbeService probeService;
     private ContextRefreshedEvent event;
     private ApplicationContext applicationContext;
+    private static String savedDbUser;
+    private static String savedDbPass;
+
+    @org.junit.jupiter.api.BeforeAll
+    public static void setupCredentials() {
+        // RC13+: DatabasePreInitializer's constructor (and the inner
+        // resolver paths) require non-empty CouchDB credentials. These
+        // tests never actually authenticate (mocks / unreachable hosts);
+        // set harmless dev values so the constructor succeeds.
+        savedDbUser = System.getProperty("db.couchdb.auth.username");
+        savedDbPass = System.getProperty("db.couchdb.auth.password");
+        System.setProperty("db.couchdb.auth.username", "test");
+        System.setProperty("db.couchdb.auth.password", "test");
+    }
+
+    @org.junit.jupiter.api.AfterAll
+    public static void restoreCredentials() {
+        if (savedDbUser != null) System.setProperty("db.couchdb.auth.username", savedDbUser);
+        else System.clearProperty("db.couchdb.auth.username");
+        if (savedDbPass != null) System.setProperty("db.couchdb.auth.password", savedDbPass);
+        else System.clearProperty("db.couchdb.auth.password");
+    }
 
     @BeforeEach
     public void setUp() throws Exception {

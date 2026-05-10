@@ -1,22 +1,23 @@
 package jp.aegif.nemaki.cmis.factory.auth;
 
-import jp.aegif.nemaki.cmis.factory.auth.impl.AuthenticationServiceImpl;
 import org.junit.jupiter.api.Test;
-
-import java.lang.reflect.Method;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for the trusted proxy IP check in AuthenticationServiceImpl.
+ * Tests for the trusted proxy IP check.
+ *
+ * <p>The implementation lived as a private static helper in
+ * {@code AuthenticationServiceImpl} until RC13 extracted it into
+ * {@link jp.aegif.nemaki.util.TrustedProxyResolver} so the audit-log
+ * IP capture path could share the same policy. The reflection-based
+ * indirection here is now redundant; the assertions remain as a
+ * regression net for the policy itself.
  */
 class TrustedProxyTest {
 
-    // Access the private static isTrustedProxy method via reflection
-    private boolean isTrustedProxy(String remoteAddr, String trustedProxies) throws Exception {
-        Method m = AuthenticationServiceImpl.class.getDeclaredMethod("isTrustedProxy", String.class, String.class);
-        m.setAccessible(true);
-        return (boolean) m.invoke(null, remoteAddr, trustedProxies);
+    private boolean isTrustedProxy(String remoteAddr, String trustedProxies) {
+        return jp.aegif.nemaki.util.TrustedProxyResolver.isTrusted(remoteAddr, trustedProxies);
     }
 
     @Test
