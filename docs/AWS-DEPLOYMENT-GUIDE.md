@@ -66,6 +66,30 @@ NemakiWare は以下の4サービスで構成されます。すべて Docker Com
 | **Solr** | カスタムビルド | 8983 | 全文検索エンジン |
 | **TEI** | ghcr.io/huggingface/text-embeddings-inference:cpu-1.6 | 8081 | ベクトル埋め込みサーバー (RAG) |
 
+### Production credentials の取り扱い
+
+このガイドで `${COUCHDB_USER}` / `${COUCHDB_PASSWORD}` 等を使う箇所は、
+**AWS Secrets Manager / SSM Parameter Store** から取得した環境変数を
+前提としています。**シェル履歴・cron job 定義・compose ファイル・git
+管理ファイルに平文クレデンシャルを書かないでください**。例:
+
+```bash
+# Secrets Manager からデプロイホストの環境変数にロード
+export COUCHDB_USER=$(aws secretsmanager get-secret-value \
+  --secret-id nemaki/couchdb \
+  --query 'SecretString' --output text | jq -r '.username')
+export COUCHDB_PASSWORD=$(aws secretsmanager get-secret-value \
+  --secret-id nemaki/couchdb \
+  --query 'SecretString' --output text | jq -r '.password')
+
+# あるいは ECS Fargate task definition の secrets 句から ARN 経由で注入
+# (推奨 — タスク再起動時に必ず最新値が読まれる)
+```
+
+`docker-compose-simple.yml` は `${COUCHDB_USER:?...}` で fail-fast する
+ため、env がロードされていない状態で `docker compose up` すると即座に
+parse エラーで停止します。これは弱いデフォルトを忍び込ませない安全装置です。
+
 ### スケーラビリティの注意
 
 このリリースは **single replica 前提** です。複数 core レプリカを動かす場合の制約:
@@ -805,18 +829,38 @@ aws ec2 create-snapshot \
 
 #### 方法 2: CouchDB レプリケーション
 
+> **Production credentials**: 以下の例は CouchDB 認証が必要です。
+> 本番環境では credentials を AWS Secrets Manager / Systems Manager
+> Parameter Store / `.env` ファイル等から取得し、シェル履歴やコマンド
+> ログに平文を残さないでください。下記サンプルでは
+> `${COUCHDB_USER}` / `${COUCHDB_PASSWORD}` を環境変数として読み込む
+> 前提です。
+
 ```bash
+# 認証情報を Secrets Manager から取り出して環境変数にロードする例
+export COUCHDB_USER=$(aws secretsmanager get-secret-value \
+  --secret-id nemaki/couchdb \
+  --query 'SecretString' --output text | jq -r '.username')
+export COUCHDB_PASSWORD=$(aws secretsmanager get-secret-value \
+  --secret-id nemaki/couchdb \
+  --query 'SecretString' --output text | jq -r '.password')
+
 # CouchDB のデータベース一覧取得
-curl -u admin:password http://localhost:5984/_all_dbs
+curl -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/_all_dbs
 
 # 外部 CouchDB へのレプリケーション設定
-curl -X POST -u admin:password http://localhost:5984/_replicate \
+# (target 側の credentials も同様に Secrets Manager から取り出す)
+export BACKUP_USER=$(aws secretsmanager get-secret-value \
+  --secret-id nemaki/backup-couchdb --query 'SecretString' --output text | jq -r '.username')
+export BACKUP_PASSWORD=$(aws secretsmanager get-secret-value \
+  --secret-id nemaki/backup-couchdb --query 'SecretString' --output text | jq -r '.password')
+curl -X POST -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/_replicate \
   -H 'Content-Type: application/json' \
-  -d '{
-    "source": "bedroom",
-    "target": "http://backup-user:password@backup-couchdb:5984/bedroom",
-    "continuous": true
-  }'
+  -d "{
+    \"source\": \"bedroom\",
+    \"target\": \"http://${BACKUP_USER}:${BACKUP_PASSWORD}@backup-couchdb:5984/bedroom\",
+    \"continuous\": true
+  }"
 ```
 
 ### 11-3. バックアップ優先度
@@ -1032,12 +1076,12 @@ aws s3 cp s3://nemakiware-cold-storage/bedroom/OBJECT_ID/content ./downloaded-fi
 ### 13-1. ヘルスチェック
 
 ```bash
-# Core CMIS サーバー
-curl -f http://localhost:8080/core
-# HTTP 200 → 正常
+# Core CMIS サーバー — 公開エンドポイント (認証不要)
+curl -f http://localhost:8080/core/rest/all/repositories
+# JSON 配列 → 正常
 
-# CouchDB
-curl -f -u admin:password http://localhost:5984/_all_dbs
+# CouchDB — credentials は環境変数経由 (Secrets Manager / SSM 等)
+curl -f -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/_all_dbs
 # JSON 配列 → 正常
 
 # Solr
@@ -1063,8 +1107,11 @@ if ! curl -sf http://localhost:8080/core > /dev/null 2>&1; then
   ERRORS=$((ERRORS + 1))
 fi
 
-# CouchDB
-if ! curl -sf -u admin:password http://localhost:5984/_all_dbs > /dev/null 2>&1; then
+# CouchDB — credentials must be in env (Secrets Manager / SSM)
+if [ -z "${COUCHDB_USER}" ] || [ -z "${COUCHDB_PASSWORD}" ]; then
+  echo "CRITICAL: COUCHDB_USER / COUCHDB_PASSWORD env not set"
+  ERRORS=$((ERRORS + 1))
+elif ! curl -sf -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/_all_dbs > /dev/null 2>&1; then
   echo "CRITICAL: CouchDB is down"
   ERRORS=$((ERRORS + 1))
 fi
@@ -1149,12 +1196,29 @@ echo '0 * * * * root df -h / | tail -1 | awk "{if (\$5+0 > 80) print \"WARNING: 
 CouchDB は更新・削除時にデータを追記するため、定期的な compaction が必要です。
 
 ```bash
-# 手動 compaction
-curl -X POST -u admin:password http://localhost:5984/bedroom/_compact \
+# 手動 compaction (credentials は環境変数経由で渡す)
+curl -X POST -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/bedroom/_compact \
   -H 'Content-Type: application/json'
 
 # cron で毎週日曜深夜に実行
-echo '0 3 * * 0 root curl -sX POST -u admin:password http://localhost:5984/bedroom/_compact -H "Content-Type: application/json" >> /var/log/couchdb-compact.log 2>&1' \
+# /etc/cron.d/couchdb-compact 用のラッパスクリプトを作成し、credentials は
+# Secrets Manager / SSM から取り出してから curl に渡す。シェル履歴・cron
+# job 定義に平文クレデンシャルを残さないこと。
+sudo tee /opt/nemakiware/couchdb-compact.sh > /dev/null <<'SH'
+#!/bin/bash
+set -euo pipefail
+COUCHDB_USER=$(aws secretsmanager get-secret-value --secret-id nemaki/couchdb \
+  --query 'SecretString' --output text | jq -r '.username')
+COUCHDB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id nemaki/couchdb \
+  --query 'SecretString' --output text | jq -r '.password')
+curl -sX POST -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" \
+  http://localhost:5984/bedroom/_compact \
+  -H 'Content-Type: application/json'
+SH
+sudo chmod 750 /opt/nemakiware/couchdb-compact.sh
+sudo chown root:root /opt/nemakiware/couchdb-compact.sh
+
+echo '0 3 * * 0 root /opt/nemakiware/couchdb-compact.sh >> /var/log/couchdb-compact.log 2>&1' \
   | sudo tee /etc/cron.d/couchdb-compact
 ```
 
@@ -1210,8 +1274,8 @@ docker run --rm -v nemaki-network_tei_cache:/data \
 docker compose -f docker-compose-simple.yml ps couchdb
 docker compose -f docker-compose-simple.yml logs couchdb --tail 50
 
-# CouchDB への直接アクセス確認
-curl -u admin:password http://localhost:5984/
+# CouchDB への直接アクセス確認 (credentials は環境変数経由)
+curl -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/
 
 # 対処法: CouchDB を再起動
 docker compose -f docker-compose-simple.yml restart couchdb

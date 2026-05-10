@@ -61,26 +61,33 @@ class SamlAuthnRequestRegistryMultiReplicaWarnTest {
     }
 
     @Test
-    void noWarn_whenSingleReplicaIsDefault() {
+    void infoNotWarn_whenSingleReplicaIsDefault() {
         new SamlAuthnRequestRegistry(60).clear();
         assertTrue(warnLines().isEmpty(),
-                "default config (singleReplica unset) must not warn — got " + warnLines());
+                "default config (singleReplica unset) must not WARN — got " + warnLines());
+        // The INFO line is emitted so operators see the assumption even if
+        // they silently scaled out without updating the env.
+        assertTrue(infoLines().stream().anyMatch(l -> l.contains("single-replica")),
+                "default posture must log an INFO line — got " + infoLines());
     }
 
     @Test
-    void noWarn_whenSingleReplicaTrue() {
+    void infoNotWarn_whenSingleReplicaTrue() {
         System.setProperty(SINGLE_PROP, "true");
         new SamlAuthnRequestRegistry(60).clear();
         assertTrue(warnLines().isEmpty(), warnLines().toString());
+        assertTrue(infoLines().stream().anyMatch(l -> l.contains("single-replica")));
     }
 
     @Test
-    void noWarn_whenMultiReplicaButStickySessionDeclared() {
+    void infoNotWarn_whenMultiReplicaButStickySessionDeclared() {
         System.setProperty(SINGLE_PROP, "false");
         System.setProperty(STICKY_PROP, "true");
         new SamlAuthnRequestRegistry(60).clear();
         assertTrue(warnLines().isEmpty(),
-                "multi-replica + sticky session is acknowledged HA — must not warn");
+                "multi-replica + sticky session is acknowledged HA — must not WARN");
+        assertTrue(infoLines().stream().anyMatch(l -> l.contains("multi-replica") && l.contains("sticky")),
+                "must log an INFO acknowledging the explicit HA posture");
     }
 
     @Test
@@ -107,6 +114,13 @@ class SamlAuthnRequestRegistryMultiReplicaWarnTest {
     private List<String> warnLines() {
         return appender.list.stream()
                 .filter(e -> e.getLevel() == Level.WARN)
+                .map(ILoggingEvent::getFormattedMessage)
+                .collect(Collectors.toList());
+    }
+
+    private List<String> infoLines() {
+        return appender.list.stream()
+                .filter(e -> e.getLevel() == Level.INFO)
                 .map(ILoggingEvent::getFormattedMessage)
                 .collect(Collectors.toList());
     }

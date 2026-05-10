@@ -551,10 +551,17 @@ public class AuthTokenResource extends ResourceBase{
 				String commitError = pending.apply();
 				if (commitError != null) {
 					// Race condition: another concurrent caller committed
-					// the same SAML state first. The token we just minted is
-					// orphaned but harmless (will expire normally). Surface
-					// the conflict to the caller so they can retry the SSO
-					// flow rather than receive a token they can't use safely.
+					// the same SAML state first. The token we just minted
+					// has not been returned to the caller (no cookie, no
+					// JSON body), so revoke it from the server's token
+					// store before returning the error so it does not
+					// linger in tokenMap until natural expiry.
+					try {
+						tokenService.invalidateToken(app, repositoryId, userName);
+					} catch (Exception revokeError) {
+						logger.warn("Failed to revoke orphaned SAML token for {} after commit race: {}",
+								userName, revokeError.getMessage());
+					}
 					logger.warn("SAML commit race for user {}: {}", userName, commitError);
 					addErrMsg(errMsg, "saml", "commitRace:" + commitError);
 					return makeResult(false, result, errMsg).toString();

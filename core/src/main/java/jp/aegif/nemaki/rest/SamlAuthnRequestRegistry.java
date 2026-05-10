@@ -80,25 +80,43 @@ public final class SamlAuthnRequestRegistry {
     }
 
     /**
-     * Surface the single-replica assumption at startup. Both this registry
-     * and {@link SamlReplayCache} are JVM-local; multi-replica deployments
-     * MUST run sticky sessions (or a shared backing store, not yet
-     * implemented) or SAML strict mode and replay protection break across
-     * replicas.
+     * Surface the deployment posture at startup. Both this registry and
+     * {@link SamlReplayCache} are JVM-local; the SAML strict-mode flow
+     * therefore requires either single-replica deployment or sticky
+     * sessions across replicas.
      *
-     * <p>Operators who knowingly run sticky sessions can suppress the
-     * warning by setting {@code nemakiware.deployment.singleReplica=true}
-     * (default) or {@code nemakiware.deployment.stickySession=true}.
+     * <p>Three states are logged:
+     * <ul>
+     *   <li>"single replica" (default, no env knobs touched) — INFO with
+     *       a clear pointer to the multi-replica recipe so operators
+     *       see the assumption even if their actual cluster is bigger;</li>
+     *   <li>"multi-replica + sticky session declared" — INFO acknowledging
+     *       the operator's explicit HA stance;</li>
+     *   <li>"multi-replica WITHOUT sticky session" — loud WARN block
+     *       (SAML strict mode and replay protection will break).</li>
+     * </ul>
+     *
+     * <p>Knobs (system property or env, env name uppercased with dots
+     * mapped to underscores):
+     * <ul>
+     *   <li>{@code nemakiware.deployment.singleReplica}: default
+     *       {@code true}. Set to {@code false} when scaling out.</li>
+     *   <li>{@code nemakiware.deployment.stickySession}: default
+     *       {@code false}. Set to {@code true} once the load balancer is
+     *       configured for cookie-based sticky sessions.</li>
+     * </ul>
+     *
+     * <p>Note that the gate is *opt-in detection* — the JVM itself cannot
+     * tell whether the operator silently scaled the deployment to N≥2.
+     * The 3.1.1 release is single-replica posture; future versions may
+     * add CouchDB-backed peer discovery to detect undeclared replicas.
      */
     private void warnIfMultiReplica() {
-        String single = System.getProperty("nemakiware.deployment.singleReplica",
-                System.getenv().getOrDefault("NEMAKIWARE_DEPLOYMENT_SINGLEREPLICA", ""));
-        String sticky = System.getProperty("nemakiware.deployment.stickySession",
-                System.getenv().getOrDefault("NEMAKIWARE_DEPLOYMENT_STICKYSESSION", ""));
-        // Default is "single replica assumed" — only warn when operator
-        // has explicitly declared multi-replica without sticky sessions.
+        String single = readDeploymentProperty("nemakiware.deployment.singleReplica");
+        String sticky = readDeploymentProperty("nemakiware.deployment.stickySession");
         boolean explicitMulti = "false".equalsIgnoreCase(single);
         boolean stickyOk      = "true".equalsIgnoreCase(sticky);
+
         if (explicitMulti && !stickyOk) {
             logger.warn("============================================================");
             logger.warn("SAML strict mode + multi-replica deployment WITHOUT sticky session");
@@ -111,7 +129,25 @@ public final class SamlAuthnRequestRegistry {
             logger.warn("      nemakiware.deployment.stickySession=true to silence this warning, or");
             logger.warn("  (b) deploy as a single replica.");
             logger.warn("============================================================");
+        } else if (explicitMulti) {
+            logger.info("Deployment posture: multi-replica + sticky session declared. "
+                    + "SAML strict mode will rely on the LB to keep IdP callbacks on the issuing replica.");
+        } else {
+            // Default branch — log INFO so the assumption is visible even
+            // if the operator silently scaled the deployment without
+            // updating the env.
+            logger.info("Deployment posture: single-replica (default). "
+                    + "If you scale this service to N>=2 replicas, set "
+                    + "nemakiware.deployment.singleReplica=false and "
+                    + "nemakiware.deployment.stickySession=true (cookie-based "
+                    + "sticky session at the LB) — see CLAUDE.md \"SAML strict-mode + multi-replica\".");
         }
+    }
+
+    private static String readDeploymentProperty(String key) {
+        String v = System.getProperty(key);
+        if (v != null && !v.isEmpty()) return v;
+        return System.getenv().getOrDefault(key.toUpperCase().replace('.', '_'), "");
     }
 
     /**

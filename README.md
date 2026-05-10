@@ -67,6 +67,13 @@ docker compose -f docker-compose-simple.yml --profile rag up -d --build
 
 A Setup Wizard runs on first launch to configure database, authentication, and embedding provider.
 
+> **Deployment posture (3.1.1)**: this release is **single-replica** by
+> design. Multi-replica deployments work mechanically but require
+> sticky sessions for SAML strict mode and `lineage.leader-election.enabled=true`
+> for cron schedulers. See [`docs/AWS-DEPLOYMENT-GUIDE.md` §1 — スケーラビリティの注意](docs/AWS-DEPLOYMENT-GUIDE.md)
+> and [CLAUDE.md "SAML strict-mode + multi-replica"](CLAUDE.md) for the
+> full HA story.
+
 ---
 
 ## Features
