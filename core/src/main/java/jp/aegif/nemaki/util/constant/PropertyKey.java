@@ -330,10 +330,17 @@ public interface PropertyKey {
 	final String SAML_ATTRIBUTE_MAPPING = "saml.attribute.mapping";
 	/**
 	 * When true, SAML Responses are rejected unless they carry an
-	 * InResponseTo attribute matching an AuthnRequest ID that this SP
-	 * has registered via {@code POST /rest/all/saml/register-request}.
-	 * Default false for backward compatibility with older UIs that do
-	 * not yet register IDs server-side.
+	 * InResponseTo attribute matching an AuthnRequest ID this SP issued
+	 * via {@code POST /rest/all/saml/initiate}. The endpoint generates
+	 * the ID and a 256-bit binding token, returns the ID to the caller,
+	 * and sets the binding token as the HttpOnly + SameSite=Lax
+	 * {@code NEMAKI_SAML_BIND} cookie. The binding cookie travels back
+	 * with the SAML Response convert call so the verifier can confirm
+	 * that the Response corresponds to a request *this browser session*
+	 * initiated.
+	 *
+	 * <p>Default false for backward compatibility with non-React SAML
+	 * clients that have not yet adopted the {@code /initiate} flow.
 	 */
 	final String SAML_REQUIRE_IN_RESPONSE_TO = "saml.require.inResponseTo";
 

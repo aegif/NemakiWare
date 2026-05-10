@@ -242,6 +242,10 @@ export class SAMLService {
       const res = await fetch('/core/rest/all/saml/initiate', {
         method: 'POST',
         credentials: 'same-origin', // ensure Set-Cookie is honoured
+        // X-Requested-With satisfies CsrfValidator alongside the same-origin
+        // Origin header that fetch() sends automatically. Belt-and-suspenders
+        // so a third-party page cannot reach this endpoint via form POST.
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
       });
       if (res.ok) {
         const body = await res.json();

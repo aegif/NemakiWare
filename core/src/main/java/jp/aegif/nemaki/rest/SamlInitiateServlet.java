@@ -8,6 +8,11 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.context.support.WebApplicationContextUtils;
+
+import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.TrustedProxyResolver;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -67,6 +72,23 @@ public class SamlInitiateServlet extends HttpServlet {
         response.setContentType("application/json; charset=UTF-8");
         response.setHeader("Cache-Control", "no-store");
 
+        // Cross-site protection. Even though this endpoint is unauthenticated
+        // by design, we must not let a third-party page POST to it from a
+        // victim's browser and overwrite their NEMAKI_SAML_BIND cookie
+        // (which would disrupt an in-progress SAML login). CsrfValidator
+        // accepts an Origin / Referer matching the server, OR an XHR
+        // header, OR an explicit non-Basic auth header — none of which a
+        // form-POST or img-POST attack can supply for a different origin.
+        String csrfError = CsrfValidator.validate(request);
+        if (csrfError != null) {
+            log.warn("SAML initiate rejected: " + csrfError);
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            try (PrintWriter out = response.getWriter()) {
+                out.print("{\"status\":\"forbidden\",\"error\":\"" + jsonEscape(csrfError) + "\"}");
+            }
+            return;
+        }
+
         String clientIp = clientAddress(request);
         if (!checkRateLimit(clientIp)) {
             log.warn("SAML initiate rate-limited for client " + safeForLog(clientIp));
@@ -91,7 +113,12 @@ public class SamlInitiateServlet extends HttpServlet {
         // — Strict would drop the cookie and break the flow.
         Cookie cookie = new Cookie(SamlAuthnRequestRegistry.BINDING_COOKIE_NAME, issued.getBindingToken());
         cookie.setHttpOnly(true);
-        cookie.setSecure(request.isSecure());
+        // Cookie Secure flag is determined by TrustedProxyResolver, which
+        // honours nemakiware.public.scheme=https (force-fail-closed). Plain
+        // request.isSecure() can silently weaken behind a misconfigured
+        // proxy that doesn't propagate X-Forwarded-Proto into the Tomcat
+        // RemoteIpValve mapping.
+        cookie.setSecure(TrustedProxyResolver.isPublicRequestSecure(request, getPropertyManager()));
         cookie.setPath(buildContextPath(request));
         cookie.setMaxAge((int) (issued.getTtlMillis() / 1000L));
         cookie.setAttribute("SameSite", "Lax");
@@ -158,6 +185,31 @@ public class SamlInitiateServlet extends HttpServlet {
         if (s == null) return "null";
         String stripped = s.replaceAll("[\\x00-\\x1f\\x7f]", "");
         return stripped.length() > 64 ? stripped.substring(0, 64) + "..." : stripped;
+    }
+
+    /**
+     * Resolve PropertyManager from the Spring context. Returns null when
+     * not yet wired so the cookie code falls back to {@code request.isSecure()}
+     * via TrustedProxyResolver's "auto" mode. Cached per servlet instance.
+     */
+    private volatile PropertyManager cachedPropertyManager;
+
+    private PropertyManager getPropertyManager() {
+        PropertyManager pm = cachedPropertyManager;
+        if (pm != null) {
+            return pm;
+        }
+        try {
+            WebApplicationContext ctx = WebApplicationContextUtils
+                    .getWebApplicationContext(getServletContext());
+            if (ctx != null && ctx.containsBean("propertyManager")) {
+                pm = ctx.getBean("propertyManager", PropertyManager.class);
+                cachedPropertyManager = pm;
+            }
+        } catch (Exception e) {
+            log.debug("PropertyManager lookup failed: " + e.getMessage());
+        }
+        return pm;
     }
 
     private static final class RateState {

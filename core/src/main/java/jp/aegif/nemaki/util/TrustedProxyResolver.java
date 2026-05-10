@@ -96,6 +96,65 @@ public final class TrustedProxyResolver {
     }
 
     /**
+     * Property key consumed by {@link #isPublicRequestSecure(HttpServletRequest, PropertyManager)}.
+     * Values: {@code auto} (default — trust {@link HttpServletRequest#isSecure()},
+     * which Tomcat's RemoteIpValve rewrites for trusted proxies); {@code https}
+     * (force-fail closed if the request appears insecure even when behind a
+     * proxy — recommended for any deployment whose public URL is HTTPS);
+     * {@code http} (development only, never use in production).
+     */
+    public static final String PUBLIC_SCHEME_KEY = "nemakiware.public.scheme";
+
+    /**
+     * Decide whether the *public-facing* request that arrived here was
+     * carried over HTTPS, in a way that respects trusted-proxy boundaries.
+     *
+     * <p>The naive {@link HttpServletRequest#isSecure()} check is correct
+     * when Tomcat's {@code RemoteIpValve} is configured (it rewrites
+     * isSecure based on {@code X-Forwarded-Proto} from a trusted proxy
+     * IP). But operators with bespoke proxy stacks may inadvertently lose
+     * that mapping — and then SAML / cookie security will silently
+     * weaken to "Secure flag absent over public HTTPS". Setting
+     * {@code nemakiware.public.scheme=https} forces this method to
+     * return false (i.e. demand TLS) until the request truly looks
+     * secure, so misconfigured stacks fail closed instead of degrading.
+     */
+    public static boolean isPublicRequestSecure(HttpServletRequest request, PropertyManager propertyManager) {
+        if (request == null) {
+            return false;
+        }
+        String configured = propertyManager == null ? null : propertyManager.readValue(PUBLIC_SCHEME_KEY);
+        String mode = configured == null ? "auto" : configured.trim().toLowerCase(java.util.Locale.ROOT);
+        if (mode.isEmpty()) {
+            mode = "auto";
+        }
+        switch (mode) {
+            case "https":
+                // Strict mode: trust ONLY request.isSecure() (the RemoteIpValve
+                // path) AND verify that any X-Forwarded-Proto, if present,
+                // came from a trusted proxy and matches.
+                if (!request.isSecure()) {
+                    return false;
+                }
+                String forwarded = sanitize(request.getHeader("X-Forwarded-Proto"));
+                if (forwarded == null || forwarded.isEmpty()) {
+                    return true;
+                }
+                // forwarded header was stamped by *something* upstream; only honour
+                // it when the immediate caller is in trustedProxies.
+                if (!isTrusted(sanitize(request.getRemoteAddr()), propertyManager)) {
+                    return false;
+                }
+                return "https".equalsIgnoreCase(forwarded.trim());
+            case "http":
+                return false; // explicit HTTP-only: never set Secure
+            case "auto":
+            default:
+                return request.isSecure();
+        }
+    }
+
+    /**
      * Strip CR/LF (and any control character that would let an attacker break
      * audit log lines) from a header value. Keeps null/blank semantics.
      */

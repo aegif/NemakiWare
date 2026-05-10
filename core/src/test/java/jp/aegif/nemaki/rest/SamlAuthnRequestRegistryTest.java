@@ -110,6 +110,40 @@ class SamlAuthnRequestRegistryTest {
     }
 
     @Test
+    void peekDoesNotConsume() {
+        SamlAuthnRequestRegistry r = new SamlAuthnRequestRegistry(60);
+        try {
+            SamlAuthnRequestRegistry.Issued issued = r.issue();
+            assertTrue(r.peekMatches(issued.getBindingToken(), issued.getAuthnRequestId()),
+                    "peek must succeed for the bound pair");
+            // ...repeatedly...
+            assertTrue(r.peekMatches(issued.getBindingToken(), issued.getAuthnRequestId()));
+            assertEquals(1, r.size(), "peek must NOT remove the entry");
+            // consume can still drain the entry once verification finishes
+            assertTrue(r.consume(issued.getBindingToken(), issued.getAuthnRequestId()));
+            assertEquals(0, r.size());
+            assertFalse(r.peekMatches(issued.getBindingToken(), issued.getAuthnRequestId()));
+        } finally {
+            r.clear();
+        }
+    }
+
+    @Test
+    void peekRejectsMismatchAndExpired() throws InterruptedException {
+        SamlAuthnRequestRegistry r = new SamlAuthnRequestRegistry(0); // immediate expiry
+        try {
+            SamlAuthnRequestRegistry.Issued issued = r.issue();
+            assertFalse(r.peekMatches(issued.getBindingToken(), "_other"),
+                    "peek must reject a wrong AuthnRequest ID even if cookie matches");
+            Thread.sleep(50);
+            assertFalse(r.peekMatches(issued.getBindingToken(), issued.getAuthnRequestId()),
+                    "peek must reject expired entries");
+        } finally {
+            r.clear();
+        }
+    }
+
+    @Test
     void singletonInstanceShared() {
         assertSame(SamlAuthnRequestRegistry.getInstance(), SamlAuthnRequestRegistry.getInstance());
     }

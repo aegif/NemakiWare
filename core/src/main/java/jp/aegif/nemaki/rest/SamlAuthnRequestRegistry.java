@@ -133,6 +133,31 @@ public final class SamlAuthnRequestRegistry {
         return entry.authnRequestId.equals(expectedAuthnRequestId);
     }
 
+    /**
+     * Read-only counterpart to {@link #consume(String, String)}: returns
+     * whether the binding currently maps to the expected AuthnRequest ID,
+     * without removing the entry. Used during the verifier's pre-flight
+     * phase so a downstream failure (user lookup, token issuance) can
+     * abort without burning the binding for the legitimate user.
+     *
+     * <p>The actual atomic check-and-remove must still happen via
+     * {@link #consume(String, String)} after the entire flow has succeeded.
+     */
+    public boolean peekMatches(String bindingToken, String expectedAuthnRequestId) {
+        if (bindingToken == null || bindingToken.isBlank()
+                || expectedAuthnRequestId == null || expectedAuthnRequestId.isBlank()) {
+            return false;
+        }
+        Entry entry = outstanding.get(bindingToken);
+        if (entry == null) {
+            return false;
+        }
+        if (entry.expiryMillis <= System.currentTimeMillis()) {
+            return false;
+        }
+        return entry.authnRequestId.equals(expectedAuthnRequestId);
+    }
+
     void sweep() {
         long now = System.currentTimeMillis();
         outstanding.entrySet().removeIf(e -> e.getValue().expiryMillis <= now);

@@ -540,6 +540,27 @@ public class AuthTokenResource extends ResourceBase{
 
 			String app = "";
 			Token token = tokenService.setToken(app, repositoryId, userName);
+
+			// Token issued successfully — only NOW commit the SAML state
+			// (binding cookie consume + replay record). Earlier revisions
+			// committed at verify() time, so a transient DAO/user/token
+			// failure burned the SAML Response and forced the user back
+			// through the IdP.
+			SamlSignatureVerifier.PendingCommits pending = verifyResult.getPendingCommits();
+			if (pending != null) {
+				String commitError = pending.apply();
+				if (commitError != null) {
+					// Race condition: another concurrent caller committed
+					// the same SAML state first. The token we just minted is
+					// orphaned but harmless (will expire normally). Surface
+					// the conflict to the caller so they can retry the SSO
+					// flow rather than receive a token they can't use safely.
+					logger.warn("SAML commit race for user {}: {}", userName, commitError);
+					addErrMsg(errMsg, "saml", "commitRace:" + commitError);
+					return makeResult(false, result, errMsg).toString();
+				}
+			}
+
 			setAuthTokenCookie(token.getToken(), repositoryId);
 
 			JSONObject obj = new JSONObject();
@@ -1721,20 +1742,16 @@ public class AuthTokenResource extends ResourceBase{
 	/**
 	 * Determine if the current connection is secure (HTTPS).
 	 *
-	 * <p>Uses only {@code request.isSecure()}, which Tomcat's
-	 * {@code RemoteIpValve} (configured in {@code docker/core/server.xml})
-	 * rewrites when the request arrives from a trusted proxy with
-	 * {@code X-Forwarded-Proto: https}.  This avoids parsing forwarded
-	 * headers directly, which would be spoofable by untrusted clients
-	 * and inconsistent with the CSRF trust model in ResourceBase.</p>
-	 *
-	 * <p>On the Jetty dev server, no forwarded-header customizer is
-	 * registered (see {@code core/src/main/webapp/WEB-INF/jetty-forwarded.xml}
-	 * for the rationale), so this returns the actual local connection
-	 * scheme.  Jetty dev is HTTP-only and not intended for proxy testing.</p>
+	 * <p>Delegates to {@link jp.aegif.nemaki.util.TrustedProxyResolver#isPublicRequestSecure}
+	 * which respects the {@code nemakiware.public.scheme} property.
+	 * Operators with bespoke proxy stacks should set
+	 * {@code nemakiware.public.scheme=https} so a misconfigured proxy
+	 * that fails to propagate {@code X-Forwarded-Proto} produces a
+	 * non-Secure cookie ⇒ obvious browser breakage at staging instead
+	 * of a silent loss of cookie security in production.</p>
 	 */
 	private boolean isSecureConnection(jakarta.servlet.http.HttpServletRequest req) {
-		return req.isSecure();
+		return jp.aegif.nemaki.util.TrustedProxyResolver.isPublicRequestSecure(req, getPropertyManager());
 	}
 
 	/**

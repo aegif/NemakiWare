@@ -41,35 +41,95 @@ public class SamlSignatureVerifier {
 
 	/**
 	 * Result of SAML signature verification.
+	 *
+	 * <p>On success the result also carries a {@link PendingCommits} bundle
+	 * that the caller MUST {@link PendingCommits#apply()} only after every
+	 * downstream operation (user extraction, getOrCreateUser, auth-method
+	 * allowlist, tokenService.setToken) has succeeded. Committing earlier
+	 * means a transient DAO/user/token-service failure burns the SAML
+	 * Response and forces the user back through the IdP.
 	 */
 	public static class VerificationResult {
 		private final boolean valid;
 		private final String error;
 		private final Element signedElement;
+		private final PendingCommits pendingCommits;
 
-		private VerificationResult(boolean valid, String error, Element signedElement) {
+		private VerificationResult(boolean valid, String error, Element signedElement, PendingCommits pendingCommits) {
 			this.valid = valid;
 			this.error = error;
 			this.signedElement = signedElement;
+			this.pendingCommits = pendingCommits;
 		}
 
-		public static VerificationResult success(Element signedElement) {
-			return new VerificationResult(true, null, signedElement);
+		public static VerificationResult success(Element signedElement, PendingCommits pendingCommits) {
+			return new VerificationResult(true, null, signedElement, pendingCommits);
 		}
 
-		/** Internal success (no signed element needed, e.g. sub-verification steps). */
+		/** Internal success (no signed element / no pending commits — used by sub-verification steps). */
 		static VerificationResult success() {
-			return new VerificationResult(true, null, null);
+			return new VerificationResult(true, null, null, null);
 		}
 
 		public static VerificationResult failure(String error) {
-			return new VerificationResult(false, error, null);
+			return new VerificationResult(false, error, null, null);
 		}
 
 		public boolean isValid() { return valid; }
 		public String getError() { return error; }
 		/** The signed Response or Assertion element. Identity data must be extracted from this subtree only. */
 		public Element getSignedElement() { return signedElement; }
+		/** Commits to apply only after the entire login flow has succeeded. May be null on failure or for sub-results. */
+		public PendingCommits getPendingCommits() { return pendingCommits; }
+	}
+
+	/**
+	 * State that the verifier validated as ready-to-commit but deliberately
+	 * did NOT commit, so that a later downstream failure does not poison
+	 * replay state for the legitimate user.
+	 *
+	 * <p>{@link #apply()} performs the atomic commits in the same order the
+	 * verifier originally enforced (binding cookie consume, then replay-id
+	 * record). Each commit is idempotent for the same identity: a second
+	 * apply() returns false but is safe to call.
+	 */
+	public static final class PendingCommits {
+		private final String bindingTokenToConsume;     // null when no binding cookie / non-strict no-cookie
+		private final String inResponseToToConsume;     // null when no InResponseTo
+		private final java.util.List<String> replayIds; // never null, may be empty
+		private boolean applied;
+
+		PendingCommits(String bindingTokenToConsume, String inResponseToToConsume, java.util.List<String> replayIds) {
+			this.bindingTokenToConsume = bindingTokenToConsume;
+			this.inResponseToToConsume = inResponseToToConsume;
+			this.replayIds = replayIds == null ? java.util.List.of() : replayIds;
+		}
+
+		/**
+		 * Commit binding consumption and replay records.
+		 * @return null on full success, or an error string describing the
+		 *         first race condition encountered (caller must reject).
+		 */
+		public synchronized String apply() {
+			if (applied) {
+				return null;
+			}
+			applied = true;
+			if (bindingTokenToConsume != null && inResponseToToConsume != null) {
+				if (!SamlAuthnRequestRegistry.getInstance().consume(bindingTokenToConsume, inResponseToToConsume)) {
+					logger.warn("Concurrent SAML binding consume for InResponseTo='{}'", inResponseToToConsume);
+					return "SAML binding cookie was consumed by a concurrent request";
+				}
+			}
+			SamlReplayCache cache = SamlReplayCache.getInstance();
+			for (String key : replayIds) {
+				if (!cache.recordIfNew(key)) {
+					logger.warn("Concurrent SAML replay commit for {}", key);
+					return "SAML element already consumed (race): " + key;
+				}
+			}
+			return null;
+		}
 	}
 
 	/**
@@ -224,11 +284,10 @@ public class SamlSignatureVerifier {
 				return conditionsResult;
 			}
 
-			// 6. Anti-replay LOOKUP — read-only. We collect every Response/Assertion
-			//    ID and reject early if any are already known to the cache. We
-			//    deliberately DO NOT commit yet: a later check (InResponseTo,
-			//    user-extraction, etc.) failing must not leave these IDs locked
-			//    out for legitimate retries.
+			// 6. Anti-replay LOOKUP — read-only. Collect IDs and reject early
+			//    if any are already known to the cache. We DO NOT commit yet;
+			//    that happens via PendingCommits.apply() once AuthTokenResource
+			//    has actually issued the user a token.
 			SamlReplayCache cache = SamlReplayCache.getInstance();
 			java.util.List<String> idsToCommit = collectReplayIds(document, signedElement);
 			for (String key : idsToCommit) {
@@ -238,12 +297,7 @@ public class SamlSignatureVerifier {
 				}
 			}
 
-			// 7. InResponseTo binding. The SP-issued AuthnRequest ID was bound to
-			//    the browser via the HttpOnly NEMAKI_SAML_BIND cookie when the UI
-			//    called SamlInitiateServlet. We resolve {bindingToken → expected
-			//    AuthnRequest ID} via SamlAuthnRequestRegistry.consume — but only
-			//    AFTER every other validation has succeeded, so a failed Response
-			//    cannot burn the legitimate user's outstanding AuthnRequest entry.
+			// 7. InResponseTo binding (cookie-bound, server-issued).
 			Element response = SAML_PROTOCOL_NS.equals(signedElement.getNamespaceURI())
 					&& "Response".equals(signedElement.getLocalName())
 					? signedElement
@@ -260,38 +314,32 @@ public class SamlSignatureVerifier {
 					logger.warn("Strict mode rejected SAML Response: missing NEMAKI_SAML_BIND cookie");
 					return VerificationResult.failure("SAML binding cookie missing — initiate the SSO flow via /rest/all/saml/initiate");
 				}
-			}
-
-			// 8. Atomic commits — only past this line do we mutate state.
-			//    Order matters: consume the binding first (it's per-cookie, so a
-			//    failed commit affects only this one user), then commit replay
-			//    (global, so a race here is the worst-case rejection).
-			if (requireInResponseTo) {
-				if (!SamlAuthnRequestRegistry.getInstance().consume(bindingToken, inResponseTo)) {
+				// Strict-mode pre-flight: peek at the registry to confirm a
+				// match exists, but do not consume yet. The commit phase
+				// (PendingCommits.apply) does the real consume atomically and
+				// will reject if a concurrent caller beat us.
+				if (!SamlAuthnRequestRegistry.getInstance().peekMatches(bindingToken, inResponseTo)) {
 					logger.warn("Strict mode rejected SAML Response: InResponseTo='{}' did not match the binding cookie", inResponseTo);
 					return VerificationResult.failure("SAML Response InResponseTo did not match the binding cookie");
 				}
 				if (logger.isDebugEnabled()) {
-					logger.debug("Strict mode accepted SAML Response InResponseTo='{}'", inResponseTo);
+					logger.debug("Strict mode pre-validated SAML Response InResponseTo='{}'", inResponseTo);
 				}
-			} else if (hasInResponseTo && bindingToken != null && !bindingToken.isBlank()) {
-				// Non-strict mode: opportunistically consume so the binding
-				// entry doesn't sit until TTL expiry. Result is informational.
-				boolean matched = SamlAuthnRequestRegistry.getInstance().consume(bindingToken, inResponseTo);
-				logger.info("SAML Response InResponseTo='{}' (strict-mode disabled; binding-match={})", inResponseTo, matched);
 			} else if (hasInResponseTo) {
-				logger.info("SAML Response InResponseTo='{}' (strict-mode disabled; no binding cookie present)", inResponseTo);
+				logger.info("SAML Response InResponseTo='{}' (strict-mode disabled; binding consume deferred to apply())", inResponseTo);
 			}
 
-			for (String key : idsToCommit) {
-				if (!cache.recordIfNew(key)) {
-					logger.warn("Rejecting concurrently-replayed SAML element: {}", key);
-					return VerificationResult.failure("SAML element already consumed (race): " + key);
-				}
-			}
+			// 8. Build the deferred-commit bundle. The caller MUST invoke
+			//    pendingCommits.apply() only after the user has been
+			//    extracted, created/loaded, allowed by allowedAuthMethods,
+			//    and a token has been minted by tokenService.setToken().
+			String bindingForCommit = (hasInResponseTo && bindingToken != null && !bindingToken.isBlank())
+					? bindingToken : null;
+			String inResponseToForCommit = bindingForCommit == null ? null : inResponseTo;
+			PendingCommits pending = new PendingCommits(bindingForCommit, inResponseToForCommit, idsToCommit);
 
-			logger.info("SAML response signature verified successfully");
-			return VerificationResult.success(signedElement);
+			logger.info("SAML response signature verified successfully (commits deferred)");
+			return VerificationResult.success(signedElement, pending);
 
 		} catch (Exception e) {
 			logger.error("SAML signature verification error", e);
