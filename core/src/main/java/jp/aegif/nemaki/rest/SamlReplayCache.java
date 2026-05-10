@@ -3,7 +3,6 @@ package jp.aegif.nemaki.rest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -15,28 +14,41 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>SAML Responses and Assertions are signed and time-bound, but until
  * RC13 there was no server-side cache of consumed IDs. An attacker who
- * captured a Response (e.g. via XSS, an open-relay redirect, or a TLS
- * compromise) could replay it within the validity window
- * (commonly 5–15 minutes) from any IP to mint a session token for the
- * victim. This cache closes that window by remembering the IDs that
- * have already been accepted.
+ * captured a Response could replay it within the validity window (5–15
+ * min) from any IP to mint a session token for the victim. This cache
+ * closes that window by remembering the IDs that have already been
+ * accepted.
  *
- * <p>The cache is in-memory and per-JVM. For multi-replica deployments
- * with a shared SP entity, an attacker who beats the original Response
- * to a *different* replica could still replay; the LeaderElection /
- * sticky-session story for SAML is a follow-up.
+ * <p><b>Two-phase commit semantics.</b> Earlier revisions exposed a
+ * single {@code isReplayAndRecord(id)} that committed the ID at lookup
+ * time. That made the verifier vulnerable to a different attack: an
+ * attacker submits a captured Response that fails a *later* check
+ * (e.g. wrong InResponseTo), and the legitimate user's subsequent
+ * Response — carrying the same Response/Assertion IDs — is then
+ * permanently rejected as a replay. The current API splits the
+ * operation:
+ * <ul>
+ *   <li>{@link #isAlreadySeen(String)} — read-only check, used early
+ *       to fail-fast on obvious duplicates;</li>
+ *   <li>{@link #recordIfNew(String)} — atomic commit, called only
+ *       after every other validation has succeeded, returns false if
+ *       a concurrent commit beat us (still treated as replay).</li>
+ * </ul>
  *
- * <p>Entries auto-expire after {@link #DEFAULT_TTL_SECONDS} (15 minutes —
- * longer than the typical SAML validity window so that a Response cached
- * here remains blocked even if its NotOnOrAfter has passed). A daemon
- * thread sweeps expired entries every minute.
+ * <p>Time arithmetic uses {@link System#currentTimeMillis()} for
+ * millisecond precision so the deny boundary is unambiguous in tests
+ * and so a low TTL does not collide with seconds-resolution rounding.
+ *
+ * <p>Entries auto-expire after {@link #DEFAULT_TTL_SECONDS} (15 min,
+ * longer than typical SAML validity). A daemon thread sweeps every
+ * minute. {@link #MAX_ENTRIES} caps memory under abuse.
  */
 public final class SamlReplayCache {
 
     private static final Logger logger = LoggerFactory.getLogger(SamlReplayCache.class);
 
     /** Default TTL — must exceed the IdP's NotOnOrAfter window. */
-    static final long DEFAULT_TTL_SECONDS = 15 * 60L; // 15 min
+    static final long DEFAULT_TTL_SECONDS = 15 * 60L;
 
     /** Maximum entries — bounds memory if an IdP misbehaves. */
     static final int MAX_ENTRIES = 100_000;
@@ -47,12 +59,12 @@ public final class SamlReplayCache {
         return INSTANCE;
     }
 
-    private final long ttlSeconds;
+    private final long ttlMillis;
     private final Map<String, Long> seen = new ConcurrentHashMap<>();
     private final ScheduledExecutorService sweeper;
 
     SamlReplayCache(long ttlSeconds) {
-        this.ttlSeconds = ttlSeconds;
+        this.ttlMillis = ttlSeconds * 1000L;
         this.sweeper = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "SamlReplayCache-sweeper");
             t.setDaemon(true);
@@ -62,47 +74,59 @@ public final class SamlReplayCache {
     }
 
     /**
-     * Atomically check whether the SAML element ID has been seen. If not,
-     * record it and return false (caller should accept the assertion).
-     * If already present and not yet expired, return true (caller must
-     * reject as a replay).
+     * Read-only test: is this ID currently recorded as already-consumed?
+     * Use this early in verification to short-circuit obvious replays
+     * BEFORE any other validator may consume side-effectful state.
      *
-     * @param id  SAML Response ID, Assertion ID, or any other unique
-     *            identifier the caller wants tracked. Must be non-blank.
-     * @return true if this ID was already consumed (REPLAY); false on first use
+     * @return true if the ID was already consumed AND has not yet expired.
      */
-    public boolean isReplayAndRecord(String id) {
+    public boolean isAlreadySeen(String id) {
         if (id == null || id.isBlank()) {
-            // Defensive: an unidentified Response/Assertion is suspicious;
-            // refuse to accept rather than allowing an un-trackable token.
-            logger.warn("SAML replay check called with blank id — treating as replay (deny)");
+            // Defensive: an unidentified Response/Assertion is suspicious.
             return true;
         }
-        long now = Instant.now().getEpochSecond();
-        long expiry = now + ttlSeconds;
+        Long expiry = seen.get(id);
+        return expiry != null && expiry > System.currentTimeMillis();
+    }
 
-        // Bound memory under abuse: if the cache grew past MAX_ENTRIES,
-        // sweep before inserting to give expired entries a chance to drain.
+    /**
+     * Atomically record this ID as consumed. Call ONLY after every
+     * other validation has succeeded (signature, conditions, audience,
+     * InResponseTo, ...) so a failure in any later step does not lock
+     * out a legitimate retry.
+     *
+     * @return true if the ID was fresh (commit succeeded — caller may
+     *         accept). false if a concurrent commit beat us (caller
+     *         must treat as a replay).
+     */
+    public boolean recordIfNew(String id) {
+        if (id == null || id.isBlank()) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        long expiry = now + ttlMillis;
+
+        // Bound memory under abuse: sweep before inserting if we are over cap.
         if (seen.size() > MAX_ENTRIES) {
             sweep();
         }
 
         Long previous = seen.putIfAbsent(id, expiry);
         if (previous == null) {
-            return false; // first use
+            return true; // first use — committed
         }
-        if (previous < now) {
-            // Expired entry was lingering — overwrite and accept.
-            seen.put(id, expiry);
-            return false;
+        if (previous <= now) {
+            // Expired entry was lingering — try to overwrite atomically.
+            // If a concurrent caller already overwrote, treat as replay.
+            return seen.replace(id, previous, expiry);
         }
-        return true; // active duplicate — replay
+        return false; // active duplicate — caller must reject as replay
     }
 
     /** Remove expired entries. Called periodically and whenever the cache is large. */
     void sweep() {
-        long now = Instant.now().getEpochSecond();
-        seen.entrySet().removeIf(e -> e.getValue() < now);
+        long now = System.currentTimeMillis();
+        seen.entrySet().removeIf(e -> e.getValue() <= now);
     }
 
     /** Visible for tests. */

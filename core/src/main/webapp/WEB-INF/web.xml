@@ -475,24 +475,27 @@
   <url-pattern>/rest/all/repositories</url-pattern>
  </servlet-mapping>
 
- <!-- Public endpoint for the React UI to register a SAML AuthnRequest ID
-      before redirecting the user to the IdP. The ID is stored in the
-      in-memory SamlAuthnRequestRegistry with a 15-minute TTL; later, when
-      saml.require.inResponseTo=true, SamlSignatureVerifier consults the
-      registry to enforce that incoming Responses correspond to a request
-      this SP actually issued.
+ <!-- Public endpoint that issues a server-generated SAML AuthnRequest ID
+      and binding cookie for the React UI before it redirects to the IdP.
+      The earlier register-request design accepted client-supplied IDs and
+      was therefore useless as a trust boundary; this servlet instead
+      generates the ID and a 256-bit opaque bindingToken on the server,
+      sets the bindingToken as an HttpOnly + Secure + SameSite=Lax cookie,
+      and returns the ID. Subsequent SAML Response convert calls (in
+      AuthTokenResource) read the cookie and verify InResponseTo against
+      the bound ID via SamlAuthnRequestRegistry.consume().
 
       Bypasses restAuthenticationFilter on purpose: the user has not
-      authenticated yet at the start of an SSO flow, but rate-limit /
-      payload-cap protections live inside the servlet itself. -->
+      authenticated yet at the start of an SSO flow. The servlet enforces
+      a per-IP rate limit (30/min) to prevent registry exhaustion. -->
  <servlet>
-  <servlet-name>saml-register-request</servlet-name>
-  <servlet-class>jp.aegif.nemaki.rest.SamlRequestRegistrationServlet</servlet-class>
+  <servlet-name>saml-initiate</servlet-name>
+  <servlet-class>jp.aegif.nemaki.rest.SamlInitiateServlet</servlet-class>
  </servlet>
 
  <servlet-mapping>
-  <servlet-name>saml-register-request</servlet-name>
-  <url-pattern>/rest/all/saml/register-request</url-pattern>
+  <servlet-name>saml-initiate</servlet-name>
+  <url-pattern>/rest/all/saml/initiate</url-pattern>
  </servlet-mapping>
 
  <!-- Type registration servlet - bypasses Jersey routing issues -->

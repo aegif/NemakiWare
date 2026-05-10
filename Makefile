@@ -49,12 +49,24 @@ deploy: env-check war
 	cp core/target/core.war $(DOCKER_DIR)/core/core.war
 	cd $(DOCKER_DIR) && $(COMPOSE) up -d --build --force-recreate core
 	@echo "Waiting for core to be healthy..."
-	@for i in $$(seq 1 24); do \
-		if curl -sf -u "$$COUCHDB_USER:$$COUCHDB_PASSWORD" http://localhost:8080/core/atom/bedroom > /dev/null 2>&1 \
-		   || curl -sf -u admin:admin http://localhost:8080/core/atom/bedroom > /dev/null 2>&1; then \
-			echo "Ready"; break; \
+	@# Health check uses /core/rest/all/repositories — the only truly
+	@# public endpoint on the SP. Earlier revisions confused CouchDB
+	@# credentials with NemakiWare app-user credentials by hitting
+	@# /core/atom/bedroom with $$COUCHDB_PASSWORD; the request happened
+	@# to succeed only because the dev CouchDB and dev app admin shared
+	@# admin/admin. The repositories endpoint requires no auth and
+	@# returns the configured repository list, which is the strongest
+	@# signal we can get without app-user credentials. The for-loop
+	@# explicitly fails the make target when the readiness budget is
+	@# exhausted (the previous version always returned success).
+	@if ! { for i in $$(seq 1 24); do \
+		if curl -sf http://localhost:8080/core/rest/all/repositories > /dev/null 2>&1; then \
+			echo "Ready (after $${i} attempts)"; exit 0; \
 		fi; sleep 5; \
-	done
+	done; exit 1; }; then \
+		echo "ERROR: core did not become ready within 120s — see 'docker compose -f $(DOCKER_DIR)/docker-compose-simple.yml logs core'"; \
+		exit 1; \
+	fi
 
 # Convenience target for local development on the developer workstation.
 # Uses the well-known admin/password pair that the dev CouchDB container

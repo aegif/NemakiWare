@@ -219,35 +219,47 @@ export class SAMLService {
   }
 
   async initiateLogin(repositoryId?: string): Promise<void> {
-    const id = '_' + this.generateUUID();
-    // Register the AuthnRequest ID with the SP server BEFORE redirecting
-    // to the IdP. When the SP later receives the SAML Response and
-    // saml.require.inResponseTo=true, SamlSignatureVerifier consults
-    // SamlAuthnRequestRegistry to confirm that InResponseTo matches a
-    // request this SP actually issued — closing the unsolicited-Response
-    // injection vector.
+    // Server-issued AuthnRequest ID + binding cookie. The SP generates
+    // BOTH the request ID we embed in the AuthnRequest XML and a 256-bit
+    // opaque binding token that it sets as an HttpOnly + Secure +
+    // SameSite=Lax cookie (NEMAKI_SAML_BIND). The cookie value never
+    // reaches JavaScript and travels back automatically when the IdP
+    // redirects to /core/rest/repo/{repo}/authtoken/saml/convert,
+    // letting the verifier confirm that the SAML Response's InResponseTo
+    // corresponds to a request *this browser session* initiated.
     //
-    // Best-effort: a registry failure must not block login when
-    // strict-mode is disabled (the default), so we proceed regardless of
-    // outcome but surface the error in the console for diagnostics.
+    // Earlier revisions allowed the client to invent its own ID and
+    // POST it to a registration endpoint — that turned strict mode into
+    // theatre because an attacker could pre-register the InResponseTo of
+    // a captured Response. Server issuance + HttpOnly cookie closes that.
+    //
+    // The endpoint is rate-limited per IP. If issuance fails we fall back
+    // to a client-only ID so non-strict deployments continue to work, but
+    // strict mode (saml.require.inResponseTo=true) will reject any
+    // Response that lacks a valid binding cookie.
+    let authnRequestId: string;
     try {
-      const res = await fetch('/core/rest/all/saml/register-request', {
+      const res = await fetch('/core/rest/all/saml/initiate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestId: id }),
+        credentials: 'same-origin', // ensure Set-Cookie is honoured
       });
-      if (!res.ok) {
+      if (res.ok) {
+        const body = await res.json();
+        authnRequestId = body.authnRequestId;
+      } else {
         // eslint-disable-next-line no-console
-        console.warn('SAML AuthnRequest registration returned', res.status);
+        console.warn('SAML initiate returned', res.status, '— falling back to client-only ID (strict mode will reject)');
+        authnRequestId = '_' + this.generateUUID();
       }
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn('SAML AuthnRequest registration failed (continuing):', err);
+      console.warn('SAML initiate failed:', err);
+      authnRequestId = '_' + this.generateUUID();
     }
 
     const relayState = repositoryId ? `repositoryId=${repositoryId}` : '';
     const params = new URLSearchParams({
-      SAMLRequest: this.generateSAMLRequest(id),
+      SAMLRequest: this.generateSAMLRequest(authnRequestId),
       RelayState: relayState
     });
 
@@ -294,6 +306,12 @@ export class SAMLService {
     
     const response = await fetch(`/core/rest/repo/${repositoryId}/authtoken/saml/convert`, {
       method: 'POST',
+      // Explicit: ensure NEMAKI_SAML_BIND cookie travels back to the SP
+      // so SamlSignatureVerifier can validate InResponseTo against the
+      // server-side binding. Same-origin is the default for fetch but
+      // we set it explicitly to defend against accidental client-side
+      // config changes that would silently break strict mode.
+      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest'
@@ -333,6 +351,7 @@ export class SAMLService {
   async convertSAMLResponse(samlResponseData: SAMLResponse, repositoryId: string): Promise<AuthToken> {
     const response = await fetch(`/core/rest/repo/${repositoryId}/authtoken/saml/convert`, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest'

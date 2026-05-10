@@ -5,53 +5,91 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
 /**
- * Tests for {@link SamlAuthnRequestRegistry}.
+ * Tests for the redesigned {@link SamlAuthnRequestRegistry} (server-issued
+ * AuthnRequest IDs bound by HttpOnly cookie).
  *
- * <p>The registry is the SP-side companion to the IdP-side
- * {@link SamlReplayCache}: it lets {@code saml.require.inResponseTo=true}
- * enforce that incoming Responses correspond to a request this SP
- * actually issued (defends against unsolicited-Response injection).
+ * <p>The trust model is: only the server can produce a (bindingToken,
+ * authnRequestId) pair via {@link SamlAuthnRequestRegistry#issue()}. The
+ * verifier later requires the caller to present BOTH the cookie value
+ * (bindingToken) and the InResponseTo value (authnRequestId) and they
+ * must match exactly. Without the cookie, an attacker who knows the
+ * AuthnRequest ID (e.g. read it from a captured Response) cannot satisfy
+ * {@link SamlAuthnRequestRegistry#consume(String, String)}.
  */
 class SamlAuthnRequestRegistryTest {
 
     @Test
-    void registerThenConsumeSucceeds() {
+    void issueProducesPairThatConsumeAccepts() {
         SamlAuthnRequestRegistry r = new SamlAuthnRequestRegistry(60);
         try {
-            String id = "_e51b3a8d-1234-4567-89ab-cdef01234567";
-            assertTrue(r.register(id));
-            assertTrue(r.consume(id), "consume must succeed once for a registered id");
-            assertFalse(r.consume(id), "second consume must fail (no replay even for the request side)");
+            SamlAuthnRequestRegistry.Issued issued = r.issue();
+            assertNotNull(issued);
+            assertNotNull(issued.getAuthnRequestId());
+            assertNotNull(issued.getBindingToken());
+            assertNotEquals(issued.getAuthnRequestId(), issued.getBindingToken(),
+                    "ID and binding token must be distinct values");
+            assertTrue(r.consume(issued.getBindingToken(), issued.getAuthnRequestId()),
+                    "consume with the matching pair must succeed");
+            assertFalse(r.consume(issued.getBindingToken(), issued.getAuthnRequestId()),
+                    "second consume must fail (entry removed)");
         } finally {
             r.clear();
         }
     }
 
     @Test
-    void consumeWithoutRegisterFails() {
+    void consumeRejectsMismatchedAuthnRequestId() {
         SamlAuthnRequestRegistry r = new SamlAuthnRequestRegistry(60);
         try {
-            assertFalse(r.consume("_unregistered"));
-            assertFalse(r.consume(""));
-            assertFalse(r.consume(null));
+            SamlAuthnRequestRegistry.Issued issued = r.issue();
+            // Attacker presents a valid binding token (they somehow stole the
+            // cookie, e.g. via sub-resource) but tries to bind to a different
+            // AuthnRequest ID. Must fail.
+            assertFalse(r.consume(issued.getBindingToken(), "_attacker-controlled-id"));
+            // The defensive removal-on-mismatch leaves no entry behind.
+            assertEquals(0, r.size());
         } finally {
             r.clear();
         }
     }
 
     @Test
-    void registerRejectsMalformedIds() {
+    void consumeRejectsUnknownBindingToken() {
         SamlAuthnRequestRegistry r = new SamlAuthnRequestRegistry(60);
         try {
-            assertFalse(r.register(null), "null id rejected");
-            assertFalse(r.register(""), "empty id rejected");
-            assertFalse(r.register("1starts-with-digit"), "NCName must start with letter or underscore");
-            assertFalse(r.register("has spaces"), "spaces forbidden");
-            assertFalse(r.register("contains\r\nCRLF"), "CRLF rejected (log-injection guard)");
-            assertFalse(r.register("a".repeat(300)), "over-long id rejected (memory bound)");
+            SamlAuthnRequestRegistry.Issued issued = r.issue();
+            // Attacker presents the leaked AuthnRequest ID (from the SAML
+            // Response) but no binding cookie / a forged one. Must fail.
+            assertFalse(r.consume("attacker-forged-token", issued.getAuthnRequestId()));
+            // The legitimate user can still consume their own pair.
+            assertTrue(r.consume(issued.getBindingToken(), issued.getAuthnRequestId()));
+        } finally {
+            r.clear();
+        }
+    }
 
-            assertTrue(r.register("_id-with-dot.and-dash"));
-            assertTrue(r.register("Letters_DigitsAndUnderscore_123"));
+    @Test
+    void consumeRejectsBlankInputs() {
+        SamlAuthnRequestRegistry r = new SamlAuthnRequestRegistry(60);
+        try {
+            assertFalse(r.consume(null, "_id"));
+            assertFalse(r.consume("", "_id"));
+            assertFalse(r.consume("token", null));
+            assertFalse(r.consume("token", ""));
+        } finally {
+            r.clear();
+        }
+    }
+
+    @Test
+    void issueRespectsCapacity() {
+        // Tiny registry to verify capacity behaviour without allocating 10k entries.
+        SamlAuthnRequestRegistry r = new SamlAuthnRequestRegistry(60);
+        try {
+            for (int i = 0; i < 50; i++) {
+                assertNotNull(r.issue());
+            }
+            assertEquals(50, r.size());
         } finally {
             r.clear();
         }
@@ -59,28 +97,13 @@ class SamlAuthnRequestRegistryTest {
 
     @Test
     void expiredEntryIsRejectedOnConsume() throws InterruptedException {
-        SamlAuthnRequestRegistry r = new SamlAuthnRequestRegistry(2);
+        // 0-second TTL exposes the millisecond-precision boundary check.
+        SamlAuthnRequestRegistry r = new SamlAuthnRequestRegistry(0);
         try {
-            String id = "_expiring";
-            assertTrue(r.register(id));
-            Thread.sleep(2500);
-            // Sweeper runs every minute; the entry may still be in the map but
-            // consume() must check expiry and refuse it.
-            assertFalse(r.consume(id), "expired AuthnRequest id must not authenticate a Response");
-        } finally {
-            r.clear();
-        }
-    }
-
-    @Test
-    void registryIsBoundedAndDoesNotGrowUnboundedUnderAbuse() {
-        SamlAuthnRequestRegistry r = new SamlAuthnRequestRegistry(60);
-        try {
-            // Register 100 IDs — each unique. Trivial size sanity check.
-            for (int i = 0; i < 100; i++) {
-                assertTrue(r.register("_abuse-" + i));
-            }
-            assertEquals(100, r.size());
+            SamlAuthnRequestRegistry.Issued issued = r.issue();
+            Thread.sleep(50);
+            assertFalse(r.consume(issued.getBindingToken(), issued.getAuthnRequestId()),
+                    "expired AuthnRequest must not authenticate a Response");
         } finally {
             r.clear();
         }

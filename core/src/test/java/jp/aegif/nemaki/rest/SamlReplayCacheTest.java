@@ -5,21 +5,70 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
 /**
- * Tests for {@link SamlReplayCache}.
+ * Tests for the two-phase {@link SamlReplayCache} contract.
  *
- * <p>The replay cache is the post-RC13 defence against captured-Response
- * replay within the SAML validity window: even if an attacker holds a
- * still-valid signed Assertion, the second presentation must be refused.
+ * <p>The split between {@link SamlReplayCache#isAlreadySeen(String)} and
+ * {@link SamlReplayCache#recordIfNew(String)} closes the
+ * "InResponseTo-failure poisons replay state" attack: replay commits must
+ * happen only after every other validation has succeeded.
  */
 class SamlReplayCacheTest {
 
     @Test
-    void firstUseIsAccepted_secondIsRejected() {
+    void notSeenBeforeFirstRecord() {
         SamlReplayCache cache = new SamlReplayCache(60);
         try {
             String id = "_response-" + System.nanoTime();
-            assertFalse(cache.isReplayAndRecord(id), "first use must be accepted");
-            assertTrue(cache.isReplayAndRecord(id), "second use must be rejected as replay");
+            assertFalse(cache.isAlreadySeen(id), "fresh ID must not be flagged");
+            assertTrue(cache.recordIfNew(id), "fresh ID must commit successfully");
+            assertTrue(cache.isAlreadySeen(id), "after commit the ID must be flagged");
+        } finally {
+            cache.clear();
+        }
+    }
+
+    @Test
+    void recordIfNewIsAtomicAgainstDuplicateCommit() {
+        SamlReplayCache cache = new SamlReplayCache(60);
+        try {
+            String id = "_dup";
+            assertTrue(cache.recordIfNew(id), "first commit succeeds");
+            assertFalse(cache.recordIfNew(id), "second commit must fail (replay)");
+        } finally {
+            cache.clear();
+        }
+    }
+
+    @Test
+    void lookupOnlyDoesNotCommit_failedValidationDoesNotPoisonState() {
+        SamlReplayCache cache = new SamlReplayCache(60);
+        try {
+            // Simulate the verifier's read-only phase: many isAlreadySeen()
+            // calls must NOT promote anything to consumed.
+            String id = "_fresh";
+            for (int i = 0; i < 5; i++) {
+                assertFalse(cache.isAlreadySeen(id),
+                        "isAlreadySeen must remain false until a successful recordIfNew");
+            }
+            // Simulate verifier deciding to abort (e.g. InResponseTo mismatch)
+            // and never calling recordIfNew. The legitimate retry must still
+            // be accepted.
+            assertTrue(cache.recordIfNew(id), "legitimate retry must succeed because no commit happened earlier");
+        } finally {
+            cache.clear();
+        }
+    }
+
+    @Test
+    void blankIdsBehaveAsAlwaysSeenAndNeverRecord() {
+        SamlReplayCache cache = new SamlReplayCache(60);
+        try {
+            assertTrue(cache.isAlreadySeen(null));
+            assertTrue(cache.isAlreadySeen(""));
+            assertTrue(cache.isAlreadySeen("   "));
+            assertFalse(cache.recordIfNew(null));
+            assertFalse(cache.recordIfNew(""));
+            assertEquals(0, cache.size(), "no entries are stored for blank ids");
         } finally {
             cache.clear();
         }
@@ -29,10 +78,10 @@ class SamlReplayCacheTest {
     void differentIdsAreIndependent() {
         SamlReplayCache cache = new SamlReplayCache(60);
         try {
-            assertFalse(cache.isReplayAndRecord("a"));
-            assertFalse(cache.isReplayAndRecord("b"));
-            assertFalse(cache.isReplayAndRecord("c"));
-            assertTrue(cache.isReplayAndRecord("a"));
+            assertTrue(cache.recordIfNew("a"));
+            assertTrue(cache.recordIfNew("b"));
+            assertTrue(cache.recordIfNew("c"));
+            assertFalse(cache.recordIfNew("a"));
             assertEquals(3, cache.size());
         } finally {
             cache.clear();
@@ -40,35 +89,18 @@ class SamlReplayCacheTest {
     }
 
     @Test
-    void blankIdsAreTreatedAsReplayDeny() {
-        SamlReplayCache cache = new SamlReplayCache(60);
-        try {
-            // Defensive: an unidentifiable Response is suspicious.
-            assertTrue(cache.isReplayAndRecord(null));
-            assertTrue(cache.isReplayAndRecord(""));
-            assertTrue(cache.isReplayAndRecord("   "));
-            // No entries are stored for blank ids.
-            assertEquals(0, cache.size());
-        } finally {
-            cache.clear();
-        }
-    }
-
-    @Test
     void expiredEntriesAreReusable() throws InterruptedException {
-        // 2-second TTL with 3-second sleep so the boundary is well clear of
-        // the seconds-resolution clock used by getEpochSecond().
-        SamlReplayCache cache = new SamlReplayCache(2);
+        // Millisecond-precision TTL means the test is decisive even with a
+        // 250 ms TTL: after the sleep the entry must be considered expired.
+        SamlReplayCache cache = new SamlReplayCache(0); // 0s = immediate expiry
         try {
-            String id = "expiring";
-            assertFalse(cache.isReplayAndRecord(id));
-            assertTrue(cache.isReplayAndRecord(id));
-            // Wait > TTL, then try again — must be accepted because the cache TTL
-            // is itself the replay window. (Production TTL is 15min, longer than
-            // the typical SAML validity window, so this case won't fire in real use.)
-            Thread.sleep(3000);
-            assertFalse(cache.isReplayAndRecord(id),
-                    "after TTL the same id should be accepted again");
+            String id = "_short";
+            assertTrue(cache.recordIfNew(id));
+            // With ttl=0 the entry expires immediately; isAlreadySeen reads false
+            // and a re-record succeeds.
+            Thread.sleep(50);
+            assertFalse(cache.isAlreadySeen(id), "expired entry must read as not-seen");
+            assertTrue(cache.recordIfNew(id), "expired entry can be re-recorded");
         } finally {
             cache.clear();
         }
@@ -76,8 +108,6 @@ class SamlReplayCacheTest {
 
     @Test
     void singletonInstanceShared() {
-        SamlReplayCache a = SamlReplayCache.getInstance();
-        SamlReplayCache b = SamlReplayCache.getInstance();
-        assertSame(a, b);
+        assertSame(SamlReplayCache.getInstance(), SamlReplayCache.getInstance());
     }
 }

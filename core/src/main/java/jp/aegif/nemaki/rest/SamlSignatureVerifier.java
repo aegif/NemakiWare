@@ -98,33 +98,38 @@ public class SamlSignatureVerifier {
 	/**
 	 * Verify a SAML Response document.
 	 *
-	 * <p>Equivalent to {@code verify(document, idpCertificate, spEntityId, false)} —
-	 * non-strict InResponseTo handling for backward compatibility.
+	 * <p>Equivalent to the 5-arg overload with {@code requireInResponseTo=false}
+	 * and {@code bindingToken=null} — non-strict InResponseTo handling for
+	 * backward compatibility.
 	 */
 	public static VerificationResult verify(Document document, X509Certificate idpCertificate, String spEntityId) {
-		return verify(document, idpCertificate, spEntityId, false);
+		return verify(document, idpCertificate, spEntityId, false, null);
 	}
 
 	/**
 	 * Verify a SAML Response document with optional strict InResponseTo
 	 * enforcement.
 	 *
+	 * <p><b>Phase ordering.</b> Validation runs entirely as read-only
+	 * checks first (signature, conditions, audience, replay lookup,
+	 * InResponseTo lookup). Stateful commits — {@link SamlReplayCache#recordIfNew}
+	 * and {@link SamlAuthnRequestRegistry#consume} — happen only at the end,
+	 * after every other check has succeeded. This prevents an attacker who
+	 * submits a captured-but-mismatched Response from poisoning replay state
+	 * for a legitimate user.
+	 *
 	 * @param document             parsed XML Document of the SAML Response
 	 * @param idpCertificate       IdP's X.509 signing certificate
 	 * @param spEntityId           expected SP Entity ID (for AudienceRestriction check)
-	 * @param requireInResponseTo  when true, the Response must carry
-	 *                             {@code InResponseTo} matching an outstanding
-	 *                             ID in {@link SamlAuthnRequestRegistry}; the
-	 *                             matched ID is consumed on success. Enable
-	 *                             via {@code saml.require.inResponseTo=true}
-	 *                             once the SP-initiated flow registers
-	 *                             AuthnRequest IDs server-side (the React UI
-	 *                             does this via
-	 *                             {@code POST /rest/all/saml/register-request}).
-	 * @return VerificationResult indicating success or failure with error message
+	 * @param requireInResponseTo  when true, the Response MUST carry
+	 *                             {@code InResponseTo} that matches the
+	 *                             AuthnRequest bound to {@code bindingToken}.
+	 * @param bindingToken         opaque token from the {@code NEMAKI_SAML_BIND}
+	 *                             cookie set by {@link SamlInitiateServlet}.
+	 *                             May be null in non-strict mode.
 	 */
 	public static VerificationResult verify(Document document, X509Certificate idpCertificate, String spEntityId,
-			boolean requireInResponseTo) {
+			boolean requireInResponseTo, String bindingToken) {
 		try {
 			PublicKey publicKey = idpCertificate.getPublicKey();
 
@@ -212,55 +217,77 @@ public class SamlSignatureVerifier {
 				return VerificationResult.failure("XML Signature is not enveloped in the referenced signed element");
 			}
 
-			// 5. Verify Conditions (NotBefore / NotOnOrAfter)
+			// 5. Verify Conditions (NotBefore / NotOnOrAfter / Audience)
 			// Search within the signed subtree only to prevent unsigned elements from being accepted
 			VerificationResult conditionsResult = verifyConditions(signedElement, spEntityId);
 			if (!conditionsResult.isValid()) {
 				return conditionsResult;
 			}
 
-			// 6. Anti-replay: refuse to consume the same Response or Assertion twice.
-			// Both IDs must be tracked because a replay could come in either as a full
-			// captured Response or as a re-wrapped Assertion in a fresh-looking Response.
+			// 6. Anti-replay LOOKUP — read-only. We collect every Response/Assertion
+			//    ID and reject early if any are already known to the cache. We
+			//    deliberately DO NOT commit yet: a later check (InResponseTo,
+			//    user-extraction, etc.) failing must not leave these IDs locked
+			//    out for legitimate retries.
 			SamlReplayCache cache = SamlReplayCache.getInstance();
-			VerificationResult replayResult = checkReplay(document, signedElement, cache);
-			if (!replayResult.isValid()) {
-				return replayResult;
+			java.util.List<String> idsToCommit = collectReplayIds(document, signedElement);
+			for (String key : idsToCommit) {
+				if (cache.isAlreadySeen(key)) {
+					logger.warn("Rejecting replayed SAML element: {}", key);
+					return VerificationResult.failure("SAML element already consumed (replay): " + key);
+				}
 			}
 
-			// 7. InResponseTo binding. NemakiWare's React UI registers each
-			// AuthnRequest ID via POST /rest/all/saml/register-request before
-			// redirecting to the IdP; the entry sits in
-			// SamlAuthnRequestRegistry until consumed here.
-			//
-			// Default: log only (back-compat, since older UIs may not yet
-			// register). Strict (saml.require.inResponseTo=true): the Response
-			// MUST carry InResponseTo and it MUST be in the registry — closes
-			// the unsolicited-Response injection vector.
+			// 7. InResponseTo binding. The SP-issued AuthnRequest ID was bound to
+			//    the browser via the HttpOnly NEMAKI_SAML_BIND cookie when the UI
+			//    called SamlInitiateServlet. We resolve {bindingToken → expected
+			//    AuthnRequest ID} via SamlAuthnRequestRegistry.consume — but only
+			//    AFTER every other validation has succeeded, so a failed Response
+			//    cannot burn the legitimate user's outstanding AuthnRequest entry.
 			Element response = SAML_PROTOCOL_NS.equals(signedElement.getNamespaceURI())
 					&& "Response".equals(signedElement.getLocalName())
 					? signedElement
 					: findResponseAncestor(signedElement);
 			String inResponseTo = response == null ? null : response.getAttribute("InResponseTo");
 			boolean hasInResponseTo = inResponseTo != null && !inResponseTo.isEmpty();
+
 			if (requireInResponseTo) {
 				if (!hasInResponseTo) {
 					logger.warn("Strict mode rejected SAML Response: missing InResponseTo");
 					return VerificationResult.failure("SAML Response missing InResponseTo (strict mode)");
 				}
-				if (!SamlAuthnRequestRegistry.getInstance().consume(inResponseTo)) {
-					logger.warn("Strict mode rejected SAML Response: InResponseTo='{}' did not match an outstanding AuthnRequest", inResponseTo);
-					return VerificationResult.failure("SAML Response InResponseTo did not match an outstanding AuthnRequest");
+				if (bindingToken == null || bindingToken.isBlank()) {
+					logger.warn("Strict mode rejected SAML Response: missing NEMAKI_SAML_BIND cookie");
+					return VerificationResult.failure("SAML binding cookie missing — initiate the SSO flow via /rest/all/saml/initiate");
+				}
+			}
+
+			// 8. Atomic commits — only past this line do we mutate state.
+			//    Order matters: consume the binding first (it's per-cookie, so a
+			//    failed commit affects only this one user), then commit replay
+			//    (global, so a race here is the worst-case rejection).
+			if (requireInResponseTo) {
+				if (!SamlAuthnRequestRegistry.getInstance().consume(bindingToken, inResponseTo)) {
+					logger.warn("Strict mode rejected SAML Response: InResponseTo='{}' did not match the binding cookie", inResponseTo);
+					return VerificationResult.failure("SAML Response InResponseTo did not match the binding cookie");
 				}
 				if (logger.isDebugEnabled()) {
 					logger.debug("Strict mode accepted SAML Response InResponseTo='{}'", inResponseTo);
 				}
+			} else if (hasInResponseTo && bindingToken != null && !bindingToken.isBlank()) {
+				// Non-strict mode: opportunistically consume so the binding
+				// entry doesn't sit until TTL expiry. Result is informational.
+				boolean matched = SamlAuthnRequestRegistry.getInstance().consume(bindingToken, inResponseTo);
+				logger.info("SAML Response InResponseTo='{}' (strict-mode disabled; binding-match={})", inResponseTo, matched);
 			} else if (hasInResponseTo) {
-				// Even in non-strict mode, opportunistically consume so that
-				// once strict mode is turned on later there is no flood of
-				// expired entries. Failure here is informational only.
-				boolean consumed = SamlAuthnRequestRegistry.getInstance().consume(inResponseTo);
-				logger.info("SAML Response InResponseTo='{}' (strict-mode disabled; registry-match={})", inResponseTo, consumed);
+				logger.info("SAML Response InResponseTo='{}' (strict-mode disabled; no binding cookie present)", inResponseTo);
+			}
+
+			for (String key : idsToCommit) {
+				if (!cache.recordIfNew(key)) {
+					logger.warn("Rejecting concurrently-replayed SAML element: {}", key);
+					return VerificationResult.failure("SAML element already consumed (race): " + key);
+				}
 			}
 
 			logger.info("SAML response signature verified successfully");
@@ -273,44 +300,30 @@ public class SamlSignatureVerifier {
 	}
 
 	/**
-	 * Anti-replay check: collect the Response ID and every Assertion ID
-	 * inside the signed subtree, and refuse if the cache has seen any of
-	 * them before. Recording only happens on first use, so a permanent
-	 * deny on duplicate is symmetric with the validity window.
+	 * Collect every Response/Assertion ID that the replay cache should
+	 * eventually track. Pure helper — does not mutate any state.
 	 */
-	private static VerificationResult checkReplay(Document document, Element signedElement, SamlReplayCache cache) {
-		// Always check the top-level Response ID even when the IdP only
-		// signs the Assertion — that's the outermost replay surface.
+	private static java.util.List<String> collectReplayIds(Document document, Element signedElement) {
+		java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>();
+		// Top-level Response ID — outermost replay surface even when only the
+		// Assertion is signed.
 		NodeList responses = document.getElementsByTagNameNS(SAML_PROTOCOL_NS, "Response");
 		for (int i = 0; i < responses.getLength(); i++) {
-			Element resp = (Element) responses.item(i);
-			String id = resp.getAttribute("ID");
-			if (id != null && !id.isEmpty() && cache.isReplayAndRecord("response:" + id)) {
-				logger.warn("Rejecting replayed SAML Response ID: {}", id);
-				return VerificationResult.failure("SAML Response ID already consumed (replay)");
-			}
+			String id = ((Element) responses.item(i)).getAttribute("ID");
+			if (id != null && !id.isEmpty()) keys.add("response:" + id);
 		}
-
-		// Then every Assertion within the signed element (typical IdP-signs-Assertion pattern).
-		NodeList assertions = signedElement.getElementsByTagNameNS(SAML_ASSERTION_NS, "Assertion");
-		// If the signedElement itself is the Assertion, also include it.
+		// Every Assertion inside the signed element (typical IdP-signs-Assertion).
 		if (SAML_ASSERTION_NS.equals(signedElement.getNamespaceURI())
 				&& "Assertion".equals(signedElement.getLocalName())) {
 			String id = signedElement.getAttribute("ID");
-			if (id != null && !id.isEmpty() && cache.isReplayAndRecord("assertion:" + id)) {
-				logger.warn("Rejecting replayed SAML Assertion ID: {}", id);
-				return VerificationResult.failure("SAML Assertion ID already consumed (replay)");
-			}
+			if (id != null && !id.isEmpty()) keys.add("assertion:" + id);
 		}
+		NodeList assertions = signedElement.getElementsByTagNameNS(SAML_ASSERTION_NS, "Assertion");
 		for (int i = 0; i < assertions.getLength(); i++) {
-			Element a = (Element) assertions.item(i);
-			String id = a.getAttribute("ID");
-			if (id != null && !id.isEmpty() && cache.isReplayAndRecord("assertion:" + id)) {
-				logger.warn("Rejecting replayed SAML Assertion ID: {}", id);
-				return VerificationResult.failure("SAML Assertion ID already consumed (replay)");
-			}
+			String id = ((Element) assertions.item(i)).getAttribute("ID");
+			if (id != null && !id.isEmpty()) keys.add("assertion:" + id);
 		}
-		return VerificationResult.success();
+		return new java.util.ArrayList<>(keys);
 	}
 
 	/** Walk up to find the enclosing samlp:Response element, if any. */

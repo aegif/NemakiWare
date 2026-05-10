@@ -488,15 +488,19 @@ public class AuthTokenResource extends ResourceBase{
 			DocumentBuilder builder = factory.newDocumentBuilder();
 			Document document = builder.parse(new ByteArrayInputStream(xmlBytes));
 
-			// Verify SAML signature, conditions, and audience.
-			// Strict InResponseTo mode is opt-in; when enabled, the React UI
-			// must register each AuthnRequest ID via
-			// POST /rest/all/saml/register-request before redirecting the
-			// user to the IdP, otherwise legitimate logins will be rejected.
+			// Verify SAML signature, conditions, audience, replay, and the
+			// browser-bound InResponseTo. Strict mode is opt-in via
+			// saml.require.inResponseTo=true; when enabled, the SP-initiated
+			// flow must have started with POST /rest/all/saml/initiate so
+			// that the NEMAKI_SAML_BIND cookie is set. The cookie value
+			// (HttpOnly, never reaches JavaScript) is the trust anchor that
+			// ties this Response back to a request *this browser session*
+			// initiated.
 			boolean requireInResponseTo = Boolean.parseBoolean(
 					String.valueOf(pm.readValue(repositoryId, PropertyKey.SAML_REQUIRE_IN_RESPONSE_TO)));
+			String bindingToken = readBindingCookie(request);
 			SamlSignatureVerifier.VerificationResult verifyResult =
-					SamlSignatureVerifier.verify(document, idpCert, spEntityId, requireInResponseTo);
+					SamlSignatureVerifier.verify(document, idpCert, spEntityId, requireInResponseTo, bindingToken);
 			if (!verifyResult.isValid()) {
 				logger.warn("SAML signature verification failed: {}", verifyResult.getError());
 				addErrMsg(errMsg, "saml", "SAML signature verification failed");
@@ -1632,6 +1636,23 @@ public class AuthTokenResource extends ResourceBase{
 	 * @param token The authentication token
 	 * @param repositoryId The repository ID (for logging)
 	 */
+	/**
+	 * Read the SP-issued SAML binding cookie (set by SamlInitiateServlet).
+	 * Returns null if no such cookie is present — verifier handles the
+	 * non-strict case gracefully.
+	 */
+	private String readBindingCookie(HttpServletRequest request) {
+		if (request == null) return null;
+		jakarta.servlet.http.Cookie[] cookies = request.getCookies();
+		if (cookies == null) return null;
+		for (jakarta.servlet.http.Cookie c : cookies) {
+			if (SamlAuthnRequestRegistry.BINDING_COOKIE_NAME.equals(c.getName())) {
+				return c.getValue();
+			}
+		}
+		return null;
+	}
+
 	private void setAuthTokenCookie(String token, String repositoryId) {
 		if (response == null) {
 			logger.warn("HttpServletResponse not available, cannot set auth cookie");
