@@ -638,6 +638,19 @@ public class AuditLogger {
      */
     public void logOperation(AuditOperation operation, String repositoryId,
                              String userId, String objectId, boolean success, String errorMessage) {
+        logOperation(operation, repositoryId, userId, objectId, success, errorMessage, null);
+    }
+
+    /**
+     * Same as the simpler {@code logOperation(...)}, but lets the caller
+     * attach a {@code details} map that becomes part of the audit JSON
+     * (under the {@code details} key). Used by ingest delegation paths to
+     * record {@code delegated}, {@code targetFolderId}, {@code connectorIds},
+     * etc. without overloading the standard {@code userId} field.
+     */
+    public void logOperation(AuditOperation operation, String repositoryId,
+                             String userId, String objectId, boolean success, String errorMessage,
+                             java.util.Map<String, ?> details) {
         // Fast path: volatile reads
         if (!enabled) {
             return;
@@ -665,6 +678,13 @@ public class AuditLogger {
         RequestContext reqCtx = requestContext.get();
         if (reqCtx != null) {
             builder.clientIp(reqCtx.getClientIp());
+        }
+
+        if (details != null) {
+            for (java.util.Map.Entry<String, ?> e : details.entrySet()) {
+                if (e.getKey() == null || e.getValue() == null) continue;
+                builder.detail(e.getKey(), e.getValue());
+            }
         }
 
         if (success) {

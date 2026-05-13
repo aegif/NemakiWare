@@ -151,6 +151,57 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                     + "' expects archetype " + desc.archetype()
                     + " but connector declares " + def.getSourceArchetype());
         }
+        validateDelegationFields(def);
+    }
+
+    /**
+     * Delegation invariants (enforced even though admin sets them, to keep
+     * the data shape consistent and to surface configuration mistakes early):
+     *
+     * <ul>
+     *   <li>If {@code delegated=false}, the scope fields must be empty —
+     *       leaving stale folder/principal IDs around when delegation is
+     *       toggled off would be confusing on a later re-enable.</li>
+     *   <li>If {@code delegated=true} AND {@code delegateAllFolders=false},
+     *       {@code allowedFolderIds} must be non-empty. Empty means
+     *       "no delegation" by design (we deliberately don't treat empty
+     *       as "all folders" — that would turn an admin oversight into a
+     *       silent broad credential delegation).</li>
+     *   <li>If {@code delegated=false} AND {@code delegateAllFolders=true},
+     *       reject — the combination is meaningless and likely a typo.</li>
+     * </ul>
+     */
+    private void validateDelegationFields(ConnectorDefinition def) {
+        boolean hasFolderScope = def.getAllowedFolderIds() != null && !def.getAllowedFolderIds().isEmpty();
+        boolean hasPrincipalScope = def.getAllowedPrincipalIds() != null && !def.getAllowedPrincipalIds().isEmpty();
+
+        if (!def.isDelegated()) {
+            if (def.isDelegateAllFolders() || hasFolderScope || hasPrincipalScope) {
+                throw new IllegalArgumentException(
+                        "delegateAllFolders / allowedFolderIds / allowedPrincipalIds may only be set when delegated=true");
+            }
+            return;
+        }
+
+        if (!def.isDelegateAllFolders() && !hasFolderScope) {
+            throw new IllegalArgumentException(
+                    "delegated=true requires either delegateAllFolders=true or a non-empty allowedFolderIds list. "
+                            + "Empty allowedFolderIds is treated as 'no delegation' and is not the safe default for repository-wide delegation");
+        }
+        if (def.isDelegateAllFolders() && hasFolderScope) {
+            throw new IllegalArgumentException(
+                    "delegateAllFolders=true and a non-empty allowedFolderIds list are mutually exclusive");
+        }
+        for (String fid : def.getAllowedFolderIds() != null ? def.getAllowedFolderIds() : List.<String>of()) {
+            if (fid == null || fid.isBlank()) {
+                throw new IllegalArgumentException("allowedFolderIds must not contain null/blank entries");
+            }
+        }
+        for (String pid : def.getAllowedPrincipalIds() != null ? def.getAllowedPrincipalIds() : List.<String>of()) {
+            if (pid == null || pid.isBlank()) {
+                throw new IllegalArgumentException("allowedPrincipalIds must not contain null/blank entries");
+            }
+        }
     }
 
     // --- Internal ---

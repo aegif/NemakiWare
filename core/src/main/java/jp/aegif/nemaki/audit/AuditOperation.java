@@ -154,6 +154,9 @@ public enum AuditOperation {
     // External Ingest operations
     EXTERNAL_INGEST("externalIngest", "External content ingested"),
     EXTERNAL_INGEST_FAILED("externalIngestFailed", "External content ingest failed"),
+    EXTERNAL_PROFILE_CREATED("externalProfileCreated", "External ingest profile created"),
+    EXTERNAL_PROFILE_UPDATED("externalProfileUpdated", "External ingest profile updated"),
+    EXTERNAL_PROFILE_DELETED("externalProfileDeleted", "External ingest profile deleted"),
 
     // Unknown operation (fallback)
     UNKNOWN("unknown", "Unknown operation");

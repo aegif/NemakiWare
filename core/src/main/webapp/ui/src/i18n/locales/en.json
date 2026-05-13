@@ -3067,6 +3067,8 @@
   },
   "integrationSettings": {
     "title": "Integration Settings",
+    "delegatedNotice": "Delegated view: showing tabs available to folder owners with cmis:all.",
+    "noAccess": "No integration settings tabs are available for your account.",
     "tabs": {
       "oidc": "OIDC (Keycloak)",
       "google": "Google Auth",
@@ -3385,6 +3387,9 @@
       "defaultClassificationPlaceholder": "e.g. Confidential, Internal, Public",
       "defaultProfile": "Default Profile",
       "defaultProfileHint": "Mark as the default profile for auto-resolution when multiple profiles match",
+      "schedulerAdminOnly": "Scheduled ingestion is admin-only in this release.",
+      "defaultProfileAdminOnly": "Repository default profile is admin-only.",
+      "noDelegatedConnectors": "No connectors are delegated to you for this folder. Ask an admin to delegate one.",
       "preserveOriginalEml": "Preserve Original .eml",
       "preserveOriginalEmlHint": "Store the raw .eml MIME message alongside extracted body for audit/compliance",
       "schedulerParamsHint": "Source-scope parameters for scheduled fetches (JSON key-value pairs, e.g. channelId, query, folderId)",
@@ -3426,6 +3431,7 @@
     "form": {
       "connector": "Connector",
       "selectConnector": "Select a connector",
+      "selectProfileFirst": "Select a profile first.",
       "profile": "Import Profile",
       "selectProfile": "Select an import profile",
       "sourceObjectId": "Source Object ID",

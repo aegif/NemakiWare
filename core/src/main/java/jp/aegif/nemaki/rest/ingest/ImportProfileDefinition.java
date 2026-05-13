@@ -63,6 +63,14 @@ public class ImportProfileDefinition {
     private boolean defaultProfile;
     /** Source-scope parameters for scheduled fetches (e.g. channelId, teamId, query, soql, folderId). */
     private Map<String, String> schedulerParams;
+    /** Username of the principal who created this profile. {@code null} for legacy admin-created profiles. */
+    private String createdByUserId;
+    /**
+     * True for profiles created by a non-admin via folder delegation.
+     * {@code false} for admin-managed profiles (default; preserves backward compat).
+     * Non-admins may only edit/delete profiles where this is true.
+     */
+    private boolean delegated = false;
     private String createdAt;
     private String updatedAt;
 
@@ -138,6 +146,12 @@ public class ImportProfileDefinition {
 
     public Map<String, String> getSchedulerParams() { return schedulerParams; }
     public void setSchedulerParams(Map<String, String> schedulerParams) { this.schedulerParams = schedulerParams; }
+
+    public String getCreatedByUserId() { return createdByUserId; }
+    public void setCreatedByUserId(String createdByUserId) { this.createdByUserId = createdByUserId; }
+
+    public boolean isDelegated() { return delegated; }
+    public void setDelegated(boolean delegated) { this.delegated = delegated; }
 
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }

@@ -2821,6 +2821,8 @@
   },
   "integrationSettings": {
     "title": "連携設定",
+    "delegatedNotice": "委譲ビュー: cmis:all 権限を持つフォルダ管理者向けタブのみ表示しています。",
+    "noAccess": "このアカウントで利用可能な連携設定タブはありません。",
     "tabs": {
       "oidc": "OIDC (Keycloak)",
       "google": "Google認証",
@@ -3132,6 +3134,9 @@
       "defaultClassificationPlaceholder": "例: 社外秘, 社内, 公開",
       "defaultProfile": "デフォルトプロファイル",
       "defaultProfileHint": "複数プロファイルが一致する場合の自動解決で優先するプロファイルとしてマーク",
+      "schedulerAdminOnly": "本リリースではスケジュール取り込みは管理者のみ設定可能です",
+      "defaultProfileAdminOnly": "リポジトリ全体のデフォルトプロファイル指定は管理者のみ可能です",
+      "noDelegatedConnectors": "このフォルダ向けに委譲されたコネクタがありません。管理者に委譲設定を依頼してください。",
       "preserveOriginalEml": "メール原本 (.eml) 保存",
       "preserveOriginalEmlHint": "抽出済み本文に加え、監査・コンプライアンス用に生の .eml MIMEメッセージを保存",
       "schedulerParamsHint": "定期フェッチのソーススコープパラメータ（JSONキー値ペア、例: channelId, query, folderId）",
@@ -3173,6 +3178,7 @@
     "form": {
       "connector": "コネクタ",
       "selectConnector": "コネクタを選択",
+      "selectProfileFirst": "先にプロファイルを選択してください",
       "profile": "インポートプロファイル",
       "selectProfile": "インポートプロファイルを選択",
       "sourceObjectId": "ソースオブジェクトID",

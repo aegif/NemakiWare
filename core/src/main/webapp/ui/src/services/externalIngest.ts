@@ -67,8 +67,28 @@ export interface ConnectorDefinition {
   rateLimitRpm?: number;
   webhookSecret?: string;
   enabled: boolean;
+  /** When false, only admins may reference this connector. Default false. */
+  delegated?: boolean;
+  /** When true, ignore allowedFolderIds and let any folder use this connector. */
+  delegateAllFolders?: boolean;
+  /** Folder IDs (and descendants) that may reference this connector from a delegated profile. */
+  allowedFolderIds?: string[];
+  /** Username and group IDs allowed to reference this connector. Empty = no principal restriction. */
+  allowedPrincipalIds?: string[];
   createdAt?: string;
   updatedAt?: string;
+}
+
+/**
+ * Slim connector summary returned by /admin/connectors/summary for non-admins.
+ * Has no secret / endpoint / scope material.
+ */
+export interface ConnectorSummary {
+  connectorId: string;
+  displayName?: string;
+  sourceArchetype?: string;
+  sourceSystem?: string;
+  adapterKind?: string;
 }
 
 // ── Profile Types ──────────────────────────────────────────────────
@@ -96,6 +116,10 @@ export interface ImportProfileDefinition {
   schedulerEnabled?: boolean;
   schedulerParams?: Record<string, string>;
   preserveOriginalEml?: boolean;
+  /** Username of the principal who created this profile. */
+  createdByUserId?: string;
+  /** True for profiles created by a non-admin via folder delegation. */
+  delegated?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -110,6 +134,21 @@ export interface ProfileResponse {
 export async function listConnectors(): Promise<ConnectorDefinition[]> {
   const res = await fetchWithAuth(CONNECTOR_URL);
   return parseJsonOrThrow<ConnectorDefinition[]>(res, 'listConnectors');
+}
+
+/**
+ * Non-admin discovery — returns only connectors the caller is allowed to
+ * reference for the given folder. The summary view never includes
+ * credential / endpoint / scope fields. The caller must already hold
+ * cmis:all on {@code targetFolderId}.
+ */
+export async function listConnectorSummary(
+  repositoryId: string,
+  targetFolderId: string,
+): Promise<ConnectorSummary[]> {
+  const url = `${CONNECTOR_URL}/summary?repositoryId=${encodeURIComponent(repositoryId)}&targetFolderId=${encodeURIComponent(targetFolderId)}`;
+  const res = await fetchWithAuth(url);
+  return parseJsonOrThrow<ConnectorSummary[]>(res, 'listConnectorSummary');
 }
 
 export async function getConnector(connectorId: string): Promise<ConnectorDefinition> {

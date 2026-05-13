@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, Form, Select, Input, Upload, Button, Alert, Space, Typography, App, Switch } from 'antd';
 import { UploadOutlined, SendOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../../contexts/AuthContext';
 import { AuthService } from '../../services/auth';
 import { parseJsonResponseBody } from '../../services/http/jsonFetch';
 import {
   ConnectorDefinition,
   ImportProfileDefinition,
   listConnectors,
+  listConnectorSummary,
   listProfiles,
 } from '../../services/externalIngest';
 
@@ -44,24 +46,87 @@ function defaultObjectType(archetype?: string): string {
 export function ManualIngestTab({ repositoryId }: Props) {
   const { t } = useTranslation();
   const { message } = App.useApp();
+  const { authToken } = useAuth();
+  const isAdmin = authToken?.isAdmin === true;
+
   const [connectors, setConnectors] = useState<ConnectorDefinition[]>([]);
   const [profiles, setProfiles] = useState<ImportProfileDefinition[]>([]);
   const [selectedConnectorId, setSelectedConnectorId] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<IngestResult | null>(null);
   const [form] = Form.useForm();
+  const watchedProfileId: string | undefined = Form.useWatch('profileId', form);
 
+  // Loader. Admin pulls full connector + profile lists. Non-admin pulls
+  // ONLY the delegated profile list — admin endpoints would 403 and break
+  // the whole UI. Connectors for non-admin are loaded lazily after a
+  // profile is chosen, via the folder-scoped /connectors/summary endpoint.
   const load = useCallback(async () => {
     try {
-      const [c, p] = await Promise.all([listConnectors(), listProfiles(repositoryId)]);
-      setConnectors(c.filter(x => x.enabled));
-      setProfiles(p.filter(x => x.enabled));
+      if (isAdmin) {
+        const [c, p] = await Promise.all([listConnectors(), listProfiles(repositoryId)]);
+        setConnectors(c.filter(x => x.enabled));
+        setProfiles(p.filter(x => x.enabled));
+      } else {
+        const p = await listProfiles(repositoryId);
+        setProfiles(p.filter(x => x.enabled));
+        setConnectors([]);
+      }
     } catch {
       message.error(t('manualIngest.loadError'));
     }
-  }, [repositoryId, message, t]);
+  }, [repositoryId, message, t, isAdmin]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Non-admin: when a profile is picked, derive the available connectors
+  // from /connectors/summary against that profile's target folder, and
+  // intersect with profile.allowedConnectorIds (which the backend already
+  // narrowed to delegated connectors). Result is what the user is allowed
+  // to actually invoke.
+  useEffect(() => {
+    if (isAdmin) return;
+    if (!watchedProfileId) {
+      setConnectors([]);
+      setSelectedConnectorId(undefined);
+      form.setFieldValue('connectorId', undefined);
+      return;
+    }
+    const profile = profiles.find(p => p.profileId === watchedProfileId);
+    if (!profile?.targetFolderId) {
+      setConnectors([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const summaries = await listConnectorSummary(repositoryId, profile.targetFolderId!);
+        if (cancelled) return;
+        const allowedSet = profile.allowedConnectorIds && profile.allowedConnectorIds.length > 0
+          ? new Set(profile.allowedConnectorIds) : null;
+        const visible: ConnectorDefinition[] = summaries
+          .filter(s => !allowedSet || allowedSet.has(s.connectorId))
+          .map(s => ({
+            connectorId: s.connectorId,
+            displayName: s.displayName,
+            sourceArchetype: s.sourceArchetype || 'FILE_SHARE',
+            sourceSystem: s.sourceSystem || '',
+            adapterKind: s.adapterKind,
+            enabled: true,
+          }));
+        setConnectors(visible);
+        // If the previous connector is no longer in the list, clear it.
+        const currentConn = form.getFieldValue('connectorId');
+        if (currentConn && !visible.some(c => c.connectorId === currentConn)) {
+          form.setFieldValue('connectorId', undefined);
+          setSelectedConnectorId(undefined);
+        }
+      } catch {
+        if (!cancelled) setConnectors([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isAdmin, watchedProfileId, profiles, repositoryId, form]);
 
   // Derive selected connector's archetype for conditional fields + profile filtering
   const selectedConnector = useMemo(
@@ -70,7 +135,9 @@ export function ManualIngestTab({ repositoryId }: Props) {
   );
   const selectedArchetype = selectedConnector?.sourceArchetype;
 
-  // Filter profiles to those compatible with the selected connector
+  // Filter profiles to those compatible with the selected connector.
+  // For non-admin, the picker order is reversed (profile first), so this
+  // memo is mostly relevant in the admin flow.
   const compatibleProfiles = useMemo(() => {
     if (!selectedConnector) return profiles;
     return profiles.filter(p => {
@@ -88,7 +155,10 @@ export function ManualIngestTab({ repositoryId }: Props) {
 
   const handleConnectorChange = (connectorId: string) => {
     setSelectedConnectorId(connectorId);
-    // Recompute compatibility against the NEW connector (not the stale memo)
+    if (!isAdmin) return;
+    // Admin flow: recompute compatibility against the NEW connector
+    // (not the stale memo). Non-admin flow chooses profile first so this
+    // back-direction reset is unnecessary.
     const newConnector = connectors.find(c => c.connectorId === connectorId);
     const currentProfile = form.getFieldValue('profileId');
     if (currentProfile && newConnector) {
@@ -172,27 +242,49 @@ export function ManualIngestTab({ repositoryId }: Props) {
     }
   };
 
+  // Picker order: admin sees [connector → profile]; non-admin sees
+  // [profile → connector] because connectors are derived from the
+  // chosen profile's folder scope.
+  const profileSelector = (
+    <Form.Item name="profileId" label={t('manualIngest.form.profile')}
+      rules={[{ required: true }]}>
+      <Select placeholder={t('manualIngest.form.selectProfile')}
+        options={(isAdmin ? compatibleProfiles : profiles).map(p => ({
+          value: p.profileId,
+          label: `${p.displayName || p.profileId}`,
+        }))} />
+    </Form.Item>
+  );
+  const connectorSelector = (
+    <Form.Item name="connectorId" label={t('manualIngest.form.connector')}
+      rules={[{ required: true }]}
+      extra={!isAdmin && !watchedProfileId
+        ? t('manualIngest.form.selectProfileFirst', { defaultValue: 'Select a profile first.' })
+        : undefined}>
+      <Select placeholder={t('manualIngest.form.selectConnector')}
+        onChange={handleConnectorChange}
+        disabled={!isAdmin && (!watchedProfileId || connectors.length === 0)}
+        options={connectors.map(c => ({
+          value: c.connectorId,
+          label: `${c.displayName || c.connectorId} (${c.sourceSystem})`,
+        }))} />
+    </Form.Item>
+  );
+
   return (
     <Card title={t('manualIngest.title')}>
       <Form form={form} layout="vertical" style={{ maxWidth: 600 }}>
-        <Form.Item name="connectorId" label={t('manualIngest.form.connector')}
-          rules={[{ required: true }]}>
-          <Select placeholder={t('manualIngest.form.selectConnector')}
-            onChange={handleConnectorChange}
-            options={connectors.map(c => ({
-              value: c.connectorId,
-              label: `${c.displayName || c.connectorId} (${c.sourceSystem})`,
-            }))} />
-        </Form.Item>
-
-        <Form.Item name="profileId" label={t('manualIngest.form.profile')}
-          rules={[{ required: true }]}>
-          <Select placeholder={t('manualIngest.form.selectProfile')}
-            options={compatibleProfiles.map(p => ({
-              value: p.profileId,
-              label: `${p.displayName || p.profileId}`,
-            }))} />
-        </Form.Item>
+        {isAdmin ? (
+          <>
+            {connectorSelector}
+            {profileSelector}
+          </>
+        ) : (
+          <>
+            {profileSelector}
+            {connectorSelector}
+          </>
+        )}
 
         <Form.Item name="sourceObjectId" label={t('manualIngest.form.sourceObjectId')}
           rules={[{ required: true }]}>

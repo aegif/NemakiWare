@@ -487,11 +487,17 @@ function AppRoutes() {
               </AdminRoute>
             </ProtectedRoute>
           } />
+          {/*
+            IntegrationSettings is admin-by-default but contains two tabs
+            ('import-profiles', 'manual-ingest') that may be exposed to
+            non-admin folder owners under the delegation model. The page
+            itself filters tabs based on isAdmin, so it must NOT be wrapped
+            in AdminRoute. Non-admin users with no folder delegation will
+            see an empty tab list (and a "no permissions" hint inside).
+          */}
           <Route path="/integration-settings" element={
             <ProtectedRoute>
-              <AdminRoute>
-                <IntegrationSettings repositoryId={authToken.repositoryId} />
-              </AdminRoute>
+              <IntegrationSettings repositoryId={authToken.repositoryId} />
             </ProtectedRoute>
           } />
           <Route path="/admin/lineage-journal" element={

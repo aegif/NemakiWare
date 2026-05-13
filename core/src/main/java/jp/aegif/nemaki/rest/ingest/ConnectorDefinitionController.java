@@ -20,6 +20,9 @@ public class ConnectorDefinitionController {
     private ConnectorDefinitionService connectorDefinitionService;
 
     @Autowired
+    private IngestAuthorizationService ingestAuthorizationService;
+
+    @Autowired
     private HttpServletRequest httpRequest;
 
     @PostMapping
@@ -131,6 +134,10 @@ public class ConnectorDefinitionController {
         copy.setAdapterKind(src.getAdapterKind());
         copy.setRateLimitRpm(src.getRateLimitRpm());
         copy.setEnabled(src.isEnabled());
+        copy.setDelegated(src.isDelegated());
+        copy.setDelegateAllFolders(src.isDelegateAllFolders());
+        copy.setAllowedFolderIds(src.getAllowedFolderIds());
+        copy.setAllowedPrincipalIds(src.getAllowedPrincipalIds());
         copy.setCreatedAt(src.getCreatedAt());
         copy.setUpdatedAt(src.getUpdatedAt());
         // Mask secrets: show "[configured]" instead of actual value
@@ -139,6 +146,49 @@ public class ConnectorDefinitionController {
         copy.setWebhookSecret(src.getWebhookSecret() != null && !src.getWebhookSecret().isBlank()
                 ? "[configured]" : null);
         return copy;
+    }
+
+    /**
+     * Non-admin discovery endpoint: lists connectors that are delegated to
+     * the caller for {@code targetFolderId}. Returns a slim summary without
+     * any secret material, endpoint, or scope metadata. The caller must
+     * already hold {@code cmis:all} on {@code targetFolderId}, or admin.
+     *
+     * <p>Use case: the delegated profile editor needs to populate the
+     * connector picker without exposing the full admin connector view.
+     */
+    @GetMapping("/summary")
+    public ResponseEntity<?> listSummary(
+            @RequestParam String repositoryId,
+            @RequestParam String targetFolderId) {
+        CallContext ctx = currentCallContext();
+        if (ctx == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (repositoryId == null || repositoryId.isBlank()
+                || targetFolderId == null || targetFolderId.isBlank()) {
+            return errorResponse(HttpStatus.BAD_REQUEST, "repositoryId and targetFolderId are required");
+        }
+        if (!ingestAuthorizationService.canManageProfileForFolder(ctx, repositoryId, targetFolderId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        var visible = new java.util.ArrayList<Map<String, Object>>();
+        for (ConnectorDefinition c : connectorDefinitionService.list()) {
+            if (!ingestAuthorizationService.canUseConnectorForDelegatedProfile(ctx, repositoryId, c, targetFolderId)) {
+                continue;
+            }
+            var entry = new LinkedHashMap<String, Object>();
+            entry.put("connectorId", c.getConnectorId());
+            entry.put("displayName", c.getDisplayName());
+            entry.put("sourceArchetype", c.getSourceArchetype() != null ? c.getSourceArchetype().name() : null);
+            entry.put("sourceSystem", c.getSourceSystem());
+            entry.put("adapterKind", c.getAdapterKind());
+            visible.add(entry);
+        }
+        return ResponseEntity.ok(visible);
+    }
+
+    private CallContext currentCallContext() {
+        if (httpRequest == null) return null;
+        return (CallContext) httpRequest.getAttribute("CallContext");
     }
 
     /**

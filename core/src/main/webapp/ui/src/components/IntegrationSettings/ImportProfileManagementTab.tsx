@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Switch, Space, Tag, App, Popconfirm, Alert } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, Switch, Space, Tag, App, Popconfirm, Alert, Tooltip } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../../contexts/AuthContext';
 import {
   ImportProfileDefinition,
   AdapterDescriptor,
@@ -11,6 +12,7 @@ import {
   deleteProfile,
   getProfile,
   listConnectors,
+  listConnectorSummary,
   fetchAdapterRegistry,
 } from '../../services/externalIngest';
 
@@ -28,6 +30,8 @@ interface Props {
 export function ImportProfileManagementTab({ repositoryId }: Props) {
   const { t } = useTranslation();
   const { message } = App.useApp();
+  const { authToken } = useAuth();
+  const isAdmin = authToken?.isAdmin === true;
 
   const DEDUPE_OPTIONS = [
     { value: 'skip_if_same_version', label: t('importProfileManagement.dedupePolicies.skip') },
@@ -71,6 +75,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
   const [selectedAdapter, setSelectedAdapter] = useState<AdapterDescriptor | null>(null);
   const [jsonMode, setJsonMode] = useState(false);
   const schedulerEnabled = Form.useWatch('schedulerEnabled', form) ?? false;
+  const formTargetFolderId: string | undefined = Form.useWatch('targetFolderId', form);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,15 +90,48 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Load adapter registry and connector map for structured schedulerParams form
+  // Load adapter registry and connector map for structured schedulerParams form.
+  // Admins read the full list; non-admins fall back to the folder-scoped
+  // summary endpoint when a target folder ID is known (loaded lazily on
+  // form open via the helper below — see refreshConnectorMapForFolder).
   useEffect(() => {
     fetchAdapterRegistry().then(setAdapterRegistry).catch(() => {});
-    listConnectors().then(conns => {
+    if (isAdmin) {
+      listConnectors().then(conns => {
+        const map: Record<string, string> = {};
+        for (const c of conns) map[c.connectorId] = c.sourceSystem;
+        setConnectorMap(map);
+      }).catch(() => {});
+    }
+  }, [isAdmin]);
+
+  /**
+   * For non-admins: fetch the connector summary for the given folder. The
+   * summary endpoint enforces cmis:all on targetFolderId server-side and
+   * returns only delegated connectors. We swap the picker's source-of-truth
+   * map without merging into admin's full map (admin doesn't need this).
+   */
+  const refreshConnectorMapForFolder = useCallback(async (targetFolderId?: string) => {
+    if (isAdmin || !targetFolderId) return;
+    try {
+      const summaries = await listConnectorSummary(repositoryId, targetFolderId);
       const map: Record<string, string> = {};
-      for (const c of conns) map[c.connectorId] = c.sourceSystem;
+      for (const s of summaries) if (s.sourceSystem) map[s.connectorId] = s.sourceSystem;
       setConnectorMap(map);
-    }).catch(() => {});
-  }, []);
+    } catch {
+      // Folder not delegated yet, or no connectors delegated — keep the
+      // map empty so the picker is correctly empty.
+      setConnectorMap({});
+    }
+  }, [isAdmin, repositoryId]);
+
+  // Re-resolve the delegated connector picker whenever a non-admin user
+  // changes the targetFolderId. Watch via Form.useWatch (debounced by
+  // React's render cycle, not per-keystroke fetch).
+  useEffect(() => {
+    if (!modalOpen || isAdmin || !formTargetFolderId || formTargetFolderId.trim().length === 0) return;
+    refreshConnectorMapForFolder(formTargetFolderId);
+  }, [formTargetFolderId, modalOpen, isAdmin, refreshConnectorMapForFolder]);
 
   const openCreate = () => {
     setEditing(null);
@@ -117,6 +155,9 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
     setJsonMode(false);
     // Reset form fully before applying record values to avoid stale fields
     form.resetFields();
+    // Non-admin: refresh the connector picker against the profile's bound
+    // folder so the dropdown only shows connectors still delegated to them.
+    await refreshConnectorMapForFolder(record.targetFolderId);
     // Resolve adapter from connector
     const sourceSystem = record.defaultConnectorId ? connectorMap[record.defaultConnectorId] : null;
     const desc = sourceSystem ? adapterRegistry.find(a => a.sourceSystem === sourceSystem) : null;
@@ -312,16 +353,42 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
               options={ARCHETYPE_OPTIONS.map(a => ({ value: a, label: a }))} />
           </Form.Item>
           <Form.Item name="allowedConnectorIds" label={t('importProfileManagement.form.allowedConnectorIds')}
-            extra={t('importProfileManagement.form.allowedConnectorIdsHint')}>
-            <Select mode="tags" allowClear placeholder={t('importProfileManagement.form.allowedConnectorIdsHint')} />
+            extra={!isAdmin && Object.keys(connectorMap).length === 0
+              ? t('importProfileManagement.form.noDelegatedConnectors', { defaultValue: 'No connectors are delegated to you for this folder. Ask an admin to delegate one.' })
+              : t('importProfileManagement.form.allowedConnectorIdsHint')}>
+            {/*
+              Options are derived from connectorMap so the user picks
+              from a known set rather than free-typing IDs the backend
+              will reject. Admin uses listConnectors() (full list);
+              non-admin uses listConnectorSummary() (delegated only).
+              Non-admin gets mode="multiple" (no free tag entry); admin
+              keeps mode="tags" so they can paste in IDs that aren't yet
+              in their map (rare but useful for quick edits).
+            */}
+            <Select
+              mode={isAdmin ? 'tags' : 'multiple'}
+              allowClear
+              placeholder={t('importProfileManagement.form.allowedConnectorIdsHint')}
+              options={Object.keys(connectorMap).map(cid => ({
+                value: cid,
+                label: `${cid} (${connectorMap[cid]})`,
+              }))} />
           </Form.Item>
           <Form.Item name="defaultConnectorId" label={t('importProfileManagement.form.defaultConnectorId')}>
-            <Input onChange={(e) => {
-              const connId = e.target.value;
-              const sourceSystem = connectorMap[connId];
-              const desc = sourceSystem ? adapterRegistry.find(a => a.sourceSystem === sourceSystem) : null;
-              setSelectedAdapter(desc || null);
-            }} />
+            <Select
+              allowClear
+              showSearch
+              placeholder={t('importProfileManagement.form.defaultConnectorId')}
+              options={Object.keys(connectorMap).map(cid => ({
+                value: cid,
+                label: `${cid} (${connectorMap[cid]})`,
+              }))}
+              onChange={(connId?: string) => {
+                if (!connId) { setSelectedAdapter(null); return; }
+                const sourceSystem = connectorMap[connId];
+                const desc = sourceSystem ? adapterRegistry.find(a => a.sourceSystem === sourceSystem) : null;
+                setSelectedAdapter(desc || null);
+              }} />
           </Form.Item>
           <Form.Item name="secondaryTypeIds" label={t('importProfileManagement.form.secondaryTypeIds')}
             extra={t('importProfileManagement.form.secondaryTypeIdsHint')}>
@@ -351,8 +418,15 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
             <Select options={ACL_SYNC_OPTIONS} />
           </Form.Item>
           <Form.Item name="schedulerEnabled" label={t('importProfileManagement.form.schedulerEnabled')}
-            valuePropName="checked" extra={t('importProfileManagement.form.schedulerEnabledHint')}>
-            <Switch />
+            valuePropName="checked"
+            extra={!isAdmin
+              ? t('importProfileManagement.form.schedulerAdminOnly', { defaultValue: 'Scheduled ingestion is admin-only in this release.' })
+              : t('importProfileManagement.form.schedulerEnabledHint')}>
+            {isAdmin
+              ? <Switch />
+              : <Tooltip title={t('importProfileManagement.form.schedulerAdminOnly', { defaultValue: 'Scheduled ingestion is admin-only in this release.' })}>
+                  <Switch disabled />
+                </Tooltip>}
           </Form.Item>
           <Form.Item label={t('importProfileManagement.form.schedulerParams', 'スケジューラパラメータ')}
             extra={<><a onClick={() => setJsonMode(!jsonMode)}>{jsonMode ? t('importProfileManagement.form.switchToStructured', '構造化入力に切替') : t('importProfileManagement.form.switchToJson', 'JSON入力に切替')}</a>
@@ -392,8 +466,15 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
             <Switch />
           </Form.Item>
           <Form.Item name="defaultProfile" label={t('importProfileManagement.form.defaultProfile')}
-            valuePropName="checked" extra={t('importProfileManagement.form.defaultProfileHint')}>
-            <Switch />
+            valuePropName="checked"
+            extra={!isAdmin
+              ? t('importProfileManagement.form.defaultProfileAdminOnly', { defaultValue: 'Repository default profile is admin-only.' })
+              : t('importProfileManagement.form.defaultProfileHint')}>
+            {isAdmin
+              ? <Switch />
+              : <Tooltip title={t('importProfileManagement.form.defaultProfileAdminOnly', { defaultValue: 'Repository default profile is admin-only.' })}>
+                  <Switch disabled />
+                </Tooltip>}
           </Form.Item>
           <Form.Item name="enabled" label={t('importProfileManagement.form.enabled')} valuePropName="checked">
             <Switch />

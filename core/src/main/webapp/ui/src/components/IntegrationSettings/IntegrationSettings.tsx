@@ -1,5 +1,6 @@
-import { Space, Tabs, Tag, Typography } from 'antd';
+import { Alert, Space, Tabs, Tag, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../../contexts/AuthContext';
 import { OidcSettingsTab } from './OidcSettingsTab';
 import { GoogleAuthSettingsTab } from './GoogleAuthSettingsTab';
 import { MicrosoftAuthSettingsTab } from './MicrosoftAuthSettingsTab';
@@ -25,94 +26,61 @@ interface IntegrationSettingsProps {
 
 export function IntegrationSettings({ repositoryId }: IntegrationSettingsProps) {
   const { t } = useTranslation();
+  const { authToken } = useAuth();
+  const isAdmin = authToken?.isAdmin === true;
 
-  const items = [
-    {
-      key: 'oidc',
-      label: t('integrationSettings.tabs.oidc'),
-      children: <OidcSettingsTab />,
-    },
-    {
-      key: 'google',
-      label: t('integrationSettings.tabs.google'),
-      children: <GoogleAuthSettingsTab />,
-    },
-    {
-      key: 'microsoft',
-      label: t('integrationSettings.tabs.microsoft'),
-      children: <MicrosoftAuthSettingsTab />,
-    },
-    {
-      key: 'saml',
-      label: t('integrationSettings.tabs.saml'),
-      children: <SamlSettingsTab />,
-    },
-    {
-      key: 'directory-sync',
-      label: t('integrationSettings.tabs.directorySync'),
-      children: <DirectorySyncSettingsTab />,
-    },
-    {
-      key: 'purview',
-      label: <Space size={4}>{t('integrationSettings.tabs.purview')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
-      children: <PurviewSettingsTab />,
-    },
-    {
-      key: 'atlas',
-      label: <Space size={4}>{t('integrationSettings.tabs.atlas')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
-      children: <AtlasSettingsTab />,
-    },
-    {
-      key: 'dataplex',
-      label: <Space size={4}>{t('integrationSettings.tabs.dataplex')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
-      children: <DataplexSettingsTab />,
-    },
-    {
-      key: 'lineage',
-      label: <Space size={4}>{t('integrationSettings.tabs.lineage')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
-      children: <LineageSettingsTab />,
-    },
-    {
-      key: 'property-mapping',
-      label: <Space size={4}>{t('integrationSettings.tabs.propertyMapping')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
-      children: <PropertyMappingSection repositoryId={repositoryId} />,
-    },
-    {
-      key: 'connectors',
-      label: <Space size={4}>{t('integrationSettings.tabs.connectors')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
-      children: <ConnectorManagementTab />,
-    },
-    {
-      key: 'import-profiles',
-      label: <Space size={4}>{t('integrationSettings.tabs.importProfiles')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
-      children: <ImportProfileManagementTab repositoryId={repositoryId} />,
-    },
-    {
-      key: 'manual-ingest',
-      label: <Space size={4}>{t('integrationSettings.tabs.manualIngest')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
-      children: <ManualIngestTab repositoryId={repositoryId} />,
-    },
-    {
-      key: 'ingest-jobs',
-      label: <Space size={4}>{t('integrationSettings.tabs.ingestJobs')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
-      children: <IngestJobsTab />,
-    },
-    {
-      key: 'scheduler-status',
-      label: <Space size={4}>{t('integrationSettings.tabs.schedulerStatus')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('common.beta')}</Tag></Space>,
-      children: <SchedulerStatusTab />,
-    },
-    {
-      key: 'mcp',
-      label: t('integrationSettings.tabs.mcp', 'MCP'),
-      children: <McpSettingsTab />,
-    },
+  // Tabs that any folder owner with cmis:all (delegated) may use. Everything
+  // else is admin-only — connector credentials, repository-wide auth config,
+  // catalog backends, scheduler, DLQ, etc.
+  const delegatedTabKeys = new Set(['import-profiles', 'manual-ingest']);
+
+  const beta = (
+    <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>
+      {t('common.beta')}
+    </Tag>
+  );
+
+  const allItems = [
+    { key: 'oidc', label: t('integrationSettings.tabs.oidc'), children: <OidcSettingsTab /> },
+    { key: 'google', label: t('integrationSettings.tabs.google'), children: <GoogleAuthSettingsTab /> },
+    { key: 'microsoft', label: t('integrationSettings.tabs.microsoft'), children: <MicrosoftAuthSettingsTab /> },
+    { key: 'saml', label: t('integrationSettings.tabs.saml'), children: <SamlSettingsTab /> },
+    { key: 'directory-sync', label: t('integrationSettings.tabs.directorySync'), children: <DirectorySyncSettingsTab /> },
+    { key: 'purview', label: <Space size={4}>{t('integrationSettings.tabs.purview')} {beta}</Space>, children: <PurviewSettingsTab /> },
+    { key: 'atlas', label: <Space size={4}>{t('integrationSettings.tabs.atlas')} {beta}</Space>, children: <AtlasSettingsTab /> },
+    { key: 'dataplex', label: <Space size={4}>{t('integrationSettings.tabs.dataplex')} {beta}</Space>, children: <DataplexSettingsTab /> },
+    { key: 'lineage', label: <Space size={4}>{t('integrationSettings.tabs.lineage')} {beta}</Space>, children: <LineageSettingsTab /> },
+    { key: 'property-mapping', label: <Space size={4}>{t('integrationSettings.tabs.propertyMapping')} {beta}</Space>, children: <PropertyMappingSection repositoryId={repositoryId} /> },
+    { key: 'connectors', label: <Space size={4}>{t('integrationSettings.tabs.connectors')} {beta}</Space>, children: <ConnectorManagementTab /> },
+    { key: 'import-profiles', label: <Space size={4}>{t('integrationSettings.tabs.importProfiles')} {beta}</Space>, children: <ImportProfileManagementTab repositoryId={repositoryId} /> },
+    { key: 'manual-ingest', label: <Space size={4}>{t('integrationSettings.tabs.manualIngest')} {beta}</Space>, children: <ManualIngestTab repositoryId={repositoryId} /> },
+    { key: 'ingest-jobs', label: <Space size={4}>{t('integrationSettings.tabs.ingestJobs')} {beta}</Space>, children: <IngestJobsTab /> },
+    { key: 'scheduler-status', label: <Space size={4}>{t('integrationSettings.tabs.schedulerStatus')} {beta}</Space>, children: <SchedulerStatusTab /> },
+    { key: 'mcp', label: t('integrationSettings.tabs.mcp', 'MCP'), children: <McpSettingsTab /> },
   ];
+
+  const visibleItems = isAdmin ? allItems : allItems.filter(item => delegatedTabKeys.has(item.key));
+  const defaultActive = visibleItems[0]?.key;
 
   return (
     <div style={{ padding: '24px' }}>
       <Title level={3}>{t('integrationSettings.title')}</Title>
-      <Tabs defaultActiveKey="oidc" items={items} />
+      {!isAdmin && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t('integrationSettings.delegatedNotice', { defaultValue: 'Delegated view: showing tabs available to folder owners with cmis:all.' })}
+        />
+      )}
+      {visibleItems.length === 0 ? (
+        <Alert
+          type="warning"
+          message={t('integrationSettings.noAccess', { defaultValue: 'No integration settings tabs are available for your account.' })}
+        />
+      ) : (
+        <Tabs defaultActiveKey={defaultActive} items={visibleItems} />
+      )}
     </div>
   );
 }

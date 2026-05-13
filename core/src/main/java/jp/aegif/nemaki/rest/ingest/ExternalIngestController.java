@@ -34,6 +34,23 @@ public class ExternalIngestController {
     @Autowired(required = false)
     private ConnectorDefinitionService connectorDefinitionService;
 
+    @Autowired(required = false)
+    private ImportProfileDefinitionService importProfileDefinitionService;
+
+    /**
+     * Required dependency. Spring fails fast if this bean is missing —
+     * we deliberately reject {@code @Autowired(required = false)} here
+     * because a missing authorization service would cause non-admin
+     * callers to fall through to the legacy admin path, defeating the
+     * folder-scoped delegation gate (connector credential indirect
+     * delegation, targetFolderOverride bypass, etc.).
+     */
+    @Autowired
+    private IngestAuthorizationService ingestAuthorizationService;
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.audit.AuditLogger auditLogger;
+
     /** JSON-only ingest (metadata-only, no file content). */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ExternalIngestResult> ingestJson(
@@ -78,6 +95,35 @@ public class ExternalIngestController {
         }
         request.setRepositoryId(repositoryId);
 
+        // Delegated execution gate. The authorization service is a required
+        // bean (see field declaration); the null check below is defence in
+        // depth — if it ever does come back null in some misconfigured
+        // context, refuse rather than fall through to admin path.
+        //
+        // For non-admin callers, enforces that:
+        //   1. profileId is given and resolves to a delegated profile;
+        //   2. caller still holds cmis:all on the profile's target folder;
+        //   3. connectorId (if any) is in the profile's allowedConnectorIds;
+        //   4. targetFolderOverride is rejected (initial release boundary);
+        // Admin path is unchanged.
+        boolean delegatedRequest = false;
+        if (ingestAuthorizationService == null) {
+            // Missing means deny — never silently downgrade non-admins.
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(ExternalIngestResult.error("unknown",
+                            "Authorization service unavailable; ingest disabled"));
+        }
+        if (!ingestAuthorizationService.isAdmin(callContext)) {
+            delegatedRequest = true;
+            ResponseEntity<ExternalIngestResult> denied = enforceDelegatedExecution(callContext, repositoryId, request);
+            if (denied != null) {
+                auditDelegatedAttempt(callContext, repositoryId, request, false,
+                        denied.getBody() != null && denied.getBody().errors() != null && !denied.getBody().errors().isEmpty()
+                                ? denied.getBody().errors().get(0) : "denied");
+                return denied;
+            }
+        }
+
         // Dispatch to specialized import flow based on connector archetype first,
         // then sourceObjectType, with .eml extension as a hint only for MESSAGE_CONTEXT
         ExternalIngestResult result;
@@ -113,11 +159,43 @@ public class ExternalIngestController {
             result = canonicalImportService.execute(callContext, request);
         }
         if (result.isSuccess() || result.skipped() || result.dryRun()) {
+            if (delegatedRequest) auditDelegatedAttempt(callContext, repositoryId, request, true, null);
             return ResponseEntity.ok(result);
         }
         // Map validation/config errors to appropriate HTTP status
         HttpStatus errorStatus = classifyErrorStatus(result);
+        if (delegatedRequest) {
+            auditDelegatedAttempt(callContext, repositoryId, request, false,
+                    result.errors() != null && !result.errors().isEmpty() ? result.errors().get(0) : "ingest failed");
+        }
         return ResponseEntity.status(errorStatus).body(result);
+    }
+
+    /**
+     * Records a delegated ingest attempt regardless of outcome — gives the
+     * security review trail for the new non-admin code path. Admin ingests
+     * continue through the existing AOP audit and don't double-log here.
+     */
+    private void auditDelegatedAttempt(CallContext ctx, String repositoryId,
+                                       ExternalIngestRequest request, boolean success, String errorMessage) {
+        if (auditLogger == null || ctx == null) return;
+        try {
+            String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
+            java.util.Map<String, Object> details = new java.util.LinkedHashMap<>();
+            details.put("delegated", true);
+            details.put("actorUserId", actor);
+            if (request.getProfileId() != null) details.put("profileId", request.getProfileId());
+            if (request.getConnectorId() != null) details.put("connectorId", request.getConnectorId());
+            if (request.getTargetFolderOverride() != null) details.put("targetFolderOverrideAttempted", true);
+            jp.aegif.nemaki.audit.AuditOperation op = success
+                    ? jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST
+                    : jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST_FAILED;
+            auditLogger.logOperation(op, repositoryId, actor,
+                    request.getSourceObjectId() != null ? request.getSourceObjectId() : "",
+                    success, errorMessage, details);
+        } catch (RuntimeException ignored) {
+            // Audit must never break the API path
+        }
     }
 
     /**
@@ -179,5 +257,104 @@ public class ExternalIngestController {
     private CallContext getCallContext() {
         if (httpRequest == null) return null;
         return (CallContext) httpRequest.getAttribute("CallContext");
+    }
+
+    /**
+     * Runs the non-admin runtime gate. Returns {@code null} when the caller
+     * is allowed; otherwise returns a {@code 403/400/404} response that the
+     * caller should send back as-is. Every failure mode is logged but the
+     * client message stays terse — we don't want to leak which step failed
+     * (folder absent vs. not delegated vs. wrong connector).
+     */
+    private ResponseEntity<ExternalIngestResult> enforceDelegatedExecution(
+            CallContext callContext, String repositoryId, ExternalIngestRequest request) {
+
+        // (4) Override forbidden in v1 — keep the gate explicit even if a
+        // future release re-enables it under separate ACL evaluation.
+        if (request.getTargetFolderOverride() != null && !request.getTargetFolderOverride().isBlank()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ExternalIngestResult.error("unknown",
+                            "targetFolderOverride is not permitted for non-admin callers"));
+        }
+        if (importProfileDefinitionService == null) {
+            // Configuration missing — refuse rather than fall through to admin path.
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(ExternalIngestResult.error("unknown", "Profile service unavailable"));
+        }
+        // (1) profileId is mandatory for non-admin — admin auto-resolution
+        // would happily pick a profile the caller can't manage.
+        String profileId = request.getProfileId();
+        if (profileId == null || profileId.isBlank()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ExternalIngestResult.error("unknown",
+                            "profileId is required for non-admin ingestion"));
+        }
+        ImportProfileDefinition profile = importProfileDefinitionService.get(profileId);
+        if (profile == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ExternalIngestResult.error("unknown", "Profile not found"));
+        }
+        if (!profile.isDelegated()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ExternalIngestResult.error("unknown", "Admin-managed profile"));
+        }
+        // Repo must match — non-admins cannot route a profile across repos.
+        if (profile.getRepositoryId() != null && !profile.getRepositoryId().equals(repositoryId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ExternalIngestResult.error("unknown", "Profile is not bound to this repository"));
+        }
+
+        // (2) Re-evaluate cmis:all at execution time — guards against ACL
+        // changes between profile-create and execute.
+        String folderId = ingestAuthorizationService.resolveFolderId(
+                repositoryId, profile.getTargetFolderId(), profile.getTargetFolderPath());
+        if (folderId == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ExternalIngestResult.error("unknown", "Target folder no longer resolvable"));
+        }
+        if (!ingestAuthorizationService.canManageProfileForFolder(callContext, repositoryId, folderId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ExternalIngestResult.error("unknown", "cmis:all on target folder required"));
+        }
+
+        // (3) connectorId, if provided, must be in the profile's saved
+        // allowedConnectorIds — and that connector must still be delegated
+        // for this user/folder. Empty connectorId is allowed (downstream
+        // pipeline picks defaultConnectorId).
+        String connectorId = request.getConnectorId();
+        if (connectorId != null && !connectorId.isBlank()) {
+            if (!profile.isConnectorAllowed(connectorId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ExternalIngestResult.error(connectorId,
+                                "Connector not in profile's allowedConnectorIds"));
+            }
+            if (connectorDefinitionService != null) {
+                ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
+                if (connector == null) {
+                    return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                            .body(ExternalIngestResult.error(connectorId, "Connector not found"));
+                }
+                if (!ingestAuthorizationService.canUseConnectorForDelegatedProfile(
+                        callContext, repositoryId, connector, folderId)) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(ExternalIngestResult.error(connectorId,
+                                    "Connector no longer delegated for this folder/user"));
+                }
+            }
+        } else if (profile.getDefaultConnectorId() != null) {
+            // No explicit connector — verify the profile's default is still delegated.
+            String def = profile.getDefaultConnectorId();
+            if (connectorDefinitionService != null) {
+                ConnectorDefinition connector = connectorDefinitionService.get(def);
+                if (connector == null
+                        || !ingestAuthorizationService.canUseConnectorForDelegatedProfile(
+                                callContext, repositoryId, connector, folderId)) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(ExternalIngestResult.error(def,
+                                    "Profile's default connector no longer delegated"));
+                }
+            }
+        }
+        return null;
     }
 }

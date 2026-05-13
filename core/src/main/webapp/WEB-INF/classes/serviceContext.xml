@@ -811,6 +811,10 @@
         <property name="connectorPool" ref="connectorPool" />
         <property name="connectorDefinitionService" ref="connectorDefinitionService" />
     </bean>
+    <bean id="ingestAuthorizationService" class="jp.aegif.nemaki.rest.ingest.IngestAuthorizationService">
+        <property name="contentService" ref="ContentService" />
+        <property name="principalService" ref="PrincipalService" />
+    </bean>
     <bean id="ingestLineageEmitter" class="jp.aegif.nemaki.rest.ingest.IngestLineageEmitter" />
     <bean id="ingestMetadataService" class="jp.aegif.nemaki.rest.ingest.IngestMetadataService">
         <property name="contentService" ref="ContentService" />
