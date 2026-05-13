@@ -310,6 +310,34 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC15 / RC3 サイクル (進行中, 2026-05-14〜) — フォルダ管理者への ingest 委譲
+
+ブランチ: `release/3.1.1-RC3`
+
+予定スコープ (実装中):
+
+- **External Ingestion の権限委譲** (admin → folder-scoped):
+  - 非 admin が `cmis:all` を持つフォルダに対して、admin が明示委譲した connector を使った **manual-only** Profile を作成・編集・削除可能に
+  - `ConnectorDefinition` に `delegated`(default false) / `allowedFolderIds`(空 = 委譲不可、明示委譲必須) / `allowedPrincipalIds`(user/group 両対応, fail-closed) を追加
+  - `delegateAllFolders=true` の明示フラグでのみ全フォルダ委譲を許可(誤設定での広域委譲防止)
+  - `ImportProfileDefinition` に `createdByUserId` / `delegated` を追加
+  - 非 admin の Profile は `delegated=true` 強制 + `schedulerEnabled=false` + `defaultProfile=false` 強制
+  - 非 admin は `delegated=true` の Profile のみ PUT/DELETE 可能(admin-owned profile は admin only)
+  - `allowedFolderIds` の配下判定は **folder ID + ancestor chain** ベース(path prefix 不可)
+  - `IngestAuthorizationService` を新規追加、判定は `PermissionServiceImpl.checkPermission` 経由の **effective permission**
+  - PUT TOCTOU: target folder 変更前後・connector 範囲変更前後の両方で再評価
+  - `ExternalIngestController` 実行時: 非 admin は `targetFolderOverride` 禁止、`profileId/connectorId` 任意組み合わせ禁止(profile 保存値の範囲のみ)
+  - 新 endpoint: `GET /v1/admin/connectors/summary?targetFolderId=...` — secret を一切返さない非 admin 可参照 endpoint
+  - admin の scheduled / admin-owned profile は触らない(後方互換)
+  - audit に `delegated`, `actorUserId`, `targetFolderId`, `connectorIds` を記録
+  - UI: IntegrationSettings をタブ単位で再ガード(connector / DLQ / job history は admin only、profile / 手動 import は委譲ユーザ可)
+- 設計参考: `docs/design/connector-delegation.md`(別途追加予定)
+
+将来課題 (v2 検討、本 RC では対応しない):
+
+- 非 admin の scheduled profile: `createdByUserId` ベースで実行時 CallContext 再構築 + 対象 folder への cmis:all 再評価が必要
+- createdBy ユーザの非アクティブ化検知 → profile 自動 disable
+
 ### RC14 (2026-05-10) — SAML strict-mode redesign + production hardening posture
 
 - **SAML strict mode** (`saml.require.inResponseTo`):
