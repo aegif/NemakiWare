@@ -155,7 +155,69 @@ async function teardown(request: APIRequestContext, c: Created): Promise<void> {
   await deleteFolderTree(request, c.folderId);
 }
 
+/**
+ * Best-effort cleanup of any leftover delegation-test artefacts from
+ * previous failed runs. Identifies test data by ID prefix; non-matching
+ * production data is untouched. Run from beforeAll so a flaky run
+ * doesn't accumulate orphans across days.
+ */
+async function cleanupDelegationOrphans(request: APIRequestContext) {
+  const prefixes = ['delg-prof-', 'sch-prof-', 'dp-prof-', 'und-prof-', 'ec-prof-',
+                    'priv-prof-', 'aopu-prof-', 'aodel-prof-', 'list-admin-'];
+  try {
+    const profRes = await request.get(`${BASE}/v1/admin/import-profiles?repositoryId=bedroom`, { headers: ADMIN_H });
+    if (profRes.ok()) {
+      const list = await profRes.json();
+      for (const p of list as Array<{ profileId?: string }>) {
+        if (p.profileId && prefixes.some(pre => p.profileId!.startsWith(pre))) {
+          await request.delete(`${BASE}/v1/admin/import-profiles/${p.profileId}`, { headers: ADMIN_H }).catch(() => {});
+        }
+      }
+    }
+  } catch { /* best effort */ }
+  const connPrefixes = ['delg-conn-', 'sch-conn-', 'dp-conn-', 'und-conn-', 'priv-conn-',
+                        'aopu-conn-', 'aodel-conn-', 'other-conn-', 'sneaky-', 'bad-scope-',
+                        'bad-stale-', 'bad-mutex-', 'unauth-'];
+  try {
+    const connRes = await request.get(`${BASE}/v1/admin/connectors`, { headers: ADMIN_H });
+    if (connRes.ok()) {
+      const list = await connRes.json();
+      for (const c of list as Array<{ connectorId?: string }>) {
+        if (c.connectorId && connPrefixes.some(pre => c.connectorId!.startsWith(pre))) {
+          await request.delete(`${BASE}/v1/admin/connectors/${c.connectorId}`, { headers: ADMIN_H }).catch(() => {});
+        }
+      }
+    }
+  } catch { /* best effort */ }
+  // Folder cleanup: list root children, drop names matching delegation-test pattern
+  try {
+    const childRes = await request.get(`${CMIS}/root?cmisselector=children`, { headers: ADMIN_H });
+    if (childRes.ok()) {
+      const body = await childRes.json();
+      const folderPrefixes = ['delg-', 'sch-', 'dp-', 'und-', 'ec-', 'priv-',
+                              'aopu-', 'aodel-', 'swap-victim-'];
+      for (const obj of body.objects ?? []) {
+        const name = cmisProp(obj.object, 'cmis:name') as string | undefined;
+        const id = cmisProp(obj.object, 'cmis:objectId') as string | undefined;
+        if (name && id && folderPrefixes.some(pre => name.startsWith(pre))) {
+          await deleteFolderTree(request, id);
+        }
+      }
+    }
+  } catch { /* best effort */ }
+}
+
 test.describe('Ingest delegation — REST API gates', () => {
+
+  // Sweep any leftover delg-* / sch-* / etc. artefacts before AND after.
+  // Failed runs from previous days can leave folders / connectors behind
+  // that would otherwise collide with the next setUp().
+  test.beforeAll(async ({ request }) => {
+    await cleanupDelegationOrphans(request);
+  });
+  test.afterAll(async ({ request }) => {
+    await cleanupDelegationOrphans(request);
+  });
 
   // ── Connector CRUD remains admin-only ──────────────────────────
 

@@ -76,6 +76,10 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
   const [jsonMode, setJsonMode] = useState(false);
   const schedulerEnabled = Form.useWatch('schedulerEnabled', form) ?? false;
   const formTargetFolderId: string | undefined = Form.useWatch('targetFolderId', form);
+  // For non-admins: derived from the connector summary call result. We use
+  // it as a proxy for "do I hold cmis:all on this folder" — the summary
+  // endpoint short-circuits on a 403 if the caller doesn't.
+  const [folderAccessState, setFolderAccessState] = useState<'unknown' | 'ok' | 'denied' | 'unresolved'>('unknown');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -110,6 +114,12 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
    * summary endpoint enforces cmis:all on targetFolderId server-side and
    * returns only delegated connectors. We swap the picker's source-of-truth
    * map without merging into admin's full map (admin doesn't need this).
+   *
+   * Side effect: also drives the {@link folderAccessState} indicator so
+   * the user gets immediate feedback on whether their entered folder ID
+   * is one they actually hold {@code cmis:all} on. The summary endpoint
+   * returns 403 in that case, which we surface as "denied" rather than
+   * the silent "no connectors visible" the original behaviour gave.
    */
   const refreshConnectorMapForFolder = useCallback(async (targetFolderId?: string) => {
     if (isAdmin || !targetFolderId) return;
@@ -118,10 +128,14 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
       const map: Record<string, string> = {};
       for (const s of summaries) if (s.sourceSystem) map[s.connectorId] = s.sourceSystem;
       setConnectorMap(map);
-    } catch {
-      // Folder not delegated yet, or no connectors delegated — keep the
-      // map empty so the picker is correctly empty.
+      setFolderAccessState('ok');
+    } catch (err) {
+      // The summary helper throws a generic Error; the underlying status
+      // (403 vs 400 vs 500) isn't propagated. We treat any failure as
+      // "denied/unresolved" — the resulting empty connector list makes
+      // the cause obvious in either case.
       setConnectorMap({});
+      setFolderAccessState(err instanceof Error && err.message.includes('400') ? 'unresolved' : 'denied');
     }
   }, [isAdmin, repositoryId]);
 
@@ -138,6 +152,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
     setWarnings([]);
     setSelectedAdapter(null);
     setJsonMode(false);
+    setFolderAccessState('unknown');
     form.resetFields();
     form.setFieldsValue({
       repositoryId,
@@ -338,7 +353,22 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
           <Form.Item name="displayName" label={t('importProfileManagement.form.displayName')}>
             <Input />
           </Form.Item>
-          <Form.Item name="targetFolderId" label={t('importProfileManagement.form.targetFolderId')}>
+          <Form.Item name="targetFolderId" label={t('importProfileManagement.form.targetFolderId')}
+            extra={!isAdmin && formTargetFolderId
+              ? folderAccessState === 'ok'
+                ? <span style={{ color: '#52c41a' }}>
+                    {t('importProfileManagement.form.folderAccessOk', { defaultValue: '✓ このフォルダの管理権限があります' })}
+                  </span>
+                : folderAccessState === 'denied'
+                  ? <span style={{ color: '#ff4d4f' }}>
+                      {t('importProfileManagement.form.folderAccessDenied', { defaultValue: '✗ このフォルダに cmis:all 権限がありません' })}
+                    </span>
+                  : folderAccessState === 'unresolved'
+                    ? <span style={{ color: '#faad14' }}>
+                        {t('importProfileManagement.form.folderUnresolved', { defaultValue: '? フォルダ ID を解決できません' })}
+                      </span>
+                    : null
+              : undefined}>
             <Input placeholder={t('importProfileManagement.form.targetFolderIdHint')} />
           </Form.Item>
           <Form.Item name="targetFolderPath" label={t('importProfileManagement.form.targetFolderPath')}

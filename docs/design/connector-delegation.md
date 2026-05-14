@@ -292,9 +292,16 @@ Delegated ingest (`EXTERNAL_INGEST` / `EXTERNAL_INGEST_FAILED`) records:
   "actorUserId": "alice",
   "profileId": "…",
   "connectorId": "…",
-  "targetFolderOverrideAttempted": true   // only when present
+  "targetFolderOverrideAttempted": true,   // only when present
+  "denialReason": "CONNECTOR_NOT_DELEGATED"  // only on failure
 }
 ```
+
+Every denial — both profile API and runtime ingest — also carries a
+`denialReason` field tagged with a stable {@link DenialReason} enum
+value. See §10 for the full list and what each one means. The
+`errorMessage` field is human-readable and may be tweaked release to
+release; the enum names are part of the audit contract and won't.
 
 Admin ingest continues through the existing AOP audit and is **not**
 double-logged here.
@@ -318,15 +325,40 @@ double-logged here.
 
 ### Auditing delegated activity
 
+Every delegation-related decision (success and denial) emits an audit
+event with a structured `details` map. The `denialReason` field uses
+the stable enum values defined in `DenialReason.java` — see §10 for the
+full list. Free-form English in `errorMessage` may be tweaked between
+releases; the enum names will not.
+
 ```bash
 # Find profiles created by delegation
-grep '"operation":"externalProfileCreated"' audit.log | jq 'select(.details.delegated == true)'
+grep '"operation":"externalProfileCreated"' audit.log \
+  | jq 'select(.details.delegated == true)'
 
-# Find runtime executions by a specific user
-grep '"operation":"externalIngest"' audit.log | jq 'select(.details.actorUserId == "alice")'
+# Runtime executions by a specific user (success + failure)
+grep -E '"operation":"external(Ingest|IngestFailed)"' audit.log \
+  | jq 'select(.details.actorUserId == "alice")'
 
-# Find override attempts (always denied for non-admin, but visible)
-grep targetFolderOverrideAttempted audit.log
+# Every denied attempt against a profile (gate refusal trail)
+jq 'select(.details.denialReason)' audit.log
+
+# Bucketise the most common denial reasons in the last 24h
+jq -r 'select(.details.denialReason)
+       | "\(.timestamp) \(.details.denialReason) \(.details.actorUserId)"' \
+   audit.log \
+  | awk '$1 >= "'"$(date -u -d '24 hours ago' +%Y-%m-%dT%H)"'"' \
+  | awk '{print $2}' | sort | uniq -c | sort -nr
+
+# Override attempts (always denied for non-admin, but visible)
+jq 'select(.details.targetFolderOverrideAttempted == true)' audit.log
+
+# Folder-swap escalation attempts (CMIS_ALL_REQUIRED_NEW)
+jq 'select(.details.denialReason == "CMIS_ALL_REQUIRED_NEW")' audit.log
+
+# Connector swap attempts (CONNECTOR_NOT_DELEGATED on PUT)
+jq 'select(.operation == "externalProfileUpdated"
+           and .details.denialReason == "CONNECTOR_NOT_DELEGATED")' audit.log
 ```
 
 ### Revoking delegation
@@ -349,7 +381,47 @@ backed and shared. Multi-replica deployments inherit the existing
 constraints from `docs/MULTI-REPLICA-DEPLOYMENT.md`; delegation adds
 nothing new.
 
-## 10. Future work (not in v1)
+## 10. `DenialReason` reference
+
+Stable identifiers used in audit `details.denialReason` and in the JSON
+response body's `denialReason` key. Names are part of the audit
+contract — do not rename or remove. Adding new entries is fine.
+
+| Reason | Where it fires | What the operator should check |
+|---|---|---|
+| `SCHEDULER_REQUIRES_ADMIN` | non-admin POST/PUT with `schedulerEnabled=true` | UI client trying to enable scheduler — explain v1 limit, or upgrade caller to admin |
+| `DEFAULT_PROFILE_REQUIRES_ADMIN` | non-admin POST/PUT with `defaultProfile=true` | Same as above; affects repo-wide auto-resolution |
+| `ADMIN_OWNED_PROFILE` | non-admin PUT/DELETE/GET on a profile with `delegated=false` | UI bug listing admin profiles to non-admin, or stale link |
+| `REPOSITORY_REQUIRED` | POST without `repositoryId` | Client payload incomplete |
+| `TARGET_FOLDER_UNRESOLVABLE` | targetFolderId/Path doesn't resolve to an existing folder | Folder deleted between profile open and save, or wrong path |
+| `CMIS_ALL_REQUIRED` | runtime execute / single GET / current-folder check | Caller's ACE was revoked, or they were never granted |
+| `CMIS_ALL_REQUIRED_OLD` | PUT — caller has lost cmis:all on the EXISTING target folder since profile was created | ACL revoke; ask admin to restore or delete the stale profile |
+| `CMIS_ALL_REQUIRED_NEW` | PUT — caller does not have cmis:all on the NEW target folder they're trying to swap to | **Possible escalation attempt** — investigate caller |
+| `EMPTY_ALLOWED_CONNECTORS` | profile create/update with empty allowedConnectorIds, OR runtime gate seeing a corrupted record | UI client bug — must offer at least one delegated connector |
+| `BLANK_CONNECTOR_ENTRY` | allowedConnectorIds list contains a blank string | Client serialisation bug |
+| `UNKNOWN_CONNECTOR` | referenced connector doesn't exist in CouchDB | Connector deleted out from under a profile |
+| `CONNECTOR_NOT_DELEGATED` | connector is not `delegated=true`, scope mismatch, or principal restriction excludes the user | If unexpected, check connector's `allowedFolderIds` / `allowedPrincipalIds` |
+| `DEFAULT_CONNECTOR_NOT_IN_ALLOWED` | profile's `defaultConnectorId` is not listed in `allowedConnectorIds` | Client validation bug — keep them in sync |
+| `PROFILE_NOT_FOUND` | runtime execute references a profileId that doesn't exist | Stale link or recently-deleted profile |
+| `PROFILE_REPO_MISMATCH` | runtime execute targets a profile bound to a different repository | URL routing bug |
+| `PROFILE_ID_REQUIRED` | non-admin runtime execute with no profileId | Auto-resolution path is admin-only by design |
+| `TARGET_FOLDER_OVERRIDE_FORBIDDEN` | non-admin runtime execute with `targetFolderOverride` set | Override is admin-only in v1 |
+| `CONNECTOR_NOT_IN_PROFILE` | runtime execute with a connectorId not in profile's allowedConnectorIds | Client bug; verify pickers match the saved profile |
+| `DEFAULT_CONNECTOR_NOT_DELEGATED` | runtime execute fell through to profile's defaultConnectorId, but admin has since revoked its delegation | Restore delegation or update the profile |
+| `SERVICES_UNAVAILABLE` | required Spring beans missing (should be impossible in production) | Custom application context misconfiguration |
+
+## 11. Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Folder owner sees "Admin-managed profile" when trying to edit a profile they expected to own | The profile was created by an admin (delegated=false). Non-admins can only edit `delegated=true` profiles | Delete and re-create the profile under the folder owner's account, or have admin migrate it (set delegated=true and createdByUserId). v2 will offer a migration tool |
+| Folder owner can't see any connectors in the picker | Either no connector is `delegated=true`, or none has `allowedFolderIds` covering this folder, or the user is excluded by `allowedPrincipalIds` | Check ConnectorManagementTab — the new "委譲" column shows admin-only / scoped / all-folders / misconfigured at a glance |
+| Runtime ingest fails immediately for a non-admin with `CONNECTOR_NOT_DELEGATED` even though the profile saved successfully | An admin revoked the connector's delegation between profile create and execute | Either restore delegation (`delegated=true` + scope) or have the user delete the profile and pick a still-delegated connector |
+| `denialReason: SERVICES_UNAVAILABLE` in audit | Custom Spring context strips one of the required ingest beans | Restore default `serviceContext.xml` wiring; the controller fail-closes rather than fall through to admin path |
+| Connector picker reactively refreshes per keystroke | UI uses `Form.useWatch('targetFolderId')`; React's render cycle debounces. Single-target endpoint per change is intentional | No action — confirmed safe |
+| Non-admin scheduled ingest doesn't fire | By design — non-admin profiles have `schedulerEnabled=false` enforced; the scheduler also defensively skips any record with `delegated=true` regardless | Use manual ingest, or have admin take over the profile (`delegated=false` + admin sets schedulerEnabled) |
+
+## 12. Future work (not in v1)
 
 - **Scheduled delegated profiles.** Requires `IngestSchedulerService`
   to construct a `CallContext` from `createdByUserId` and re-evaluate

@@ -297,4 +297,53 @@ class ExternalIngestControllerGateTest {
         // Must not even attempt to load the profile — override check is first
         verifyNoInteractions(importProfileDefinitionService);
     }
+
+    // ──────────────────────────────────────────────────────────────────
+    // 7. denialReason → audit propagation
+    // ──────────────────────────────────────────────────────────────────
+
+    @Test
+    void denialReasonsAreEmittedToAudit() throws Exception {
+        // Wire a real audit logger spy to assert details.denialReason flows through
+        jp.aegif.nemaki.audit.AuditLogger auditLogger = mock(jp.aegif.nemaki.audit.AuditLogger.class);
+        Field f = ExternalIngestController.class.getDeclaredField("auditLogger");
+        f.setAccessible(true);
+        f.set(controller, auditLogger);
+
+        // 1. targetFolderOverride → TARGET_FOLDER_OVERRIDE_FORBIDDEN
+        nonAdminContext();
+        ExternalIngestRequest overrideReq = baseRequest();
+        overrideReq.setTargetFolderOverride("F-other");
+        ingest(overrideReq);
+
+        // 2. profileId missing → PROFILE_ID_REQUIRED
+        ExternalIngestRequest noProfileReq = baseRequest();
+        noProfileReq.setProfileId(null);
+        ingest(noProfileReq);
+
+        // 3. profile not found → PROFILE_NOT_FOUND
+        when(importProfileDefinitionService.get(PROF)).thenReturn(null);
+        ingest(baseRequest());
+
+        // Verify each call recorded its denialReason in details
+        @SuppressWarnings("unchecked")
+        java.util.ArrayList<java.util.Map<String, Object>> capturedDetails = new java.util.ArrayList<>();
+        verify(auditLogger, times(3)).logOperation(
+                any(jp.aegif.nemaki.audit.AuditOperation.class), any(), any(), any(),
+                eq(false), any(),
+                argThat(detailsMap -> {
+                    if (detailsMap == null) return false;
+                    capturedDetails.add(new java.util.LinkedHashMap<>(detailsMap));
+                    return true;
+                }));
+        java.util.List<String> reasons = capturedDetails.stream()
+                .map(d -> (String) d.get("denialReason"))
+                .toList();
+        org.junit.jupiter.api.Assertions.assertTrue(reasons.contains("TARGET_FOLDER_OVERRIDE_FORBIDDEN"),
+                "expected TARGET_FOLDER_OVERRIDE_FORBIDDEN in " + reasons);
+        org.junit.jupiter.api.Assertions.assertTrue(reasons.contains("PROFILE_ID_REQUIRED"),
+                "expected PROFILE_ID_REQUIRED in " + reasons);
+        org.junit.jupiter.api.Assertions.assertTrue(reasons.contains("PROFILE_NOT_FOUND"),
+                "expected PROFILE_NOT_FOUND in " + reasons);
+    }
 }

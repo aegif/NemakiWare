@@ -45,13 +45,15 @@ public class ImportProfileDefinitionController {
 
         try {
             if (!admin) {
-                ResponseEntity<Map<String, Object>> denied = enforceDelegationOnCreate(ctx, def);
-                if (denied != null) {
+                ResponseEntity<Map<String, Object>> deniedResp = enforceDelegationOnCreate(ctx, def);
+                if (deniedResp != null) {
                     // Audit denied attempts too — security review trail needs
                     // "who tried to do what" not just successes.
-                    audit(AuditOperation.EXTERNAL_PROFILE_CREATED, ctx, def, false,
-                            extractMessage(denied));
-                    return denied;
+                    String reason = extractDenialReason(deniedResp);
+                    String message = extractMessage(deniedResp);
+                    auditDenial(AuditOperation.EXTERNAL_PROFILE_CREATED, ctx, def,
+                            reason != null ? DenialReason.valueOf(reason) : null, message);
+                    return deniedResp;
                 }
             }
             ImportProfileDefinition created = importProfileDefinitionService.create(def);
@@ -101,12 +103,15 @@ public class ImportProfileDefinitionController {
 
         boolean admin = ingestAuthorizationService.isAdmin(ctx);
         if (!admin) {
-            if (!def.isDelegated()) return errorResponse(HttpStatus.FORBIDDEN, "Admin-managed profile");
+            if (!def.isDelegated()) {
+                return denied(HttpStatus.FORBIDDEN, DenialReason.ADMIN_OWNED_PROFILE, "Admin-managed profile");
+            }
             String folderId = ingestAuthorizationService.resolveFolderId(
                     def.getRepositoryId(), def.getTargetFolderId(), def.getTargetFolderPath());
             if (folderId == null
                     || !ingestAuthorizationService.canManageProfileForFolder(ctx, def.getRepositoryId(), folderId)) {
-                return errorResponse(HttpStatus.FORBIDDEN, "cmis:all on target folder required");
+                return denied(HttpStatus.FORBIDDEN, DenialReason.CMIS_ALL_REQUIRED,
+                        "cmis:all on target folder required");
             }
         }
         Map<String, Object> response = new LinkedHashMap<>();
@@ -126,11 +131,13 @@ public class ImportProfileDefinitionController {
         boolean admin = ingestAuthorizationService.isAdmin(ctx);
         try {
             if (!admin) {
-                ResponseEntity<Map<String, Object>> denied = enforceDelegationOnUpdate(ctx, def);
-                if (denied != null) {
-                    audit(AuditOperation.EXTERNAL_PROFILE_UPDATED, ctx, def, false,
-                            extractMessage(denied));
-                    return denied;
+                ResponseEntity<Map<String, Object>> deniedResp = enforceDelegationOnUpdate(ctx, def);
+                if (deniedResp != null) {
+                    String reason = extractDenialReason(deniedResp);
+                    String message = extractMessage(deniedResp);
+                    auditDenial(AuditOperation.EXTERNAL_PROFILE_UPDATED, ctx, def,
+                            reason != null ? DenialReason.valueOf(reason) : null, message);
+                    return deniedResp;
                 }
             }
             importProfileDefinitionService.update(def);
@@ -160,16 +167,21 @@ public class ImportProfileDefinitionController {
         if (existing == null) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
         if (!admin) {
             if (!existing.isDelegated()) {
-                audit(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, existing, false, "Admin-managed profile");
-                return errorResponse(HttpStatus.FORBIDDEN, "Admin-managed profile");
+                ResponseEntity<Map<String, Object>> resp = denied(HttpStatus.FORBIDDEN,
+                        DenialReason.ADMIN_OWNED_PROFILE, "Admin-managed profile");
+                auditDenial(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, existing,
+                        DenialReason.ADMIN_OWNED_PROFILE, "Admin-managed profile");
+                return resp;
             }
             String folderId = ingestAuthorizationService.resolveFolderId(
                     existing.getRepositoryId(), existing.getTargetFolderId(), existing.getTargetFolderPath());
             if (folderId == null
                     || !ingestAuthorizationService.canManageProfileForFolder(ctx, existing.getRepositoryId(), folderId)) {
-                audit(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, existing, false,
-                        "cmis:all on target folder required");
-                return errorResponse(HttpStatus.FORBIDDEN, "cmis:all on target folder required");
+                ResponseEntity<Map<String, Object>> resp = denied(HttpStatus.FORBIDDEN,
+                        DenialReason.CMIS_ALL_REQUIRED, "cmis:all on target folder required");
+                auditDenial(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, existing,
+                        DenialReason.CMIS_ALL_REQUIRED, "cmis:all on target folder required");
+                return resp;
             }
         }
         // Stop IDLE thread before deletion (no-op if not running)
@@ -196,24 +208,26 @@ public class ImportProfileDefinitionController {
         // Strict v1 limits — refuse rather than silently coerce so the UI/CLI
         // sees an explicit error and the operator knows what's restricted.
         if (def.isSchedulerEnabled()) {
-            return errorResponse(HttpStatus.FORBIDDEN,
+            return denied(HttpStatus.FORBIDDEN, DenialReason.SCHEDULER_REQUIRES_ADMIN,
                     "Scheduled ingestion requires admin privileges in this release");
         }
         if (def.isDefaultProfile()) {
-            return errorResponse(HttpStatus.FORBIDDEN,
+            return denied(HttpStatus.FORBIDDEN, DenialReason.DEFAULT_PROFILE_REQUIRES_ADMIN,
                     "defaultProfile=true requires admin privileges (affects repository-wide auto-resolution)");
         }
         String repositoryId = def.getRepositoryId();
         if (repositoryId == null || repositoryId.isBlank()) {
-            return errorResponse(HttpStatus.BAD_REQUEST, "repositoryId is required");
+            return denied(HttpStatus.BAD_REQUEST, DenialReason.REPOSITORY_REQUIRED, "repositoryId is required");
         }
         String folderId = ingestAuthorizationService.resolveFolderId(
                 repositoryId, def.getTargetFolderId(), def.getTargetFolderPath());
         if (folderId == null) {
-            return errorResponse(HttpStatus.BAD_REQUEST, "targetFolderId or targetFolderPath must resolve");
+            return denied(HttpStatus.BAD_REQUEST, DenialReason.TARGET_FOLDER_UNRESOLVABLE,
+                    "targetFolderId or targetFolderPath must resolve");
         }
         if (!ingestAuthorizationService.canManageProfileForFolder(ctx, repositoryId, folderId)) {
-            return errorResponse(HttpStatus.FORBIDDEN, "cmis:all on target folder required");
+            return denied(HttpStatus.FORBIDDEN, DenialReason.CMIS_ALL_REQUIRED,
+                    "cmis:all on target folder required");
         }
         // Normalise to ID — avoids the path moving out from under the profile
         def.setTargetFolderId(folderId);
@@ -251,14 +265,14 @@ public class ImportProfileDefinitionController {
         ImportProfileDefinition existing = importProfileDefinitionService.get(def.getProfileId());
         if (existing == null) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
         if (!existing.isDelegated()) {
-            return errorResponse(HttpStatus.FORBIDDEN, "Admin-managed profile");
+            return denied(HttpStatus.FORBIDDEN, DenialReason.ADMIN_OWNED_PROFILE, "Admin-managed profile");
         }
         if (def.isSchedulerEnabled()) {
-            return errorResponse(HttpStatus.FORBIDDEN,
+            return denied(HttpStatus.FORBIDDEN, DenialReason.SCHEDULER_REQUIRES_ADMIN,
                     "Scheduled ingestion requires admin privileges in this release");
         }
         if (def.isDefaultProfile()) {
-            return errorResponse(HttpStatus.FORBIDDEN,
+            return denied(HttpStatus.FORBIDDEN, DenialReason.DEFAULT_PROFILE_REQUIRES_ADMIN,
                     "defaultProfile=true requires admin privileges (affects repository-wide auto-resolution)");
         }
 
@@ -271,17 +285,20 @@ public class ImportProfileDefinitionController {
                 repositoryId, existing.getTargetFolderId(), existing.getTargetFolderPath());
         if (oldFolderId == null
                 || !ingestAuthorizationService.canManageProfileForFolder(ctx, repositoryId, oldFolderId)) {
-            return errorResponse(HttpStatus.FORBIDDEN, "cmis:all required on existing target folder");
+            return denied(HttpStatus.FORBIDDEN, DenialReason.CMIS_ALL_REQUIRED_OLD,
+                    "cmis:all required on existing target folder");
         }
 
         // New folder check (which may equal oldFolderId — re-checked anyway)
         String newFolderId = ingestAuthorizationService.resolveFolderId(
                 repositoryId, def.getTargetFolderId(), def.getTargetFolderPath());
         if (newFolderId == null) {
-            return errorResponse(HttpStatus.BAD_REQUEST, "targetFolderId or targetFolderPath must resolve");
+            return denied(HttpStatus.BAD_REQUEST, DenialReason.TARGET_FOLDER_UNRESOLVABLE,
+                    "targetFolderId or targetFolderPath must resolve");
         }
         if (!ingestAuthorizationService.canManageProfileForFolder(ctx, repositoryId, newFolderId)) {
-            return errorResponse(HttpStatus.FORBIDDEN, "cmis:all required on new target folder");
+            return denied(HttpStatus.FORBIDDEN, DenialReason.CMIS_ALL_REQUIRED_NEW,
+                    "cmis:all required on new target folder");
         }
         def.setTargetFolderId(newFolderId);
         def.setTargetFolderPath(null);
@@ -318,25 +335,27 @@ public class ImportProfileDefinitionController {
             CallContext ctx, String repositoryId, String targetFolderId, ImportProfileDefinition def) {
         List<String> allowed = def.getAllowedConnectorIds();
         if (allowed == null || allowed.isEmpty()) {
-            return errorResponse(HttpStatus.BAD_REQUEST,
+            return denied(HttpStatus.BAD_REQUEST, DenialReason.EMPTY_ALLOWED_CONNECTORS,
                     "allowedConnectorIds must be a non-empty list of admin-delegated connectors");
         }
         for (String cid : allowed) {
             if (cid == null || cid.isBlank()) {
-                return errorResponse(HttpStatus.BAD_REQUEST, "allowedConnectorIds must not contain blank entries");
+                return denied(HttpStatus.BAD_REQUEST, DenialReason.BLANK_CONNECTOR_ENTRY,
+                        "allowedConnectorIds must not contain blank entries");
             }
             ConnectorDefinition c = connectorDefinitionService.get(cid);
             if (c == null) {
-                return errorResponse(HttpStatus.BAD_REQUEST, "Unknown connector: " + cid);
+                return denied(HttpStatus.BAD_REQUEST, DenialReason.UNKNOWN_CONNECTOR,
+                        "Unknown connector: " + cid);
             }
             if (!ingestAuthorizationService.canUseConnectorForDelegatedProfile(ctx, repositoryId, c, targetFolderId)) {
-                return errorResponse(HttpStatus.FORBIDDEN,
+                return denied(HttpStatus.FORBIDDEN, DenialReason.CONNECTOR_NOT_DELEGATED,
                         "Connector not delegated for this folder/user: " + cid);
             }
         }
         String defConn = def.getDefaultConnectorId();
         if (defConn != null && !defConn.isBlank() && !allowed.contains(defConn)) {
-            return errorResponse(HttpStatus.BAD_REQUEST,
+            return denied(HttpStatus.BAD_REQUEST, DenialReason.DEFAULT_CONNECTOR_NOT_IN_ALLOWED,
                     "defaultConnectorId must be one of allowedConnectorIds");
         }
         return null;
@@ -360,6 +379,17 @@ public class ImportProfileDefinitionController {
 
     private void audit(AuditOperation op, CallContext ctx, ImportProfileDefinition def,
                        boolean success, String errorMessage) {
+        auditWithReason(op, ctx, def, success, errorMessage, null);
+    }
+
+    /** Audit a denial with a stable {@link DenialReason} tag in the details map. */
+    private void auditDenial(AuditOperation op, CallContext ctx, ImportProfileDefinition def,
+                             DenialReason reason, String message) {
+        auditWithReason(op, ctx, def, false, message, reason);
+    }
+
+    private void auditWithReason(AuditOperation op, CallContext ctx, ImportProfileDefinition def,
+                                 boolean success, String errorMessage, DenialReason denialReason) {
         if (auditLogger == null || ctx == null || def == null) return;
         try {
             String repoId = def.getRepositoryId();
@@ -372,6 +402,7 @@ public class ImportProfileDefinitionController {
             if (def.getAllowedConnectorIds() != null && !def.getAllowedConnectorIds().isEmpty()) {
                 details.put("connectorIds", def.getAllowedConnectorIds());
             }
+            if (denialReason != null) details.put("denialReason", denialReason.name());
             auditLogger.logOperation(op, repoId, actor, objectId, success, errorMessage, details);
         } catch (RuntimeException ignored) {
             // Audit must not break the API path
@@ -383,6 +414,27 @@ public class ImportProfileDefinitionController {
         if (denied == null || denied.getBody() == null) return "denied";
         Object msg = denied.getBody().get("message");
         return msg != null ? msg.toString() : "denied";
+    }
+
+    /** Pulls the structured {@link DenialReason} key out of a body produced by {@link #denied}. */
+    private static String extractDenialReason(ResponseEntity<Map<String, Object>> denied) {
+        if (denied == null || denied.getBody() == null) return null;
+        Object reason = denied.getBody().get("denialReason");
+        return reason != null ? reason.toString() : null;
+    }
+
+    /**
+     * Build a delegation-denial response that carries both a stable
+     * {@link DenialReason} key and the human-readable message. Used by
+     * every gate inside {@code enforceDelegation*} so the audit trail
+     * gets a structured tag, not just free-form text.
+     */
+    private ResponseEntity<Map<String, Object>> denied(HttpStatus status, DenialReason reason, String message) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", "error");
+        response.put("denialReason", reason.name());
+        response.put("message", message);
+        return ResponseEntity.status(status).body(response);
     }
 
     private ResponseEntity<Map<String, Object>> errorResponse(HttpStatus status, String message) {

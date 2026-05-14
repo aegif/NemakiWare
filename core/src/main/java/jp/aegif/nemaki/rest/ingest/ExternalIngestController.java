@@ -125,18 +125,22 @@ public class ExternalIngestController {
         boolean delegatedRequest = false;
         if (ingestAuthorizationService == null) {
             // Missing means deny — never silently downgrade non-admins.
+            // Audit emits SERVICES_UNAVAILABLE without consulting the
+            // (null) authorization service.
+            auditDelegatedAttempt(callContext, repositoryId, request, false,
+                    "Authorization service unavailable; ingest disabled",
+                    DenialReason.SERVICES_UNAVAILABLE);
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(ExternalIngestResult.error("unknown",
                             "Authorization service unavailable; ingest disabled"));
         }
         if (!ingestAuthorizationService.isAdmin(callContext)) {
             delegatedRequest = true;
-            ResponseEntity<ExternalIngestResult> denied = enforceDelegatedExecution(callContext, repositoryId, request);
-            if (denied != null) {
+            Denial denial = enforceDelegatedExecution(callContext, repositoryId, request);
+            if (denial != null) {
                 auditDelegatedAttempt(callContext, repositoryId, request, false,
-                        denied.getBody() != null && denied.getBody().errors() != null && !denied.getBody().errors().isEmpty()
-                                ? denied.getBody().errors().get(0) : "denied");
-                return denied;
+                        denial.message(), denial.reason());
+                return denial.toResponse();
             }
         }
 
@@ -194,6 +198,12 @@ public class ExternalIngestController {
      */
     private void auditDelegatedAttempt(CallContext ctx, String repositoryId,
                                        ExternalIngestRequest request, boolean success, String errorMessage) {
+        auditDelegatedAttempt(ctx, repositoryId, request, success, errorMessage, null);
+    }
+
+    private void auditDelegatedAttempt(CallContext ctx, String repositoryId,
+                                       ExternalIngestRequest request, boolean success,
+                                       String errorMessage, DenialReason denialReason) {
         if (auditLogger == null || ctx == null) return;
         try {
             String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
@@ -203,6 +213,7 @@ public class ExternalIngestController {
             if (request.getProfileId() != null) details.put("profileId", request.getProfileId());
             if (request.getConnectorId() != null) details.put("connectorId", request.getConnectorId());
             if (request.getTargetFolderOverride() != null) details.put("targetFolderOverrideAttempted", true);
+            if (denialReason != null) details.put("denialReason", denialReason.name());
             jp.aegif.nemaki.audit.AuditOperation op = success
                     ? jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST
                     : jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST_FAILED;
@@ -276,52 +287,62 @@ public class ExternalIngestController {
     }
 
     /**
-     * Runs the non-admin runtime gate. Returns {@code null} when the caller
-     * is allowed; otherwise returns a {@code 403/400/404} response that the
-     * caller should send back as-is. Every failure mode is logged but the
-     * client message stays terse — we don't want to leak which step failed
-     * (folder absent vs. not delegated vs. wrong connector).
+     * Carries a refusal across the gate boundary. The {@link DenialReason}
+     * is recorded in the audit details map so SOC tooling can search by
+     * code rather than by free-form English. The wire body still uses the
+     * existing {@link ExternalIngestResult#error} factory so external
+     * clients see no schema change.
      */
-    private ResponseEntity<ExternalIngestResult> enforceDelegatedExecution(
+    private record Denial(HttpStatus status, DenialReason reason, String requestId, String message) {
+        ResponseEntity<ExternalIngestResult> toResponse() {
+            return ResponseEntity.status(status).body(ExternalIngestResult.error(requestId, message));
+        }
+    }
+
+    /**
+     * Runs the non-admin runtime gate. Returns {@code null} when the caller
+     * is allowed; otherwise returns a {@link Denial}. Every failure mode is
+     * logged but the client message stays terse — we don't want to leak
+     * which step failed (folder absent vs. not delegated vs. wrong
+     * connector).
+     */
+    private Denial enforceDelegatedExecution(
             CallContext callContext, String repositoryId, ExternalIngestRequest request) {
 
         // (4) Override forbidden in v1 — keep the gate explicit even if a
         // future release re-enables it under separate ACL evaluation.
         if (request.getTargetFolderOverride() != null && !request.getTargetFolderOverride().isBlank()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ExternalIngestResult.error("unknown",
-                            "targetFolderOverride is not permitted for non-admin callers"));
+            return new Denial(HttpStatus.FORBIDDEN, DenialReason.TARGET_FOLDER_OVERRIDE_FORBIDDEN,
+                    "unknown", "targetFolderOverride is not permitted for non-admin callers");
         }
         // Defence in depth — these services are @Autowired (required) so
         // the bean factory has already failed if they were missing. The
         // null check exists in case some misconfigured custom context
         // strips them; missing means deny.
         if (importProfileDefinitionService == null || connectorDefinitionService == null) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(ExternalIngestResult.error("unknown",
-                            "Ingest services unavailable; non-admin ingest disabled"));
+            return new Denial(HttpStatus.SERVICE_UNAVAILABLE, DenialReason.SERVICES_UNAVAILABLE,
+                    "unknown", "Ingest services unavailable; non-admin ingest disabled");
         }
         // (1) profileId is mandatory for non-admin — admin auto-resolution
         // would happily pick a profile the caller can't manage.
         String profileId = request.getProfileId();
         if (profileId == null || profileId.isBlank()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ExternalIngestResult.error("unknown",
-                            "profileId is required for non-admin ingestion"));
+            return new Denial(HttpStatus.FORBIDDEN, DenialReason.PROFILE_ID_REQUIRED,
+                    "unknown", "profileId is required for non-admin ingestion");
         }
         ImportProfileDefinition profile = importProfileDefinitionService.get(profileId);
         if (profile == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ExternalIngestResult.error("unknown", "Profile not found"));
+            return new Denial(HttpStatus.NOT_FOUND, DenialReason.PROFILE_NOT_FOUND,
+                    "unknown", "Profile not found");
         }
         if (!profile.isDelegated()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ExternalIngestResult.error("unknown", "Admin-managed profile"));
+            return new Denial(HttpStatus.FORBIDDEN, DenialReason.ADMIN_OWNED_PROFILE,
+                    "unknown", "Admin-managed profile");
         }
         // Repo must match — non-admins cannot route a profile across repos.
         if (profile.getRepositoryId() != null && !profile.getRepositoryId().equals(repositoryId)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ExternalIngestResult.error("unknown", "Profile is not bound to this repository"));
+            return new Denial(HttpStatus.FORBIDDEN, DenialReason.PROFILE_REPO_MISMATCH,
+                    "unknown", "Profile is not bound to this repository");
         }
 
         // (2) Runtime fail-closed for the profile shape itself. The create
@@ -333,9 +354,9 @@ public class ExternalIngestController {
         // the credential-indirect-delegation hole we are guarding against.
         // So we close it explicitly in the runtime gate too.
         if (profile.getAllowedConnectorIds() == null || profile.getAllowedConnectorIds().isEmpty()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ExternalIngestResult.error("unknown",
-                            "Delegated profile has no allowedConnectorIds; refusing to fall back to 'any connector'"));
+            return new Denial(HttpStatus.FORBIDDEN, DenialReason.EMPTY_ALLOWED_CONNECTORS,
+                    "unknown",
+                    "Delegated profile has no allowedConnectorIds; refusing to fall back to 'any connector'");
         }
 
         // (3) Re-evaluate cmis:all at execution time — guards against ACL
@@ -343,12 +364,12 @@ public class ExternalIngestController {
         String folderId = ingestAuthorizationService.resolveFolderId(
                 repositoryId, profile.getTargetFolderId(), profile.getTargetFolderPath());
         if (folderId == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ExternalIngestResult.error("unknown", "Target folder no longer resolvable"));
+            return new Denial(HttpStatus.NOT_FOUND, DenialReason.TARGET_FOLDER_UNRESOLVABLE,
+                    "unknown", "Target folder no longer resolvable");
         }
         if (!ingestAuthorizationService.canManageProfileForFolder(callContext, repositoryId, folderId)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ExternalIngestResult.error("unknown", "cmis:all on target folder required"));
+            return new Denial(HttpStatus.FORBIDDEN, DenialReason.CMIS_ALL_REQUIRED,
+                    "unknown", "cmis:all on target folder required");
         }
 
         // (4) connectorId, if provided, must be in the profile's saved
@@ -358,20 +379,18 @@ public class ExternalIngestController {
         String connectorId = request.getConnectorId();
         if (connectorId != null && !connectorId.isBlank()) {
             if (!profile.isConnectorAllowed(connectorId)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(ExternalIngestResult.error(connectorId,
-                                "Connector not in profile's allowedConnectorIds"));
+                return new Denial(HttpStatus.FORBIDDEN, DenialReason.CONNECTOR_NOT_IN_PROFILE,
+                        connectorId, "Connector not in profile's allowedConnectorIds");
             }
             ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
             if (connector == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(ExternalIngestResult.error(connectorId, "Connector not found"));
+                return new Denial(HttpStatus.NOT_FOUND, DenialReason.UNKNOWN_CONNECTOR,
+                        connectorId, "Connector not found");
             }
             if (!ingestAuthorizationService.canUseConnectorForDelegatedProfile(
                     callContext, repositoryId, connector, folderId)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(ExternalIngestResult.error(connectorId,
-                                "Connector no longer delegated for this folder/user"));
+                return new Denial(HttpStatus.FORBIDDEN, DenialReason.CONNECTOR_NOT_DELEGATED,
+                        connectorId, "Connector no longer delegated for this folder/user");
             }
         } else if (profile.getDefaultConnectorId() != null) {
             // No explicit connector — verify the profile's default is still delegated.
@@ -380,9 +399,8 @@ public class ExternalIngestController {
             if (connector == null
                     || !ingestAuthorizationService.canUseConnectorForDelegatedProfile(
                             callContext, repositoryId, connector, folderId)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(ExternalIngestResult.error(def,
-                                "Profile's default connector no longer delegated"));
+                return new Denial(HttpStatus.FORBIDDEN, DenialReason.DEFAULT_CONNECTOR_NOT_DELEGATED,
+                        def, "Profile's default connector no longer delegated");
             }
         }
         return null;
