@@ -480,6 +480,7 @@ const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');  // Not 
 - Do not commit secrets. Local defaults: CouchDB `admin/password` (dev only).
 - Primary config: `core/nemakiware.properties`, `docker/repositories.yml`.
 - For Java 21, ensure `MAVEN_OPTS` includes required `--add-opens` (see `core/start-jetty-dev.sh`).
+- **External Ingest delegation (3.1.1-RC3+)**: connectors are admin-only by default. To let a folder owner use a connector, set `delegated=true` AND either `allowedFolderIds=[...]` or `delegateAllFolders=true` (the latter only when truly needed — credential reach is repo-wide). Empty `allowedFolderIds` while `delegated=true` is treated as no delegation. See `docs/design/connector-delegation.md`.
 
 ## Current Work Status (2026-04-17)
 

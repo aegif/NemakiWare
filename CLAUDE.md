@@ -310,33 +310,63 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
-### RC15 / RC3 サイクル (進行中, 2026-05-14〜) — フォルダ管理者への ingest 委譲
+### RC15 / RC3 (2026-05-14) — フォルダ管理者への ingest 委譲
 
-ブランチ: `release/3.1.1-RC3`
+ブランチ: `release/3.1.1-RC3` / 主要コミット: `2186a40b0`
 
-予定スコープ (実装中):
+**実装済み境界**: 非 admin が `cmis:all` を持つフォルダに対して、admin が明示委譲した connector を使った **manual-only** な delegated profile を作成・編集・削除できる。admin-owned profile と scheduled ingestion はそのまま admin 専用。
 
-- **External Ingestion の権限委譲** (admin → folder-scoped):
-  - 非 admin が `cmis:all` を持つフォルダに対して、admin が明示委譲した connector を使った **manual-only** Profile を作成・編集・削除可能に
-  - `ConnectorDefinition` に `delegated`(default false) / `allowedFolderIds`(空 = 委譲不可、明示委譲必須) / `allowedPrincipalIds`(user/group 両対応, fail-closed) を追加
-  - `delegateAllFolders=true` の明示フラグでのみ全フォルダ委譲を許可(誤設定での広域委譲防止)
-  - `ImportProfileDefinition` に `createdByUserId` / `delegated` を追加
-  - 非 admin の Profile は `delegated=true` 強制 + `schedulerEnabled=false` + `defaultProfile=false` 強制
-  - 非 admin は `delegated=true` の Profile のみ PUT/DELETE 可能(admin-owned profile は admin only)
-  - `allowedFolderIds` の配下判定は **folder ID + ancestor chain** ベース(path prefix 不可)
-  - `IngestAuthorizationService` を新規追加、判定は `PermissionServiceImpl.checkPermission` 経由の **effective permission**
-  - PUT TOCTOU: target folder 変更前後・connector 範囲変更前後の両方で再評価
-  - `ExternalIngestController` 実行時: 非 admin は `targetFolderOverride` 禁止、`profileId/connectorId` 任意組み合わせ禁止(profile 保存値の範囲のみ)
-  - 新 endpoint: `GET /v1/admin/connectors/summary?targetFolderId=...` — secret を一切返さない非 admin 可参照 endpoint
-  - admin の scheduled / admin-owned profile は触らない(後方互換)
-  - audit に `delegated`, `actorUserId`, `targetFolderId`, `connectorIds` を記録
-  - UI: IntegrationSettings をタブ単位で再ガード(connector / DLQ / job history は admin only、profile / 手動 import は委譲ユーザ可)
-- 設計参考: `docs/design/connector-delegation.md`(別途追加予定)
+#### バックエンド
 
-将来課題 (v2 検討、本 RC では対応しない):
+- `ConnectorDefinition` に 4 フィールド追加 (POJO + バリデーション):
+  - `delegated` (default `false`) — 委譲 opt-in フラグ
+  - `delegateAllFolders` (default `false`) — リポジトリ全体委譲(明示要求)
+  - `allowedFolderIds` — 空は **委譲不可** として扱う(誤設定での広域委譲防止)
+  - `allowedPrincipalIds` — user / group 両対応 (`PrincipalService` で展開、fail-closed)
+- `ImportProfileDefinition` に `createdByUserId` / `delegated` 追加。非 admin の POST/PUT は `delegated=true` + `schedulerEnabled=false` + `defaultProfile=false` を強制
+- `IngestAuthorizationService` (新規):
+  - effective `cmis:all` 判定 (user + groups + Anyone principal の union × `Acl.getAllAces()` を直接走査、`PermissionMapping` 設定差の影響を受けない)
+  - 配下判定は **folder ID + ancestor chain** (path-prefix 不可、cycle 検出 128 hop で打切り)
+  - 全パス fail-closed
+  - 28 unit tests (admin / cmis:all-via-user / via-group / via-Anyone / read-only / null acl / fail-closed / cycle / etc.)
+- `ImportProfileDefinitionController`:
+  - POST: folder 解決 → `canManageProfileForFolder` → 全 `allowedConnectorIds` を `canUseConnectorForDelegatedProfile` で検証 → 非空必須(暗黙の "any connector" を拒否)
+  - PUT: TOCTOU 両方向 — 既存 + 新 target folder 両方で `cmis:all` 必要、connector list も既存 + 新の両方で許可確認
+  - PUT/DELETE: 非 admin は `delegated=true` の profile のみ操作可
+  - GET (list): profile を iterate して `canManageProfileForFolder` で per-profile filter (フォルダツリー全走査しない)
+- `ConnectorDefinitionController.GET /summary?repositoryId=&targetFolderId=`:
+  - secret / endpoint / scope 一切含まないスリム DTO
+  - `cmis:all` ガード + `canUseConnectorForDelegatedProfile` フィルタ
+- `ExternalIngestController` 実行時:
+  - `IngestAuthorizationService` を **required dependency** (Spring 起動時 fail-fast)
+  - 念のため null check で 503 (defence in depth、fail-open しない)
+  - 非 admin: `targetFolderOverride` 禁止 (403)、`profileId` 必須、profile.delegated 必須、profile.repositoryId 一致必須、`cmis:all` 実行時再評価、`connectorId` は profile.allowedConnectorIds 内かつ依然委譲済みであること
+- `AuditLogger.logOperation` に `details` map を受ける overload 追加。新 ops: `EXTERNAL_PROFILE_CREATED/UPDATED/DELETED`。delegated ingest path も `{delegated, actorUserId, profileId, connectorId}` を audit 詳細に記録
 
-- 非 admin の scheduled profile: `createdByUserId` ベースで実行時 CallContext 再構築 + 対象 folder への cmis:all 再評価が必要
+#### UI
+
+- `IntegrationSettings` 全体の `AdminRoute` ガードを廃止。タブ単位フィルタへ:
+  - admin: 全タブ
+  - 非 admin: `import-profiles` + `manual-ingest` のみ + 「委譲ビュー」notice
+- `ImportProfileManagementTab`:
+  - schedulerEnabled / defaultProfile スイッチは非 admin で `disabled` + tooltip
+  - connector picker は `connectorMap` 由来の options-driven `Select` (admin: `tags`、非 admin: `multiple` で自由タグ禁止)
+  - 非 admin は form の `targetFolderId` 変更を watch して `/connectors/summary` から map を更新
+- `ManualIngestTab`:
+  - admin: 従来 (connector → profile)
+  - 非 admin: 順序逆転 (profile → connector)。profile 選択後に `listConnectorSummary(repo, targetFolderId)` を呼び `profile.allowedConnectorIds` と intersect。`listConnectors()` (admin-only) は非 admin path から一切呼ばない
+- i18n ja/en: `delegatedNotice` / `noAccess` / `schedulerAdminOnly` / `defaultProfileAdminOnly` / `noDelegatedConnectors` / `selectProfileFirst`
+
+#### ドキュメント
+
+- 設計詳細: `docs/design/connector-delegation.md`
+- 操作者向けヘルプ: README.md (Permission Model セクション) / AGENTS.md (Scalability + Operations)
+
+#### 将来課題 (v2 検討、本 RC では対応しない)
+
+- 非 admin の scheduled profile: `createdByUserId` ベースで実行時 CallContext 再構築 + 対象 folder への `cmis:all` 再評価が必要
 - createdBy ユーザの非アクティブ化検知 → profile 自動 disable
+- フォルダ選択 UI (現状はオブジェクト ID/path 手入力)
 
 ### RC14 (2026-05-10) — SAML strict-mode redesign + production hardening posture
 

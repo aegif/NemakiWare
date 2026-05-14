@@ -100,6 +100,7 @@ Every search result is checked against the requesting user's permissions before 
 - Inherited permissions from parent folders
 - User/group-based access control
 - Admin simulation mode for verifying what a specific user can see
+- **External Ingestion delegation (3.1.1-RC3+)**: folder owners with `cmis:all` can manage manual-only import profiles for their folders, using only connectors an admin has expressly delegated. Scheduler, default-profile, connector CRUD, and admin-owned profiles remain admin-only. See [`docs/design/connector-delegation.md`](docs/design/connector-delegation.md) for the full model
 
 ### MCP Server
 

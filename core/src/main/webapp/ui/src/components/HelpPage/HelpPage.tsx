@@ -538,6 +538,49 @@ const AdminGuide: React.FC = () => {
             </Descriptions.Item>
           </Descriptions>
 
+          {/* --- フォルダ管理者への委譲 (3.1.1-RC3 追加) --- */}
+          <Divider />
+          <Title level={5}>{t('help.admin.ingestDelegation', 'フォルダ管理者への委譲')}</Title>
+          <Paragraph>
+            {t('help.admin.ingestDelegationIntro', '管理者が明示的に許可した範囲内で、フォルダオーナー（cmis:all 権限保持者）に手動インポートのプロファイル管理を委譲できます。スケジュール取り込み・コネクタ作成・admin-owned プロファイルの編集は引き続き管理者専用です。')}
+          </Paragraph>
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label={t('help.admin.ingestDelegationField1', 'delegated (デフォルト false)')}>
+              {t('help.admin.ingestDelegationField1Desc', 'コネクタの委譲を opt-in する。false のままなら admin 専用です。コネクタ画面で個別にトグルしてください。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestDelegationField2', 'allowedFolderIds')}>
+              {t('help.admin.ingestDelegationField2Desc', '委譲対象フォルダ ID のリスト。配下のフォルダにも委譲が及びます（フォルダ ID + 親チェーンで判定、path prefix ではないため rename / move に強い）。空のままで delegateAllFolders=false の場合は「委譲なし」として扱われます — 管理者の設定漏れで広域委譲されることを防ぐ意図的な仕様です。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestDelegationField3', 'delegateAllFolders (デフォルト false)')}>
+              {t('help.admin.ingestDelegationField3Desc', 'リポジトリ全体で委譲を許可する明示フラグです。クレデンシャルが全フォルダに届くため、本当に必要な場合のみ有効化してください。')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('help.admin.ingestDelegationField4', 'allowedPrincipalIds')}>
+              {t('help.admin.ingestDelegationField4Desc', 'ユーザ ID とグループ ID で利用者を絞り込みます（PrincipalService によるグループ展開、fail-closed）。空のままなら principal 制約なし（folder 制約のみ）。')}
+            </Descriptions.Item>
+          </Descriptions>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginTop: 12 }}
+            message={t('help.admin.ingestDelegationRunbook', '運用フロー')}
+            description={
+              <ol style={{ margin: 0, paddingLeft: 20 }}>
+                <li>{t('help.admin.ingestDelegationRunbook1', '管理者がコネクタを作成し、必要に応じて delegated=true + allowedFolderIds（または delegateAllFolders=true）+ allowedPrincipalIds を設定する')}</li>
+                <li>{t('help.admin.ingestDelegationRunbook2', 'フォルダオーナー（cmis:all 保持者）が「連携設定」を開くと、import-profiles と manual-ingest タブのみ表示される')}</li>
+                <li>{t('help.admin.ingestDelegationRunbook3', 'プロファイル作成時、targetFolderId に基づき委譲済みコネクタのみが選択肢に出る（/connectors/summary 経由）')}</li>
+                <li>{t('help.admin.ingestDelegationRunbook4', '保存されたプロファイルは delegated=true / schedulerEnabled=false / defaultProfile=false で固定される')}</li>
+                <li>{t('help.admin.ingestDelegationRunbook5', '実行時にも cmis:all とコネクタ委譲を再評価。targetFolderOverride は非 admin で 403')}</li>
+              </ol>
+            }
+          />
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginTop: 12 }}
+            message={t('help.admin.ingestDelegationLimits', '本リリースの制約')}
+            description={t('help.admin.ingestDelegationLimitsDesc', '非 admin が作成したプロファイルは scheduler / defaultProfile / targetFolderOverride を使えません。これらが必要な場合は管理者が代理で作成してください。委譲対象コネクタを後から無効化（delegated=false）した場合、既存プロファイルは実行時に拒否され、次回 PUT で TOCTOU 検査によって弾かれます。詳細は docs/design/connector-delegation.md を参照してください。')}
+          />
+
           {/* --- 実行パターン --- */}
           <Title level={5} style={{ marginTop: 24 }}>{t('help.admin.ingestExecution', '実行パターン')}</Title>
           <Descriptions bordered size="small" column={1}>
