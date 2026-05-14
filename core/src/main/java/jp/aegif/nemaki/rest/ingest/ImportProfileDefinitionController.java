@@ -46,7 +46,13 @@ public class ImportProfileDefinitionController {
         try {
             if (!admin) {
                 ResponseEntity<Map<String, Object>> denied = enforceDelegationOnCreate(ctx, def);
-                if (denied != null) return denied;
+                if (denied != null) {
+                    // Audit denied attempts too — security review trail needs
+                    // "who tried to do what" not just successes.
+                    audit(AuditOperation.EXTERNAL_PROFILE_CREATED, ctx, def, false,
+                            extractMessage(denied));
+                    return denied;
+                }
             }
             ImportProfileDefinition created = importProfileDefinitionService.create(def);
             audit(AuditOperation.EXTERNAL_PROFILE_CREATED, ctx, def, true, null);
@@ -121,7 +127,11 @@ public class ImportProfileDefinitionController {
         try {
             if (!admin) {
                 ResponseEntity<Map<String, Object>> denied = enforceDelegationOnUpdate(ctx, def);
-                if (denied != null) return denied;
+                if (denied != null) {
+                    audit(AuditOperation.EXTERNAL_PROFILE_UPDATED, ctx, def, false,
+                            extractMessage(denied));
+                    return denied;
+                }
             }
             importProfileDefinitionService.update(def);
             // If profile was disabled and IDLE is running, stop the IDLE thread
@@ -149,11 +159,16 @@ public class ImportProfileDefinitionController {
         ImportProfileDefinition existing = importProfileDefinitionService.get(profileId);
         if (existing == null) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
         if (!admin) {
-            if (!existing.isDelegated()) return errorResponse(HttpStatus.FORBIDDEN, "Admin-managed profile");
+            if (!existing.isDelegated()) {
+                audit(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, existing, false, "Admin-managed profile");
+                return errorResponse(HttpStatus.FORBIDDEN, "Admin-managed profile");
+            }
             String folderId = ingestAuthorizationService.resolveFolderId(
                     existing.getRepositoryId(), existing.getTargetFolderId(), existing.getTargetFolderPath());
             if (folderId == null
                     || !ingestAuthorizationService.canManageProfileForFolder(ctx, existing.getRepositoryId(), folderId)) {
+                audit(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, existing, false,
+                        "cmis:all on target folder required");
                 return errorResponse(HttpStatus.FORBIDDEN, "cmis:all on target folder required");
             }
         }
@@ -361,6 +376,13 @@ public class ImportProfileDefinitionController {
         } catch (RuntimeException ignored) {
             // Audit must not break the API path
         }
+    }
+
+    /** Pulls the error message string out of an {@link #errorResponse} body so we can record it in audit. */
+    private static String extractMessage(ResponseEntity<Map<String, Object>> denied) {
+        if (denied == null || denied.getBody() == null) return "denied";
+        Object msg = denied.getBody().get("message");
+        return msg != null ? msg.toString() : "denied";
     }
 
     private ResponseEntity<Map<String, Object>> errorResponse(HttpStatus status, String message) {

@@ -31,20 +31,36 @@ public class ExternalIngestController {
     @Autowired
     private HttpServletRequest httpRequest;
 
-    @Autowired(required = false)
+    /**
+     * Required dependencies. Spring fails fast if any of these beans is
+     * missing — they participate in the security gates and must not
+     * fall back to "best effort" behaviour. Specifically:
+     *
+     * <ul>
+     *   <li>{@link IngestAuthorizationService}: missing means non-admins
+     *       would fall through to the legacy admin path, defeating
+     *       folder-scoped delegation entirely (targetFolderOverride
+     *       bypass, connector credential indirect delegation, etc.).</li>
+     *   <li>{@link ConnectorDefinitionService}: missing means the
+     *       runtime cannot re-verify that the connector is still
+     *       delegated to the user/folder, so the {@code canUseConnector}
+     *       check would be silently skipped — a privilege escalation
+     *       window if an admin revokes delegation between profile
+     *       create and execute.</li>
+     *   <li>{@link ImportProfileDefinitionService}: missing means we
+     *       cannot load the profile to re-evaluate cmis:all on its
+     *       target folder.</li>
+     * </ul>
+     *
+     * The runtime null checks below are defence in depth; with
+     * {@code required=true} they should be unreachable.
+     */
+    @Autowired
     private ConnectorDefinitionService connectorDefinitionService;
 
-    @Autowired(required = false)
+    @Autowired
     private ImportProfileDefinitionService importProfileDefinitionService;
 
-    /**
-     * Required dependency. Spring fails fast if this bean is missing —
-     * we deliberately reject {@code @Autowired(required = false)} here
-     * because a missing authorization service would cause non-admin
-     * callers to fall through to the legacy admin path, defeating the
-     * folder-scoped delegation gate (connector credential indirect
-     * delegation, targetFolderOverride bypass, etc.).
-     */
     @Autowired
     private IngestAuthorizationService ingestAuthorizationService;
 
@@ -276,10 +292,14 @@ public class ExternalIngestController {
                     .body(ExternalIngestResult.error("unknown",
                             "targetFolderOverride is not permitted for non-admin callers"));
         }
-        if (importProfileDefinitionService == null) {
-            // Configuration missing — refuse rather than fall through to admin path.
+        // Defence in depth — these services are @Autowired (required) so
+        // the bean factory has already failed if they were missing. The
+        // null check exists in case some misconfigured custom context
+        // strips them; missing means deny.
+        if (importProfileDefinitionService == null || connectorDefinitionService == null) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(ExternalIngestResult.error("unknown", "Profile service unavailable"));
+                    .body(ExternalIngestResult.error("unknown",
+                            "Ingest services unavailable; non-admin ingest disabled"));
         }
         // (1) profileId is mandatory for non-admin — admin auto-resolution
         // would happily pick a profile the caller can't manage.
@@ -304,7 +324,21 @@ public class ExternalIngestController {
                     .body(ExternalIngestResult.error("unknown", "Profile is not bound to this repository"));
         }
 
-        // (2) Re-evaluate cmis:all at execution time — guards against ACL
+        // (2) Runtime fail-closed for the profile shape itself. The create
+        // / update controller refuses delegated profiles with empty
+        // allowedConnectorIds — but a legacy record, manual CouchDB write,
+        // or a future migration bug could leave one in that state. Empty
+        // here would mean "any connector allowed" via {@link
+        // ImportProfileDefinition#isConnectorAllowed}, which is exactly
+        // the credential-indirect-delegation hole we are guarding against.
+        // So we close it explicitly in the runtime gate too.
+        if (profile.getAllowedConnectorIds() == null || profile.getAllowedConnectorIds().isEmpty()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ExternalIngestResult.error("unknown",
+                            "Delegated profile has no allowedConnectorIds; refusing to fall back to 'any connector'"));
+        }
+
+        // (3) Re-evaluate cmis:all at execution time — guards against ACL
         // changes between profile-create and execute.
         String folderId = ingestAuthorizationService.resolveFolderId(
                 repositoryId, profile.getTargetFolderId(), profile.getTargetFolderPath());
@@ -317,10 +351,10 @@ public class ExternalIngestController {
                     .body(ExternalIngestResult.error("unknown", "cmis:all on target folder required"));
         }
 
-        // (3) connectorId, if provided, must be in the profile's saved
+        // (4) connectorId, if provided, must be in the profile's saved
         // allowedConnectorIds — and that connector must still be delegated
         // for this user/folder. Empty connectorId is allowed (downstream
-        // pipeline picks defaultConnectorId).
+        // pipeline picks defaultConnectorId, which is also re-checked).
         String connectorId = request.getConnectorId();
         if (connectorId != null && !connectorId.isBlank()) {
             if (!profile.isConnectorAllowed(connectorId)) {
@@ -328,31 +362,27 @@ public class ExternalIngestController {
                         .body(ExternalIngestResult.error(connectorId,
                                 "Connector not in profile's allowedConnectorIds"));
             }
-            if (connectorDefinitionService != null) {
-                ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
-                if (connector == null) {
-                    return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                            .body(ExternalIngestResult.error(connectorId, "Connector not found"));
-                }
-                if (!ingestAuthorizationService.canUseConnectorForDelegatedProfile(
-                        callContext, repositoryId, connector, folderId)) {
-                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                            .body(ExternalIngestResult.error(connectorId,
-                                    "Connector no longer delegated for this folder/user"));
-                }
+            ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
+            if (connector == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(ExternalIngestResult.error(connectorId, "Connector not found"));
+            }
+            if (!ingestAuthorizationService.canUseConnectorForDelegatedProfile(
+                    callContext, repositoryId, connector, folderId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ExternalIngestResult.error(connectorId,
+                                "Connector no longer delegated for this folder/user"));
             }
         } else if (profile.getDefaultConnectorId() != null) {
             // No explicit connector — verify the profile's default is still delegated.
             String def = profile.getDefaultConnectorId();
-            if (connectorDefinitionService != null) {
-                ConnectorDefinition connector = connectorDefinitionService.get(def);
-                if (connector == null
-                        || !ingestAuthorizationService.canUseConnectorForDelegatedProfile(
-                                callContext, repositoryId, connector, folderId)) {
-                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                            .body(ExternalIngestResult.error(def,
-                                    "Profile's default connector no longer delegated"));
-                }
+            ConnectorDefinition connector = connectorDefinitionService.get(def);
+            if (connector == null
+                    || !ingestAuthorizationService.canUseConnectorForDelegatedProfile(
+                            callContext, repositoryId, connector, folderId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ExternalIngestResult.error(def,
+                                "Profile's default connector no longer delegated"));
             }
         }
         return null;

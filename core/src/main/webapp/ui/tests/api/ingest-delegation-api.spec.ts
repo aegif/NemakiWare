@@ -517,6 +517,84 @@ test.describe('Ingest delegation — REST API gates', () => {
     }
   });
 
+  // ── PUT TOCTOU escalation paths ─────────────────────────────────
+
+  test('non-admin PUT folder-swap to a folder they do NOT own → 403', async ({ request }) => {
+    const c = await setupDelegated(request, 'swap-folder');
+
+    // F2: admin-only folder where api-e2e-testuser has no cmis:all
+    const rootId = await getRootFolderId(request);
+    const f2Form = new URLSearchParams();
+    f2Form.append('cmisaction', 'createFolder');
+    f2Form.append('folderId', rootId);
+    f2Form.append('propertyId[0]', 'cmis:objectTypeId');
+    f2Form.append('propertyValue[0]', 'cmis:folder');
+    f2Form.append('propertyId[1]', 'cmis:name');
+    f2Form.append('propertyValue[1]', `swap-victim-${SUFFIX}`);
+    const f2Res = await request.post(`${CMIS}`, {
+      headers: { Authorization: ADMIN_AUTH, 'Content-Type': 'application/x-www-form-urlencoded' },
+      data: f2Form.toString(),
+    });
+    const f2Id = cmisProp(await f2Res.json(), 'cmis:objectId') as string;
+
+    try {
+      // Attempt the swap: same profile, different folder
+      const res = await request.put(`${BASE}/v1/admin/import-profiles/${c.profileId}`, {
+        headers: USER_JSON,
+        data: {
+          profileId: c.profileId,
+          repositoryId: 'bedroom',
+          targetFolderId: f2Id,                // ← attacker target
+          defaultConnectorId: c.connectorId,
+          allowedConnectorIds: [c.connectorId],
+          enabled: true,
+        },
+      });
+      expect(res.status()).toBe(403);
+      // Verify the original profile was NOT modified — TOCTOU defence
+      const reload = await request.get(`${BASE}/v1/admin/import-profiles/${c.profileId}`, { headers: ADMIN_H });
+      const { profile } = await reload.json();
+      expect(profile.targetFolderId).toBe(c.folderId);
+    } finally {
+      await deleteFolderTree(request, f2Id);
+      await teardown(request, c);
+    }
+  });
+
+  test('non-admin PUT swapping to undelegated connector → 403', async ({ request }) => {
+    const c = await setupDelegated(request, 'swap-conn');
+    // Add an UNDELEGATED connector that the user must not be able to attach
+    const sneakyConn = `sneaky-${SUFFIX}`;
+    await request.post(`${BASE}/v1/admin/connectors`, {
+      headers: ADMIN_JSON,
+      data: {
+        connectorId: sneakyConn, sourceArchetype: 'FILE_SHARE', sourceSystem: 'box',
+        authType: 'none', enabled: true, // delegated default = false
+      },
+    });
+    try {
+      const res = await request.put(`${BASE}/v1/admin/import-profiles/${c.profileId}`, {
+        headers: USER_JSON,
+        data: {
+          profileId: c.profileId,
+          repositoryId: 'bedroom',
+          targetFolderId: c.folderId,
+          defaultConnectorId: sneakyConn,
+          allowedConnectorIds: [sneakyConn],   // ← the swap
+          enabled: true,
+        },
+      });
+      expect(res.status()).toBe(403);
+      // Verify the connector list was NOT replaced
+      const reload = await request.get(`${BASE}/v1/admin/import-profiles/${c.profileId}`, { headers: ADMIN_H });
+      const { profile } = await reload.json();
+      expect(profile.allowedConnectorIds).toEqual([c.connectorId]);
+    } finally {
+      await request.delete(`${BASE}/v1/admin/connectors/${sneakyConn}`, { headers: ADMIN_H }).catch(() => {});
+      await teardown(request, c);
+    }
+  });
+
   // ── Runtime ingest gates ────────────────────────────────────────
 
   test('non-admin ingest rejects targetFolderOverride', async ({ request }) => {

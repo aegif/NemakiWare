@@ -162,6 +162,17 @@ public class IngestSchedulerService {
             for (ImportProfileDefinition profile : profiles) {
                 // Re-check: profile may have been disabled since getScheduledProfiles()
                 if (!profile.isEnabled() || !profile.isSchedulerEnabled()) continue;
+                // Defence in depth: the controller already refuses to set
+                // schedulerEnabled=true on a delegated profile (3.1.1-RC3),
+                // but a profile written directly to CouchDB could bypass
+                // that. A delegated profile has no admin CallContext to run
+                // under, so refuse to schedule it. WARN once — operators
+                // should not see this in normal flow.
+                if (profile.isDelegated()) {
+                    logger.warn("Skipping delegated profile '{}' from scheduler — delegated profiles are manual-only by design",
+                            profile.getProfileId());
+                    continue;
+                }
                 ConnectorDefinition connector = resolveConnectorForProfile(profile);
                 if (connector == null) continue;
 
