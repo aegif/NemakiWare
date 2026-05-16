@@ -3366,6 +3366,7 @@
       "secondaryTypeIdsHint": "Additional secondary types to attach to imported documents",
       "secondaryTypeIdsPlaceholder": "e.g. nemaki:cloudDriveMetadata",
       "targetFolderIdHint": "CouchDB folder object ID",
+      "targetFolderIdRequiredDelegated": "Delegated profiles require a folder ID (path input is admin-only).",
       "targetFolderPathHint": "/Sites/Invoices",
       "allowedConnectorIds": "Allowed Connectors",
       "allowedConnectorIdsHint": "Leave empty to allow any connector",

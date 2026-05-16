@@ -374,8 +374,9 @@ public class ExternalIngestController {
 
         // (4) connectorId, if provided, must be in the profile's saved
         // allowedConnectorIds — and that connector must still be delegated
-        // for this user/folder. Empty connectorId is allowed (downstream
-        // pipeline picks defaultConnectorId, which is also re-checked).
+        // for this user/folder. Empty connectorId triggers a strict
+        // fallback to the profile's defaultConnectorId below; it is NOT
+        // a free pass to skip the connector gate entirely.
         String connectorId = request.getConnectorId();
         if (connectorId != null && !connectorId.isBlank()) {
             if (!profile.isConnectorAllowed(connectorId)) {
@@ -392,16 +393,42 @@ public class ExternalIngestController {
                 return new Denial(HttpStatus.FORBIDDEN, DenialReason.CONNECTOR_NOT_DELEGATED,
                         connectorId, "Connector no longer delegated for this folder/user");
             }
-        } else if (profile.getDefaultConnectorId() != null) {
-            // No explicit connector — verify the profile's default is still delegated.
+        } else {
+            // No explicit connector — non-admin must have a profile-provided
+            // default that is itself valid. Every check the explicit path
+            // does, the default path must do too: blank guard, membership
+            // in allowedConnectorIds, existence, and live delegation.
+            // After approval we *stamp the default onto the request* so
+            // downstream dispatch (resolveConnectorArchetype) sees a real
+            // connectorId and doesn't fall back to filename heuristics
+            // that could pick a wrong import flow.
             String def = profile.getDefaultConnectorId();
+            if (def == null || def.isBlank()) {
+                return new Denial(HttpStatus.FORBIDDEN, DenialReason.PROFILE_ID_REQUIRED,
+                        "unknown",
+                        "No connectorId supplied and profile has no defaultConnectorId; "
+                                + "non-admin ingest must resolve a connector deterministically");
+            }
+            if (!profile.isConnectorAllowed(def)) {
+                // The profile's own default falls outside its allowed list —
+                // a corrupt record. Same gate as for an explicit-but-wrong
+                // connectorId.
+                return new Denial(HttpStatus.FORBIDDEN, DenialReason.DEFAULT_CONNECTOR_NOT_IN_ALLOWED,
+                        def, "Profile's defaultConnectorId is not in allowedConnectorIds");
+            }
             ConnectorDefinition connector = connectorDefinitionService.get(def);
-            if (connector == null
-                    || !ingestAuthorizationService.canUseConnectorForDelegatedProfile(
-                            callContext, repositoryId, connector, folderId)) {
+            if (connector == null) {
+                return new Denial(HttpStatus.NOT_FOUND, DenialReason.UNKNOWN_CONNECTOR,
+                        def, "Profile's default connector not found");
+            }
+            if (!ingestAuthorizationService.canUseConnectorForDelegatedProfile(
+                    callContext, repositoryId, connector, folderId)) {
                 return new Denial(HttpStatus.FORBIDDEN, DenialReason.DEFAULT_CONNECTOR_NOT_DELEGATED,
                         def, "Profile's default connector no longer delegated");
             }
+            // Stamp the validated default onto the request so the dispatch
+            // path that follows sees an explicit connectorId.
+            request.setConnectorId(def);
         }
         return null;
     }

@@ -607,7 +607,7 @@ const AdminGuide: React.FC = () => {
             {
               title: t('help.admin.ingestDelegationOpsStep4', '委譲ユーザに通知'),
               description: t('help.admin.ingestDelegationOpsStep4Desc',
-                'フォルダオーナーには「連携設定 → インポートプロファイル」タブからプロファイルを作成できる旨を伝えてください。connector ID は UI 側で /summary endpoint 経由のセレクタに自動表示されます。'),
+                'フォルダオーナーには「連携設定 → インポートプロファイル」タブからプロファイルを作成できる旨を伝えてください。connector ID は UI 側で /summary endpoint 経由のセレクタに自動表示されます。委譲プロファイルでは targetFolderId が必須で path 入力欄は非表示（picker / 監査 / cache key を単一 ID に統一するため）。'),
             },
             {
               title: t('help.admin.ingestDelegationOpsStep5', '監査で利用状況を確認'),

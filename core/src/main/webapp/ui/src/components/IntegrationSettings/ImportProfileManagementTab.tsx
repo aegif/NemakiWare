@@ -120,15 +120,22 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
    * is one they actually hold {@code cmis:all} on. The summary endpoint
    * returns 403 in that case, which we surface as "denied" rather than
    * the silent "no connectors visible" the original behaviour gave.
+   *
+   * <p>Returns the freshly-resolved map. Callers that need to act on the
+   * result in the same tick (e.g. {@link openEdit} resolving the adapter
+   * descriptor) must use the return value — reading {@link connectorMap}
+   * via closure after this call resolves yields the stale, pre-update
+   * value because {@code setConnectorMap} is async.
    */
-  const refreshConnectorMapForFolder = useCallback(async (targetFolderId?: string) => {
-    if (isAdmin || !targetFolderId) return;
+  const refreshConnectorMapForFolder = useCallback(async (targetFolderId?: string): Promise<Record<string, string>> => {
+    if (isAdmin || !targetFolderId) return {};
     try {
       const summaries = await listConnectorSummary(repositoryId, targetFolderId);
       const map: Record<string, string> = {};
       for (const s of summaries) if (s.sourceSystem) map[s.connectorId] = s.sourceSystem;
       setConnectorMap(map);
       setFolderAccessState('ok');
+      return map;
     } catch (err) {
       // The summary helper throws a generic Error; the underlying status
       // (403 vs 400 vs 500) isn't propagated. We treat any failure as
@@ -136,6 +143,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
       // the cause obvious in either case.
       setConnectorMap({});
       setFolderAccessState(err instanceof Error && err.message.includes('400') ? 'unresolved' : 'denied');
+      return {};
     }
   }, [isAdmin, repositoryId]);
 
@@ -172,9 +180,15 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
     form.resetFields();
     // Non-admin: refresh the connector picker against the profile's bound
     // folder so the dropdown only shows connectors still delegated to them.
-    await refreshConnectorMapForFolder(record.targetFolderId);
+    // We MUST use the returned map (not connectorMap from closure) — the
+    // setConnectorMap call inside refreshConnectorMapForFolder hasn't been
+    // committed by React yet at this tick, so reading the state hook here
+    // would resolve to the stale pre-update value and selectedAdapter
+    // would be wrong on first open of a non-admin edit.
+    const freshMap = await refreshConnectorMapForFolder(record.targetFolderId);
+    const lookupMap = isAdmin ? connectorMap : freshMap;
     // Resolve adapter from connector
-    const sourceSystem = record.defaultConnectorId ? connectorMap[record.defaultConnectorId] : null;
+    const sourceSystem = record.defaultConnectorId ? lookupMap[record.defaultConnectorId] : null;
     const desc = sourceSystem ? adapterRegistry.find(a => a.sourceSystem === sourceSystem) : null;
     setSelectedAdapter(desc || null);
     const formValues: Record<string, unknown> = {
@@ -354,6 +368,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
             <Input />
           </Form.Item>
           <Form.Item name="targetFolderId" label={t('importProfileManagement.form.targetFolderId')}
+            rules={!isAdmin ? [{ required: true, message: t('importProfileManagement.form.targetFolderIdRequiredDelegated', { defaultValue: '委譲プロファイルでは folder ID が必須です（path 指定は管理者専用）' }) }] : []}
             extra={!isAdmin && formTargetFolderId
               ? folderAccessState === 'ok'
                 ? <span style={{ color: '#52c41a' }}>
@@ -371,10 +386,21 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
               : undefined}>
             <Input placeholder={t('importProfileManagement.form.targetFolderIdHint')} />
           </Form.Item>
-          <Form.Item name="targetFolderPath" label={t('importProfileManagement.form.targetFolderPath')}
-            extra={t('importProfileManagement.form.targetFolderHint')}>
-            <Input placeholder={t('importProfileManagement.form.targetFolderPathHint')} />
-          </Form.Item>
+          {/*
+            targetFolderPath: admin only. Non-admin delegated profiles must
+            pin a folder ID (also normalised server-side on POST) so the
+            picker / summary endpoint / cache key all agree on a single
+            resolved identifier. Letting non-admin enter only a path would
+            leave the in-form connector picker empty (it watches
+            targetFolderId) and confuse the audit trail. Admin keeps the
+            path option for legacy / scripted workflows.
+          */}
+          {isAdmin ? (
+            <Form.Item name="targetFolderPath" label={t('importProfileManagement.form.targetFolderPath')}
+              extra={t('importProfileManagement.form.targetFolderHint')}>
+              <Input placeholder={t('importProfileManagement.form.targetFolderPathHint')} />
+            </Form.Item>
+          ) : null}
           <Form.Item name="defaultObjectTypeId" label={t('importProfileManagement.form.objectType')}>
             <Input placeholder="cmis:document" />
           </Form.Item>

@@ -3115,6 +3115,7 @@
       "secondaryTypeIdsHint": "インポートされたドキュメントに自動的に付与する追加のセカンダリタイプ",
       "secondaryTypeIdsPlaceholder": "例: nemaki:cloudDriveMetadata",
       "targetFolderIdHint": "CouchDB フォルダオブジェクトID",
+      "targetFolderIdRequiredDelegated": "委譲プロファイルでは folder ID が必須です（path 指定は管理者専用）",
       "targetFolderPathHint": "/Sites/Invoices",
       "allowedConnectorIds": "許可するコネクタ",
       "allowedConnectorIdsHint": "空の場合はすべてのコネクタを許可",

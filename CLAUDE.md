@@ -363,7 +363,8 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 - `ImportProfileManagementTab`:
   - schedulerEnabled / defaultProfile スイッチは非 admin で `disabled` + tooltip
   - connector picker は `connectorMap` 由来の options-driven `Select` (admin: `tags`、非 admin: `multiple` で自由タグ禁止)
-  - 非 admin は form の `targetFolderId` 変更を watch して `/connectors/summary` から map を更新
+  - 非 admin は form の `targetFolderId` 変更を watch して `/connectors/summary` から map を更新。`refreshConnectorMapForFolder` は呼び出し元に map を return するので `openEdit` は閉包経由の stale state を読まずに adapter を解決する
+  - 非 admin の delegated profile は `targetFolderId` 必須 + `targetFolderPath` 入力欄を非表示。委譲フローは ID 単一決定を保証(picker / cache key / audit が全て同じ resolved ID を共有)。admin は path 入力を維持(レガシー / スクリプト用)
 - `ManualIngestTab`:
   - admin: 従来 (connector → profile)
   - 非 admin: 順序逆転 (profile → connector)。profile 選択後に `listConnectorSummary(repo, targetFolderId)` を呼び `profile.allowedConnectorIds` と intersect。`listConnectors()` (admin-only) は非 admin path から一切呼ばない

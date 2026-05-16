@@ -232,6 +232,88 @@ class ExternalIngestControllerGateTest {
         verifyNoInteractions(canonicalImportService);
     }
 
+    @Test
+    void connectorOmitted_validDefault_isStampedOntoRequestAndDispatched() {
+        // Non-admin omits connectorId; profile.defaultConnectorId is valid,
+        // in allowedConnectorIds, exists, and is still delegated. The gate
+        // must approve AND stamp the default connectorId onto the request
+        // so downstream dispatch can route by connector archetype rather
+        // than fall back to filename heuristics.
+        CallContext ctx = nonAdminContext();
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+
+        ExternalIngestRequest req = baseRequest();
+        req.setConnectorId(null);   // ← the omission case
+
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);
+        ConnectorDefinition c = delegatedConnector();
+        when(connectorDefinitionService.get(CONN)).thenReturn(c);
+        when(ingestAuthorizationService.canUseConnectorForDelegatedProfile(ctx, REPO, c, FOLDER))
+                .thenReturn(true);
+
+        ExternalIngestResult ok = ExternalIngestResult.success("src-1", "obj-1", "1.0", false, null);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class))).thenReturn(ok);
+
+        ResponseEntity<ExternalIngestResult> res = ingest(req);
+        assertEquals(HttpStatus.OK, res.getStatusCode());
+
+        // Capture the request passed downstream and assert the stamping
+        org.mockito.ArgumentCaptor<ExternalIngestRequest> captor =
+                org.mockito.ArgumentCaptor.forClass(ExternalIngestRequest.class);
+        verify(canonicalImportService).execute(eq(ctx), captor.capture());
+        org.junit.jupiter.api.Assertions.assertEquals(CONN, captor.getValue().getConnectorId(),
+                "default connectorId must be stamped onto the request before dispatch");
+    }
+
+    @Test
+    void connectorOmitted_defaultNotInAllowedConnectors_isRefused() {
+        // Corrupted record: profile.defaultConnectorId points to a connector
+        // that isn't in allowedConnectorIds. The runtime gate must close
+        // this just like an explicit-but-disallowed connectorId would.
+        CallContext ctx = nonAdminContext();
+        ImportProfileDefinition p = delegatedProfile();
+        p.setDefaultConnectorId("rogue-conn");                 // not in allowed list
+        p.setAllowedConnectorIds(java.util.List.of(CONN));     // canonical list
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+
+        ExternalIngestRequest req = baseRequest();
+        req.setConnectorId(null);
+
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);
+
+        ResponseEntity<ExternalIngestResult> res = ingest(req);
+        assertEquals(HttpStatus.FORBIDDEN, res.getStatusCode());
+        // canUseConnector check must NOT be reached for the rogue default,
+        // because allowedConnectorIds membership is checked first
+        verify(connectorDefinitionService, never()).get(eq("rogue-conn"));
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void connectorOmitted_noDefault_isRefused() {
+        // Defensive: profile has no defaultConnectorId at all. Non-admin
+        // ingest can't deterministically resolve a connector, so the gate
+        // refuses rather than letting the downstream filename heuristic
+        // pick something.
+        CallContext ctx = nonAdminContext();
+        ImportProfileDefinition p = delegatedProfile();
+        p.setDefaultConnectorId(null);
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+
+        ExternalIngestRequest req = baseRequest();
+        req.setConnectorId(null);
+
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);
+
+        ResponseEntity<ExternalIngestResult> res = ingest(req);
+        assertEquals(HttpStatus.FORBIDDEN, res.getStatusCode());
+        verifyNoInteractions(canonicalImportService);
+    }
+
     // ──────────────────────────────────────────────────────────────────
     // 4. Happy path — everything passes, dispatch reaches the service
     // ──────────────────────────────────────────────────────────────────

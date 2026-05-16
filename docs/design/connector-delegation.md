@@ -262,7 +262,12 @@ UI just makes the right thing easy and the wrong thing visible.
   is options-driven (`Select`), not free-text tags. Non-admin uses
   `mode="multiple"` (no free tag entry); admin keeps `mode="tags"`.
   Non-admin reactively pulls `/connectors/summary` against the form's
-  `targetFolderId`.
+  `targetFolderId`. **`targetFolderId` is required for non-admin
+  delegated profiles; the `targetFolderPath` input is hidden** — every
+  delegated path needs to agree on a single resolved ID for the
+  picker, the cache key, and the audit trail. Admin retains the path
+  input for legacy / scripted workflows; the server also normalises
+  path → ID on POST/PUT.
 - `ManualIngestTab`: non-admin path inverts picker order
   (profile → connector) and uses `listConnectorSummary` scoped to the
   chosen profile's `targetFolderId`, intersected with the profile's
