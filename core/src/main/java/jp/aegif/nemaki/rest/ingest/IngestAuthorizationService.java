@@ -7,6 +7,7 @@ import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.constant.CmisPermission;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -42,8 +43,19 @@ public class IngestAuthorizationService {
 
     private static final Logger logger = LoggerFactory.getLogger(IngestAuthorizationService.class);
 
+    /** Default ancestor-chain walk cap. Most real folder hierarchies are
+     *  shallow (<20 levels); 128 leaves wide headroom while still acting as
+     *  a circuit breaker against pathological cycles. Operators can tune
+     *  via {@code nemakiware.ingest.ancestorWalk.maxHops} in
+     *  {@code nemakiware.properties}. */
+    static final int DEFAULT_MAX_ANCESTOR_HOPS = 128;
+    static final String MAX_HOPS_PROPERTY = "nemakiware.ingest.ancestorWalk.maxHops";
+
     private ContentService contentService;
     private PrincipalService principalService;
+    private PropertyManager propertyManager;
+    /** Resolved lazily on first use; recomputed if property changes mid-flight. */
+    private volatile int cachedMaxHops = -1;
 
     public void setContentService(ContentService contentService) {
         this.contentService = contentService;
@@ -51,6 +63,44 @@ public class IngestAuthorizationService {
 
     public void setPrincipalService(PrincipalService principalService) {
         this.principalService = principalService;
+    }
+
+    public void setPropertyManager(PropertyManager propertyManager) {
+        this.propertyManager = propertyManager;
+        // Force re-read on next use
+        this.cachedMaxHops = -1;
+    }
+
+    /**
+     * Returns the configured ancestor-walk cap. Resolves once from
+     * {@link PropertyManager}; falls back to {@link #DEFAULT_MAX_ANCESTOR_HOPS}
+     * for missing / invalid / negative values. Logs a WARN at most once
+     * per JVM lifetime for invalid values so a misconfigured properties
+     * file is visible without log spam.
+     */
+    int maxAncestorHops() {
+        int cached = cachedMaxHops;
+        if (cached > 0) return cached;
+        int resolved = DEFAULT_MAX_ANCESTOR_HOPS;
+        if (propertyManager != null) {
+            String v = propertyManager.readValue(MAX_HOPS_PROPERTY);
+            if (v != null && !v.isBlank()) {
+                try {
+                    int n = Integer.parseInt(v.trim());
+                    if (n > 0) {
+                        resolved = n;
+                    } else {
+                        logger.warn("{}={} is non-positive, falling back to default {}",
+                                MAX_HOPS_PROPERTY, v, DEFAULT_MAX_ANCESTOR_HOPS);
+                    }
+                } catch (NumberFormatException e) {
+                    logger.warn("{}='{}' is not an integer, falling back to default {}",
+                            MAX_HOPS_PROPERTY, v, DEFAULT_MAX_ANCESTOR_HOPS);
+                }
+            }
+        }
+        cachedMaxHops = resolved;
+        return resolved;
     }
 
     // ------------------------------------------------------------------
@@ -182,7 +232,8 @@ public class IngestAuthorizationService {
         String cursor = targetFolderId;
         Set<String> visited = new HashSet<>();
         int hop = 0;
-        while (cursor != null && hop++ < 128) {
+        int cap = maxAncestorHops();
+        while (cursor != null && hop++ < cap) {
             if (allowed.contains(cursor)) return true;
             if (!visited.add(cursor)) {
                 logger.warn("Cycle detected while walking ancestors of folder {} in repository {}", targetFolderId, repositoryId);
@@ -195,6 +246,17 @@ public class IngestAuthorizationService {
                 logger.debug("Parent lookup failed at {} (chain from {}): {}", cursor, targetFolderId, e.getMessage());
                 return false;
             }
+        }
+        if (cursor != null) {
+            // Reached the cap without finding the allowed ancestor (or a
+            // null root). Either the folder hierarchy is deeper than the
+            // configured cap or the chain is broken. Either way: treat as
+            // not-in-scope (fail-closed) and surface a WARN so the operator
+            // can tune the property if a legitimate deep tree is involved.
+            logger.warn("Ancestor walk for folder {} in repository {} exceeded the configured cap of {} hops "
+                    + "without resolving — treating as not-in-scope. "
+                    + "Increase {} in nemakiware.properties if your hierarchy is legitimately deeper.",
+                    targetFolderId, repositoryId, cap, MAX_HOPS_PROPERTY);
         }
         return false;
     }

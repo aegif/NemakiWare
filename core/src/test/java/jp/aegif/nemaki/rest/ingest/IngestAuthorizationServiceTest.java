@@ -6,6 +6,7 @@ import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.constant.CmisPermission;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -302,6 +303,66 @@ class IngestAuthorizationServiceTest {
         when(principalService.getGroupIdsContainingUser(REPO, USER))
                 .thenThrow(new RuntimeException("ldap down"));
         assertFalse(svc.canUseConnectorForDelegatedProfile(userCtx(), REPO, c, FOLDER));
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // maxAncestorHops — configurable cap
+    // ────────────────────────────────────────────────────────────────────
+
+    @Test
+    void maxAncestorHops_defaultsTo128_whenNoPropertyManager() {
+        assertEquals(IngestAuthorizationService.DEFAULT_MAX_ANCESTOR_HOPS, svc.maxAncestorHops());
+    }
+
+    @Test
+    void maxAncestorHops_usesPropertyValue_whenValid() {
+        PropertyManager pm = mock(PropertyManager.class);
+        when(pm.readValue(IngestAuthorizationService.MAX_HOPS_PROPERTY)).thenReturn("50");
+        svc.setPropertyManager(pm);
+        assertEquals(50, svc.maxAncestorHops());
+    }
+
+    @Test
+    void maxAncestorHops_fallsBackToDefault_onInvalidProperty() {
+        PropertyManager pm = mock(PropertyManager.class);
+        when(pm.readValue(IngestAuthorizationService.MAX_HOPS_PROPERTY)).thenReturn("not-a-number");
+        svc.setPropertyManager(pm);
+        assertEquals(IngestAuthorizationService.DEFAULT_MAX_ANCESTOR_HOPS, svc.maxAncestorHops());
+    }
+
+    @Test
+    void maxAncestorHops_fallsBackToDefault_onNonPositive() {
+        PropertyManager pm = mock(PropertyManager.class);
+        when(pm.readValue(IngestAuthorizationService.MAX_HOPS_PROPERTY)).thenReturn("0");
+        svc.setPropertyManager(pm);
+        assertEquals(IngestAuthorizationService.DEFAULT_MAX_ANCESTOR_HOPS, svc.maxAncestorHops());
+    }
+
+    @Test
+    void maxAncestorHops_isCached_propertyReadOnce() {
+        PropertyManager pm = mock(PropertyManager.class);
+        when(pm.readValue(IngestAuthorizationService.MAX_HOPS_PROPERTY)).thenReturn("42");
+        svc.setPropertyManager(pm);
+        svc.maxAncestorHops();
+        svc.maxAncestorHops();
+        svc.maxAncestorHops();
+        verify(pm, times(1)).readValue(IngestAuthorizationService.MAX_HOPS_PROPERTY);
+    }
+
+    @Test
+    void isFolderInAllowedScope_capExceeded_returnsFalseAndLogsWarn() {
+        // Build a long chain F0 -> F1 -> ... -> F49, with cap=5 and allowed=F30.
+        // Walk should give up at hop 5 without false-positive.
+        PropertyManager pm = mock(PropertyManager.class);
+        when(pm.readValue(IngestAuthorizationService.MAX_HOPS_PROPERTY)).thenReturn("5");
+        svc.setPropertyManager(pm);
+
+        for (int i = 0; i < 50; i++) {
+            Folder f = mockFolder("F" + (i + 1));
+            when(contentService.getParent(REPO, "F" + i)).thenReturn(f);
+        }
+        boolean result = svc.isFolderInAllowedScope(REPO, "F0", List.of("F30"));
+        assertFalse(result, "ancestor walk should fail-closed when cap is reached without finding allowed ancestor");
     }
 
     // ────────────────────────────────────────────────────────────────────

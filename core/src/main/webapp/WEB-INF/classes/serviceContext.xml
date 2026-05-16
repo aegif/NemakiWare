@@ -814,6 +814,7 @@
     <bean id="ingestAuthorizationService" class="jp.aegif.nemaki.rest.ingest.IngestAuthorizationService">
         <property name="contentService" ref="ContentService" />
         <property name="principalService" ref="PrincipalService" />
+        <property name="propertyManager" ref="propertyManager" />
     </bean>
     <bean id="ingestLineageEmitter" class="jp.aegif.nemaki.rest.ingest.IngestLineageEmitter" />
     <bean id="ingestMetadataService" class="jp.aegif.nemaki.rest.ingest.IngestMetadataService">

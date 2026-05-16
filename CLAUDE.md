@@ -310,9 +310,17 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
-### RC15 / RC3 (2026-05-14) — フォルダ管理者への ingest 委譲
+### RC15 / RC3 (2026-05-14〜17) — フォルダ管理者への ingest 委譲
 
-ブランチ: `release/3.1.1-RC3` / 主要コミット: `2186a40b0`
+ブランチ: `release/3.1.1-RC3`
+
+主要コミット系列:
+- `2186a40b0` — feat: 委譲実装本体
+- `6812a78ff` — docs: 設計 doc + Help + 初版 E2E
+- `b87bd0282` — hardening #1: audit 拒否経路 / scheduler 防御初版 / runtime fail-closed / controller test
+- `875209434` — hardening #2: 構造化 `DenialReason` / ConnectorTab 委譲列 / E2E cleanup / runbook
+- `5285d706b` — hardening #3: scheduler WARN once + scheduler defence JVM test
+- `<next>` — hardening #4: ancestor walk cap → property 化 / list endpoint キャッシュ / Help admin runbook
 
 **実装済み境界**: 非 admin が `cmis:all` を持つフォルダに対して、admin が明示委譲した connector を使った **manual-only** な delegated profile を作成・編集・削除できる。admin-owned profile と scheduled ingestion はそのまま admin 専用。
 
@@ -326,14 +334,17 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 - `ImportProfileDefinition` に `createdByUserId` / `delegated` 追加。非 admin の POST/PUT は `delegated=true` + `schedulerEnabled=false` + `defaultProfile=false` を強制
 - `IngestAuthorizationService` (新規):
   - effective `cmis:all` 判定 (user + groups + Anyone principal の union × `Acl.getAllAces()` を直接走査、`PermissionMapping` 設定差の影響を受けない)
-  - 配下判定は **folder ID + ancestor chain** (path-prefix 不可、cycle 検出 128 hop で打切り)
+  - 配下判定は **folder ID + ancestor chain** (path-prefix 不可)
+  - cycle 検出 + ancestor walk cap (default **128 hop**、`nemakiware.ingest.ancestorWalk.maxHops` で override 可、`PropertyManager` 経由、無効値は default に fall back + WARN)
+  - cap 到達時は fail-closed + WARN で operator に通知(深いツリーで legitimate な場合はプロパティ調整)
   - 全パス fail-closed
-  - 28 unit tests (admin / cmis:all-via-user / via-group / via-Anyone / read-only / null acl / fail-closed / cycle / etc.)
+  - 34 unit tests (admin / cmis:all-via-user / via-group / via-Anyone / read-only / null acl / fail-closed / cycle / cap exceeded / property handling)
 - `ImportProfileDefinitionController`:
   - POST: folder 解決 → `canManageProfileForFolder` → 全 `allowedConnectorIds` を `canUseConnectorForDelegatedProfile` で検証 → 非空必須(暗黙の "any connector" を拒否)
   - PUT: TOCTOU 両方向 — 既存 + 新 target folder 両方で `cmis:all` 必要、connector list も既存 + 新の両方で許可確認
   - PUT/DELETE: 非 admin は `delegated=true` の profile のみ操作可
-  - GET (list): profile を iterate して `canManageProfileForFolder` で per-profile filter (フォルダツリー全走査しない)
+  - GET (list): profile を iterate して `canManageProfileForFolder` で per-profile filter (フォルダツリー全走査しない)。per-request `HashMap<repo+folderId, Boolean>` キャッシュで「N profiles on K folders → ACL eval K 回」(典型 5-20×)
+  - 全拒否経路 (`enforceDelegationOnCreate/Update` / GET / DELETE) は構造化 `DenialReason` enum 経由で audit に記録(20 値、契約として固定)
 - `ConnectorDefinitionController.GET /summary?repositoryId=&targetFolderId=`:
   - secret / endpoint / scope 一切含まないスリム DTO
   - `cmis:all` ガード + `canUseConnectorForDelegatedProfile` フィルタ
@@ -341,7 +352,8 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
   - `IngestAuthorizationService` を **required dependency** (Spring 起動時 fail-fast)
   - 念のため null check で 503 (defence in depth、fail-open しない)
   - 非 admin: `targetFolderOverride` 禁止 (403)、`profileId` 必須、profile.delegated 必須、profile.repositoryId 一致必須、`cmis:all` 実行時再評価、`connectorId` は profile.allowedConnectorIds 内かつ依然委譲済みであること
-- `AuditLogger.logOperation` に `details` map を受ける overload 追加。新 ops: `EXTERNAL_PROFILE_CREATED/UPDATED/DELETED`。delegated ingest path も `{delegated, actorUserId, profileId, connectorId}` を audit 詳細に記録
+- `AuditLogger.logOperation` に `details` map を受ける overload 追加。新 ops: `EXTERNAL_PROFILE_CREATED/UPDATED/DELETED`。delegated ingest path も `{delegated, actorUserId, profileId, connectorId, denialReason?}` を audit 詳細に記録
+- `IngestSchedulerService`: delegated profile (schedulerEnabled=true で書かれた壊れたレコード) を defensive に skip。`ConcurrentHashMap.newKeySet()` で profileId 別に **WARN 1 回 / JVM lifetime**、以降 DEBUG。`delegated=false` への戻りで memo 削除 → 再 flip 時に WARN 復活。`pollScheduledProfiles` を package-private にして JVM test で 5 シナリオ固定 (skip / WARN once / admin 進行 / mixed list / disabled 前段スキップ)
 
 #### UI
 
@@ -359,14 +371,28 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 #### ドキュメント
 
-- 設計詳細: `docs/design/connector-delegation.md`
-- 操作者向けヘルプ: README.md (Permission Model セクション) / AGENTS.md (Scalability + Operations)
+- 設計詳細: `docs/design/connector-delegation.md` (§10 `DenialReason` reference table、§11 Troubleshooting、§8 Operator runbook)
+- 操作者向けヘルプ: README.md (Permission Model セクション) / AGENTS.md (Scalability + Operations) / HelpPage に「委譲を運用する」step-by-step + 監査クエリ例
+
+#### 検証 (本 RC 終了時点)
+
+- 単体テスト: 165+ ingest tests pass (29 IngestAuthorizationServiceTest 中 cap-property 関連 6 含む / 11 ExternalIngestControllerGateTest / 5 IngestSchedulerDelegationSkipTest / その他)
+- API E2E: 21 / 21 pass (admin + 委譲 + 非委譲 × CRUD + 実行 + TOCTOU 全網羅、live deployment 実機検証、beforeAll/afterAll で残骸 sweep)
+- Maven package + UI build: green
+- レビュー指摘 P1/P2/P3 全反映済み
+
+#### 設定可能項目
+
+| プロパティ | デフォルト | 意味 |
+|---|---|---|
+| `nemakiware.ingest.ancestorWalk.maxHops` | 128 | folder ancestor チェーンを辿る最大 hop 数。深いツリーで legitimate に到達できない場合に増やす |
 
 #### 将来課題 (v2 検討、本 RC では対応しない)
 
 - 非 admin の scheduled profile: `createdByUserId` ベースで実行時 CallContext 再構築 + 対象 folder への `cmis:all` 再評価が必要
 - createdBy ユーザの非アクティブ化検知 → profile 自動 disable
-- フォルダ選択 UI (現状はオブジェクト ID/path 手入力)
+- フォルダ選択 UI (ツリーピッカー — 現状はオブジェクト ID/path 手入力 + summary endpoint 経由の即時 ✓/✗ feedback)
+- Admin-owned → delegated 移行 / 移管ツール (現状は delete + recreate)
 
 ### RC14 (2026-05-10) — SAML strict-mode redesign + production hardening posture
 

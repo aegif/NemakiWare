@@ -581,6 +581,66 @@ const AdminGuide: React.FC = () => {
             description={t('help.admin.ingestDelegationLimitsDesc', '非 admin が作成したプロファイルは scheduler / defaultProfile / targetFolderOverride を使えません。これらが必要な場合は管理者が代理で作成してください。委譲対象コネクタを後から無効化（delegated=false）した場合、既存プロファイルは実行時に拒否され、次回 PUT で TOCTOU 検査によって弾かれます。詳細は docs/design/connector-delegation.md を参照してください。')}
           />
 
+          {/* --- 委譲の運用フロー (step-by-step) --- */}
+          <Title level={5} style={{ marginTop: 16 }}>
+            {t('help.admin.ingestDelegationOps', '委譲を運用する')}
+          </Title>
+          <Paragraph type="secondary">
+            {t('help.admin.ingestDelegationOpsIntro', '管理者がコネクタを 1 つ委譲してから、その状態を監査・解除するまでの典型フローです。')}
+          </Paragraph>
+          <Steps direction="vertical" size="small" items={[
+            {
+              title: t('help.admin.ingestDelegationOpsStep1', 'コネクタを作成・committing'),
+              description: t('help.admin.ingestDelegationOpsStep1Desc',
+                'まず通常どおり connector を作成し、credentialRef / endpoint / authType をセットして save します。delegated は初期値 false のままで構いません — 後から有効化できます。'),
+            },
+            {
+              title: t('help.admin.ingestDelegationOpsStep2', 'スコープを決めて委譲を有効化'),
+              description: t('help.admin.ingestDelegationOpsStep2Desc',
+                '対象 connector の編集画面で「委譲を有効化」をオンにし、allowedFolderIds に対象フォルダ ID を 1 つ以上指定します。複数フォルダ可・配下含む判定です。リポジトリ全体に開きたい場合のみ delegateAllFolders=true をオンにしてください（クレデンシャルが全フォルダに届くため広域委譲になります）。'),
+            },
+            {
+              title: t('help.admin.ingestDelegationOpsStep3', 'principal を絞る（任意）'),
+              description: t('help.admin.ingestDelegationOpsStep3Desc',
+                'allowedPrincipalIds を空のままにすると cmis:all を持つ任意のユーザに委譲されます。特定ユーザ・グループに絞りたい場合のみ username / group ID を列挙してください。'),
+            },
+            {
+              title: t('help.admin.ingestDelegationOpsStep4', '委譲ユーザに通知'),
+              description: t('help.admin.ingestDelegationOpsStep4Desc',
+                'フォルダオーナーには「連携設定 → インポートプロファイル」タブからプロファイルを作成できる旨を伝えてください。connector ID は UI 側で /summary endpoint 経由のセレクタに自動表示されます。'),
+            },
+            {
+              title: t('help.admin.ingestDelegationOpsStep5', '監査で利用状況を確認'),
+              description: t('help.admin.ingestDelegationOpsStep5Desc',
+                'audit.log で operation=externalProfileCreated / externalIngest を絞り、details.delegated=true のレコードに委譲ユーザの活動が記録されます。失敗イベントには details.denialReason が付き、よくある原因を機械的に把握できます。'),
+            },
+            {
+              title: t('help.admin.ingestDelegationOpsStep6', '委譲を解除する'),
+              description: t('help.admin.ingestDelegationOpsStep6Desc',
+                'connector で delegated=false に戻すか、allowedFolderIds から該当 folder を外すか、allowedPrincipalIds から該当 user/group を外せば即時に解除されます。既存の delegated profile は残りますが、実行時に拒否され（runtime での再評価）、次回 PUT 時にも TOCTOU チェックで弾かれます。Profile レコード自体を消したい場合は管理者が DELETE してください。'),
+            },
+          ]} />
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginTop: 12 }}
+            message={t('help.admin.ingestDelegationOpsAudit', '監査クエリ例')}
+            description={
+              <pre style={{ fontSize: 11, margin: 0, padding: 8, background: '#f5f5f5', overflowX: 'auto' }}>
+{`# 委譲プロファイルの作成記録
+grep '"operation":"externalProfileCreated"' audit.log \\
+  | jq 'select(.details.delegated == true)'
+
+# 直近24h の拒否理由集計
+jq -r 'select(.details.denialReason) | .details.denialReason' audit.log \\
+  | sort | uniq -c | sort -nr
+
+# folder-swap escalation の試行
+jq 'select(.details.denialReason == "CMIS_ALL_REQUIRED_NEW")' audit.log`}
+              </pre>
+            }
+          />
+
           {/* --- 実行パターン --- */}
           <Title level={5} style={{ marginTop: 24 }}>{t('help.admin.ingestExecution', '実行パターン')}</Title>
           <Descriptions bordered size="small" column={1}>
