@@ -36,6 +36,17 @@ public class IngestSchedulerService {
     private final java.util.concurrent.ConcurrentHashMap<String, Integer> consecutiveFailures =
             new java.util.concurrent.ConcurrentHashMap<>();
 
+    /**
+     * Tracks delegated profileIds that we've already emitted a "skipping"
+     * WARN for, so subsequent poll cycles don't repeat the same WARN at
+     * every poll interval (default 5min). Without this, a single broken
+     * record would pollute the log indefinitely. Subsequent skips drop to
+     * DEBUG. Cleared if the profile flips back to non-delegated (rare —
+     * normally just admin-edit) so a re-set would re-WARN once.
+     */
+    private final java.util.Set<String> warnedDelegatedSchedulerProfiles =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     private volatile java.util.concurrent.ScheduledExecutorService scheduler;
 
     /**
@@ -133,7 +144,8 @@ public class IngestSchedulerService {
         return imapIdleMonitor != null ? imapIdleMonitor.getIdleProfiles() : List.of();
     }
 
-    private void pollScheduledProfiles() {
+    /** Visible for tests — driven by the scheduler at fixed delay in production. */
+    void pollScheduledProfiles() {
         try {
             // Multi-replica safety: only the leader replica polls. When leader
             // election is disabled (default), isLeader returns true so the
@@ -166,12 +178,23 @@ public class IngestSchedulerService {
                 // schedulerEnabled=true on a delegated profile (3.1.1-RC3),
                 // but a profile written directly to CouchDB could bypass
                 // that. A delegated profile has no admin CallContext to run
-                // under, so refuse to schedule it. WARN once — operators
-                // should not see this in normal flow.
+                // under, so refuse to schedule it. WARN exactly once per
+                // profileId — every subsequent poll cycle drops to DEBUG
+                // so a single broken record can't flood the log.
                 if (profile.isDelegated()) {
-                    logger.warn("Skipping delegated profile '{}' from scheduler — delegated profiles are manual-only by design",
-                            profile.getProfileId());
+                    String pid = profile.getProfileId();
+                    if (warnedDelegatedSchedulerProfiles.add(pid)) {
+                        logger.warn("Skipping delegated profile '{}' from scheduler — delegated profiles are manual-only by design. "
+                                + "This WARN fires once per profile per JVM lifetime; subsequent skips log at DEBUG.", pid);
+                    } else if (logger.isDebugEnabled()) {
+                        logger.debug("Scheduler skipping delegated profile '{}' (already warned)", pid);
+                    }
                     continue;
+                }
+                // If a previously-delegated profile flipped back, drop our
+                // memo so the next reset will re-WARN exactly once.
+                if (!warnedDelegatedSchedulerProfiles.isEmpty()) {
+                    warnedDelegatedSchedulerProfiles.remove(profile.getProfileId());
                 }
                 ConnectorDefinition connector = resolveConnectorForProfile(profile);
                 if (connector == null) continue;
