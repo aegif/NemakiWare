@@ -302,11 +302,14 @@ NemakiWare uses custom OpenCMIS 1.1.0-nemakiware JARs (Jakarta EE compatible). P
 
 | Document | Description |
 |----------|-------------|
+| [Release Notes](RELEASE_NOTES.md) | User-facing changelog (latest: 3.1.1-RC3) |
 | [Architecture](docs/ARCHITECTURE.md) | System architecture overview |
 | [AWS Deployment](docs/AWS-DEPLOYMENT-GUIDE.md) | Production deployment on AWS |
 | [Bedrock Embedding](docs/BEDROCK_EMBEDDING.md) | Amazon Bedrock setup |
 | [Cloud Integration](docs/CLOUD_INTEGRATION.md) | Google / Microsoft setup |
 | [Archive Enhancement](docs/ARCHIVE_ENHANCEMENT.md) | Retention & cold storage |
+| [Connector Delegation](docs/design/connector-delegation.md) | Folder-scoped External Ingestion delegation (RC3+) |
+| [Multi-replica Deployment](docs/MULTI-REPLICA-DEPLOYMENT.md) | Required conditions and known limitations for N≥2 replicas |
 
 ## Etymology
 

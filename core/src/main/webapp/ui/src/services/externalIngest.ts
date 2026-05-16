@@ -22,7 +22,13 @@ async function parseJsonOrThrow<T>(res: Response, context: string): Promise<T> {
   const data = (await parseJsonResponseBody(res, context)) as Record<string, unknown>;
   if (!res.ok) {
     const msg = typeof data.message === 'string' ? data.message : `HTTP ${res.status}`;
-    throw new Error(`${context}: ${msg}`);
+    // The delegation gates emit a stable DenialReason enum alongside the
+    // free-form message. We surface it in the thrown Error so callers can
+    // show it in a toast and admins quoting the error don't have to copy
+    // possibly-translated English text. Format: "[REASON] message".
+    const reason = typeof data.denialReason === 'string' ? data.denialReason : null;
+    const tagged = reason ? `[${reason}] ${msg}` : msg;
+    throw new Error(`${context}: ${tagged}`);
   }
   return data as T;
 }
