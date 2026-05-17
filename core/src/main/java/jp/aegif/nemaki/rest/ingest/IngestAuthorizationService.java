@@ -156,9 +156,28 @@ public class IngestAuthorizationService {
             return false;
         }
         if (isAdmin(callContext)) return true;
+        return canManageProfileForFolderAsUser(callContext.getUsername(), repositoryId, folderId);
+    }
+
+    /**
+     * Username-keyed overload — evaluates as if the named user were the
+     * caller, regardless of who actually invoked. Used by admin tools
+     * like the ownership-transfer endpoint to check whether the new
+     * owner can effectively manage the folder, without having to
+     * synthesise a {@link CallContext} for them.
+     *
+     * <p>NB: this is NOT admin-short-circuited. If you intend "admin
+     * passes too" semantics, check {@link #isAdmin} separately first.
+     */
+    public boolean canManageProfileForFolderAsUser(String username, String repositoryId, String folderId) {
+        if (username == null || username.isBlank()
+                || repositoryId == null
+                || folderId == null || folderId.isBlank()) {
+            return false;
+        }
         Folder folder = loadFolder(repositoryId, folderId);
         if (folder == null) return false;
-        return hasEffectiveCmisAll(callContext, repositoryId, folder);
+        return hasEffectiveCmisAllForUser(username, repositoryId, folder);
     }
 
     /**
@@ -183,8 +202,22 @@ public class IngestAuthorizationService {
     public boolean canUseConnectorForDelegatedProfile(
             CallContext callContext, String repositoryId,
             ConnectorDefinition connector, String targetFolderId) {
+        if (callContext == null) return false;
+        return canUseConnectorForDelegatedProfileAsUser(
+                callContext.getUsername(), repositoryId, connector, targetFolderId);
+    }
+
+    /**
+     * Username-keyed overload — see {@link #canManageProfileForFolderAsUser}
+     * for rationale.
+     */
+    public boolean canUseConnectorForDelegatedProfileAsUser(
+            String username, String repositoryId,
+            ConnectorDefinition connector, String targetFolderId) {
         if (connector == null || !connector.isEnabled() || !connector.isDelegated()) return false;
-        if (callContext == null || repositoryId == null || targetFolderId == null || targetFolderId.isBlank()) {
+        if (username == null || username.isBlank()
+                || repositoryId == null
+                || targetFolderId == null || targetFolderId.isBlank()) {
             return false;
         }
 
@@ -196,7 +229,7 @@ public class IngestAuthorizationService {
 
         List<String> allowedPrincipals = connector.getAllowedPrincipalIds();
         if (allowedPrincipals != null && !allowedPrincipals.isEmpty()) {
-            Set<String> userPrincipals = expandPrincipals(repositoryId, callContext.getUsername());
+            Set<String> userPrincipals = expandPrincipals(repositoryId, username);
             boolean intersects = false;
             for (String p : allowedPrincipals) {
                 if (p != null && userPrincipals.contains(p)) {
@@ -269,6 +302,11 @@ public class IngestAuthorizationService {
      * NemakiWare's ACL model.
      */
     boolean hasEffectiveCmisAll(CallContext callContext, String repositoryId, Folder folder) {
+        if (callContext == null) return false;
+        return hasEffectiveCmisAllForUser(callContext.getUsername(), repositoryId, folder);
+    }
+
+    boolean hasEffectiveCmisAllForUser(String username, String repositoryId, Folder folder) {
         Acl acl;
         try {
             acl = contentService.calculateAcl(repositoryId, folder);
@@ -278,7 +316,7 @@ public class IngestAuthorizationService {
         }
         if (acl == null) return false;
 
-        Set<String> principals = expandPrincipals(repositoryId, callContext.getUsername());
+        Set<String> principals = expandPrincipals(repositoryId, username);
         // The repository's Anyone principal name is configurable per repo;
         // PrincipalService exposes it. Falls back to the CMIS canonical
         // "anyone" only if the repo doesn't have one configured.

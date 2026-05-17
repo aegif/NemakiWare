@@ -208,6 +208,156 @@ public class ImportProfileDefinitionController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * Admin-only ownership transfer between admin and delegated modes.
+     * This is the missing piece for "I created this profile as admin and
+     * now want to hand it to a folder owner" — previously the operator
+     * had to delete and re-create. Body shape:
+     *
+     * <pre>{@code
+     * { "mode": "delegated", "createdByUserId": "alice" }   // admin → delegated
+     * { "mode": "admin" }                                    // delegated → admin
+     * }</pre>
+     *
+     * <p>Round-trip semantics:
+     * <ul>
+     *   <li>{@code mode=delegated}: forces {@code delegated=true},
+     *       stamps {@code createdByUserId} (defaults to caller if
+     *       omitted), forces {@code schedulerEnabled=false} and
+     *       {@code defaultProfile=false}, and re-validates that
+     *       {@code allowedConnectorIds} is non-empty and that every
+     *       listed connector is delegated to the new owner for the
+     *       profile's target folder. Refuses if not — surfacing the
+     *       same {@link DenialReason} codes as the normal delegated
+     *       PUT path, so audit consumers see a uniform shape.</li>
+     *   <li>{@code mode=admin}: forces {@code delegated=false} and
+     *       leaves the other fields alone. Subsequent admin PUTs can
+     *       re-enable scheduler etc.</li>
+     * </ul>
+     *
+     * <p>Always emits an {@link AuditOperation#EXTERNAL_PROFILE_UPDATED}
+     * audit with {@code details.transferTo} = mode so the audit trail
+     * shows the ownership change explicitly.
+     */
+    @PostMapping("/{profileId}/ownership")
+    public ResponseEntity<Map<String, Object>> transferOwnership(
+            @PathVariable String profileId,
+            @RequestBody Map<String, Object> body) {
+        CallContext ctx = currentCallContext();
+        if (ctx == null) return errorResponse(HttpStatus.UNAUTHORIZED, "No call context");
+        if (!ingestAuthorizationService.isAdmin(ctx)) {
+            return errorResponse(HttpStatus.FORBIDDEN, "Ownership transfer is admin-only");
+        }
+
+        ImportProfileDefinition existing = importProfileDefinitionService.get(profileId);
+        if (existing == null) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
+
+        String mode = body.get("mode") instanceof String s ? s : null;
+        if (!"delegated".equals(mode) && !"admin".equals(mode)) {
+            return errorResponse(HttpStatus.BAD_REQUEST,
+                    "Body must include mode: 'delegated' or 'admin'");
+        }
+
+        // We mutate a working copy so a validation failure leaves the
+        // stored record untouched.
+        try {
+            if ("admin".equals(mode)) {
+                existing.setDelegated(false);
+                importProfileDefinitionService.update(existing);
+                auditOwnershipTransfer(ctx, existing, "admin", null);
+                return successResponse(existing);
+            }
+
+            // mode=delegated
+            String newOwner = body.get("createdByUserId") instanceof String s ? s : ctx.getUsername();
+            if (newOwner == null || newOwner.isBlank()) {
+                return errorResponse(HttpStatus.BAD_REQUEST,
+                        "createdByUserId is required when mode=delegated (or use the caller's username)");
+            }
+            String folderId = ingestAuthorizationService.resolveFolderId(
+                    existing.getRepositoryId(), existing.getTargetFolderId(), existing.getTargetFolderPath());
+            if (folderId == null) {
+                return denied(HttpStatus.BAD_REQUEST, DenialReason.TARGET_FOLDER_UNRESOLVABLE,
+                        "Profile's target folder cannot be resolved");
+            }
+            // Mirror the non-admin POST invariants exactly — same code path
+            // would otherwise be reachable via "admin POSTs delegated=true"
+            // anyway, but we want a single canonical entry point.
+            if (existing.getAllowedConnectorIds() == null || existing.getAllowedConnectorIds().isEmpty()) {
+                return denied(HttpStatus.BAD_REQUEST, DenialReason.EMPTY_ALLOWED_CONNECTORS,
+                        "Profile has no allowedConnectorIds; cannot transfer to delegated mode");
+            }
+            // Re-evaluate cmis:all for the new owner using the
+            // username-keyed overload — avoids synthesising a CallContext
+            // for a user who may not even be the current caller. The
+            // overload deliberately does NOT short-circuit for admin
+            // (transfers go through the delegation gate regardless of
+            // who the new owner is, so admin → admin transfers via this
+            // endpoint still validate folder ownership).
+            if (!ingestAuthorizationService.canManageProfileForFolderAsUser(newOwner, existing.getRepositoryId(), folderId)) {
+                return denied(HttpStatus.FORBIDDEN, DenialReason.CMIS_ALL_REQUIRED,
+                        "Target user " + newOwner + " does not hold cmis:all on the profile's folder");
+            }
+            for (String cid : existing.getAllowedConnectorIds()) {
+                if (cid == null || cid.isBlank()) {
+                    return denied(HttpStatus.BAD_REQUEST, DenialReason.BLANK_CONNECTOR_ENTRY,
+                            "allowedConnectorIds contains a blank entry");
+                }
+                ConnectorDefinition c = connectorDefinitionService.get(cid);
+                if (c == null) {
+                    return denied(HttpStatus.BAD_REQUEST, DenialReason.UNKNOWN_CONNECTOR,
+                            "Unknown connector: " + cid);
+                }
+                if (!ingestAuthorizationService.canUseConnectorForDelegatedProfileAsUser(
+                        newOwner, existing.getRepositoryId(), c, folderId)) {
+                    return denied(HttpStatus.FORBIDDEN, DenialReason.CONNECTOR_NOT_DELEGATED,
+                            "Connector not delegated to " + newOwner + " for this folder: " + cid);
+                }
+            }
+            // Apply the transfer
+            existing.setDelegated(true);
+            existing.setCreatedByUserId(newOwner);
+            existing.setSchedulerEnabled(false);
+            existing.setDefaultProfile(false);
+            existing.setTargetFolderId(folderId);
+            existing.setTargetFolderPath(null);
+            importProfileDefinitionService.update(existing);
+            auditOwnershipTransfer(ctx, existing, "delegated", newOwner);
+            return successResponse(existing);
+        } catch (IllegalArgumentException e) {
+            return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    private ResponseEntity<Map<String, Object>> successResponse(ImportProfileDefinition profile) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", "success");
+        response.put("profileId", profile.getProfileId());
+        response.put("delegated", profile.isDelegated());
+        if (profile.getCreatedByUserId() != null) {
+            response.put("createdByUserId", profile.getCreatedByUserId());
+        }
+        return ResponseEntity.ok(response);
+    }
+
+    private void auditOwnershipTransfer(CallContext ctx, ImportProfileDefinition profile,
+                                        String newMode, String newOwner) {
+        if (auditLogger == null) return;
+        try {
+            String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("delegated", profile.isDelegated());
+            details.put("actorUserId", actor);
+            details.put("transferTo", newMode);
+            if (newOwner != null) details.put("newOwnerUserId", newOwner);
+            if (profile.getTargetFolderId() != null) details.put("targetFolderId", profile.getTargetFolderId());
+            auditLogger.logOperation(AuditOperation.EXTERNAL_PROFILE_UPDATED,
+                    profile.getRepositoryId(), actor, profile.getProfileId(), true, null, details);
+        } catch (RuntimeException ignored) {
+            // Audit must never break the API path
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────────
     // Delegation enforcement
     // ──────────────────────────────────────────────────────────────────

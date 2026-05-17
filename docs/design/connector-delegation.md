@@ -428,16 +428,98 @@ contract — do not rename or remove. Adding new entries is fine.
 
 ## 12. Future work (not in v1)
 
-- **Scheduled delegated profiles.** Requires `IngestSchedulerService`
-  to construct a `CallContext` from `createdByUserId` and re-evaluate
-  `cmis:all` at each tick (currently calls `executeFetch(null, …)`).
-  Also needs a story for what happens when the creator is deactivated
-  (auto-disable the profile, or leave it for admin review).
-- **Folder picker UI.** Today, non-admins enter folder IDs by hand.
-  A tree picker showing only folders where they have `cmis:all` would
-  be friendlier — the API is already there (per-folder
-  `canManageProfileForFolder`); it's a UI cost.
-- **Connector group memberships.** `allowedPrincipalIds` accepts group
-  IDs and expands them at evaluation. A view "what connectors does
-  group X have access to?" would help operators answer governance
-  questions; not modelled today.
+### 12.1 Scheduled delegated profiles (substantial — pre-design below)
+
+**Goal**: let a delegated profile fire on a schedule under the original
+folder owner's permissions, with the same security guarantees the
+manual path provides.
+
+**Why deferred**: the current `IngestSchedulerService.pollScheduledProfiles`
+calls `executeFetch(null, profile, connector, params)` (line 215) —
+the scheduler thread has no inbound HTTP request to derive a
+`CallContext` from. Building one synthetically requires several pieces
+that don't exist yet, and getting any of them wrong is a privilege
+escalation.
+
+**Required design work**:
+
+1. **CallContext synthesis from `createdByUserId`**.
+   - Probably a new `CallContextFactory.forUser(repositoryId, username)`
+     that loads the user's `UserItem`, computes group membership once
+     (PrincipalService), and produces a fully-populated read-only
+     context. Must NOT short-circuit to admin if the user happens to be
+     one — the whole point is to run as the *delegated* user.
+   - Cache scope: per-tick. Long-lived caches would mask
+     mid-tick group/membership changes.
+
+2. **Per-tick ACL re-evaluation**.
+   - At the start of each scheduled execution: re-run
+     `canManageProfileForFolderAsUser(createdByUserId, repo, folderId)`
+     and `canUseConnectorForDelegatedProfileAsUser(...)`. If either
+     returns false, skip with a structured `denialReason`
+     (`CMIS_ALL_REQUIRED` etc.) and emit the same audit shape the
+     runtime gate already uses.
+   - The check must happen INSIDE the fetch task (not at
+     `getScheduledProfiles` filtering), because the scheduler poll
+     interval can be long enough for ACL changes to land between
+     selection and execution.
+
+3. **Creator deactivation handling**.
+   - When `createdByUserId` is no longer a valid `UserItem` (deleted,
+     disabled, deactivated by LDAP sync), the runbook needs a decision:
+     - **(a) Hard fail-shut**: the next poll skips with a new
+       `denialReason: CREATOR_USER_INACTIVE` and the profile stays
+       visible in admin views. A nightly job could surface
+       "profiles with inactive creators" for admin review.
+     - **(b) Auto-disable** the profile (`enabled=false`) after N
+       consecutive failures. Less noisy but obscures the underlying
+       cause if the admin isn't watching.
+   - **Recommendation**: ship (a) first; layer (b) on as an opt-in
+     `nemakiware.ingest.delegated.autoDisableInactiveOwners=true`.
+
+4. **`schedulerEnabled` gate relaxation**.
+   - Today the controller refuses `schedulerEnabled=true` on
+     `delegated=true` profile creates/updates and the scheduler
+     defensively skips them. Once (1)–(3) ship, this gate flips —
+     non-admin scheduled is allowed, defensive skip is removed (or
+     limited to a hard kill-switch property).
+   - Keep the gate behind a property: `nemakiware.ingest.delegated.schedulerEnabled=false`
+     by default in v2 → operators must opt-in per deployment after
+     they understand the deactivation policy.
+
+5. **Audit shape additions**.
+   - New `details` keys: `scheduled=true`, `creatorUserId`,
+     `creatorActive=true|false`. New ops: `EXTERNAL_INGEST_DELEGATED_SCHEDULED`
+     (or stay with `EXTERNAL_INGEST` + a `scheduled` flag — TBD).
+   - New `DenialReason` entries: `CREATOR_USER_INACTIVE`,
+     `CREATOR_CMIS_ALL_LOST`.
+
+6. **Test surface to add**.
+   - Per-tick ACL re-eval: revoke `cmis:all` between two ticks →
+     second tick skips with the right reason.
+   - Creator deactivation: disable `UserItem` between ticks → skip
+     + audit.
+   - Group change: creator added to or removed from a group named in
+     `allowedPrincipalIds` between ticks → skip toggles correctly.
+   - Connector revocation: connector flipped to `delegated=false`
+     between ticks → skip.
+   - Hardening invariant: scheduler must not run a delegated profile
+     under an admin CallContext (regression check for
+     `IngestSchedulerDelegationSkipTest` style).
+
+**Scope estimate**: ~600–1000 LOC of production code, ~30 new unit
+tests, ~5 new E2E scenarios, 2–3 new properties. Best split into its
+own release-candidate cycle once a deployment actually needs it.
+
+### 12.2 Folder picker UI
+
+Non-admins enter folder IDs by hand. A tree picker showing only
+folders where they have `cmis:all` would be friendlier — the API is
+already there (per-folder `canManageProfileForFolder`); it's a UI
+cost.
+
+### 12.3 Connector group-membership view
+
+`allowedPrincipalIds` accepts group IDs and expands them at
+evaluation. A view "what connectors does group X have access to?"
+would help operators answer governance questions; not modelled today.

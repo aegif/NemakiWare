@@ -116,20 +116,33 @@ No migration required. After deploying RC3:
 
 - **Scheduled delegated profiles**: not supported.
   `schedulerEnabled=true` on a delegated profile is rejected at both
-  the create/update API and at the scheduler poll loop. The path would
-  require synthesising a `CallContext` from `createdByUserId` and
-  re-evaluating `cmis:all` per tick.
+  the create/update API and at the scheduler poll loop. See
+  [`docs/design/connector-delegation.md`](docs/design/connector-delegation.md)
+  §12.1 for the full v2 pre-design — CallContext synthesis,
+  per-tick ACL re-evaluation, creator deactivation policy, new
+  `DenialReason` entries, and the property gates that govern the
+  feature.
 - **Folder picker tree**: non-admin enter folder IDs by hand for now;
   the form gives immediate ✓ / ✗ permission feedback against the entered
   ID. A tree picker showing only folders where they hold `cmis:all`
   is on the roadmap.
-- **Admin → delegated profile migration tool**: delete + recreate for
-  now.
-- **Connector PUT partial payload**: an admin PUT that omits
-  `allowedFolderIds` will clear it. Server-side validation catches it
-  loudly (rejects with 400 if the resulting state would be inconsistent
-  with `delegated=true`), but the admin UI sends the full record so
-  this is mostly a scripted-PUT concern.
+
+### New in this RC (closed earlier "limitations")
+
+- **Profile ownership transfer endpoint** (was: "delete + recreate
+  only") — `POST /v1/admin/import-profiles/{id}/ownership` with
+  `{mode: "delegated", createdByUserId: "alice"}` or
+  `{mode: "admin"}`. Admin-only; re-validates that the new owner
+  effectively holds `cmis:all` and that every connector in the
+  profile's `allowedConnectorIds` is delegated to them, before
+  flipping the flag. Refuses with the same `DenialReason` codes
+  used elsewhere so audit shape stays uniform.
+- **Connector PUT partial-payload protection** (was: "admin PUT
+  omitting allowedFolderIds clears it"). List fields
+  (`allowedFolderIds`, `allowedPrincipalIds`) follow
+  null=preserve / `[]`=explicit clear semantics. Primitive flags
+  still require an explicit value — admin must always send the
+  intended boolean.
 
 ### Testing
 

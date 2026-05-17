@@ -81,6 +81,22 @@ public class ConnectorDefinitionController {
             if ("[configured]".equals(def.getWebhookSecret())) {
                 def.setWebhookSecret(existing.getWebhookSecret());
             }
+            // Preserve delegation-scope arrays when the payload omits them.
+            // Jackson deserialisation collapses an absent key and an explicit
+            // null into a null Java field — both signal "I'm not touching
+            // this; keep what's stored". An explicit empty list is the
+            // operator's "clear it" intent and IS honoured. This stops a
+            // scripted partial PUT (e.g. flipping only `enabled`) from
+            // accidentally wiping `allowedFolderIds`/`allowedPrincipalIds`
+            // and tripping the "delegated=true requires non-empty scope"
+            // validation. Lists only — primitive flags have no null state
+            // and admins must always send the desired boolean.
+            if (def.getAllowedFolderIds() == null) {
+                def.setAllowedFolderIds(existing.getAllowedFolderIds());
+            }
+            if (def.getAllowedPrincipalIds() == null) {
+                def.setAllowedPrincipalIds(existing.getAllowedPrincipalIds());
+            }
         }
         try {
             connectorDefinitionService.update(def);

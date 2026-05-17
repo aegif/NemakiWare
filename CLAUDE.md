@@ -390,10 +390,14 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 #### 将来課題 (v2 検討、本 RC では対応しない)
 
-- 非 admin の scheduled profile: `createdByUserId` ベースで実行時 CallContext 再構築 + 対象 folder への `cmis:all` 再評価が必要
-- createdBy ユーザの非アクティブ化検知 → profile 自動 disable
+- 非 admin の scheduled profile (詳細設計は `docs/design/connector-delegation.md` §12.1): CallContext 合成 + per-tick ACL 再評価 + creator deactivation policy + 5 つの新 DenialReason + ~600-1000 LOC + ~30 unit tests。独立した RC サイクルで対応すべき規模
 - フォルダ選択 UI (ツリーピッカー — 現状はオブジェクト ID/path 手入力 + summary endpoint 経由の即時 ✓/✗ feedback)
-- Admin-owned → delegated 移行 / 移管ツール (現状は delete + recreate)
+- Connector group-membership view (「group X が使える connector は何か」のガバナンス用)
+
+#### 本 RC で対応済 (元 v2 候補)
+
+- ~~Admin-owned → delegated 移行 / 移管ツール~~ → `POST /v1/admin/import-profiles/{id}/ownership` で実装。`mode=delegated|admin`、新 owner の cmis:all + connector 委譲を per-user で再評価、`details.transferTo` を audit
+- ~~Connector PUT partial payload で scope clobber~~ → list field omit (null) は existing 保持、explicit `[]` は clear として尊重
 
 ### RC14 (2026-05-10) — SAML strict-mode redesign + production hardening posture
 
