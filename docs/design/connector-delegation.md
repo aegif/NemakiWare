@@ -511,12 +511,24 @@ escalation.
 tests, ~5 new E2E scenarios, 2–3 new properties. Best split into its
 own release-candidate cycle once a deployment actually needs it.
 
-### 12.2 Folder picker UI
+### 12.2 ~~Folder picker UI~~ (shipped)
 
-Non-admins enter folder IDs by hand. A tree picker showing only
-folders where they have `cmis:all` would be friendlier — the API is
-already there (per-folder `canManageProfileForFolder`); it's a UI
-cost.
+**Shipped** in RC3 hardening #8. `FolderPickerModal.tsx` renders a
+lazy-expanded folder tree fetched via the CMIS Browser Binding's
+`getChildren` (so users only see folders they can read). When the user
+selects a folder, the modal probes `/v1/admin/connectors/summary`
+against that ID — a 200 means the user holds `cmis:all` (the gate the
+delegated profile will need anyway) and the Confirm button enables; a
+403 keeps the modal open and shows a red "no permission" line.
+
+The probe is intentionally per-selection rather than per-node: bulk
+pre-coloring the whole tree would multiply the auth-service load and
+slow expansion. The selection probe is fast (single endpoint hit) and
+matches exactly the check the server will re-run on form submit.
+
+Wired into `ImportProfileManagementTab` via a Browse button inside
+the `targetFolderId` Input's `addonAfter`. Admin gets the same picker
+(informational only — admin can pick any folder regardless of cmis:all).
 
 ### 12.3 Connector group-membership view
 

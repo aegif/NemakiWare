@@ -3316,6 +3316,12 @@
       "sourceSystemHint": "google_drive, notion, imap, slack, teams, ..."
     }
   },
+  "folderPicker": {
+    "title": "Select a target folder",
+    "selected": "Selected",
+    "permissionOk": "You hold management permission on this folder",
+    "noPermission": "You do not hold cmis:all on this folder."
+  },
   "importProfileManagement": {
     "loadError": "Failed to load import profiles",
     "createSuccess": "Import profile created successfully",
@@ -3367,6 +3373,7 @@
       "secondaryTypeIdsPlaceholder": "e.g. nemaki:cloudDriveMetadata",
       "targetFolderIdHint": "CouchDB folder object ID",
       "targetFolderIdRequiredDelegated": "Delegated profiles require a folder ID (path input is admin-only).",
+      "browseFolder": "Browse folders",
       "targetFolderPathHint": "/Sites/Invoices",
       "allowedConnectorIds": "Allowed Connectors",
       "allowedConnectorIdsHint": "Leave empty to allow any connector",

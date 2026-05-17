@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Switch, Space, Tag, App, Popconfirm, Alert, Tooltip } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -15,6 +15,7 @@ import {
   listConnectorSummary,
   fetchAdapterRegistry,
 } from '../../services/externalIngest';
+import { FolderPickerModal } from './FolderPickerModal';
 
 const ARCHETYPE_OPTIONS = [
   'FILE_SHARE', 'COMPOUND_NOTE', 'CHAT_CONTEXT', 'BUSINESS_RECORD', 'MESSAGE_CONTEXT',
@@ -80,6 +81,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
   // it as a proxy for "do I hold cmis:all on this folder" — the summary
   // endpoint short-circuits on a 403 if the caller doesn't.
   const [folderAccessState, setFolderAccessState] = useState<'unknown' | 'ok' | 'denied' | 'unresolved'>('unknown');
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -384,7 +386,27 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
                       </span>
                     : null
               : undefined}>
-            <Input placeholder={t('importProfileManagement.form.targetFolderIdHint')} />
+            {/*
+              Compact Input + Browse button. The button opens
+              FolderPickerModal which probes /summary on selection — so
+              non-admins picking via the tree get the same cmis:all
+              gate as if they had typed an ID. Admin gets the picker too
+              (informational only — they can pick any folder).
+            */}
+            <Input
+              placeholder={t('importProfileManagement.form.targetFolderIdHint')}
+              addonAfter={
+                <Tooltip title={t('importProfileManagement.form.browseFolder', { defaultValue: 'フォルダを参照' })}>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<FolderOpenOutlined />}
+                    onClick={() => setFolderPickerOpen(true)}
+                    style={{ padding: 0, height: 'auto', lineHeight: 1 }}
+                  />
+                </Tooltip>
+              }
+            />
           </Form.Item>
           {/*
             targetFolderPath: admin only. Non-admin delegated profiles must
@@ -537,6 +559,24 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/*
+        FolderPicker is rendered as a sibling so it survives the parent
+        Modal's destroyOnClose. The selected ID is written directly into
+        the form via form.setFieldValue, which triggers the existing
+        targetFolderId watcher and refreshes the connector summary in
+        the same render cycle.
+      */}
+      <FolderPickerModal
+        open={folderPickerOpen}
+        repositoryId={repositoryId}
+        currentFolderId={formTargetFolderId}
+        onSelect={(folderId) => {
+          form.setFieldValue('targetFolderId', folderId);
+          setFolderPickerOpen(false);
+        }}
+        onCancel={() => setFolderPickerOpen(false)}
+      />
     </>
   );
 }

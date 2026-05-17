@@ -3070,6 +3070,12 @@
       "sourceSystemHint": "google_drive, notion, imap, slack, teams, ..."
     }
   },
+  "folderPicker": {
+    "title": "対象フォルダを選択",
+    "selected": "選択中",
+    "permissionOk": "このフォルダの管理権限があります",
+    "noPermission": "このフォルダに cmis:all 権限がありません。"
+  },
   "importProfileManagement": {
     "loadError": "インポートプロファイルの読み込みに失敗しました",
     "createSuccess": "インポートプロファイルを作成しました",
@@ -3116,6 +3122,7 @@
       "secondaryTypeIdsPlaceholder": "例: nemaki:cloudDriveMetadata",
       "targetFolderIdHint": "CouchDB フォルダオブジェクトID",
       "targetFolderIdRequiredDelegated": "委譲プロファイルでは folder ID が必須です（path 指定は管理者専用）",
+      "browseFolder": "フォルダを参照",
       "targetFolderPathHint": "/Sites/Invoices",
       "allowedConnectorIds": "許可するコネクタ",
       "allowedConnectorIdsHint": "空の場合はすべてのコネクタを許可",

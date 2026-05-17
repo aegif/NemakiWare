@@ -122,10 +122,7 @@ No migration required. After deploying RC3:
   per-tick ACL re-evaluation, creator deactivation policy, new
   `DenialReason` entries, and the property gates that govern the
   feature.
-- **Folder picker tree**: non-admin enter folder IDs by hand for now;
-  the form gives immediate ✓ / ✗ permission feedback against the entered
-  ID. A tree picker showing only folders where they hold `cmis:all`
-  is on the roadmap.
+- ~~**Folder picker tree**~~: **shipped**. See "New in this RC" below.
 
 ### New in this RC (closed earlier "limitations")
 
@@ -143,6 +140,14 @@ No migration required. After deploying RC3:
   null=preserve / `[]`=explicit clear semantics. Primitive flags
   still require an explicit value — admin must always send the
   intended boolean.
+- **Folder picker tree** (was: "type IDs by hand"). The Browse
+  button in the `targetFolderId` field opens a lazy-expanded CMIS
+  folder tree. The picker shows folders the user can read (Browser
+  Binding default); when a folder is selected the picker probes
+  `/v1/admin/connectors/summary` against it — 403 = no `cmis:all`,
+  Confirm stays disabled; 200 = green check and Confirm enables.
+  Same picker is available to admin as a quality-of-life
+  convenience (admin can pick any folder regardless of cmis:all).
 
 ### Testing
 
