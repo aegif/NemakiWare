@@ -284,8 +284,21 @@ public class ImportProfileDefinitionController {
             // would otherwise be reachable via "admin POSTs delegated=true"
             // anyway, but we want a single canonical entry point.
             if (existing.getAllowedConnectorIds() == null || existing.getAllowedConnectorIds().isEmpty()) {
-                return denied(HttpStatus.BAD_REQUEST, DenialReason.EMPTY_ALLOWED_CONNECTORS,
+                return denyTransfer(ctx, existing, newOwner, folderId,
+                        HttpStatus.BAD_REQUEST, DenialReason.EMPTY_ALLOWED_CONNECTORS,
                         "Profile has no allowedConnectorIds; cannot transfer to delegated mode");
+            }
+            // defaultConnectorId, when set, must be in allowedConnectorIds.
+            // The normal delegated PUT enforces this in validateDelegatedConnectors —
+            // transfer must apply the same shape invariant before flipping the
+            // delegated flag, otherwise a transferred profile could land in a
+            // state the runtime gate would later refuse.
+            String existingDefault = existing.getDefaultConnectorId();
+            if (existingDefault != null && !existingDefault.isBlank()
+                    && !existing.getAllowedConnectorIds().contains(existingDefault)) {
+                return denyTransfer(ctx, existing, newOwner, folderId,
+                        HttpStatus.BAD_REQUEST, DenialReason.DEFAULT_CONNECTOR_NOT_IN_ALLOWED,
+                        "Profile's defaultConnectorId is not in allowedConnectorIds; transfer refused");
             }
             // Re-evaluate cmis:all for the new owner using the
             // username-keyed overload — avoids synthesising a CallContext
@@ -295,22 +308,26 @@ public class ImportProfileDefinitionController {
             // who the new owner is, so admin → admin transfers via this
             // endpoint still validate folder ownership).
             if (!ingestAuthorizationService.canManageProfileForFolderAsUser(newOwner, existing.getRepositoryId(), folderId)) {
-                return denied(HttpStatus.FORBIDDEN, DenialReason.CMIS_ALL_REQUIRED,
+                return denyTransfer(ctx, existing, newOwner, folderId,
+                        HttpStatus.FORBIDDEN, DenialReason.CMIS_ALL_REQUIRED,
                         "Target user " + newOwner + " does not hold cmis:all on the profile's folder");
             }
             for (String cid : existing.getAllowedConnectorIds()) {
                 if (cid == null || cid.isBlank()) {
-                    return denied(HttpStatus.BAD_REQUEST, DenialReason.BLANK_CONNECTOR_ENTRY,
+                    return denyTransfer(ctx, existing, newOwner, folderId,
+                            HttpStatus.BAD_REQUEST, DenialReason.BLANK_CONNECTOR_ENTRY,
                             "allowedConnectorIds contains a blank entry");
                 }
                 ConnectorDefinition c = connectorDefinitionService.get(cid);
                 if (c == null) {
-                    return denied(HttpStatus.BAD_REQUEST, DenialReason.UNKNOWN_CONNECTOR,
+                    return denyTransfer(ctx, existing, newOwner, folderId,
+                            HttpStatus.BAD_REQUEST, DenialReason.UNKNOWN_CONNECTOR,
                             "Unknown connector: " + cid);
                 }
                 if (!ingestAuthorizationService.canUseConnectorForDelegatedProfileAsUser(
                         newOwner, existing.getRepositoryId(), c, folderId)) {
-                    return denied(HttpStatus.FORBIDDEN, DenialReason.CONNECTOR_NOT_DELEGATED,
+                    return denyTransfer(ctx, existing, newOwner, folderId,
+                            HttpStatus.FORBIDDEN, DenialReason.CONNECTOR_NOT_DELEGATED,
                             "Connector not delegated to " + newOwner + " for this folder: " + cid);
                 }
             }
@@ -326,6 +343,44 @@ public class ImportProfileDefinitionController {
             return successResponse(existing);
         } catch (IllegalArgumentException e) {
             return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    /**
+     * Build a denial response for a delegated-mode transfer attempt AND
+     * record the matching audit entry in one call. Inline because the
+     * audit shape (transferTo + newOwnerUserId) is specific enough to
+     * this endpoint that folding it into the generic {@code auditDenial}
+     * would over-couple the two — the rest of the controller doesn't
+     * need to know about transfer semantics.
+     */
+    private ResponseEntity<Map<String, Object>> denyTransfer(
+            CallContext ctx, ImportProfileDefinition existing, String newOwner, String folderId,
+            HttpStatus status, DenialReason reason, String message) {
+        ResponseEntity<Map<String, Object>> resp = denied(status, reason, message);
+        auditTransferDenial(ctx, existing, newOwner, folderId, reason, message);
+        return resp;
+    }
+
+    private void auditTransferDenial(CallContext ctx, ImportProfileDefinition existing,
+                                     String newOwner, String folderId,
+                                     DenialReason reason, String message) {
+        if (auditLogger == null || ctx == null) return;
+        try {
+            String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("delegated", existing != null && existing.isDelegated());
+            details.put("actorUserId", actor);
+            details.put("transferTo", "delegated");
+            if (newOwner != null) details.put("newOwnerUserId", newOwner);
+            if (folderId != null) details.put("targetFolderId", folderId);
+            if (reason != null) details.put("denialReason", reason.name());
+            String repoId = existing != null ? existing.getRepositoryId() : null;
+            String objectId = existing != null && existing.getProfileId() != null ? existing.getProfileId() : "";
+            auditLogger.logOperation(AuditOperation.EXTERNAL_PROFILE_UPDATED,
+                    repoId, actor, objectId, false, message, details);
+        } catch (RuntimeException ignored) {
+            // Audit must never break the API path
         }
     }
 

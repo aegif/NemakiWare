@@ -75,19 +75,83 @@ failure. The names are part of the audit contract — see
 - **Admin API**: unchanged. Adding `delegated` / scope fields to a
   connector POST/PUT is opt-in.
 
+### Migration safety (RC3)
+
+The static review of view registration, patch application, and
+record round-trip is summarised here so operators can sign off on
+an upgrade without reading the source.
+
+1. **RC3 adds no new CouchDB views, no new patches, and no new type
+   definitions.** Existing dump files (`bedroom_init.dump`,
+   `nemaki_conf_init.dump`) are unchanged. `DatabasePreInitializer`'s
+   `viewCount < requiredViews` heuristic (38) is unaffected.
+2. **Added persistence is JSON-field-only**:
+   - `ConnectorDefinition` — `delegated`, `delegateAllFolders`,
+     `allowedFolderIds`, `allowedPrincipalIds`
+   - `ImportProfileDefinition` — `createdByUserId`, `delegated`
+3. **Pre-RC3 records read with Java default values that fall on the
+   safe side**:
+   - `connector.delegated = false` → admin-only (existing behaviour)
+   - `profile.delegated = false` → admin-managed (existing behaviour)
+   - list fields = `null` → no scope (no implicit grant)
+4. **Selector compatibility**. The `_find` mango selectors used for
+   `connector_definition` and `import_profile_definition` query only
+   on `type` + the primary key (`connectorId` / `profileId` /
+   `repositoryId`). They do not filter on any new field, so pre-RC3
+   and post-RC3 records remain mutually visible without an index
+   rebuild.
+5. **Corrupted records fail-closed at runtime**, not at read. A
+   hand-edited record like `delegated=true && allowedConnectorIds=[]`
+   deserialises cleanly but the runtime gate refuses with
+   `denialReason: EMPTY_ALLOWED_CONNECTORS`. Same for an empty scope
+   on the connector side (`hasUsableDelegationScope()` returns false).
+6. **Backwards-compat for serialisation**: all delegation models are
+   annotated `@JsonIgnoreProperties(ignoreUnknown=true)` and
+   `@JsonInclude(NON_NULL)`. A round-trip through CouchDB preserves
+   both pre-RC3 and post-RC3 records exactly; primitive `false`
+   booleans are emitted (cannot be null).
+
+> **Pre-existing items found during this review** that did not
+> change in RC3 but are worth knowing about, recorded for follow-up
+> in a separate PR — see "Known pre-existing follow-ups" at the end
+> of this section.
+
 ### Upgrade
 
-No migration required. After deploying RC3:
+No CouchDB migration required — RC3 adds no new views, patches, or
+type definitions; only JSON fields with safe defaults. See
+[**Migration safety**](#migration-safety-rc3) below for the full
+upgrade-time round-trip analysis. After deploying RC3:
 
-1. Audit any existing admin-owned profiles — they remain admin-managed.
-   If a folder owner should take over a profile, currently the admin
-   needs to delete + recreate (a 1-click transfer tool is on the v2
-   list).
+1. **Existing admin-owned profiles** stay admin-managed. If a folder
+   owner should take over a profile, use
+   `POST /v1/admin/import-profiles/{id}/ownership` with
+   `{"mode": "delegated", "createdByUserId": "<owner>"}` — admin only.
+   Before transferring, verify that:
+   - the target connector has `delegated=true` AND the profile's
+     target folder is within its `allowedFolderIds` (or it sets
+     `delegateAllFolders=true`),
+   - the profile's `allowedConnectorIds` is non-empty AND each
+     connector in it is delegated to the new owner for the target
+     folder,
+   - the profile's `defaultConnectorId` (if any) is contained in
+     `allowedConnectorIds`,
+   - the new owner effectively holds `cmis:all` on the target folder.
+   Any of these failing returns a 400/403 with a structured
+   `denialReason` and the profile is left untouched (the transfer is
+   transactional from the caller's point of view).
+
+   To move a profile back to admin management, POST the same endpoint
+   with `{"mode": "admin"}` — clears `delegated`, leaves other fields
+   alone.
+
 2. To delegate a connector, open Integration Settings → Connectors →
    edit the connector → enable **委譲設定** and set
    `allowedFolderIds`. Optionally restrict by `allowedPrincipalIds`.
+
 3. Notify folder owners — they'll see the import-profile and
-   manual-ingest tabs under Integration Settings.
+   manual-ingest tabs under Integration Settings, plus a Browse
+   folder-picker in the targetFolderId field.
 
 ### Security hardening (everything below is automatic)
 
@@ -148,6 +212,29 @@ No migration required. After deploying RC3:
   Confirm stays disabled; 200 = green check and Confirm enables.
   Same picker is available to admin as a quality-of-life
   convenience (admin can pick any folder regardless of cmis:all).
+
+### Testing
+
+- 165+ ingest unit tests cover the authorization service, controller
+  gates, runtime gates, scheduler defence, and cap-property handling.
+- 21 API E2E tests against a live deployment cover admin / delegated
+  user / non-delegated user × CRUD + execute + TOCTOU scenarios.
+- All tests pass on every RC3 commit including the latest
+  hardening rounds.
+
+### Known pre-existing follow-ups (out of scope for RC3)
+
+Surfaced by the RC3 migration / view-registration static review.
+**None of these are RC3 regressions** — they exist on the RC2 line as
+well. They are recorded here so a follow-up PR can address them
+independently of the delegation feature ship.
+
+| ID | Severity | Summary | Suggested follow-up |
+|---|---|---|---|
+| R1 | High | `NemakiPatchInitializationListener.patchBeanNames` (fallback path) is asymmetric with `CMISPostInitializer.cmisPatchList` (primary path). 9 patches are missing from the fallback list; 8 of those have no top-level `bean id="..."` in `patchContext.xml`, so even if added to the fallback array `springContext.containsBean()` would skip them. Concretely missing: `patch_IngestRelationshipTypes` and 8 others. Impact: if the primary path dies mid-run, the fallback can never finish what's left. | Add top-level bean ids for all patches, or migrate the listener to collect `Map<String, AbstractNemakiPatch>` automatically and drop the hardcoded array. |
+| R2 | Medium | Mango `_find` queries against `nemaki_conf` (connector / profile / job records) have no registered Cloudant index — `postIndex` is never called anywhere in the codebase. Falls back to full-table scan. Fine at current scale (<1k records), noticeable at 10k+. | Add a startup patch that registers compound indexes on `(type, connectorId)` / `(type, profileId)` / `(type, repositoryId)`. |
+| R3 | Medium | `StartupProbeService.REQUIRED_VIEWS_MAIN = 38` is hard-coded; the shipped `bedroom_init.dump` actually contains 40 views. The check `viewCount < required` passes either way today, but the count drifts over time. A future release that adds or removes views without updating the constant could mis-classify view completeness. | Compute the required-view set from the dump at startup (name-set comparison rather than count threshold). |
+| R4 | Low | `Patch_StandardCmisViews` is registered both in `cmisPostInitializer.cmisPatchList` (primary) and in `patchService.patchList`. `PatchHistory` dedupes execution, but the startup log shows the patch entry twice. | Remove the duplicate registration from `patchService.patchList`. |
 
 ### Testing
 

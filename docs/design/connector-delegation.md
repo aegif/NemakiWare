@@ -386,6 +386,131 @@ backed and shared. Multi-replica deployments inherit the existing
 constraints from `docs/MULTI-REPLICA-DEPLOYMENT.md`; delegation adds
 nothing new.
 
+## 9.5 Migration safety and pre-existing follow-ups
+
+This section captures the conclusions of the RC3 migration / view
+static review so future maintainers don't have to re-derive them.
+
+### 9.5.1 Why RC3 is safe to roll out without a migration step
+
+RC3 makes **no changes to the on-disk shape that the existing
+machinery doesn't already know how to handle**:
+
+- No new CouchDB views (no `Patch_*Views` class added).
+- No new CMIS type definitions (no `Patch_*Type` class added; the
+  RC2 `Patch_IngestRelationshipTypes` stands as-is).
+- No new Mango index (none existed before; status quo).
+- No new dump file changes (`bedroom_init.dump`,
+  `nemaki_conf_init.dump` unchanged).
+- No new `DOC_TYPE` discriminator (re-uses existing
+  `connector_definition` / `import_profile_definition`).
+
+The added persistence is **JSON-field-only** on existing record
+shapes:
+
+- `ConnectorDefinition`: `delegated` (boolean, default false),
+  `delegateAllFolders` (boolean, default false), `allowedFolderIds`
+  (List, default null), `allowedPrincipalIds` (List, default null).
+- `ImportProfileDefinition`: `createdByUserId` (String, default null),
+  `delegated` (boolean, default false).
+
+Round-trip behaviour:
+
+1. Pre-RC3 records have none of these fields. Jackson
+   `@JsonIgnoreProperties(ignoreUnknown=true)` reads them with Java's
+   built-in defaults — booleans are `false`, references are `null`.
+   `false` is the safe side for both `delegated` flags.
+2. Mango `_find` selectors (`connectorDefinitionService.findBySelector`,
+   `importProfileDefinitionService.findBySelector`) query only on
+   `type` + the primary key. They do not condition on any new field,
+   so pre-RC3 records remain matchable and post-RC3 records remain
+   findable.
+3. `@JsonInclude(NON_NULL)` strips `null` list fields from the
+   serialised JSON, so a post-RC3 record without any scope set
+   doesn't grow the document with empty lists. Primitive booleans
+   are always emitted (Java can't distinguish "unset false" from
+   "explicit false").
+4. Corrupted shapes (`delegated=true && allowedConnectorIds=[]`,
+   `delegated=true && delegateAllFolders=false && allowedFolderIds=null`,
+   etc.) deserialise without exception. They fail at *runtime* via
+   `EMPTY_ALLOWED_CONNECTORS` /
+   `ConnectorDefinition.hasUsableDelegationScope() == false` /
+   `canUseConnectorForDelegatedProfile() == false`, never silently.
+
+### 9.5.2 Known pre-existing follow-ups (NOT addressed in RC3)
+
+The static review surfaced 4 pre-existing structural items in the
+patch / view machinery. They are not RC3 regressions; they should be
+fixed independently to keep the delegation work focused. The
+implementation of each is deliberately deferred.
+
+#### R1 (High) — Fallback patch listener is asymmetric with the primary
+
+`NemakiPatchInitializationListener.patchBeanNames` (L112-135) is a
+hard-coded array of 23 patches. `CMISPostInitializer.cmisPatchList`
+(in `patchContext.xml`, L92-272) is an inline list of 28. The
+fallback lacks: `patch_IngestRelationshipTypes`,
+`patch_BusinessRecordMetadataSecondaryType`,
+`patch_ChatContextMetadataSecondaryType`,
+`patch_MessageMetadataSecondaryType`,
+`patch_NoteMetadataSecondaryType`,
+`patch_ExternalIntegrationSourceFields`,
+`patch_DefaultCloudDriveConnectorProfile`,
+`patch_PurviewStateMigration`. 8 of the 9 have no top-level
+`bean id="..."`, so even if they were added to the listener array
+`springContext.containsBean()` would skip them.
+
+Failure mode: primary path crashes mid-run → fallback runs only the
+23 it knows about → the missing 9 are not retried by the fallback.
+The next normal startup re-runs the primary which idempotently
+applies the rest, so the window is bounded — but a deployment that
+loses the primary repeatedly (config error) could stall on the
+missing patches.
+
+Suggested fix (separate PR): add top-level bean IDs for every patch
+class and have the listener collect `Map<String, AbstractNemakiPatch>`
+automatically instead of maintaining a duplicate hardcoded array.
+
+#### R2 (Medium) — Mango `_find` has no registered index
+
+`postIndex` is not called anywhere in the codebase. Cloudant falls
+back to `_all_docs` scan for every `_find`. At current scale
+(typical 10-50 connectors + 50-200 profiles per repository) this
+is fine. At 10k+ records per type it would dominate query latency.
+
+Suggested fix (separate PR): new
+`Patch_IngestMangoIndexes` that calls `postIndex` with compound
+fields `(type, connectorId)`, `(type, profileId, repositoryId)`,
+`(type, repositoryId, enabled, schedulerEnabled)`. Add Mango index
+registration to the standard view-merge path.
+
+#### R3 (Medium) — `REQUIRED_VIEWS_MAIN = 38` drifts from the dump
+
+`StartupProbeService.REQUIRED_VIEWS_MAIN` is hard-coded as 38;
+shipped `bedroom_init.dump` has 40 views. `DatabasePreInitializer`
+checks `viewCount < required` so both 38 and 40 pass today, but a
+release that adds a 41st view via dump + forgets to bump the
+constant, or removes a view from the dump without removing the
+constant guard, would mis-classify view completeness.
+
+Suggested fix (separate PR): drop the count threshold; parse the
+dump at startup and require the **set** of view names to match.
+Promote the constant to a method that reads the dump once and
+caches the result.
+
+#### R4 (Low) — Duplicate registration of `Patch_StandardCmisViews`
+
+The patch appears both in `cmisPostInitializer.cmisPatchList` and
+`patchService.patchList` (`patchContext.xml` L109, L58).
+`PatchHistory.isApplied` dedupes execution per repository, so the
+duplicate is functionally harmless, but it produces two
+"Applying patch: standard-cmis-views" log lines on every startup
+and confuses startup diagnostics.
+
+Suggested fix (separate PR): remove the entry from
+`patchService.patchList`; keep `cmisPostInitializer` as the
+canonical home.
+
 ## 10. `DenialReason` reference
 
 Stable identifiers used in audit `details.denialReason` and in the JSON

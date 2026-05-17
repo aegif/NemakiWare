@@ -395,9 +395,27 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 #### 本 RC で対応済 (元 v2 候補)
 
-- ~~Admin-owned → delegated 移行 / 移管ツール~~ → `POST /v1/admin/import-profiles/{id}/ownership` で実装。`mode=delegated|admin`、新 owner の cmis:all + connector 委譲を per-user で再評価、`details.transferTo` を audit
+- ~~Admin-owned → delegated 移行 / 移管ツール~~ → `POST /v1/admin/import-profiles/{id}/ownership` で実装。`mode=delegated|admin`、新 owner の cmis:all + connector 委譲を per-user で再評価、`details.transferTo` を audit。delegated mode では `defaultConnectorId ∈ allowedConnectorIds` も検証、全失敗パスで `auditTransferDenial` 経由 audit
 - ~~Connector PUT partial payload で scope clobber~~ → list field omit (null) は existing 保持、explicit `[]` は clear として尊重
 - ~~フォルダ選択 UI~~ → `FolderPickerModal` で実装。CMIS Browser Binding の lazy expand + 選択時に `/summary` で cmis:all を probe、403 で Confirm disable。admin にも同じ picker を提供 (informational)
+
+#### マイグレーション安全性 (RC3 静的レビュー結論)
+
+詳細: `docs/design/connector-delegation.md` §9.5 / `RELEASE_NOTES.md` "Migration safety (RC3)"
+
+- RC3 は新 CouchDB view / patch / type definition を追加しない。dump file 変更なし
+- 追加永続化は JSON field のみ。`@JsonIgnoreProperties(ignoreUnknown=true)` + プリミティブ default で pre-RC3 record は安全側 (`delegated=false`) で読まれる
+- mango `_find` selector は新 field を条件にしないため既存・新規 record の検索互換性は維持
+- 不整合 record は読み込みでは落とさず runtime gate で fail-closed
+
+#### RC3 範囲外の follow-up (静的レビュー副産物、独立 PR で対応)
+
+| ID | 重要度 | 概要 |
+|---|---|---|
+| R1 | 🔴 | `NemakiPatchInitializationListener` の fallback patchBeanNames (23) と `CMISPostInitializer.cmisPatchList` (28) が非対称。9 patches 欠落、うち 8 patches は top-level bean id 不在 |
+| R2 | 🟠 | `nemaki_conf` の mango `_find` に index 未登録。10k+ records でスケール問題 |
+| R3 | 🟠 | `REQUIRED_VIEWS_MAIN = 38` がハードコード、dump は 40 views で乖離 |
+| R4 | 🟡 | `Patch_StandardCmisViews` が cmisPostInitializer / patchService に二重登録 (PatchHistory で dedupe) |
 
 ### RC14 (2026-05-10) — SAML strict-mode redesign + production hardening posture
 

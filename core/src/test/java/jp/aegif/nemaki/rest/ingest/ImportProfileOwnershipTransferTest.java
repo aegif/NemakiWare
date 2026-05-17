@@ -287,6 +287,64 @@ class ImportProfileOwnershipTransferTest {
     }
 
     @Test
+    void adminToDelegated_defaultConnectorNotInAllowed_isRefused() {
+        // Same invariant as the normal delegated PUT path
+        // (validateDelegatedConnectors): defaultConnectorId, when set,
+        // must be in allowedConnectorIds. Transfer must close this
+        // before flipping delegated=true — otherwise the runtime gate
+        // would later refuse with the same DenialReason and the profile
+        // would be DOA.
+        adminCtx();
+        ImportProfileDefinition p = adminOwnedProfile();
+        p.setDefaultConnectorId("rogue-conn");      // not in allowed list
+        p.setAllowedConnectorIds(List.of(CONN));    // canonical list
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+
+        ResponseEntity<Map<String, Object>> res = controller.transferOwnership(
+                PROF, Map.of("mode", "delegated", "createdByUserId", NEW_OWNER));
+        assertEquals(HttpStatus.BAD_REQUEST, res.getStatusCode());
+        assertEquals("DEFAULT_CONNECTOR_NOT_IN_ALLOWED", res.getBody().get("denialReason"));
+        // Must refuse BEFORE flipping the flag
+        verify(importProfileDefinitionService, never()).update(any());
+        // canManageProfileForFolderAsUser is reached AFTER this check so
+        // it doesn't need to have fired; the test doesn't stub it which
+        // would have caused an NPE if reached.
+        verify(ingestAuthorizationService, never()).canManageProfileForFolderAsUser(any(), any(), any());
+    }
+
+    @Test
+    void adminToDelegated_newOwnerLacksCmisAll_recordsAuditDenial() {
+        // Pins the audit shape for transfer denials — newly required so
+        // SOC tooling can see who tried to hand a profile to whom and
+        // why it was refused. Operation = EXTERNAL_PROFILE_UPDATED with
+        // success=false; details include transferTo + newOwnerUserId +
+        // denialReason.
+        adminCtx();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(adminOwnedProfile());
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolderAsUser(NEW_OWNER, REPO, FOLDER))
+                .thenReturn(false);
+
+        ResponseEntity<Map<String, Object>> res = controller.transferOwnership(
+                PROF, Map.of("mode", "delegated", "createdByUserId", NEW_OWNER));
+        assertEquals(HttpStatus.FORBIDDEN, res.getStatusCode());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, ?>> detailsCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(auditLogger).logOperation(
+                eq(jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_PROFILE_UPDATED),
+                eq(REPO), eq("admin"), eq(PROF),
+                eq(false), any(),
+                detailsCaptor.capture());
+        Map<String, ?> details = detailsCaptor.getValue();
+        assertEquals("CMIS_ALL_REQUIRED", details.get("denialReason"));
+        assertEquals("delegated", details.get("transferTo"));
+        assertEquals(NEW_OWNER, details.get("newOwnerUserId"));
+        assertEquals(FOLDER, details.get("targetFolderId"));
+    }
+
+    @Test
     void adminToDelegated_defaultsCreatedByToCaller_whenOmitted() {
         adminCtx();
         when(importProfileDefinitionService.get(PROF)).thenReturn(adminOwnedProfile());
