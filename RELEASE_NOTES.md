@@ -236,15 +236,6 @@ independently of the delegation feature ship.
 | R3 | Medium | `StartupProbeService.REQUIRED_VIEWS_MAIN = 38` is hard-coded; the shipped `bedroom_init.dump` actually contains 40 views. The check `viewCount < required` passes either way today, but the count drifts over time. A future release that adds or removes views without updating the constant could mis-classify view completeness. | Compute the required-view set from the dump at startup (name-set comparison rather than count threshold). |
 | R4 | Low | `Patch_StandardCmisViews` is registered both in `cmisPostInitializer.cmisPatchList` (primary) and in `patchService.patchList`. `PatchHistory` dedupes execution, but the startup log shows the patch entry twice. | Remove the duplicate registration from `patchService.patchList`. |
 
-### Testing
-
-- 165+ ingest unit tests cover the authorization service, controller
-  gates, runtime gates, scheduler defence, and cap-property handling.
-- 21 API E2E tests against a live deployment cover admin / delegated
-  user / non-delegated user × CRUD + execute + TOCTOU scenarios.
-- All tests pass on every RC3 commit including the latest
-  hardening rounds.
-
 ### References
 
 - Design: [`docs/design/connector-delegation.md`](docs/design/connector-delegation.md)

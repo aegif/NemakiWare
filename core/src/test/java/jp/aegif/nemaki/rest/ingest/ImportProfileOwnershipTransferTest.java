@@ -345,6 +345,43 @@ class ImportProfileOwnershipTransferTest {
     }
 
     @Test
+    void adminToDelegated_targetFolderUnresolvable_isRefusedAndAudited() {
+        // resolveFolderId returns null when neither targetFolderId nor
+        // targetFolderPath resolves to an existing folder — typically the
+        // folder was deleted out from under the profile, or the path
+        // moved. This is the only transfer denial branch that previously
+        // bypassed the audit trail; H10 patches it to flow through
+        // denyTransfer like every other failure mode. We also check the
+        // captured details map records denialReason=TARGET_FOLDER_UNRESOLVABLE
+        // and that update() is never reached.
+        adminCtx();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(adminOwnedProfile());
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(null);
+
+        ResponseEntity<Map<String, Object>> res = controller.transferOwnership(
+                PROF, Map.of("mode", "delegated", "createdByUserId", NEW_OWNER));
+        assertEquals(HttpStatus.BAD_REQUEST, res.getStatusCode());
+        assertEquals("TARGET_FOLDER_UNRESOLVABLE", res.getBody().get("denialReason"));
+        verify(importProfileDefinitionService, never()).update(any());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, ?>> detailsCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(auditLogger).logOperation(
+                eq(jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_PROFILE_UPDATED),
+                eq(REPO), eq("admin"), eq(PROF),
+                eq(false), any(),
+                detailsCaptor.capture());
+        Map<String, ?> details = detailsCaptor.getValue();
+        assertEquals("TARGET_FOLDER_UNRESOLVABLE", details.get("denialReason"));
+        assertEquals("delegated", details.get("transferTo"));
+        assertEquals(NEW_OWNER, details.get("newOwnerUserId"));
+        // folderId is null at this point in the flow — the helper omits
+        // the key rather than emitting a null
+        org.junit.jupiter.api.Assertions.assertFalse(details.containsKey("targetFolderId"),
+                "targetFolderId must not appear when resolveFolderId returned null");
+    }
+
+    @Test
     void adminToDelegated_defaultsCreatedByToCaller_whenOmitted() {
         adminCtx();
         when(importProfileDefinitionService.get(PROF)).thenReturn(adminOwnedProfile());

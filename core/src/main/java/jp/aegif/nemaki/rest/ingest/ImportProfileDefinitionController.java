@@ -277,7 +277,15 @@ public class ImportProfileDefinitionController {
             String folderId = ingestAuthorizationService.resolveFolderId(
                     existing.getRepositoryId(), existing.getTargetFolderId(), existing.getTargetFolderPath());
             if (folderId == null) {
-                return denied(HttpStatus.BAD_REQUEST, DenialReason.TARGET_FOLDER_UNRESOLVABLE,
+                // Audit this denial too — every other transfer denial
+                // flows through denyTransfer() and we don't want this
+                // branch silently dropping out of the security trail.
+                // folderId is null by definition here, so the details
+                // map records targetFolderId only if the caller passed
+                // a partial profile that has it set (resolveFolderId
+                // returned null because of a path/ID mismatch).
+                return denyTransfer(ctx, existing, newOwner, null,
+                        HttpStatus.BAD_REQUEST, DenialReason.TARGET_FOLDER_UNRESOLVABLE,
                         "Profile's target folder cannot be resolved");
             }
             // Mirror the non-admin POST invariants exactly — same code path
