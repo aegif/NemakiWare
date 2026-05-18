@@ -194,10 +194,18 @@ upgrade-time round-trip analysis. After deploying RC3:
   only") — `POST /v1/admin/import-profiles/{id}/ownership` with
   `{mode: "delegated", createdByUserId: "alice"}` or
   `{mode: "admin"}`. Admin-only; re-validates that the new owner
-  effectively holds `cmis:all` and that every connector in the
-  profile's `allowedConnectorIds` is delegated to them, before
-  flipping the flag. Refuses with the same `DenialReason` codes
-  used elsewhere so audit shape stays uniform.
+  effectively holds `cmis:all`, that every connector in the
+  profile's `allowedConnectorIds` is delegated to them, and that
+  `defaultConnectorId` (if set) is contained in `allowedConnectorIds`,
+  before flipping the flag. Refuses with the same `DenialReason`
+  codes used elsewhere. Every denial — including
+  `TARGET_FOLDER_UNRESOLVABLE`,
+  `EMPTY_ALLOWED_CONNECTORS`, `DEFAULT_CONNECTOR_NOT_IN_ALLOWED`,
+  `CMIS_ALL_REQUIRED`, `CONNECTOR_NOT_DELEGATED`, `UNKNOWN_CONNECTOR`,
+  `BLANK_CONNECTOR_ENTRY` — flows through `auditTransferDenial`, so
+  the audit trail captures `transferTo` + `newOwnerUserId` +
+  `denialReason` even when the transfer is rejected before any DB
+  write.
 - **Connector PUT partial-payload protection** (was: "admin PUT
   omitting allowedFolderIds clears it"). List fields
   (`allowedFolderIds`, `allowedPrincipalIds`) follow

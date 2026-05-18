@@ -308,6 +308,18 @@ value. See §10 for the full list and what each one means. The
 `errorMessage` field is human-readable and may be tweaked release to
 release; the enum names are part of the audit contract and won't.
 
+Ownership transfer (`POST /v1/admin/import-profiles/{id}/ownership`,
+admin-only) emits `EXTERNAL_PROFILE_UPDATED` with an extra
+`transferTo` (`"delegated"` | `"admin"`) and, for delegated
+transfers, `newOwnerUserId`. Every failure mode flows through the
+private `denyTransfer` / `auditTransferDenial` helpers so the
+`denialReason` is recorded even when the transfer is rejected before
+`importProfileDefinitionService.update` is called. Reasons used by
+this endpoint: `TARGET_FOLDER_UNRESOLVABLE`,
+`EMPTY_ALLOWED_CONNECTORS`, `DEFAULT_CONNECTOR_NOT_IN_ALLOWED`,
+`BLANK_CONNECTOR_ENTRY`, `UNKNOWN_CONNECTOR`, `CMIS_ALL_REQUIRED`,
+`CONNECTOR_NOT_DELEGATED`.
+
 Admin ingest continues through the existing AOP audit and is **not**
 double-logged here.
 
