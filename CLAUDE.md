@@ -310,6 +310,38 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC17 / RC5 サイクル (2026-05-19〜, 進行中) — v2 着手: scheduled delegated + governance view
+
+ブランチ: `release/3.1.1-RC5` (off `v3.1.1-RC4.1` = `572aad18b`)
+
+v1 (RC3) で意図的に v2 へ繰越した 2 件を独立 RC で対応。設計参照:
+- `docs/design/connector-delegation.md` §12.1 (scheduled delegated profile, ~600-1000 LOC + 30 unit tests の pre-design あり)
+- 同 §12.3 (governance view: 「group X が使える connector は?」)
+
+#### Scope (v2 機能 2 件)
+
+##### §12.1 Scheduled delegated profiles
+- `createdByUserId` ベースで scheduler tick ごとに `CallContext` を合成
+- per-tick で `canManageProfileForFolderAsUser` + `canUseConnectorForDelegatedProfileAsUser` を再評価
+- creator の `UserItem` が disable されていれば `CREATOR_USER_INACTIVE` で skip + audit
+- 連続 N 回失敗で profile 自動 disable (`nemakiware.ingest.delegated.autoDisableInactiveOwners=true` opt-in)
+- `schedulerEnabled=true` on delegated profile を `nemakiware.ingest.delegated.schedulerEnabled=true` でのみ許可 (default false で安全側 fail-shut 維持)
+- 新 `DenialReason`: `CREATOR_USER_INACTIVE`, `CREATOR_CMIS_ALL_LOST`
+- audit details に `scheduled`, `creatorUserId`, `creatorActive` 追加
+
+##### §12.3 Governance view
+- 新 endpoint: `GET /v1/admin/connectors/by-principal?principalId=alice` (admin only)
+- 指定 principal (user ID または group ID) が `allowedPrincipalIds` で参照される connector を一覧
+- `delegateAllFolders=true` の connector も `[matches any principal]` でマーク
+- 「group X を消すと何が壊れる?」「user Y は何の credential 経由でデータにアクセスできる?」を operator が即答できる
+
+#### 設計原則 (RC3/RC4 と同じ)
+
+- 既存 patch / view / data には触らない
+- 全 fix idempotent
+- 全 default が安全側 (`schedulerEnabled` opt-in / `autoDisableInactiveOwners` opt-in)
+- 既存テスト退行ゼロ
+
 ### RC16 / RC4 (2026-05-18) — パッチ機構の構造改修
 
 ブランチ: `release/3.1.1-RC4` (off RC3 HEAD `9bdfb8383`)
