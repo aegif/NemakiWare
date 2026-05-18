@@ -8,6 +8,8 @@ User-facing changelog. For per-commit detail see
 
 ## 3.1.1-RC4.1 — RC4 acceptance findings F1-F3
 _Patch release on `release/3.1.1-RC4` (2026-05-19)._
+_Recommended release tag commit: **`7823b60f7`** (HEAD of the
+acceptance-review hardening pass on top of RC4 `cc63d960e`)._
 
 Tightens three findings surfaced by the RC4 acceptance review.
 All changes are small, idempotent, and re-verifiable. No new
@@ -44,11 +46,17 @@ Fix: renamed to `idx_type_dlqId` with the correct field. The
 existing dead index `idx_type_dlqEntryId` is **not** auto-deleted
 (we don't touch state we didn't create with the current patch
 instance). Operators on RC4 → RC4.1 upgrades may optionally remove
-it:
+it. Substitute your own CouchDB host, port, and credentials —
+the values shown below are the docker-compose dev defaults and
+are **not** appropriate for production:
 
 ```bash
-curl -u admin:password -X DELETE \
-  http://localhost:5984/nemaki_conf/_index/ingest-indexes/json/idx_type_dlqEntryId
+# Replace COUCHDB_URL and CREDENTIALS with the values from your
+# deployment (e.g. for the docker-compose dev environment:
+#   COUCHDB_URL=http://localhost:5984
+#   CREDENTIALS=admin:password — DO NOT use these in production)
+curl -u "${CREDENTIALS}" -X DELETE \
+  "${COUCHDB_URL}/nemaki_conf/_index/ingest-indexes/json/idx_type_dlqEntryId"
 ```
 
 Leaving it in place is harmless (a few KB of unused index storage).

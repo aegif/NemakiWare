@@ -341,6 +341,9 @@ RC3 のマイグレーション静的レビューで pre-existing follow-up と�
 
 #### RC4.1 (2026-05-19) — 受け入れレビュー F1-F3 対応
 
+ブランチ HEAD: `7823b60f7` (RC4 `cc63d960e` への追加 6 ファイル / +229/-16 行)
+**Recommended release tag: `7823b60f7`**
+
 acceptance review で挙がった 5 件 (F1-F5) のうち F1-F3 を小規模修正で取込。F4/F5 は documentation-only:
 
 - **F1** (Medium): `NemakiPatchInitializationListener.ORDERED_SEED_PATCHES` に `patch_ExternalIntegrationSecondaryType` + `patch_ExternalIntegrationSourceFields` を追加。fallback path での依存順序を alphabetical 偶然依存から explicit seed に変更。新 test で hostile な間に割り込む patch を入れても依存順守を確認
