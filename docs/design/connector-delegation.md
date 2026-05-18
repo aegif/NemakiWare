@@ -571,88 +571,83 @@ contract — do not rename or remove. Adding new entries is fine.
 
 ## 12. Future work (not in v1)
 
-### 12.1 Scheduled delegated profiles (substantial — pre-design below)
+### 12.1 ~~Scheduled delegated profiles~~ (shipped in RC5)
 
-**Goal**: let a delegated profile fire on a schedule under the original
-folder owner's permissions, with the same security guarantees the
-manual path provides.
+**Shipped** in RC5 (3.1.1). Delegated profiles can now fire on a
+schedule under the original folder owner's CallContext, with the same
+per-tick ACL re-evaluation the manual path enforces. The feature is
+**off by default**: operators must explicitly opt in via
+`nemakiware.ingest.delegated.schedulerEnabled=true` so they consciously
+accept the deactivation policy before non-admin scheduled ticks start
+firing.
 
-**Why deferred**: the current `IngestSchedulerService.pollScheduledProfiles`
-calls `executeFetch(null, profile, connector, params)` (line 215) —
-the scheduler thread has no inbound HTTP request to derive a
-`CallContext` from. Building one synthetically requires several pieces
-that don't exist yet, and getting any of them wrong is a privilege
-escalation.
+**Shipped pieces**:
 
-**Required design work**:
+1. **CallContext synthesis** — `DelegatedCallContextFactory.buildOrNull(repositoryId, username)`
+   produces a `SyntheticCallContext` that satisfies the four methods
+   the delegation gate actually reads (`getUsername`, `getRepositoryId`,
+   `get(IS_ADMIN)`, `getBinding`). Hard-coded `IS_ADMIN=false` even when
+   the underlying `UserItem.isAdmin()` is true — the gate must run
+   regardless of who the creator is. No JVM-scope cache; each call does
+   a fresh `UserItem` lookup so mid-day directory changes are picked
+   up on the next poll.
 
-1. **CallContext synthesis from `createdByUserId`**.
-   - Probably a new `CallContextFactory.forUser(repositoryId, username)`
-     that loads the user's `UserItem`, computes group membership once
-     (PrincipalService), and produces a fully-populated read-only
-     context. Must NOT short-circuit to admin if the user happens to be
-     one — the whole point is to run as the *delegated* user.
-   - Cache scope: per-tick. Long-lived caches would mask
-     mid-tick group/membership changes.
+2. **Per-tick ACL re-evaluation** — inside `IngestSchedulerService.prepareDelegatedTick`,
+   immediately before the fetch is dispatched:
+   1. Operator opt-in (`schedulerEnabled` property) → `DELEGATED_SCHEDULING_DISABLED`
+   2. Required wiring present → `SERVICES_UNAVAILABLE`
+   3. `createdByUserId` set → `CREATOR_USER_INACTIVE`
+   4. `UserItem` resolvable (== "active") → `CREATOR_USER_INACTIVE`
+   5. Creator still holds `cmis:all` on the target folder → `CREATOR_CMIS_ALL_LOST`
 
-2. **Per-tick ACL re-evaluation**.
-   - At the start of each scheduled execution: re-run
-     `canManageProfileForFolderAsUser(createdByUserId, repo, folderId)`
-     and `canUseConnectorForDelegatedProfileAsUser(...)`. If either
-     returns false, skip with a structured `denialReason`
-     (`CMIS_ALL_REQUIRED` etc.) and emit the same audit shape the
-     runtime gate already uses.
-   - The check must happen INSIDE the fetch task (not at
-     `getScheduledProfiles` filtering), because the scheduler poll
-     interval can be long enough for ACL changes to land between
-     selection and execution.
+   A second per-tick check fires after `resolveConnectorForProfile` to
+   catch connector-side revocations (`CONNECTOR_NOT_DELEGATED`). This is
+   needed because the connector list can be edited after the profile
+   selection runs.
 
-3. **Creator deactivation handling**.
-   - When `createdByUserId` is no longer a valid `UserItem` (deleted,
-     disabled, deactivated by LDAP sync), the runbook needs a decision:
-     - **(a) Hard fail-shut**: the next poll skips with a new
-       `denialReason: CREATOR_USER_INACTIVE` and the profile stays
-       visible in admin views. A nightly job could surface
-       "profiles with inactive creators" for admin review.
-     - **(b) Auto-disable** the profile (`enabled=false`) after N
-       consecutive failures. Less noisy but obscures the underlying
-       cause if the admin isn't watching.
-   - **Recommendation**: ship (a) first; layer (b) on as an opt-in
-     `nemakiware.ingest.delegated.autoDisableInactiveOwners=true`.
+3. **Creator deactivation policy** — fail-shut as default
+   (option **(a)** from the original pre-design): a missing `UserItem`
+   triggers `CREATOR_USER_INACTIVE`, the tick is skipped, the profile
+   stays visible for admin review. An opt-in
+   `nemakiware.ingest.delegated.autoDisableInactiveOwners=true` plus
+   `nemakiware.ingest.delegated.inactiveOwnerFailureThreshold=N` (default
+   3) layers on option **(b)** — after N consecutive inactive-creator
+   ticks, the scheduler flips `enabled=false` and stops re-trying.
+   Successful active-user resolution resets the streak counter, so
+   transient outages don't accumulate.
 
-4. **`schedulerEnabled` gate relaxation**.
-   - Today the controller refuses `schedulerEnabled=true` on
-     `delegated=true` profile creates/updates and the scheduler
-     defensively skips them. Once (1)–(3) ship, this gate flips —
-     non-admin scheduled is allowed, defensive skip is removed (or
-     limited to a hard kill-switch property).
-   - Keep the gate behind a property: `nemakiware.ingest.delegated.schedulerEnabled=false`
-     by default in v2 → operators must opt-in per deployment after
-     they understand the deactivation policy.
+4. **`schedulerEnabled` gate relaxation** — the
+   `ImportProfileDefinitionController` create/update path now
+   property-gates the `SCHEDULER_REQUIRES_ADMIN` rejection. With the
+   property off (default) the v1 refusal stands. With the property on,
+   non-admins can set `schedulerEnabled=true` on profiles they own; the
+   safety properties are re-evaluated per-tick by the scheduler.
+   `defaultProfile` remains admin-only — that gate is unrelated.
 
-5. **Audit shape additions**.
-   - New `details` keys: `scheduled=true`, `creatorUserId`,
-     `creatorActive=true|false`. New ops: `EXTERNAL_INGEST_DELEGATED_SCHEDULED`
-     (or stay with `EXTERNAL_INGEST` + a `scheduled` flag — TBD).
-   - New `DenialReason` entries: `CREATOR_USER_INACTIVE`,
-     `CREATOR_CMIS_ALL_LOST`.
+5. **Audit shape additions** — `EXTERNAL_INGEST_FAILED` records emitted
+   from the scheduled path carry `details.scheduled=true`,
+   `details.delegated=true`, `details.creatorUserId`,
+   `details.creatorActive` (false iff the denial reason is
+   `CREATOR_USER_INACTIVE`), and the structured `details.denialReason`
+   matching the new `DenialReason` enum entries:
+   `CREATOR_USER_INACTIVE`, `CREATOR_CMIS_ALL_LOST`,
+   `DELEGATED_SCHEDULING_DISABLED`.
 
-6. **Test surface to add**.
-   - Per-tick ACL re-eval: revoke `cmis:all` between two ticks →
-     second tick skips with the right reason.
-   - Creator deactivation: disable `UserItem` between ticks → skip
-     + audit.
-   - Group change: creator added to or removed from a group named in
-     `allowedPrincipalIds` between ticks → skip toggles correctly.
-   - Connector revocation: connector flipped to `delegated=false`
-     between ticks → skip.
-   - Hardening invariant: scheduler must not run a delegated profile
-     under an admin CallContext (regression check for
-     `IngestSchedulerDelegationSkipTest` style).
+6. **Test coverage** — `DelegatedCallContextFactoryTest` (8),
+   `IngestSchedulerDelegatedRunTest` (7),
+   `ImportProfileSchedulerGateTest` (5),
+   `IngestSchedulerDelegationSkipTest` (5, regression pin for
+   property-off legacy behaviour).
 
-**Scope estimate**: ~600–1000 LOC of production code, ~30 new unit
-tests, ~5 new E2E scenarios, 2–3 new properties. Best split into its
-own release-candidate cycle once a deployment actually needs it.
+**Properties added** (`nemakiware.properties`):
+
+```properties
+# Operator opt-in for delegated scheduled ingest (v2 §12.1)
+nemakiware.ingest.delegated.schedulerEnabled=false
+# Auto-disable a delegated profile after N consecutive CREATOR_USER_INACTIVE ticks
+nemakiware.ingest.delegated.autoDisableInactiveOwners=false
+nemakiware.ingest.delegated.inactiveOwnerFailureThreshold=3
+```
 
 ### 12.2 ~~Folder picker UI~~ (shipped)
 
@@ -673,8 +668,28 @@ Wired into `ImportProfileManagementTab` via a Browse button inside
 the `targetFolderId` Input's `addonAfter`. Admin gets the same picker
 (informational only — admin can pick any folder regardless of cmis:all).
 
-### 12.3 Connector group-membership view
+### 12.3 ~~Connector group-membership view~~ (shipped in RC5)
 
-`allowedPrincipalIds` accepts group IDs and expands them at
-evaluation. A view "what connectors does group X have access to?"
-would help operators answer governance questions; not modelled today.
+**Shipped** in RC5 (3.1.1) alongside §12.1. The admin-only endpoint
+
+```
+GET /v1/admin/connectors/by-principal/{principalId}?repositoryId=...&expand=true|false
+```
+
+answers "which connectors does principal X have access to?". The
+`expand` flag toggles whether the response includes connectors that
+match indirectly via group expansion (`IngestAuthorizationService.expandPrincipals`
+— the same expansion the runtime gate uses, so the governance view
+agrees with what the user would actually experience). Each match entry
+records the principal IDs that triggered it and a `matchType` of
+`direct`, `group`, or `direct+group`, so operators can identify
+redundant grants (a user listed both directly and via a group they
+belong to is a likely candidate for cleanup).
+
+The endpoint returns connectors with an empty/null `allowedPrincipalIds`
+as zero matches — a connector that's open to everyone is by definition
+not a delegation question.
+
+Tested by `ConnectorByPrincipalGovernanceTest` (8 cases covering the
+admin gate, missing `repositoryId`, the direct/group/mixed match-type
+matrix, and the empty-`allowedPrincipalIds` skip).

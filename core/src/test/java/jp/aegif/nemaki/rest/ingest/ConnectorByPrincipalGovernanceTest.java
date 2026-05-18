@@ -1,0 +1,215 @@
+package jp.aegif.nemaki.rest.ingest;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jp.aegif.nemaki.util.constant.CallContextKey;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+
+import java.lang.reflect.Field;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+/**
+ * RC5 (v2 §12.3): {@code GET /v1/admin/connectors/by-principal/{id}}.
+ * Admin-only governance view. Pins:
+ * <ul>
+ *   <li>Admin gate (non-admin → 403)</li>
+ *   <li>repositoryId required</li>
+ *   <li>{@code expand=false} → only direct allowedPrincipalIds hits</li>
+ *   <li>{@code expand=true} → includes group-derived hits + records
+ *       which principal IDs matched</li>
+ *   <li>{@code matchType} resolves to {@code direct},
+ *       {@code group}, or {@code direct+group}</li>
+ *   <li>Connectors with an empty allowedPrincipalIds are skipped</li>
+ * </ul>
+ */
+class ConnectorByPrincipalGovernanceTest {
+
+    private static final String REPO = "bedroom";
+    private static final String USER = "alice";
+    private static final String GROUP = "engineers";
+
+    private ConnectorDefinitionController controller;
+    private ConnectorDefinitionService connectorService;
+    private IngestAuthorizationService authService;
+    private HttpServletRequest httpRequest;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        controller = new ConnectorDefinitionController();
+        connectorService = mock(ConnectorDefinitionService.class);
+        authService = mock(IngestAuthorizationService.class);
+        httpRequest = mock(HttpServletRequest.class);
+
+        inject("connectorDefinitionService", connectorService);
+        inject("ingestAuthorizationService", authService);
+        inject("httpRequest", httpRequest);
+    }
+
+    private void inject(String fieldName, Object value) throws Exception {
+        Field f = ConnectorDefinitionController.class.getDeclaredField(fieldName);
+        f.setAccessible(true);
+        f.set(controller, value);
+    }
+
+    private void asAdmin() {
+        CallContext ctx = mock(CallContext.class);
+        when(ctx.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
+    }
+
+    private void asNonAdmin() {
+        CallContext ctx = mock(CallContext.class);
+        lenient().when(ctx.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.FALSE);
+        when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
+    }
+
+    private ConnectorDefinition conn(String id, List<String> allowed) {
+        ConnectorDefinition c = new ConnectorDefinition();
+        c.setConnectorId(id);
+        c.setDisplayName(id + "-display");
+        c.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        c.setSourceSystem("box");
+        c.setAdapterKind("native");
+        c.setDelegated(true);
+        c.setEnabled(true);
+        c.setAllowedPrincipalIds(allowed);
+        return c;
+    }
+
+    @Test
+    void nonAdmin_returns403() {
+        asNonAdmin();
+        ResponseEntity<?> resp = controller.listByPrincipal(USER, REPO, false);
+        assertEquals(HttpStatus.FORBIDDEN, resp.getStatusCode());
+    }
+
+    @Test
+    void missingRepositoryId_returns400() {
+        asAdmin();
+        ResponseEntity<?> resp = controller.listByPrincipal(USER, "", false);
+        assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
+    }
+
+    @Test
+    void blankPrincipalId_returns400() {
+        asAdmin();
+        ResponseEntity<?> resp = controller.listByPrincipal("   ", REPO, false);
+        assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void noExpansion_returnsOnlyDirectMatches() {
+        asAdmin();
+        when(connectorService.list()).thenReturn(List.of(
+                conn("c-direct", List.of(USER)),
+                conn("c-group", List.of(GROUP)),
+                conn("c-other", List.of("bob"))
+        ));
+
+        ResponseEntity<?> resp = controller.listByPrincipal(USER, REPO, false);
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        assertNotNull(body);
+        List<Map<String, Object>> matches = (List<Map<String, Object>>) body.get("matches");
+        assertEquals(1, matches.size(), "expected only the direct match");
+        assertEquals("c-direct", matches.get(0).get("connectorId"));
+        assertEquals("direct", matches.get(0).get("matchType"));
+        assertEquals(List.of(USER), matches.get(0).get("matchedPrincipalIds"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void expansion_includesGroupDerivedMatches() {
+        asAdmin();
+        when(authService.expandPrincipals(REPO, USER))
+                .thenReturn(Set.of(USER, GROUP, "sf-office"));
+        when(connectorService.list()).thenReturn(List.of(
+                conn("c-direct", List.of(USER)),
+                conn("c-group", List.of(GROUP)),
+                conn("c-office", List.of("sf-office")),
+                conn("c-other", List.of("bob"))
+        ));
+
+        ResponseEntity<?> resp = controller.listByPrincipal(USER, REPO, true);
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        List<Map<String, Object>> matches = (List<Map<String, Object>>) body.get("matches");
+        assertEquals(3, matches.size(),
+                "expected direct + 2 group-derived matches");
+        Map<String, String> typesByConnector = new java.util.HashMap<>();
+        matches.forEach(m -> typesByConnector.put(
+                (String) m.get("connectorId"), (String) m.get("matchType")));
+        assertEquals("direct", typesByConnector.get("c-direct"));
+        assertEquals("group", typesByConnector.get("c-group"));
+        assertEquals("group", typesByConnector.get("c-office"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void connectorWithBothDirectAndGroupMatch_reportsAsDirectPlusGroup() {
+        // A connector that allows both the user directly AND a group they
+        // belong to should be flagged "direct+group" so the operator can
+        // see the redundancy.
+        asAdmin();
+        when(authService.expandPrincipals(REPO, USER))
+                .thenReturn(Set.of(USER, GROUP));
+        when(connectorService.list()).thenReturn(List.of(
+                conn("c-both", List.of(USER, GROUP))
+        ));
+
+        ResponseEntity<?> resp = controller.listByPrincipal(USER, REPO, true);
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        List<Map<String, Object>> matches = (List<Map<String, Object>>) body.get("matches");
+        assertEquals(1, matches.size());
+        assertEquals("direct+group", matches.get(0).get("matchType"));
+        List<String> matchedIds = (List<String>) matches.get(0).get("matchedPrincipalIds");
+        assertTrue(matchedIds.contains(USER));
+        assertTrue(matchedIds.contains(GROUP));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void connectorWithEmptyAllowedPrincipals_isSkipped() {
+        asAdmin();
+        when(connectorService.list()).thenReturn(List.of(
+                conn("c-open", List.of()),
+                conn("c-null", null)
+        ));
+
+        ResponseEntity<?> resp = controller.listByPrincipal(USER, REPO, false);
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        List<Map<String, Object>> matches = (List<Map<String, Object>>) body.get("matches");
+        assertEquals(0, matches.size());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void responseBody_includesEchoFieldsForCaller() {
+        // The body must echo back principalId / repositoryId / expand so the
+        // caller can render the result against the input they sent.
+        asAdmin();
+        when(connectorService.list()).thenReturn(List.of());
+
+        ResponseEntity<?> resp = controller.listByPrincipal(USER, REPO, true);
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        assertEquals(USER, body.get("principalId"));
+        assertEquals(REPO, body.get("repositoryId"));
+        assertEquals(Boolean.TRUE, body.get("expand"));
+        assertNotNull(body.get("expandedPrincipals"));
+    }
+}

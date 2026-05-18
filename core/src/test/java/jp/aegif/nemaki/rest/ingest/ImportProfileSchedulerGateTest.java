@@ -1,0 +1,198 @@
+package jp.aegif.nemaki.rest.ingest;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jp.aegif.nemaki.audit.AuditLogger;
+import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.constant.CallContextKey;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+
+import java.lang.reflect.Field;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+/**
+ * RC5 (v2 §12.1): the {@code SCHEDULER_REQUIRES_ADMIN} gate on the
+ * profile controller is now property-controlled. Default (property unset
+ * / false) preserves RC4 behaviour — non-admin scheduled profiles are
+ * refused outright. With {@code nemakiware.ingest.delegated.schedulerEnabled=true}
+ * the gate lets {@code schedulerEnabled=true} through; the runtime
+ * scheduler is then responsible for the per-tick ACL re-eval.
+ */
+class ImportProfileSchedulerGateTest {
+
+    private static final String REPO = "bedroom";
+    private static final String FOLDER = "F-1";
+    private static final String CONN = "c-1";
+    private static final String USER = "alice";
+
+    private ImportProfileDefinitionController controller;
+    private ImportProfileDefinitionService profileService;
+    private ConnectorDefinitionService connectorService;
+    private IngestAuthorizationService authService;
+    private AuditLogger auditLogger;
+    private HttpServletRequest httpRequest;
+    private PropertyManager properties;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        controller = new ImportProfileDefinitionController();
+        profileService = mock(ImportProfileDefinitionService.class);
+        connectorService = mock(ConnectorDefinitionService.class);
+        authService = mock(IngestAuthorizationService.class);
+        auditLogger = mock(AuditLogger.class);
+        httpRequest = mock(HttpServletRequest.class);
+        properties = mock(PropertyManager.class);
+
+        inject("importProfileDefinitionService", profileService);
+        inject("connectorDefinitionService", connectorService);
+        inject("ingestAuthorizationService", authService);
+        inject("auditLogger", auditLogger);
+        inject("httpRequest", httpRequest);
+        inject("propertyManager", properties);
+    }
+
+    private void inject(String fieldName, Object value) throws Exception {
+        Field f = ImportProfileDefinitionController.class.getDeclaredField(fieldName);
+        f.setAccessible(true);
+        f.set(controller, value);
+    }
+
+    private CallContext nonAdminCtx() {
+        CallContext ctx = mock(CallContext.class);
+        when(ctx.getUsername()).thenReturn(USER);
+        lenient().when(ctx.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.FALSE);
+        when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
+        when(authService.isAdmin(ctx)).thenReturn(false);
+        // Folder + connector pass-through
+        lenient().when(authService.resolveFolderId(eq(REPO), any(), any())).thenReturn(FOLDER);
+        lenient().when(authService.canManageProfileForFolder(any(), eq(REPO), eq(FOLDER)))
+                .thenReturn(true);
+        lenient().when(authService.canUseConnectorForDelegatedProfile(
+                any(), eq(REPO), any(), eq(FOLDER))).thenReturn(true);
+        ConnectorDefinition conn = new ConnectorDefinition();
+        conn.setConnectorId(CONN);
+        conn.setDelegated(true);
+        conn.setAllowedFolderIds(List.of(FOLDER));
+        conn.setAllowedPrincipalIds(List.of(USER));
+        lenient().when(connectorService.get(CONN)).thenReturn(conn);
+        return ctx;
+    }
+
+    private ImportProfileDefinition scheduledDelegatedDraft() {
+        ImportProfileDefinition def = new ImportProfileDefinition();
+        def.setRepositoryId(REPO);
+        def.setTargetFolderId(FOLDER);
+        def.setDefaultConnectorId(CONN);
+        def.setAllowedConnectorIds(List.of(CONN));
+        def.setSchedulerEnabled(true);   // ← what we want gated
+        def.setDelegated(true);
+        return def;
+    }
+
+    @Test
+    void propertyOff_refusesNonAdminScheduledCreate_withSchedulerRequiresAdmin() {
+        nonAdminCtx();
+        when(properties.readValue("nemakiware.ingest.delegated.schedulerEnabled"))
+                .thenReturn(null);  // simulates property absent → default false
+
+        ResponseEntity<Map<String, Object>> resp = controller.create(scheduledDelegatedDraft());
+
+        assertEquals(HttpStatus.FORBIDDEN, resp.getStatusCode());
+        assertNotNull(resp.getBody());
+        assertEquals(DenialReason.SCHEDULER_REQUIRES_ADMIN.name(),
+                resp.getBody().get("denialReason"));
+    }
+
+    @Test
+    void propertyExplicitlyFalse_alsoRefuses() {
+        nonAdminCtx();
+        when(properties.readValue("nemakiware.ingest.delegated.schedulerEnabled"))
+                .thenReturn("false");
+
+        ResponseEntity<Map<String, Object>> resp = controller.create(scheduledDelegatedDraft());
+
+        assertEquals(HttpStatus.FORBIDDEN, resp.getStatusCode());
+        assertEquals(DenialReason.SCHEDULER_REQUIRES_ADMIN.name(),
+                resp.getBody().get("denialReason"));
+    }
+
+    @Test
+    void propertyOn_acceptsNonAdminScheduledCreate_andPreservesSchedulerEnabledFlag() {
+        nonAdminCtx();
+        when(properties.readValue("nemakiware.ingest.delegated.schedulerEnabled"))
+                .thenReturn("true");
+
+        ImportProfileDefinition draft = scheduledDelegatedDraft();
+        when(profileService.create(any())).thenAnswer(inv -> {
+            ImportProfileDefinition saved = inv.getArgument(0);
+            saved.setProfileId("new-id");
+            return saved;
+        });
+
+        ResponseEntity<Map<String, Object>> resp = controller.create(draft);
+
+        assertEquals(HttpStatus.CREATED, resp.getStatusCode());
+        assertEquals("new-id", resp.getBody().get("profileId"));
+        // The whole point of the property: schedulerEnabled is preserved
+        // rather than coerced to false.
+        assertTrue(draft.isSchedulerEnabled(),
+                "with property=true the non-admin's schedulerEnabled choice must be preserved");
+        // Delegation flags still stamped
+        assertTrue(draft.isDelegated());
+        assertEquals(USER, draft.getCreatedByUserId());
+        // defaultProfile is still admin-only — unrelated gate
+        assertFalse(draft.isDefaultProfile());
+    }
+
+    @Test
+    void propertyOn_butSchedulerEnabledFalse_isStillAccepted() {
+        nonAdminCtx();
+        when(properties.readValue("nemakiware.ingest.delegated.schedulerEnabled"))
+                .thenReturn("true");
+
+        ImportProfileDefinition draft = scheduledDelegatedDraft();
+        draft.setSchedulerEnabled(false);
+        when(profileService.create(any())).thenAnswer(inv -> {
+            ImportProfileDefinition saved = inv.getArgument(0);
+            saved.setProfileId("new-id");
+            return saved;
+        });
+
+        ResponseEntity<Map<String, Object>> resp = controller.create(draft);
+
+        assertEquals(HttpStatus.CREATED, resp.getStatusCode());
+        assertFalse(draft.isSchedulerEnabled());
+    }
+
+    @Test
+    void propertyOn_doesNotBypassDefaultProfileGate() {
+        // defaultProfile=true is a DIFFERENT non-admin restriction, with its
+        // own DenialReason. The new opt-in must not accidentally relax it.
+        nonAdminCtx();
+        when(properties.readValue("nemakiware.ingest.delegated.schedulerEnabled"))
+                .thenReturn("true");
+
+        ImportProfileDefinition draft = scheduledDelegatedDraft();
+        draft.setDefaultProfile(true);
+
+        ResponseEntity<Map<String, Object>> resp = controller.create(draft);
+
+        assertEquals(HttpStatus.FORBIDDEN, resp.getStatusCode());
+        assertEquals(DenialReason.DEFAULT_PROFILE_REQUIRES_ADMIN.name(),
+                resp.getBody().get("denialReason"));
+    }
+}

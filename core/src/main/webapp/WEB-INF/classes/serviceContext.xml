@@ -816,6 +816,9 @@
         <property name="principalService" ref="PrincipalService" />
         <property name="propertyManager" ref="propertyManager" />
     </bean>
+    <bean id="delegatedCallContextFactory" class="jp.aegif.nemaki.rest.ingest.DelegatedCallContextFactory">
+        <property name="contentService" ref="ContentService" />
+    </bean>
     <bean id="ingestLineageEmitter" class="jp.aegif.nemaki.rest.ingest.IngestLineageEmitter" />
     <bean id="ingestMetadataService" class="jp.aegif.nemaki.rest.ingest.IngestMetadataService">
         <property name="contentService" ref="ContentService" />
@@ -944,6 +947,13 @@
         <!-- Multi-replica safety: only the leader replica polls. Component-
              scanned bean from jp.aegif.nemaki.rest.purview.journal. -->
         <property name="leaderElection" ref="leaderElection" />
+        <!-- RC5 (v2 §12.1): delegated profile scheduling support.
+             ingestAuthorizationService: per-tick cmis:all + connector ACL re-eval.
+             delegatedCallContextFactory: synthesises CallContext from createdByUserId.
+             auditLogger: emits EXTERNAL_INGEST_FAILED on scheduled-delegated denials. -->
+        <property name="ingestAuthorizationService" ref="ingestAuthorizationService" />
+        <property name="delegatedCallContextFactory" ref="delegatedCallContextFactory" />
+        <property name="auditLogger" ref="auditLogger" />
     </bean>
 
     <!-- Password Policy Service -->

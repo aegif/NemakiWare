@@ -3395,7 +3395,7 @@
       "defaultClassificationPlaceholder": "e.g. Confidential, Internal, Public",
       "defaultProfile": "Default Profile",
       "defaultProfileHint": "Mark as the default profile for auto-resolution when multiple profiles match",
-      "schedulerAdminOnly": "Scheduled ingestion is admin-only in this release.",
+      "schedulerAdminOnly": "Scheduled ingestion is admin-only by default. The operator can enable folder owners to schedule their own delegated profiles by setting nemakiware.ingest.delegated.schedulerEnabled=true.",
       "defaultProfileAdminOnly": "Repository default profile is admin-only.",
       "noDelegatedConnectors": "No connectors are delegated to you for this folder. Ask an admin to delegate one.",
       "preserveOriginalEml": "Preserve Original .eml",

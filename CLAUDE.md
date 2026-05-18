@@ -310,37 +310,60 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
-### RC17 / RC5 サイクル (2026-05-19〜, 進行中) — v2 着手: scheduled delegated + governance view
+### RC17 / RC5 (2026-05-19) — v2: scheduled delegated profiles + connector governance view
 
 ブランチ: `release/3.1.1-RC5` (off `v3.1.1-RC4.1` = `572aad18b`)
 
-v1 (RC3) で意図的に v2 へ繰越した 2 件を独立 RC で対応。設計参照:
-- `docs/design/connector-delegation.md` §12.1 (scheduled delegated profile, ~600-1000 LOC + 30 unit tests の pre-design あり)
-- 同 §12.3 (governance view: 「group X が使える connector は?」)
+v1 (RC3) で意図的に v2 へ繰越した 2 件を独立 RC で対応完了。設計参照:
+- `docs/design/connector-delegation.md` §12.1 (scheduled delegated profile)
+- 同 §12.3 (governance view)
 
-#### Scope (v2 機能 2 件)
+#### §12.1 Scheduled delegated profiles (shipped)
 
-##### §12.1 Scheduled delegated profiles
-- `createdByUserId` ベースで scheduler tick ごとに `CallContext` を合成
-- per-tick で `canManageProfileForFolderAsUser` + `canUseConnectorForDelegatedProfileAsUser` を再評価
-- creator の `UserItem` が disable されていれば `CREATOR_USER_INACTIVE` で skip + audit
-- 連続 N 回失敗で profile 自動 disable (`nemakiware.ingest.delegated.autoDisableInactiveOwners=true` opt-in)
-- `schedulerEnabled=true` on delegated profile を `nemakiware.ingest.delegated.schedulerEnabled=true` でのみ許可 (default false で安全側 fail-shut 維持)
-- 新 `DenialReason`: `CREATOR_USER_INACTIVE`, `CREATOR_CMIS_ALL_LOST`
-- audit details に `scheduled`, `creatorUserId`, `creatorActive` 追加
+- 新クラス `DelegatedCallContextFactory` (`SyntheticCallContext` 内包)
+  - `createdByUserId` から `UserItem` 引き当て、毎 tick 新規 lookup (cache なし)
+  - `UserItem.isAdmin()` が true でも合成 context は `IS_ADMIN=false` を強制 (delegation gate は必ず走る)
+  - lookup 例外は inactive 扱い (fail-shut)
+- `IngestSchedulerService.prepareDelegatedTick`: tick ごとに 5 段ガード
+  1. `nemakiware.ingest.delegated.schedulerEnabled=true` (operator opt-in)
+  2. 必要 wiring (`DelegatedCallContextFactory`, `IngestAuthorizationService`)
+  3. `createdByUserId` 必須
+  4. `UserItem` 引き当て可能 (== "active")
+  5. creator がまだ `cmis:all` を target folder に保持
+- connector 解決後の二段目チェック: `canUseConnectorForDelegatedProfileAsUser` を再評価
+- Creator deactivation:
+  - default fail-shut + `CREATOR_USER_INACTIVE` audit
+  - `nemakiware.ingest.delegated.autoDisableInactiveOwners=true` opt-in で N 回連続失敗後 `enabled=false`
+  - 閾値は `nemakiware.ingest.delegated.inactiveOwnerFailureThreshold` (default 3)
+  - active user 復帰で streak リセット (一時障害が誤検知にならない)
+- `ImportProfileDefinitionController`: `SCHEDULER_REQUIRES_ADMIN` ガードを property 連動化
+  - 同 property OFF → v1 動作 (refuse)
+  - 同 property ON → 非 admin の `schedulerEnabled=true` を受理、scheduler が per-tick で再評価
+- 新 `DenialReason`: `CREATOR_USER_INACTIVE`, `CREATOR_CMIS_ALL_LOST`, `DELEGATED_SCHEDULING_DISABLED`
+- audit `EXTERNAL_INGEST_FAILED.details`: `scheduled`, `delegated`, `actorUserId`, `creatorUserId`, `creatorActive`, `profileId`, `connectorId`, `targetFolderId`, `denialReason`
+- 既存 RC4 動作 (property OFF 時の WARN-once + skip) は `IngestSchedulerDelegationSkipTest` で退行ピン
 
-##### §12.3 Governance view
-- 新 endpoint: `GET /v1/admin/connectors/by-principal?principalId=alice` (admin only)
+#### §12.3 Connector governance view (shipped)
+
+- 新 endpoint: `GET /v1/admin/connectors/by-principal/{principalId}?repositoryId={repo}&expand={true|false}` (admin only)
 - 指定 principal (user ID または group ID) が `allowedPrincipalIds` で参照される connector を一覧
-- `delegateAllFolders=true` の connector も `[matches any principal]` でマーク
+- `expand=true` で `IngestAuthorizationService.expandPrincipals` 経由で group 経由マッチも含む (runtime gate と同じ展開ロジック)
+- match entry に `matchType`: `direct` / `group` / `direct+group` + `matchedPrincipalIds` を返却 (冗長 grant 検出に有用)
 - 「group X を消すと何が壊れる?」「user Y は何の credential 経由でデータにアクセスできる?」を operator が即答できる
 
-#### 設計原則 (RC3/RC4 と同じ)
+#### 新規 properties (`nemakiware.properties`)
 
-- 既存 patch / view / data には触らない
-- 全 fix idempotent
-- 全 default が安全側 (`schedulerEnabled` opt-in / `autoDisableInactiveOwners` opt-in)
-- 既存テスト退行ゼロ
+```properties
+# v2 §12.1 operator opt-in
+nemakiware.ingest.delegated.schedulerEnabled=false
+nemakiware.ingest.delegated.autoDisableInactiveOwners=false
+nemakiware.ingest.delegated.inactiveOwnerFailureThreshold=3
+```
+
+#### テスト
+
+- 新規 4 ファイル / 28 テスト (`DelegatedCallContextFactoryTest`, `IngestSchedulerDelegatedRunTest`, `ImportProfileSchedulerGateTest`, `ConnectorByPrincipalGovernanceTest`) + 既存 `IngestSchedulerDelegationSkipTest` (5) で計 33 テスト全 PASS
+- ingest delegation 関連の関連既存テスト合計 97 テスト退行なし
 
 ### RC16 / RC4 (2026-05-18) — パッチ機構の構造改修
 

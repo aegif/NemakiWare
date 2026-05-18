@@ -6,6 +6,111 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC5 — Scheduled delegated profiles + connector governance view
+_Release candidate on `release/3.1.1-RC5` (2026-05-19), branched off
+`v3.1.1-RC4.1` (`572aad18b`)._
+
+Lands the two v2 items deferred from RC3's connector-delegation work:
+scheduling for non-admin delegated profiles, and an admin governance
+view answering "which connectors does principal X have access to?".
+Both ship behind safe defaults so an upgrade does NOT change runtime
+behaviour until the operator explicitly opts in.
+
+### §12.1 Scheduled delegated profiles
+
+A folder owner can now mark their delegated import profile
+`schedulerEnabled=true` and have it fire on the scheduler without
+needing admin privileges, with the same per-tick `cmis:all` and
+connector re-evaluation the manual ingest path runs.
+
+**Why this matters.** Before RC5, scheduled ingest required admin —
+non-admins could only trigger their delegated profiles manually. That
+forced a workflow where the folder owner kept a browser tab open or
+scripted a curl call. RC5 closes the gap while keeping the security
+contract: the scheduler tick runs under a synthetic CallContext for
+the original creator, never short-circuits to admin even if the
+creator happens to be one, and re-checks every gate (folder ACL,
+connector delegation scope, creator-still-active) every tick.
+
+**Operator opt-in required.** Off by default. Set:
+```properties
+nemakiware.ingest.delegated.schedulerEnabled=true
+```
+to enable. The controller's `SCHEDULER_REQUIRES_ADMIN` gate flips with
+the same property — non-admin scheduled profiles can only be created
+when the operator has consciously enabled the path.
+
+**Creator deactivation policy.** When a creator's `UserItem` is no
+longer findable (LDAP sync hard-delete, manual disable), the next tick
+emits a structured `CREATOR_USER_INACTIVE` audit and skips. The
+profile stays visible for admin review. Layer on automatic disable
+after N consecutive failures:
+```properties
+nemakiware.ingest.delegated.autoDisableInactiveOwners=true
+nemakiware.ingest.delegated.inactiveOwnerFailureThreshold=3
+```
+A successful active-user resolution resets the streak, so a transient
+directory hiccup does not accumulate toward auto-disable.
+
+**New `DenialReason` enum entries** (audit-stable, additive only):
+- `CREATOR_USER_INACTIVE`
+- `CREATOR_CMIS_ALL_LOST`
+- `DELEGATED_SCHEDULING_DISABLED`
+
+**Audit shape**. `EXTERNAL_INGEST_FAILED` records from the scheduled
+path now carry `details.scheduled=true`, `details.creatorUserId`,
+`details.creatorActive`, plus the existing `details.denialReason` and
+`details.targetFolderId` keys. SOC queries that already filter on
+`EXTERNAL_INGEST_FAILED` pick up the scheduled denials automatically.
+
+### §12.3 Connector governance view
+
+New admin-only endpoint:
+```
+GET /v1/admin/connectors/by-principal/{principalId}?repositoryId=...&expand={true|false}
+```
+
+Answers "which delegated connectors does this principal have access
+to?". `expand=true` includes connectors matched via group expansion
+(the same expansion the runtime gate uses, so the view agrees with
+what the user would actually experience). Each match records the
+principal IDs that triggered it and a `matchType` of `direct`,
+`group`, or `direct+group`. The mixed case surfaces redundant grants
+that may be cleanup candidates.
+
+**Why this matters.** Removing a user from a group, or deleting a
+group entirely, used to require scanning every connector's
+`allowedPrincipalIds` by eye. The endpoint makes the question a single
+admin API call.
+
+### Migration / upgrade
+
+No migration needed. All new behaviour is property-gated and off by
+default. Existing deployments that upgrade and do nothing get
+byte-identical scheduler behaviour to RC4.1. Existing tests retained
+to pin the legacy path.
+
+### Properties added
+
+```properties
+# v2 §12.1 — operator opt-in for delegated scheduled ingest
+nemakiware.ingest.delegated.schedulerEnabled=false
+nemakiware.ingest.delegated.autoDisableInactiveOwners=false
+nemakiware.ingest.delegated.inactiveOwnerFailureThreshold=3
+```
+
+### Tests
+
+- New: `DelegatedCallContextFactoryTest` (8),
+  `IngestSchedulerDelegatedRunTest` (7),
+  `ImportProfileSchedulerGateTest` (5),
+  `ConnectorByPrincipalGovernanceTest` (8) — 28 new unit tests.
+- Regression: `IngestSchedulerDelegationSkipTest` (5) preserved to pin
+  the property-off legacy behaviour.
+- Ingest delegation suite: 97 tests, all PASS.
+
+---
+
 ## 3.1.1-RC4.1 — RC4 acceptance findings F1-F3
 _Patch release on `release/3.1.1-RC4` (2026-05-19)._
 _Release tag: **`v3.1.1-RC4.1`**._

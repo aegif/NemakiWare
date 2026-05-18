@@ -208,6 +208,108 @@ public class ConnectorDefinitionController {
     }
 
     /**
+     * RC5 (v2 §12.3): governance view — "which connectors does this
+     * principal have access to?"
+     *
+     * <p>Admin-only. For a given {@code principalId} (user or group),
+     * returns the list of delegated connectors whose
+     * {@code allowedPrincipalIds} contains the principal — either
+     * directly, or (when {@code expand=true}) via group expansion of a
+     * user principal through {@link IngestAuthorizationService#expandPrincipals}.
+     *
+     * <p>This is the operator answer to "who can use what?". Without it,
+     * removing a user from a group leaves you without a way to audit
+     * what they will lose access to. The endpoint returns a slim summary
+     * including which principal IDs caused the match, so the operator
+     * can distinguish direct grants (likely intentional) from group-
+     * derived grants (likely indirect / candidate for cleanup).
+     *
+     * <p>Query params:
+     * <ul>
+     *   <li>{@code repositoryId} — required for group expansion when
+     *       {@code expand=true}; also scopes the listing to connectors
+     *       whose principal-set could reach this repository.</li>
+     *   <li>{@code expand} — {@code true} to include group-derived
+     *       matches; default {@code false} returns only direct
+     *       {@code allowedPrincipalIds} hits.</li>
+     * </ul>
+     *
+     * <p>Note: connector records are repository-agnostic; the
+     * {@code repositoryId} is required only because group expansion is
+     * a per-repository operation (a user can belong to different group
+     * sets in different repositories).
+     */
+    @GetMapping("/by-principal/{principalId}")
+    public ResponseEntity<?> listByPrincipal(
+            @PathVariable String principalId,
+            @RequestParam String repositoryId,
+            @RequestParam(required = false, defaultValue = "false") boolean expand) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
+        if (forbidden != null) return forbidden;
+        if (principalId == null || principalId.isBlank()
+                || repositoryId == null || repositoryId.isBlank()) {
+            return errorResponse(HttpStatus.BAD_REQUEST,
+                    "principalId and repositoryId are required");
+        }
+
+        // Build the set of principal IDs to test against each connector's
+        // allowedPrincipalIds. expand=false → just the principal itself
+        // (lets operators view group ACEs as well as user ACEs). expand=true
+        // → for users, include the groups they belong to; for groups, the
+        // expansion is a no-op (groups don't contain groups in NemakiWare).
+        java.util.Set<String> principalsToMatch = new java.util.LinkedHashSet<>();
+        principalsToMatch.add(principalId);
+        if (expand) {
+            // expandPrincipals is fail-closed on lookup error — caller sees
+            // the direct-only view, which is the safer governance default.
+            principalsToMatch.addAll(
+                    ingestAuthorizationService.expandPrincipals(repositoryId, principalId));
+        }
+
+        var matches = new java.util.ArrayList<Map<String, Object>>();
+        for (ConnectorDefinition c : connectorDefinitionService.list()) {
+            List<String> allowed = c.getAllowedPrincipalIds();
+            if (allowed == null || allowed.isEmpty()) continue;
+            // Intersect — preserves the matched principal IDs so the
+            // operator can see WHY this connector is visible to the
+            // principal (direct vs. via group X).
+            java.util.List<String> matched = new java.util.ArrayList<>();
+            for (String p : allowed) {
+                if (p != null && principalsToMatch.contains(p)) matched.add(p);
+            }
+            if (matched.isEmpty()) continue;
+
+            var entry = new LinkedHashMap<String, Object>();
+            entry.put("connectorId", c.getConnectorId());
+            entry.put("displayName", c.getDisplayName());
+            entry.put("sourceArchetype",
+                    c.getSourceArchetype() != null ? c.getSourceArchetype().name() : null);
+            entry.put("sourceSystem", c.getSourceSystem());
+            entry.put("adapterKind", c.getAdapterKind());
+            entry.put("delegated", c.isDelegated());
+            entry.put("enabled", c.isEnabled());
+            entry.put("matchedPrincipalIds", matched);
+            // matchType: "direct" iff the principal itself is the only
+            // matched entry; "group" if at least one matched id is NOT
+            // the principal (i.e. group-derived). Mixed grants surface
+            // as "direct+group" so operators can investigate.
+            boolean direct = matched.contains(principalId);
+            boolean groupDerived = matched.stream().anyMatch(m -> !principalId.equals(m));
+            entry.put("matchType", direct && groupDerived ? "direct+group"
+                    : direct ? "direct" : "group");
+            matches.add(entry);
+        }
+
+        var body = new LinkedHashMap<String, Object>();
+        body.put("principalId", principalId);
+        body.put("repositoryId", repositoryId);
+        body.put("expand", expand);
+        body.put("expandedPrincipals", new java.util.ArrayList<>(principalsToMatch));
+        body.put("matches", matches);
+        return ResponseEntity.ok(body);
+    }
+
+    /**
      * Return the adapter registry — all supported source systems with their
      * required/optional params, archetype, and webhook scope keys.
      * Used by the UI for dynamic form generation and Help documentation.

@@ -3142,7 +3142,7 @@
       "defaultClassificationPlaceholder": "例: 社外秘, 社内, 公開",
       "defaultProfile": "デフォルトプロファイル",
       "defaultProfileHint": "複数プロファイルが一致する場合の自動解決で優先するプロファイルとしてマーク",
-      "schedulerAdminOnly": "本リリースではスケジュール取り込みは管理者のみ設定可能です",
+      "schedulerAdminOnly": "スケジュール取り込みは管理者のみ設定可能です（運用者が nemakiware.ingest.delegated.schedulerEnabled=true をセットすると、フォルダ所有者も自分のプロファイルでスケジュール取り込みを有効化できます）",
       "defaultProfileAdminOnly": "リポジトリ全体のデフォルトプロファイル指定は管理者のみ可能です",
       "noDelegatedConnectors": "このフォルダ向けに委譲されたコネクタがありません。管理者に委譲設定を依頼してください。",
       "preserveOriginalEml": "メール原本 (.eml) 保存",

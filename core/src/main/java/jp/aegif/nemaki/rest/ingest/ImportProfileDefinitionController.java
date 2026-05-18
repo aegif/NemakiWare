@@ -34,8 +34,33 @@ public class ImportProfileDefinitionController {
     @Autowired(required = false)
     private AuditLogger auditLogger;
 
+    /**
+     * RC5 (v2 §12.1): operator opt-in for delegated scheduling. When
+     * {@code nemakiware.ingest.delegated.schedulerEnabled=true}, non-
+     * admins are allowed to set {@code schedulerEnabled=true} on
+     * delegated profiles they own; the scheduler then runs the tick under
+     * the creator's synthesised CallContext with per-tick ACL re-eval.
+     * Default false preserves RC4 behaviour (refuse with
+     * {@code SCHEDULER_REQUIRES_ADMIN}).
+     */
+    @Autowired(required = false)
+    private jp.aegif.nemaki.util.PropertyManager propertyManager;
+
     @Autowired
     private HttpServletRequest httpRequest;
+
+    /** Reads a boolean property, defaulting on null / blank / unset. */
+    private boolean readBool(String key, boolean defaultValue) {
+        if (propertyManager == null) return defaultValue;
+        String val = propertyManager.readValue(key);
+        if (val == null || val.isBlank()) return defaultValue;
+        return Boolean.parseBoolean(val.trim());
+    }
+
+    /** Single source of truth for the v2 delegated-scheduling opt-in. */
+    private boolean isDelegatedSchedulingEnabled() {
+        return readBool("nemakiware.ingest.delegated.schedulerEnabled", false);
+    }
 
     @PostMapping
     public ResponseEntity<Map<String, Object>> create(@RequestBody ImportProfileDefinition def) {
@@ -433,11 +458,17 @@ public class ImportProfileDefinitionController {
      * {@code createdByUserId} stamped from the call context).
      */
     private ResponseEntity<Map<String, Object>> enforceDelegationOnCreate(CallContext ctx, ImportProfileDefinition def) {
-        // Strict v1 limits — refuse rather than silently coerce so the UI/CLI
-        // sees an explicit error and the operator knows what's restricted.
-        if (def.isSchedulerEnabled()) {
+        // RC5 (v2 §12.1): the scheduler gate is property-controlled.
+        // Default false → keep the v1 behaviour (refuse non-admin scheduled
+        // profiles outright). When the operator opts in, the scheduler
+        // itself enforces per-tick cmis:all + connector re-eval under a
+        // synthesised CallContext, so it is safe to let the profile be
+        // created here.
+        boolean delegatedSchedulingOn = isDelegatedSchedulingEnabled();
+        if (def.isSchedulerEnabled() && !delegatedSchedulingOn) {
             return denied(HttpStatus.FORBIDDEN, DenialReason.SCHEDULER_REQUIRES_ADMIN,
-                    "Scheduled ingestion requires admin privileges in this release");
+                    "Scheduled ingestion requires admin privileges (or operator opt-in via "
+                            + "nemakiware.ingest.delegated.schedulerEnabled=true)");
         }
         if (def.isDefaultProfile()) {
             return denied(HttpStatus.FORBIDDEN, DenialReason.DEFAULT_PROFILE_REQUIRES_ADMIN,
@@ -470,7 +501,11 @@ public class ImportProfileDefinitionController {
         // Stamp the safe fields LAST so a misuse can't override them via payload.
         def.setDelegated(true);
         def.setCreatedByUserId(ctx.getUsername());
-        def.setSchedulerEnabled(false);
+        // RC5 (v2 §12.1): preserve user's schedulerEnabled choice when the
+        // operator has opted in; otherwise force it off (v1 behaviour).
+        if (!delegatedSchedulingOn) {
+            def.setSchedulerEnabled(false);
+        }
         def.setDefaultProfile(false);
         return null;
     }
@@ -495,9 +530,12 @@ public class ImportProfileDefinitionController {
         if (!existing.isDelegated()) {
             return denied(HttpStatus.FORBIDDEN, DenialReason.ADMIN_OWNED_PROFILE, "Admin-managed profile");
         }
-        if (def.isSchedulerEnabled()) {
+        // RC5 (v2 §12.1): see enforceDelegationOnCreate — property-gated.
+        boolean delegatedSchedulingOn = isDelegatedSchedulingEnabled();
+        if (def.isSchedulerEnabled() && !delegatedSchedulingOn) {
             return denied(HttpStatus.FORBIDDEN, DenialReason.SCHEDULER_REQUIRES_ADMIN,
-                    "Scheduled ingestion requires admin privileges in this release");
+                    "Scheduled ingestion requires admin privileges (or operator opt-in via "
+                            + "nemakiware.ingest.delegated.schedulerEnabled=true)");
         }
         if (def.isDefaultProfile()) {
             return denied(HttpStatus.FORBIDDEN, DenialReason.DEFAULT_PROFILE_REQUIRES_ADMIN,
@@ -547,7 +585,11 @@ public class ImportProfileDefinitionController {
         def.setDelegated(true);
         def.setCreatedByUserId(existing.getCreatedByUserId() != null
                 ? existing.getCreatedByUserId() : ctx.getUsername());
-        def.setSchedulerEnabled(false);
+        // RC5 (v2 §12.1): preserve user's schedulerEnabled choice when the
+        // operator has opted in; otherwise force it off (v1 behaviour).
+        if (!delegatedSchedulingOn) {
+            def.setSchedulerEnabled(false);
+        }
         def.setDefaultProfile(false);
         return null;
     }

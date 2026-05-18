@@ -47,6 +47,49 @@ public class IngestSchedulerService {
     private final java.util.Set<String> warnedDelegatedSchedulerProfiles =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    /**
+     * RC5 (v2 §12.1): per-profile consecutive CREATOR_USER_INACTIVE
+     * counter. When {@code autoDisableInactiveOwners=true} and this
+     * exceeds the configured threshold, the profile is auto-disabled
+     * (enabled=false) and the counter cleared.
+     */
+    private final java.util.concurrent.ConcurrentHashMap<String, Integer> inactiveCreatorStreak =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * RC5 (v2 §12.1): authorization service for per-tick ACL re-eval
+     * on delegated scheduled profiles. Same instance the runtime gate
+     * uses, so the security contract is identical between manual and
+     * scheduled paths.
+     */
+    private IngestAuthorizationService ingestAuthorizationService;
+
+    /**
+     * RC5 (v2 §12.1): factory for synthesising a CallContext from a
+     * profile's {@code createdByUserId}. Null indicates no delegated-
+     * scheduler support (legacy wiring, tests).
+     */
+    private DelegatedCallContextFactory delegatedCallContextFactory;
+
+    public void setIngestAuthorizationService(IngestAuthorizationService svc) {
+        this.ingestAuthorizationService = svc;
+    }
+
+    public void setDelegatedCallContextFactory(DelegatedCallContextFactory factory) {
+        this.delegatedCallContextFactory = factory;
+    }
+
+    /**
+     * RC5 (v2 §12.1): audit sink for scheduled delegated denials. Same
+     * {@code AuditLogger} the manual path uses, so SOC queries that
+     * filter on {@code EXTERNAL_INGEST_FAILED} catch both flows.
+     */
+    private jp.aegif.nemaki.audit.AuditLogger auditLogger;
+
+    public void setAuditLogger(jp.aegif.nemaki.audit.AuditLogger auditLogger) {
+        this.auditLogger = auditLogger;
+    }
+
     private volatile java.util.concurrent.ScheduledExecutorService scheduler;
 
     /**
@@ -144,6 +187,193 @@ public class IngestSchedulerService {
         return imapIdleMonitor != null ? imapIdleMonitor.getIdleProfiles() : List.of();
     }
 
+    // ──────────────────────────────────────────────────────────────────
+    // RC5 (v2 §12.1) — Scheduled delegated profile helpers
+    // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * Run the per-tick gate for a delegated profile. Returns a
+     * synthesised {@link CallContext} for {@code profile.createdByUserId}
+     * if all checks pass, or {@code null} if the tick should be skipped.
+     * In the null case the appropriate WARN + audit entry has already
+     * been emitted before returning.
+     *
+     * <p>Order of checks (every failure is fail-shut):
+     * <ol>
+     *   <li>Operator opt-in: {@code nemakiware.ingest.delegated.schedulerEnabled=true}
+     *       must be set. Default false → emit
+     *       {@code DELEGATED_SCHEDULING_DISABLED}, fall back to the
+     *       legacy WARN-once behaviour for visibility.</li>
+     *   <li>Required wiring: {@link DelegatedCallContextFactory} and
+     *       {@link IngestAuthorizationService} must be present.
+     *       Missing → {@code SERVICES_UNAVAILABLE}.</li>
+     *   <li>{@code createdByUserId} must be set on the profile (otherwise
+     *       there's no identity to evaluate against — log + skip).</li>
+     *   <li>UserItem must exist and be active. Missing →
+     *       {@code CREATOR_USER_INACTIVE}. Also drives the
+     *       auto-disable streak counter.</li>
+     *   <li>Creator must still hold {@code cmis:all} on the target
+     *       folder. Missing → {@code CREATOR_CMIS_ALL_LOST}.</li>
+     * </ol>
+     */
+    private CallContext prepareDelegatedTick(ImportProfileDefinition profile) {
+        String pid = profile.getProfileId();
+
+        // 1. Operator opt-in
+        boolean enabled = readBool(
+                "nemakiware.ingest.delegated.schedulerEnabled", false);
+        if (!enabled) {
+            // Maintain the WARN-once-per-JVM behaviour from RC4 so
+            // existing operators upgrading from RC4 with property OFF
+            // see the same log signature they're used to.
+            if (warnedDelegatedSchedulerProfiles.add(pid)) {
+                logger.warn("Skipping delegated profile '{}' from scheduler — "
+                        + "nemakiware.ingest.delegated.schedulerEnabled=false (default). "
+                        + "Set it to true to enable v2 scheduled-delegated behaviour. "
+                        + "This WARN fires once per profile per JVM lifetime.", pid);
+            } else if (logger.isDebugEnabled()) {
+                logger.debug("Scheduler skipping delegated profile '{}' (already warned, property off)", pid);
+            }
+            auditScheduledDelegatedDenial(profile, null,
+                    DenialReason.DELEGATED_SCHEDULING_DISABLED,
+                    "Delegated scheduling disabled by property");
+            return null;
+        }
+
+        // 2. Required wiring
+        if (delegatedCallContextFactory == null || ingestAuthorizationService == null) {
+            logger.warn("Skipping delegated profile '{}' — DelegatedCallContextFactory "
+                    + "or IngestAuthorizationService not wired", pid);
+            auditScheduledDelegatedDenial(profile, null,
+                    DenialReason.SERVICES_UNAVAILABLE,
+                    "DelegatedCallContextFactory or IngestAuthorizationService not wired");
+            return null;
+        }
+
+        // 3. createdByUserId required
+        String creatorUser = profile.getCreatedByUserId();
+        if (creatorUser == null || creatorUser.isBlank()) {
+            logger.warn("Skipping delegated profile '{}' — createdByUserId is missing", pid);
+            auditScheduledDelegatedDenial(profile, null,
+                    DenialReason.CREATOR_USER_INACTIVE,
+                    "Profile has no createdByUserId (legacy admin-created record?)");
+            return null;
+        }
+
+        // 4. UserItem must exist (== "active" in NemakiWare's model)
+        CallContext ctx = delegatedCallContextFactory.buildOrNull(
+                profile.getRepositoryId(), creatorUser);
+        if (ctx == null) {
+            handleInactiveCreator(profile, creatorUser);
+            return null;
+        }
+        // Reset streak on successful active-user resolution.
+        inactiveCreatorStreak.remove(pid);
+
+        // 5. cmis:all re-eval
+        String folderId = ingestAuthorizationService.resolveFolderId(
+                profile.getRepositoryId(),
+                profile.getTargetFolderId(), profile.getTargetFolderPath());
+        if (folderId == null) {
+            auditScheduledDelegatedDenial(profile, null,
+                    DenialReason.TARGET_FOLDER_UNRESOLVABLE,
+                    "Profile's target folder no longer resolvable");
+            return null;
+        }
+        if (!ingestAuthorizationService.canManageProfileForFolderAsUser(
+                creatorUser, profile.getRepositoryId(), folderId)) {
+            auditScheduledDelegatedDenial(profile, null,
+                    DenialReason.CREATOR_CMIS_ALL_LOST,
+                    "Creator " + creatorUser + " no longer holds cmis:all on target folder");
+            return null;
+        }
+        return ctx;
+    }
+
+    /**
+     * Increment the inactive-creator streak counter and, if
+     * {@code autoDisableInactiveOwners=true} is set AND the streak
+     * exceeds the configured threshold, mark the profile
+     * {@code enabled=false} so the tick stops repeating. The audit
+     * entry includes a {@code creatorActive=false} flag and the
+     * current streak count for operator review.
+     */
+    private void handleInactiveCreator(ImportProfileDefinition profile, String creatorUser) {
+        String pid = profile.getProfileId();
+        int streak = inactiveCreatorStreak.merge(pid, 1, Integer::sum);
+        auditScheduledDelegatedDenial(profile, null,
+                DenialReason.CREATOR_USER_INACTIVE,
+                "Creator " + creatorUser + " is no longer an active UserItem (streak="
+                        + streak + ")");
+
+        boolean autoDisable = readBool(
+                "nemakiware.ingest.delegated.autoDisableInactiveOwners", false);
+        if (!autoDisable) return;
+        int threshold = (int) readLong(
+                "nemakiware.ingest.delegated.inactiveOwnerFailureThreshold", 3);
+        if (streak < threshold) return;
+
+        // Auto-disable: set enabled=false and persist.
+        try {
+            profile.setEnabled(false);
+            if (profileService != null) {
+                profileService.update(profile);
+            }
+            inactiveCreatorStreak.remove(pid);
+            logger.warn("Auto-disabled delegated profile '{}' after {} consecutive "
+                    + "CREATOR_USER_INACTIVE failures (creator: '{}')",
+                    pid, streak, creatorUser);
+        } catch (Exception e) {
+            logger.warn("Auto-disable failed for delegated profile '{}': {}",
+                    pid, e.getMessage());
+        }
+    }
+
+    /**
+     * Emit an EXTERNAL_INGEST_FAILED audit entry for a delegated
+     * scheduled tick that was refused before {@code executeFetch} ran.
+     * Matches the shape used by {@code ExternalIngestController}'s
+     * {@code auditDelegatedAttempt} so SOC queries treat the manual
+     * and scheduled paths uniformly.
+     */
+    private void auditScheduledDelegatedDenial(ImportProfileDefinition profile,
+                                               ConnectorDefinition connector,
+                                               DenialReason reason, String message) {
+        if (auditLogger == null) return;
+        try {
+            String actor = profile.getCreatedByUserId() != null
+                    ? profile.getCreatedByUserId() : "anonymous";
+            java.util.Map<String, Object> details = new java.util.LinkedHashMap<>();
+            details.put("delegated", true);
+            details.put("scheduled", true);
+            details.put("actorUserId", actor);
+            details.put("creatorUserId", actor);
+            // creatorActive: true only when this is NOT an inactive-user denial
+            details.put("creatorActive", reason != DenialReason.CREATOR_USER_INACTIVE);
+            if (profile.getProfileId() != null) details.put("profileId", profile.getProfileId());
+            if (connector != null) details.put("connectorId", connector.getConnectorId());
+            if (profile.getTargetFolderId() != null) {
+                details.put("targetFolderId", profile.getTargetFolderId());
+            }
+            details.put("denialReason", reason.name());
+            auditLogger.logOperation(
+                    jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST_FAILED,
+                    profile.getRepositoryId(), actor,
+                    profile.getProfileId() != null ? profile.getProfileId() : "",
+                    false, message, details);
+        } catch (RuntimeException ignored) {
+            // Audit must never break the scheduler
+        }
+    }
+
+    /** Property reader for booleans. Centralises invalid-value handling. */
+    private boolean readBool(String key, boolean defaultValue) {
+        if (propertyManager == null) return defaultValue;
+        String val = propertyManager.readValue(key);
+        if (val == null || val.isBlank()) return defaultValue;
+        return Boolean.parseBoolean(val.trim());
+    }
+
     /** Visible for tests — driven by the scheduler at fixed delay in production. */
     void pollScheduledProfiles() {
         try {
@@ -174,30 +404,57 @@ public class IngestSchedulerService {
             for (ImportProfileDefinition profile : profiles) {
                 // Re-check: profile may have been disabled since getScheduledProfiles()
                 if (!profile.isEnabled() || !profile.isSchedulerEnabled()) continue;
-                // Defence in depth: the controller already refuses to set
-                // schedulerEnabled=true on a delegated profile (3.1.1-RC3),
-                // but a profile written directly to CouchDB could bypass
-                // that. A delegated profile has no admin CallContext to run
-                // under, so refuse to schedule it. WARN exactly once per
-                // profileId — every subsequent poll cycle drops to DEBUG
-                // so a single broken record can't flood the log.
+                // RC5 (v2 §12.1): delegated profile handling.
+                //
+                // Before RC5: delegated profiles were unconditionally
+                // skipped from the scheduler regardless of
+                // schedulerEnabled, because the scheduler had no
+                // CallContext to evaluate ACL against.
+                //
+                // RC5: if the operator has opted in via
+                //   nemakiware.ingest.delegated.schedulerEnabled=true
+                // the scheduler synthesises a CallContext from the
+                // profile's createdByUserId and re-runs the same
+                // gate the runtime ingest path uses. Per-tick — no
+                // long-lived cache, so mid-day ACL / group changes
+                // are picked up on the next poll.
+                //
+                // Default remains opt-out (property=false), so existing
+                // deployments behave exactly like RC3/RC4.
+                CallContext delegatedCtx = null;     // null = admin path / not applicable
                 if (profile.isDelegated()) {
-                    String pid = profile.getProfileId();
-                    if (warnedDelegatedSchedulerProfiles.add(pid)) {
-                        logger.warn("Skipping delegated profile '{}' from scheduler — delegated profiles are manual-only by design. "
-                                + "This WARN fires once per profile per JVM lifetime; subsequent skips log at DEBUG.", pid);
-                    } else if (logger.isDebugEnabled()) {
-                        logger.debug("Scheduler skipping delegated profile '{}' (already warned)", pid);
+                    delegatedCtx = prepareDelegatedTick(profile);
+                    if (delegatedCtx == null) {
+                        // prepareDelegatedTick already emitted the
+                        // appropriate WARN/audit + DenialReason. Skip.
+                        continue;
                     }
-                    continue;
                 }
                 // If a previously-delegated profile flipped back, drop our
-                // memo so the next reset will re-WARN exactly once.
-                if (!warnedDelegatedSchedulerProfiles.isEmpty()) {
+                // WARN-once memo so a re-flip can re-WARN cleanly.
+                if (!profile.isDelegated() && !warnedDelegatedSchedulerProfiles.isEmpty()) {
                     warnedDelegatedSchedulerProfiles.remove(profile.getProfileId());
                 }
                 ConnectorDefinition connector = resolveConnectorForProfile(profile);
                 if (connector == null) continue;
+
+                // RC5: for delegated profiles, also re-check connector
+                // delegation against the creator. Catches admin-revoked
+                // connector scope between ticks.
+                if (delegatedCtx != null) {
+                    if (!ingestAuthorizationService.canUseConnectorForDelegatedProfileAsUser(
+                            delegatedCtx.getUsername(), profile.getRepositoryId(),
+                            connector, ingestAuthorizationService.resolveFolderId(
+                                    profile.getRepositoryId(),
+                                    profile.getTargetFolderId(),
+                                    profile.getTargetFolderPath()))) {
+                        auditScheduledDelegatedDenial(profile, connector,
+                                DenialReason.CONNECTOR_NOT_DELEGATED,
+                                "Connector no longer delegated to "
+                                        + delegatedCtx.getUsername() + " for this folder");
+                        continue;
+                    }
+                }
 
                 // Circuit breaker: skip connector if it has failed too many times consecutively
                 String connectorKey = connector.getConnectorId();
@@ -236,6 +493,11 @@ public class IngestSchedulerService {
                     // On timeout, Thread.interrupt() triggers RuntimeException in throttle(),
                     // stopping the adapter loop at the next per-item checkpoint.
                     final java.util.concurrent.atomic.AtomicReference<Thread> fetchThread = new java.util.concurrent.atomic.AtomicReference<>();
+                    // RC5 (v2 §12.1): effectively-final capture for the
+                    // supplyAsync lambda. `delegatedCtx` is built outside
+                    // this try block and assigned conditionally, so the
+                    // compiler refuses to capture it directly.
+                    final CallContext fetchCtx = delegatedCtx;
 
                     var future = java.util.concurrent.CompletableFuture.supplyAsync(
                             () -> {
@@ -246,7 +508,11 @@ public class IngestSchedulerService {
                                         profile.getProfileId(), connector.getConnectorId(),
                                         connector.getSourceSystem(), connector.getSourceArchetype());
                                 try {
-                                    return executeFetch(null, profile, connector, params);
+                                    // RC5 (v2 §12.1): pass the synthesised
+                                    // CallContext when this is a delegated
+                                    // tick; null for admin profiles keeps
+                                    // legacy behaviour.
+                                    return executeFetch(fetchCtx, profile, connector, params);
                                 } finally {
                                     FetchSupport.currentJobHolder().remove();
                                     FetchSupport.lastProgressHeartbeat().remove();
