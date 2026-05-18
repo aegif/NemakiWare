@@ -50,9 +50,23 @@ import java.util.List;
  *       records.</li>
  *   <li>{@code idx_type_jobId} → {@code (type, jobId)} — covers
  *       {@code IngestJobService} record lookups.</li>
- *   <li>{@code idx_type_dlqEntryId} → {@code (type, dlqEntryId)} —
- *       covers dead-letter retry lookups.</li>
+ *   <li>{@code idx_type_dlqId} → {@code (type, dlqId)} — covers
+ *       dead-letter retry lookups.</li>
  * </ul>
+ *
+ * <p><b>RC4.1 (F2)</b>: the previous spelling
+ * {@code idx_type_dlqEntryId} was based on a guess at the field
+ * name; the actual selectors at {@code IngestJobService:176}
+ * (loadDlqContent), {@code 234} (getDlqEntry), {@code 278}
+ * (deleteDlqEntry), {@code 300} (upsert key-match) all use
+ * {@code dlqId}. The index was created without error but matched
+ * no real selector — Cloudant fell back to {@code _all_docs}
+ * scan for DLQ lookups. Existing deployments will get the
+ * correctly-named index on next boot; the obsolete
+ * {@code idx_type_dlqEntryId} index can be removed manually via
+ * {@code DELETE /nemaki_conf/_index/ingest-indexes/json/idx_type_dlqEntryId}
+ * (we deliberately don't auto-delete to avoid touching state we
+ * didn't create with the current patch instance).
  *
  * <p>Operates on {@code nemaki_conf} only (no per-repository state).
  * The patch is a system-level operation so it runs in
@@ -82,7 +96,11 @@ public class Patch_IngestMangoIndexes extends AbstractNemakiPatch {
             new IndexSpec("idx_type_profileId", "type", "profileId"),
             new IndexSpec("idx_type_repositoryId", "type", "repositoryId"),
             new IndexSpec("idx_type_jobId", "type", "jobId"),
-            new IndexSpec("idx_type_dlqEntryId", "type", "dlqEntryId")
+            // RC4.1 (F2): renamed from idx_type_dlqEntryId — the actual
+            // selector field in IngestJobService is dlqId. Operators
+            // upgrading from RC4 will get this new index; the old dead
+            // one stays put until removed manually (see class javadoc).
+            new IndexSpec("idx_type_dlqId", "type", "dlqId")
     );
 
     @Override
@@ -114,7 +132,13 @@ public class Patch_IngestMangoIndexes extends AbstractNemakiPatch {
         log.info("[patch=" + PATCH_NAME + "] registering " + INDEXES.size()
                 + " Mango indexes on database '" + db + "'");
 
-        int created = 0, existed = 0, failed = 0;
+        // RC4.1 (F3): collapse the created/exists counters into a single
+        // "processed" tally. The SDK returns "created" on both the first
+        // call and on idempotent re-registrations against newer Cloudant
+        // builds, so distinguishing them in the summary log was
+        // unreliable. Failure detection (the only counter that drives a
+        // RuntimeException) stays exactly as before.
+        int processed = 0, failed = 0;
         for (IndexSpec spec : INDEXES) {
             try {
                 IndexDefinition def = buildDefinition(spec.fields());
@@ -126,16 +150,11 @@ public class Patch_IngestMangoIndexes extends AbstractNemakiPatch {
                         .ddoc("ingest-indexes")
                         .build();
                 IndexResult result = cloudant.postIndex(opts).execute().getResult();
-                String resultStr = result != null ? result.getResult() : null;
-                if ("exists".equalsIgnoreCase(resultStr)) {
-                    existed++;
-                    if (log.isDebugEnabled()) {
-                        log.debug("[patch=" + PATCH_NAME + "] index '" + spec.name() + "' already exists");
-                    }
-                } else {
-                    created++;
-                    log.info("[patch=" + PATCH_NAME + "] created index '" + spec.name()
-                            + "' on fields " + spec.fields());
+                processed++;
+                if (log.isDebugEnabled()) {
+                    String resultStr = result != null ? result.getResult() : "null";
+                    log.debug("[patch=" + PATCH_NAME + "] index '" + spec.name()
+                            + "' result=" + resultStr);
                 }
             } catch (Exception e) {
                 failed++;
@@ -147,8 +166,8 @@ public class Patch_IngestMangoIndexes extends AbstractNemakiPatch {
                         + spec.name() + "': " + e.getMessage());
             }
         }
-        log.info("[patch=" + PATCH_NAME + "] complete — created=" + created
-                + ", existing=" + existed + ", failed=" + failed);
+        log.info("[patch=" + PATCH_NAME + "] complete — processed=" + processed
+                + ", failed=" + failed + " (out of " + INDEXES.size() + ")");
         if (failed > 0) {
             // Surface as a patch failure so PatchHistory does NOT mark
             // it applied; next startup will retry the failed entries.

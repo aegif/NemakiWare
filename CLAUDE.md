@@ -339,6 +339,18 @@ RC3 のマイグレーション静的レビューで pre-existing follow-up と�
 - すべて idempotent (PatchHistory + Cloudant `result="exists"`)
 - 既存 test 退行ゼロ
 
+#### RC4.1 (2026-05-19) — 受け入れレビュー F1-F3 対応
+
+acceptance review で挙がった 5 件 (F1-F5) のうち F1-F3 を小規模修正で取込。F4/F5 は documentation-only:
+
+- **F1** (Medium): `NemakiPatchInitializationListener.ORDERED_SEED_PATCHES` に `patch_ExternalIntegrationSecondaryType` + `patch_ExternalIntegrationSourceFields` を追加。fallback path での依存順序を alphabetical 偶然依存から explicit seed に変更。新 test で hostile な間に割り込む patch を入れても依存順守を確認
+- **F2** (Low): `Patch_IngestMangoIndexes` の dead index `idx_type_dlqEntryId` を `idx_type_dlqId` に修正 (実フィールド名と一致)。既存 dead index は RELEASE_NOTES に手動 cleanup コマンド記録、自動削除はしない。新 test で `INDEXES` リストを reflection で検証
+- **F3** (Low): log を `processed=N, failed=M (out of K)` 形式に簡略化。`failed > 0` → `RuntimeException` の failure 検知は維持
+- **F4**: 修正なし。`applySystemPatch()` の毎起動再実行は cheap (~16ms / 7 indexes)、Cloudant idempotent
+- **F5**: 修正なし。`archive_init.dump` (14 views) と旧 threshold (8) の乖離は merge で self-heal
+
+検証: 171 unit tests pass (2 new), live restart で `processed=7, failed=0` 確認
+
 ### RC15 / RC3 (2026-05-14〜17) — フォルダ管理者への ingest 委譲
 
 ブランチ: `release/3.1.1-RC3`

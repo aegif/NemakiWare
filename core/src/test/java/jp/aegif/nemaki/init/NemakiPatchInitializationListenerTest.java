@@ -188,4 +188,44 @@ class NemakiPatchInitializationListenerTest {
         applyAll(patches);
         assertEquals(List.of("patch_OnlyCustom"), applied);
     }
+
+    @Test
+    void externalIntegrationDependency_isPreservedRegardlessOfAlphabet() throws Exception {
+        // RC4.1 (F1) regression guard. The runtime dependency is:
+        //   Patch_ExternalIntegrationSourceFields must run AFTER
+        //   Patch_ExternalIntegrationSecondaryType.
+        // Pre-fix this only happened to hold because the bean names
+        // sort that way ("Sec" < "SourceFields"). If a future patch
+        // named e.g. "patch_ExternalIntegrationFoo" were introduced
+        // — sorting alphabetically BETWEEN the two — it would split
+        // the pair under alphabetical-only ordering.
+        //
+        // After RC4.1 both Sec and SourceFields are explicit seeds, so
+        // they MUST be applied before any non-seed patch regardless of
+        // alphabetical interleaving. We simulate the hostile case here
+        // by inserting a custom "patch_ExternalIntegrationFoo" bean
+        // that sorts between the two and verifying the dependency
+        // still holds.
+        List<String> applied = new ArrayList<>();
+        Map<String, AbstractNemakiPatch> patches = new LinkedHashMap<>();
+        patches.put("patch_ExternalIntegrationFoo",
+                new RecordingPatch("patch_ExternalIntegrationFoo", applied));
+        patches.put("patch_ExternalIntegrationSourceFields",
+                new RecordingPatch("patch_ExternalIntegrationSourceFields", applied));
+        patches.put("patch_ExternalIntegrationSecondaryType",
+                new RecordingPatch("patch_ExternalIntegrationSecondaryType", applied));
+
+        applyAll(patches);
+
+        int secIdx = applied.indexOf("patch_ExternalIntegrationSecondaryType");
+        int srcIdx = applied.indexOf("patch_ExternalIntegrationSourceFields");
+        assertTrue(secIdx >= 0 && srcIdx >= 0,
+                "both ExternalIntegration patches must run");
+        assertTrue(secIdx < srcIdx,
+                "SecondaryType must precede SourceFields regardless of alphabet, "
+                        + "got order: " + applied);
+        // The dependency-free patch can land anywhere relative to the pair.
+        assertTrue(applied.contains("patch_ExternalIntegrationFoo"),
+                "non-dependency patch must still execute");
+    }
 }

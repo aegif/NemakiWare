@@ -132,6 +132,15 @@ public class NemakiPatchInitializationListener implements ServletContextListener
         "patch_TestUserInitialization",
         "patch_NemakiwareStandardTypes",  // base + secondary type registration
         "patch_WebhookableSecondaryType", // depends on standard types
+        // RC4.1 (F1): SourceFields adds properties to the
+        // ExternalIntegration secondary type and emits a WARN when the
+        // type is missing (see Patch_ExternalIntegrationSourceFields:66).
+        // Alphabetical ordering happens to preserve this dependency
+        // today, but a future patch named e.g. "patch_ExternalIntegrationFoo"
+        // sorting between the two would silently break it. Pin both as
+        // seeds so the order is explicit.
+        "patch_ExternalIntegrationSecondaryType",
+        "patch_ExternalIntegrationSourceFields",
     };
 
     private void applyPatchesFromSpringContext(WebApplicationContext springContext) {

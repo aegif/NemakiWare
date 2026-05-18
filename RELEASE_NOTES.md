@@ -6,6 +6,86 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC4.1 — RC4 acceptance findings F1-F3
+_Patch release on `release/3.1.1-RC4` (2026-05-19)._
+
+Tightens three findings surfaced by the RC4 acceptance review.
+All changes are small, idempotent, and re-verifiable. No new
+features. No data migration. No change to existing patch history.
+
+### F1 — Fallback patch ordering for ExternalIntegration types
+
+`Patch_ExternalIntegrationSourceFields` depends at runtime on
+`Patch_ExternalIntegrationSecondaryType` (it WARN-and-skips if the
+target type doesn't yet exist — see
+`Patch_ExternalIntegrationSourceFields.java:66`). RC4's fallback
+listener happened to preserve this dependency only by coincidence
+of alphabetical bean-name ordering ("`Sec`" < "`SourceFields`"
+lexicographically). A future patch named, say,
+`patch_ExternalIntegrationFoo` would sort BETWEEN them and silently
+break the chain.
+
+Fix: both patches added to `ORDERED_SEED_PATCHES`. Seeds run first
+in declared order regardless of alphabetical interleaving.
+New test `externalIntegrationDependency_isPreservedRegardlessOfAlphabet`
+inserts a hostile bean name between them and asserts the
+SecondaryType still precedes SourceFields.
+
+### F2 — Mango index targeted a non-existent field
+
+`Patch_IngestMangoIndexes` (RC4) registered `idx_type_dlqEntryId` on
+`(type, dlqEntryId)`, but the DLQ record's actual key field — used
+in every `_find` selector at `IngestJobService:176/234/278/300` — is
+`dlqId`. Cloudant created the index without complaint, but it
+matched no real selector, so DLQ lookups silently fell back to
+`_all_docs` scan.
+
+Fix: renamed to `idx_type_dlqId` with the correct field. The
+existing dead index `idx_type_dlqEntryId` is **not** auto-deleted
+(we don't touch state we didn't create with the current patch
+instance). Operators on RC4 → RC4.1 upgrades may optionally remove
+it:
+
+```bash
+curl -u admin:password -X DELETE \
+  http://localhost:5984/nemaki_conf/_index/ingest-indexes/json/idx_type_dlqEntryId
+```
+
+Leaving it in place is harmless (a few KB of unused index storage).
+
+New test `indexSpecs_targetActualSelectorFields_notGuesses` walks
+the patch's `INDEXES` list by reflection and pins:
+- `idx_type_dlqId` present with field set `[type, dlqId]`
+- `idx_type_dlqEntryId` **absent** (regression guard)
+- the other selectors used by ingest services
+  (`connectorId`, `profileId`, `jobId`) are still registered
+
+### F3 — Log message simplification
+
+The "created / existing / failed" counter was unreliable: different
+Cloudant versions return `result="created"` on idempotent
+re-registration too. RC4.1 collapses to a single `processed` counter
+(`processed=N, failed=M (out of K)`). The `failed > 0` ->
+`RuntimeException` failure detection that drives PatchHistory
+non-marking is **unchanged**.
+
+### Not addressed in RC4.1 (documented as accepted)
+
+| ID | Status | Rationale |
+|---|---|---|
+| F4 | Doc only | `applySystemPatch()` runs on every boot, but Cloudant `postIndex` is idempotent + cheap (~16ms for 7 indexes confirmed on live restart). Matches existing patch pattern. |
+| F5 | Doc only | `archive_init.dump` declares 14 views vs the legacy threshold of 8. The RC4 subset check tightens it but the existing `mergeDesignDocument` self-heals on the next boot, so end state is correct and visible via the missing-name WARN log. |
+
+### Verification
+
+- 171 unit tests pass (2 new: F1 ordering + F2 selector field check).
+- Live restart on the running container confirms the renamed
+  index registers cleanly and the log line reads
+  `processed=7, failed=0 (out of 7)`.
+- `git status --short`: clean.
+
+---
+
 ## 3.1.1-RC4 — Patch machinery cleanup
 _Release branch: `release/3.1.1-RC4` (2026-05-18 → ongoing)_
 

@@ -47,6 +47,59 @@ class Patch_IngestMangoIndexesTest {
     }
 
     @Test
+    void indexSpecs_targetActualSelectorFields_notGuesses() throws Exception {
+        // RC4.1 (F2) regression guard. The pre-fix spec list included
+        // `idx_type_dlqEntryId` whose field doesn't exist in
+        // IngestDeadLetterRecord — the actual selector field is `dlqId`
+        // (IngestJobService:176/234/278/300). Cloudant accepted the
+        // useless index and the DLQ `_find` paths silently fell back to
+        // _all_docs scan. This test reaches into the static INDEXES list
+        // by reflection and asserts the field names match what the
+        // ingest services actually query.
+        @SuppressWarnings("unchecked")
+        java.util.List<Object> indexes = (java.util.List<Object>) reflectStatic("INDEXES");
+
+        java.util.Set<String> names = new java.util.HashSet<>();
+        java.util.Map<String, java.util.List<String>> fields = new java.util.HashMap<>();
+        for (Object spec : indexes) {
+            // IndexSpec is a private record; pull name() and fields() via reflection
+            String name = (String) spec.getClass().getMethod("name").invoke(spec);
+            @SuppressWarnings("unchecked")
+            java.util.List<String> f = (java.util.List<String>) spec.getClass()
+                    .getMethod("fields").invoke(spec);
+            names.add(name);
+            fields.put(name, f);
+        }
+
+        // Positive: the dlqId index is present with the right field
+        assertTrue(names.contains("idx_type_dlqId"),
+                "must register an index for the dlqId selector path");
+        assertEquals(java.util.List.of("type", "dlqId"), fields.get("idx_type_dlqId"));
+
+        // Negative: the dead RC4 name must NOT be there
+        assertFalse(names.contains("idx_type_dlqEntryId"),
+                "RC4's idx_type_dlqEntryId targeted a non-existent field — must not regress");
+
+        // Spot-check the other selectors the ingest services use.
+        // (We don't assert ALL specs here — keeping the test resilient
+        // to future additions — but the ones that already mismatched
+        // selectors in production are pinned.)
+        assertTrue(names.contains("idx_type_connectorId"),
+                "ConnectorDefinitionServiceImpl uses (type, connectorId)");
+        assertTrue(names.contains("idx_type_profileId"),
+                "ImportProfileDefinitionServiceImpl uses (type, profileId)");
+        assertTrue(names.contains("idx_type_jobId"),
+                "IngestJobService uses (type, jobId) for the job record selector");
+    }
+
+    /** Reflect a static field on Patch_IngestMangoIndexes. */
+    private static Object reflectStatic(String fieldName) throws Exception {
+        java.lang.reflect.Field f = Patch_IngestMangoIndexes.class.getDeclaredField(fieldName);
+        f.setAccessible(true);
+        return f.get(null);
+    }
+
+    @Test
     void applyPerRepositoryPatch_isNoOp() {
         // System-wide patch — must not touch per-repo state. We just want
         // to be sure it doesn't blow up and doesn't reach for resources
