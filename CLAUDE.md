@@ -310,6 +310,25 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC16 / RC4 サイクル (2026-05-18〜, 進行中) — パッチ機構の構造改修
+
+ブランチ: `release/3.1.1-RC4` (off RC3 HEAD `9bdfb8383`)
+
+RC3 のマイグレーション静的レビューで pre-existing follow-up として記録した R1-R4 を独立 RC で対応。RC3 で新機能は出さない。
+
+スコープ:
+
+- **R4** (Low): `Patch_StandardCmisViews` の重複登録削除 (`patchService.patchList` から除外、`cmisPostInitializer` 側に統一)
+- **R3** (Medium): `REQUIRED_VIEWS_MAIN = 38` ハードコード → dump から view name set を読み込んで完全一致比較に変更
+- **R1** (High): patch fallback asymmetry 解消 — 全 patch に top-level bean id を付与し、`NemakiPatchInitializationListener` を `Map<String, AbstractNemakiPatch>` 自動収集に変更してハードコード配列を廃止
+- **R2** (Medium): `Patch_IngestMangoIndexes` 新設 — `nemaki_conf` の `connector_definition` / `import_profile_definition` / `ingest_job_record` 向け compound index を起動時登録
+
+設計原則:
+
+- 全 R で existing patch / view / data には触らない (追加のみ)
+- 既存テストは全て pass を維持
+- 各 R に最低 1 件のユニットテストを追加
+
 ### RC15 / RC3 (2026-05-14〜17) — フォルダ管理者への ingest 委譲
 
 ブランチ: `release/3.1.1-RC3`
