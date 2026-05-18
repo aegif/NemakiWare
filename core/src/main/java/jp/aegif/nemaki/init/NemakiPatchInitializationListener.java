@@ -106,64 +106,81 @@ public class NemakiPatchInitializationListener implements ServletContextListener
         }
     }
 
+    /**
+     * Patches that have a guaranteed dependency order (must run first /
+     * in this sequence). Anything not listed here is appended in
+     * Spring-bean-name alphabetical order after these run.
+     *
+     * <p>RC4 (R1): the hardcoded array used to be the source of truth
+     * for the entire patch set. Adding a new patch to
+     * {@code cmisPostInitializer.cmisPatchList} without also remembering
+     * to add it here meant the fallback path silently skipped it (and 8
+     * patches lacked top-level bean ids so they couldn't even be
+     * referenced this way). The listener now uses
+     * {@link WebApplicationContext#getBeansOfType} to collect every
+     * {@link AbstractNemakiPatch} bean, then runs the ordered seeds
+     * below first followed by all remaining patches. PatchHistory
+     * still dedupes per repository, so re-running an already-applied
+     * patch in either order is a no-op.
+     */
+    private static final String[] ORDERED_SEED_PATCHES = {
+        "patch_SystemFolderSetup",        // .system folder — must be first
+        "patch_InitialContentSetup",      // Sites / Technical Documents
+        "patch_StandardCmisViews",        // 38+ standard CMIS views
+        "patch_NarrowUserGroupViews",     // 3.1 upgrade: objectType filter
+        "patch_ChildrenViewReduceCount",  // 2.4 upgrade: _count reduce
+        "patch_TestUserInitialization",
+        "patch_NemakiwareStandardTypes",  // base + secondary type registration
+        "patch_WebhookableSecondaryType", // depends on standard types
+    };
+
     private void applyPatchesFromSpringContext(WebApplicationContext springContext) {
         try {
-            // Patch execution order (CRITICAL: System folder must be first)
-            String[] patchBeanNames = {
-                "patch_SystemFolderSetup",       // Creates .system folder
-                "patch_InitialContentSetup",     // Creates Sites and Technical Documents folders
-                "patch_StandardCmisViews",       // Creates CMIS views
-                "patch_NarrowUserGroupViews",    // Narrows userItemsById/groupItemsById views with objectType filter (3.1 upgrade)
-                "patch_ChildrenViewReduceCount", // Adds _count reduce to children view (2.4 upgrade compatibility)
-                "patch_TestUserInitialization",   // Creates test users
-                "patch_NemakiwareStandardTypes",  // NemakiWare standard types
-                "patch_WebhookableSecondaryType", // Webhookable secondary type for webhook support
-                "patch_WebhookDeliveryLogViews",  // Webhook delivery log views
-                "patch_RetentionMigrationLogViews", // Retention migration log views
-                "patch_ArchiveByCreatorView",     // Archive byCreator view
-                "patch_ArchiveByArchivedByView",  // Archive byArchivedBy view
-                "patch_SearchableArchivesView",   // Searchable archives view
-                "patch_ArchivesByArchivedAtView",  // Archives byArchivedAt view
-                "patch_CloudDriveMetadataSecondaryType", // Cloud Drive metadata secondary type
-                "patch_ExternalIntegrationSecondaryType", // External integration secondary type
-                "patch_RetentionSecondaryTypes",  // Retention secondary types
-                "patch_RetentionExpirationView",  // Retention expiration view
-                "patch_McpServiceAccount",        // Creates MCP service account for API access
-                "patch_RssTokenViews",            // Creates RSS token views for token persistence
-                "patch_WebAuthnCredentialViews",  // WebAuthn credential views (passkey support)
-                "patch_RetentionLastModificationView" // Retention last-modification view (localArchiveAfterDays)
-            };
+            // 1. Pull EVERY patch from the live context — no hardcoded list
+            //    can drift out of sync with cmisPostInitializer's inline list.
+            java.util.Map<String, AbstractNemakiPatch> allPatches =
+                    springContext.getBeansOfType(AbstractNemakiPatch.class);
+            if (allPatches.isEmpty()) {
+                log.warn("No AbstractNemakiPatch beans found in Spring context — nothing to apply");
+                return;
+            }
 
-            for (String beanName : patchBeanNames) {
+            // 2. Build ordered execution list: seed-order first, then the
+            //    remainder in alphabetical bean-name order for determinism.
+            java.util.LinkedHashMap<String, AbstractNemakiPatch> ordered = new java.util.LinkedHashMap<>();
+            for (String seedName : ORDERED_SEED_PATCHES) {
+                AbstractNemakiPatch p = allPatches.get(seedName);
+                if (p != null) {
+                    ordered.put(seedName, p);
+                }
+                // Missing seed beans aren't fatal — they may legitimately
+                // be absent in custom builds. PatchHistory dedupes if both
+                // CMISPostInitializer (primary) and this listener fire.
+            }
+            allPatches.entrySet().stream()
+                    .filter(e -> !ordered.containsKey(e.getKey()))
+                    .sorted(java.util.Map.Entry.comparingByKey())
+                    .forEach(e -> ordered.put(e.getKey(), e.getValue()));
+
+            log.info("NemakiPatchInitializationListener: collected " + ordered.size()
+                    + " patches from Spring context (" + ORDERED_SEED_PATCHES.length
+                    + " ordered seeds + " + (ordered.size() - countPresentSeeds(allPatches))
+                    + " remainder)");
+
+            // 3. Apply.
+            for (java.util.Map.Entry<String, AbstractNemakiPatch> e : ordered.entrySet()) {
+                String beanName = e.getKey();
+                AbstractNemakiPatch patch = e.getValue();
                 try {
-                    log.info("Retrieving patch bean: " + beanName);
-
-                    // Check if bean exists
-                    if (!springContext.containsBean(beanName)) {
-                        log.warn("Patch bean not found: " + beanName + " - skipping");
-                        continue;
-                    }
-
-                    // Get patch bean
-                    Object patchBean = springContext.getBean(beanName);
-
-                    if (!(patchBean instanceof AbstractNemakiPatch)) {
-                        log.error("Bean " + beanName + " is not an AbstractNemakiPatch - skipping");
-                        continue;
-                    }
-
-                    AbstractNemakiPatch patch = (AbstractNemakiPatch) patchBean;
-
-                    log.info("Applying patch: " + patch.getClass().getSimpleName());
+                    log.info("Applying patch: " + patch.getClass().getSimpleName() + " (bean: " + beanName + ")");
                     boolean success = patch.apply();
                     if (success) {
                         log.info("Successfully applied patch: " + patch.getClass().getSimpleName());
                     } else {
                         log.warn("Patch returned failure: " + patch.getClass().getSimpleName());
                     }
-
-                } catch (Exception e) {
-                    log.error("Failed to apply patch: " + beanName, e);
+                } catch (Exception ex) {
+                    log.error("Failed to apply patch: " + beanName, ex);
                     // Continue with other patches even if one fails
                 }
             }
@@ -171,6 +188,14 @@ public class NemakiPatchInitializationListener implements ServletContextListener
         } catch (Exception e) {
             log.error("Error during patch application", e);
         }
+    }
+
+    private int countPresentSeeds(java.util.Map<String, AbstractNemakiPatch> allPatches) {
+        int n = 0;
+        for (String seedName : ORDERED_SEED_PATCHES) {
+            if (allPatches.containsKey(seedName)) n++;
+        }
+        return n;
     }
 
     @Override

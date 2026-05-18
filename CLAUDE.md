@@ -310,24 +310,34 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
-### RC16 / RC4 サイクル (2026-05-18〜, 進行中) — パッチ機構の構造改修
+### RC16 / RC4 (2026-05-18) — パッチ機構の構造改修
 
 ブランチ: `release/3.1.1-RC4` (off RC3 HEAD `9bdfb8383`)
 
-RC3 のマイグレーション静的レビューで pre-existing follow-up として記録した R1-R4 を独立 RC で対応。RC3 で新機能は出さない。
+RC3 のマイグレーション静的レビューで pre-existing follow-up として記録した R1-R4 を独立 RC で完結。RC3 機能には触れない。
 
-スコープ:
+#### 実装内容
 
-- **R4** (Low): `Patch_StandardCmisViews` の重複登録削除 (`patchService.patchList` から除外、`cmisPostInitializer` 側に統一)
-- **R3** (Medium): `REQUIRED_VIEWS_MAIN = 38` ハードコード → dump から view name set を読み込んで完全一致比較に変更
-- **R1** (High): patch fallback asymmetry 解消 — 全 patch に top-level bean id を付与し、`NemakiPatchInitializationListener` を `Map<String, AbstractNemakiPatch>` 自動収集に変更してハードコード配列を廃止
-- **R2** (Medium): `Patch_IngestMangoIndexes` 新設 — `nemaki_conf` の `connector_definition` / `import_profile_definition` / `ingest_job_record` 向け compound index を起動時登録
+- **R4** (Low): `Patch_StandardCmisViews` の重複登録削除 (`patchService.patchList` から除外、`cmisPostInitializer` 側に統一)。起動ログの "Applying patch: standard-cmis-views" 重複が解消
+- **R3** (Medium): `REQUIRED_VIEWS_MAIN = 38` ハードコード → 起動時に `bedroom_init.dump` / `archive_init.dump` から view name set をパースして subset 比較。dump が読めない場合は legacy int threshold にフォールバック。完全性チェックは missing view name の集合を WARN で出力するので運用時に直接対処可能
+- **R1** (High): patch fallback asymmetry 解消
+  - 欠落していた 8 patches に top-level bean id 付与 (`Patch_IngestRelationshipTypes`, `Patch_BusinessRecordMetadataSecondaryType`, `Patch_ChatContextMetadataSecondaryType`, `Patch_MessageMetadataSecondaryType`, `Patch_NoteMetadataSecondaryType`, `Patch_ExternalIntegrationSourceFields`, `Patch_DefaultCloudDriveConnectorProfile`, `Patch_PurviewStateMigration`)
+  - `NemakiPatchInitializationListener` を `WebApplicationContext.getBeansOfType(AbstractNemakiPatch.class)` 自動収集化。ハードコード配列廃止 → 短い `ORDERED_SEED_PATCHES` (8 件) が dependency-sensitive な順序を維持、残りは alphabetical
+  - 例外 / `apply()=false` でも残りの patch は実行継続
+- **R2** (Medium): `Patch_IngestMangoIndexes` 新設、`nemaki_conf` に 7 compound index を起動時登録: `(type, connectorId)`, `(type, sourceArchetype)`, `(type, sourceSystem, sourceArchetype, enabled)`, `(type, profileId)`, `(type, repositoryId)`, `(type, jobId)`, `(type, dlqEntryId)`。Cloudant 側で idempotent (`result="exists"` 返却)。失敗時は `RuntimeException` で PatchHistory 未マークにして次回 retry
 
-設計原則:
+#### 検証
 
-- 全 R で existing patch / view / data には触らない (追加のみ)
-- 既存テストは全て pass を維持
-- 各 R に最低 1 件のユニットテストを追加
+- 17 新規 unit test pass (5 + 6 + 6)
+- 169 ingest+init+patch 関連 test pass
+- live deployment で `Patch_IngestMangoIndexes` が 7 indexes 全て created (CouchDB `_index` 直接確認)
+- RC3 API E2E 21 / 21 pass (RC4 patches 込みでデプロイ)
+
+#### 設計原則 (守られた)
+
+- 既存 patch / view / data に手を入れない (追加のみ)
+- すべて idempotent (PatchHistory + Cloudant `result="exists"`)
+- 既存 test 退行ゼロ
 
 ### RC15 / RC3 (2026-05-14〜17) — フォルダ管理者への ingest 委譲
 

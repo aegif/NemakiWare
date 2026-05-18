@@ -6,6 +6,76 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC4 — Patch machinery cleanup
+_Release branch: `release/3.1.1-RC4` (2026-05-18 → ongoing)_
+
+Closes the four pre-existing follow-ups (R1-R4) recorded in RC3's
+"Known pre-existing follow-ups" section. No new user-facing
+functionality; structural fixes to the patch / view-registration
+machinery so the foundation is solid before any future feature
+work that touches it.
+
+### What changed
+
+| ID | Fix |
+|---|---|
+| **R4** (Low) | `Patch_StandardCmisViews` was registered both in `cmisPostInitializer.cmisPatchList` (primary) and in `patchService.patchList`. `PatchHistory` deduped execution, but the startup log emitted "Applying patch: standard-cmis-views" twice and confused diagnostics. Removed the duplicate from `patchService.patchList`; canonical home is `cmisPostInitializer`. |
+| **R3** (Medium) | `StartupProbeService.REQUIRED_VIEWS_MAIN = 38` int threshold replaced by a NAME-SET subset comparison against the shipped `bedroom_init.dump` (currently 40 views). `DatabasePreInitializer` now reports specifically *which* view names are missing rather than a count gap. Dump-file unreadability (e.g. classpath-stripped builds) falls back to the legacy int threshold so the check never silently passes everything. The integer constants are kept as a backstop. |
+| **R1** (High) | `NemakiPatchInitializationListener.patchBeanNames` hardcoded array of 23 patches replaced with `WebApplicationContext.getBeansOfType(AbstractNemakiPatch.class)` auto-collection. The 8 patches that previously lacked a top-level `bean id` (`Patch_IngestRelationshipTypes`, `Patch_BusinessRecordMetadataSecondaryType`, `Patch_ChatContextMetadataSecondaryType`, `Patch_MessageMetadataSecondaryType`, `Patch_NoteMetadataSecondaryType`, `Patch_ExternalIntegrationSourceFields`, `Patch_DefaultCloudDriveConnectorProfile`, `Patch_PurviewStateMigration`) get one. A short `ORDERED_SEED_PATCHES` array keeps dependency-sensitive patches (`patch_SystemFolderSetup` → `patch_InitialContentSetup` → `patch_StandardCmisViews` → …) in deterministic order; everything else runs in alphabetical bean-name order. A throwing or failing patch no longer halts the run. |
+| **R2** (Medium) | New `Patch_IngestMangoIndexes` registers 7 compound Mango indexes on `nemaki_conf` for the ingest record types: `(type, connectorId)`, `(type, sourceArchetype)`, `(type, sourceSystem, sourceArchetype, enabled)`, `(type, profileId)`, `(type, repositoryId)`, `(type, jobId)`, `(type, dlqEntryId)`. Eliminates the `_all_docs` scan fallback that affected query latency at 10k+ records. Idempotent on Cloudant (`postIndex` returns `result="exists"` for unchanged definitions). |
+
+### Compatibility
+
+- **Existing CouchDB views**: untouched. The R3 change is read-only —
+  it switches the *completeness check* from a count to a name-set
+  subset, but the views themselves are still merged into the design
+  document by `DatabasePreInitializer.mergeDesignDocument` as before.
+- **Patch execution semantics**: every patch still runs through
+  `PatchUtil.isApplied` / `PatchHistory`, so re-runs are no-ops. R1
+  may execute patches in a different (alphabetical) order than the
+  RC3 hardcoded list for the non-seed entries; `PatchHistory`
+  guarantees this doesn't matter for correctness.
+- **Mango index creation (R2)**: idempotent. Existing deployments
+  get the indexes on first RC4 boot; the operation completes in
+  hundreds of milliseconds against a typical `nemaki_conf`.
+
+### Upgrade
+
+No manual steps. Restart the core service; the four patches apply
+automatically. Verify with:
+
+```bash
+docker logs docker-core-1 2>&1 | grep -E "IngestMangoIndexes|patch.*complete"
+curl -u admin:password http://localhost:5984/nemaki_conf/_index | jq '.indexes | length'
+```
+
+Expected: 7 newly-created indexes (or 7 "existing" on re-deploy) plus
+the CouchDB default `_all_docs` index.
+
+### Testing
+
+- 17 new unit tests:
+  - `StartupProbeViewNameSetTest` (5) — dump parsing, caching,
+    immutability, fallback when dump missing
+  - `NemakiPatchInitializationListenerTest` (6) — auto-collect,
+    seed-order preservation, alphabetical remainder, throwing /
+    failing patches don't halt the run
+  - `Patch_IngestMangoIndexesTest` (6) — patch name stability,
+    graceful skip on missing pool / client, failure surfacing
+- Live verification:
+  - All 7 Mango indexes created on first boot (logs + CouchDB
+    `_index` introspection)
+  - 21 / 21 RC3 API E2E still pass with RC4 patches deployed
+
+### References
+
+- Design doc with R1-R4 detail moved from "known follow-ups" to
+  "shipped": [`docs/design/connector-delegation.md`](docs/design/connector-delegation.md) §9.5
+- RC3 history (for context on what these follow-ups closed):
+  [section below](#311-rc3--folder-scoped-external-ingestion-delegation)
+
+---
+
 ## 3.1.1-RC3 — Folder-scoped External Ingestion delegation
 _Release branch: `release/3.1.1-RC3` (2026-05-14 → ongoing)_
 
@@ -230,19 +300,18 @@ upgrade-time round-trip analysis. After deploying RC3:
 - All tests pass on every RC3 commit including the latest
   hardening rounds.
 
-### Known pre-existing follow-ups (out of scope for RC3)
+### Known pre-existing follow-ups (closed in RC4)
 
-Surfaced by the RC3 migration / view-registration static review.
-**None of these are RC3 regressions** — they exist on the RC2 line as
-well. They are recorded here so a follow-up PR can address them
-independently of the delegation feature ship.
+Surfaced by the RC3 migration / view-registration static review and
+**all four shipped in RC4** (see top of this file). The table below
+is retained for traceability.
 
-| ID | Severity | Summary | Suggested follow-up |
+| ID | Severity | Summary | Status |
 |---|---|---|---|
-| R1 | High | `NemakiPatchInitializationListener.patchBeanNames` (fallback path) is asymmetric with `CMISPostInitializer.cmisPatchList` (primary path). 9 patches are missing from the fallback list; 8 of those have no top-level `bean id="..."` in `patchContext.xml`, so even if added to the fallback array `springContext.containsBean()` would skip them. Concretely missing: `patch_IngestRelationshipTypes` and 8 others. Impact: if the primary path dies mid-run, the fallback can never finish what's left. | Add top-level bean ids for all patches, or migrate the listener to collect `Map<String, AbstractNemakiPatch>` automatically and drop the hardcoded array. |
-| R2 | Medium | Mango `_find` queries against `nemaki_conf` (connector / profile / job records) have no registered Cloudant index — `postIndex` is never called anywhere in the codebase. Falls back to full-table scan. Fine at current scale (<1k records), noticeable at 10k+. | Add a startup patch that registers compound indexes on `(type, connectorId)` / `(type, profileId)` / `(type, repositoryId)`. |
-| R3 | Medium | `StartupProbeService.REQUIRED_VIEWS_MAIN = 38` is hard-coded; the shipped `bedroom_init.dump` actually contains 40 views. The check `viewCount < required` passes either way today, but the count drifts over time. A future release that adds or removes views without updating the constant could mis-classify view completeness. | Compute the required-view set from the dump at startup (name-set comparison rather than count threshold). |
-| R4 | Low | `Patch_StandardCmisViews` is registered both in `cmisPostInitializer.cmisPatchList` (primary) and in `patchService.patchList`. `PatchHistory` dedupes execution, but the startup log shows the patch entry twice. | Remove the duplicate registration from `patchService.patchList`. |
+| R1 | High | `NemakiPatchInitializationListener.patchBeanNames` (fallback path) is asymmetric with `CMISPostInitializer.cmisPatchList` (primary path). 9 patches are missing from the fallback list; 8 of those have no top-level `bean id="..."` in `patchContext.xml`. | ✅ Fixed in RC4 — auto-collect from Spring context, 8 missing bean ids added |
+| R2 | Medium | Mango `_find` queries against `nemaki_conf` have no registered Cloudant index. Fine at current scale, noticeable at 10k+. | ✅ Fixed in RC4 — `Patch_IngestMangoIndexes` registers 7 compound indexes |
+| R3 | Medium | `StartupProbeService.REQUIRED_VIEWS_MAIN = 38` is hard-coded; the shipped `bedroom_init.dump` actually contains 40 views. | ✅ Fixed in RC4 — dump-derived name-set subset check |
+| R4 | Low | `Patch_StandardCmisViews` is registered both in `cmisPostInitializer.cmisPatchList` and `patchService.patchList`. Startup log shows the patch entry twice. | ✅ Fixed in RC4 — removed from `patchService.patchList` |
 
 ### References
 

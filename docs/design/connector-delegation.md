@@ -449,12 +449,12 @@ Round-trip behaviour:
    `ConnectorDefinition.hasUsableDelegationScope() == false` /
    `canUseConnectorForDelegatedProfile() == false`, never silently.
 
-### 9.5.2 Known pre-existing follow-ups (NOT addressed in RC3)
+### 9.5.2 Pre-existing follow-ups — all closed in RC4
 
 The static review surfaced 4 pre-existing structural items in the
-patch / view machinery. They are not RC3 regressions; they should be
-fixed independently to keep the delegation work focused. The
-implementation of each is deliberately deferred.
+patch / view machinery. They are not RC3 regressions. **All four
+shipped in RC4** (see `RELEASE_NOTES.md` 3.1.1-RC4). The detailed
+rationale per item is retained below for traceability.
 
 #### R1 (High) — Fallback patch listener is asymmetric with the primary
 
@@ -479,9 +479,11 @@ applies the rest, so the window is bounded — but a deployment that
 loses the primary repeatedly (config error) could stall on the
 missing patches.
 
-Suggested fix (separate PR): add top-level bean IDs for every patch
-class and have the listener collect `Map<String, AbstractNemakiPatch>`
-automatically instead of maintaining a duplicate hardcoded array.
+**Shipped in RC4**: top-level bean IDs added for all 8 missing
+patches; `NemakiPatchInitializationListener` switched to
+`getBeansOfType(AbstractNemakiPatch.class)` with a short
+`ORDERED_SEED_PATCHES` array preserving dependency-sensitive
+ordering. Failing / throwing patches no longer halt the run.
 
 #### R2 (Medium) — Mango `_find` has no registered index
 
@@ -490,11 +492,13 @@ back to `_all_docs` scan for every `_find`. At current scale
 (typical 10-50 connectors + 50-200 profiles per repository) this
 is fine. At 10k+ records per type it would dominate query latency.
 
-Suggested fix (separate PR): new
-`Patch_IngestMangoIndexes` that calls `postIndex` with compound
-fields `(type, connectorId)`, `(type, profileId, repositoryId)`,
-`(type, repositoryId, enabled, schedulerEnabled)`. Add Mango index
-registration to the standard view-merge path.
+**Shipped in RC4**: `Patch_IngestMangoIndexes` registers 7 compound
+indexes on `nemaki_conf` at first boot:
+`(type, connectorId)`, `(type, sourceArchetype)`,
+`(type, sourceSystem, sourceArchetype, enabled)`,
+`(type, profileId)`, `(type, repositoryId)`, `(type, jobId)`,
+`(type, dlqEntryId)`. Idempotent on Cloudant (`postIndex` returns
+`result="exists"` for unchanged definitions).
 
 #### R3 (Medium) — `REQUIRED_VIEWS_MAIN = 38` drifts from the dump
 
@@ -505,10 +509,12 @@ release that adds a 41st view via dump + forgets to bump the
 constant, or removes a view from the dump without removing the
 constant guard, would mis-classify view completeness.
 
-Suggested fix (separate PR): drop the count threshold; parse the
-dump at startup and require the **set** of view names to match.
-Promote the constant to a method that reads the dump once and
-caches the result.
+**Shipped in RC4**: `StartupProbeService.expectedMainViewNames()` /
+`expectedClosetViewNames()` parse the dump on first call and cache
+JVM-wide. `DatabasePreInitializer` does a subset check (existing
+DB must contain every expected name; custom views are tolerated as
+before). Falls back to the legacy int threshold when the dump is
+unreadable so the gate never silently passes everything.
 
 #### R4 (Low) — Duplicate registration of `Patch_StandardCmisViews`
 
@@ -519,9 +525,9 @@ duplicate is functionally harmless, but it produces two
 "Applying patch: standard-cmis-views" log lines on every startup
 and confuses startup diagnostics.
 
-Suggested fix (separate PR): remove the entry from
-`patchService.patchList`; keep `cmisPostInitializer` as the
-canonical home.
+**Shipped in RC4**: duplicate registration removed from
+`patchService.patchList`; `cmisPostInitializer.cmisPatchList` is
+the canonical home.
 
 ## 10. `DenialReason` reference
 

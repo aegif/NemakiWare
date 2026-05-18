@@ -54,12 +54,14 @@
 		<!-- NOTE: These patches will NOT be executed (apply() requires init-method or explicit call) -->
 		<property name="patchList">
 			<list>
-				<!-- Using inline bean definition instead of reference to match CMISPostInitializer pattern -->
-				<bean class="jp.aegif.nemaki.patch.Patch_StandardCmisViews">
-					<property name="patchUtil">
-						<ref bean="patchUtil" />
-					</property>
-				</bean>
+				<!--
+					RC4 (R4): Patch_StandardCmisViews was previously registered
+					here AND in cmisPostInitializer.cmisPatchList. PatchHistory
+					deduped execution per repository, but the startup log
+					emitted "Applying patch: standard-cmis-views" twice and
+					confused diagnostics. Removed here; the canonical home is
+					cmisPostInitializer.cmisPatchList (Path A).
+				-->
 				<!-- Purview state views in nemaki_conf for dead-letter/state queries -->
 				<bean class="jp.aegif.nemaki.patch.Patch_PurviewStateViews">
 					<property name="patchUtil">
@@ -267,6 +269,13 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- RC4 (R2): Mango compound indexes for nemaki_conf _find paths
+				     (ConnectorDefinition / ImportProfileDefinition / IngestJobRecord) -->
+				<bean class="jp.aegif.nemaki.patch.Patch_IngestMangoIndexes">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
@@ -437,6 +446,64 @@
 	</bean>
 
 	<bean id="patch_PurviewStateViews" class="jp.aegif.nemaki.patch.Patch_PurviewStateViews">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<!--
+		RC4 (R1): top-level bean IDs added for the 8 patches that were
+		previously only declared inline inside cmisPostInitializer's
+		cmisPatchList. The fallback NemakiPatchInitializationListener
+		now collects ALL patches by interface from the live Spring
+		context (Map<String, AbstractNemakiPatch>) so the hardcoded
+		array is no longer the source of truth, but keeping
+		explicit ids lets operators reference them in custom
+		application-context overrides if needed.
+	-->
+	<bean id="patch_BusinessRecordMetadataSecondaryType" class="jp.aegif.nemaki.patch.Patch_BusinessRecordMetadataSecondaryType">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_ChatContextMetadataSecondaryType" class="jp.aegif.nemaki.patch.Patch_ChatContextMetadataSecondaryType">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_DefaultCloudDriveConnectorProfile" class="jp.aegif.nemaki.patch.Patch_DefaultCloudDriveConnectorProfile">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_ExternalIntegrationSourceFields" class="jp.aegif.nemaki.patch.Patch_ExternalIntegrationSourceFields">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_IngestRelationshipTypes" class="jp.aegif.nemaki.patch.Patch_IngestRelationshipTypes">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_MessageMetadataSecondaryType" class="jp.aegif.nemaki.patch.Patch_MessageMetadataSecondaryType">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_NoteMetadataSecondaryType" class="jp.aegif.nemaki.patch.Patch_NoteMetadataSecondaryType">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_PurviewStateMigration" class="jp.aegif.nemaki.patch.Patch_PurviewStateMigration">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<!-- RC4 (R2): Mango compound indexes for ingest record types -->
+	<bean id="patch_IngestMangoIndexes" class="jp.aegif.nemaki.patch.Patch_IngestMangoIndexes">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

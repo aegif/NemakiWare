@@ -60,9 +60,88 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    /** Required view counts (shared with DatabasePreInitializer) */
+    /**
+     * Required view counts (shared with DatabasePreInitializer).
+     *
+     * <p><b>Deprecated as the source-of-truth in RC4 (R3)</b>. The
+     * shipped dump now ships 40 main / 8 closet views; bumping the
+     * dump without keeping these constants in sync used to silently
+     * leave installs under-checked. The probe falls back to these
+     * counts only when {@link #expectedViewNamesFromDump} cannot read
+     * the dump file (classpath-stripped builds etc). The new check is
+     * a NAME-SET subset comparison so a dump that adds a view will
+     * automatically tighten the gate without a constant bump, and
+     * custom user-added views are tolerated as before.
+     */
     static final int REQUIRED_VIEWS_MAIN = 38;
     static final int REQUIRED_VIEWS_CLOSET = 8;
+
+    /**
+     * Cached set of view names that the shipped main-repo dump
+     * declares. Read once from {@code /initialization/bedroom_init.dump}
+     * on first call and memoised. Empty set means the dump couldn't be
+     * read; callers fall back to the integer threshold.
+     */
+    private static volatile Set<String> CACHED_MAIN_VIEW_NAMES = null;
+    private static volatile Set<String> CACHED_CLOSET_VIEW_NAMES = null;
+
+    /**
+     * Reads the design-document view names from a shipped dump file
+     * on the classpath. Returns an empty set if the dump can't be
+     * loaded — callers should fall back to the integer threshold.
+     *
+     * <p>The result is memoised at JVM scope; dump files don't change
+     * at runtime so re-reading is wasteful.
+     */
+    static Set<String> expectedViewNamesFromDump(String classpathResource, java.util.concurrent.atomic.AtomicReference<Set<String>> cacheRef) {
+        Set<String> cached = cacheRef.get();
+        if (cached != null) return cached;
+        Set<String> resolved = new java.util.HashSet<>();
+        try (java.io.InputStream in = StartupProbeService.class.getResourceAsStream(classpathResource)) {
+            if (in == null) {
+                log.warn("Cannot read dump file from classpath: " + classpathResource + " — falling back to integer threshold");
+            } else {
+                JsonNode arr = mapper.readTree(in);
+                if (arr != null && arr.isArray()) {
+                    for (JsonNode entry : arr) {
+                        JsonNode doc = entry.get("document");
+                        if (doc == null) continue;
+                        JsonNode id = doc.get("_id");
+                        if (id == null || !id.asText().startsWith("_design/")) continue;
+                        JsonNode views = doc.get("views");
+                        if (views == null || !views.isObject()) continue;
+                        java.util.Iterator<String> names = views.fieldNames();
+                        while (names.hasNext()) resolved.add(names.next());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse dump for expected view names (" + classpathResource + "): " + e.getMessage());
+        }
+        cacheRef.compareAndSet(null, java.util.Collections.unmodifiableSet(resolved));
+        return cacheRef.get();
+    }
+
+    private static final java.util.concurrent.atomic.AtomicReference<Set<String>> MAIN_DUMP_VIEWS_REF =
+            new java.util.concurrent.atomic.AtomicReference<>();
+    private static final java.util.concurrent.atomic.AtomicReference<Set<String>> CLOSET_DUMP_VIEWS_REF =
+            new java.util.concurrent.atomic.AtomicReference<>();
+
+    public static Set<String> expectedMainViewNames() {
+        Set<String> s = CACHED_MAIN_VIEW_NAMES;
+        if (s != null) return s;
+        s = expectedViewNamesFromDump("/initialization/bedroom_init.dump", MAIN_DUMP_VIEWS_REF);
+        CACHED_MAIN_VIEW_NAMES = s;
+        return s;
+    }
+
+    public static Set<String> expectedClosetViewNames() {
+        Set<String> s = CACHED_CLOSET_VIEW_NAMES;
+        if (s != null) return s;
+        s = expectedViewNamesFromDump("/initialization/archive_init.dump", CLOSET_DUMP_VIEWS_REF);
+        CACHED_CLOSET_VIEW_NAMES = s;
+        return s;
+    }
 
     /** Cached set of main repository IDs (populated by discoverNemakiDatabases). */
     private volatile Set<String> mainRepositoryIds = null;

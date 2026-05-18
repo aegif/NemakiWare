@@ -281,34 +281,63 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                     com.fasterxml.jackson.databind.JsonNode designDoc = mapper.readTree(designResponseStr);
 
                     if (designDoc.has("views")) {
-                        int viewCount = designDoc.get("views").size();
-                        // Main repos require 38 views, closet repos require 8 archive views
-                        int requiredViews;
+                        com.fasterxml.jackson.databind.JsonNode viewsNode = designDoc.get("views");
+                        int viewCount = viewsNode.size();
                         boolean isMain = startupProbeService != null
                                 ? startupProbeService.isMainRepository(dbName)
                                 : (!"nemaki_conf".equals(dbName) && !dbName.endsWith("_closet"));
+
+                        // RC4 (R3): switched from int-threshold to view-name
+                        // SET subset comparison. The DB must contain every
+                        // view declared in the shipped dump file. Custom
+                        // user-added views are tolerated as before
+                        // (mergeDesignDocument overlays without deletion).
+                        // When the dump can't be read (classpath-stripped
+                        // build), we keep the legacy int threshold so the
+                        // check never regresses to "always pass".
+                        java.util.Set<String> expected;
+                        int legacyThreshold;
                         if ("nemaki_conf".equals(dbName)) {
-                            requiredViews = 0;
+                            expected = java.util.Collections.emptySet();
+                            legacyThreshold = 0;
                         } else if (isMain) {
-                            requiredViews = StartupProbeService.REQUIRED_VIEWS_MAIN;
+                            expected = StartupProbeService.expectedMainViewNames();
+                            legacyThreshold = StartupProbeService.REQUIRED_VIEWS_MAIN;
                         } else {
-                            requiredViews = StartupProbeService.REQUIRED_VIEWS_CLOSET;
+                            expected = StartupProbeService.expectedClosetViewNames();
+                            legacyThreshold = StartupProbeService.REQUIRED_VIEWS_CLOSET;
                         }
 
-                        if (viewCount < requiredViews) {
-                            if (log.isDebugEnabled()) {
-                                log.debug("CHECKING: Database " + dbName + " has incomplete views (" +
-                                    viewCount + "/" + requiredViews + "), initialization needed");
+                        if (!expected.isEmpty()) {
+                            // Name-set subset check
+                            java.util.Set<String> present = new java.util.HashSet<>();
+                            java.util.Iterator<String> it = viewsNode.fieldNames();
+                            while (it.hasNext()) present.add(it.next());
+                            java.util.Set<String> missing = new java.util.HashSet<>(expected);
+                            missing.removeAll(present);
+                            if (!missing.isEmpty()) {
+                                log.info("CHECKING: Database " + dbName + " is missing required views ("
+                                        + missing.size() + " of " + expected.size() + "): " + missing
+                                        + ", full initialization needed");
+                                return false;
                             }
-                            log.info("CHECKING: Database " + dbName + " has incomplete views (" +
-                                viewCount + "/" + requiredViews + "), full initialization needed");
+                            if (log.isDebugEnabled()) {
+                                log.debug("CHECKING: Database " + dbName + " has all "
+                                        + expected.size() + " required views (+ " + (viewCount - expected.size())
+                                        + " custom)");
+                            }
+                            log.info("CHECKING: Database " + dbName + " has all "
+                                    + expected.size() + " required views");
+                        } else if (viewCount < legacyThreshold) {
+                            // Dump unreadable — fall back to count threshold
+                            log.info("CHECKING: Database " + dbName + " has incomplete views ("
+                                    + viewCount + "/" + legacyThreshold + ", legacy threshold), "
+                                    + "full initialization needed");
                             return false;
+                        } else if (log.isDebugEnabled()) {
+                            log.debug("CHECKING: Database " + dbName + " has " + viewCount
+                                    + " views (legacy threshold " + legacyThreshold + " met)");
                         }
-
-                        if (log.isDebugEnabled()) {
-                            log.debug("CHECKING: Database " + dbName + " has complete views (" + viewCount + ")");
-                        }
-                        log.info("CHECKING: Database " + dbName + " has complete views (" + viewCount + ")");
                     } else {
                         if (log.isDebugEnabled()) {
                             log.debug("CHECKING: Database " + dbName + " design document has no views, initialization needed");
