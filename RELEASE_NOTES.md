@@ -8,8 +8,17 @@ User-facing changelog. For per-commit detail see
 
 ## 3.1.1-RC4.1 — RC4 acceptance findings F1-F3
 _Patch release on `release/3.1.1-RC4` (2026-05-19)._
-_Recommended release tag commit: **`7823b60f7`** (HEAD of the
-acceptance-review hardening pass on top of RC4 `cc63d960e`)._
+_Release tag: **`v3.1.1-RC4.1`**._
+
+Commit anchors:
+- **RC4 baseline** (`cc63d960e`) — R1-R4 patch-machinery cleanup.
+- **RC4.1 code hardening** (`7823b60f7`) — F1-F3 fix on top of
+  `cc63d960e`. This is the commit that ships the actual behaviour
+  changes documented below.
+- **Final tag target** — includes the RC4.1 code hardening above
+  PLUS one or more doc-only release-review fixes layered on top.
+  See `git log v3.1.1-RC4.1 --oneline` for the exact head once the
+  tag is created.
 
 Tightens three findings surfaced by the RC4 acceptance review.
 All changes are small, idempotent, and re-verifiable. No new

@@ -341,8 +341,11 @@ RC3 のマイグレーション静的レビューで pre-existing follow-up と�
 
 #### RC4.1 (2026-05-19) — 受け入れレビュー F1-F3 対応
 
-ブランチ HEAD: `7823b60f7` (RC4 `cc63d960e` への追加 6 ファイル / +229/-16 行)
-**Recommended release tag: `7823b60f7`**
+Commit 構成:
+- **RC4 baseline**: `cc63d960e` (R1-R4 patch-machinery cleanup)
+- **RC4.1 code hardening**: `7823b60f7` (F1-F3 fix。6 files, +229/-16 行)
+- **Final tag target**: 上記 + release-review の doc-only fix を含む。詳細は `git log v3.1.1-RC4.1 --oneline` 参照
+- **Release tag**: `v3.1.1-RC4.1`
 
 acceptance review で挙がった 5 件 (F1-F5) のうち F1-F3 を小規模修正で取込。F4/F5 は documentation-only:
 
