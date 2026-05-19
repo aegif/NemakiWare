@@ -168,6 +168,33 @@ public class ImportProfileDefinitionController {
         if (ctx == null) return errorResponse(HttpStatus.UNAUTHORIZED, "No call context");
         def.setProfileId(profileId);
 
+        // V1 (RC5 ext): handle the auto-disable re-enable handshake.
+        // - On re-enable (existing.enabled=false → def.enabled=true) for
+        //   a profile that the scheduler had auto-disabled, clear the
+        //   marker fields so admin sees a clean state. The audit detail
+        //   records the reset for accountability.
+        // - On any other update, preserve the marker if the caller's
+        //   payload doesn't include it (so an unrelated PUT — e.g.
+        //   flipping rateLimitRpm — doesn't accidentally erase the
+        //   audit trail).
+        boolean clearedAutoDisableMarker = false;
+        ImportProfileDefinition existingForMarker =
+                importProfileDefinitionService.get(profileId);
+        if (existingForMarker != null) {
+            boolean reEnableFromAutoDisable = def.isEnabled()
+                    && !existingForMarker.isEnabled()
+                    && existingForMarker.getLastAutoDisabledAt() != null;
+            if (reEnableFromAutoDisable) {
+                def.setLastAutoDisabledAt(null);
+                def.setLastAutoDisabledReason(null);
+                clearedAutoDisableMarker = true;
+            } else if (def.getLastAutoDisabledAt() == null
+                    && existingForMarker.getLastAutoDisabledAt() != null) {
+                def.setLastAutoDisabledAt(existingForMarker.getLastAutoDisabledAt());
+                def.setLastAutoDisabledReason(existingForMarker.getLastAutoDisabledReason());
+            }
+        }
+
         boolean admin = ingestAuthorizationService.isAdmin(ctx);
         try {
             if (!admin) {
@@ -181,6 +208,9 @@ public class ImportProfileDefinitionController {
                 }
             }
             importProfileDefinitionService.update(def);
+            if (clearedAutoDisableMarker) {
+                auditAutoDisableReset(ctx, def);
+            }
             // If profile was disabled and IDLE is running, stop the IDLE thread
             if (!def.isEnabled() && ingestSchedulerService != null) {
                 ingestSchedulerService.stopIdle(profileId);
@@ -656,6 +686,33 @@ public class ImportProfileDefinitionController {
     private void auditDenial(AuditOperation op, CallContext ctx, ImportProfileDefinition def,
                              DenialReason reason, String message) {
         auditWithReason(op, ctx, def, false, message, reason);
+    }
+
+    /**
+     * V1 (RC5 ext): emit a dedicated audit entry when admin/folder-owner
+     * deliberately clears the scheduler's auto-disable marker. Lets SOC
+     * tooling distinguish "the scheduler turned this profile off" from
+     * "a human turned it back on" — important when investigating a
+     * second auto-disable that follows a re-enable.
+     */
+    private void auditAutoDisableReset(CallContext ctx, ImportProfileDefinition def) {
+        if (auditLogger == null || ctx == null || def == null) return;
+        try {
+            String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("actorUserId", actor);
+            details.put("delegated", def.isDelegated());
+            details.put("profileId", def.getProfileId());
+            details.put("clearedAutoDisableMarker", true);
+            auditLogger.logOperation(
+                    AuditOperation.EXTERNAL_PROFILE_UPDATED,
+                    def.getRepositoryId(), actor,
+                    def.getProfileId() != null ? def.getProfileId() : "",
+                    true, "Auto-disable marker cleared (deliberate re-enable)",
+                    details);
+        } catch (RuntimeException ignored) {
+            // Audit must not break the API path
+        }
     }
 
     private void auditWithReason(AuditOperation op, CallContext ctx, ImportProfileDefinition def,

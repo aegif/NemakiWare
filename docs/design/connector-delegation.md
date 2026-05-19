@@ -690,6 +690,44 @@ The endpoint returns connectors with an empty/null `allowedPrincipalIds`
 as zero matches — a connector that's open to everyone is by definition
 not a delegation question.
 
-Tested by `ConnectorByPrincipalGovernanceTest` (8 cases covering the
-admin gate, missing `repositoryId`, the direct/group/mixed match-type
-matrix, and the empty-`allowedPrincipalIds` skip).
+Tested by `ConnectorByPrincipalGovernanceTest` (13 cases — admin
+gate, missing `repositoryId`, direct/group/mixed match-type matrix,
+empty-`allowedPrincipalIds` skip, principalType resolution
+(USER/GROUP/UNKNOWN paths), and the GROUP-skips-expansion guard).
+
+### 12.4 V1-V3 extensions (RC5, post-acceptance)
+
+Folded into RC5 after the §12.1/§12.3 acceptance review. All
+operator-UX; no runtime contract changes.
+
+**V1: auto-disable marker fields.** `ImportProfileDefinition` gained
+two strings — `lastAutoDisabledAt` (ISO-8601) and
+`lastAutoDisabledReason` — written by the scheduler whenever
+`handleInactiveCreator` flips `enabled=false` after the configured
+streak threshold. The admin UI shows them as a badge + tooltip on the
+profile list so an admin can tell a scheduler-disabled profile from
+one they disabled themselves. `ImportProfileDefinitionController.update`
+clears both fields when the same PUT also re-enables the profile (and
+emits a dedicated `clearedAutoDisableMarker=true` audit detail);
+unrelated PUTs preserve the markers. The new fields are JSON-optional
+so pre-RC5 records read with `lastAutoDisabledAt=null` and behave
+identically.
+
+**V2: `principalType` in governance view.** The governance API now
+classifies the queried principal as `USER`, `GROUP`, or `UNKNOWN` via
+`PrincipalService.getUserById` → `getGroupById`. `UNKNOWN` is the
+safe fallback when neither lookup resolves or `PrincipalService`
+isn't wired (the rest of the response is still produced — the lookup
+never fails closed). For `GROUP` principals the endpoint now
+deliberately skips the `expandPrincipals` call even when
+`expand=true`: NemakiWare groups don't nest, and feeding a non-user
+ID to a PrincipalService that does is an avoidable surprise.
+
+**V3: governance dashboard tab.** `ConnectorGovernanceTab.tsx` —
+admin-only React tab wired into `IntegrationSettings`. Form is
+`principalId` + `expand` toggle (default true); submit calls the
+governance endpoint and renders a table with a colour-coded matchType
+badge (green=direct, blue=via group, orange=direct+group) plus a
+header card showing the principal type and the full
+`expandedPrincipals` list. Operators answering "what does this user
+have access to?" no longer need curl.

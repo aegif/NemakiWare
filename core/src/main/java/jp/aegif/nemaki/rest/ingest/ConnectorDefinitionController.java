@@ -22,6 +22,17 @@ public class ConnectorDefinitionController {
     @Autowired
     private IngestAuthorizationService ingestAuthorizationService;
 
+    /**
+     * V2 (RC5 ext): used by the governance view to classify
+     * {@code principalId} as {@code USER}, {@code GROUP}, or
+     * {@code UNKNOWN}. Resolved {@code required=false} so the rest of the
+     * controller still works when the bean is absent (e.g. in
+     * unit-test setups that don't wire a PrincipalService); the
+     * governance endpoint just reports {@code UNKNOWN} in that case.
+     */
+    @Autowired(required = false)
+    private jp.aegif.nemaki.businesslogic.PrincipalService principalService;
+
     @Autowired
     private HttpServletRequest httpRequest;
 
@@ -252,6 +263,12 @@ public class ConnectorDefinitionController {
                     "principalId and repositoryId are required");
         }
 
+        // V2 (RC5 ext): classify the input principal so the operator
+        // sees explicit context (querying a user vs a group). Falls back
+        // to UNKNOWN when PrincipalService isn't wired or the principal
+        // doesn't resolve — never blocks the lookup.
+        String principalType = resolvePrincipalType(repositoryId, principalId);
+
         // Build the set of principal IDs to test against each connector's
         // allowedPrincipalIds. expand=false → just the principal itself
         // (lets operators view group ACEs as well as user ACEs). expand=true
@@ -262,8 +279,13 @@ public class ConnectorDefinitionController {
         if (expand) {
             // expandPrincipals is fail-closed on lookup error — caller sees
             // the direct-only view, which is the safer governance default.
-            principalsToMatch.addAll(
-                    ingestAuthorizationService.expandPrincipals(repositoryId, principalId));
+            // For GROUP principals the expansion is conceptually a no-op
+            // (NemakiWare's group model doesn't nest), so we skip the
+            // call to avoid PrincipalService impl-dependent surprises.
+            if (!"GROUP".equals(principalType)) {
+                principalsToMatch.addAll(
+                        ingestAuthorizationService.expandPrincipals(repositoryId, principalId));
+            }
         }
 
         var matches = new java.util.ArrayList<Map<String, Object>>();
@@ -302,11 +324,37 @@ public class ConnectorDefinitionController {
 
         var body = new LinkedHashMap<String, Object>();
         body.put("principalId", principalId);
+        body.put("principalType", principalType);
         body.put("repositoryId", repositoryId);
         body.put("expand", expand);
         body.put("expandedPrincipals", new java.util.ArrayList<>(principalsToMatch));
         body.put("matches", matches);
         return ResponseEntity.ok(body);
+    }
+
+    /**
+     * V2 (RC5 ext): classify {@code principalId} as {@code USER},
+     * {@code GROUP}, or {@code UNKNOWN} using the wired
+     * {@link jp.aegif.nemaki.businesslogic.PrincipalService}. UNKNOWN
+     * is the safe fallback when the bean is missing, the lookup
+     * throws, or the principal isn't a user AND isn't a group (e.g.
+     * pseudo-principals like Anyone / Authenticated, or a typo). Never
+     * fails the request — governance lookups are read-only and best
+     * served partial-but-honest over noisy.
+     */
+    private String resolvePrincipalType(String repositoryId, String principalId) {
+        if (principalService == null) return "UNKNOWN";
+        try {
+            if (principalService.getUserById(repositoryId, principalId) != null) return "USER";
+        } catch (RuntimeException ignored) {
+            // fall through to GROUP check
+        }
+        try {
+            if (principalService.getGroupById(repositoryId, principalId) != null) return "GROUP";
+        } catch (RuntimeException ignored) {
+            // fall through to UNKNOWN
+        }
+        return "UNKNOWN";
     }
 
     /**

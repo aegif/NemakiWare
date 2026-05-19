@@ -46,6 +46,7 @@ class ConnectorByPrincipalGovernanceTest {
     private ConnectorDefinitionService connectorService;
     private IngestAuthorizationService authService;
     private HttpServletRequest httpRequest;
+    private jp.aegif.nemaki.businesslogic.PrincipalService principalService;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -53,10 +54,12 @@ class ConnectorByPrincipalGovernanceTest {
         connectorService = mock(ConnectorDefinitionService.class);
         authService = mock(IngestAuthorizationService.class);
         httpRequest = mock(HttpServletRequest.class);
+        principalService = mock(jp.aegif.nemaki.businesslogic.PrincipalService.class);
 
         inject("connectorDefinitionService", connectorService);
         inject("ingestAuthorizationService", authService);
         inject("httpRequest", httpRequest);
+        inject("principalService", principalService);
     }
 
     private void inject(String fieldName, Object value) throws Exception {
@@ -211,5 +214,90 @@ class ConnectorByPrincipalGovernanceTest {
         assertEquals(REPO, body.get("repositoryId"));
         assertEquals(Boolean.TRUE, body.get("expand"));
         assertNotNull(body.get("expandedPrincipals"));
+    }
+
+    // ── V2 (RC5 ext): principalType resolution ─────────────────────────
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void principalType_USER_whenPrincipalServiceResolvesUser() {
+        asAdmin();
+        jp.aegif.nemaki.model.User u = mock(jp.aegif.nemaki.model.User.class);
+        when(principalService.getUserById(REPO, USER)).thenReturn(u);
+        when(connectorService.list()).thenReturn(List.of());
+
+        ResponseEntity<?> resp = controller.listByPrincipal(USER, REPO, false);
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        assertEquals("USER", body.get("principalType"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void principalType_GROUP_whenPrincipalServiceResolvesGroup() {
+        asAdmin();
+        jp.aegif.nemaki.model.Group g = mock(jp.aegif.nemaki.model.Group.class);
+        when(principalService.getUserById(REPO, GROUP)).thenReturn(null);
+        when(principalService.getGroupById(REPO, GROUP)).thenReturn(g);
+        when(connectorService.list()).thenReturn(List.of());
+
+        ResponseEntity<?> resp = controller.listByPrincipal(GROUP, REPO, false);
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        assertEquals("GROUP", body.get("principalType"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void principalType_UNKNOWN_whenNeitherUserNorGroupResolves() {
+        // Pseudo-principal (e.g. "anyone"), or a typo — must not break
+        // the lookup. Match list is still computed against the raw
+        // principalId so direct allowedPrincipalIds hits still surface.
+        asAdmin();
+        when(principalService.getUserById(REPO, "pseudo-anyone")).thenReturn(null);
+        when(principalService.getGroupById(REPO, "pseudo-anyone")).thenReturn(null);
+        when(connectorService.list()).thenReturn(List.of());
+
+        ResponseEntity<?> resp = controller.listByPrincipal("pseudo-anyone", REPO, true);
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        assertEquals("UNKNOWN", body.get("principalType"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void principalType_UNKNOWN_whenPrincipalServiceNotWired() throws Exception {
+        // Defence: ConnectorDefinitionController.principalService is
+        // declared @Autowired(required=false) so the rest of the
+        // controller still works when the bean is missing. Reset to
+        // null to simulate that.
+        java.lang.reflect.Field f = ConnectorDefinitionController.class.getDeclaredField("principalService");
+        f.setAccessible(true);
+        f.set(controller, null);
+
+        asAdmin();
+        when(connectorService.list()).thenReturn(List.of());
+
+        ResponseEntity<?> resp = controller.listByPrincipal(USER, REPO, true);
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        assertEquals("UNKNOWN", body.get("principalType"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void expand_isSkippedForGROUPPrincipal() {
+        // When the input is a group, expansion is a conceptual no-op
+        // (NemakiWare groups don't nest). The endpoint must not call
+        // expandPrincipals to avoid PrincipalService impl-dependent
+        // surprises when fed a non-user ID.
+        asAdmin();
+        jp.aegif.nemaki.model.Group g = mock(jp.aegif.nemaki.model.Group.class);
+        when(principalService.getUserById(REPO, GROUP)).thenReturn(null);
+        when(principalService.getGroupById(REPO, GROUP)).thenReturn(g);
+        when(connectorService.list()).thenReturn(List.of());
+
+        controller.listByPrincipal(GROUP, REPO, true);
+
+        // expandPrincipals must NOT be called for GROUP principals
+        org.mockito.Mockito.verify(authService, org.mockito.Mockito.never())
+                .expandPrincipals(org.mockito.ArgumentMatchers.eq(REPO),
+                        org.mockito.ArgumentMatchers.eq(GROUP));
     }
 }

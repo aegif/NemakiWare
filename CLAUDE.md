@@ -362,8 +362,44 @@ nemakiware.ingest.delegated.inactiveOwnerFailureThreshold=3
 
 #### テスト
 
-- 新規 4 ファイル / 28 テスト (`DelegatedCallContextFactoryTest`, `IngestSchedulerDelegatedRunTest`, `ImportProfileSchedulerGateTest`, `ConnectorByPrincipalGovernanceTest`) + 既存 `IngestSchedulerDelegationSkipTest` (5) で計 33 テスト全 PASS
-- ingest delegation 関連の関連既存テスト合計 97 テスト退行なし
+- 新規 4 ファイル / 36 テスト (`DelegatedCallContextFactoryTest`, `IngestSchedulerDelegatedRunTest`, `ImportProfileSchedulerGateTest`, `ConnectorByPrincipalGovernanceTest`) + 既存 `IngestSchedulerDelegationSkipTest` (5) で計 41 テスト全 PASS
+- ingest delegation 関連の関連既存テスト合計 133 テスト退行なし
+
+#### V1-V3 拡張 (RC5 受け入れレビュー後の vNext 取り込み)
+
+§12.1 / §12.3 受け入れ完了後、operator UX を高める 3 件を同一 RC5 内に追加。再レビュー対象。
+
+##### V1: auto-disable 後の re-enable handshake
+- `ImportProfileDefinition` に `lastAutoDisabledAt` (ISO-8601) / `lastAutoDisabledReason` (String) を追加
+- `IngestSchedulerService.handleInactiveCreator` が auto-disable 時に両 field を書き込み
+  - reason = `CREATOR_USER_INACTIVE: creator '{user}' inactive for {N} consecutive ticks`
+- `ImportProfileDefinitionController.update`:
+  - 既存 `enabled=false` + marker あり → 新 `enabled=true` 受信 → marker クリア + 新 audit `clearedAutoDisableMarker=true`
+  - 無関係な PUT (例: rateLimitRpm のみ flip) で payload に marker 無し → 既存 marker を保持 (audit trail 残置)
+- UI `ImportProfileManagementTab`: `enabled=false` 行に「auto-disabled」橙 Tag + Tooltip で reason 表示
+- audit 追跡: scheduler が disable した event と admin が re-enable した event の両方が SOC で見える
+
+##### V2: governance view に `principalType` 追加
+- `ConnectorDefinitionController.listByPrincipal` 応答 top-level に `principalType` (`USER` / `GROUP` / `UNKNOWN`)
+- `PrincipalService.getUserById` → `getGroupById` で解決 (両方 null = UNKNOWN, lookup 失敗も UNKNOWN, bean 未注入も UNKNOWN)
+- GROUP の場合は `expand=true` でも group 展開 skip (NemakiWare の group は nest しない仕様、PrincipalService impl の挙動依存を回避)
+- UI badge: USER=geekblue / GROUP=purple / UNKNOWN=default + Tooltip
+- 既存の matchType (direct / group / direct+group) の挙動は変更なし、principal type は orthogonal な情報
+
+##### V3: governance UI dashboard
+- 新 tab `ConnectorGovernanceTab.tsx` (admin only, `key='connector-governance'`)
+- Form: principalId 入力 + repositoryId (props) + expand toggle (default true)
+- 検索結果: 4 列 table (Connector / Source / Status / Match)
+- matchType badge 色分け: direct=green / via group=blue / direct+group=orange
+- ヘッダーカード: queried principal + principalType badge + expanded principal IDs list
+- 0 件マッチ時は warning Alert
+- i18n: ja/en に `tabs.connectorGovernance` (短縮、UI tab name のみ)、他は defaultValue 経由
+- 新 TS API: `getConnectorsByPrincipal()` + interface `ConnectorByPrincipalResponse` / `ConnectorPrincipalMatch`
+
+##### V1-V3 テスト追加 (8 新規)
+- `IngestSchedulerDelegatedRunTest`: V1 marker 書き込み (threshold=2 で auto-disable + 両 field set + reason 内容検証)
+- `ImportProfileSchedulerGateTest`: V1 marker クリア (admin re-enable) + V1 marker 保持 (無関係 PUT)
+- `ConnectorByPrincipalGovernanceTest`: V2 principalType (USER / GROUP / UNKNOWN-no-resolve / UNKNOWN-no-bean) + GROUP の expand skip 検証
 
 ### RC16 / RC4 (2026-05-18) — パッチ機構の構造改修
 

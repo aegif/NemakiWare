@@ -102,12 +102,58 @@ nemakiware.ingest.delegated.inactiveOwnerFailureThreshold=3
 ### Tests
 
 - New: `DelegatedCallContextFactoryTest` (8),
-  `IngestSchedulerDelegatedRunTest` (7),
-  `ImportProfileSchedulerGateTest` (5),
-  `ConnectorByPrincipalGovernanceTest` (8) — 28 new unit tests.
+  `IngestSchedulerDelegatedRunTest` (8),
+  `ImportProfileSchedulerGateTest` (7),
+  `ConnectorByPrincipalGovernanceTest` (13) — 36 new unit tests.
 - Regression: `IngestSchedulerDelegationSkipTest` (5) preserved to pin
   the property-off legacy behaviour.
-- Ingest delegation suite: 97 tests, all PASS.
+- Ingest delegation suite: 133 tests, all PASS.
+
+### V1-V3 extensions (post-acceptance vNext fold-in)
+
+After acceptance review of §12.1/§12.3, three operator-UX
+improvements were folded into the same RC5 cycle. None change runtime
+behaviour without a deliberate admin action.
+
+**V1: auto-disable re-enable handshake.** When the scheduler
+auto-disables a delegated profile after N consecutive
+`CREATOR_USER_INACTIVE` ticks, it now records `lastAutoDisabledAt`
+(ISO-8601) and `lastAutoDisabledReason` (e.g.
+`CREATOR_USER_INACTIVE: creator 'alice' inactive for 3 consecutive ticks`)
+on the profile. The admin UI's profile list shows an orange
+"auto-disabled" badge with the reason in a tooltip, so admins can
+distinguish a profile they disabled from one the scheduler shut down.
+On the next admin re-enable (`enabled: true`), the markers are
+cleared and a dedicated audit entry
+(`EXTERNAL_PROFILE_UPDATED` with `details.clearedAutoDisableMarker=true`)
+fires so the audit trail captures the deliberate reset. Unrelated
+edits that don't flip `enabled` preserve the marker.
+
+**V2: `principalType` in governance view.** The governance API now
+classifies the queried principal as `USER`, `GROUP`, or `UNKNOWN`
+(resolved via `PrincipalService`; `UNKNOWN` is the safe fallback for
+pseudo-principals like `Anyone`, typos, or when `PrincipalService` is
+not wired). The new `principalType` field appears at the top level of
+the response. For `GROUP` principals the `expand=true` flag is now a
+no-op (NemakiWare groups don't nest) — avoiding any
+PrincipalService-impl-dependent surprises when fed a non-user ID.
+
+**V3: governance dashboard UI.** New admin-only tab
+"Connector Access" in Integration Settings. Form: principal ID +
+include-group-expansion toggle. The result table shows connector
+name, source system, status (enabled/delegated badges), and the match
+type with the principal IDs that triggered the match. The header
+card surfaces the principal type and the full list of expanded
+principal IDs the server actually checked against. Operators no
+longer need curl to answer "which connectors does this user/group
+have access to?"
+
+### V1-V3 properties
+
+No new properties for V1-V3. Existing
+`nemakiware.ingest.delegated.*` properties continue to control the
+scheduler's auto-disable behaviour; the markers are written
+automatically whenever auto-disable fires.
 
 ---
 

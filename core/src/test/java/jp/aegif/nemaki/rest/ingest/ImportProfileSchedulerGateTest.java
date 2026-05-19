@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -194,5 +195,75 @@ class ImportProfileSchedulerGateTest {
         assertEquals(HttpStatus.FORBIDDEN, resp.getStatusCode());
         assertEquals(DenialReason.DEFAULT_PROFILE_REQUIRES_ADMIN.name(),
                 resp.getBody().get("denialReason"));
+    }
+
+    // ── V1 (RC5 ext): auto-disable marker handshake ───────────────────
+
+    @Test
+    void update_clearsAutoDisableMarker_whenAdminReEnablesDisabledProfile() {
+        // Admin path. Existing profile was auto-disabled by the scheduler
+        // (enabled=false + lastAutoDisabledAt set). Admin re-enables
+        // (enabled=true). Marker must be cleared so a second auto-disable
+        // doesn't carry stale audit context forward.
+        CallContext admin = mock(CallContext.class);
+        when(admin.getUsername()).thenReturn("admin");
+        lenient().when(admin.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(httpRequest.getAttribute("CallContext")).thenReturn(admin);
+        when(authService.isAdmin(admin)).thenReturn(true);
+
+        ImportProfileDefinition existing = scheduledDelegatedDraft();
+        existing.setProfileId("p-1");
+        existing.setEnabled(false);
+        existing.setLastAutoDisabledAt("2026-05-19T15:55:03.701Z");
+        existing.setLastAutoDisabledReason("CREATOR_USER_INACTIVE: creator 'alice' inactive for 3 ticks");
+        when(profileService.get("p-1")).thenReturn(existing);
+
+        ImportProfileDefinition update = scheduledDelegatedDraft();
+        update.setProfileId("p-1");
+        update.setEnabled(true);
+        // Marker fields not sent in payload — common case
+
+        controller.update("p-1", update);
+
+        // After admin re-enable, marker cleared on the payload object
+        // before being persisted.
+        org.junit.jupiter.api.Assertions.assertNull(update.getLastAutoDisabledAt(),
+                "lastAutoDisabledAt must be cleared on re-enable");
+        org.junit.jupiter.api.Assertions.assertNull(update.getLastAutoDisabledReason(),
+                "lastAutoDisabledReason must be cleared on re-enable");
+        verify(profileService).update(update);
+    }
+
+    @Test
+    void update_preservesAutoDisableMarker_whenUnrelatedEditAndPayloadOmitsIt() {
+        // A scripted PUT that flips an unrelated field (e.g. rateLimitRpm)
+        // must NOT accidentally erase the audit-trail marker from a
+        // previously auto-disabled profile.
+        CallContext admin = mock(CallContext.class);
+        when(admin.getUsername()).thenReturn("admin");
+        lenient().when(admin.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(httpRequest.getAttribute("CallContext")).thenReturn(admin);
+        when(authService.isAdmin(admin)).thenReturn(true);
+
+        ImportProfileDefinition existing = scheduledDelegatedDraft();
+        existing.setProfileId("p-2");
+        existing.setEnabled(false);
+        existing.setLastAutoDisabledAt("2026-05-19T15:55:03.701Z");
+        existing.setLastAutoDisabledReason("CREATOR_USER_INACTIVE: ...");
+        when(profileService.get("p-2")).thenReturn(existing);
+
+        ImportProfileDefinition update = scheduledDelegatedDraft();
+        update.setProfileId("p-2");
+        update.setEnabled(false);   // still disabled — admin is just editing other fields
+        update.setLastAutoDisabledAt(null);
+        update.setLastAutoDisabledReason(null);
+
+        controller.update("p-2", update);
+
+        org.junit.jupiter.api.Assertions.assertEquals("2026-05-19T15:55:03.701Z",
+                update.getLastAutoDisabledAt(),
+                "marker must be preserved from existing record");
+        org.junit.jupiter.api.Assertions.assertNotNull(update.getLastAutoDisabledReason());
+        verify(profileService).update(update);
     }
 }

@@ -97,6 +97,30 @@ export interface ConnectorSummary {
   adapterKind?: string;
 }
 
+// V3 (RC5 ext): governance dashboard — "what connectors does principal X have access to?"
+export interface ConnectorPrincipalMatch {
+  connectorId: string;
+  displayName?: string;
+  sourceArchetype?: string;
+  sourceSystem?: string;
+  adapterKind?: string;
+  delegated: boolean;
+  enabled: boolean;
+  matchedPrincipalIds: string[];
+  /** "direct" | "group" | "direct+group" */
+  matchType: 'direct' | 'group' | 'direct+group';
+}
+
+export interface ConnectorByPrincipalResponse {
+  principalId: string;
+  /** "USER" | "GROUP" | "UNKNOWN" — added by V2 (RC5 ext) */
+  principalType: 'USER' | 'GROUP' | 'UNKNOWN';
+  repositoryId: string;
+  expand: boolean;
+  expandedPrincipals: string[];
+  matches: ConnectorPrincipalMatch[];
+}
+
 // ── Profile Types ──────────────────────────────────────────────────
 
 export interface ImportProfileDefinition {
@@ -128,6 +152,14 @@ export interface ImportProfileDefinition {
   delegated?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  /**
+   * V1 (RC5 ext): set by the scheduler when it auto-disabled the
+   * profile because the creator was inactive for N consecutive ticks.
+   * Null on profiles disabled by an admin or never auto-disabled.
+   * Cleared on the next admin re-enable.
+   */
+  lastAutoDisabledAt?: string;
+  lastAutoDisabledReason?: string;
 }
 
 export interface ProfileResponse {
@@ -155,6 +187,25 @@ export async function listConnectorSummary(
   const url = `${CONNECTOR_URL}/summary?repositoryId=${encodeURIComponent(repositoryId)}&targetFolderId=${encodeURIComponent(targetFolderId)}`;
   const res = await fetchWithAuth(url);
   return parseJsonOrThrow<ConnectorSummary[]>(res, 'listConnectorSummary');
+}
+
+/**
+ * V3 (RC5 ext): governance view — admin-only. Returns every delegated
+ * connector whose {@code allowedPrincipalIds} contains
+ * {@code principalId}. With {@code expand=true} also returns connectors
+ * reachable via group expansion (only when the principal is a user;
+ * see {@link ConnectorByPrincipalResponse#principalType}).
+ */
+export async function getConnectorsByPrincipal(
+  principalId: string,
+  repositoryId: string,
+  expand: boolean,
+): Promise<ConnectorByPrincipalResponse> {
+  const url = `${CONNECTOR_URL}/by-principal/${encodeURIComponent(principalId)}`
+    + `?repositoryId=${encodeURIComponent(repositoryId)}`
+    + `&expand=${expand ? 'true' : 'false'}`;
+  const res = await fetchWithAuth(url);
+  return parseJsonOrThrow<ConnectorByPrincipalResponse>(res, 'getConnectorsByPrincipal');
 }
 
 export async function getConnector(connectorId: string): Promise<ConnectorDefinition> {

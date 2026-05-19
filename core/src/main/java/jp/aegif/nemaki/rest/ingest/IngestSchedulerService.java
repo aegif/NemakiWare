@@ -313,9 +313,16 @@ public class IngestSchedulerService {
                 "nemakiware.ingest.delegated.inactiveOwnerFailureThreshold", 3);
         if (streak < threshold) return;
 
-        // Auto-disable: set enabled=false and persist.
+        // Auto-disable: set enabled=false + record WHY/WHEN so the admin
+        // UI can distinguish this from a manual disable. Markers cleared
+        // by ImportProfileDefinitionController on the admin re-enable.
         try {
             profile.setEnabled(false);
+            profile.setLastAutoDisabledAt(java.time.Instant.now().toString());
+            profile.setLastAutoDisabledReason(
+                    DenialReason.CREATOR_USER_INACTIVE.name()
+                    + ": creator '" + creatorUser + "' inactive for "
+                    + streak + " consecutive ticks");
             if (profileService != null) {
                 profileService.update(profile);
             }

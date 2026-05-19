@@ -12,6 +12,7 @@ import { DataplexSettingsTab } from './DataplexSettingsTab';
 import { LineageSettingsTab } from './LineageSettingsTab';
 import PropertyMappingSection from './PropertyMappingSection';
 import { ConnectorManagementTab } from './ConnectorManagementTab';
+import { ConnectorGovernanceTab } from './ConnectorGovernanceTab';
 import { ImportProfileManagementTab } from './ImportProfileManagementTab';
 import { ManualIngestTab } from './ManualIngestTab';
 import { IngestJobsTab } from './IngestJobsTab';
@@ -52,6 +53,7 @@ export function IntegrationSettings({ repositoryId }: IntegrationSettingsProps) 
     { key: 'lineage', label: <Space size={4}>{t('integrationSettings.tabs.lineage')} {beta}</Space>, children: <LineageSettingsTab /> },
     { key: 'property-mapping', label: <Space size={4}>{t('integrationSettings.tabs.propertyMapping')} {beta}</Space>, children: <PropertyMappingSection repositoryId={repositoryId} /> },
     { key: 'connectors', label: <Space size={4}>{t('integrationSettings.tabs.connectors')} {beta}</Space>, children: <ConnectorManagementTab /> },
+    { key: 'connector-governance', label: <Space size={4}>{t('integrationSettings.tabs.connectorGovernance', { defaultValue: 'Connector Access' })} {beta}</Space>, children: <ConnectorGovernanceTab repositoryId={repositoryId} /> },
     { key: 'import-profiles', label: <Space size={4}>{t('integrationSettings.tabs.importProfiles')} {beta}</Space>, children: <ImportProfileManagementTab repositoryId={repositoryId} /> },
     { key: 'manual-ingest', label: <Space size={4}>{t('integrationSettings.tabs.manualIngest')} {beta}</Space>, children: <ManualIngestTab repositoryId={repositoryId} /> },
     { key: 'ingest-jobs', label: <Space size={4}>{t('integrationSettings.tabs.ingestJobs')} {beta}</Space>, children: <IngestJobsTab /> },

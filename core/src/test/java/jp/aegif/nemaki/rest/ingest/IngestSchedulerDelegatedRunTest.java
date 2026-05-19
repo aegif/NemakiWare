@@ -202,6 +202,41 @@ class IngestSchedulerDelegatedRunTest {
     }
 
     @Test
+    void autoDisable_writesMarkerFields_whenInactiveCreatorStreakExceedsThreshold() {
+        // V1 (RC5 ext): the auto-disable path must persist
+        // lastAutoDisabledAt + lastAutoDisabledReason so the admin UI
+        // can distinguish scheduler-disabled from manually-disabled.
+        // threshold=2 (lower than default 3 to keep test fast) + opt-in ON.
+        lenient().when(properties.readValue(
+                eq("nemakiware.ingest.delegated.autoDisableInactiveOwners"))).thenReturn("true");
+        lenient().when(properties.readValue(
+                eq("nemakiware.ingest.delegated.inactiveOwnerFailureThreshold"))).thenReturn("2");
+
+        ImportProfileDefinition p = delegatedProfile();
+        when(profileService.listByRepository(REPO)).thenReturn(List.of(p));
+        when(ctxFactory.buildOrNull(REPO, CREATOR)).thenReturn(null);
+
+        // Tick 1: streak=1, below threshold → no auto-disable
+        scheduler.pollScheduledProfiles();
+        assertTrue(p.isEnabled(), "profile must remain enabled before threshold");
+        org.junit.jupiter.api.Assertions.assertNull(p.getLastAutoDisabledAt());
+
+        // Tick 2: streak=2, hits threshold → auto-disable + marker written
+        scheduler.pollScheduledProfiles();
+        assertFalse(p.isEnabled(), "profile must be auto-disabled at threshold");
+        org.junit.jupiter.api.Assertions.assertNotNull(p.getLastAutoDisabledAt(),
+                "lastAutoDisabledAt must be set");
+        org.junit.jupiter.api.Assertions.assertNotNull(p.getLastAutoDisabledReason(),
+                "lastAutoDisabledReason must be set");
+        assertTrue(p.getLastAutoDisabledReason().contains("CREATOR_USER_INACTIVE"),
+                "reason must reference the structured DenialReason");
+        assertTrue(p.getLastAutoDisabledReason().contains(CREATOR),
+                "reason must include the creator's user ID for operator review");
+        // Persist call must have happened
+        verify(profileService, atLeast(1)).update(p);
+    }
+
+    @Test
     void optInOn_inactiveCreator_doesNotEmitLegacyOptOutWarn() {
         // When the property is ON, the inactive-creator branch should NOT
         // also fire the "scheduler property=false" WARN. We're using the

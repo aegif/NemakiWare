@@ -74,6 +74,21 @@ public class ImportProfileDefinition {
     private String createdAt;
     private String updatedAt;
 
+    /**
+     * RC5 (v2 §12.1 / V1 extension): set by
+     * {@code IngestSchedulerService.handleInactiveCreator} when the
+     * profile is auto-disabled because the creator's UserItem has been
+     * inactive for {@code inactiveOwnerFailureThreshold} consecutive
+     * ticks. Lets the admin UI distinguish a profile the admin
+     * manually disabled from one the scheduler shut down — and shows
+     * WHY. Cleared on the next admin {@code enabled=true} update so
+     * deliberate re-enable starts with a clean slate.
+     *
+     * <p>Null on profiles that were never auto-disabled.
+     */
+    private String lastAutoDisabledAt;
+    private String lastAutoDisabledReason;
+
     public ImportProfileDefinition() {}
 
     // --- Getters / Setters ---
@@ -158,6 +173,12 @@ public class ImportProfileDefinition {
 
     public String getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(String updatedAt) { this.updatedAt = updatedAt; }
+
+    public String getLastAutoDisabledAt() { return lastAutoDisabledAt; }
+    public void setLastAutoDisabledAt(String lastAutoDisabledAt) { this.lastAutoDisabledAt = lastAutoDisabledAt; }
+
+    public String getLastAutoDisabledReason() { return lastAutoDisabledReason; }
+    public void setLastAutoDisabledReason(String lastAutoDisabledReason) { this.lastAutoDisabledReason = lastAutoDisabledReason; }
 
     /**
      * Checks whether the given connector is allowed by this profile.

@@ -303,10 +303,27 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
     },
     {
       title: t('importProfileManagement.columns.enabled'),
-      dataIndex: 'enabled',
       key: 'enabled',
-      width: 80,
-      render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? t('common.on') : t('common.off')}</Tag>,
+      width: 160,
+      render: (_: unknown, record: ImportProfileDefinition) => (
+        <Space direction="vertical" size={2}>
+          <Tag color={record.enabled ? 'green' : 'default'}>
+            {record.enabled ? t('common.on') : t('common.off')}
+          </Tag>
+          {/* V1 (RC5 ext): badge a profile that the scheduler auto-disabled
+              so admins can spot it without comparing timestamps. The
+              tooltip shows the reason (e.g. CREATOR_USER_INACTIVE) so
+              they know whether re-enabling is safe. */}
+          {!record.enabled && record.lastAutoDisabledAt && (
+            <Tooltip title={record.lastAutoDisabledReason || t('importProfileManagement.autoDisabledHint',
+              { defaultValue: 'Auto-disabled by the scheduler' })}>
+              <Tag color="orange" style={{ fontSize: 10 }}>
+                {t('importProfileManagement.autoDisabledBadge', { defaultValue: 'auto-disabled' })}
+              </Tag>
+            </Tooltip>
+          )}
+        </Space>
+      ),
     },
     {
       title: t('importProfileManagement.columns.actions'),

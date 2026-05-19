@@ -3082,6 +3082,7 @@
       "lineageJournalTitle": "Lineage Journal",
       "propertyMapping": "Property Mapping",
       "connectors": "Connectors",
+      "connectorGovernance": "Connector Access",
       "importProfiles": "Import Profiles",
       "manualIngest": "Manual Import",
       "ingestJobs": "Job History",

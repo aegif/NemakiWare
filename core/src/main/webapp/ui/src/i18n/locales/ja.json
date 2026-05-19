@@ -2836,6 +2836,7 @@
       "lineageJournalTitle": "Lineage ジャーナル",
       "propertyMapping": "プロパティマッピング",
       "connectors": "コネクタ",
+      "connectorGovernance": "コネクタアクセス",
       "importProfiles": "インポートプロファイル",
       "manualIngest": "手動インポート",
       "ingestJobs": "ジョブ履歴",
