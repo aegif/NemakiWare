@@ -3317,6 +3317,36 @@
       "sourceSystemHint": "google_drive, notion, imap, slack, teams, ..."
     }
   },
+  "connectorGovernance": {
+    "title": "Connector access governance",
+    "intro": "Enter a user ID or group ID to see every delegated connector that grants access. Use this before removing a user from a group to audit what they will lose access to.",
+    "principalRequired": "Enter a principal ID first.",
+    "principalPlaceholder": "user ID or group ID",
+    "expandLabel": "Include group expansion",
+    "lookup": "Look up",
+    "lookupFailed": "Governance lookup failed",
+    "queriedPrincipal": "Queried principal:",
+    "expandedTag": "expanded",
+    "searchedAgainst": "Searched against principal IDs:",
+    "noMatches": "No delegated connectors grant access to this principal.",
+    "colConnector": "Connector",
+    "colSource": "Source",
+    "colStatus": "Status",
+    "colMatch": "Match",
+    "matchTypeDirect": "direct",
+    "matchTypeGroup": "via group",
+    "matchTypeBoth": "direct + via group",
+    "viaLabel": "via:",
+    "delegated": "delegated",
+    "adminOnly": "admin-only",
+    "unknownHint": "Principal not found as a user or group. May be a pseudo-principal (e.g. Anyone) or a typo.",
+    "simulateRemoveLabel": "Simulate removing:",
+    "simulateRemovePlaceholder": "Pick a principal ID",
+    "simulateClear": "Clear simulation",
+    "simulationNote": "Removing this principal from the expanded set would lose access to {{count}} connector(s).",
+    "simulationLost": "Connectors lost",
+    "simulationOnlyMatchedVia": "Showing only connectors where this principal is the sole matching route"
+  },
   "folderPicker": {
     "title": "Select a target folder",
     "selected": "Selected",
@@ -3352,6 +3382,10 @@
       "none": "None"
     },
     "phase2Warning": "Some settings are not yet enforced at runtime",
+    "autoDisabledBadge": "auto-disabled",
+    "autoDisabledHint": "Auto-disabled by the scheduler after detecting an inactive creator",
+    "autoDisabledFilter": "Show only auto-disabled",
+    "autoDisabledBanner": "{{count}} profiles were auto-disabled by the scheduler. Review the reason before re-enabling.",
     "columns": {
       "profileId": "Profile ID",
       "displayName": "Display Name",

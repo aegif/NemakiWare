@@ -401,6 +401,19 @@ nemakiware.ingest.delegated.inactiveOwnerFailureThreshold=3
 - `ImportProfileSchedulerGateTest`: V1 marker クリア (admin re-enable) + V1 marker 保持 (無関係 PUT)
 - `ConnectorByPrincipalGovernanceTest`: V2 principalType (USER / GROUP / UNKNOWN-no-resolve / UNKNOWN-no-bean) + GROUP の expand skip 検証
 
+#### F1-V5 follow-up 取り込み (V1-V3 acceptance 後)
+
+V1-V3 受け入れレビューで挙げた follow-up (F1-F3 low + V4-V5 vNext) を同 RC5 cycle 内に追加。
+
+- **F1**: 非 admin payload で marker フィールド spoof を防止。`update()` の handshake 前 + `enforceDelegationOnCreate` 末尾で `lastAutoDisabledAt` / `lastAutoDisabledReason` を null に強制。admin は data repair 用に書き込み可 (live 検証済)。
+- **F2**: `connectorGovernance` top-level i18n section を ja/en に明示追加 (~17 keys)、`importProfileManagement.autoDisabled*` 4 keys 追加。defaultValue fallback 廃止 → 翻訳更新時のキャッチが確実に。
+- **F3**: `ConnectorGovernanceTab` の principalId input を Input → `AutoComplete` 化。`CMISService.getUsers/getGroups` で repo の users + groups を mount 時に取得 (limit 500)、`{id} · {label} (USER/GROUP)` 形式で suggest。pseudo-principal / 外部 IdP 由来は free-text 継続。lookup 失敗は AutoComplete 候補を空にして fail-soft。
+- **V4**: `ImportProfileManagementTab` に「自動無効化のみ表示」filter Switch (auto-disabled が 0 件のとき非表示)、`{count}` Tag、`Alert` banner を追加。Admin の triage 用途。
+- **V5**: `ConnectorGovernanceTab` に「principal X を expanded set から外したら失う connector」drill-down を追加。`expandedPrincipals - {queriedPrincipal}` から `Select` で principal を選び、client side で `matchedPrincipalIds.every(p => p === X)` の match のみ表示。server 側追加なし (既存 API のみで成立)。
+
+##### F1-V5 テスト追加 (3 新規 → ingest 計 136 テスト)
+- `ImportProfileSchedulerGateTest`: F1 非 admin update spoof / F1 非 admin create spoof / F1 admin data repair (admin は marker 書込可)
+
 ### RC16 / RC4 (2026-05-18) — パッチ機構の構造改修
 
 ブランチ: `release/3.1.1-RC4` (off RC3 HEAD `9bdfb8383`)

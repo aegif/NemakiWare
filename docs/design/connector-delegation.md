@@ -731,3 +731,71 @@ badge (green=direct, blue=via group, orange=direct+group) plus a
 header card showing the principal type and the full
 `expandedPrincipals` list. Operators answering "what does this user
 have access to?" no longer need curl.
+
+### 12.5 F1-V5 follow-up (RC5, post-V1-V3 review)
+
+Five follow-ups from the V1-V3 acceptance review.
+
+**F1 (Low): marker spoof prevention.** The V1 marker fields are
+scheduler-controlled. A non-admin folder owner had API surface to set
+fake markers on their own delegated profile via POST/PUT payload —
+no security impact (they own the profile) but it could pollute the
+"auto-disabled" badge and audit story. F1 strips
+`lastAutoDisabledAt` + `lastAutoDisabledReason` from non-admin
+payloads in both `enforceDelegationOnCreate` (for create, end of
+method) and at the top of `update()` (before the V1 handshake runs,
+so the handshake operates on clean data). Admin payloads are
+unchanged so admins can manually annotate the marker for data
+repair.
+
+**F2 (Low): complete i18n.** The V1 badge / V4 banner / V3 + V5 tab
+content previously used `t(key, { defaultValue: ... })` exclusively.
+F2 adds explicit ja/en entries under a new top-level
+`connectorGovernance` i18n section (17 keys) and 4 keys under
+`importProfileManagement` for auto-disable bits. Future translation
+updates will surface as missing-key warnings instead of silently
+diverging.
+
+**F3 (Low): principal AutoComplete.** Replaces the plain `Input`
+with an Ant Design `AutoComplete` populated from
+`CMISService.getUsers(repo, {limit:500})` +
+`getGroups(repo, {limit:500})` on mount. Options are
+`{id} · {display name} (USER|GROUP)`; `filterOption` matches against
+the rendered label so typing a partial display name surfaces
+suggestions. Free-text submission is still allowed, which keeps
+pseudo-principals (e.g. `Anyone`) and external-IdP principals not
+yet cached working. Lookup failures soft-fail to an empty
+suggestion list.
+
+**V4: auto-disable triage UI.** `ImportProfileManagementTab` now
+computes `autoDisabledCount = profiles.filter(p => !p.enabled && p.lastAutoDisabledAt).length`
+and surfaces:
+- A `Switch` "Show only auto-disabled" + count `Tag` (hidden when
+  count is 0)
+- A warning `Alert` banner ("N profiles were auto-disabled — review
+  before re-enabling")
+- The existing "auto-disabled" badge per row (already shipped in V1)
+The filter passes a derived `visibleProfiles` to the Table.
+
+**V5: simulate-removal drill-down.** The governance tab adds a
+`Select` populated from `result.expandedPrincipals - {result.principalId}`
+(the queried principal itself isn't a meaningful "remove" target).
+When the admin picks a principal, the matches table re-filters
+client-side to:
+
+```
+matches.filter(m =>
+    m.matchedPrincipalIds.length > 0
+    && m.matchedPrincipalIds.every(p => p === simulateRemove))
+```
+
+i.e. matches where the simulated principal is the **sole** route to
+access. These are exactly the connectors the queried principal would
+lose if removed from that group. A warning Alert with the lost count
+appears above the filtered table. No new server endpoint — the data
+needed is already in the existing `matchedPrincipalIds` field, so V5
+is purely UI.
+
+Tested by `ImportProfileSchedulerGateTest` (+3 F1 cases). V4 / V5 /
+F2 / F3 are UI-only; coverage relies on TS type checking, UI build,
+and live deployment verification.

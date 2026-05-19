@@ -67,6 +67,10 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
   ];
   const [profiles, setProfiles] = useState<ImportProfileDefinition[]>([]);
   const [loading, setLoading] = useState(false);
+  // V4 (RC5 ext): filter toggle — show only profiles the scheduler
+  // auto-disabled (enabled=false + lastAutoDisabledAt set). Lets admins
+  // triage scheduler shutdowns without scanning every profile row.
+  const [onlyAutoDisabled, setOnlyAutoDisabled] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ImportProfileDefinition | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -315,10 +319,9 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
               tooltip shows the reason (e.g. CREATOR_USER_INACTIVE) so
               they know whether re-enabling is safe. */}
           {!record.enabled && record.lastAutoDisabledAt && (
-            <Tooltip title={record.lastAutoDisabledReason || t('importProfileManagement.autoDisabledHint',
-              { defaultValue: 'Auto-disabled by the scheduler' })}>
+            <Tooltip title={record.lastAutoDisabledReason || t('importProfileManagement.autoDisabledHint')}>
               <Tag color="orange" style={{ fontSize: 10 }}>
-                {t('importProfileManagement.autoDisabledBadge', { defaultValue: 'auto-disabled' })}
+                {t('importProfileManagement.autoDisabledBadge')}
               </Tag>
             </Tooltip>
           )}
@@ -342,17 +345,47 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
     },
   ];
 
+  // V4: derived list — filter to auto-disabled when toggle is on, otherwise pass-through
+  const autoDisabledCount = profiles.filter(p => !p.enabled && p.lastAutoDisabledAt).length;
+  const visibleProfiles = onlyAutoDisabled
+    ? profiles.filter(p => !p.enabled && p.lastAutoDisabledAt)
+    : profiles;
+
   return (
     <>
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 16 }} wrap>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           {t('importProfileManagement.create')}
         </Button>
+        {/* V4: filter visible only when at least one auto-disabled
+            profile exists, so the UI stays clean when nothing's wrong. */}
+        {autoDisabledCount > 0 && (
+          <Space size={4}>
+            <Switch
+              size="small"
+              checked={onlyAutoDisabled}
+              onChange={setOnlyAutoDisabled}
+            />
+            <span>{t('importProfileManagement.autoDisabledFilter')}</span>
+            <Tag color="orange">{autoDisabledCount}</Tag>
+          </Space>
+        )}
       </Space>
+
+      {/* V4: banner — informational, only shows when there are auto-disabled
+          profiles. Encourages reading the reason before re-enabling. */}
+      {autoDisabledCount > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={t('importProfileManagement.autoDisabledBanner', { count: autoDisabledCount })}
+        />
+      )}
 
       <Table
         columns={columns}
-        dataSource={profiles}
+        dataSource={visibleProfiles}
         rowKey="profileId"
         loading={loading}
         pagination={false}

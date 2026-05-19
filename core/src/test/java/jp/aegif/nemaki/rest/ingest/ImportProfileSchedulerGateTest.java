@@ -266,4 +266,96 @@ class ImportProfileSchedulerGateTest {
         org.junit.jupiter.api.Assertions.assertNotNull(update.getLastAutoDisabledReason());
         verify(profileService).update(update);
     }
+
+    // ── F1 (RC5 ext): non-admin payload cannot spoof markers ─────────
+
+    @Test
+    void update_nonAdmin_payloadMarker_isStripped() {
+        // A non-admin (folder owner) PUT must NOT be able to set marker
+        // fields via the payload — those are scheduler-controlled. Even
+        // if the payload includes them, the controller strips them
+        // before the handshake runs.
+        nonAdminCtx();
+        when(properties.readValue("nemakiware.ingest.delegated.schedulerEnabled"))
+                .thenReturn("true");
+
+        ImportProfileDefinition existing = scheduledDelegatedDraft();
+        existing.setProfileId("p-spoof");
+        existing.setEnabled(true);
+        existing.setLastAutoDisabledAt(null);    // never auto-disabled
+        existing.setLastAutoDisabledReason(null);
+        when(profileService.get("p-spoof")).thenReturn(existing);
+
+        ImportProfileDefinition update = scheduledDelegatedDraft();
+        update.setProfileId("p-spoof");
+        update.setEnabled(true);
+        // Spoof attempt: payload sets marker fields
+        update.setLastAutoDisabledAt("2099-12-31T00:00:00Z");
+        update.setLastAutoDisabledReason("FAKE: I disabled myself yesterday");
+
+        controller.update("p-spoof", update);
+
+        // Marker fields must be null — payload values discarded
+        org.junit.jupiter.api.Assertions.assertNull(update.getLastAutoDisabledAt(),
+                "non-admin payload marker must be stripped (F1)");
+        org.junit.jupiter.api.Assertions.assertNull(update.getLastAutoDisabledReason(),
+                "non-admin payload marker must be stripped (F1)");
+    }
+
+    @Test
+    void create_nonAdmin_payloadMarker_isStripped() {
+        // Same F1 invariant on create path. A non-admin creating a
+        // delegated profile cannot ship it with a pre-set marker.
+        nonAdminCtx();
+        when(properties.readValue("nemakiware.ingest.delegated.schedulerEnabled"))
+                .thenReturn("true");
+
+        ImportProfileDefinition draft = scheduledDelegatedDraft();
+        draft.setLastAutoDisabledAt("2099-01-01T00:00:00Z");
+        draft.setLastAutoDisabledReason("FAKE marker from creation payload");
+        when(profileService.create(any())).thenAnswer(inv -> {
+            ImportProfileDefinition saved = inv.getArgument(0);
+            saved.setProfileId("new-id");
+            return saved;
+        });
+
+        controller.create(draft);
+
+        org.junit.jupiter.api.Assertions.assertNull(draft.getLastAutoDisabledAt(),
+                "non-admin create payload marker must be stripped (F1)");
+        org.junit.jupiter.api.Assertions.assertNull(draft.getLastAutoDisabledReason(),
+                "non-admin create payload marker must be stripped (F1)");
+    }
+
+    @Test
+    void update_admin_canStillWriteMarker_forDataRepair() {
+        // Admin path is trusted for the marker field — admins may need
+        // to fix corrupted records manually. The strip only fires for
+        // non-admin.
+        CallContext admin = mock(CallContext.class);
+        when(admin.getUsername()).thenReturn("admin");
+        lenient().when(admin.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(httpRequest.getAttribute("CallContext")).thenReturn(admin);
+        when(authService.isAdmin(admin)).thenReturn(true);
+
+        ImportProfileDefinition existing = scheduledDelegatedDraft();
+        existing.setProfileId("p-admin-repair");
+        existing.setEnabled(false);                   // currently disabled, no marker
+        existing.setLastAutoDisabledAt(null);
+        when(profileService.get("p-admin-repair")).thenReturn(existing);
+
+        ImportProfileDefinition update = scheduledDelegatedDraft();
+        update.setProfileId("p-admin-repair");
+        update.setEnabled(false);                     // stay disabled (not a re-enable)
+        update.setLastAutoDisabledAt("2026-05-19T20:00:00Z");
+        update.setLastAutoDisabledReason("Manually annotated by admin");
+
+        controller.update("p-admin-repair", update);
+
+        // Admin write of marker honoured
+        org.junit.jupiter.api.Assertions.assertEquals("2026-05-19T20:00:00Z",
+                update.getLastAutoDisabledAt());
+        org.junit.jupiter.api.Assertions.assertEquals("Manually annotated by admin",
+                update.getLastAutoDisabledReason());
+    }
 }

@@ -155,6 +155,58 @@ No new properties for V1-V3. Existing
 scheduler's auto-disable behaviour; the markers are written
 automatically whenever auto-disable fires.
 
+### F1-V5 hardening + UX (post-V1-V3 review fold-in)
+
+After the V1-V3 acceptance review, three Low-priority hardenings
+(F1-F3) and two operator-UX extensions (V4-V5) landed on the same RC5
+cycle. None change runtime contracts; the API surface gains nothing
+new (V5 is computed client-side from the existing governance response).
+
+**F1: marker spoof prevention.** Non-admin payloads on
+`POST /v1/admin/import-profiles` and
+`PUT /v1/admin/import-profiles/{id}` can no longer set or modify
+`lastAutoDisabledAt` / `lastAutoDisabledReason` via the payload — the
+controller strips them before the V1 handshake runs. Admin payloads
+can still write the markers for data-repair scenarios. The handshake
+itself (re-enable clears, unrelated PUT preserves) is unchanged.
+
+**F2: complete i18n entries.** All UI strings for the
+`connectorGovernance` tab and the `importProfileManagement`
+auto-disable badge/filter/banner now have explicit ja/en entries
+(previously the TSX called `t()` with `defaultValue` only). Adds 17
+keys to the `connectorGovernance` top-level section plus 4 keys under
+`importProfileManagement` for the V1/V4 UI bits.
+
+**F3: principal AutoComplete.** The governance tab's principal-ID
+input is now an Ant Design `AutoComplete`, pre-populated with the
+repository's users + groups (limit 500 each, loaded once on mount).
+Each option renders as `{id} · {display name} (USER|GROUP)`. Free-text
+entry is preserved for pseudo-principals (e.g. `Anyone`) or external
+IdP principals not yet cached locally. Lookup failures fall back to
+an empty suggestion list — the input still works.
+
+**V4: auto-disable triage UI.** The Import Profiles tab now shows
+a "Show only auto-disabled" filter Switch + a count Tag + a warning
+Alert banner whenever at least one profile has been auto-disabled by
+the scheduler. The filter is hidden when no auto-disabled profiles
+exist, so the UI stays clean for healthy deployments.
+
+**V5: simulate principal removal.** The governance tab now offers
+a "Simulate removing" dropdown populated from the expansion result
+(minus the queried principal itself). Picking a principal filters the
+results table to matches where that principal was the **sole**
+matching route — i.e. the connectors the user would actually lose if
+removed from that group. Computed client-side from the existing
+`matchedPrincipalIds` data, so no new API surface and no extra round
+trip.
+
+### F1-V5 tests
+
+- `ImportProfileSchedulerGateTest`: +3 cases (F1 non-admin update
+  spoof, F1 non-admin create spoof, F1 admin write preserved) — 10
+  total cases in this class.
+- Ingest delegation suite: **136 tests, all PASS** (was 133).
+
 ---
 
 ## 3.1.1-RC4.1 — RC4 acceptance findings F1-F3

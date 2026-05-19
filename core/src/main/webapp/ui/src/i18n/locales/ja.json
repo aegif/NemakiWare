@@ -3071,6 +3071,36 @@
       "sourceSystemHint": "google_drive, notion, imap, slack, teams, ..."
     }
   },
+  "connectorGovernance": {
+    "title": "コネクタアクセス権の調査",
+    "intro": "ユーザー ID またはグループ ID を入力して、その principal がアクセス可能な委譲コネクタを一覧表示します。グループからユーザーを削除する前に、何にアクセス出来なくなるかを確認する用途で利用してください。",
+    "principalRequired": "principal ID を入力してください",
+    "principalPlaceholder": "ユーザー ID またはグループ ID",
+    "expandLabel": "グループ展開を含める",
+    "lookup": "検索",
+    "lookupFailed": "ガバナンス検索に失敗しました",
+    "queriedPrincipal": "検索対象 principal:",
+    "expandedTag": "展開済み",
+    "searchedAgainst": "照合した principal ID:",
+    "noMatches": "この principal にアクセス権を付与する委譲コネクタはありません",
+    "colConnector": "コネクタ",
+    "colSource": "ソース",
+    "colStatus": "状態",
+    "colMatch": "マッチ",
+    "matchTypeDirect": "direct",
+    "matchTypeGroup": "via group",
+    "matchTypeBoth": "direct + via group",
+    "viaLabel": "経由:",
+    "delegated": "委譲済み",
+    "adminOnly": "admin 専用",
+    "unknownHint": "user / group として解決できませんでした。pseudo-principal (例: Anyone) または typo の可能性があります。",
+    "simulateRemoveLabel": "削除をシミュレート:",
+    "simulateRemovePlaceholder": "principal ID を選択",
+    "simulateClear": "シミュレーション解除",
+    "simulationNote": "この principal を expanded 集合から削除した場合、{{count}} 件の connector アクセスが失われます。",
+    "simulationLost": "失う connector",
+    "simulationOnlyMatchedVia": "現在この principal だけが経由している連結器のみ表示しています"
+  },
   "folderPicker": {
     "title": "対象フォルダを選択",
     "selected": "選択中",
@@ -3101,6 +3131,10 @@
       "none": "なし"
     },
     "phase2Warning": "一部の設定はまだランタイムで適用されません",
+    "autoDisabledBadge": "自動無効化",
+    "autoDisabledHint": "スケジューラが creator inactive を検知して自動的に無効化しました",
+    "autoDisabledFilter": "自動無効化のみ表示",
+    "autoDisabledBanner": "{{count}} 件のプロファイルがスケジューラによって自動無効化されています。reason を確認してから再有効化してください。",
     "columns": {
       "profileId": "プロファイルID",
       "displayName": "表示名",

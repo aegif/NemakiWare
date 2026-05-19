@@ -168,6 +168,16 @@ public class ImportProfileDefinitionController {
         if (ctx == null) return errorResponse(HttpStatus.UNAUTHORIZED, "No call context");
         def.setProfileId(profileId);
 
+        // F1 (RC5 ext): a non-admin must never be able to spoof the
+        // scheduler-controlled marker fields via the PUT payload. Strip
+        // them BEFORE the V1 handshake so the rest of update() operates
+        // on clean data. Admin payloads are trusted: admins can audit
+        // and adjust the markers manually if needed (e.g. data repair).
+        if (!ingestAuthorizationService.isAdmin(ctx)) {
+            def.setLastAutoDisabledAt(null);
+            def.setLastAutoDisabledReason(null);
+        }
+
         // V1 (RC5 ext): handle the auto-disable re-enable handshake.
         // - On re-enable (existing.enabled=false → def.enabled=true) for
         //   a profile that the scheduler had auto-disabled, clear the
@@ -537,6 +547,13 @@ public class ImportProfileDefinitionController {
             def.setSchedulerEnabled(false);
         }
         def.setDefaultProfile(false);
+        // F1 (RC5 ext): scheduler-controlled marker fields. A non-admin
+        // payload that tries to set these is ignored — only the scheduler
+        // (admin-level code path) is allowed to write them. The handshake
+        // in update() handles preservation from the existing record for
+        // admin path; on create, the markers must always start null.
+        def.setLastAutoDisabledAt(null);
+        def.setLastAutoDisabledReason(null);
         return null;
     }
 
@@ -621,6 +638,9 @@ public class ImportProfileDefinitionController {
             def.setSchedulerEnabled(false);
         }
         def.setDefaultProfile(false);
+        // Marker fields are governed exclusively by the update() handshake
+        // (above this method's call). F1 ensures non-admin payloads can't
+        // spoof markers by stripping them BEFORE the handshake runs.
         return null;
     }
 
