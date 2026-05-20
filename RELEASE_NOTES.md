@@ -170,9 +170,13 @@ reviewers and explicitly tracks this tag-vs-branch divergence.
 | R3 | RC5.4 feature commit `6283afc96` | V7 audit fires on explicit "Simulate (audit)" button (was 800ms debounce) |
 | R4 | RC5.4 feature commit `6283afc96` | `autoDisabledSince` malformed → HTTP 400 (was 200 pass-through with WARN) |
 
-After RC5.4: **the only outstanding follow-up is R1** — and R1 is
-infra/ops integration that lives outside this repository, not
-NemakiWare code work.
+After RC5.4: **outstanding follow-ups are R1 and R5**.
+- R1 is infra/ops integration that lives outside this repository,
+  not NemakiWare code work.
+- R5 is a small denialReason-label refactor inside
+  `IngestSchedulerService`; safety property is already preserved,
+  only the emitted audit label is mislabeled in a microsecond race
+  window. Not a release blocker.
 
 ---
 

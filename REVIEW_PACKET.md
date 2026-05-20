@@ -51,8 +51,10 @@ Cumulative from `v3.1.1-RC4.1`:
   what-if tooling.
 - **Auto-disabled triage UI** (RC5 V1-V4) — markers + filter +
   banner + custom-N-days window.
-- **Server-side principal search** (RC5.3 W1) — `autoDisabledSince`
-  filter for the import-profiles list.
+- **Server-side auto-disabled profile filtering** (RC5.3 W1) —
+  `autoDisabledSince` query param on `GET /v1/admin/import-profiles`
+  pushes V6's client-side "last N days" window to the server for
+  large profile lists.
 - **RC5.4 closure code corrections** — R3 explicit audit button +
   R4 strict 400 on malformed `autoDisabledSince`.
 
