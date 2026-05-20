@@ -131,10 +131,16 @@ class ImportProfileSinceFilterTest {
     }
 
     @Test
-    void malformedCutoff_failsSafe_returnsAllProfilesWithoutFilter() {
-        // UI bug ships garbage → filter must drop silently rather than
-        // 400 (preserves admin tab usability while a malformed value
-        // gets WARN-logged for investigation).
+    void malformedCutoff_returns400_R4Strictness() {
+        // R4 (RC5.4): malformed cutoff is now strictly rejected with
+        // 400, replacing the RC5.3 fail-safe pass-through. The
+        // closure review flagged the pass-through as risky because a
+        // typo could silently return the full list and let an
+        // operator misread "no recent shutdowns". The RC5.3 UI only
+        // ever ships Date.toISOString(), so this strictness affects
+        // only CLI / scripting callers with malformed input — for
+        // them, an explicit 400 is more useful than a silent
+        // pass-through.
         when(profileService.list()).thenReturn(List.of(
                 profile("p-active", null),
                 profile("p-recent", Instant.now().toString())
@@ -142,9 +148,25 @@ class ImportProfileSinceFilterTest {
 
         ResponseEntity<List<ImportProfileDefinition>> resp = controller.list(null, "not-a-timestamp");
 
-        assertEquals(HttpStatus.OK, resp.getStatusCode());
-        assertEquals(2, resp.getBody().size(),
-                "malformed cutoff must pass through, not 400");
+        assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode(),
+                "malformed cutoff must be 400 (R4 strict, not RC5.3 pass-through)");
+    }
+
+    @Test
+    void emptyStringCutoff_stillTreatedAsAbsent_passThrough_evenWithR4() {
+        // R4 strictness applies only to non-empty malformed input.
+        // Empty / null still pass through (treat as "no filter requested").
+        when(profileService.list()).thenReturn(List.of(
+                profile("p-recent", Instant.now().toString())
+        ));
+
+        ResponseEntity<List<ImportProfileDefinition>> respEmpty = controller.list(null, "");
+        ResponseEntity<List<ImportProfileDefinition>> respNull = controller.list(null, null);
+
+        assertEquals(HttpStatus.OK, respEmpty.getStatusCode(),
+                "empty string remains pass-through (R4 only catches malformed non-empty)");
+        assertEquals(HttpStatus.OK, respNull.getStatusCode(),
+                "null remains pass-through");
     }
 
     @Test

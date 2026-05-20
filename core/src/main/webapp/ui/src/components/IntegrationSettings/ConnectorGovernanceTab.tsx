@@ -160,37 +160,40 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
     };
   }, []);
 
-  // W2 (RC5.3): debounced server-side simulate-remove call. The UI
-  // keeps client-side computation for instant filter feedback, but
-  // also fires the server endpoint so the audit pipeline captures
-  // who-asked-what for SOC review. Fire-and-forget — we don't use
-  // the server response for display (client-computed result is the
-  // exact same thing). 800 ms debounce avoids spamming audit on
-  // intermediate multi-select states; selection that settles for
-  // <800 ms doesn't audit, which matches operator intent.
-  const simulateAuditTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!result || simulateRemove.length === 0) return undefined;
-    if (simulateAuditTimerRef.current) clearTimeout(simulateAuditTimerRef.current);
-    simulateAuditTimerRef.current = setTimeout(() => {
-      simulateRemovePrincipals(
+  // R3 (RC5.4): explicit "Simulate (audit)" button replaces the
+  // RC5.3 800 ms debounce-fire pattern. Audit entries now map 1:1 to
+  // deliberate operator decisions instead of "every time the
+  // multi-select settled for >800 ms". SOC reviewers can read each
+  // EXTERNAL_GOVERNANCE_SIMULATE entry as "an admin explicitly
+  // asked this question" rather than "a multi-select traversal
+  // happened to pass a quiet threshold". Client-computed display
+  // unchanged — the button only triggers the audit round-trip.
+  const [simulateAuditing, setSimulateAuditing] = useState(false);
+  const [simulateLastAuditedAt, setSimulateLastAuditedAt] = useState<string | null>(null);
+  const triggerSimulateAudit = useCallback(async () => {
+    if (!result || simulateRemove.length === 0) return;
+    setSimulateAuditing(true);
+    try {
+      await simulateRemovePrincipals(
         result.principalId,
         result.repositoryId,
         result.expand,
         simulateRemove,
-      ).catch(() => {
-        // Audit failure is non-fatal — client-computed result still
-        // displays correctly. Server-side WARN log captures the
-        // failure for ops investigation.
-      });
-    }, 800);
-    return () => {
-      if (simulateAuditTimerRef.current) {
-        clearTimeout(simulateAuditTimerRef.current);
-        simulateAuditTimerRef.current = null;
-      }
-    };
-  }, [result, simulateRemove]);
+      );
+      setSimulateLastAuditedAt(new Date().toISOString());
+    } catch (err) {
+      message.error(t('connectorGovernance.simulateAuditFailed')
+        + ': ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSimulateAuditing(false);
+    }
+  }, [result, simulateRemove, message, t]);
+
+  // Reset audit-timestamp marker whenever the simulate selection
+  // changes — the previous audit only matched the previous selection.
+  useEffect(() => {
+    setSimulateLastAuditedAt(null);
+  }, [simulateRemove]);
 
   const onSubmit = async (values: { principalId: string; expand: boolean }) => {
     const pid = values.principalId?.trim();
@@ -407,6 +410,25 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
                     <Button size="small" onClick={() => setSimulateRemove([])}>
                       {t('connectorGovernance.simulateClear')}
                     </Button>
+                  )}
+                  {/* R3 (RC5.4): explicit audit button. Client-computed
+                      display is instant; this button is what records the
+                      operator's deliberate query in the audit log. */}
+                  {simulateRemove.length > 0 && (
+                    <Tooltip title={t('connectorGovernance.simulateAuditHint')}>
+                      <Button
+                        size="small"
+                        type="primary"
+                        ghost
+                        loading={simulateAuditing}
+                        disabled={simulateLastAuditedAt !== null}
+                        onClick={triggerSimulateAudit}
+                      >
+                        {simulateLastAuditedAt
+                          ? t('connectorGovernance.simulateAudited')
+                          : t('connectorGovernance.simulateAudit')}
+                      </Button>
+                    </Tooltip>
                   )}
                   {simulateRemove.length >= SIMULATE_REMOVE_MAX && (
                     <Tag color="orange" style={{ fontSize: 10 }}>

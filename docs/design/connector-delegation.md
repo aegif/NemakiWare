@@ -957,7 +957,25 @@ the audit fires without slowing the UI.
 addition. Per the existing audit-stability contract, the enum name
 is now part of the audit-trail and may never be renamed or removed.
 
-### 12.12 vNext (separate scope, not RC5.x)
+### 12.12 ~~RC5.4: R3 + R4 closure review code corrections~~ (shipped)
+
+Folded into RC5.4 — code corrections for the two RC5.3 closure-review
+findings the operator opted to fix before external review.
+
+**R3: V7 audit on explicit button.** Replaces the RC5.3 800 ms
+debounce useEffect with a `Simulate (audit)` button. Click ⇒ one
+`EXTERNAL_GOVERNANCE_SIMULATE` audit entry. State-gated so repeated
+audit of the same query requires a selection change. Net SOC
+benefit: audit entries map 1:1 to deliberate operator decisions.
+
+**R4: `autoDisabledSince` malformed → 400.** Strict ISO-8601 parse
+in `applyAutoDisabledSinceFilter` throws `IllegalArgumentException`
+on unparseable non-empty input; controller returns 400. Empty / null
+still pass through. The shipped UI flow ships only
+`Date.toISOString()` so the strictness is invisible to the UI; CLI
+/ scripting callers now get an immediate 400 on typos.
+
+### 12.13 vNext (separate scope, not RC5.x)
 
 Bigger ideas that came up during RC5.1 review but are explicitly
 NOT planned for any RC5 patch.

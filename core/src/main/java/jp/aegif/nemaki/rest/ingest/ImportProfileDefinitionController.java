@@ -105,13 +105,16 @@ public class ImportProfileDefinitionController {
         List<ImportProfileDefinition> all = (repositoryId != null && !repositoryId.isBlank())
                 ? importProfileDefinitionService.listByRepository(repositoryId)
                 : importProfileDefinitionService.list();
-        // W1 (RC5.3): server-side "auto-disabled since" filter. Passes
-        // through `all` unchanged when the param is absent or malformed,
-        // so existing clients (and the non-admin path below) see no
-        // change. Malformed ISO-8601 → WARN log + pass-through rather
-        // than 400, to keep the endpoint forgiving for shaky callers
-        // (e.g. a UI bug that ships an empty string).
-        all = applyAutoDisabledSinceFilter(all, autoDisabledSince);
+        // W1 (RC5.3): server-side "auto-disabled since" filter.
+        // R4 (RC5.4): malformed ISO-8601 → 400 BAD_REQUEST (was
+        // fail-safe pass-through in RC5.3). Empty / missing param
+        // still passes through (no filter applied) — only malformed
+        // non-empty values 400.
+        try {
+            all = applyAutoDisabledSinceFilter(all, autoDisabledSince);
+        } catch (IllegalArgumentException badInput) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
         if (admin) return ResponseEntity.ok(all);
         // Non-admin: profile-by-profile permission filter (no full folder-tree scan).
         // canManageProfileForFolder does getFolder + calculateAcl + group expansion
@@ -717,22 +720,29 @@ public class ImportProfileDefinitionController {
     }
 
     /**
-     * W1 (RC5.3): server-side analogue of V6's client-side
+     * W1 (RC5.3) / R4 (RC5.4): server-side analogue of V6's client-side
      * "auto-disabled within last N days" filter. The UI ships
      * `autoDisabledSince` as an ISO-8601 instant (the cutoff). A
      * profile passes if it carries a `lastAutoDisabledAt` that is
      * &gt;= cutoff.
      *
-     * <p>Forgiving on malformed input — empty string, null,
-     * unparseable timestamp all result in pass-through (no filter
-     * applied) plus a WARN log. The UI controls the cutoff, so 400
-     * would just escalate a UI bug into a broken admin tab; the
-     * filter is non-load-bearing and skipping it is safe.
+     * <p>R4 (RC5.4): strict on malformed input — throws
+     * {@link IllegalArgumentException} so the controller returns 400.
+     * Pre-RC5.4 behaviour was fail-safe pass-through, which the
+     * closure review flagged as risky because a typo could
+     * silently return the full list and let an operator misread
+     * "no recent shutdowns". The RC5.3 UI only ever ships
+     * `Date.toISOString()` output, so this strictness has no
+     * impact on the shipped UI flow; it surfaces UI bugs / CLI
+     * typos immediately.
      *
      * <p>Profiles without a `lastAutoDisabledAt` (never auto-disabled
      * or marker cleared on re-enable) do NOT pass the filter — the
      * point of the filter is to surface recent scheduler shutdowns,
      * which only marker-bearing profiles can be.
+     *
+     * <p>Profile-side malformed marker is still defensively excluded
+     * (one bad record must not be silently surfaced as "recent").
      */
     private List<ImportProfileDefinition> applyAutoDisabledSinceFilter(
             List<ImportProfileDefinition> input, String autoDisabledSince) {
@@ -741,12 +751,10 @@ public class ImportProfileDefinitionController {
         try {
             cutoffMs = java.time.Instant.parse(autoDisabledSince).toEpochMilli();
         } catch (java.time.format.DateTimeParseException e) {
-            // Fail-safe: drop the filter rather than 400. Caller (UI)
-            // sees the unfiltered list, admin can investigate the WARN.
-            org.slf4j.LoggerFactory.getLogger(ImportProfileDefinitionController.class)
-                    .warn("Ignoring malformed autoDisabledSince='{}': {}",
-                            autoDisabledSince, e.getMessage());
-            return input;
+            // R4 (RC5.4): strict — bubble up to 400. Controller's
+            // catch(IllegalArgumentException) maps to BAD_REQUEST.
+            throw new IllegalArgumentException(
+                    "autoDisabledSince must be a valid ISO-8601 instant: " + autoDisabledSince, e);
         }
         List<ImportProfileDefinition> out = new ArrayList<>();
         for (ImportProfileDefinition p : input) {

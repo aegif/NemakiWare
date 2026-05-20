@@ -3099,6 +3099,10 @@
     "simulateRemoveHint": "最大 {{max}} 件まで同時選択可能。多すぎる選択は \"ほぼ全て失う\" になりがちで分析価値が下がります。",
     "simulateMaxReached": "上限 {{max}} 件に到達",
     "simulateClear": "シミュレーション解除",
+    "simulateAudit": "監査ログに記録",
+    "simulateAudited": "監査済み",
+    "simulateAuditHint": "現在のシミュレーション内容を audit log に記録します (EXTERNAL_GOVERNANCE_SIMULATE)。selection を変更すると再度記録できます。",
+    "simulateAuditFailed": "監査ログ記録に失敗しました",
     "simulationNote": "{{principals}} を expanded 集合から削除すると、{{count}} 件の connector アクセスが失われます。",
     "simulationLost": "失う connector",
     "simulationOnlyMatchedVia": "現在この principal だけが経由している連結器のみ表示しています"

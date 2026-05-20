@@ -3345,6 +3345,10 @@
     "simulateRemoveHint": "Up to {{max}} principals at once. Selecting too many tends toward \"lose everything\" and loses analytical value.",
     "simulateMaxReached": "Reached limit of {{max}}",
     "simulateClear": "Clear simulation",
+    "simulateAudit": "Record to audit",
+    "simulateAudited": "Audited",
+    "simulateAuditHint": "Records the current simulation to the audit log (EXTERNAL_GOVERNANCE_SIMULATE). Change the selection to record again.",
+    "simulateAuditFailed": "Failed to record simulation to audit",
     "simulationNote": "Removing {{principals}} from the expanded set would lose access to {{count}} connector(s).",
     "simulationLost": "Connectors lost",
     "simulationOnlyMatchedVia": "Showing only connectors where this principal is the sole matching route"

@@ -6,6 +6,86 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC5.4 — R3 + R4 closure review code corrections
+_Release candidate on `release/3.1.1-RC5.4` (2026-05-20), branched
+off `release/3.1.1-RC5.3` HEAD `01fe84ac5` (RC5.3 closure
+correction doc commit included)._
+
+Code correction follow-up cycle for the two RC5.3 closure-review
+findings the user opted to fix before external review. Both items
+were post-release candidates in RC5.3 but accepted with caveat
+documentation; RC5.4 elevates them to shipped fixes.
+
+### R3: V7 audit fires on explicit button instead of 800ms debounce
+
+`ConnectorGovernanceTab` removes the RC5.3 `useEffect`-driven
+debounce that fired `simulate-remove` 800 ms after the multi-select
+settled. Replaced with an explicit `Simulate (audit)` button next
+to the simulate `Clear` button. Click → exactly one audit entry
+recorded, 1:1 mapping to "an admin deliberately asked this
+question". The button disables after firing and re-enables when
+the selection changes (so repeated audit of the same query is
+gated behind a state change). Client-computed display is unchanged —
+the table filter is still instant, only the audit-trail trigger
+moved from automatic to deliberate.
+
+SOC tooling consumers can now treat each `EXTERNAL_GOVERNANCE_SIMULATE`
+audit entry as a high-signal event (intentional operator query)
+rather than a low-signal event (UI side-effect of multi-select
+traversal).
+
+### R4: `autoDisabledSince` malformed → 400 BAD_REQUEST
+
+`applyAutoDisabledSinceFilter` now throws `IllegalArgumentException`
+on unparseable ISO-8601 input; the controller catches and returns
+HTTP 400. Empty / null params still pass through (treat as "no
+filter requested") — only non-empty malformed values 400.
+
+The closure review flagged the RC5.3 fail-safe pass-through as
+risky: a typo in an admin diagnostic query returned the full list,
+which an operator might briefly misread as "no recent shutdowns" =
+"system healthy". The RC5.3 UI only ever ships `Date.toISOString()`
+output, so the strictness doesn't affect the shipped flow; CLI /
+scripting callers with malformed input now get an immediate 400
+instead of a silently-full response.
+
+### API contract impact
+
+- **Backwards-compatible for callers shipping valid ISO-8601 or
+  empty/missing `autoDisabledSince`** (the entire shipped UI flow).
+- **Breaking only for non-empty malformed `autoDisabledSince`**:
+  RC5.3 returned 200 + unfiltered list (with WARN log); RC5.4
+  returns 400. This is the deliberate R4 strictness improvement.
+
+### Tests
+
+- `ImportProfileSinceFilterTest`: 8 cases (was 7 — `malformedCutoff`
+  case rewritten as `malformedCutoff_returns400_R4Strictness` +
+  new `emptyStringCutoff_stillTreatedAsAbsent_passThrough_evenWithR4`).
+- Ingest delegation suite: **155 tests, all PASS** (was 154).
+- TS check + UI build pass.
+
+### Live verification
+
+- R4: malformed query → HTTP 400 (was 200 in RC5.3) ✅
+- R4: valid ISO → 200 ✅
+- R4: empty param → 200 pass-through (unchanged) ✅
+- R3: simulateAudit / simulateAudited / simulateAuditHint / simulateAuditFailed
+  i18n keys all present in deployed bundle (3x each = ja + en + t() call) ✅
+- W2 endpoint regression check: still returns lost/kept correctly ✅
+
+### Known post-RC5.4 follow-ups
+
+R1 / R2 from RC5.3 follow-up list remain valid:
+- R1: SOC tooling integration for `EXTERNAL_GOVERNANCE_SIMULATE`
+- R2: `docs/MULTI-REPLICA-DEPLOYMENT.md` update (shipped in RC5.3
+  closure correction doc commit; entry retained for completeness).
+
+The RC5.3 R3 / R4 entries are now shipped and removed from the
+post-release list.
+
+---
+
 ## 3.1.1-RC5.3 — W1 + W2 server-side governance scalability
 _Release candidate on `release/3.1.1-RC5.3` (2026-05-20), branched
 off `v3.1.1-RC5.2` (`e18e020f6`)._

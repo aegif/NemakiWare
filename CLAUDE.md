@@ -310,6 +310,42 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC21 / RC5.4 (2026-05-20〜, 進行中) — R3 + R4 closure review code corrections
+
+ブランチ: `release/3.1.1-RC5.4` (off `release/3.1.1-RC5.3` HEAD `01fe84ac5`、
+RC5.3 closure correction doc commit を含む)
+
+外部レビュー前に code 反映すべき 2 件 (cumulative closure 批判 review
+の R3 / R4) を独立 RC で対応。RC5.3 で確立した API は additive、
+R4 は malformed input の挙動を厳格化 (forgiving pass-through → 400)
+で API 仕様変更となるため別 RC として扱う。
+
+#### R3: V7 audit fire を debounce → explicit Simulate button
+
+- `ConnectorGovernanceTab` の 800ms debounce useEffect を廃止
+- 「Simulate (audit)」button を simulate Select 隣に追加
+- click 時のみ W2 `simulate-remove` endpoint 発火 + audit
+- audit エントリ 1:1 mapping 「人間が deliberately query した」
+- ノイズ削減、SOC review 価値向上
+
+#### R4: autoDisabledSince malformed → HTTP 400
+
+- `applyAutoDisabledSinceFilter` が malformed 時 IllegalArgumentException
+- `ImportProfileDefinitionController.list` の catch block で 400 応答
+- 既存 pass-through テストを「無効値 → 400」に書き換え
+- 利点: typo を運用者が即検知、admin tab で誤認しない
+- 軽微な breaking change (R4 は今後の RC5.x ではなく next major で
+  追加するか議論あり): pass-through → 400 は old UI bug を弾く可能性
+  あり。ただし RC5.3 UI は `Date().toISOString()` のみ送信なので
+  実環境では影響なし
+
+#### 設計原則 (RC5.3 まで継続)
+
+- 既存 patch / view / Mango / migration / property / Java スケジューラ
+  本体 (DelegatedCallContextFactory / IngestSchedulerService) は触らない
+- API additive 範囲を維持 (R4 のみ strictness 強化)
+- 既存 unit test 退行ゼロ
+
 ### RC20 / RC5.3 (2026-05-20) — W1 + W2 server-side governance/scalability (shipped)
 
 ブランチ: `release/3.1.1-RC5.3` (off `v3.1.1-RC5.2` = `e18e020f6`)
