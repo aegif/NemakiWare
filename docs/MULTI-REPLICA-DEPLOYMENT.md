@@ -30,6 +30,7 @@ the one that created the entry will not see it.
 | **SAML `/initiate` rate limit** | Per-IP token bucket | `rest/SamlInitiateServlet.java:69` |
 | **Webhook delivery queue / circuit breakers** | `folderQueues`, `rateLimitStates`, `circuitBreakerStates` | `webhook/ChildEventBatchProcessor.java:63-65` |
 | **Ingest scheduler circuit breaker** | `consecutiveFailures` map keyed by connectorId | `rest/ingest/IngestSchedulerService.java` |
+| **Scheduled delegated profile state** (RC5+) | `inactiveCreatorStreak` (per-profile auto-disable streak counter) + `warnedDelegatedSchedulerProfiles` (WARN-once memo) | `rest/ingest/IngestSchedulerService.java` |
 | **EhCache** (ACL / content / type definition cache) | Local in-memory cache; `cache.clustering.enabled=false` ships disabled | `core/src/main/webapp/WEB-INF/classes/ehcache.yml` + `nemakiware.properties:80` |
 | **Cron schedulers** (Cloud Directory Sync / Ingest / Retention / Lineage) | Each replica has its own scheduler — `LeaderElection` gates execution | `rest/purview/journal/LeaderElection.java`, the three scheduler classes |
 
@@ -103,7 +104,37 @@ lineage.leader-election.enabled=true
 nemakiware.public.scheme=https
 saml.require.inResponseTo=true        # Enable strict mode after migrating
                                       # all SAML clients to /saml/initiate
+
+# RC5+ scheduled delegated profiles (default-off; enable only after
+# reading the multi-replica caveats below).
+# - schedulerEnabled: lets non-admin folder owners run their delegated
+#   profiles on the scheduler. The scheduler tick re-evaluates
+#   cmis:all + connector delegation per tick under a synthesised
+#   CallContext for the original creator.
+# - autoDisableInactiveOwners + inactiveOwnerFailureThreshold: after
+#   N consecutive CREATOR_USER_INACTIVE ticks, auto-disable the
+#   profile. The streak counter is JVM-LOCAL — see the multi-replica
+#   note below.
+nemakiware.ingest.delegated.schedulerEnabled=false
+nemakiware.ingest.delegated.autoDisableInactiveOwners=false
+nemakiware.ingest.delegated.inactiveOwnerFailureThreshold=3
 ```
+
+**Multi-replica caveat for `nemakiware.ingest.delegated.*`** (RC5+):
+The scheduled delegated path is **gated by the existing
+`lineage.leader-election.enabled` (R2)** — only the leader replica
+runs the ingest scheduler, so JVM-local state (
+`inactiveCreatorStreak`, `warnedDelegatedSchedulerProfiles`) lives
+on exactly one replica per cluster. Leader failover hands the
+scheduler thread to the new leader; streak state is **reset on
+failover** (new JVM starts from streak=0). Net effect with R2
+enabled: a profile whose creator is inactive will need another
+`inactiveOwnerFailureThreshold` consecutive failures on the new
+leader before auto-disable fires. Operators should size the
+threshold accordingly if they expect leader churn to be frequent.
+
+Without R2, every replica's scheduler would race, each with its own
+streak counter — single-replica posture is required.
 
 #### (b) Process-bound deployment knobs (env or `-D` only)
 

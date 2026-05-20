@@ -20,9 +20,23 @@ existing API response shapes and the existing endpoints are unchanged.
 
 `GET /v1/admin/import-profiles?autoDisabledSince=ISO-8601` returns
 only profiles whose `lastAutoDisabledAt` is `>= cutoff`. Profiles
-without a marker are excluded. Empty / missing / malformed cutoff →
-filter dropped (WARN logged), so the endpoint stays forgiving and
-the existing no-param contract is preserved byte-identically. The V6
+without a marker are excluded.
+
+**Malformed cutoff behaviour (documented trade-off)**: empty /
+missing / unparseable ISO-8601 cutoff is **silently ignored** — the
+filter is dropped and the unfiltered list is returned, with a WARN
+in the server log. This preserves the no-param call shape (no
+breaking change for old clients) and keeps the admin tab usable if
+the UI ships a malformed value. The trade-off: a typo in an
+admin-only diagnostic query returns the full list rather than 0,
+which an operator might briefly misread as "no recent shutdowns" =
+"everything looks fine". Because the endpoint is admin-only and the
+intended UI driver only ever ships a `Date.toISOString()` value,
+the misread risk is low. Operators who prefer strict 400 semantics
+can request that change in a follow-up RC; the current behaviour is
+deliberately permissive for backward compat.
+
+The V6
 UI window now ships the cutoff when both the "only auto-disabled"
 filter and a non-zero window are active, so large-profile deployments
 fetch only the relevant slice rather than filtering client-side.
@@ -53,6 +67,22 @@ responsiveness, but fires the W2 endpoint debounced at 800 ms after
 the multi-select settles. Audit captures the operator intent without
 adding a round-trip to every keystroke.
 
+**Audit noise trade-off (documented)**: a 5-principal selection
+session in the UI typically produces 1 audit entry (the final
+settled state after the user stops adjusting for 800 ms). A
+power-user who toggles selection repeatedly within shorter windows
+can produce more — each 800 ms quiet period after a change yields
+one audit. Rough upper bound: one entry per second of active
+multi-select tweaking. For SOC tooling consumers this is small
+compared to legitimate ingest audit volume, but operators should be
+aware that "intent to investigate" produces audit volume, not just
+"acted on". A future RC could replace the debounce with an explicit
+"Simulate (audit)" button so audit entries map 1:1 to deliberate
+operator decisions; tracked as a post-release follow-up.
+
+CLI / scripting access bypasses this entirely — the endpoint is
+called explicitly, audit fires once per call, no debounce.
+
 ### Audit additions
 
 - New `AuditOperation.EXTERNAL_GOVERNANCE_SIMULATE` enum entry (audit
@@ -61,13 +91,29 @@ adding a round-trip to every keystroke.
   `actorUserId`, `principalId`, `expandedPrincipals`, `removePrincipalIds`,
   `lostCount`.
 
-### API contract
+### API contract — additive only, no breaking changes
 
-- `GET /v1/admin/import-profiles` — adds optional `autoDisabledSince`
-  query param; response shape unchanged.
-- `POST /v1/admin/connectors/by-principal/{id}/simulate-remove` — new
-  endpoint, admin-only.
-- All existing endpoints byte-identical.
+This section uses precise terms because external reviewers will read
+it:
+
+- **New endpoint** (additive): `POST /v1/admin/connectors/by-principal/{id}/simulate-remove`
+  — admin-only. Pre-RC5.3 clients are unaffected (they never call it).
+- **New optional query param** (additive): `GET /v1/admin/import-profiles?autoDisabledSince=ISO-8601`.
+  Pre-RC5.3 clients that omit the param see the same response set
+  they did at RC5.2. The param is opt-in per request.
+- **New response field** (additive): `ImportProfileDefinition`
+  gained `lastAutoDisabledAt` + `lastAutoDisabledReason`. Marshalled
+  with `@JsonInclude(NON_NULL)`, so profiles without a marker emit
+  the same JSON they did at RC5.2. Pre-RC5.3 clients tolerate the
+  fields via `@JsonIgnoreProperties(ignoreUnknown=true)`.
+- **No fields removed or renamed.** No endpoint paths changed.
+- **Audit enum** (`AuditOperation`, `DenialReason`) gained entries
+  only — additive per the existing audit-stability contract.
+
+In short: RC5.3 is **backward-compatible** with RC5.2 — no breaking
+changes — but it is NOT "byte-identical" because additive surface
+necessarily changes byte-level output for clients that opt in. Old
+clients see the same bytes; new clients see strictly more.
 
 ### Migration / upgrade
 
@@ -87,10 +133,48 @@ default behaviour with no param is identical to RC5.2.
 - Ingest delegation suite: **154 tests, all PASS** (was 136).
 - TS check + UI build pass.
 
-### Known post-RC5.3 follow-ups
+### Known post-RC5.3 follow-ups (low priority)
 
-None at this time. The remaining V8 virtual-scroll alternative was
-explicitly traded off in B1 and remains documented.
+Surfaced by the cumulative closure review. Not release blockers;
+recorded so they aren't lost when external review concludes.
+
+- **R1** (doc, ops): SOC tooling integration — add a query / alert
+  template for the new `EXTERNAL_GOVERNANCE_SIMULATE` audit event so
+  operators get notified when a high-frequency simulate burst
+  happens (could indicate either reasonable investigation or a UI
+  bug spamming the endpoint).
+- **R2** (doc, deployment): `docs/MULTI-REPLICA-DEPLOYMENT.md` lists
+  the JVM-local state subsystems that need sticky sessions / leader
+  election for multi-replica. The RC5 inactiveCreatorStreak counter
+  inside `IngestSchedulerService` is one such state (per-JVM
+  HashMap). `docs/MULTI-REPLICA-DEPLOYMENT.md` should be updated to
+  list the new properties + the leader-election requirement that
+  scheduled delegated profiles already inherit from the existing
+  ingest scheduler.
+- **R3** (UX, RC5.4 optional): replace V7 UI's 800 ms debounce audit
+  fire with an explicit "Simulate (audit)" button so audit entries
+  map 1:1 to deliberate operator decisions. Trade-off noted above.
+- **R4** (API, RC5.4 optional): `GET import-profiles?autoDisabledSince=`
+  malformed cutoff currently pass-through with WARN. Switching to
+  400 would be stricter but breaks the "forgiving admin tab" path.
+  Operator choice.
+
+### Release / GA operational note
+
+`v3.1.1-RC5.3` is and remains a **release candidate** tag — RC
+suffix tags must NOT be promoted to GA by removing a "pre-release"
+flag. The promotion path on completion of external review is:
+
+1. Merge `release/3.1.1-RC5.3` into `master` (or whichever GA branch
+   the project uses).
+2. Cut a **new** annotated tag `v3.1.1` against the merge commit on
+   `master`. This is the GA tag.
+3. Optionally create a GitHub Release attached to `v3.1.1` (the GA
+   tag), separate from any "Pre-release" labels on the RC tags.
+4. Existing `v3.1.1-RC5{,.1,.2,.3}` tags stay as internal
+   milestones; they're never relabelled to GA. This keeps the
+   audit trail of which commit was reviewed and approved at which
+   point in the RC cycle.
 
 ---
 
@@ -339,7 +423,8 @@ admin API call.
 
 No migration needed. All new behaviour is property-gated and off by
 default. Existing deployments that upgrade and do nothing get
-byte-identical scheduler behaviour to RC4.1. Existing tests retained
+RC4.1-equivalent scheduler behaviour (no-op observable to old
+clients). Existing tests retained
 to pin the legacy path.
 
 ### Properties added

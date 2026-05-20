@@ -345,7 +345,7 @@ governance に simulate-remove endpoint を新設。RC5 で確立した既存 AP
 #### 設計原則
 
 - 既存 patch / view / Mango index / migration には触らない
-- API 既存 shape 不変 (W1 query param 追加、W2 新 endpoint)
+- API additive only / no breaking change (W1 で optional query param 追加、W2 で新 endpoint 追加、既存 endpoint の必須 param / 応答 field は変更なし)
 - default 安全側 (W1 default no-filter、W2 admin gate)
 - 既存 unit test 退行ゼロ
 
@@ -354,7 +354,8 @@ governance に simulate-remove endpoint を新設。RC5 で確立した既存 AP
 ブランチ: `release/3.1.1-RC5.2` (off `v3.1.1-RC5.1` = `cc1ac2b54`)
 
 RC5.1 受け入れレビューで挙げた H1-H3 (低優先 UX polish) を独立 RC で
-解消。RC5 で確立した API contract / property / Java / DB は不変。
+解消。RC5 で確立した API は additive only (breaking change なし)、
+property / Java / DB は無触。
 
 #### H1-H3 scope
 
