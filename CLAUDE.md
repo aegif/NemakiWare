@@ -310,7 +310,7 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
-### RC21 / RC5.4 (2026-05-20〜, 進行中) — R3 + R4 closure review code corrections
+### RC21 / RC5.4 (2026-05-20) — R3 + R4 closure review code corrections (shipped)
 
 ブランチ: `release/3.1.1-RC5.4` (off `release/3.1.1-RC5.3` HEAD `01fe84ac5`、
 RC5.3 closure correction doc commit を含む)
