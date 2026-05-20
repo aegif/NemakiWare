@@ -3096,6 +3096,8 @@
     "unknownHint": "user / group として解決できませんでした。pseudo-principal (例: Anyone) または typo の可能性があります。",
     "simulateRemoveLabel": "削除をシミュレート:",
     "simulateRemovePlaceholder": "principal ID を選択",
+    "simulateRemoveHint": "最大 {{max}} 件まで同時選択可能。多すぎる選択は \"ほぼ全て失う\" になりがちで分析価値が下がります。",
+    "simulateMaxReached": "上限 {{max}} 件に到達",
     "simulateClear": "シミュレーション解除",
     "simulationNote": "{{principals}} を expanded 集合から削除すると、{{count}} 件の connector アクセスが失われます。",
     "simulationLost": "失う connector",
@@ -3140,6 +3142,8 @@
     "autoDisabledWindow1d": "過去 24 時間",
     "autoDisabledWindow7d": "過去 7 日",
     "autoDisabledWindow30d": "過去 30 日",
+    "autoDisabledWindowCustom": "カスタム...",
+    "autoDisabledWindowDone": "確定",
     "columns": {
       "profileId": "プロファイルID",
       "displayName": "表示名",

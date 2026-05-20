@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Switch, Space, Tag, App, Popconfirm, Alert, Tooltip } from 'antd';
+import { Table, Button, Modal, Form, Input, InputNumber, Select, Switch, Space, Tag, App, Popconfirm, Alert, Tooltip } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
@@ -76,6 +76,12 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
   // events so fresh scheduler shutdowns aren't drowned out by legacy
   // ones that haven't been cleaned up yet.
   const [autoDisabledDays, setAutoDisabledDays] = useState<number>(0);
+  // H3 (RC5.2): swap the preset Select for an InputNumber so admins
+  // can pick any positive number of days, then snap back to the
+  // preset Select on "Done". Reset to false whenever the underlying
+  // count drops to 0 so the UI doesn't get stuck in custom mode with
+  // no profiles to filter.
+  const [customDaysMode, setCustomDaysMode] = useState<boolean>(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ImportProfileDefinition | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -378,11 +384,15 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
   // and `visibleProfiles` would silently filter to an empty table
   // until then. Reset it here so the table reverts to the full list
   // automatically.
+  // H3 (RC5.2): same trick for customDaysMode — the InputNumber
+  // unmounts with the filter row, so reset the mode flag to keep
+  // the Select-only state consistent on re-mount.
   useEffect(() => {
-    if (autoDisabledCount === 0 && onlyAutoDisabled) {
-      setOnlyAutoDisabled(false);
+    if (autoDisabledCount === 0) {
+      if (onlyAutoDisabled) setOnlyAutoDisabled(false);
+      if (customDaysMode) setCustomDaysMode(false);
     }
-  }, [autoDisabledCount, onlyAutoDisabled]);
+  }, [autoDisabledCount, onlyAutoDisabled, customDaysMode]);
 
   return (
     <>
@@ -406,18 +416,52 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
                 ? `${autoDisabledRecentCount}/${autoDisabledCount}`
                 : autoDisabledCount}
             </Tag>
-            <Select
-              size="small"
-              value={autoDisabledDays}
-              onChange={setAutoDisabledDays}
-              style={{ minWidth: 110 }}
-              options={[
-                { value: 0, label: t('importProfileManagement.autoDisabledWindowAll') },
-                { value: 1, label: t('importProfileManagement.autoDisabledWindow1d') },
-                { value: 7, label: t('importProfileManagement.autoDisabledWindow7d') },
-                { value: 30, label: t('importProfileManagement.autoDisabledWindow30d') },
-              ]}
-            />
+            {/* H3 (RC5.2): "Custom..." option swaps the Select to
+                InputNumber so admins can investigate incident windows
+                that don't fit the preset list (e.g. a 14-day rolling
+                check). Selecting any preset (or clearing the custom
+                value) snaps back to the Select. */}
+            {customDaysMode ? (
+              <Space size={2}>
+                <InputNumber
+                  size="small"
+                  autoFocus
+                  min={1}
+                  max={9999}
+                  value={autoDisabledDays > 0 ? autoDisabledDays : undefined}
+                  onChange={(v) => setAutoDisabledDays(typeof v === 'number' && v > 0 ? v : 0)}
+                  addonAfter="d"
+                  style={{ width: 100 }}
+                />
+                <Button
+                  size="small"
+                  onClick={() => { setCustomDaysMode(false); setAutoDisabledDays(0); }}
+                >
+                  {t('importProfileManagement.autoDisabledWindowDone', { defaultValue: 'Done' })}
+                </Button>
+              </Space>
+            ) : (
+              <Select
+                size="small"
+                value={autoDisabledDays}
+                onChange={(v) => {
+                  if (v === -1) {       // sentinel for "Custom..."
+                    setCustomDaysMode(true);
+                    setAutoDisabledDays(0);
+                  } else {
+                    setAutoDisabledDays(v as number);
+                  }
+                }}
+                style={{ minWidth: 130 }}
+                options={[
+                  { value: 0, label: t('importProfileManagement.autoDisabledWindowAll') },
+                  { value: 1, label: t('importProfileManagement.autoDisabledWindow1d') },
+                  { value: 7, label: t('importProfileManagement.autoDisabledWindow7d') },
+                  { value: 30, label: t('importProfileManagement.autoDisabledWindow30d') },
+                  { value: -1, label: t('importProfileManagement.autoDisabledWindowCustom') },
+                ]}
+              />
+            )}
           </Space>
         )}
       </Space>

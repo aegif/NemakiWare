@@ -39,6 +39,17 @@ const PSEUDO_PRINCIPALS_FOR_SIMULATE = new Set<string>([
 ]);
 
 /**
+ * H2 (RC5.2): cap V7's multi-principal removal Select so admins
+ * don't reach for the "select all → lose almost everything" answer
+ * (low operator value, lots of noise). 10 covers the realistic
+ * range of group memberships for most NemakiWare deployments; if
+ * a user belongs to more groups and the operator genuinely needs
+ * to ask "what does this user have access to AT ALL?", the
+ * answer is the unfiltered match list itself.
+ */
+const SIMULATE_REMOVE_MAX = 10;
+
+/**
  * V3 (RC5 ext): admin UI for the governance view
  * (GET /v1/admin/connectors/by-principal/{id}).
  *
@@ -132,6 +143,21 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(() => fetchPrincipals(q), 300);
   }, [fetchPrincipals]);
+
+  // H1 (RC5.2): unmount cleanup for the debounce timer. Without this,
+  // a tab navigation away during the 300 ms debounce window leaves
+  // a pending setTimeout that fires fetchPrincipals → setState on an
+  // unmounted component → React warning. Single-tab admin UI rarely
+  // unmounts so the impact is marginal, but the cleanup costs nothing
+  // and removes the warning class entirely.
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+        searchTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const onSubmit = async (values: { principalId: string; expand: boolean }) => {
     const pid = values.principalId?.trim();
@@ -319,15 +345,24 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
                 {result.expandedPrincipals.join(', ')}
               </Text>
               {/* V5/V7 (RC5.1): simulate-removal dropdown — only when
-                  expansion brought in extra actionable principals. */}
+                  expansion brought in extra actionable principals.
+                  H2 (RC5.2): maxCount caps selection so the operator
+                  is steered toward focused comparisons rather than
+                  the trivial "remove all groups → lose almost
+                  everything" answer. */}
               {simulateOptions.length > 0 && (
                 <Space size={8} wrap style={{ marginTop: 8 }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {t('connectorGovernance.simulateRemoveLabel')}
-                  </Text>
+                  <Tooltip title={t('connectorGovernance.simulateRemoveHint', {
+                    max: SIMULATE_REMOVE_MAX,
+                  })}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {t('connectorGovernance.simulateRemoveLabel')}
+                    </Text>
+                  </Tooltip>
                   <Select
                     mode="multiple"
                     allowClear
+                    maxCount={SIMULATE_REMOVE_MAX}
                     placeholder={t('connectorGovernance.simulateRemovePlaceholder')}
                     options={simulateOptions}
                     value={simulateRemove}
@@ -339,6 +374,11 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
                     <Button size="small" onClick={() => setSimulateRemove([])}>
                       {t('connectorGovernance.simulateClear')}
                     </Button>
+                  )}
+                  {simulateRemove.length >= SIMULATE_REMOVE_MAX && (
+                    <Tag color="orange" style={{ fontSize: 10 }}>
+                      {t('connectorGovernance.simulateMaxReached', { max: SIMULATE_REMOVE_MAX })}
+                    </Tag>
                   )}
                 </Space>
               )}

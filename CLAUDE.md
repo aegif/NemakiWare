@@ -310,6 +310,29 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC19 / RC5.2 (2026-05-20〜, 進行中) — H1-H3 UI polish
+
+ブランチ: `release/3.1.1-RC5.2` (off `v3.1.1-RC5.1` = `cc1ac2b54`)
+
+RC5.1 受け入れレビューで挙げた H1-H3 (低優先 UX polish) を独立 RC で
+解消。RC5 で確立した API contract / property / Java / DB は不変。
+
+#### H1-H3 scope
+
+- **H1**: V8 debounce setTimeout の unmount cleanup を `useEffect`
+  return で追加 — single-tab admin UI で実害低いが best practice
+- **H2**: V7 multi-removal Select に `maxCount` 上限 + Tooltip —
+  全 expansion を選択した「lose everything」noise を防ぐ UX 保護
+- **H3**: V6 window selector を「Custom...」option 含む拡張 →
+  選択時 InputNumber に切替で任意 N 日入力可能
+
+#### 設計原則 (RC5.1 から継続)
+
+- 既存 patch / view / Mango index / migration / Java / property 無触
+- API contract 不変
+- UI のみ、i18n 追加可
+- 既存 unit test 退行ゼロ
+
 ### RC18 / RC5.1 (2026-05-20) — G1-G3 polish + V6-V8 governance/scalability 拡張 + B1 fix
 
 ブランチ: `release/3.1.1-RC5.1` (off `v3.1.1-RC5` = `f47d3273d`)
