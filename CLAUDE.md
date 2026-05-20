@@ -310,7 +310,7 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
-### RC20 / RC5.3 (2026-05-20〜, 進行中) — W1 + W2 server-side governance/scalability
+### RC20 / RC5.3 (2026-05-20) — W1 + W2 server-side governance/scalability (shipped)
 
 ブランチ: `release/3.1.1-RC5.3` (off `v3.1.1-RC5.2` = `e18e020f6`)
 
