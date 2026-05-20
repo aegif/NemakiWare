@@ -346,6 +346,31 @@ R4 は malformed input の挙動を厳格化 (forgiving pass-through → 400)
 - API additive 範囲を維持 (R4 のみ strictness 強化)
 - 既存 unit test 退行ゼロ
 
+#### Change scope vs RC5.3 (正確な分類)
+
+- **変更あり**: `ImportProfileDefinitionController` (R4 catch block)、
+  `ConnectorGovernanceTab.tsx` (R3 button 化)、`ImportProfileSinceFilterTest`、
+  4 i18n keys (ja+en)
+- **無変更** (RC5.3 から byte 等価): scheduler / property / patch /
+  view / Mango index / DB bootstrap / `ConnectorDefinitionController` /
+  `DelegatedCallContextFactory` / `AuditOperation` / `DenialReason` /
+  `serviceContext.xml`
+
+#### Commit + tag 関係
+
+- R3 + R4 feature commit: `6283afc96`
+- pre-tag doc closure commit (status flip): `014939eeb`
+- annotated tag `v3.1.1-RC5.4` target: `014939eeb`
+  (annotated object: `d0a4a4f3d0f40482b0ca45cae47f75305235588b`)
+
+#### Follow-up cumulative 状態
+
+- **Remaining (R1 のみ)**: SOC tooling integration —
+  `EXTERNAL_GOVERNANCE_SIMULATE` query / alert template (NemakiWare
+  リポジトリ外、ops 領域)
+- **Resolved**: R2 (RC5.3 `01fe84ac5`)、R3 (RC5.4 `6283afc96`)、
+  R4 (RC5.4 `6283afc96`)
+
 ### RC20 / RC5.3 (2026-05-20) — W1 + W2 server-side governance/scalability (shipped)
 
 ブランチ: `release/3.1.1-RC5.3` (off `v3.1.1-RC5.2` = `e18e020f6`)

@@ -74,15 +74,72 @@ instead of a silently-full response.
   i18n keys all present in deployed bundle (3x each = ja + en + t() call) ✅
 - W2 endpoint regression check: still returns lost/kept correctly ✅
 
-### Known post-RC5.4 follow-ups
+### Change scope vs RC5.3 (precise)
 
-R1 / R2 from RC5.3 follow-up list remain valid:
-- R1: SOC tooling integration for `EXTERNAL_GOVERNANCE_SIMULATE`
-- R2: `docs/MULTI-REPLICA-DEPLOYMENT.md` update (shipped in RC5.3
-  closure correction doc commit; entry retained for completeness).
+Where exactly the RC5.4 cycle touched code, so external reviewers
+can scope their review accurately:
 
-The RC5.3 R3 / R4 entries are now shipped and removed from the
-post-release list.
+- **Changed in RC5.4** (deliberate):
+  - `ImportProfileDefinitionController` (Java) — R4 strictness:
+    `applyAutoDisabledSinceFilter` throws `IllegalArgumentException`
+    on malformed cutoff; `list()` catches → 400.
+  - `ConnectorGovernanceTab.tsx` (UI) — R3 explicit audit button
+    replaces the 800ms debounce useEffect; new state +
+    `triggerSimulateAudit` callback.
+  - `ImportProfileSinceFilterTest` — `malformedCutoff` test rewritten
+    + new `emptyStringCutoff` test (155/155 PASS, was 154).
+  - 4 new i18n keys (ja + en) for the R3 audit button states.
+- **Unchanged from RC5.3** (verified zero diff):
+  - `IngestSchedulerService` and `DelegatedCallContextFactory`
+    (the scheduled delegated profile core)
+  - `ConnectorDefinitionController` (governance V3 / W2 endpoints)
+  - `AuditOperation` enum (no new entries since RC5.3)
+  - `DenialReason` enum (no new entries since RC5.3)
+  - `nemakiware.properties` (all 3 RC5 opt-in properties unchanged)
+  - `serviceContext.xml` (no DI changes)
+  - Patch / CouchDB view dumps / Mango index registration /
+    DB bootstrap (`Patch_*`, `*_init.dump`, `Patch_IngestMangoIndexes`,
+    `DatabasePreInitializer`, etc.) — accumulated zero diff
+    since v3.1.1-RC4.1.
+
+Phrased operationally: **RC5.4 changes one Java controller method,
+one TSX component, one test class, and four i18n keys. Everything
+else listed above is byte-equal to RC5.3.**
+
+### Commit + tag relationship
+
+- **R3 + R4 feature commit**: `6283afc96`
+  (`feat(rc5.4): R3 + R4 closure review code corrections`)
+- **Pre-tag doc closure commit** (status flip 進行中 → shipped):
+  `014939eeb`
+- **`v3.1.1-RC5.4` annotated tag target**: `014939eeb`
+- **Annotated tag object SHA**: `d0a4a4f3d0f40482b0ca45cae47f75305235588b`
+
+The annotated tag points at the pre-tag doc closure commit, not
+the feature commit, by the project convention established in RC5
+closure (doc closure included in the reviewed tag).
+
+### Follow-up status (cumulative across RC5 cycle)
+
+**Remaining** (post-release / RC5.5+ candidates):
+
+- **R1** (Low, ops) — SOC tooling integration for the
+  `EXTERNAL_GOVERNANCE_SIMULATE` audit event. A query / alert
+  template would let operators get notified on high-frequency
+  simulate bursts. Not a release blocker; recorded so it isn't
+  lost in the external-review handoff.
+
+**Resolved during RC5 cycle** (for completeness):
+
+| ID | Resolution venue | Description |
+|---|---|---|
+| R2 | RC5.3 closure doc commit `01fe84ac5` | `docs/MULTI-REPLICA-DEPLOYMENT.md` updated with the new `nemakiware.ingest.delegated.*` properties + leader-failover streak-reset caveat |
+| R3 | RC5.4 feature commit `6283afc96` | V7 audit fires on explicit "Simulate (audit)" button (was 800ms debounce) |
+| R4 | RC5.4 feature commit `6283afc96` | `autoDisabledSince` malformed → HTTP 400 (was 200 pass-through with WARN) |
+
+After RC5.4: **the only outstanding follow-up is R1** — and R1 is
+infra/ops integration that lives outside this repository, not
+NemakiWare code work.
 
 ---
 
