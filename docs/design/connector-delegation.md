@@ -922,7 +922,42 @@ preset Select. G1's count-reset `useEffect` was extended to also
 reset `customDaysMode` so the filter row stays consistent when
 the underlying count drops to 0.
 
-### 12.11 vNext (separate scope, not RC5.2)
+### 12.11 ~~RC5.3: W1 + W2 server-side scalability~~ (shipped)
+
+Folded into RC5.3 — first RC5.x cycle since the base that adds Java
+code. All previous RC5.x cycles were UI-only.
+
+**W1: `autoDisabledSince` server-side filter.**
+`GET /v1/admin/import-profiles` gains an optional `autoDisabledSince`
+query param (ISO-8601 instant). When set, only profiles whose
+`lastAutoDisabledAt >= cutoff` are returned; profiles without a
+marker are excluded by definition. Malformed cutoff → filter dropped
++ WARN, preserving backward compat for shaky callers. Profile-side
+malformed markers fail-shut (exclude rather than misclassify a stale
+shutdown as fresh during triage). The V6 UI window pushes the
+cutoff to the server when its "only auto-disabled" filter is also
+active, eliminating client-side filtering at scale.
+
+**W2: `POST /by-principal/{id}/simulate-remove`.**
+Admin-only endpoint that runs V5/V7's sole-route detection
+server-side and returns a `{lost, kept}` partition.
+`buildMatches(principalId, principalsToMatch)` is extracted as a
+shared helper used by both this endpoint and V3's listByPrincipal
+so the two stay byte-identical for the same principal set. The
+audit log adds `EXTERNAL_GOVERNANCE_SIMULATE` entries with
+`actorUserId`, `principalId`, `expandedPrincipals`,
+`removePrincipalIds`, and `lostCount` — SOC tooling can correlate
+"what-if" questions with subsequent group / ACL changes.
+
+The V7 UI keeps client-side computation for instant filter feedback
+but fires W2 debounced at 800 ms after the multi-select settles, so
+the audit fires without slowing the UI.
+
+`AuditOperation.EXTERNAL_GOVERNANCE_SIMULATE` is the only audit-enum
+addition. Per the existing audit-stability contract, the enum name
+is now part of the audit-trail and may never be renamed or removed.
+
+### 12.12 vNext (separate scope, not RC5.x)
 
 Bigger ideas that came up during RC5.1 review but are explicitly
 NOT planned for any RC5 patch.

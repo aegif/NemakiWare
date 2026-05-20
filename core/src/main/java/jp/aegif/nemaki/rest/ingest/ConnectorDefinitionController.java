@@ -33,6 +33,14 @@ public class ConnectorDefinitionController {
     @Autowired(required = false)
     private jp.aegif.nemaki.businesslogic.PrincipalService principalService;
 
+    /**
+     * W2 (RC5.3): audit sink for governance simulate-remove. Optional
+     * so unit tests can run without wiring; null check in auditSimulate
+     * makes that a graceful skip.
+     */
+    @Autowired(required = false)
+    private jp.aegif.nemaki.audit.AuditLogger auditLogger;
+
     @Autowired
     private HttpServletRequest httpRequest;
 
@@ -288,7 +296,120 @@ public class ConnectorDefinitionController {
             }
         }
 
-        var matches = new java.util.ArrayList<Map<String, Object>>();
+        var matches = buildMatches(principalId, principalsToMatch);
+
+        var body = new LinkedHashMap<String, Object>();
+        body.put("principalId", principalId);
+        body.put("principalType", principalType);
+        body.put("repositoryId", repositoryId);
+        body.put("expand", expand);
+        body.put("expandedPrincipals", new java.util.ArrayList<>(principalsToMatch));
+        body.put("matches", matches);
+        return ResponseEntity.ok(body);
+    }
+
+    /**
+     * W2 (RC5.3): server-side simulate-remove. Body specifies the
+     * principal-set to remove from the expansion. Returns
+     * {@code lost} (matches where every {@code matchedPrincipalIds}
+     * entry is in the removal set — sole-route detection) plus
+     * {@code kept} (matches that survive). Same logic as the V5/V7
+     * client-computed simulator, but invokable from CLI / scripts and
+     * usable by the UI when the result set is large.
+     *
+     * <p>Admin only. Audited as
+     * {@link AuditOperation#EXTERNAL_GOVERNANCE_SIMULATE} with the
+     * queried principal, removal set, and lost count for post-hoc
+     * analysis.
+     *
+     * <p>Body shape:
+     * <pre>
+     * {
+     *   "repositoryId": "bedroom",
+     *   "expand": true,
+     *   "removePrincipalIds": ["group-a", "group-b"]
+     * }
+     * </pre>
+     */
+    @PostMapping("/by-principal/{principalId}/simulate-remove")
+    public ResponseEntity<?> simulateRemove(
+            @PathVariable String principalId,
+            @RequestBody Map<String, Object> body) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
+        if (forbidden != null) return forbidden;
+        if (principalId == null || principalId.isBlank()) {
+            return errorResponse(HttpStatus.BAD_REQUEST, "principalId is required");
+        }
+        String repositoryId = (String) body.get("repositoryId");
+        if (repositoryId == null || repositoryId.isBlank()) {
+            return errorResponse(HttpStatus.BAD_REQUEST, "repositoryId is required");
+        }
+        boolean expand = Boolean.TRUE.equals(body.get("expand"));
+        Object removeRaw = body.get("removePrincipalIds");
+        if (!(removeRaw instanceof List<?>)) {
+            return errorResponse(HttpStatus.BAD_REQUEST,
+                    "removePrincipalIds must be an array");
+        }
+        List<?> removeList = (List<?>) removeRaw;
+        java.util.Set<String> removalSet = new java.util.LinkedHashSet<>();
+        for (Object o : removeList) {
+            if (o instanceof String s && !s.isBlank()) removalSet.add(s);
+        }
+        if (removalSet.isEmpty()) {
+            return errorResponse(HttpStatus.BAD_REQUEST,
+                    "removePrincipalIds must contain at least one non-blank entry");
+        }
+
+        // Build the same principal set the V3 governance view uses, so
+        // simulate-remove results align exactly with what the admin would
+        // see in the matches table before deciding to simulate.
+        String principalType = resolvePrincipalType(repositoryId, principalId);
+        java.util.Set<String> principalsToMatch = new java.util.LinkedHashSet<>();
+        principalsToMatch.add(principalId);
+        if (expand && !"GROUP".equals(principalType)) {
+            principalsToMatch.addAll(
+                    ingestAuthorizationService.expandPrincipals(repositoryId, principalId));
+        }
+
+        List<Map<String, Object>> allMatches = buildMatches(principalId, principalsToMatch);
+        List<Map<String, Object>> lost = new java.util.ArrayList<>();
+        List<Map<String, Object>> kept = new java.util.ArrayList<>();
+        for (Map<String, Object> m : allMatches) {
+            @SuppressWarnings("unchecked")
+            List<String> matched = (List<String>) m.get("matchedPrincipalIds");
+            if (matched == null || matched.isEmpty()) {
+                kept.add(m);
+                continue;
+            }
+            boolean allInRemoval = matched.stream().allMatch(removalSet::contains);
+            if (allInRemoval) lost.add(m); else kept.add(m);
+        }
+
+        // Audit the invocation. SOC tooling can correlate
+        // EXTERNAL_GOVERNANCE_SIMULATE entries with subsequent group /
+        // ACL changes to spot "asked, then acted" patterns.
+        auditSimulate(principalId, repositoryId, principalsToMatch, removalSet, lost.size());
+
+        var resp = new LinkedHashMap<String, Object>();
+        resp.put("principalId", principalId);
+        resp.put("principalType", principalType);
+        resp.put("repositoryId", repositoryId);
+        resp.put("expand", expand);
+        resp.put("expandedPrincipals", new java.util.ArrayList<>(principalsToMatch));
+        resp.put("removePrincipalIds", new java.util.ArrayList<>(removalSet));
+        resp.put("lost", lost);
+        resp.put("kept", kept);
+        return ResponseEntity.ok(resp);
+    }
+
+    /**
+     * Shared connector-match builder used by both V3 (listByPrincipal)
+     * and W2 (simulateRemove). Returns the same shape so the two
+     * endpoints stay byte-identical for any given principal set.
+     */
+    private List<Map<String, Object>> buildMatches(
+            String principalId, java.util.Set<String> principalsToMatch) {
+        List<Map<String, Object>> matches = new java.util.ArrayList<>();
         for (ConnectorDefinition c : connectorDefinitionService.list()) {
             List<String> allowed = c.getAllowedPrincipalIds();
             if (allowed == null || allowed.isEmpty()) continue;
@@ -321,15 +442,36 @@ public class ConnectorDefinitionController {
                     : direct ? "direct" : "group");
             matches.add(entry);
         }
+        return matches;
+    }
 
-        var body = new LinkedHashMap<String, Object>();
-        body.put("principalId", principalId);
-        body.put("principalType", principalType);
-        body.put("repositoryId", repositoryId);
-        body.put("expand", expand);
-        body.put("expandedPrincipals", new java.util.ArrayList<>(principalsToMatch));
-        body.put("matches", matches);
-        return ResponseEntity.ok(body);
+    /**
+     * W2 (RC5.3): audit a simulate-remove invocation. Records the
+     * queried principal, the principals an admin asked to simulate
+     * removing, and the lost count so SOC can correlate "what-if"
+     * questions with subsequent group / ACL changes. Audit failures
+     * are swallowed — the simulator must not be blocked by audit
+     * pipeline hiccups.
+     */
+    private void auditSimulate(String principalId, String repositoryId,
+                               java.util.Set<String> expandedPrincipals,
+                               java.util.Set<String> removePrincipalIds, int lostCount) {
+        if (auditLogger == null) return;
+        try {
+            CallContext ctx = currentCallContext();
+            String actor = ctx != null && ctx.getUsername() != null ? ctx.getUsername() : "admin";
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("actorUserId", actor);
+            details.put("principalId", principalId);
+            details.put("expandedPrincipals", new java.util.ArrayList<>(expandedPrincipals));
+            details.put("removePrincipalIds", new java.util.ArrayList<>(removePrincipalIds));
+            details.put("lostCount", lostCount);
+            auditLogger.logOperation(
+                    jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_GOVERNANCE_SIMULATE,
+                    repositoryId, actor, principalId, true, null, details);
+        } catch (RuntimeException ignored) {
+            // Audit must not break the API path
+        }
     }
 
     /**

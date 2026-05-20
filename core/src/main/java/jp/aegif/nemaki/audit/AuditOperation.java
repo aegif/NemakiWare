@@ -157,6 +157,11 @@ public enum AuditOperation {
     EXTERNAL_PROFILE_CREATED("externalProfileCreated", "External ingest profile created"),
     EXTERNAL_PROFILE_UPDATED("externalProfileUpdated", "External ingest profile updated"),
     EXTERNAL_PROFILE_DELETED("externalProfileDeleted", "External ingest profile deleted"),
+    // RC5.3 W2: governance simulate-remove invocations. Records the
+    // queried principal, the principals an admin is simulating
+    // removal of, and the size of the resulting "lost" set so
+    // post-hoc analysis of who-asked-what is possible.
+    EXTERNAL_GOVERNANCE_SIMULATE("externalGovernanceSimulate", "External governance simulate-remove invoked"),
 
     // Unknown operation (fallback)
     UNKNOWN("unknown", "Unknown operation");

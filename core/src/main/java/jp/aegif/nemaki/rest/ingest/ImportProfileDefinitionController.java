@@ -97,13 +97,21 @@ public class ImportProfileDefinitionController {
 
     @GetMapping
     public ResponseEntity<List<ImportProfileDefinition>> list(
-            @RequestParam(required = false) String repositoryId) {
+            @RequestParam(required = false) String repositoryId,
+            @RequestParam(required = false) String autoDisabledSince) {
         CallContext ctx = currentCallContext();
         if (ctx == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         boolean admin = ingestAuthorizationService.isAdmin(ctx);
         List<ImportProfileDefinition> all = (repositoryId != null && !repositoryId.isBlank())
                 ? importProfileDefinitionService.listByRepository(repositoryId)
                 : importProfileDefinitionService.list();
+        // W1 (RC5.3): server-side "auto-disabled since" filter. Passes
+        // through `all` unchanged when the param is absent or malformed,
+        // so existing clients (and the non-admin path below) see no
+        // change. Malformed ISO-8601 → WARN log + pass-through rather
+        // than 400, to keep the endpoint forgiving for shaky callers
+        // (e.g. a UI bug that ships an empty string).
+        all = applyAutoDisabledSinceFilter(all, autoDisabledSince);
         if (admin) return ResponseEntity.ok(all);
         // Non-admin: profile-by-profile permission filter (no full folder-tree scan).
         // canManageProfileForFolder does getFolder + calculateAcl + group expansion
@@ -706,6 +714,55 @@ public class ImportProfileDefinitionController {
     private void auditDenial(AuditOperation op, CallContext ctx, ImportProfileDefinition def,
                              DenialReason reason, String message) {
         auditWithReason(op, ctx, def, false, message, reason);
+    }
+
+    /**
+     * W1 (RC5.3): server-side analogue of V6's client-side
+     * "auto-disabled within last N days" filter. The UI ships
+     * `autoDisabledSince` as an ISO-8601 instant (the cutoff). A
+     * profile passes if it carries a `lastAutoDisabledAt` that is
+     * &gt;= cutoff.
+     *
+     * <p>Forgiving on malformed input — empty string, null,
+     * unparseable timestamp all result in pass-through (no filter
+     * applied) plus a WARN log. The UI controls the cutoff, so 400
+     * would just escalate a UI bug into a broken admin tab; the
+     * filter is non-load-bearing and skipping it is safe.
+     *
+     * <p>Profiles without a `lastAutoDisabledAt` (never auto-disabled
+     * or marker cleared on re-enable) do NOT pass the filter — the
+     * point of the filter is to surface recent scheduler shutdowns,
+     * which only marker-bearing profiles can be.
+     */
+    private List<ImportProfileDefinition> applyAutoDisabledSinceFilter(
+            List<ImportProfileDefinition> input, String autoDisabledSince) {
+        if (autoDisabledSince == null || autoDisabledSince.isBlank()) return input;
+        long cutoffMs;
+        try {
+            cutoffMs = java.time.Instant.parse(autoDisabledSince).toEpochMilli();
+        } catch (java.time.format.DateTimeParseException e) {
+            // Fail-safe: drop the filter rather than 400. Caller (UI)
+            // sees the unfiltered list, admin can investigate the WARN.
+            org.slf4j.LoggerFactory.getLogger(ImportProfileDefinitionController.class)
+                    .warn("Ignoring malformed autoDisabledSince='{}': {}",
+                            autoDisabledSince, e.getMessage());
+            return input;
+        }
+        List<ImportProfileDefinition> out = new ArrayList<>();
+        for (ImportProfileDefinition p : input) {
+            String at = p.getLastAutoDisabledAt();
+            if (at == null || at.isBlank()) continue;       // no marker = exclude
+            try {
+                long t = java.time.Instant.parse(at).toEpochMilli();
+                if (t >= cutoffMs) out.add(p);
+            } catch (java.time.format.DateTimeParseException e) {
+                // Profile has a marker we can't parse — exclude
+                // defensively rather than including. The filter
+                // semantic is "recent and resolvable", not "recent or
+                // probably-but-can't-tell".
+            }
+        }
+        return out;
     }
 
     /**

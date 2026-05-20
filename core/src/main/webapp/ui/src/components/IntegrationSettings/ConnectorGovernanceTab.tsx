@@ -4,6 +4,7 @@ import { SearchOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import {
   getConnectorsByPrincipal,
+  simulateRemovePrincipals,
   type ConnectorByPrincipalResponse,
   type ConnectorPrincipalMatch,
 } from '../../services/externalIngest';
@@ -158,6 +159,38 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
       }
     };
   }, []);
+
+  // W2 (RC5.3): debounced server-side simulate-remove call. The UI
+  // keeps client-side computation for instant filter feedback, but
+  // also fires the server endpoint so the audit pipeline captures
+  // who-asked-what for SOC review. Fire-and-forget — we don't use
+  // the server response for display (client-computed result is the
+  // exact same thing). 800 ms debounce avoids spamming audit on
+  // intermediate multi-select states; selection that settles for
+  // <800 ms doesn't audit, which matches operator intent.
+  const simulateAuditTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!result || simulateRemove.length === 0) return undefined;
+    if (simulateAuditTimerRef.current) clearTimeout(simulateAuditTimerRef.current);
+    simulateAuditTimerRef.current = setTimeout(() => {
+      simulateRemovePrincipals(
+        result.principalId,
+        result.repositoryId,
+        result.expand,
+        simulateRemove,
+      ).catch(() => {
+        // Audit failure is non-fatal — client-computed result still
+        // displays correctly. Server-side WARN log captures the
+        // failure for ops investigation.
+      });
+    }, 800);
+    return () => {
+      if (simulateAuditTimerRef.current) {
+        clearTimeout(simulateAuditTimerRef.current);
+        simulateAuditTimerRef.current = null;
+      }
+    };
+  }, [result, simulateRemove]);
 
   const onSubmit = async (values: { principalId: string; expand: boolean }) => {
     const pid = values.principalId?.trim();

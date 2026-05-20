@@ -310,6 +310,45 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC20 / RC5.3 (2026-05-20〜, 進行中) — W1 + W2 server-side governance/scalability
+
+ブランチ: `release/3.1.1-RC5.3` (off `v3.1.1-RC5.2` = `e18e020f6`)
+
+RC5.1 で vNext 分類した W1 / W2 を統合 RC として実施。**Java 側追加あり**
+(RC5.x で初): import-profiles list endpoint に since filter を追加、
+governance に simulate-remove endpoint を新設。RC5 で確立した既存 API
+の応答 shape は不変、追加のみ。
+
+#### W1: import-profiles since filter (server-side)
+
+- `GET /v1/admin/import-profiles?autoDisabledSince=ISO-8601` で
+  `lastAutoDisabledAt >= since` を満たす profile のみ返却
+- 既存 endpoint の応答 shape / 既存 query 動作は不変 (param 不在で
+  従来通り)
+- 大量 profile 環境で V6 client filter を server side に押し下げ、
+  ネットワーク + render コスト削減
+- 不正 ISO-8601 値は fail-safe (filter 無効化 + WARN ログ、API は
+  400 でなく 200 維持で backward compat)
+
+#### W2: governance simulate-remove endpoint
+
+- `POST /v1/admin/connectors/by-principal/{principalId}/simulate-remove`
+- Body: `{"repositoryId": "...", "expand": true|false, "removePrincipalIds": [...]}`
+- Response: `{"lost": [...matches...], "kept": [...matches...]}`
+  - lost: 全 matchedPrincipalIds が removePrincipalIds に含まれる → 削除で完全失う
+  - kept: その他の matches (alternate route 残存)
+- admin only (`requireAdmin()`)
+- audit: `EXTERNAL_GOVERNANCE_SIMULATE` op、principalId + removeIds + lost count を記録
+- 既存 V5/V7 client-computed ロジックと同じ「sole-route 検出」を server 化
+- CLI / スクリプトから直接呼べる、UI も V7 が大量 matches の時に server に offload 可
+
+#### 設計原則
+
+- 既存 patch / view / Mango index / migration には触らない
+- API 既存 shape 不変 (W1 query param 追加、W2 新 endpoint)
+- default 安全側 (W1 default no-filter、W2 admin gate)
+- 既存 unit test 退行ゼロ
+
 ### RC19 / RC5.2 (2026-05-20) — H1-H3 UI polish (shipped)
 
 ブランチ: `release/3.1.1-RC5.2` (off `v3.1.1-RC5.1` = `cc1ac2b54`)

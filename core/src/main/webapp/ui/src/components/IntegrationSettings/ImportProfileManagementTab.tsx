@@ -101,13 +101,22 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setProfiles(await listProfiles(repositoryId));
+      // W1 (RC5.3): when the V6 window is active AND the user has
+      // turned on the "only auto-disabled" filter, push the filter
+      // down to the server via `autoDisabledSince`. This keeps the
+      // payload small for large profile lists (legacy auto-disables
+      // never sent). The client still re-applies V6/G1 logic against
+      // the returned list — server is best-effort, client is final.
+      const since = (onlyAutoDisabled && autoDisabledDays > 0)
+        ? new Date(Date.now() - autoDisabledDays * 24 * 60 * 60 * 1000).toISOString()
+        : undefined;
+      setProfiles(await listProfiles({ repositoryId, autoDisabledSince: since }));
     } catch (err) {
       message.error(t('importProfileManagement.loadError'));
     } finally {
       setLoading(false);
     }
-  }, [repositoryId, message, t]);
+  }, [repositoryId, message, t, onlyAutoDisabled, autoDisabledDays]);
 
   useEffect(() => { load(); }, [load]);
 

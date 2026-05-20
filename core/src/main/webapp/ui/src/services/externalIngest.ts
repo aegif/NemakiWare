@@ -208,6 +208,46 @@ export async function getConnectorsByPrincipal(
   return parseJsonOrThrow<ConnectorByPrincipalResponse>(res, 'getConnectorsByPrincipal');
 }
 
+/**
+ * W2 (RC5.3): server-side simulate-remove. Same sole-route logic the
+ * V5/V7 client computes, but invokable from CLI / scripts and used by
+ * the UI when the match set is large enough that client-side
+ * computation would be wasteful (the server already has the data).
+ *
+ * Returns a `{lost, kept}` partition of the matches that would exist
+ * with the original expansion: lost = connectors where every
+ * matched principal lies in `removePrincipalIds` (no alternate route
+ * grants access); kept = everything else.
+ *
+ * Admin only on the server; this client method does not enforce that
+ * but the endpoint will 403 non-admin callers.
+ */
+export interface SimulateRemoveResponse {
+  principalId: string;
+  principalType: 'USER' | 'GROUP' | 'UNKNOWN';
+  repositoryId: string;
+  expand: boolean;
+  expandedPrincipals: string[];
+  removePrincipalIds: string[];
+  lost: ConnectorPrincipalMatch[];
+  kept: ConnectorPrincipalMatch[];
+}
+
+export async function simulateRemovePrincipals(
+  principalId: string,
+  repositoryId: string,
+  expand: boolean,
+  removePrincipalIds: string[],
+): Promise<SimulateRemoveResponse> {
+  const url = `${CONNECTOR_URL}/by-principal/${encodeURIComponent(principalId)}/simulate-remove`;
+  const res = await fetchWithAuth(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repositoryId, expand, removePrincipalIds }),
+  });
+  return parseJsonOrThrow<SimulateRemoveResponse>(res, 'simulateRemovePrincipals');
+}
+
 export async function getConnector(connectorId: string): Promise<ConnectorDefinition> {
   const res = await fetchWithAuth(`${CONNECTOR_URL}/${encodeURIComponent(connectorId)}`);
   return parseJsonOrThrow<ConnectorDefinition>(res, 'getConnector');
@@ -240,10 +280,32 @@ export async function deleteConnector(connectorId: string): Promise<void> {
 
 // ── Profile CRUD ───────────────────────────────────────────────────
 
-export async function listProfiles(repositoryId?: string): Promise<ImportProfileDefinition[]> {
-  const url = repositoryId
-    ? `${PROFILE_URL}?repositoryId=${encodeURIComponent(repositoryId)}`
-    : PROFILE_URL;
+/**
+ * W1 (RC5.3): optional `autoDisabledSince` is an ISO-8601 instant.
+ * When set, the server returns only profiles whose
+ * `lastAutoDisabledAt` is &gt;= that cutoff. Used by V6's window
+ * filter to push the work server-side for large profile lists.
+ * Malformed values pass through server-side (filter skipped + WARN
+ * logged), so the UI doesn't need to validate before sending.
+ */
+export interface ListProfilesOptions {
+  repositoryId?: string;
+  autoDisabledSince?: string;
+}
+
+export async function listProfiles(
+  repositoryIdOrOptions?: string | ListProfilesOptions,
+): Promise<ImportProfileDefinition[]> {
+  // Back-compat: accept a bare repositoryId string OR an options object.
+  // Existing callers pass `listProfiles('bedroom')` unchanged.
+  const opts: ListProfilesOptions = typeof repositoryIdOrOptions === 'string'
+    ? { repositoryId: repositoryIdOrOptions }
+    : (repositoryIdOrOptions ?? {});
+  const params = new URLSearchParams();
+  if (opts.repositoryId) params.set('repositoryId', opts.repositoryId);
+  if (opts.autoDisabledSince) params.set('autoDisabledSince', opts.autoDisabledSince);
+  const qs = params.toString();
+  const url = qs ? `${PROFILE_URL}?${qs}` : PROFILE_URL;
   const res = await fetchWithAuth(url);
   return parseJsonOrThrow<ImportProfileDefinition[]>(res, 'listProfiles');
 }

@@ -6,6 +6,94 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC5.3 — W1 + W2 server-side governance scalability
+_Release candidate on `release/3.1.1-RC5.3` (2026-05-20), branched
+off `v3.1.1-RC5.2` (`e18e020f6`)._
+
+First RC5.x cycle to **add Java code paths** since the RC5 base.
+Resolves the W1 / W2 vNext items by pushing two pieces of work
+server-side: V6's "auto-disabled within N days" filter and V7's
+multi-principal removal simulation. Both are purely additive — RC5's
+existing API response shapes and the existing endpoints are unchanged.
+
+### W1: import-profiles `autoDisabledSince` filter
+
+`GET /v1/admin/import-profiles?autoDisabledSince=ISO-8601` returns
+only profiles whose `lastAutoDisabledAt` is `>= cutoff`. Profiles
+without a marker are excluded. Empty / missing / malformed cutoff →
+filter dropped (WARN logged), so the endpoint stays forgiving and
+the existing no-param contract is preserved byte-identically. The V6
+UI window now ships the cutoff when both the "only auto-disabled"
+filter and a non-zero window are active, so large-profile deployments
+fetch only the relevant slice rather than filtering client-side.
+
+### W2: `POST /by-principal/{principalId}/simulate-remove`
+
+Admin-only endpoint that performs V5/V7's sole-route detection
+server-side. Body shape:
+
+```json
+{
+  "repositoryId": "bedroom",
+  "expand": true,
+  "removePrincipalIds": ["group-a", "group-b"]
+}
+```
+
+Response partitions matches into `lost` (every matched principal lies
+in the removal set — no alternate route) and `kept` (everything
+else). Same logic the V7 UI computes client-side; the value is
+**CLI / scripting access** + **audit trail**: each invocation logs an
+`EXTERNAL_GOVERNANCE_SIMULATE` audit entry with the queried principal,
+the removal set, and the lost count. SOC tooling can now correlate
+"what-if" questions with subsequent group / ACL changes.
+
+The V7 UI keeps its instant client-side computation for display
+responsiveness, but fires the W2 endpoint debounced at 800 ms after
+the multi-select settles. Audit captures the operator intent without
+adding a round-trip to every keystroke.
+
+### Audit additions
+
+- New `AuditOperation.EXTERNAL_GOVERNANCE_SIMULATE` enum entry (audit
+  contract: additive only, never renamed).
+- W2 audit details include:
+  `actorUserId`, `principalId`, `expandedPrincipals`, `removePrincipalIds`,
+  `lostCount`.
+
+### API contract
+
+- `GET /v1/admin/import-profiles` — adds optional `autoDisabledSince`
+  query param; response shape unchanged.
+- `POST /v1/admin/connectors/by-principal/{id}/simulate-remove` — new
+  endpoint, admin-only.
+- All existing endpoints byte-identical.
+
+### Migration / upgrade
+
+No migration. Both features are additive at the API surface; W1's
+default behaviour with no param is identical to RC5.2.
+
+### Tests
+
+- New `ImportProfileSinceFilterTest`: 7 cases (no param /
+  empty string / valid cutoff / malformed cutoff fail-safe /
+  malformed marker defensive-exclude / future cutoff / repo-scoped
+  composition).
+- New `ConnectorSimulateRemoveTest`: 11 cases (admin gate /
+  required-body validation / sole-route detection / multi-principal
+  cascade / response-shape alignment with V3 / GROUP-skip-expand /
+  empty-allowedPrincipalIds skip / blank-entry filter).
+- Ingest delegation suite: **154 tests, all PASS** (was 136).
+- TS check + UI build pass.
+
+### Known post-RC5.3 follow-ups
+
+None at this time. The remaining V8 virtual-scroll alternative was
+explicitly traded off in B1 and remains documented.
+
+---
+
 ## 3.1.1-RC5.2 — H1-H3 UI polish
 _Release candidate on `release/3.1.1-RC5.2` (2026-05-20), branched
 off `v3.1.1-RC5.1` (`cc1ac2b54`)._
