@@ -414,6 +414,20 @@ V1-V3 受け入れレビューで挙げた follow-up (F1-F3 low + V4-V5 vNext) �
 ##### F1-V5 テスト追加 (3 新規 → ingest 計 136 テスト)
 - `ImportProfileSchedulerGateTest`: F1 非 admin update spoof / F1 非 admin create spoof / F1 admin data repair (admin は marker 書込可)
 
+#### Post-RC5 follow-up (low priority — RC5.1 候補)
+
+F1-V5 受け入れ再々レビューで surface。release blocker ではない:
+
+- **G1** (Low, UX): V4 filter ON 状態で全 auto-disabled を re-enable → count=0 で filter Switch unmount + 内部 state 残置 → 表 empty で confusing。`useEffect` で count==0 時 `setOnlyAutoDisabled(false)` 3 行 fix。
+- **G2** (Low, scale): F3 AutoComplete が `getUsers/getGroups` を `limit=500` で 1 ショット。10k+ principal 環境ではページング or server-side filter 化が必要 (現状 single-tenant 想定)。
+- **G3** (Low, UX): V5 simulate-removal Select に `GROUP_EVERYONE` が含まれる。removal シミュレートしても通常 0 lost で害なし、ただし noise。pseudo-principal を除外する polish 候補。
+
+#### vNext (RC5.1 ではなく別 scope)
+
+- **V6**: V4 拡張 — 「過去 N 日に auto-disable された profile」filter
+- **V7**: V5 拡張 — 複数 principal 同時 removal シミュレーション
+- **V8**: F3 AutoComplete の virtual scroll + lazy load (大規模 principal directory 対応)
+
 ### RC16 / RC4 (2026-05-18) — パッチ機構の構造改修
 
 ブランチ: `release/3.1.1-RC4` (off RC3 HEAD `9bdfb8383`)

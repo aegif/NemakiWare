@@ -799,3 +799,39 @@ is purely UI.
 Tested by `ImportProfileSchedulerGateTest` (+3 F1 cases). V4 / V5 /
 F2 / F3 are UI-only; coverage relies on TS type checking, UI build,
 and live deployment verification.
+
+### 12.6 Post-RC5 follow-up (low priority — RC5.1 candidates)
+
+Surfaced in the F1-V5 acceptance re-review. Not release blockers;
+recorded here so the RC5.1 cycle can pick them up cleanly.
+
+- **G1** (Low, UX): `ImportProfileManagementTab` — when the
+  "auto-disabled only" filter Switch is on AND the admin re-enables
+  the last auto-disabled profile, `autoDisabledCount` drops to 0,
+  the Switch unmounts, and its `useState` value stays `true`. The
+  table renders empty until refresh. Fix: a 3-line `useEffect` that
+  resets the state when the count hits 0.
+- **G2** (Low, scale): F3's AutoComplete loads users + groups in a
+  single `limit=500` call on tab mount. Adequate for single-tenant
+  NemakiWare; 10k+ principal directories need pagination or
+  server-side filtering. Defer until a deployment actually needs it.
+- **G3** (Low, UX): V5's `simulateRemove` `Select` includes
+  `GROUP_EVERYONE` when expansion brought it in. Removing it from
+  the simulation set typically yields 0 lost (no connector should
+  list `GROUP_EVERYONE` in `allowedPrincipalIds` — defeats the
+  point of delegation). Filtering well-known pseudo-principals out
+  of the dropdown is a small polish.
+
+### 12.7 vNext (separate scope, not RC5.1)
+
+Larger ideas that came up during reviews but are explicitly NOT
+RC5.1 work. Recorded for future planning only.
+
+- **V6**: "Auto-disabled in last N days" filter in
+  `ImportProfileManagementTab` so admins can separate fresh
+  scheduler shutdowns from legacy ones.
+- **V7**: Multi-principal removal simulation in V5 — e.g. "what
+  does Alice lose if removed from BOTH group A and group B?"
+- **V8**: F3 AutoComplete virtual scroll + lazy load to make the
+  governance tab usable at 10k+ users/groups without large initial
+  fetches.

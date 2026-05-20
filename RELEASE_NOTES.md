@@ -207,6 +207,41 @@ trip.
   total cases in this class.
 - Ingest delegation suite: **136 tests, all PASS** (was 133).
 
+### Known post-RC5 follow-ups (low priority — RC5.1 candidates)
+
+Surfaced during the F1-V5 acceptance re-review. None are release
+blockers; recorded here so they aren't lost.
+
+- **G1** (Low, UX): `ImportProfileManagementTab` — when the
+  "auto-disabled only" filter is on AND the admin re-enables the
+  last auto-disabled profile, `autoDisabledCount` drops to 0 → the
+  filter Switch unmounts but its internal state stays `true`. The
+  visible table looks empty until the page is refreshed. Fix: small
+  `useEffect` that resets `onlyAutoDisabled` to false when count
+  reaches 0.
+- **G2** (Low, scale): `ConnectorGovernanceTab` AutoComplete loads
+  users + groups with `limit=500`. Adequate for single-tenant
+  NemakiWare deployments; needs pagination or server-side filtering
+  for 10k+ principal directories.
+- **G3** (Low, UX): V5 simulate-removal `Select` includes
+  `GROUP_EVERYONE` when expansion brought it in. Simulating its
+  removal yields 0 lost (nothing typically lists `GROUP_EVERYONE` in
+  `allowedPrincipalIds`), so it's harmless but visually noisy.
+  Excluding well-known pseudo-principals from the dropdown would be
+  a small polish.
+
+### vNext (separate scope — not RC5.1)
+
+Larger ideas surfaced during RC5 reviews; explicitly out of scope
+for any RC5 patch and not started:
+
+- **V6**: "Auto-disabled in last N days" filter in
+  `ImportProfileManagementTab`.
+- **V7**: Multi-principal removal simulation (e.g. remove from
+  group A AND group B simultaneously).
+- **V8**: AutoComplete virtual scroll + lazy load for very large
+  principal directories.
+
 ---
 
 ## 3.1.1-RC4.1 — RC4 acceptance findings F1-F3
