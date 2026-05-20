@@ -18,8 +18,16 @@ test.describe('Connector & Profile Management UI', () => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
     await waitForUiStable(page);
 
-    const tabs = page.locator('[role="tab"]');
-    const connectorTab = tabs.filter({ hasText: /Connector|コネクタ/i });
+    // RC5.1+ added a "Connector Access" / "コネクタアクセス" governance
+    // tab in addition to the "Connectors" / "コネクタ" management tab.
+    // The previous /Connector|コネクタ/i regex matched both → strict-
+    // mode 2-match collision. Match the management tab by accessible
+    // name with a negative lookahead so "コネクタアクセス" / "Connector
+    // Access" don't slip through. The "ベータ" Tag rendered next to
+    // the label is in the same accessible name, so we anchor on the
+    // word "コネクタ" / "Connectors" followed by space + "ベータ" /
+    // "Beta" — the exact management tab label.
+    const connectorTab = page.getByRole('tab', { name: /^(コネクタ ベータ|Connectors\s+Beta)$/ });
     await expect(connectorTab).toBeVisible({ timeout: 10000 });
   });
 
@@ -33,7 +41,14 @@ test.describe('Connector & Profile Management UI', () => {
   });
 
   test('Connector CRUD via API', async ({ request }) => {
-    const headers = { Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64'), 'Content-Type': 'application/json' };
+    // CSRF: /core/api/v1/* requires X-Requested-With for state-changing
+    // requests using basic auth (ambient credential). Without it, CSRF
+    // filter returns 403. See CLAUDE.md "CSRF保護".
+    const headers = {
+      Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+    };
 
     // Cleanup
     await request.delete(`${API_BASE}/connectors/e2e-test-conn`, { headers }).catch(() => {});
@@ -71,7 +86,14 @@ test.describe('Connector & Profile Management UI', () => {
   });
 
   test('Import Profile CRUD via API', async ({ request }) => {
-    const headers = { Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64'), 'Content-Type': 'application/json' };
+    // CSRF: /core/api/v1/* requires X-Requested-With for state-changing
+    // requests using basic auth (ambient credential). Without it, CSRF
+    // filter returns 403. See CLAUDE.md "CSRF保護".
+    const headers = {
+      Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+    };
 
     // Cleanup
     await request.delete(`${API_BASE}/import-profiles/e2e-test-profile`, { headers }).catch(() => {});

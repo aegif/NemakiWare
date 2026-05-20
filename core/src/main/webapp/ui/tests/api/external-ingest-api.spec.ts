@@ -1,8 +1,22 @@
 import { test, expect } from '@playwright/test';
 
 const BASE = 'http://localhost:8080/core/api';
-const AUTH = { Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64') };
+// CSRF: /core/api/v1/* requires X-Requested-With for state-changing
+// requests when basic auth (an ambient credential) is used. Add it to
+// AUTH so every helper that spreads {...AUTH} gets the header. GET
+// requests don't strictly need it, but including it is harmless.
+const AUTH = {
+  Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+  'X-Requested-With': 'XMLHttpRequest',
+};
 const JSON_HEADERS = { ...AUTH, 'Content-Type': 'application/json' };
+
+// CSRF + serial execution: these tests share backend state (single
+// connectorId / profileId within each describe block) and depend on
+// CRUD ordering. With workers > 1 parallel runs trip on each other's
+// state — declare serial so all 16 tests in this file run in one
+// worker even when the project parallelizes other files.
+test.describe.configure({ mode: 'serial' });
 
 test.describe('External Ingest API', () => {
 

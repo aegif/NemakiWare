@@ -14,7 +14,13 @@ import { test, expect, APIRequestContext } from '@playwright/test';
 
 const BASE = 'http://localhost:8080/core/api';
 const CMIS = 'http://localhost:8080/core/browser/bedroom';
-const AUTH = { Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64') };
+// CSRF: /core/api/v1/* requires X-Requested-With for state-changing
+// requests when basic auth (ambient credential) is used. See CLAUDE.md
+// "CSRF保護". Adding to AUTH so every spread {...AUTH} gets it.
+const AUTH = {
+  Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+  'X-Requested-With': 'XMLHttpRequest',
+};
 const JSON_H = { ...AUTH, 'Content-Type': 'application/json' };
 
 /** Extract property value from CMIS object (handles both succinct and full format). */
@@ -33,9 +39,18 @@ async function createStub(request: APIRequestContext, suffix: string) {
   await request.delete(`${BASE}/v1/admin/import-profiles/${profId}`, { headers: AUTH }).catch(() => {});
   await request.delete(`${BASE}/v1/admin/connectors/${connId}`, { headers: AUTH }).catch(() => {});
 
+  // Use a real registered sourceSystem ('box') — RC5+ server validates
+  // sourceSystem against AdapterRegistry. 'e2e_test' was a synthetic
+  // value that pre-validation servers accepted; now it 400s. The
+  // connector won't actually reach Box (these are stub fixtures for
+  // ingest-pipeline behaviour, not external-call tests).
   await request.post(`${BASE}/v1/admin/connectors`, {
     headers: JSON_H,
-    data: { connectorId: connId, sourceArchetype: 'FILE_SHARE', sourceSystem: 'e2e_test', authType: 'none', enabled: true },
+    data: {
+      connectorId: connId, sourceArchetype: 'FILE_SHARE', sourceSystem: 'box',
+      authType: 'none', enabled: true,
+      endpoint: 'https://api.box.com/v1',
+    },
   });
   await request.post(`${BASE}/v1/admin/import-profiles`, {
     headers: JSON_H,
@@ -84,6 +99,12 @@ async function cleanupOrphans(request: APIRequestContext) {
     }
   } catch { /* best effort */ }
 }
+
+// Serial execution: ingest pipeline tests create connector+profile
+// stubs, exercise them, and tear them down. Parallel workers race on
+// each other's stubs; serial avoids that without giving up overall
+// parallelism with other spec files.
+test.describe.configure({ mode: 'serial' });
 
 test.describe('Ingest Pipeline — API Smoke Tests', () => {
 
@@ -296,7 +317,11 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
 
     await request.post(`${BASE}/v1/admin/connectors`, {
       headers: JSON_H,
-      data: { connectorId: connId, sourceArchetype: 'FILE_SHARE', sourceSystem: 'google', enabled: true },
+      // RC5+ requires registered sourceSystem ('google_drive' not 'google'); also endpoint
+      data: {
+        connectorId: connId, sourceArchetype: 'FILE_SHARE', sourceSystem: 'google_drive',
+        enabled: true, endpoint: 'https://www.googleapis.com/drive/v3',
+      },
     });
     await request.post(`${BASE}/v1/admin/import-profiles`, {
       headers: JSON_H,
@@ -337,7 +362,10 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
 
     await request.post(`${BASE}/v1/admin/connectors`, {
       headers: JSON_H,
-      data: { connectorId: connId, sourceArchetype: 'FILE_SHARE', sourceSystem: 'e2e_test', enabled: true },
+      data: {
+        connectorId: connId, sourceArchetype: 'FILE_SHARE', sourceSystem: 'box',
+        enabled: true, endpoint: 'https://api.box.com/v1',
+      },
     });
     await request.post(`${BASE}/v1/admin/import-profiles`, {
       headers: JSON_H,
@@ -431,7 +459,7 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
 
     await request.post(`${BASE}/v1/admin/connectors`, {
       headers: JSON_H,
-      data: { connectorId: connId, sourceArchetype: 'FILE_SHARE', sourceSystem: 'e2e_test', authType: 'none', enabled: true },
+      data: { connectorId: connId, sourceArchetype: 'FILE_SHARE', sourceSystem: 'box', authType: 'none', enabled: true, endpoint: 'https://api.box.com/v1' },
     });
     await request.post(`${BASE}/v1/admin/import-profiles`, {
       headers: JSON_H,
@@ -502,7 +530,8 @@ test.describe('Ingest Pipeline — API Smoke Tests', () => {
       headers: JSON_H,
       data: {
         connectorId: connId, sourceArchetype: 'FILE_SHARE',
-        sourceSystem: 'e2e_test', authType: 'none', enabled: true,
+        sourceSystem: 'box', authType: 'none', enabled: true,
+        endpoint: 'https://api.box.com/v1',
       },
     });
     await request.post(`${BASE}/v1/admin/import-profiles`, {
