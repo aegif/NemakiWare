@@ -310,7 +310,7 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
-### RC22 / RC5.5 (2026-05-20〜, 進行中) — 外部レビュー C1 blocker fix + H1/M1/M4
+### RC22 / RC5.5 (2026-05-20) — 外部レビュー C1 blocker fix + H1/M1/M4 (shipped)
 
 ブランチ: `release/3.1.1-RC5.5` (off `release/3.1.1-RC5.4` HEAD `8629782bb`)
 
