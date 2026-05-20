@@ -310,7 +310,7 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
-### RC18 / RC5.1 (2026-05-20〜, 進行中) — G1-G3 polish + V6-V8 governance/scalability 拡張
+### RC18 / RC5.1 (2026-05-20) — G1-G3 polish + V6-V8 governance/scalability 拡張 + B1 fix
 
 ブランチ: `release/3.1.1-RC5.1` (off `v3.1.1-RC5` = `f47d3273d`)
 
@@ -344,6 +344,30 @@ default-off opt-in property は不変。UI 改善 + 拡張 + scalability 中心�
 - API contract 不変 (governance API / profile API 既存応答 shape は維持)
 - default 安全側継続
 - 既存 unit test 退行ゼロ
+
+#### B1 fix (RC5.1 受け入れレビュー後の regression 修正)
+
+V8 が AutoComplete → `Select` 置換で free-text 入力 path を失った
+regression を解消。`Select` は options からのみ submit 可能で、pseudo-
+principal (例: `anyone`)、外部 IdP ID、未 sync の new principal は
+typed-text で submit できなかった。`AutoComplete` に revert しつつ V8
+の server-side `onSearch` + 300 ms debounce + 50件 fetch は維持。
+virtual scrolling は明示的に trade-off (50件は DOM cost 軽微で不要)。
+
+V5/V7 multi simulate-removal Select は別 control なので影響なし。
+
+Commit: `fc124aea1` (推奨 tag 対象)
+
+#### Post-RC5.1 follow-up (RC5.2 候補、release blocker なし)
+
+- **H1** (Low): V8 debounce timer の unmount cleanup — 単一 admin tab で実害低、best practice
+- **H2** (Low, UX): V7 multi-removal Select に最大選択件数制限 — 全 expansion 一括選択で「全失う」noise 回避
+- **H3** (Low, UX): V6 window に「カスタム日数」入力欄 — 現在は 1/7/30 固定
+
+#### vNext (RC5.2 ではなく別 scope)
+
+- **W1**: V6 server-side filter 化 (大量 profile 環境向け、現状 client filter)
+- **W2**: V7 server-side simulate endpoint — CLI/スクリプトから同じロジックを呼べる
 
 ### RC17 / RC5 (2026-05-19) — v2: scheduled delegated profiles + connector governance view
 

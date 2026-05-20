@@ -835,3 +835,81 @@ RC5.1 work. Recorded for future planning only.
 - **V8**: F3 AutoComplete virtual scroll + lazy load to make the
   governance tab usable at 10k+ users/groups without large initial
   fetches.
+
+### 12.8 RC5.1 polish (G1 + G3 + V6 + V7 + V8 + B1 fix)
+
+Folded into RC5.1 — all UI / i18n only, no Java / contract / DB
+changes. RC5.1's tag (`v3.1.1-RC5.1`) closes this cycle.
+
+**G1**: `ImportProfileManagementTab` gains a `useEffect` that resets
+`onlyAutoDisabled` to false whenever `autoDisabledCount` drops to 0.
+Previously the filter Switch would unmount but its state would stay
+`true`, leaving the admin staring at an empty table until refresh.
+
+**G3**: `ConnectorGovernanceTab` filters
+`PSEUDO_PRINCIPALS_FOR_SIMULATE = {GROUP_EVERYONE, anyone, Anyone, GROUP_ANYONE, authenticated, Authenticated}`
+out of the simulate-removal Select. These are ACL targets, not group
+memberships an admin can edit; simulating their removal isn't a
+meaningful operator question. The match-list itself is unaffected
+(connectors that allow `GROUP_EVERYONE` still surface in `matches`).
+
+**V6**: V4's filter Switch now sits next to a window Select
+(All / 24h / 7d / 30d). The `isWithinDays(p, days)` helper fails
+shut on malformed timestamps. The count Tag shows `recent/total`
+when a window is active and the banner switches to the
+`autoDisabledBannerRecent` i18n key.
+
+**V7**: V5's `simulateRemove` type changes from `string | null` to
+`string[]`. The Select goes `mode="multiple"`. Filter logic stays
+sole-route-detection but generalises to "every matched principal is
+in the removal set": `m.matchedPrincipalIds.every(p => removalSet.has(p))`.
+Single-element selection degenerates exactly to V5 behaviour. The
+key UX win is cascade detection — a connector that allows both group
+A and group B doesn't lose access when either is removed
+individually, but does when both are.
+
+**V8**: server-side principal search. The picker no longer fetches
+500 users + 500 groups on mount. An empty `query` fetches 50 of
+each; `onSearch` triggers a fresh fetch with the typed query against
+the existing `/user/list?query=` and `/group/list?query=` admin
+endpoints (300 ms debounce). Lookup failures soft-fail to an empty
+options list. Scales for 10k+ principal directories.
+
+**B1 fix** (RC5.1 acceptance-review regression): V8 originally
+switched the picker from `AutoComplete` to Ant Design `Select` to
+get virtual scrolling. Review caught that `Select` only accepts
+options-list values — typed pseudo-principals couldn't be submitted.
+Fix: revert the picker to `AutoComplete` while preserving V8's
+server-side debounced search. Virtual scroll is explicitly traded
+off — 50 items per response is small enough that virtual scrolling
+adds no measurable benefit for this use case.
+
+### 12.9 Post-RC5.1 follow-up (low priority — RC5.2 candidates)
+
+Surfaced during the RC5.1 acceptance review. Not blockers.
+
+- **H1**: V8 debounce `setTimeout` lacks an unmount cleanup. The
+  governance tab rarely unmounts in admin sessions so the impact
+  is essentially zero, but adding a `useEffect` return-cleanup
+  closes the loop.
+- **H2**: V7's `mode="multiple"` Select accepts unbounded selection.
+  Picking the whole expansion set yields a noisy "lose everything"
+  result that isn't a useful operator question. A max-count cap
+  (5? 10?) would steer the UI toward meaningful comparisons.
+- **H3**: V6's window selector is fixed (All / 24h / 7d / 30d). A
+  custom-N-days input would handle incident windows that don't fit
+  the preset list.
+
+### 12.10 vNext (separate scope, not RC5.2)
+
+Bigger ideas that came up during RC5.1 review but are explicitly
+NOT planned for any RC5 patch.
+
+- **W1**: V6 currently filters client-side. Very large profile
+  lists would benefit from a server-side `since` query param so
+  the client fetches only profiles disabled in the window.
+- **W2**: V7 currently computes the lost-connector set client-side
+  from the existing `matchedPrincipalIds` data. A dedicated server
+  endpoint (`POST /by-principal/{id}/simulate-remove` with a
+  principal-set body and a `lost` array response) would let CLI
+  / scripting access the same logic without re-implementing it.

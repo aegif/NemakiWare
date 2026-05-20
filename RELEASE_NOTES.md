@@ -6,6 +6,117 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC5.1 — Governance dashboard polish + scalability
+_Release candidate on `release/3.1.1-RC5.1` (2026-05-20), branched
+off `v3.1.1-RC5` (`f47d3273d`)._
+
+UI-only follow-up cycle on top of RC5. **No Java / property / patch /
+migration changes** — RC5's scheduled delegated profile contract and
+governance API contract are unchanged. RC4.1 → RC5.1 upgrade
+behaviour is identical to RC4.1 → RC5 (default-safe).
+
+### G1: auto-disable filter state reset
+
+`ImportProfileManagementTab` — when the "Show only auto-disabled"
+filter is on and the admin re-enables the last auto-disabled profile,
+`autoDisabledCount` drops to 0, the filter Switch unmounts, but
+React state stayed `true`. The table silently rendered empty until
+refresh. A `useEffect` now resets the state when the count reaches 0
+so the table reverts to the full list automatically.
+
+### G3: pseudo-principal removal-simulation filter
+
+The governance tab's "Simulate removing" dropdown no longer offers
+well-known pseudo-principals — `GROUP_EVERYONE`, `anyone`, `Anyone`,
+`GROUP_ANYONE`, `authenticated`, `Authenticated`. These are ACL
+targets, not group memberships an admin can edit, so simulating
+their removal isn't a meaningful operator question. Reduces visual
+noise without changing match logic.
+
+### V6: "auto-disabled in last N days" filter
+
+V4's auto-disabled filter gains a window selector (All / 24h / 7d /
+30d, default All). When a window is active:
+- The count Tag shows `recent/total` (e.g. `2/3`)
+- The banner switches to a recent-count phrasing
+- Malformed `lastAutoDisabledAt` timestamps fail-shut (excluded)
+
+Lets ops teams investigating an incident surface fresh scheduler
+shutdowns without legacy auto-disables creating noise.
+
+### V7: multi-principal removal simulation
+
+The V5 simulate-removal Select goes multi-select. Filter logic
+extends from `every === simulateRemove` to
+`every ∈ removalSet`, so removing multiple principals together
+correctly cascades — e.g. removing the user from both group A and
+group B reveals connectors that survive each removal individually
+but fall when both are removed (matched via either group only).
+
+### V8: server-side principal search
+
+The governance tab's principal picker no longer issues a single
+`limit=500` fetch on mount. Instead:
+- An empty `query` fetches the first 50 users + 50 groups
+- Every keystroke triggers `onSearch` with a 300 ms debounce
+- The fetch passes the typed query to `/user/list?query=` and
+  `/group/list?query=` (existing endpoints, existing admin gate)
+- Scales to 10k+ principal directories without an upfront fetch
+  cost
+
+### B1 fix (acceptance-review regression)
+
+A pre-fix V8 implementation switched the picker from Ant Design
+`AutoComplete` to `Select` to gain virtual scrolling. Acceptance
+review surfaced that `Select` only accepts values from its options
+array — typed pseudo-principals (`anyone`, external-IdP IDs) couldn't
+be submitted. The fix reverts the picker to `AutoComplete` while
+keeping V8's server-side `onSearch` + 300 ms debounce + 50-per-call
+fetch. Virtual scrolling is given up; 50 items is small enough that
+DOM cost is negligible.
+
+### i18n
+
+- `importProfileManagement` gains 5 keys (`autoDisabledBannerRecent`,
+  `autoDisabledWindow{All,1d,7d,30d}`).
+- `connectorGovernance.simulationNote` takes a `{{principals}}`
+  placeholder for V7's multi-principal phrasing.
+- Parity: 28 `connectorGovernance` keys + 9
+  `importProfileManagement.autoDisabled*` keys aligned ja/en.
+
+### Migration / upgrade
+
+No migration. UI-only changes; pre-RC5.1 records read unchanged.
+
+### Tests
+
+- 136/136 ingest unit tests pass (unchanged from RC5 — UI-only).
+- Live verification of G1 transition, G3 filter, V6 window logic
+  (3 timestamps × 4 windows), V7 cascade simulation, V8 server-side
+  search, and B1 free-text round-trip.
+
+### Known post-RC5.1 follow-ups (low priority — RC5.2 candidates)
+
+- **H1**: V8 debounce timer lacks unmount cleanup. Single-tab admin
+  UI rarely unmounts, so impact is low; a `useEffect` return-cleanup
+  closes the loop.
+- **H2**: V7 multi-removal Select has no max-selection cap. Power
+  users could pick the whole expansion set and see a noisy "lose
+  everything" result. UX guard, not security.
+- **H3**: V6 window is a fixed list (All / 24h / 7d / 30d). A custom
+  N-days input would handle incident windows that don't fit the
+  preset.
+
+### vNext (separate scope — not RC5.2)
+
+- **W1**: V6 server-side filter for very large profile lists (current
+  V6 filters client-side).
+- **W2**: V7 server-side simulate endpoint — `POST /by-principal/{id}/simulate-remove`
+  with a principal-set body and a `lost` array response. Useful for
+  CLI / scripting access to the same logic the UI offers.
+
+---
+
 ## 3.1.1-RC5 — Scheduled delegated profiles + connector governance view
 _Release candidate on `release/3.1.1-RC5` (2026-05-19), branched off
 `v3.1.1-RC4.1` (`572aad18b`)._
