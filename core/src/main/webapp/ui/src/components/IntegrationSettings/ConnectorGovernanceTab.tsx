@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Card, Form, Switch, Button, Table, Tag, Space, App, Typography, Tooltip, Select, Spin } from 'antd';
+import { Alert, AutoComplete, Card, Form, Switch, Button, Table, Tag, Space, App, Typography, Tooltip, Select, Spin } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import {
@@ -269,12 +269,16 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
           name="principalId"
           rules={[{ required: true, message: t('connectorGovernance.principalRequired') }]}
         >
-          {/* V8 (RC5.1): Select with virtual scroll (default in antd 5)
-              + showSearch + onSearch debounce. mode="combobox" via
-              having no explicit mode lets free-text values pass
-              through (pseudo-principals / external IdP IDs). */}
-          <Select
-            showSearch
+          {/* F3/V8 (RC5.1, B1-fixed): AutoComplete preserves the
+              free-text submission path required for pseudo-principals
+              (e.g. Anyone), external-IdP IDs, and any principal not
+              yet in the local store. V8's server-side `onSearch` +
+              300 ms debounce against /user/list + /group/list is
+              kept here so the dropdown scales for large directories
+              without an upfront limit=500 fetch. virtual scrolling
+              is given up — limit=50 per call keeps the suggestion
+              list short enough that rendering cost is negligible. */}
+          <AutoComplete
             allowClear
             placeholder={t('connectorGovernance.principalPlaceholder')}
             style={{ width: 360 }}
@@ -282,8 +286,6 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
             onSearch={onPrincipalSearch}
             filterOption={false}      // server-side filter — don't double-filter client-side
             notFoundContent={pickerLoading ? <Spin size="small" /> : null}
-            virtual
-            optionLabelProp="value"   // show raw principalId in the input, not the verbose label
           />
         </Form.Item>
         <Form.Item
