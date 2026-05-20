@@ -987,7 +987,36 @@ still pass through. The shipped UI flow ships only
 `Date.toISOString()` so the strictness is invisible to the UI; CLI
 / scripting callers now get an immediate 400 on typos.
 
-### 12.13 vNext (separate scope, not RC5.x)
+### 12.13 ~~RC5.5: External-review C1 blocker + H1/M1/M4 corrections~~ (shipped)
+
+Folded into RC5.5 — correction cycle from the first external-review
+round of `v3.1.1-RC5.4`.
+
+**C1**: `applyAutoDisabledSinceFilter` now catches
+`ArithmeticException` alongside `DateTimeParseException`. Cutoff
+overflow → 400 (closes the residual 500 leak in R4's otherwise-strict
+400 contract). Profile-marker overflow → defensive exclude (one
+corrupted record no longer 500s the whole list).
+
+**H1**: New `jp.aegif.nemaki.audit.AuditEmitSupport.safeEmit(...)`
+collapses 5 silent `catch (RuntimeException ignored)` audit
+emit sites across 4 controllers. The helper preserves the
+"audit failure cannot break business path" invariant while
+logging WARN with `op + actor + object + exceptionClass + exceptionMessage`.
+The audit `details` map is deliberately NOT logged so secrets /
+tokens / credentials cannot leak into the general application
+log. The 2 fall-through catches in `resolvePrincipalType`
+(USER → GROUP → UNKNOWN) are unchanged — not audit-related.
+
+**M1**: `REVIEW_PACKET.md` test evidence precision (focused 157 +
+broader 287 explicit scopes).
+
+**M4**: This file's §12.6 and §12.9 (historical post-RC5 /
+post-RC5.1 follow-up lists, all items shipped) now carry the
+`~~strikethrough~~ (resolved in RC5.x)` treatment for consistency
+with §12.10 / §12.11 / §12.12.
+
+### 12.14 vNext (separate scope, not RC5.x)
 
 Bigger ideas that came up during RC5.1 review but are explicitly
 NOT planned for any RC5 patch.

@@ -6,6 +6,143 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC5.5 — External-review C1 blocker fix + H1/M1/M4 cleanups
+_Release candidate on `release/3.1.1-RC5.5` (2026-05-20), branched
+off `release/3.1.1-RC5.4` HEAD `8629782bb` (the post-RC5.4-closure
+branch state, with all RC5.4 doc commits included)._
+
+Correction cycle from the **first external-review round** that
+targeted `v3.1.1-RC5.4`. The reviewer surfaced one blocker (C1)
+plus three recommendations (H1, M1, M4); RC5.5 addresses all four.
+
+### C1: epoch overflow → HTTP 400 (was 500)
+
+`GET /v1/admin/import-profiles?autoDisabledSince=` with an
+ISO-8601 instant that parses successfully but overflows Long
+range on `toEpochMilli()` (e.g. `+999999999-12-31T23:59:59Z`) used
+to return HTTP 500. RC5.4 only caught `DateTimeParseException`;
+RC5.5 also catches `ArithmeticException` for both the cutoff
+parse and the per-profile marker parse:
+
+- Cutoff overflow → controller returns **HTTP 400** (R4 strictness
+  contract now holds for both DateTimeParseException AND overflow).
+- Profile-side overflow on `lastAutoDisabledAt` → defensive exclude
+  (one corrupted record no longer 500s the whole list response).
+
+2 new unit tests pin the behaviour:
+- `epochOverflowCutoff_returns400_C1_RC5_5`
+- `profileWithEpochOverflowMarker_isExcluded_listStillReturns200_C1_RC5_5`
+
+`ImportProfileSinceFilterTest` total: 8 → 10 cases.
+
+### H1: silent audit catch → safeEmit helper
+
+The five `catch (RuntimeException ignored)` audit emit sites in
+the RC5 cycle (3 in `ImportProfileDefinitionController`, 1 in
+`ConnectorDefinitionController`, 1 in
+`ExternalIngestController`, 1 in `IngestSchedulerService`) are
+collapsed to `jp.aegif.nemaki.audit.AuditEmitSupport.safeEmit(...)`
+which:
+
+- Preserves the original invariant: audit failure must never
+  break the business path.
+- Logs a WARN line on failure with `op + actor + object +
+  exceptionClass + exceptionMessage`.
+- Deliberately does NOT log the audit `details` map. The details
+  map can contain principal lists, internal IDs, and other
+  audit-only fields; keeping it out of the general application
+  log preserves audit's segregation contract and avoids
+  secret / token / credential leakage into less-protected
+  logging sinks.
+
+The 2 `catch (RuntimeException ignored)` in
+`resolvePrincipalType` are unchanged — they are deliberate
+fall-through logic (USER → GROUP → UNKNOWN), not audit-related.
+
+Net audit silent catches in RC5 area: 5 → 0.
+
+### M1: REVIEW_PACKET.md test evidence precision
+
+Replaces bare "155 / 155 ingest delegation tests PASS" with two
+explicit scopes:
+
+- **Focused 14 test classes / 157 tests** (RC5.5 includes the C1 +2).
+  Explicit class list documented.
+- **Broader pattern** `*Ingest*Test*,*Connector*Test*,*Profile*Test*,Delegated*Test`
+  returned **287 tests** all PASS at the RC5.4 closure review;
+  not re-run for RC5.5 because RC5.5 only touches files inside
+  the focused set.
+
+### M4: design doc historical section strikethrough
+
+`docs/design/connector-delegation.md` §12.6 and §12.9 (the
+historical post-RC5 / post-RC5.1 follow-up lists, whose items
+all shipped in RC5.1 / RC5.2 respectively) now carry the
+`~~strikethrough~~ (resolved in RC5.x)` treatment to match
+§12.10 / §12.11 / §12.12 already-shipped sections.
+
+### Change scope vs RC5.4 (precise)
+
+- **Changed in RC5.5**:
+  - `ImportProfileDefinitionController.applyAutoDisabledSinceFilter`
+    (C1 — adds `ArithmeticException` to the catch alongside
+    `DateTimeParseException` on both cutoff + profile paths)
+  - 5 audit method bodies in 4 files → `safeEmit` helper calls (H1)
+  - **NEW** `core/src/main/java/jp/aegif/nemaki/audit/AuditEmitSupport.java` (H1)
+  - `ImportProfileSinceFilterTest` (+2 C1 tests)
+  - `REVIEW_PACKET.md` (M1)
+  - `docs/design/connector-delegation.md` (M4 + RC5.5 §12.13)
+  - `CLAUDE.md` (RC5.5 section)
+  - `RELEASE_NOTES.md` (this section)
+- **Unchanged from RC5.4** (byte-equal, accumulated zero diff):
+  - Scheduler core, governance V3 endpoint, W2 simulate-remove
+    endpoint, W1 query param, V1 marker handshake, V4-V8 UI logic,
+    R3 audit button.
+  - `AuditOperation` enum (no new entries since RC5.3).
+  - `DenialReason` enum (no new entries since RC5).
+  - `nemakiware.properties`, `serviceContext.xml`.
+  - Patch / view dumps / Mango index / DB bootstrap.
+
+### Commit + tag relationship
+
+- **C1 + H1 feature commit**: `9bb5bcf83`
+- **Pre-tag doc closure commit** (status flip 進行中 → shipped): `dfb912da9`
+- **`v3.1.1-RC5.5` annotated tag target**: `dfb912da9`
+- **Annotated tag object SHA**: `bd967193da1f522dc9fed47a24b8c2febfd5fdba`
+
+The previous candidate `v3.1.1-RC5.4` is **not force-updated**
+and remains at peeled commit `014939eeb` as a historical
+milestone.
+
+### Tests + verification
+
+- 157/157 focused ingest tests pass (was 155 — C1 +2)
+- TypeScript check + UI build pass
+- `/core/ui/dist/` forbidden path: 0 hit cumulative
+- Live C1: 4-case curl confirms 400 / 400 / 200 / 200
+- Live C1: corrupted profile marker → that profile excluded, list 200
+
+### Follow-up status (cumulative across RC5 cycle)
+
+**Remaining** (post-release / RC5.6+ candidates, not blocking
+external re-review):
+
+- **R1** (Low, ops) — SOC tooling integration for the
+  `EXTERNAL_GOVERNANCE_SIMULATE` audit event.
+- **R5** (Low, audit label) — denialReason mislabel race in
+  `IngestSchedulerService` connector re-check.
+- **H2** (Medium, test coverage) — R3 Simulate button has no
+  Playwright / React test.
+- **M2** (Medium, security hardening) — `simulate-remove` body
+  size limit.
+- **M3** (Low, scale) — `buildMatches` full-scan per call.
+- **L1 / L2** — nit findings (UI ref-equality reset, server-side
+  null check defensiveness).
+
+**Resolved in this RC**: C1, H1, M1, M4.
+
+---
+
 ## 3.1.1-RC5.4 — R3 + R4 closure review code corrections
 _Release candidate on `release/3.1.1-RC5.4` (2026-05-20), branched
 off `release/3.1.1-RC5.3` HEAD `01fe84ac5` (RC5.3 closure
