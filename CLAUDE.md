@@ -362,12 +362,24 @@ R4 は malformed input の挙動を厳格化 (forgiving pass-through → 400)
 - pre-tag doc closure commit (status flip): `014939eeb`
 - annotated tag `v3.1.1-RC5.4` target: `014939eeb`
   (annotated object: `d0a4a4f3d0f40482b0ca45cae47f75305235588b`)
+- **post-tag supplemental docs (NOT in tag)**: `release/3.1.1-RC5.4`
+  branch HEAD は tag 後に追加された doc-only コミットを含む
+  (`REVIEW_PACKET.md`、本セクション、`RELEASE_NOTES.md` 追記、
+  `externalIngest.ts` の JSDoc 訂正)。コード本体は tag が canonical、
+  review-time のフレーミング情報は branch HEAD が canonical。
+  対象ファイルの一覧は `REVIEW_PACKET.md` §3 参照。
 
 #### Follow-up cumulative 状態
 
-- **Remaining (R1 のみ)**: SOC tooling integration —
-  `EXTERNAL_GOVERNANCE_SIMULATE` query / alert template (NemakiWare
-  リポジトリ外、ops 領域)
+- **Remaining**:
+  - **R1** (Low, ops): SOC tooling integration —
+    `EXTERNAL_GOVERNANCE_SIMULATE` query / alert template
+    (NemakiWare リポジトリ外、ops 領域)
+  - **R5** (Low, audit accuracy): `IngestSchedulerService` 内 connector
+    re-check 時の 2 度目 `resolveFolderId` が null を返すレース時、
+    audit `denialReason` が `CONNECTOR_NOT_DELEGATED` で emit される
+    (本来は `TARGET_FOLDER_UNRESOLVABLE` がより正確)。safety は
+    維持、denial reason ラベルのみ不正確。小規模 refactor で解消可
 - **Resolved**: R2 (RC5.3 `01fe84ac5`)、R3 (RC5.4 `6283afc96`)、
   R4 (RC5.4 `6283afc96`)
 

@@ -119,6 +119,22 @@ The annotated tag points at the pre-tag doc closure commit, not
 the feature commit, by the project convention established in RC5
 closure (doc closure included in the reviewed tag).
 
+#### Post-tag supplemental docs (NOT in the tag)
+
+After the tag was cut, additional documentation-only commits
+landed on `release/3.1.1-RC5.4` branch HEAD. These do not modify
+the shipped code artifact captured by `v3.1.1-RC5.4`. The current
+list of files allowed to differ between tag and branch HEAD lives
+in `REVIEW_PACKET.md` §3. External reviewers should treat:
+
+- **Tag `v3.1.1-RC5.4` (peeled `014939eeb`)** as the code artifact
+  under review.
+- **Branch HEAD** as the review-time supplementary documentation,
+  including this section and `REVIEW_PACKET.md`.
+
+`REVIEW_PACKET.md` is the single-page entry point for external
+reviewers and explicitly tracks this tag-vs-branch divergence.
+
 ### Follow-up status (cumulative across RC5 cycle)
 
 **Remaining** (post-release / RC5.5+ candidates):
@@ -128,6 +144,23 @@ closure (doc closure included in the reviewed tag).
   template would let operators get notified on high-frequency
   simulate bursts. Not a release blocker; recorded so it isn't
   lost in the external-review handoff.
+- **R5** (Low, audit accuracy) —
+  `IngestSchedulerService.pollScheduledProfiles` re-runs
+  `IngestAuthorizationService.resolveFolderId(...)` when re-checking
+  connector delegation for a delegated profile. If the second
+  resolve returns `null` (microsecond-window race where the target
+  folder was resolvable at `prepareDelegatedTick` time but
+  unresolvable a few statements later), the audit's
+  `denialReason` is `CONNECTOR_NOT_DELEGATED` when
+  `TARGET_FOLDER_UNRESOLVABLE` would be more accurate. Safety
+  property preserved (the tick is correctly skipped); only the
+  emitted denial reason is mislabeled in this edge case. Fix is a
+  small refactor in `IngestSchedulerService.java` (the second
+  `resolveFolderId` result needs a null check before reaching
+  `canUseConnectorForDelegatedProfileAsUser`). Not a release
+  blocker; flagged here because the closure report's previous
+  "active follow-up: none" wording overlooked this earlier-recorded
+  low finding.
 
 **Resolved during RC5 cycle** (for completeness):
 

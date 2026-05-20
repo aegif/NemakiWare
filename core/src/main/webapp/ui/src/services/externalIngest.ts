@@ -281,12 +281,20 @@ export async function deleteConnector(connectorId: string): Promise<void> {
 // ── Profile CRUD ───────────────────────────────────────────────────
 
 /**
- * W1 (RC5.3): optional `autoDisabledSince` is an ISO-8601 instant.
- * When set, the server returns only profiles whose
- * `lastAutoDisabledAt` is &gt;= that cutoff. Used by V6's window
- * filter to push the work server-side for large profile lists.
- * Malformed values pass through server-side (filter skipped + WARN
- * logged), so the UI doesn't need to validate before sending.
+ * W1 (RC5.3) / R4 (RC5.4): optional `autoDisabledSince` is an
+ * ISO-8601 instant. When set, the server returns only profiles
+ * whose `lastAutoDisabledAt` is &gt;= that cutoff. Used by V6's
+ * window filter to push the work server-side for large profile
+ * lists.
+ *
+ * Server input handling (RC5.4 R4 strict):
+ * - Empty / undefined / `null` → pass-through (no filter applied).
+ * - Valid ISO-8601 → filter applied normally.
+ * - Non-empty malformed string → server returns **HTTP 400**.
+ *   The shipped UI flow only ever sends `Date.toISOString()` so
+ *   this never trips in practice; CLI / scripting callers should
+ *   validate the cutoff client-side before sending to avoid the
+ *   400.
  */
 export interface ListProfilesOptions {
   repositoryId?: string;
