@@ -204,25 +204,23 @@ public class ExternalIngestController {
     private void auditDelegatedAttempt(CallContext ctx, String repositoryId,
                                        ExternalIngestRequest request, boolean success,
                                        String errorMessage, DenialReason denialReason) {
-        if (auditLogger == null || ctx == null) return;
-        try {
-            String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
-            java.util.Map<String, Object> details = new java.util.LinkedHashMap<>();
-            details.put("delegated", true);
-            details.put("actorUserId", actor);
-            if (request.getProfileId() != null) details.put("profileId", request.getProfileId());
-            if (request.getConnectorId() != null) details.put("connectorId", request.getConnectorId());
-            if (request.getTargetFolderOverride() != null) details.put("targetFolderOverrideAttempted", true);
-            if (denialReason != null) details.put("denialReason", denialReason.name());
-            jp.aegif.nemaki.audit.AuditOperation op = success
-                    ? jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST
-                    : jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST_FAILED;
-            auditLogger.logOperation(op, repositoryId, actor,
-                    request.getSourceObjectId() != null ? request.getSourceObjectId() : "",
-                    success, errorMessage, details);
-        } catch (RuntimeException ignored) {
-            // Audit must never break the API path
-        }
+        if (ctx == null) return;
+        String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
+        java.util.Map<String, Object> details = new java.util.LinkedHashMap<>();
+        details.put("delegated", true);
+        details.put("actorUserId", actor);
+        if (request.getProfileId() != null) details.put("profileId", request.getProfileId());
+        if (request.getConnectorId() != null) details.put("connectorId", request.getConnectorId());
+        if (request.getTargetFolderOverride() != null) details.put("targetFolderOverrideAttempted", true);
+        if (denialReason != null) details.put("denialReason", denialReason.name());
+        jp.aegif.nemaki.audit.AuditOperation op = success
+                ? jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST
+                : jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST_FAILED;
+        // H1 (RC5.5): silent catch replaced by safeEmit (WARN on failure)
+        jp.aegif.nemaki.audit.AuditEmitSupport.safeEmit(auditLogger,
+                op, repositoryId, actor,
+                request.getSourceObjectId() != null ? request.getSourceObjectId() : "",
+                success, errorMessage, details);
     }
 
     /**

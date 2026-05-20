@@ -449,24 +449,32 @@ public class ImportProfileDefinitionController {
     private void auditTransferDenial(CallContext ctx, ImportProfileDefinition existing,
                                      String newOwner, String folderId,
                                      DenialReason reason, String message) {
-        if (auditLogger == null || ctx == null) return;
-        try {
-            String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
-            Map<String, Object> details = new LinkedHashMap<>();
-            details.put("delegated", existing != null && existing.isDelegated());
-            details.put("actorUserId", actor);
-            details.put("transferTo", "delegated");
-            if (newOwner != null) details.put("newOwnerUserId", newOwner);
-            if (folderId != null) details.put("targetFolderId", folderId);
-            if (reason != null) details.put("denialReason", reason.name());
-            String repoId = existing != null ? existing.getRepositoryId() : null;
-            String objectId = existing != null && existing.getProfileId() != null ? existing.getProfileId() : "";
-            auditLogger.logOperation(AuditOperation.EXTERNAL_PROFILE_UPDATED,
-                    repoId, actor, objectId, false, message, details);
-        } catch (RuntimeException ignored) {
-            // Audit must never break the API path
-        }
+        if (ctx == null) return;
+        String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("delegated", existing != null && existing.isDelegated());
+        details.put("actorUserId", actor);
+        details.put("transferTo", "delegated");
+        if (newOwner != null) details.put("newOwnerUserId", newOwner);
+        if (folderId != null) details.put("targetFolderId", folderId);
+        if (reason != null) details.put("denialReason", reason.name());
+        String repoId = existing != null ? existing.getRepositoryId() : null;
+        String objectId = existing != null && existing.getProfileId() != null ? existing.getProfileId() : "";
+        // H1 (RC5.5): safeEmit logs WARN on audit pipeline failure
+        // (was: catch (RuntimeException ignored) silent swallow).
+        jp.aegif.nemaki.audit.AuditEmitSupport.safeEmit(auditLogger,
+                AuditOperation.EXTERNAL_PROFILE_UPDATED,
+                repoId, actor, objectId, false, message, details);
     }
+
+    /**
+     * H1 (RC5.5): all audit emit failures now go through
+     * {@link jp.aegif.nemaki.audit.AuditEmitSupport#safeEmit} which
+     * logs a WARN with op + actor + object + error message (but not
+     * the audit `details` map, which stays segregated to the audit
+     * pipeline). Replaces the previous {@code catch (RuntimeException
+     * ignored)} pattern that left audit-pipeline outages silent.
+     */
 
     private ResponseEntity<Map<String, Object>> successResponse(ImportProfileDefinition profile) {
         Map<String, Object> response = new LinkedHashMap<>();
@@ -481,20 +489,16 @@ public class ImportProfileDefinitionController {
 
     private void auditOwnershipTransfer(CallContext ctx, ImportProfileDefinition profile,
                                         String newMode, String newOwner) {
-        if (auditLogger == null) return;
-        try {
-            String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
-            Map<String, Object> details = new LinkedHashMap<>();
-            details.put("delegated", profile.isDelegated());
-            details.put("actorUserId", actor);
-            details.put("transferTo", newMode);
-            if (newOwner != null) details.put("newOwnerUserId", newOwner);
-            if (profile.getTargetFolderId() != null) details.put("targetFolderId", profile.getTargetFolderId());
-            auditLogger.logOperation(AuditOperation.EXTERNAL_PROFILE_UPDATED,
-                    profile.getRepositoryId(), actor, profile.getProfileId(), true, null, details);
-        } catch (RuntimeException ignored) {
-            // Audit must never break the API path
-        }
+        String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("delegated", profile.isDelegated());
+        details.put("actorUserId", actor);
+        details.put("transferTo", newMode);
+        if (newOwner != null) details.put("newOwnerUserId", newOwner);
+        if (profile.getTargetFolderId() != null) details.put("targetFolderId", profile.getTargetFolderId());
+        jp.aegif.nemaki.audit.AuditEmitSupport.safeEmit(auditLogger,
+                AuditOperation.EXTERNAL_PROFILE_UPDATED,
+                profile.getRepositoryId(), actor, profile.getProfileId(), true, null, details);
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -750,11 +754,18 @@ public class ImportProfileDefinitionController {
         long cutoffMs;
         try {
             cutoffMs = java.time.Instant.parse(autoDisabledSince).toEpochMilli();
-        } catch (java.time.format.DateTimeParseException e) {
-            // R4 (RC5.4): strict — bubble up to 400. Controller's
-            // catch(IllegalArgumentException) maps to BAD_REQUEST.
+        } catch (java.time.format.DateTimeParseException | ArithmeticException e) {
+            // R4 (RC5.4) / C1 (RC5.5): strict — bubble up to 400.
+            // Controller's catch(IllegalArgumentException) maps to
+            // BAD_REQUEST. RC5.4 only caught DateTimeParseException;
+            // RC5.5 (C1) adds ArithmeticException because
+            // Instant.parse can succeed on extreme values (e.g.
+            // +999999999-12-31T23:59:59Z) but then overflow on
+            // toEpochMilli() — the external review caught this as a
+            // 500 leak in the otherwise-strict 400 contract.
             throw new IllegalArgumentException(
-                    "autoDisabledSince must be a valid ISO-8601 instant: " + autoDisabledSince, e);
+                    "autoDisabledSince must be a valid ISO-8601 instant within Long-epoch range: "
+                            + autoDisabledSince, e);
         }
         List<ImportProfileDefinition> out = new ArrayList<>();
         for (ImportProfileDefinition p : input) {
@@ -763,11 +774,12 @@ public class ImportProfileDefinitionController {
             try {
                 long t = java.time.Instant.parse(at).toEpochMilli();
                 if (t >= cutoffMs) out.add(p);
-            } catch (java.time.format.DateTimeParseException e) {
-                // Profile has a marker we can't parse — exclude
-                // defensively rather than including. The filter
-                // semantic is "recent and resolvable", not "recent or
-                // probably-but-can't-tell".
+            } catch (java.time.format.DateTimeParseException | ArithmeticException e) {
+                // C1 (RC5.5): profile-side defensive exclude now also
+                // covers ArithmeticException. A single corrupted
+                // profile with an overflow-prone marker no longer
+                // 500s the entire list response — it is excluded the
+                // same way malformed parse failures are.
             }
         }
         return out;
@@ -781,44 +793,37 @@ public class ImportProfileDefinitionController {
      * second auto-disable that follows a re-enable.
      */
     private void auditAutoDisableReset(CallContext ctx, ImportProfileDefinition def) {
-        if (auditLogger == null || ctx == null || def == null) return;
-        try {
-            String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
-            Map<String, Object> details = new LinkedHashMap<>();
-            details.put("actorUserId", actor);
-            details.put("delegated", def.isDelegated());
-            details.put("profileId", def.getProfileId());
-            details.put("clearedAutoDisableMarker", true);
-            auditLogger.logOperation(
-                    AuditOperation.EXTERNAL_PROFILE_UPDATED,
-                    def.getRepositoryId(), actor,
-                    def.getProfileId() != null ? def.getProfileId() : "",
-                    true, "Auto-disable marker cleared (deliberate re-enable)",
-                    details);
-        } catch (RuntimeException ignored) {
-            // Audit must not break the API path
-        }
+        if (ctx == null || def == null) return;
+        String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("actorUserId", actor);
+        details.put("delegated", def.isDelegated());
+        details.put("profileId", def.getProfileId());
+        details.put("clearedAutoDisableMarker", true);
+        jp.aegif.nemaki.audit.AuditEmitSupport.safeEmit(auditLogger,
+                AuditOperation.EXTERNAL_PROFILE_UPDATED,
+                def.getRepositoryId(), actor,
+                def.getProfileId() != null ? def.getProfileId() : "",
+                true, "Auto-disable marker cleared (deliberate re-enable)",
+                details);
     }
 
     private void auditWithReason(AuditOperation op, CallContext ctx, ImportProfileDefinition def,
                                  boolean success, String errorMessage, DenialReason denialReason) {
-        if (auditLogger == null || ctx == null || def == null) return;
-        try {
-            String repoId = def.getRepositoryId();
-            String objectId = def.getProfileId() != null ? def.getProfileId() : "";
-            String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
-            Map<String, Object> details = new LinkedHashMap<>();
-            details.put("delegated", def.isDelegated());
-            details.put("actorUserId", actor);
-            if (def.getTargetFolderId() != null) details.put("targetFolderId", def.getTargetFolderId());
-            if (def.getAllowedConnectorIds() != null && !def.getAllowedConnectorIds().isEmpty()) {
-                details.put("connectorIds", def.getAllowedConnectorIds());
-            }
-            if (denialReason != null) details.put("denialReason", denialReason.name());
-            auditLogger.logOperation(op, repoId, actor, objectId, success, errorMessage, details);
-        } catch (RuntimeException ignored) {
-            // Audit must not break the API path
+        if (ctx == null || def == null) return;
+        String repoId = def.getRepositoryId();
+        String objectId = def.getProfileId() != null ? def.getProfileId() : "";
+        String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("delegated", def.isDelegated());
+        details.put("actorUserId", actor);
+        if (def.getTargetFolderId() != null) details.put("targetFolderId", def.getTargetFolderId());
+        if (def.getAllowedConnectorIds() != null && !def.getAllowedConnectorIds().isEmpty()) {
+            details.put("connectorIds", def.getAllowedConnectorIds());
         }
+        if (denialReason != null) details.put("denialReason", denialReason.name());
+        jp.aegif.nemaki.audit.AuditEmitSupport.safeEmit(auditLogger,
+                op, repoId, actor, objectId, success, errorMessage, details);
     }
 
     /** Pulls the error message string out of an {@link #errorResponse} body so we can record it in audit. */

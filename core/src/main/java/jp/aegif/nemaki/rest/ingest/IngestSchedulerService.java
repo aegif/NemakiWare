@@ -346,31 +346,27 @@ public class IngestSchedulerService {
     private void auditScheduledDelegatedDenial(ImportProfileDefinition profile,
                                                ConnectorDefinition connector,
                                                DenialReason reason, String message) {
-        if (auditLogger == null) return;
-        try {
-            String actor = profile.getCreatedByUserId() != null
-                    ? profile.getCreatedByUserId() : "anonymous";
-            java.util.Map<String, Object> details = new java.util.LinkedHashMap<>();
-            details.put("delegated", true);
-            details.put("scheduled", true);
-            details.put("actorUserId", actor);
-            details.put("creatorUserId", actor);
-            // creatorActive: true only when this is NOT an inactive-user denial
-            details.put("creatorActive", reason != DenialReason.CREATOR_USER_INACTIVE);
-            if (profile.getProfileId() != null) details.put("profileId", profile.getProfileId());
-            if (connector != null) details.put("connectorId", connector.getConnectorId());
-            if (profile.getTargetFolderId() != null) {
-                details.put("targetFolderId", profile.getTargetFolderId());
-            }
-            details.put("denialReason", reason.name());
-            auditLogger.logOperation(
-                    jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST_FAILED,
-                    profile.getRepositoryId(), actor,
-                    profile.getProfileId() != null ? profile.getProfileId() : "",
-                    false, message, details);
-        } catch (RuntimeException ignored) {
-            // Audit must never break the scheduler
+        String actor = profile.getCreatedByUserId() != null
+                ? profile.getCreatedByUserId() : "anonymous";
+        java.util.Map<String, Object> details = new java.util.LinkedHashMap<>();
+        details.put("delegated", true);
+        details.put("scheduled", true);
+        details.put("actorUserId", actor);
+        details.put("creatorUserId", actor);
+        // creatorActive: true only when this is NOT an inactive-user denial
+        details.put("creatorActive", reason != DenialReason.CREATOR_USER_INACTIVE);
+        if (profile.getProfileId() != null) details.put("profileId", profile.getProfileId());
+        if (connector != null) details.put("connectorId", connector.getConnectorId());
+        if (profile.getTargetFolderId() != null) {
+            details.put("targetFolderId", profile.getTargetFolderId());
         }
+        details.put("denialReason", reason.name());
+        // H1 (RC5.5): silent catch replaced by safeEmit (WARN on failure)
+        jp.aegif.nemaki.audit.AuditEmitSupport.safeEmit(auditLogger,
+                jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST_FAILED,
+                profile.getRepositoryId(), actor,
+                profile.getProfileId() != null ? profile.getProfileId() : "",
+                false, message, details);
     }
 
     /** Property reader for booleans. Centralises invalid-value handling. */

@@ -800,7 +800,13 @@ Tested by `ImportProfileSchedulerGateTest` (+3 F1 cases). V4 / V5 /
 F2 / F3 are UI-only; coverage relies on TS type checking, UI build,
 and live deployment verification.
 
-### 12.6 Post-RC5 follow-up (low priority — RC5.1 candidates)
+### 12.6 ~~Post-RC5 follow-up~~ (resolved in RC5.1)
+
+**All items in this section shipped in RC5.1**. Kept for historical
+record of the post-RC5 closure scope. See §12.8 (RC5.1 polish) for
+the shipped implementation narrative.
+
+#### Original list (now historical)
 
 Surfaced in the F1-V5 acceptance re-review. Not release blockers;
 recorded here so the RC5.1 cycle can pick them up cleanly.
@@ -884,7 +890,13 @@ server-side debounced search. Virtual scroll is explicitly traded
 off — 50 items per response is small enough that virtual scrolling
 adds no measurable benefit for this use case.
 
-### 12.9 Post-RC5.1 follow-up (low priority — RC5.2 candidates)
+### 12.9 ~~Post-RC5.1 follow-up~~ (resolved in RC5.2)
+
+**All items in this section shipped in RC5.2**. Kept for historical
+record of the post-RC5.1 closure scope. See §12.10 (RC5.2 polish)
+for the shipped implementation narrative.
+
+#### Original list (now historical)
 
 Surfaced during the RC5.1 acceptance review. Not blockers.
 

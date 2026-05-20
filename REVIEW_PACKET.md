@@ -87,13 +87,33 @@ a bug — please flag it.
 ## 4. Acceptance status summary
 
 - **Blocking findings**: 0
-- **Unit tests**: 155 / 155 ingest delegation tests PASS
+- **Unit tests** (precise scope):
+  - **Focused set** (RC5 cycle delegation / governance / scheduler
+    / profile pipeline): **155 tests across 12 test classes PASS**
+    — these are the test classes hand-selected during the cumulative
+    closure review because they directly exercise the RC5 surface:
+    `DelegatedCallContextFactoryTest`, `IngestSchedulerDelegatedRunTest`,
+    `ImportProfileSchedulerGateTest`, `ConnectorByPrincipalGovernanceTest`,
+    `IngestSchedulerDelegationSkipTest`, `ImportProfileOwnershipTransferTest`,
+    `ExternalIngestControllerGateTest`, `ExternalIngestControllerTest`,
+    `IngestAuthorizationServiceTest`, `ConnectorDefinitionControllerPartialPutTest`,
+    `IngestWebhookGraphValidationTest`, `ImportProfileDefinitionTest`,
+    `ImportProfileSinceFilterTest`, `ConnectorSimulateRemoveTest`.
+  - **Broader pattern** (any ingest / connector / profile test in
+    the project): `mvn test -Dtest="*Ingest*Test*,*Connector*Test*,*Profile*Test*,Delegated*Test"`
+    returned **287 tests, all PASS** when re-run during the
+    external-review wording pass. The 132-test delta beyond the
+    focused 155 includes unrelated repository / type / import-export
+    suites that happen to match the patterns; none are excluded
+    intentionally from the RC5 closure.
 - **Live verification**: scheduled delegated default-off, governance
   V3 admin/non-admin/anonymous gating, W2 audit pipeline, W1 since
-  filter (with R4 strict 400), R3 explicit audit button all PASS
+  filter (with R4 strict 400 + RC5.5 C1 epoch-overflow 400),
+  R3 explicit audit button all PASS
 - **API contract**: additive only, no breaking changes for callers
-  using valid input (a single optional query param became strict on
-  malformed non-empty values in R4)
+  using valid input. RC5.4 made `autoDisabledSince` strict 400 on
+  non-empty malformed values; RC5.5 closes the residual epoch-overflow
+  500 leak so the full strict-400 contract holds.
 - **Patch / view / Mango index / migration / DB bootstrap**:
   unchanged since RC4.1 (cumulative zero diff in those areas)
 

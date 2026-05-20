@@ -310,6 +310,50 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC22 / RC5.5 (2026-05-20〜, 進行中) — 外部レビュー C1 blocker fix + H1/M1/M4
+
+ブランチ: `release/3.1.1-RC5.5` (off `release/3.1.1-RC5.4` HEAD `8629782bb`)
+
+外部レビューで指摘された **C1 (epoch overflow による 500 leak)** を
+blocker 修正。併せて H1 (audit silent catch) と M1/M4 の doc 整理。
+RC5.4 で確立した API contract は維持、C1 fix は overflow 入力時の挙動を
+500 → 400 に揃えるだけで、正常入力には影響なし。
+
+#### C1: `autoDisabledSince` epoch overflow → 400 (was 500)
+
+- `ImportProfileDefinitionController.applyAutoDisabledSinceFilter`
+  内で `Instant.parse(...).toEpochMilli()` の `ArithmeticException`
+  (long overflow) を catch
+- cutoff 側 → 400 (`IllegalArgumentException` 経由、R4 と同経路)
+- profile-marker 側 → defensive exclude (DateTimeParseException と
+  同等扱い、1 件 corrupted で list 全体が 500 にならない)
+- live で +999999999-12-31T23:59:59Z → 500 → 400 確認
+- 2 ケース unit test 追加
+
+#### H1: audit silent catch を logger.warn + safeAudit helper 化
+
+- `catch (RuntimeException ignored)` は 5 箇所、設計意図 (audit failure
+  が業務 path を壊さない) は維持
+- 重複を `AuditEmitSupport.safeEmit(...)` ヘルパーに集約
+- failure 時 `logger.warn` で op + error message のみログ
+  (audit detail body 自体は log しない → secret leak 防止)
+
+#### M1: REVIEW_PACKET.md test evidence 表記訂正
+
+- 「155 focused tests」と「broader pattern (287 tests)」を併記
+- focused 12 test class の明示リスト
+
+#### M4: design doc §12.6 / §12.9 strikethrough 統一
+
+- G1-G3 / H1-H3 shipped 反映 (`~~Post-RC5.x follow-up~~ (resolved in RC5.y)`)
+
+#### 設計原則 (RC5.4 から継続)
+
+- 既存 patch / view / Mango / migration / property / Java scheduler
+  本体は触らない
+- API additive 維持 (C1 は overflow 入力の strictness 完成)
+- 既存 unit test 退行ゼロ
+
 ### RC21 / RC5.4 (2026-05-20) — R3 + R4 closure review code corrections (shipped)
 
 ブランチ: `release/3.1.1-RC5.4` (off `release/3.1.1-RC5.3` HEAD `01fe84ac5`、

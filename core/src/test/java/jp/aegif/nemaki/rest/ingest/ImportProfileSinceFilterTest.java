@@ -202,6 +202,50 @@ class ImportProfileSinceFilterTest {
     }
 
     @Test
+    void epochOverflowCutoff_returns400_C1_RC5_5() {
+        // C1 (RC5.5): a cutoff that parses as a valid Instant but
+        // overflows Long range on toEpochMilli() — for example
+        // "+999999999-12-31T23:59:59Z" — used to leak HTTP 500
+        // through the controller because applyAutoDisabledSinceFilter
+        // only caught DateTimeParseException. External review caught
+        // it as a contract gap with R4's "strict 400 on malformed".
+        // RC5.5 closes the gap by also catching ArithmeticException.
+        when(profileService.list()).thenReturn(List.of(
+                profile("p-recent", Instant.now().toString())
+        ));
+
+        ResponseEntity<List<ImportProfileDefinition>> resp =
+                controller.list(null, "+999999999-12-31T23:59:59Z");
+
+        assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode(),
+                "epoch-overflow cutoff must return 400, not 500 (C1 closes the leak)");
+    }
+
+    @Test
+    void profileWithEpochOverflowMarker_isExcluded_listStillReturns200_C1_RC5_5() {
+        // C1 (RC5.5): a single corrupted profile with an
+        // overflow-prone lastAutoDisabledAt (parses as valid Instant
+        // but ArithmeticException on toEpochMilli) used to 500 the
+        // entire list response. Defensive exclude now covers
+        // ArithmeticException the same way it covers
+        // DateTimeParseException — the corrupted profile is silently
+        // dropped, the rest of the list returns normally.
+        when(profileService.list()).thenReturn(List.of(
+                profile("p-overflow-marker", "+999999999-12-31T23:59:59Z"),
+                profile("p-recent", Instant.now().toString())
+        ));
+
+        ResponseEntity<List<ImportProfileDefinition>> resp = controller.list(
+                null, Instant.now().minusSeconds(60).toString());
+
+        assertEquals(HttpStatus.OK, resp.getStatusCode(),
+                "overflow-prone marker on one profile must not 500 the list");
+        assertEquals(1, resp.getBody().size(),
+                "expected only the recent profile; overflow profile must be excluded");
+        assertEquals("p-recent", resp.getBody().get(0).getProfileId());
+    }
+
+    @Test
     void repositoryIdAndSince_compose_correctly() {
         // When both params present, repository scope wins for the
         // initial fetch, then since applies to that subset.

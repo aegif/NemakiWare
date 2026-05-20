@@ -456,22 +456,18 @@ public class ConnectorDefinitionController {
     private void auditSimulate(String principalId, String repositoryId,
                                java.util.Set<String> expandedPrincipals,
                                java.util.Set<String> removePrincipalIds, int lostCount) {
-        if (auditLogger == null) return;
-        try {
-            CallContext ctx = currentCallContext();
-            String actor = ctx != null && ctx.getUsername() != null ? ctx.getUsername() : "admin";
-            Map<String, Object> details = new LinkedHashMap<>();
-            details.put("actorUserId", actor);
-            details.put("principalId", principalId);
-            details.put("expandedPrincipals", new java.util.ArrayList<>(expandedPrincipals));
-            details.put("removePrincipalIds", new java.util.ArrayList<>(removePrincipalIds));
-            details.put("lostCount", lostCount);
-            auditLogger.logOperation(
-                    jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_GOVERNANCE_SIMULATE,
-                    repositoryId, actor, principalId, true, null, details);
-        } catch (RuntimeException ignored) {
-            // Audit must not break the API path
-        }
+        CallContext ctx = currentCallContext();
+        String actor = ctx != null && ctx.getUsername() != null ? ctx.getUsername() : "admin";
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("actorUserId", actor);
+        details.put("principalId", principalId);
+        details.put("expandedPrincipals", new java.util.ArrayList<>(expandedPrincipals));
+        details.put("removePrincipalIds", new java.util.ArrayList<>(removePrincipalIds));
+        details.put("lostCount", lostCount);
+        // H1 (RC5.5): silent catch replaced by safeEmit (WARN on failure)
+        jp.aegif.nemaki.audit.AuditEmitSupport.safeEmit(auditLogger,
+                jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_GOVERNANCE_SIMULATE,
+                repositoryId, actor, principalId, true, null, details);
     }
 
     /**
