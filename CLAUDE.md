@@ -310,7 +310,7 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
-### RC19 / RC5.2 (2026-05-20〜, 進行中) — H1-H3 UI polish
+### RC19 / RC5.2 (2026-05-20) — H1-H3 UI polish (shipped)
 
 ブランチ: `release/3.1.1-RC5.2` (off `v3.1.1-RC5.1` = `cc1ac2b54`)
 

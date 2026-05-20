@@ -900,7 +900,29 @@ Surfaced during the RC5.1 acceptance review. Not blockers.
   custom-N-days input would handle incident windows that don't fit
   the preset list.
 
-### 12.10 vNext (separate scope, not RC5.2)
+### 12.10 ~~RC5.2 polish~~ (shipped) — H1 + H2 + H3
+
+Folded into RC5.2 — all UI / i18n only. RC5.1 W1/W2 (server-side
+scalability) remain as separate scope.
+
+**H1**: `ConnectorGovernanceTab` `useEffect` return-cleanup clears
+the V8 search debounce timer on unmount. Eliminates a
+"setState on unmounted" warning class. No live-tab behaviour change.
+
+**H2**: V7 multi-removal `Select` gains `maxCount={SIMULATE_REMOVE_MAX}`
+(= 10). A Tooltip on the label explains the cap; an orange Tag
+appears once the cap is hit. Picking the whole expansion set
+(the noisy "lose everything" answer) is now prevented in the UI
+without restricting the underlying API.
+
+**H3**: V6's window selector gains a "Custom..." option. Selecting
+it flips a `customDaysMode` flag → `InputNumber` (min=1, max=9999,
+addonAfter="d") renders inline. "Done" button snaps back to the
+preset Select. G1's count-reset `useEffect` was extended to also
+reset `customDaysMode` so the filter row stays consistent when
+the underlying count drops to 0.
+
+### 12.11 vNext (separate scope, not RC5.2)
 
 Bigger ideas that came up during RC5.1 review but are explicitly
 NOT planned for any RC5 patch.

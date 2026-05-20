@@ -6,6 +6,59 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC5.2 — H1-H3 UI polish
+_Release candidate on `release/3.1.1-RC5.2` (2026-05-20), branched
+off `v3.1.1-RC5.1` (`cc1ac2b54`)._
+
+UI-only polish cycle. **No Java / property / patch / migration / API
+contract changes.** Resolves the H1-H3 follow-ups recorded in RC5.1
+closure.
+
+### H1: governance picker debounce unmount cleanup
+
+`ConnectorGovernanceTab` adds a `useEffect` return-cleanup that
+clears the V8 search debounce `setTimeout` when the tab unmounts.
+Eliminates a "setState on unmounted component" warning class. No
+behaviour change for live tabs.
+
+### H2: V7 multi-removal selection cap
+
+The "Simulate removing" Select now caps at `SIMULATE_REMOVE_MAX = 10`
+principals via Ant Design's `maxCount`. A Tooltip on the label
+explains the rationale (picking everything gives the trivial "lose
+everything" answer with low operator value). An orange "Reached limit"
+Tag appears when the cap is hit so the cap isn't silent.
+
+### H3: V6 window custom days input
+
+The auto-disabled "last N days" Select gains a "Custom..." option.
+Selecting it swaps the Select for an `InputNumber` (min=1, max=9999,
+addonAfter="d"). A "Done" button snaps back to the preset Select.
+G1's count-reset effect now also resets the custom-mode flag so the
+filter row stays consistent.
+
+### i18n additions
+
+- `connectorGovernance.simulateRemoveHint` ({{max}}) +
+  `connectorGovernance.simulateMaxReached` ({{max}}) — H2
+- `importProfileManagement.autoDisabledWindowCustom` +
+  `importProfileManagement.autoDisabledWindowDone` — H3
+- Parity: 30 `connectorGovernance` keys + 11
+  `importProfileManagement.autoDisabled*` keys aligned ja/en.
+
+### Tests + verification
+
+- 136/136 ingest unit tests pass (unchanged — no Java touched)
+- TypeScript check + UI build + i18n parity pass
+- Live deployment verified all 3 H-keys present in bundle
+
+### Known post-RC5.2 follow-ups
+
+None at this time. RC5.1 W1/W2 (vNext, server-side scalability)
+remain as separate scope, not RC5.2 work.
+
+---
+
 ## 3.1.1-RC5.1 — Governance dashboard polish + scalability
 _Release candidate on `release/3.1.1-RC5.1` (2026-05-20), branched
 off `v3.1.1-RC5` (`f47d3273d`)._
