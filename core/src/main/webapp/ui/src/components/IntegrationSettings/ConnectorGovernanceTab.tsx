@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Card, Form, AutoComplete, Switch, Button, Table, Tag, Space, App, Typography, Tooltip, Select } from 'antd';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Card, Form, Switch, Button, Table, Tag, Space, App, Typography, Tooltip, Select, Spin } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import {
@@ -16,12 +16,27 @@ interface ConnectorGovernanceTabProps {
   repositoryId: string;
 }
 
-/** F3 (RC5 ext): pre-populated principal option for the AutoComplete. */
+/** V8 (RC5.1) Principal picker option. */
 interface PrincipalOption {
   value: string;           // principalId
   label: string;           // "id  ·  Display Name (USER|GROUP)"
   kind: 'USER' | 'GROUP';
 }
+
+/**
+ * G3 (RC5.1): pseudo-principals that have no real "removal" semantics
+ * — they exist as ACL targets, not as group memberships an admin can
+ * edit. Hiding them from the V5/V7 simulate dropdown keeps the
+ * "what would the user lose" question focused on actionable choices.
+ */
+const PSEUDO_PRINCIPALS_FOR_SIMULATE = new Set<string>([
+  'GROUP_EVERYONE',
+  'anyone',
+  'Anyone',
+  'GROUP_ANYONE',
+  'authenticated',
+  'Authenticated',
+]);
 
 /**
  * V3 (RC5 ext): admin UI for the governance view
@@ -33,17 +48,23 @@ interface PrincipalOption {
  * badge highlights direct vs group-derived grants so redundant
  * assignments are easy to spot.
  *
- * F3 (RC5 ext): the principalId input is an AutoComplete pre-populated
- * with the repository's users + groups, so typos that surface as
- * `principalType=UNKNOWN` become much rarer. Free-text is still
- * allowed for pseudo-principals (e.g. Anyone) or principals from an
- * external IdP that haven't yet been cached locally.
+ * V8 (RC5.1): the principal input is an Ant Design `Select` with
+ * virtual scrolling (built-in) + `onSearch` debounce that fetches
+ * matching users/groups from the server lazily. No 500-record upfront
+ * fetch; works on 10k+ principal directories. Free-text entry is
+ * preserved via `combobox` mode for pseudo-principals (e.g. Anyone) or
+ * principals that aren't yet in the local store.
  *
- * V5 (RC5 ext): when the lookup result has expanded principals beyond
- * the queried one, an "Simulate removing" dropdown lets the admin pick
- * a single principal from the expansion to ask: "what connectors does
- * this user lose if they're removed from that group?" The result table
- * filters to matches where that principal was the sole matching route.
+ * V5 (RC5 ext) / V7 (RC5.1): when the lookup result has expanded
+ * principals beyond the queried one, a "Simulate removing" dropdown
+ * (V7: multi-select) lets the admin pick one or more principals from
+ * the expansion to ask: "what connectors does this user lose if
+ * removed from those groups?" The result table filters to matches
+ * where every matched principal lies in the selected removal set.
+ *
+ * G3 (RC5.1): well-known pseudo-principals (GROUP_EVERYONE, Anyone,
+ * Authenticated) are filtered out of the simulate dropdown since
+ * removing the user from them isn't an actionable admin choice.
  */
 export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabProps) {
   const { t } = useTranslation();
@@ -52,31 +73,42 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
   const [form] = Form.useForm<{ principalId: string; expand: boolean }>();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ConnectorByPrincipalResponse | null>(null);
+  // V8: lazy-loaded options for the principal picker
   const [principalOptions, setPrincipalOptions] = useState<PrincipalOption[]>([]);
-  // V5: which principal to simulate removing (subset of result.expandedPrincipals)
-  const [simulateRemove, setSimulateRemove] = useState<string | null>(null);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  // V7: array of principals to simulate removing (was string|null in V5)
+  const [simulateRemove, setSimulateRemove] = useState<string[]>([]);
+
+  // V8: stable CMISService reference for debounced search
+  const cmisRef = useRef(new CMISService(handleAuthError));
 
   /**
-   * F3: Load users + groups once on mount. Failure is non-fatal — the
-   * AutoComplete simply has no suggestions, and the admin can still
-   * type a principalId by hand (covers pseudo-principals / external
-   * IdP principals not present in the local store).
+   * V8: debounced server-side search. Empty query returns the first
+   * page of users + groups (limit 50) so the dropdown isn't empty
+   * before the admin starts typing. On every keystroke the dropdown
+   * fetches matching principals via the existing `query` param of
+   * /user/list and /group/list. Failures are non-fatal — the dropdown
+   * just shows whatever was previously loaded.
    */
-  useEffect(() => {
-    const cmis = new CMISService(handleAuthError);
-    Promise.all([
-      cmis.getUsers(repositoryId, { limit: 500 }).catch(() => ({ users: [] as { id: string; name?: string }[] })),
-      cmis.getGroups(repositoryId, { limit: 500 }).catch(() => ({ groups: [] as { id: string; name?: string }[] })),
-    ]).then(([{ users }, { groups }]) => {
+  const fetchPrincipals = useCallback(async (query: string) => {
+    setPickerLoading(true);
+    try {
+      const cmis = cmisRef.current;
+      const [usersResp, groupsResp] = await Promise.all([
+        cmis.getUsers(repositoryId, { limit: 50, query: query || undefined })
+          .catch(() => ({ users: [] as { id: string; name?: string }[] })),
+        cmis.getGroups(repositoryId, { limit: 50, query: query || undefined })
+          .catch(() => ({ groups: [] as { id: string; name?: string }[] })),
+      ]);
       const opts: PrincipalOption[] = [];
-      for (const u of users) {
+      for (const u of usersResp.users) {
         opts.push({
           value: u.id,
           label: `${u.id} · ${u.name || u.id} (USER)`,
           kind: 'USER',
         });
       }
-      for (const g of groups) {
+      for (const g of groupsResp.groups) {
         opts.push({
           value: g.id,
           label: `${g.id} · ${g.name || g.id} (GROUP)`,
@@ -84,8 +116,22 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
         });
       }
       setPrincipalOptions(opts);
-    });
-  }, [repositoryId, handleAuthError]);
+    } finally {
+      setPickerLoading(false);
+    }
+  }, [repositoryId]);
+
+  // V8: initial population so the dropdown has suggestions on first open
+  useEffect(() => {
+    fetchPrincipals('');
+  }, [fetchPrincipals]);
+
+  // V8: debounce keystroke-driven search (300ms)
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onPrincipalSearch = useCallback((q: string) => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => fetchPrincipals(q), 300);
+  }, [fetchPrincipals]);
 
   const onSubmit = async (values: { principalId: string; expand: boolean }) => {
     const pid = values.principalId?.trim();
@@ -94,7 +140,7 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
       return;
     }
     setLoading(true);
-    setSimulateRemove(null);  // V5: reset simulation when new query starts
+    setSimulateRemove([]);  // V5/V7: reset simulation when new query starts
     try {
       const resp = await getConnectorsByPrincipal(pid, repositoryId, values.expand);
       setResult(resp);
@@ -124,27 +170,33 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
   };
 
   /**
-   * V5: filter result matches to those that would be LOST if
-   * {@code simulateRemove} were removed from the expansion. A match
-   * is lost iff every entry in its {@code matchedPrincipalIds} equals
-   * the removed principal (no other route grants access).
+   * V5 / V7 (RC5.1): filter result matches to those that would be LOST
+   * if EVERY principal in `simulateRemove` were removed from the
+   * expansion. A match is lost iff every entry in its
+   * `matchedPrincipalIds` is in the removal set (no other route grants
+   * access). Single-element removal set degenerates to V5 behaviour.
    */
   const visibleMatches = useMemo(() => {
     if (!result) return [];
-    if (!simulateRemove) return result.matches;
+    if (simulateRemove.length === 0) return result.matches;
+    const removalSet = new Set(simulateRemove);
     return result.matches.filter(m =>
       m.matchedPrincipalIds.length > 0
-      && m.matchedPrincipalIds.every(p => p === simulateRemove)
+      && m.matchedPrincipalIds.every(p => removalSet.has(p))
     );
   }, [result, simulateRemove]);
 
-  // V5: the dropdown options are the expansion set minus the queried principal
-  // itself (removing the queried principal isn't a meaningful question — you
-  // would just be asking "what does no-one have?").
+  /**
+   * G3 / V7 (RC5.1): dropdown options are the expansion set minus
+   * - the queried principal itself ("remove yourself" makes no sense)
+   * - well-known pseudo-principals (GROUP_EVERYONE etc., not editable
+   *   as a group membership in any meaningful operator workflow)
+   */
   const simulateOptions = useMemo(() => {
     if (!result) return [];
     return result.expandedPrincipals
       .filter(p => p !== result.principalId)
+      .filter(p => !PSEUDO_PRINCIPALS_FOR_SIMULATE.has(p))
       .map(p => ({ value: p, label: p }));
   }, [result]);
 
@@ -217,20 +269,21 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
           name="principalId"
           rules={[{ required: true, message: t('connectorGovernance.principalRequired') }]}
         >
-          {/* F3: AutoComplete sourced from repo users + groups. Free-text
-              still allowed for pseudo-principals (e.g. Anyone). filterOption
-              matches both the principal ID and the human label so typing
-              part of the display name also surfaces suggestions. */}
-          <AutoComplete
-            options={principalOptions}
-            placeholder={t('connectorGovernance.principalPlaceholder')}
+          {/* V8 (RC5.1): Select with virtual scroll (default in antd 5)
+              + showSearch + onSearch debounce. mode="combobox" via
+              having no explicit mode lets free-text values pass
+              through (pseudo-principals / external IdP IDs). */}
+          <Select
+            showSearch
             allowClear
+            placeholder={t('connectorGovernance.principalPlaceholder')}
             style={{ width: 360 }}
-            filterOption={(input, option) => {
-              if (!input) return true;
-              const needle = input.trim().toLowerCase();
-              return (option?.label as string ?? '').toLowerCase().includes(needle);
-            }}
+            options={principalOptions}
+            onSearch={onPrincipalSearch}
+            filterOption={false}      // server-side filter — don't double-filter client-side
+            notFoundContent={pickerLoading ? <Spin size="small" /> : null}
+            virtual
+            optionLabelProp="value"   // show raw principalId in the input, not the verbose label
           />
         </Form.Item>
         <Form.Item
@@ -263,24 +316,25 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
                 {t('connectorGovernance.searchedAgainst')}{' '}
                 {result.expandedPrincipals.join(', ')}
               </Text>
-              {/* V5: simulate-removal dropdown — only when expansion brought
-                  in extra principals beyond the queried one. */}
+              {/* V5/V7 (RC5.1): simulate-removal dropdown — only when
+                  expansion brought in extra actionable principals. */}
               {simulateOptions.length > 0 && (
                 <Space size={8} wrap style={{ marginTop: 8 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     {t('connectorGovernance.simulateRemoveLabel')}
                   </Text>
                   <Select
+                    mode="multiple"
                     allowClear
                     placeholder={t('connectorGovernance.simulateRemovePlaceholder')}
                     options={simulateOptions}
-                    value={simulateRemove ?? undefined}
-                    onChange={(v) => setSimulateRemove(v ?? null)}
-                    style={{ minWidth: 200 }}
+                    value={simulateRemove}
+                    onChange={(v: string[]) => setSimulateRemove(v ?? [])}
+                    style={{ minWidth: 240 }}
                     size="small"
                   />
-                  {simulateRemove && (
-                    <Button size="small" onClick={() => setSimulateRemove(null)}>
+                  {simulateRemove.length > 0 && (
+                    <Button size="small" onClick={() => setSimulateRemove([])}>
                       {t('connectorGovernance.simulateClear')}
                     </Button>
                   )}
@@ -289,7 +343,7 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
             </Space>
           </Card>
 
-          {simulateRemove && (
+          {simulateRemove.length > 0 && (
             <Alert
               type="warning"
               showIcon
@@ -297,7 +351,12 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
               message={t('connectorGovernance.simulationLost')}
               description={
                 <Space direction="vertical" size={2}>
-                  <Text>{t('connectorGovernance.simulationNote', { count: visibleMatches.length })}</Text>
+                  <Text>
+                    {t('connectorGovernance.simulationNote', {
+                      count: visibleMatches.length,
+                      principals: simulateRemove.join(', '),
+                    })}
+                  </Text>
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     {t('connectorGovernance.simulationOnlyMatchedVia')}
                   </Text>
@@ -308,9 +367,12 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
 
           {visibleMatches.length === 0 ? (
             <Alert
-              type={simulateRemove ? 'success' : 'warning'}
-              message={simulateRemove
-                ? t('connectorGovernance.simulationNote', { count: 0 })
+              type={simulateRemove.length > 0 ? 'success' : 'warning'}
+              message={simulateRemove.length > 0
+                ? t('connectorGovernance.simulationNote', {
+                    count: 0,
+                    principals: simulateRemove.join(', '),
+                  })
                 : t('connectorGovernance.noMatches')}
             />
           ) : (

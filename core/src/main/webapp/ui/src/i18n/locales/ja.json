@@ -3097,7 +3097,7 @@
     "simulateRemoveLabel": "削除をシミュレート:",
     "simulateRemovePlaceholder": "principal ID を選択",
     "simulateClear": "シミュレーション解除",
-    "simulationNote": "この principal を expanded 集合から削除した場合、{{count}} 件の connector アクセスが失われます。",
+    "simulationNote": "{{principals}} を expanded 集合から削除すると、{{count}} 件の connector アクセスが失われます。",
     "simulationLost": "失う connector",
     "simulationOnlyMatchedVia": "現在この principal だけが経由している連結器のみ表示しています"
   },
@@ -3135,6 +3135,11 @@
     "autoDisabledHint": "スケジューラが creator inactive を検知して自動的に無効化しました",
     "autoDisabledFilter": "自動無効化のみ表示",
     "autoDisabledBanner": "{{count}} 件のプロファイルがスケジューラによって自動無効化されています。reason を確認してから再有効化してください。",
+    "autoDisabledBannerRecent": "過去 {{days}} 日に {{count}} 件 (合計 {{total}} 件中) のプロファイルがスケジューラによって自動無効化されました。",
+    "autoDisabledWindowAll": "全期間",
+    "autoDisabledWindow1d": "過去 24 時間",
+    "autoDisabledWindow7d": "過去 7 日",
+    "autoDisabledWindow30d": "過去 30 日",
     "columns": {
       "profileId": "プロファイルID",
       "displayName": "表示名",

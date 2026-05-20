@@ -3343,7 +3343,7 @@
     "simulateRemoveLabel": "Simulate removing:",
     "simulateRemovePlaceholder": "Pick a principal ID",
     "simulateClear": "Clear simulation",
-    "simulationNote": "Removing this principal from the expanded set would lose access to {{count}} connector(s).",
+    "simulationNote": "Removing {{principals}} from the expanded set would lose access to {{count}} connector(s).",
     "simulationLost": "Connectors lost",
     "simulationOnlyMatchedVia": "Showing only connectors where this principal is the sole matching route"
   },
@@ -3386,6 +3386,11 @@
     "autoDisabledHint": "Auto-disabled by the scheduler after detecting an inactive creator",
     "autoDisabledFilter": "Show only auto-disabled",
     "autoDisabledBanner": "{{count}} profiles were auto-disabled by the scheduler. Review the reason before re-enabling.",
+    "autoDisabledBannerRecent": "{{count}} of {{total}} auto-disabled profiles were disabled in the last {{days}} day(s).",
+    "autoDisabledWindowAll": "All time",
+    "autoDisabledWindow1d": "Last 24 hours",
+    "autoDisabledWindow7d": "Last 7 days",
+    "autoDisabledWindow30d": "Last 30 days",
     "columns": {
       "profileId": "Profile ID",
       "displayName": "Display Name",

@@ -71,6 +71,11 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
   // auto-disabled (enabled=false + lastAutoDisabledAt set). Lets admins
   // triage scheduler shutdowns without scanning every profile row.
   const [onlyAutoDisabled, setOnlyAutoDisabled] = useState(false);
+  // V6 (RC5.1): additional "within last N days" window for the
+  // auto-disabled filter. 0 = all (V4 default). > 0 narrows to recent
+  // events so fresh scheduler shutdowns aren't drowned out by legacy
+  // ones that haven't been cleaned up yet.
+  const [autoDisabledDays, setAutoDisabledDays] = useState<number>(0);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ImportProfileDefinition | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -346,10 +351,38 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
   ];
 
   // V4: derived list — filter to auto-disabled when toggle is on, otherwise pass-through
-  const autoDisabledCount = profiles.filter(p => !p.enabled && p.lastAutoDisabledAt).length;
+  // V6 (RC5.1): with `autoDisabledDays > 0`, narrow further to events
+  // whose lastAutoDisabledAt falls within that window. Reason: ops
+  // teams investigating an incident want fresh events surfaced; legacy
+  // auto-disables that nobody has cleaned up create noise.
+  const isAutoDisabled = (p: ImportProfileDefinition) =>
+    !p.enabled && !!p.lastAutoDisabledAt;
+  const isWithinDays = (p: ImportProfileDefinition, days: number) => {
+    if (days <= 0 || !p.lastAutoDisabledAt) return true;
+    const t = Date.parse(p.lastAutoDisabledAt);
+    if (Number.isNaN(t)) return false;        // malformed timestamp → fail-shut (exclude)
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    return t >= cutoff;
+  };
+  const autoDisabledCount = profiles.filter(isAutoDisabled).length;
+  const autoDisabledRecentCount = profiles.filter(p =>
+    isAutoDisabled(p) && isWithinDays(p, autoDisabledDays)).length;
   const visibleProfiles = onlyAutoDisabled
-    ? profiles.filter(p => !p.enabled && p.lastAutoDisabledAt)
+    ? profiles.filter(p => isAutoDisabled(p) && isWithinDays(p, autoDisabledDays))
     : profiles;
+
+  // G1 (RC5.1): when the filter Switch unmounts (count drops to 0
+  // because everything's been re-enabled), the React state
+  // `onlyAutoDisabled` would otherwise stay `true`. The Switch is
+  // gone, so the admin can't toggle it back without a page refresh,
+  // and `visibleProfiles` would silently filter to an empty table
+  // until then. Reset it here so the table reverts to the full list
+  // automatically.
+  useEffect(() => {
+    if (autoDisabledCount === 0 && onlyAutoDisabled) {
+      setOnlyAutoDisabled(false);
+    }
+  }, [autoDisabledCount, onlyAutoDisabled]);
 
   return (
     <>
@@ -358,7 +391,8 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
           {t('importProfileManagement.create')}
         </Button>
         {/* V4: filter visible only when at least one auto-disabled
-            profile exists, so the UI stays clean when nothing's wrong. */}
+            profile exists, so the UI stays clean when nothing's wrong.
+            V6 (RC5.1): days-window selector appears alongside. */}
         {autoDisabledCount > 0 && (
           <Space size={4}>
             <Switch
@@ -367,19 +401,44 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
               onChange={setOnlyAutoDisabled}
             />
             <span>{t('importProfileManagement.autoDisabledFilter')}</span>
-            <Tag color="orange">{autoDisabledCount}</Tag>
+            <Tag color="orange">
+              {autoDisabledDays > 0
+                ? `${autoDisabledRecentCount}/${autoDisabledCount}`
+                : autoDisabledCount}
+            </Tag>
+            <Select
+              size="small"
+              value={autoDisabledDays}
+              onChange={setAutoDisabledDays}
+              style={{ minWidth: 110 }}
+              options={[
+                { value: 0, label: t('importProfileManagement.autoDisabledWindowAll') },
+                { value: 1, label: t('importProfileManagement.autoDisabledWindow1d') },
+                { value: 7, label: t('importProfileManagement.autoDisabledWindow7d') },
+                { value: 30, label: t('importProfileManagement.autoDisabledWindow30d') },
+              ]}
+            />
           </Space>
         )}
       </Space>
 
       {/* V4: banner — informational, only shows when there are auto-disabled
-          profiles. Encourages reading the reason before re-enabling. */}
+          profiles. Encourages reading the reason before re-enabling.
+          V6: when window is active, banner switches to recent-count phrasing. */}
       {autoDisabledCount > 0 && (
         <Alert
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          message={t('importProfileManagement.autoDisabledBanner', { count: autoDisabledCount })}
+          message={
+            autoDisabledDays > 0
+              ? t('importProfileManagement.autoDisabledBannerRecent', {
+                  count: autoDisabledRecentCount,
+                  days: autoDisabledDays,
+                  total: autoDisabledCount,
+                })
+              : t('importProfileManagement.autoDisabledBanner', { count: autoDisabledCount })
+          }
         />
       )}
 

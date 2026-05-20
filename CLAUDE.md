@@ -310,6 +310,41 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC18 / RC5.1 (2026-05-20〜, 進行中) — G1-G3 polish + V6-V8 governance/scalability 拡張
+
+ブランチ: `release/3.1.1-RC5.1` (off `v3.1.1-RC5` = `f47d3273d`)
+
+RC5 受け入れレビューで surface した post-RC5 follow-up (G1-G3) と
+vNext 候補 (V6-V8) を同 RC で一括対応。RC5 で確立した API contract と
+default-off opt-in property は不変。UI 改善 + 拡張 + scalability 中心。
+
+#### G1-G3 polish
+
+- **G1**: `ImportProfileManagementTab` の auto-disabled filter Switch
+  state leak (count==0 で UI unmount → state 残置) を `useEffect` で
+  reset
+- **G2**: F3 AutoComplete の 1 ショット limit=500 ロードを廃止 →
+  V8 に統合 (Select with virtual + onSearch debounce)
+- **G3**: V5 simulate-removal Select で `GROUP_EVERYONE` 等の pseudo-
+  principal を候補から除外
+
+#### V6-V8 拡張
+
+- **V6**: V4 に「過去 N 日に auto-disable」filter 追加 — 新規発生と
+  legacy 蓄積の triage を簡単に
+- **V7**: V5 を multi-principal removal シミュレーション化 — 「group
+  A AND group B から外したら何を失う?」
+- **V8 (+G2)**: `ConnectorGovernanceTab` principal picker を Ant
+  Design `Select` (virtual scroll + `onSearch` debounce + server-side
+  filter) に置換 — 10k+ principal directory 対応
+
+#### 設計原則 (RC5 から継続)
+
+- 既存 patch / view / Mango index / migration には触らない
+- API contract 不変 (governance API / profile API 既存応答 shape は維持)
+- default 安全側継続
+- 既存 unit test 退行ゼロ
+
 ### RC17 / RC5 (2026-05-19) — v2: scheduled delegated profiles + connector governance view
 
 ブランチ: `release/3.1.1-RC5` (off `v3.1.1-RC4.1` = `572aad18b`)
