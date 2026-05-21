@@ -300,4 +300,212 @@ class ConnectorByPrincipalGovernanceTest {
                 .expandPrincipals(org.mockito.ArgumentMatchers.eq(REPO),
                         org.mockito.ArgumentMatchers.eq(GROUP));
     }
+
+    // ── RC6 B3-2: /by-group/{groupId} ───────────────────────────────
+
+    private jp.aegif.nemaki.model.Group makeGroup(String id, List<String> users) {
+        jp.aegif.nemaki.model.Group g = new jp.aegif.nemaki.model.Group();
+        g.setGroupId(id);
+        g.setName(id + " display");
+        g.setUsers(users);
+        return g;
+    }
+
+    @Test
+    void byGroup_nonAdmin_returns403() {
+        asNonAdmin();
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, REPO, true, 200);
+        assertEquals(HttpStatus.FORBIDDEN, resp.getStatusCode());
+    }
+
+    @Test
+    void byGroup_missingGroupId_returns400() {
+        asAdmin();
+        ResponseEntity<?> resp = controller.listByGroup("  ", REPO, true, 200);
+        assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
+    }
+
+    @Test
+    void byGroup_missingRepoId_returns400() {
+        asAdmin();
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, "", true, 200);
+        assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
+    }
+
+    @Test
+    void byGroup_unknownPrincipal_returnsEmptyMembers_butStillSurfacesDirectGrants() {
+        asAdmin();
+        // PrincipalService returns null for getGroupById → groupType=UNKNOWN
+        when(principalService.getGroupById(REPO, GROUP)).thenReturn(null);
+        // Even so, a connector that lists "engineers" in allowedPrincipalIds
+        // should still appear in directGrants (governance is best-effort
+        // — operators can probe arbitrary IDs).
+        when(connectorService.list()).thenReturn(List.of(
+                conn("c1", List.of(GROUP))
+        ));
+        when(authService.expandPrincipals(any(), any())).thenReturn(Set.of());
+
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, REPO, true, 200);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertEquals("UNKNOWN", body.get("groupType"));
+        assertEquals(0, body.get("memberCount"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> direct = (List<Map<String, Object>>) body.get("directGrants");
+        assertEquals(1, direct.size());
+        assertEquals("c1", direct.get(0).get("connectorId"));
+        // perMemberImpact must be absent when there are no members
+        assertTrue(body.get("perMemberImpact") == null
+                || ((List<?>) body.get("perMemberImpact")).isEmpty());
+    }
+
+    @Test
+    void byGroup_resolvedGroupWithMembers_returnsMemberListAndDirectGrants() {
+        asAdmin();
+        when(principalService.getGroupById(REPO, GROUP))
+                .thenReturn(makeGroup(GROUP, List.of("alice", "bob", "carol")));
+        when(connectorService.list()).thenReturn(List.of(
+                conn("c1", List.of(GROUP)),
+                conn("c2", List.of("other-group"))
+        ));
+        // Each member's expansion includes the queried group + nothing else
+        when(authService.expandPrincipals(eq(REPO), eq("alice")))
+                .thenReturn(Set.of(GROUP));
+        when(authService.expandPrincipals(eq(REPO), eq("bob")))
+                .thenReturn(Set.of(GROUP));
+        when(authService.expandPrincipals(eq(REPO), eq("carol")))
+                .thenReturn(Set.of(GROUP));
+
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, REPO, true, 200);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertEquals("GROUP", body.get("groupType"));
+        assertEquals(3, body.get("memberCount"));
+        @SuppressWarnings("unchecked")
+        List<String> members = (List<String>) body.get("memberUserIds");
+        assertEquals(List.of("alice", "bob", "carol"), members);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> direct = (List<Map<String, Object>>) body.get("directGrants");
+        assertEquals(1, direct.size());
+        assertEquals("c1", direct.get(0).get("connectorId"));
+    }
+
+    @Test
+    void byGroup_perMemberImpact_detectsSoleRouteVsAlternateRoute() {
+        asAdmin();
+        when(principalService.getGroupById(REPO, GROUP))
+                .thenReturn(makeGroup(GROUP, List.of("alice", "bob")));
+        // c1 is reachable via the queried GROUP only
+        // c2 is reachable via "other-group" (NOT via GROUP)
+        // c3 is reachable both via GROUP and direct user grant
+        when(connectorService.list()).thenReturn(List.of(
+                conn("c1", List.of(GROUP)),
+                conn("c2", List.of("other-group")),
+                conn("c3", List.of(GROUP, "alice"))
+        ));
+        // alice belongs to both GROUP and other-group + has a direct grant
+        when(authService.expandPrincipals(eq(REPO), eq("alice")))
+                .thenReturn(Set.of(GROUP, "other-group"));
+        // bob belongs to GROUP only
+        when(authService.expandPrincipals(eq(REPO), eq("bob")))
+                .thenReturn(Set.of(GROUP));
+
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, REPO, true, 200);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> impact =
+                (List<Map<String, Object>>) body.get("perMemberImpact");
+        assertNotNull(impact);
+        assertEquals(2, impact.size());
+
+        // alice: only c1 is sole-route via GROUP (c2 via other-group, c3 via direct user grant)
+        Map<String, Object> aliceEntry = impact.get(0);
+        assertEquals("alice", aliceEntry.get("userId"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> aliceLost =
+                (List<Map<String, Object>>) aliceEntry.get("lostIfGroupRemoved");
+        assertEquals(1, aliceLost.size());
+        assertEquals("c1", aliceLost.get(0).get("connectorId"));
+
+        // bob: c1 lost (GROUP-only), c3 also lost (only matched principal is GROUP for bob)
+        Map<String, Object> bobEntry = impact.get(1);
+        assertEquals("bob", bobEntry.get("userId"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> bobLost =
+                (List<Map<String, Object>>) bobEntry.get("lostIfGroupRemoved");
+        assertEquals(2, bobLost.size());
+        assertEquals(Set.of("c1", "c3"),
+                Set.of((String) bobLost.get(0).get("connectorId"),
+                       (String) bobLost.get(1).get("connectorId")));
+    }
+
+    @Test
+    void byGroup_memberLimitTruncatesImpactButKeepsFullMemberList() {
+        asAdmin();
+        List<String> bigMembers = new java.util.ArrayList<>();
+        for (int i = 0; i < 50; i++) bigMembers.add("user-" + i);
+        when(principalService.getGroupById(REPO, GROUP))
+                .thenReturn(makeGroup(GROUP, bigMembers));
+        when(connectorService.list()).thenReturn(List.of(conn("c1", List.of(GROUP))));
+        when(authService.expandPrincipals(any(), any())).thenReturn(Set.of(GROUP));
+
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, REPO, true, 10);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        @SuppressWarnings("unchecked")
+        List<String> members = (List<String>) body.get("memberUserIds");
+        assertEquals(50, members.size(), "full member list always returned");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> impact =
+                (List<Map<String, Object>>) body.get("perMemberImpact");
+        assertEquals(10, impact.size(), "perMemberImpact capped at memberLimit");
+        assertEquals(Boolean.TRUE, body.get("perMemberImpactTruncated"));
+        assertEquals(10, body.get("memberLimit"));
+    }
+
+    @Test
+    void byGroup_includeMembersFalse_skipsPerMemberImpact() {
+        asAdmin();
+        when(principalService.getGroupById(REPO, GROUP))
+                .thenReturn(makeGroup(GROUP, List.of("alice", "bob")));
+        when(connectorService.list()).thenReturn(List.of(conn("c1", List.of(GROUP))));
+
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, REPO, false, 200);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        assertEquals(2, body.get("memberCount"));
+        // perMemberImpact must NOT be present in fast-path mode
+        org.junit.jupiter.api.Assertions.assertNull(body.get("perMemberImpact"));
+        // expandPrincipals must NOT have been called per-member
+        org.mockito.Mockito.verify(authService, org.mockito.Mockito.never())
+                .expandPrincipals(any(), any());
+    }
+
+    @Test
+    void byGroup_principalServiceThrows_fallsBackToUnknown() {
+        asAdmin();
+        when(principalService.getGroupById(REPO, GROUP))
+                .thenThrow(new RuntimeException("backend down"));
+        when(connectorService.list()).thenReturn(List.of(conn("c1", List.of(GROUP))));
+
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, REPO, true, 200);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertEquals("UNKNOWN", body.get("groupType"));
+        assertEquals(0, body.get("memberCount"));
+        // directGrants still works — that path doesn't depend on PrincipalService
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> direct = (List<Map<String, Object>>) body.get("directGrants");
+        assertEquals(1, direct.size());
+    }
 }

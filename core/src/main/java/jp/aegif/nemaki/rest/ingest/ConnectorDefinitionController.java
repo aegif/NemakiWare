@@ -309,6 +309,150 @@ public class ConnectorDefinitionController {
     }
 
     /**
+     * RC6 B3-2: group-membership governance view — "what does deleting
+     * this group cost?".
+     *
+     * <p>Admin-only. For a given {@code groupId}, returns:
+     * <ul>
+     *   <li>{@code memberUserIds} — direct member users of the group.</li>
+     *   <li>{@code subGroupIds} — direct sub-groups, if any (NemakiWare
+     *       groups don't nest in practice, but the model exposes the
+     *       field, so we surface it verbatim).</li>
+     *   <li>{@code directGrants} — connectors whose
+     *       {@code allowedPrincipalIds} contains {@code groupId} directly
+     *       (same shape as {@code /by-principal/{groupId}} matches).</li>
+     *   <li>{@code perMemberImpact} (when {@code includeMembers=true}) —
+     *       for each member user, the set of connectors they would lose
+     *       if {@code groupId} were removed from their effective
+     *       principal set (sole-route detection over this group only).
+     *       Capped at {@code memberLimit} members for response-size
+     *       safety; the cap is configurable via the query param.</li>
+     * </ul>
+     *
+     * <p>The existing {@code /by-principal/{groupId}} endpoint answers
+     * "what connectors does this group ID grant?" but stops there. This
+     * endpoint adds the membership lens — operators can answer
+     * "deleting this group would impact N users; here's what each loses"
+     * without N round-trips to {@code /by-principal/{userId}} per member.
+     *
+     * <p>If {@code groupId} doesn't resolve to a Group, the response
+     * still returns 200 with {@code groupType=UNKNOWN} and empty member
+     * lists — governance views are read-only and best served partial-but-
+     * honest. The directGrants section uses {@code allowedPrincipalIds}
+     * lookup which works regardless of whether the principal is actually
+     * a group, so admins can probe arbitrary IDs.
+     *
+     * <p>Query params:
+     * <ul>
+     *   <li>{@code repositoryId} (required) — group lookup is per-repo
+     *       because users / groups are per-repo in NemakiWare.</li>
+     *   <li>{@code includeMembers} (default {@code true}) — when false,
+     *       skips per-member impact computation (cheap fast-path for
+     *       UI that only needs counts).</li>
+     *   <li>{@code memberLimit} (default {@code 200}) — caps the number
+     *       of members included in {@code perMemberImpact}. Members
+     *       beyond the cap appear in {@code memberUserIds} but not in
+     *       {@code perMemberImpact}; the response sets
+     *       {@code perMemberImpactTruncated=true} so the UI can warn.</li>
+     * </ul>
+     */
+    @GetMapping("/by-group/{groupId}")
+    public ResponseEntity<?> listByGroup(
+            @PathVariable String groupId,
+            @RequestParam String repositoryId,
+            @RequestParam(required = false, defaultValue = "true") boolean includeMembers,
+            @RequestParam(required = false, defaultValue = "200") int memberLimit) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
+        if (forbidden != null) return forbidden;
+        if (groupId == null || groupId.isBlank()
+                || repositoryId == null || repositoryId.isBlank()) {
+            return errorResponse(HttpStatus.BAD_REQUEST,
+                    "groupId and repositoryId are required");
+        }
+        if (memberLimit < 1) memberLimit = 200;
+
+        // Resolve the group (UNKNOWN if PrincipalService isn't wired or
+        // the ID isn't actually a group). Never blocks the lookup.
+        jp.aegif.nemaki.model.Group group = null;
+        String groupType = "UNKNOWN";
+        if (principalService != null) {
+            try {
+                group = principalService.getGroupById(repositoryId, groupId);
+                if (group != null) groupType = "GROUP";
+            } catch (RuntimeException ignored) {
+                // group remains null, type stays UNKNOWN
+            }
+        }
+
+        java.util.List<String> memberUserIds = group != null && group.getUsers() != null
+                ? new java.util.ArrayList<>(group.getUsers())
+                : java.util.Collections.emptyList();
+        java.util.List<String> subGroupIds = group != null && group.getGroups() != null
+                ? new java.util.ArrayList<>(group.getGroups())
+                : java.util.Collections.emptyList();
+
+        // Direct grants: same logic as /by-principal/{groupId} with
+        // expand=false. We don't expand for groups (NemakiWare groups
+        // don't nest; the by-principal endpoint already documents this).
+        java.util.Set<String> directSet = new java.util.LinkedHashSet<>();
+        directSet.add(groupId);
+        List<Map<String, Object>> directGrants = buildMatches(groupId, directSet);
+
+        var body = new LinkedHashMap<String, Object>();
+        body.put("groupId", groupId);
+        body.put("groupType", groupType);
+        body.put("groupName", group != null ? group.getName() : null);
+        body.put("repositoryId", repositoryId);
+        body.put("memberCount", memberUserIds.size());
+        body.put("subGroupCount", subGroupIds.size());
+        body.put("memberUserIds", memberUserIds);
+        body.put("subGroupIds", subGroupIds);
+        body.put("directGrants", directGrants);
+
+        if (includeMembers && !memberUserIds.isEmpty()) {
+            int cap = Math.min(memberLimit, memberUserIds.size());
+            List<Map<String, Object>> impact = new java.util.ArrayList<>(cap);
+            for (int i = 0; i < cap; i++) {
+                String memberId = memberUserIds.get(i);
+                // For each member, compute their effective principal set
+                // expanded across ALL their group memberships, then ask:
+                // "what would they lose if groupId were removed?" — a
+                // sole-route detection over the {groupId} removal set.
+                java.util.Set<String> memberPrincipals = new java.util.LinkedHashSet<>();
+                memberPrincipals.add(memberId);
+                try {
+                    memberPrincipals.addAll(
+                            ingestAuthorizationService.expandPrincipals(repositoryId, memberId));
+                } catch (RuntimeException ignored) {
+                    // expansion fail-closed: caller still sees direct-only
+                }
+                List<Map<String, Object>> memberMatches =
+                        buildMatches(memberId, memberPrincipals);
+                List<Map<String, Object>> lost = new java.util.ArrayList<>();
+                for (Map<String, Object> m : memberMatches) {
+                    @SuppressWarnings("unchecked")
+                    List<String> matched = (List<String>) m.get("matchedPrincipalIds");
+                    if (matched == null || matched.isEmpty()) continue;
+                    // "lost via groupId" iff every matched principal equals
+                    // groupId — i.e., this connector is reachable ONLY
+                    // through the queried group for this member.
+                    boolean allViaThisGroup = matched.stream()
+                            .allMatch(p -> groupId.equals(p));
+                    if (allViaThisGroup) lost.add(m);
+                }
+                var memberEntry = new LinkedHashMap<String, Object>();
+                memberEntry.put("userId", memberId);
+                memberEntry.put("lostIfGroupRemoved", lost);
+                impact.add(memberEntry);
+            }
+            body.put("perMemberImpact", impact);
+            body.put("perMemberImpactTruncated", cap < memberUserIds.size());
+            body.put("memberLimit", memberLimit);
+        }
+        return ResponseEntity.ok(body);
+    }
+
+    /**
      * W2 (RC5.3): server-side simulate-remove. Body specifies the
      * principal-set to remove from the expansion. Returns
      * {@code lost} (matches where every {@code matchedPrincipalIds}
