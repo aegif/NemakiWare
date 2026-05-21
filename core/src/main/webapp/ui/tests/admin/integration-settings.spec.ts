@@ -50,17 +50,20 @@ test.describe('Integration Settings - Page Rendering', () => {
     await expect(title).toBeVisible({ timeout: 10000 });
   });
 
-  test('should display all fifteen tabs', async ({ page }) => {
+  test('should display all integration settings tabs (admin)', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
     await waitForUiStable(page);
 
-    // Use role=tab to count all tabs including those in overflow dropdown
+    // Use role=tab to count all tabs including those in overflow dropdown.
+    // RC5.1 added 'connector-governance' and a later RC added 'mcp', bringing
+    // the admin-visible total to 17 (was 15 in RC5.0 / 16 in RC5.1).
     const tabs = page.locator('[role="tab"]');
     const tabCount = await tabs.count();
     console.log(`Found ${tabCount} tabs`);
-    expect(tabCount).toBe(15);
+    expect(tabCount).toBe(17);
 
-    // Verify tab labels by role (i18n-safe: match English or Japanese)
+    // Verify tab labels by role (i18n-safe: match English or Japanese).
+    // 'Connector Access' / 'コネクタアクセス' is RC5.1 governance tab.
     const expectedTabs = [
       /OIDC/i,
       /Google(?!.*Dataplex)/i,
@@ -73,10 +76,12 @@ test.describe('Integration Settings - Page Rendering', () => {
       /Lineage/i,
       /Property Mapping|プロパティマッピング/i,
       /Connector|コネクタ/i,
+      /Connector Access|コネクタアクセス/i,
       /Import Profile|インポートプロファイル/i,
       /Manual Import|手動インポート/i,
       /Job History|ジョブ履歴/i,
       /Scheduler|スケジューラ/i,
+      /MCP/i,
     ];
     for (const tabPattern of expectedTabs) {
       const tab = tabs.filter({ hasText: tabPattern });
@@ -311,7 +316,7 @@ test.describe('Integration Settings - API', () => {
     const putResponse = await page.request.put(
       `${BASE_URL}/core/api/v1/admin/integration-settings/purview`,
       {
-        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         data: testValues
       }
     );
@@ -344,7 +349,7 @@ test.describe('Integration Settings - API', () => {
     await page.request.put(
       `${BASE_URL}/core/api/v1/admin/integration-settings/purview`,
       {
-        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         data: {
           'purview.enabled': '',
           'purview.endpoint': '',
@@ -369,7 +374,7 @@ test.describe('Integration Settings - API', () => {
     const putResponse = await page.request.put(
       `${BASE_URL}/core/api/v1/admin/integration-settings/atlas`,
       {
-        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         data: testValues
       }
     );
@@ -399,7 +404,7 @@ test.describe('Integration Settings - API', () => {
     await page.request.put(
       `${BASE_URL}/core/api/v1/admin/integration-settings/atlas`,
       {
-        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         data: {
           'atlas.enabled': '',
           'atlas.endpoint': '',
@@ -422,7 +427,7 @@ test.describe('Integration Settings - API', () => {
     const putResponse = await page.request.put(
       `${BASE_URL}/core/api/v1/admin/integration-settings/dataplex`,
       {
-        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         data: testValues
       }
     );
@@ -452,7 +457,7 @@ test.describe('Integration Settings - API', () => {
     await page.request.put(
       `${BASE_URL}/core/api/v1/admin/integration-settings/dataplex`,
       {
-        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         data: {
           'dataplex.enabled': '',
           'dataplex.project-id': '',
@@ -469,7 +474,7 @@ test.describe('Integration Settings - API', () => {
     await page.request.put(
       `${BASE_URL}/core/api/v1/admin/integration-settings/purview`,
       {
-        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         data: { 'purview.client.secret': 'original-secret' }
       }
     );
@@ -478,7 +483,7 @@ test.describe('Integration Settings - API', () => {
     const putResponse = await page.request.put(
       `${BASE_URL}/core/api/v1/admin/integration-settings/purview`,
       {
-        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         data: {
           'purview.endpoint': 'https://skip-test.azure.com',
           'purview.client.secret': '[configured]'
@@ -504,7 +509,7 @@ test.describe('Integration Settings - API', () => {
     await page.request.put(
       `${BASE_URL}/core/api/v1/admin/integration-settings/purview`,
       {
-        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         data: { 'purview.endpoint': '', 'purview.client.secret': '' }
       }
     );
@@ -514,7 +519,7 @@ test.describe('Integration Settings - API', () => {
     const putResponse = await page.request.put(
       `${BASE_URL}/core/api/v1/admin/integration-settings/oidc`,
       {
-        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         data: { 'malicious.key': 'hacked', 'unknown.setting': 'value' }
       }
     );
@@ -555,7 +560,7 @@ test.describe('Integration Settings - API', () => {
   test('should test OIDC connection', async ({ page }) => {
     const response = await page.request.post(
       `${BASE_URL}/core/api/v1/admin/integration-settings/oidc/test-connection`,
-      { headers: { 'Authorization': authHeader } }
+      { headers: { 'Authorization': authHeader, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     expect(response.ok()).toBe(true);
     const data = await response.json();
@@ -567,7 +572,7 @@ test.describe('Integration Settings - API', () => {
   test('should test Purview connection', async ({ page }) => {
     const response = await page.request.post(
       `${BASE_URL}/core/api/v1/admin/integration-settings/purview/test-connection`,
-      { headers: { 'Authorization': authHeader } }
+      { headers: { 'Authorization': authHeader, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     expect(response.ok()).toBe(true);
     const data = await response.json();

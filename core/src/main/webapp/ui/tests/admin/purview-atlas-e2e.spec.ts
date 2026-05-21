@@ -141,7 +141,7 @@ async function deleteAtlasEntity(
 async function triggerIncrementalSync(request: APIRequestContext, repoId: string): Promise<any> {
   const res = await request.post(
     `${BASE_URL}/core/api/v1/admin/purview/incremental-sync/${repoId}`,
-    { headers: { Authorization: AUTH_HEADER }, timeout: 60000 }
+    { headers: { Authorization: AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }, timeout: 60000 }
   );
   return res.ok() ? await res.json() : null;
 }
@@ -149,7 +149,7 @@ async function triggerIncrementalSync(request: APIRequestContext, repoId: string
 async function triggerDeleteResolution(request: APIRequestContext, repoId: string): Promise<any> {
   const res = await request.post(
     `${BASE_URL}/core/api/v1/admin/purview/delete-resolution/${repoId}`,
-    { headers: { Authorization: AUTH_HEADER }, timeout: 60000 }
+    { headers: { Authorization: AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }, timeout: 60000 }
   );
   return res.ok() ? await res.json() : null;
 }
@@ -157,7 +157,7 @@ async function triggerDeleteResolution(request: APIRequestContext, repoId: strin
 async function applySchemaBootstrap(request: APIRequestContext): Promise<any> {
   const res = await request.post(
     `${BASE_URL}/core/api/v1/admin/purview/type-definitions/apply`,
-    { headers: { Authorization: AUTH_HEADER }, timeout: 60000 }
+    { headers: { Authorization: AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }, timeout: 60000 }
   );
   return res.ok() ? await res.json() : null;
 }
@@ -312,7 +312,7 @@ async function configureSettings(
   const res = await request.put(
     `${BASE_URL}/core/api/v1/admin/integration-settings/${group}`,
     {
-      headers: { Authorization: AUTH_HEADER, 'Content-Type': 'application/json' },
+      headers: { Authorization: AUTH_HEADER, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       data: settings,
     }
   );
@@ -395,7 +395,7 @@ test.describe('Group 1: Prerequisites & Schema Setup', () => {
 
     const res = await request.post(
       `${BASE_URL}/core/api/v1/admin/integration-settings/purview/test-connection`,
-      { headers: { Authorization: AUTH_HEADER } }
+      { headers: { Authorization: AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     expect(res.ok()).toBe(true);
     const data = await res.json();
@@ -981,7 +981,7 @@ test.describe('Group 7: Dead-Letter & Replay', () => {
     // Replay the failed event
     const replayRes = await request.post(
       `${BASE_URL}/core/api/v1/admin/lineage-journal/events/${failedEventId}/replay?target=atlas`,
-      { headers: { Authorization: AUTH_HEADER } }
+      { headers: { Authorization: AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     expect(replayRes.ok()).toBe(true);
 
@@ -1019,7 +1019,7 @@ test.describe('Group 7: Dead-Letter & Replay', () => {
 
     const res = await request.post(
       `${BASE_URL}/core/api/v1/admin/lineage-journal/dead-letters/replay-all`,
-      { headers: { Authorization: AUTH_HEADER } }
+      { headers: { Authorization: AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     expect(res.ok()).toBe(true);
     const data = await res.json();
