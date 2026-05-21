@@ -22,7 +22,7 @@
 		<maven.compiler.target>21</maven.compiler.target>
 		<nemakiware.version>${project.version}</nemakiware.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<org.springframework.version>7.0.5</org.springframework.version>
+		<org.springframework.version>7.0.7</org.springframework.version>
 		<org.apache.chemistry.opencmis.version>1.1.0-nemakiware</org.apache.chemistry.opencmis.version>
 		<opencmis.github.packages.url>https://maven.pkg.github.com/aegif/chemistry-opencmis-nemakiware</opencmis.github.packages.url>
 		<opencmis.github.packages.repository.id>github-opencmis</opencmis.github.packages.repository.id>
@@ -68,19 +68,21 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
-			<!-- Force logback 1.5.19 to fix CVE-2025-11226 (which is "up to and
-			     including 1.5.18") and CVE-2026-1225. Resolved transitively
-			     from solr-core; explicit DM override required since direct
-			     deps are commented out. -->
+			<!-- Force logback 1.5.25 to fix CVE-2025-11226 (which is "up to and
+			     including 1.5.18"), CVE-2026-1225, GHSA-25qh-j22f-pwp8 (arbitrary
+			     code execution through file processing), and GHSA-qqpg-mvqg-649v
+			     (class instantiation via class path). Resolved transitively from
+			     solr-core; explicit DM override required since direct deps are
+			     commented out. -->
 			<dependency>
 				<groupId>ch.qos.logback</groupId>
 				<artifactId>logback-classic</artifactId>
-				<version>1.5.19</version>
+				<version>1.5.25</version>
 			</dependency>
 			<dependency>
 				<groupId>ch.qos.logback</groupId>
 				<artifactId>logback-core</artifactId>
-				<version>1.5.19</version>
+				<version>1.5.25</version>
 			</dependency>
 			<!-- Force JUnit 4.x to test scope. mockwebserver and other transitive
 			     deps declare junit:junit at compile, leaking it into runtime. -->

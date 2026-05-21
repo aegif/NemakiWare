@@ -94,12 +94,12 @@
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-core</artifactId>
-			<version>1.5.19</version>
+			<version>1.5.25</version>
 		</dependency>
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-classic</artifactId>
-			<version>1.5.19</version>
+			<version>1.5.25</version>
 		</dependency>
 		<!-- logback-contrib 0.1.5 is incompatible with logback 1.5.x;
 		     JSON logging is provided by logstash-logback-encoder instead -->
@@ -144,7 +144,7 @@
 		<dependency>
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-lang3</artifactId>
-			<version>3.17.0</version>
+			<version>3.18.0</version>
 			<optional>false</optional>
 		</dependency>
 		<dependency>
