@@ -6,6 +6,137 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC5.6 — R5 denialReason accuracy + A2 spec CSRF cleanup
+_Release candidate on `release/3.1.1-RC5.5` (2026-05-21), branched
+off `v3.1.1-RC5.5` (`dfb912da9`)._
+
+Post-RC5.5 cumulative cleanup. RC5.5 shipped with R5 (the last
+remaining cumulative follow-up from RC5.4) still open; RC5.6 closes
+it and extends RC5.5's Playwright spec CSRF fix to the rest of the
+repository. No public API contract change, no DB / patch / view /
+migration change. The RC5.5 tag (`dfb912da9`) is **not force-updated**
+and remains as a historical milestone.
+
+### R5: scheduler audit denialReason accuracy
+
+`IngestSchedulerService.pollScheduledProfiles` previously inlined
+the second `resolveFolderId(...)` call into the connector delegation
+re-check. When that call returned null (folder deleted, ACL revoked,
+or transient lookup failure between scheduler ticks), the
+authorization check returned `false` and the audit recorded
+`denialReason=CONNECTOR_NOT_DELEGATED` — safety preserved, label
+wrong. RC5.6 extracts `resolveFolderId(...)` into a local first; a
+null result emits `denialReason=TARGET_FOLDER_UNRESOLVABLE` (matches
+the shape already used in `prepareDelegatedTick` step 5), then the
+non-null result flows into the connector check as before.
+
+2 new unit tests pin the behaviour:
+- `targetFolderDisappearsBetweenTicks_emitsTargetFolderUnresolvable_notConnectorNotDelegated`
+- `targetFolderResolves_butConnectorNoLongerDelegated_stillEmitsConnectorNotDelegated`
+  (regression guard for the legitimate `CONNECTOR_NOT_DELEGATED` path)
+
+### A2: repository-wide spec CSRF cleanup
+
+RC5.5 fixed CSRF headers in 3 RC5-area spec files. RC5.6 audited
+all 43 specs that issue state-changing requests and found only 2
+additional files actually needed the fix — Jersey-served
+`/core/api/v1/cmis/*` paths and CMIS Browser Binding
+`/core/browser/*` are CSRF-exempt at the servlet level. Added
+`X-Requested-With: XMLHttpRequest` to:
+
+- `tests/admin/integration-settings.spec.ts` (12 PUT/POST sites on
+  `/core/api/v1/admin/integration-settings/*`)
+- `tests/admin/purview-atlas-e2e.spec.ts` (7 POST/PUT sites on
+  `/core/api/v1/admin/{purview,integration-settings,lineage-journal}/*`)
+
+While in `integration-settings.spec.ts`, two pre-existing test drift
+items were resolved as well:
+
+- Stale tab count: expected 15 → actual 17 (RC5.1 added
+  `connector-governance`, later RC added `mcp`). Test renamed and
+  assertion updated.
+- Loose `/Connector|コネクタ/i` regex would match both the
+  `Connectors` management tab and the `Connector Access` governance
+  tab — masking a regression where the management tab disappears
+  but the governance tab still satisfies the assertion. Replaced
+  with the anchored `/^(コネクタ ベータ|Connectors\s+Beta)$/`
+  pattern already used in `connector-profile-management.spec.ts`.
+
+Also folds in `7f4b268ba` (the RC5.5 post-tag Playwright E2E
+fix — CSRF header + serial mode + tab selector + valid
+sourceSystem in the 3 RC5-area spec files). RC5.5 cut its tag
+before that commit landed; RC5.6 includes it in the canonical
+artifact.
+
+### Change scope vs RC5.5 (precise)
+
+- **Changed in RC5.6**:
+  - `core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java`
+    (R5 — extract `resolveFolderId` local, add `TARGET_FOLDER_UNRESOLVABLE`
+    early-return branch)
+  - `core/src/test/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerDelegatedRunTest.java`
+    (+2 R5 unit tests, +1 ArgumentCaptor import, +AuditLogger mock wiring)
+  - `core/src/main/webapp/ui/tests/admin/integration-settings.spec.ts`
+    (CSRF header on 12 sites + tab count 15→17 + tab regex anchored)
+  - `core/src/main/webapp/ui/tests/admin/purview-atlas-e2e.spec.ts`
+    (CSRF header on 7 sites)
+  - `core/src/main/webapp/ui/tests/api/ingest-pipeline-e2e.spec.ts`
+    (RC5.5 follow-up: serial mode + CSRF header + sourceSystem `e2e_test`→`box`/`google_drive`)
+  - `core/src/main/webapp/ui/tests/api/external-ingest-api.spec.ts`
+    (RC5.5 follow-up: serial mode + CSRF header)
+  - `core/src/main/webapp/ui/tests/admin/connector-profile-management.spec.ts`
+    (RC5.5 follow-up: CSRF header + anchored tab selector)
+  - `docs/design/connector-delegation.md` §12.14 (new) / §12.15 (renumbered vNext)
+  - `CLAUDE.md` (RC5.6 section)
+  - `REVIEW_PACKET.md` (rewrite as RC5.6 packet)
+  - `RELEASE_NOTES.md` (this section)
+- **Unchanged from RC5.5** (byte-equal):
+  - All other product code (controllers, services, factories, audit
+    pipeline, scheduler-other paths, governance V3 endpoint, W1/W2
+    endpoints, RC5 §12.1 scheduled-delegated machinery)
+  - `AuditOperation` / `DenialReason` enums (no new entries)
+  - `nemakiware.properties`, `serviceContext.xml`
+  - Patch / view dumps / Mango index / DB bootstrap
+  - UI shipped components (only test files changed)
+
+### Commit + tag relationship
+
+- **R5 feature commit**: `cee66573e`
+- **A2 spec CSRF cleanup commit**: `dc0ba6dac`
+- **RC5.5 post-tag Playwright E2E follow-up**: `7f4b268ba`
+- **Tab regex tightening (Low)**: in the RC5.6 doc commit
+- **`v3.1.1-RC5.6` annotated tag target**: see `git rev-parse v3.1.1-RC5.6^{}`
+
+The previous candidate `v3.1.1-RC5.5` is **not force-updated** and
+remains at peeled commit `dfb912da9` as a historical milestone.
+
+### Tests + verification
+
+- 96/96 ingest-related Java tests pass
+  (10 `IngestSchedulerDelegatedRunTest`, was 8 — R5 +2)
+- 17/17 `integration-settings.spec.ts` (was 8 failed in RC5.5)
+- 17 pass / 25 skip `purview-atlas-e2e.spec.ts` (skips are Atlas
+  not configured in env, intentional)
+- 35/35 RC5-area specs from RC5.5 still pass (no regression)
+
+### Follow-up status (cumulative across RC5 cycle)
+
+**Resolved in this RC**: R5, A2 (Playwright spec CSRF cleanup).
+
+**Remaining** (post-release / RC5.7+ candidates, not blocking):
+
+- **R1** (Low, ops) — SOC tooling integration for the
+  `EXTERNAL_GOVERNANCE_SIMULATE` audit event.
+- **H2** (Medium, test coverage) — R3 Simulate button has no
+  Playwright / React test.
+- **M2** (Medium, security hardening) — `simulate-remove` body
+  size limit.
+- **M3** (Low, scale) — `buildMatches` full-scan per call.
+- **L1 / L2** — nit findings (UI ref-equality reset, server-side
+  null check defensiveness).
+
+---
+
 ## 3.1.1-RC5.5 — External-review C1 blocker fix + H1/M1/M4 cleanups
 _Release candidate on `release/3.1.1-RC5.5` (2026-05-20), branched
 off `release/3.1.1-RC5.4` HEAD `8629782bb` (the post-RC5.4-closure
@@ -129,8 +260,9 @@ external re-review):
 
 - **R1** (Low, ops) — SOC tooling integration for the
   `EXTERNAL_GOVERNANCE_SIMULATE` audit event.
-- **R5** (Low, audit label) — denialReason mislabel race in
-  `IngestSchedulerService` connector re-check.
+- ~~**R5** (Low, audit label) — denialReason mislabel race in
+  `IngestSchedulerService` connector re-check.~~ **Resolved in RC5.6
+  (`cee66573e`).**
 - **H2** (Medium, test coverage) — R3 Simulate button has no
   Playwright / React test.
 - **M2** (Medium, security hardening) — `simulate-remove` body
@@ -281,7 +413,7 @@ reviewers and explicitly tracks this tag-vs-branch divergence.
   template would let operators get notified on high-frequency
   simulate bursts. Not a release blocker; recorded so it isn't
   lost in the external-review handoff.
-- **R5** (Low, audit accuracy) —
+- ~~**R5** (Low, audit accuracy) —
   `IngestSchedulerService.pollScheduledProfiles` re-runs
   `IngestAuthorizationService.resolveFolderId(...)` when re-checking
   connector delegation for a delegated profile. If the second
@@ -289,15 +421,12 @@ reviewers and explicitly tracks this tag-vs-branch divergence.
   folder was resolvable at `prepareDelegatedTick` time but
   unresolvable a few statements later), the audit's
   `denialReason` is `CONNECTOR_NOT_DELEGATED` when
-  `TARGET_FOLDER_UNRESOLVABLE` would be more accurate. Safety
-  property preserved (the tick is correctly skipped); only the
-  emitted denial reason is mislabeled in this edge case. Fix is a
-  small refactor in `IngestSchedulerService.java` (the second
-  `resolveFolderId` result needs a null check before reaching
-  `canUseConnectorForDelegatedProfileAsUser`). Not a release
-  blocker; flagged here because the closure report's previous
-  "active follow-up: none" wording overlooked this earlier-recorded
-  low finding.
+  `TARGET_FOLDER_UNRESOLVABLE` would be more accurate.~~ **Resolved
+  in RC5.6 (`cee66573e`)** — the second `resolveFolderId` result is
+  now extracted into a local and null-checked before reaching
+  `canUseConnectorForDelegatedProfileAsUser`; a null result emits
+  `TARGET_FOLDER_UNRESOLVABLE` instead, matching `prepareDelegatedTick`
+  step 5's existing shape.
 
 **Resolved during RC5 cycle** (for completeness):
 

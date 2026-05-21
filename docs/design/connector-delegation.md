@@ -1016,7 +1016,40 @@ post-RC5.1 follow-up lists, all items shipped) now carry the
 `~~strikethrough~~ (resolved in RC5.x)` treatment for consistency
 with §12.10 / §12.11 / §12.12.
 
-### 12.14 vNext (separate scope, not RC5.x)
+### 12.14 ~~RC5.6: R5 denialReason accuracy + A2 spec CSRF cleanup~~ (shipped)
+
+Folded into RC5.6 — post-RC5.5 cleanup cycle that resolves the last
+cumulative R5 item and tightens repository-wide Playwright spec
+hygiene without altering any RC5.x public contract.
+
+**R5** (audit label accuracy):
+`IngestSchedulerService.pollScheduledProfiles` extracts
+`resolveFolderId(...)` into a local before the connector delegation
+re-check. When the second resolve returns null (folder deleted /
+ACL revoked / transient lookup failure between ticks), the audit
+now emits `denialReason=TARGET_FOLDER_UNRESOLVABLE` instead of
+the prior `CONNECTOR_NOT_DELEGATED` — accurate root cause, no
+behaviour change beyond the label. Mirrors the same shape used in
+`prepareDelegatedTick` step 5 (existing pattern). 2 new unit tests
+pin the fix; 1 of them is a regression guard for the legitimate
+connector-denial path.
+
+**A2** (Playwright spec CSRF cleanup):
+RC5.5 fixed CSRF headers in 3 RC5-area spec files. RC5.6 extends
+the audit to the entire spec corpus, adding
+`X-Requested-With: XMLHttpRequest` to 2 additional spec files
+that hit Spring MVC `/core/api/v1/admin/*` with basic auth.
+Jersey-served `/core/api/v1/cmis/*` paths and CMIS Browser Binding
+`/core/browser/*` are CSRF-exempt at the servlet level and need
+no change. Also tightens the integration-settings tab assertion to
+the anchored `/^(コネクタ ベータ|Connectors\s+Beta)$/` pattern so
+removing the management tab cannot be silently masked by the
+governance tab matching the same loose `/Connector/i` regex.
+
+**Migration impact**: none. No DB / patch / view / API contract
+change. R5 is a label fix inside an existing audit entry shape.
+
+### 12.15 vNext (separate scope, not RC5.x)
 
 Bigger ideas that came up during RC5.1 review but are explicitly
 NOT planned for any RC5 patch.

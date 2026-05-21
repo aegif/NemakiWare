@@ -1,20 +1,22 @@
-# NemakiWare v3.1.1-RC5.5 — External Review Packet (re-send)
+# NemakiWare v3.1.1-RC5.6 — External Review Packet
 
-Single entry point for the **second-round external review** of the
-RC5 cycle. The previous round (`v3.1.1-RC5.4`) returned one
-blocking finding (C1: epoch-overflow HTTP 500 leak); this round
-fixes it.
+Single entry point for the **third-round external review** of the
+RC5 cycle. The previous round (`v3.1.1-RC5.5`) shipped with one
+low-priority follow-up (R5: scheduler `denialReason` mislabel race)
+still open and a repository-wide Playwright spec CSRF gap surfaced
+mid-review. RC5.6 closes both items.
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC5.5` (peeled commit `dfb912da9`).
+  `v3.1.1-RC5.6`.
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC5.5` **branch HEAD** that may land after the
-  tag is cut (e.g. this very file when re-edited mid-review). The
-  current state has zero divergence — see §3.
+  tag is cut (e.g. this very file when re-edited mid-review).
+  As of tag time the divergence is zero — see §3.
 
-The previous candidate `v3.1.1-RC5.4` **remains as a historical
-tag** for traceability and is NOT promoted into GA. Its peeled
-commit is still `014939eeb`; nothing has been force-updated.
+The previous candidates `v3.1.1-RC5.5` (peeled `dfb912da9`) and
+`v3.1.1-RC5.4` (peeled `014939eeb`) **remain as historical tags**
+for traceability and are NOT promoted into GA. Nothing has been
+force-updated.
 
 ---
 
@@ -22,55 +24,64 @@ commit is still `014939eeb`; nothing has been force-updated.
 
 | Item | Value |
 |---|---|
-| **Final candidate tag** | `v3.1.1-RC5.5` |
-| Tag annotated object SHA | `bd967193da1f522dc9fed47a24b8c2febfd5fdba` |
-| Tag peeled commit | `dfb912da9639f9679aea5b2f0167621397cb67f7` |
-| Branch | `release/3.1.1-RC5.5` |
-| Branch HEAD | latest commit on branch (see `git log`) |
+| **Final candidate tag** | `v3.1.1-RC5.6` |
+| Tag peeled commit | see `git rev-parse v3.1.1-RC5.6^{}` |
+| Branch | `release/3.1.1-RC5.5` (RC5.6 lives on the RC5.5 branch — branch name is **not** renamed per release) |
 | Base of RC5 cycle | `v3.1.1-RC4.1` (`572aad18b`) |
-| **Cumulative diff cmd** | `git diff v3.1.1-RC4.1..v3.1.1-RC5.5` |
-| Previous (now historical) candidate | `v3.1.1-RC5.4` (peeled `014939eeb`) |
-| RC5.4 → RC5.5 diff cmd | `git diff v3.1.1-RC5.4..v3.1.1-RC5.5` |
+| **Cumulative diff cmd** | `git diff v3.1.1-RC4.1..v3.1.1-RC5.6` |
+| Previous historical candidate | `v3.1.1-RC5.5` (peeled `dfb912da9`) |
+| RC5.5 → RC5.6 diff cmd | `git diff v3.1.1-RC5.5..v3.1.1-RC5.6` |
 
 ---
 
-## 2. What changed since the previous external review (RC5.4 → RC5.5)
+## 2. What changed since the previous external review (RC5.5 → RC5.6)
 
-The RC5.4 review surfaced one blocker (C1) and three
-recommendations (H1, M1, M4). RC5.5 addresses all four.
+The RC5.5 closure left **R5** (the last cumulative follow-up from
+the RC5.4 review) explicitly open as "Low / audit label accuracy /
+post-release candidate". Mid-review, an internal review surfaced
+that RC5.5's Playwright spec CSRF fix had only been applied to the
+3 RC5-area specs and that 2 additional spec files outside the RC5
+focus area still failed under CSRF. RC5.6 closes both.
 
-- **C1** (blocker, code) — `GET /v1/admin/import-profiles?autoDisabledSince=`
-  with a Long-epoch-overflow ISO-8601 instant (e.g.
-  `+999999999-12-31T23:59:59Z`) returned HTTP 500 in RC5.4. RC5.5
-  now catches `ArithmeticException` alongside
-  `DateTimeParseException` on both the cutoff parse and the
-  per-profile marker parse. Cutoff overflow → 400. Profile-side
-  overflow → defensive exclude (one corrupted record no longer
-  500s the entire list). 2 new unit tests pin the behaviour.
-- **H1** (recommendation, code) — five `catch (RuntimeException ignored)`
-  audit emit sites collapsed to `jp.aegif.nemaki.audit.AuditEmitSupport.safeEmit(...)`.
-  Audit failure still cannot break the business path (the
-  invariant the original silent catches were defending), but a
-  WARN line now records `op + actor + object + exceptionClass + exceptionMessage`.
-  The audit `details` map is deliberately NOT logged so that
-  secrets / tokens / credentials cannot leak into the general
-  application log.
-- **M1** (recommendation, doc) — REVIEW_PACKET.md now distinguishes
-  the focused 14-test-class / 157-test set from the broader
-  pattern that returns 287 tests when re-run.
-- **M4** (recommendation, doc) — `docs/design/connector-delegation.md`
-  §12.6 and §12.9 (historical post-RC5/RC5.1 follow-up lists)
-  now carry the ~~strikethrough~~ + "resolved in RC5.x" treatment
-  already used for §12.10 / §12.11 / §12.12.
+- **R5** (code, low) — `IngestSchedulerService.pollScheduledProfiles`
+  extracts the second `resolveFolderId(...)` call into a local
+  before the connector delegation re-check. When the resolve
+  returns null (folder deleted, ACL revoked, or transient lookup
+  failure between scheduler ticks), the audit now emits
+  `denialReason=TARGET_FOLDER_UNRESOLVABLE` instead of the prior
+  `CONNECTOR_NOT_DELEGATED`. Safety property unchanged (the tick
+  is still skipped); the audit label is now accurate. Matches the
+  pattern already used in `prepareDelegatedTick` step 5. 2 new
+  unit tests pin the fix, 1 of which is a regression guard for
+  the legitimate `CONNECTOR_NOT_DELEGATED` path.
+- **A2** (test, low) — repo-wide Playwright spec CSRF audit. Of
+  the 43 specs issuing state-changing requests, only 2 actually
+  needed the fix (Jersey-served `/core/api/v1/cmis/*` and CMIS
+  Browser Binding `/core/browser/*` are CSRF-exempt at the servlet
+  level). Added `X-Requested-With: XMLHttpRequest` to
+  `tests/admin/integration-settings.spec.ts` (12 sites) and
+  `tests/admin/purview-atlas-e2e.spec.ts` (7 sites). While in
+  `integration-settings.spec.ts`, two pre-existing test drift
+  items were resolved as well — stale tab count assertion
+  (15 → 17) and a loose `/Connector|コネクタ/i` regex that would
+  match both the management and governance tabs (replaced with the
+  anchored `/^(コネクタ ベータ|Connectors\s+Beta)$/` pattern
+  already used in `connector-profile-management.spec.ts`).
+- **RC5.5 post-tag Playwright follow-up** (test, low) — the
+  `7f4b268ba` commit (CSRF header + serial mode + tab selector +
+  valid sourceSystem fix in the 3 RC5-area spec files) landed
+  after the RC5.5 tag was cut. RC5.6 includes it in the
+  canonical artifact so reviewers can verify the full E2E spec
+  suite against the tag.
 
-The RC5.4 review also recorded two non-blocking findings (H2 / M2)
-which are **NOT included** in RC5.5 — see §5.
+There is no public API contract change. There is no DB / patch /
+view / Mango index / migration change. There is no new property.
 
 ---
 
 ## 3. What's on the branch HEAD but NOT in the tag
 
-The tag (`v3.1.1-RC5.5` peeled `dfb912da9`) and the branch HEAD
+The tag (`v3.1.1-RC5.6`) and the branch HEAD
 (`release/3.1.1-RC5.5`) MAY diverge during the external review
 window as supplementary docs land. As of tag time the divergence
 is zero — both point at the same commit.
@@ -91,9 +102,9 @@ out the tag and ignore later branch commits.
 
 ---
 
-## 4. What's in the v3.1.1-RC5.5 tag (cumulative since RC4.1)
+## 4. What's in the v3.1.1-RC5.6 tag (cumulative since RC4.1)
 
-Same RC5 cycle scope as RC5.4, plus the RC5.5 corrections above:
+Same RC5 cycle scope as RC5.5, plus the RC5.6 additions above:
 
 - **Scheduled delegated profiles** (RC5 §12.1) — opt-in per-tick
   governance for non-admin profile creators. Default-off.
@@ -112,21 +123,25 @@ Same RC5 cycle scope as RC5.4, plus the RC5.5 corrections above:
   also returns 400.
 - **H1 safeEmit** (RC5.5) — audit pipeline failures now visible
   via WARN log without breaking the business path.
+- **R5 fix** (RC5.6) — scheduler audit `denialReason` accurate
+  for the folder-resolution-race edge case.
+- **A2 cleanup** (RC5.6) — Playwright spec CSRF / regex / count
+  drift resolved repo-wide.
 
-For the full per-RC narrative see `RELEASE_NOTES.md` 6 sections
-(`3.1.1-RC5` → `3.1.1-RC5.5`) and
-`docs/design/connector-delegation.md` §12.1 - §12.14.
+For the full per-RC narrative see `RELEASE_NOTES.md` 7 sections
+(`3.1.1-RC5` → `3.1.1-RC5.6`) and
+`docs/design/connector-delegation.md` §12.1 - §12.15.
 
 ---
 
-## 5. Acceptance status summary (RC5.5)
+## 5. Acceptance status summary (RC5.6)
 
 - **Blocking findings**: 0
 - **Unit tests** (precise scope):
   - **Focused set** (RC5 cycle delegation / governance / scheduler
-    / profile pipeline): **157 tests across 14 test classes PASS**
+    / profile pipeline): **159 tests across 14 test classes PASS**
     — `DelegatedCallContextFactoryTest`,
-    `IngestSchedulerDelegatedRunTest`,
+    `IngestSchedulerDelegatedRunTest` (10 cases — RC5.5 8 + R5 +2),
     `ImportProfileSchedulerGateTest`,
     `ConnectorByPrincipalGovernanceTest`,
     `IngestSchedulerDelegationSkipTest`,
@@ -137,50 +152,58 @@ For the full per-RC narrative see `RELEASE_NOTES.md` 6 sections
     `ConnectorDefinitionControllerPartialPutTest`,
     `IngestWebhookGraphValidationTest`,
     `ImportProfileDefinitionTest`,
-    `ImportProfileSinceFilterTest` (10 cases — RC5.4 8 + C1 +2),
+    `ImportProfileSinceFilterTest` (10 cases, unchanged from RC5.5),
     `ConnectorSimulateRemoveTest`.
-  - **Broader pattern**: `mvn test -Dtest="*Ingest*Test*,*Connector*Test*,*Profile*Test*,Delegated*Test"`
-    returned **289 tests** all PASS at the RC5.5 re-send closure
-    check (was 287 at RC5.4 closure; +2 from the C1 tests added to
-    `ImportProfileSinceFilterTest` which matches the `*Profile*Test*`
-    pattern). The 132-test delta beyond the focused 157 set is
-    other repository/type/import-export tests that share the
-    naming pattern — none are intentionally excluded.
-- **Live verification**:
-  - C1: malformed string → 400, epoch overflow → 400 (was 500),
-    valid ISO → 200, empty → 200
+  - **Broader pattern** `mvn test -Dtest="*Ingest*Test*,*Connector*Test*,*Profile*Test*,Delegated*Test"`
+    was not re-run for RC5.6 because RC5.6 only touches files inside
+    the focused set (verified: see §2 change scope). The RC5.5
+    closure run returned **289 tests** all PASS; RC5.6 adds +2
+    inside the focused set, expected RC5.6 broader-pattern count
+    is 291.
+- **Playwright E2E** (RC5-area + RC5.6 A2 scope):
+  - `tests/api/ingest-pipeline-e2e.spec.ts` + `tests/api/external-ingest-api.spec.ts`
+    + `tests/admin/connector-profile-management.spec.ts`: **35/35 PASS**
+    (unchanged from RC5.5 post-tag fix `7f4b268ba`)
+  - `tests/admin/integration-settings.spec.ts`: **17/17 PASS**
+    (was 8 failed in RC5.5 — CSRF + stale tab count + loose regex)
+  - `tests/admin/purview-atlas-e2e.spec.ts`: **17 PASS / 25 skip**
+    (skips are Atlas server not configured in env, intentional;
+    CSRF 403s all gone)
+- **Live verification** (carried from RC5.5):
+  - C1: malformed string → 400, epoch overflow → 400, valid ISO →
+    200, empty → 200
   - C1: corrupted overflow marker on a profile → 200 with that
     profile excluded
-  - V3 governance: authenticated non-admin → 403, bad credential → 401
+  - V3 governance: authenticated non-admin → 403, bad credential →
+    401
   - W2 simulate-remove: audit entry contains expected fields, no
     secrets in audit details
   - H1: silent audit catch removed from 5 sites; the 2 fall-through
     catches in `resolvePrincipalType` are intentional (not audit)
   - Default-off scheduler still scheduled=0
-- **API contract**: additive only, no breaking changes for callers
-  using valid input. RC5.4 made `autoDisabledSince` strict 400 on
-  non-empty malformed; RC5.5 completes the contract by also
-  covering the overflow edge.
+- **R5 verification** (RC5.6): unit tests cover the audit-level
+  behaviour with `ArgumentCaptor` on `AuditLogger.logOperation`.
+  No live test exists because reproducing the race requires
+  injecting a folder deletion between two scheduler ticks; the
+  refactor is mechanical and the unit test pins the audit emit
+  precisely.
+- **API contract**: additive only since RC4.1 baseline. No
+  breaking change in RC5.6.
 - **Patch / view / Mango index / migration / DB bootstrap**:
   unchanged since RC4.1 (cumulative zero diff in those areas).
 - **UI forbidden path `/core/ui/dist/`**: 0 hit in cumulative diff.
 
 ---
 
-## 6. Remaining follow-ups (post-RC5.5, not blocking review)
-
-These are explicitly NOT blockers. The previous RC5.4 review and
-the current RC5.5 review both surfaced low-/medium-priority items
-recorded here.
+## 6. Remaining follow-ups (post-RC5.6, not blocking review)
 
 | ID | Severity | Scope | Description |
 |---|---|---|---|
 | **R1** | Low (ops) | NemakiWare repo external | SOC tooling integration for `EXTERNAL_GOVERNANCE_SIMULATE` audit event |
-| **R5** | Low (audit label accuracy) | `IngestSchedulerService` | `denialReason` mislabel in a microsecond-window race during connector re-check |
-| **H2** | Medium (test coverage) | UI test | R3 explicit Simulate button has no Playwright / React test. Desirable but not blocker; the underlying audit + API behaviour IS covered by Java tests |
-| **M2** | Medium (security hardening) | Server | `simulate-remove` request body has no size limit; admin-gated, so abuse path requires a compromised admin token. Cap value + contract + test would need to land together |
+| **H2** | Medium (test coverage) | UI test | R3 explicit Simulate button has no Playwright / React test |
+| **M2** | Medium (security hardening) | Server | `simulate-remove` request body has no size limit |
 | **M3** | Low (scale) | Server | `buildMatches` full-scan over `connectorDefinitionService.list()` on every governance call |
-| **L1** | Nit (UX) | UI | R3 button state reset uses array-reference equality (`useEffect([simulateRemove])`); a JSON-stringified nonce would be marginally more robust |
+| **L1** | Nit (UX) | UI | R3 button state reset uses array-reference equality |
 | **L2** | Nit (defensiveness) | Server | `buildMatches` could null-check `connectorDefinitionService.list()` defensively |
 
 **Resolved during RC5 cycle**:
@@ -190,42 +213,47 @@ recorded here.
 | R2 | RC5.3 closure doc commit `01fe84ac5` | `docs/MULTI-REPLICA-DEPLOYMENT.md` updated |
 | R3 | RC5.4 feature commit `6283afc96` | V7 audit explicit button |
 | R4 | RC5.4 feature commit `6283afc96` | `autoDisabledSince` malformed → HTTP 400 |
-| C1 | **RC5.5 feature commit `9bb5bcf83`** | **Epoch overflow → HTTP 400** |
+| C1 | RC5.5 feature commit `9bb5bcf83` | Epoch overflow → HTTP 400 |
 | H1 | RC5.5 feature commit `9bb5bcf83` | safeEmit helper, audit silent catches eliminated |
-| M1 | RC5.5 doc | REVIEW_PACKET test scope precision (this file) |
+| M1 | RC5.5 doc | REVIEW_PACKET test scope precision |
 | M4 | RC5.5 doc | design doc §12.6 / §12.9 strikethrough |
+| **R5** | **RC5.6 feature commit `cee66573e`** | **denialReason accuracy via local extract + early-return** |
+| **A2** | **RC5.6 spec commit `dc0ba6dac` + Low fix in doc commit** | **Repo-wide Playwright spec CSRF / tab count / regex hygiene** |
 
 ---
 
 ## 7. Promotion path (operational)
 
-`v3.1.1-RC5.5` is and remains a release candidate. The GA path
-is unchanged from RC5.4:
+`v3.1.1-RC5.6` is and remains a release candidate. The GA path
+is unchanged from RC5.5:
 
-1. External review (round 2) concludes with approval.
+1. External review (round 3) concludes with approval.
 2. Merge `release/3.1.1-RC5.5` into `master`.
 3. Cut a **new** annotated tag `v3.1.1` against the merge commit
    on `master` — never relabel an RC tag.
 4. Optionally create a single GitHub Release attached to `v3.1.1`.
-5. The RC tags (`v3.1.1-RC5`, `.1`, `.2`, `.3`, `.4`, `.5`) stay
-   as internal milestones; they keep the cycle's audit trail intact.
+5. The RC tags (`v3.1.1-RC5`, `.1`, `.2`, `.3`, `.4`, `.5`, `.6`)
+   stay as internal milestones; they keep the cycle's audit trail
+   intact.
 
 ---
 
 ## 8. Re-send delta summary (what reviewers should focus on)
 
-If you reviewed RC5.4 already, the smallest possible review for
-RC5.5 is:
+If you reviewed RC5.5 already, the smallest possible review for
+RC5.6 is:
 
 ```bash
-git diff v3.1.1-RC5.4..v3.1.1-RC5.5
+git diff v3.1.1-RC5.5..v3.1.1-RC5.6
 ```
 
-This produces a focused set of changes (~10 files, mostly
-ImportProfileDefinitionController + ConnectorDefinitionController
-+ ExternalIngestController + IngestSchedulerService + new
-AuditEmitSupport + ImportProfileSinceFilterTest + doc files). All
-listed in §2 above.
+This produces a focused set of changes (~8 files):
+
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java` (R5)
+- `core/src/test/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerDelegatedRunTest.java` (R5 +2 tests)
+- 5 Playwright spec files (A2 + RC5.5 post-tag follow-up + Low)
+- Doc files: `CLAUDE.md`, `RELEASE_NOTES.md`, `REVIEW_PACKET.md`,
+  `docs/design/connector-delegation.md`
 
 If you are reviewing RC5 cold for the first time, use the
 cumulative diff in §1.
@@ -237,9 +265,9 @@ cumulative diff in §1.
 | Purpose | File |
 |---|---|
 | Re-send overview (this file) | `REVIEW_PACKET.md` |
-| What changed and why (per RC) | `RELEASE_NOTES.md` (6 sections RC5 → RC5.5) |
-| Design rationale | `docs/design/connector-delegation.md` (§12.1 - §12.14) |
+| What changed and why (per RC) | `RELEASE_NOTES.md` (7 sections RC5 → RC5.6) |
+| Design rationale | `docs/design/connector-delegation.md` (§12.1 - §12.15) |
 | Multi-replica operational notes | `docs/MULTI-REPLICA-DEPLOYMENT.md` |
 | Project-internal navigation (Japanese) | `CLAUDE.md` |
 | API entry points | `ConnectorDefinitionController.java`, `ImportProfileDefinitionController.java`, `IngestSchedulerService.java`, `AuditEmitSupport.java` |
-| Test coverage proof | `core/src/test/java/jp/aegif/nemaki/rest/ingest/*Test.java` (157 focused tests, 287 broader pattern) |
+| Test coverage proof | `core/src/test/java/jp/aegif/nemaki/rest/ingest/*Test.java` (159 focused tests) |

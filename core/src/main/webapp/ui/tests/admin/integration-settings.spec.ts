@@ -63,7 +63,13 @@ test.describe('Integration Settings - Page Rendering', () => {
     expect(tabCount).toBe(17);
 
     // Verify tab labels by role (i18n-safe: match English or Japanese).
-    // 'Connector Access' / 'コネクタアクセス' is RC5.1 governance tab.
+    // 'Connector Access' / 'コネクタアクセス' is the RC5.1 governance tab.
+    // The 'Connectors' management tab and 'Connector Access' governance tab
+    // share the same prefix, so the management entry is anchored to the
+    // exact label (including the trailing 'Beta' Tag) — the same selector
+    // shape used in connector-profile-management.spec.ts. Without the
+    // anchor, removing the management tab would still satisfy the loose
+    // regex because the governance tab would match it (false positive).
     const expectedTabs = [
       /OIDC/i,
       /Google(?!.*Dataplex)/i,
@@ -75,7 +81,7 @@ test.describe('Integration Settings - Page Rendering', () => {
       /Google Dataplex/i,
       /Lineage/i,
       /Property Mapping|プロパティマッピング/i,
-      /Connector|コネクタ/i,
+      /^(コネクタ ベータ|Connectors\s+Beta)$/,
       /Connector Access|コネクタアクセス/i,
       /Import Profile|インポートプロファイル/i,
       /Manual Import|手動インポート/i,

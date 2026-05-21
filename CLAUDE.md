@@ -310,6 +310,82 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC23 / RC5.6 (2026-05-21) — R5 denialReason 精度 + A2 spec CSRF cleanup (shipped)
+
+ブランチ: `release/3.1.1-RC5.5` (off `v3.1.1-RC5.5` = `dfb912da9`)
+
+RC5.5 受け入れ後に残っていた最後の累積 follow-up **R5** を解消し、RC5.5
+の Playwright spec CSRF 修正を repo 全体に拡張した cleanup RC。
+public API contract / DB / patch / view / migration いずれも変更なし。
+RC5.5 tag (`dfb912da9`) は **force-update せず** 歴史的マイルストーンとして
+保持。
+
+#### R5: scheduler audit denialReason 精度
+
+`IngestSchedulerService.pollScheduledProfiles` の connector 再評価
+で 2 度目の `resolveFolderId(...)` を inline していたため、null 返却時に
+`canUseConnectorForDelegatedProfileAsUser` が false を返し、audit の
+`denialReason` が `CONNECTOR_NOT_DELEGATED` で emit されていた (実際の
+原因は folder 解決失敗)。
+
+- `resolveFolderId(...)` を local 変数に extract
+- null → `TARGET_FOLDER_UNRESOLVABLE` を emit して skip (audit エントリ
+  shape は不変、reason ラベルのみ accurate に)
+- non-null → 既存 connector check 経路へ
+- `prepareDelegatedTick` step 5 と同じパターンに揃えた
+- 2 新規 unit test (R5 race scenario + legitimate connector denial の
+  regression guard)
+
+#### A2: spec CSRF cleanup (repo 全体)
+
+RC5.5 は RC5 area の 3 spec のみ修正。RC5.6 は state-change を発行する
+全 43 spec を audit。CsrfInterceptor 装着スコープは Spring MVC
+dispatcher (`/api/v1/admin/*`) のみで、Jersey servlet
+(`/api/v1/cmis/*`) と CMIS Browser Binding (`/core/browser/*`) は対象外。
+実際に修正必要な spec は 2 件のみ:
+
+- `tests/admin/integration-settings.spec.ts` — 12 PUT/POST sites に
+  `X-Requested-With: XMLHttpRequest` 追加 + stale な tab 数 assertion
+  (15→17) 修正 + loose な `/Connector|コネクタ/i` regex を anchored
+  `/^(コネクタ ベータ|Connectors\s+Beta)$/` に置換 (management tab が
+  消えても governance tab で false positive PASS する穴を塞ぐ)
+- `tests/admin/purview-atlas-e2e.spec.ts` — 7 POST/PUT sites に
+  X-Requested-With 追加
+
+RC5.5 ship 直後の Playwright E2E 修正コミット (`7f4b268ba`) も RC5.5 tag
+には未含のため、RC5.6 が canonical artifact として束ねる
+(CSRF header + serial mode + tab selector + valid sourceSystem を
+RC5 area 3 spec に適用済)。
+
+#### 検証
+
+- 96/96 ingest 関連 Java test pass (10 IngestSchedulerDelegatedRunTest
+  = 既存 8 + R5 +2)
+- integration-settings.spec.ts: **8 failed → 17/17 pass**
+- purview-atlas-e2e.spec.ts: 17 pass / 25 skip (Atlas 未配置 env)
+- RC5.5 で fix した 35 RC5-area spec も依然 35/35 pass (regression なし)
+
+#### Commit + tag 関係
+
+- R5 feature commit: `cee66573e`
+- A2 spec CSRF cleanup commit: `dc0ba6dac`
+- RC5.5 post-tag Playwright follow-up: `7f4b268ba`
+- Low fix (tab regex tightening) + 本 doc 更新: RC5.6 doc commit
+- **`v3.1.1-RC5.6` annotated tag target**: 本 doc commit
+
+#### Follow-up status (cumulative across RC5 cycle)
+
+**Resolved in this RC**: R5, A2 (spec CSRF cleanup repo-wide)
+
+**Remaining** (post-release / RC5.7+ 候補、release blocker なし):
+
+- **R1** (Low, ops): SOC tooling integration for
+  `EXTERNAL_GOVERNANCE_SIMULATE` audit event (NemakiWare repo 外)
+- **H2** (Medium, test coverage): R3 Simulate button の test
+- **M2** (Medium, security): `simulate-remove` request body size limit
+- **M3** (Low, scale): `buildMatches` full-scan per call
+- **L1 / L2**: nit findings
+
 ### RC22 / RC5.5 (2026-05-20) — 外部レビュー C1 blocker fix + H1/M1/M4 (shipped)
 
 ブランチ: `release/3.1.1-RC5.5` (off `release/3.1.1-RC5.4` HEAD `8629782bb`)
