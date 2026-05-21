@@ -356,9 +356,17 @@ class ConnectorByPrincipalGovernanceTest {
         List<Map<String, Object>> direct = (List<Map<String, Object>>) body.get("directGrants");
         assertEquals(1, direct.size());
         assertEquals("c1", direct.get(0).get("connectorId"));
-        // perMemberImpact must be absent when there are no members
-        assertTrue(body.get("perMemberImpact") == null
-                || ((List<?>) body.get("perMemberImpact")).isEmpty());
+        // RC6 review L: perMemberImpact + companion flags are ALWAYS
+        // present in the response shape. With no members, the impact
+        // array is empty and the truncation flag is false.
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> impact =
+                (List<Map<String, Object>>) body.get("perMemberImpact");
+        assertNotNull(impact, "perMemberImpact must always be present");
+        assertEquals(0, impact.size());
+        assertEquals(Boolean.FALSE, body.get("perMemberImpactTruncated"));
+        assertEquals(Boolean.FALSE, body.get("memberUserIdsTruncated"));
+        assertEquals(200, body.get("memberLimit"));
     }
 
     @Test
@@ -446,7 +454,11 @@ class ConnectorByPrincipalGovernanceTest {
     }
 
     @Test
-    void byGroup_memberLimitTruncatesImpactButKeepsFullMemberList() {
+    void byGroup_memberLimitTruncatesBothMemberListAndImpact() {
+        // RC6 review M: memberUserIds itself must be capped by
+        // memberLimit (not just perMemberImpact) so the response stays
+        // bounded for very large groups. memberCount preserves the
+        // untruncated size; memberUserIdsTruncated signals the cap.
         asAdmin();
         List<String> bigMembers = new java.util.ArrayList<>();
         for (int i = 0; i < 50; i++) bigMembers.add("user-" + i);
@@ -461,17 +473,48 @@ class ConnectorByPrincipalGovernanceTest {
         Map<String, Object> body = (Map<String, Object>) resp.getBody();
         @SuppressWarnings("unchecked")
         List<String> members = (List<String>) body.get("memberUserIds");
-        assertEquals(50, members.size(), "full member list always returned");
+        assertEquals(10, members.size(), "memberUserIds capped at memberLimit");
+        assertEquals(50, body.get("memberCount"),
+                "memberCount preserves untruncated size");
+        assertEquals(Boolean.TRUE, body.get("memberUserIdsTruncated"));
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> impact =
                 (List<Map<String, Object>>) body.get("perMemberImpact");
-        assertEquals(10, impact.size(), "perMemberImpact capped at memberLimit");
+        assertEquals(10, impact.size(), "perMemberImpact capped in lock-step");
         assertEquals(Boolean.TRUE, body.get("perMemberImpactTruncated"));
         assertEquals(10, body.get("memberLimit"));
     }
 
     @Test
-    void byGroup_includeMembersFalse_skipsPerMemberImpact() {
+    void byGroup_memberLimitClampedToServerMax_RC6_reviewM() {
+        // RC6 review M: an admin can't request memberLimit > MAX_MEMBER_LIMIT
+        // and force the controller to allocate a huge per-member list.
+        // The clamp is in the controller, not exposed via property —
+        // verified here by sending 1_000_000 and observing the response.
+        asAdmin();
+        // Use a tiny group so the actual truncation isn't what we're
+        // measuring — only the echo of the clamped memberLimit value.
+        when(principalService.getGroupById(REPO, GROUP))
+                .thenReturn(makeGroup(GROUP, List.of("alice")));
+        when(connectorService.list()).thenReturn(List.of());
+        when(authService.expandPrincipals(any(), any())).thenReturn(Set.of());
+
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, REPO, true, 1_000_000);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        // 1000 is the MAX_MEMBER_LIMIT constant declared in the controller
+        assertEquals(1000, body.get("memberLimit"),
+                "memberLimit echoed back must be clamped to MAX_MEMBER_LIMIT");
+    }
+
+    @Test
+    void byGroup_includeMembersFalse_returnsStableShapeWithEmptyImpact_reviewL() {
+        // RC6 review L: includeMembers=false is the documented fast path
+        // (no per-member expansion). The response shape must still be
+        // stable for the UI — perMemberImpact is an empty array, and
+        // perMemberImpactTruncated is false (we didn't attempt expansion;
+        // that's different from "we truncated it").
         asAdmin();
         when(principalService.getGroupById(REPO, GROUP))
                 .thenReturn(makeGroup(GROUP, List.of("alice", "bob")));
@@ -482,8 +525,15 @@ class ConnectorByPrincipalGovernanceTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) resp.getBody();
         assertEquals(2, body.get("memberCount"));
-        // perMemberImpact must NOT be present in fast-path mode
-        org.junit.jupiter.api.Assertions.assertNull(body.get("perMemberImpact"));
+        // perMemberImpact is present (review L) and empty
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> impact =
+                (List<Map<String, Object>>) body.get("perMemberImpact");
+        assertNotNull(impact, "perMemberImpact must always be present");
+        assertEquals(0, impact.size(), "fast path skips per-member expansion");
+        assertEquals(Boolean.FALSE, body.get("perMemberImpactTruncated"),
+                "false (not truncated) — we just didn't attempt expansion");
+        assertEquals(200, body.get("memberLimit"));
         // expandPrincipals must NOT have been called per-member
         org.mockito.Mockito.verify(authService, org.mockito.Mockito.never())
                 .expandPrincipals(any(), any());

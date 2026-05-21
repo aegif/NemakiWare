@@ -314,19 +314,27 @@ public class ConnectorDefinitionController {
      *
      * <p>Admin-only. For a given {@code groupId}, returns:
      * <ul>
-     *   <li>{@code memberUserIds} — direct member users of the group.</li>
+     *   <li>{@code memberUserIds} — direct member users of the group,
+     *       capped at {@code memberLimit} entries (review M). The full
+     *       count is preserved in {@code memberCount} and
+     *       {@code memberUserIdsTruncated=true} signals truncation.</li>
      *   <li>{@code subGroupIds} — direct sub-groups, if any (NemakiWare
      *       groups don't nest in practice, but the model exposes the
      *       field, so we surface it verbatim).</li>
      *   <li>{@code directGrants} — connectors whose
      *       {@code allowedPrincipalIds} contains {@code groupId} directly
      *       (same shape as {@code /by-principal/{groupId}} matches).</li>
-     *   <li>{@code perMemberImpact} (when {@code includeMembers=true}) —
-     *       for each member user, the set of connectors they would lose
-     *       if {@code groupId} were removed from their effective
-     *       principal set (sole-route detection over this group only).
-     *       Capped at {@code memberLimit} members for response-size
-     *       safety; the cap is configurable via the query param.</li>
+     *   <li>{@code perMemberImpact} — for each member user (within the
+     *       same {@code memberLimit} cap), the set of connectors they
+     *       would lose if {@code groupId} were removed from their
+     *       effective principal set (sole-route detection over this
+     *       group only). Always present (review L). Empty array when
+     *       {@code includeMembers=false} — the fast path that skips per-
+     *       member expansion entirely.</li>
+     *   <li>{@code perMemberImpactTruncated} — {@code true} iff
+     *       {@code includeMembers=true} AND the member list was capped.
+     *       {@code false} when {@code includeMembers=false} (which is
+     *       "we didn't attempt expansion", not "we truncated it").</li>
      * </ul>
      *
      * <p>The existing {@code /by-principal/{groupId}} endpoint answers
@@ -349,11 +357,13 @@ public class ConnectorDefinitionController {
      *   <li>{@code includeMembers} (default {@code true}) — when false,
      *       skips per-member impact computation (cheap fast-path for
      *       UI that only needs counts).</li>
-     *   <li>{@code memberLimit} (default {@code 200}) — caps the number
-     *       of members included in {@code perMemberImpact}. Members
-     *       beyond the cap appear in {@code memberUserIds} but not in
-     *       {@code perMemberImpact}; the response sets
-     *       {@code perMemberImpactTruncated=true} so the UI can warn.</li>
+     *   <li>{@code memberLimit} (default {@code 200}, clamped to
+     *       {@link #MAX_MEMBER_LIMIT}) — caps {@code memberUserIds} AND
+     *       the {@code perMemberImpact} computation in lock-step. The
+     *       UI can paginate by issuing follow-up queries with a higher
+     *       limit if it really needs more, but the server will never
+     *       return more than {@code MAX_MEMBER_LIMIT} entries in one
+     *       call.</li>
      * </ul>
      */
     @GetMapping("/by-group/{groupId}")
@@ -369,7 +379,12 @@ public class ConnectorDefinitionController {
             return errorResponse(HttpStatus.BAD_REQUEST,
                     "groupId and repositoryId are required");
         }
+        // RC6 B3-2 review M: clamp memberLimit to a hard server-side max
+        // so an attacker can't request memberLimit=1_000_000 and force
+        // the controller to allocate a per-member impact list of that
+        // size. Default is 200 when the caller omits / negates the value.
         if (memberLimit < 1) memberLimit = 200;
+        if (memberLimit > MAX_MEMBER_LIMIT) memberLimit = MAX_MEMBER_LIMIT;
 
         // Resolve the group (UNKNOWN if PrincipalService isn't wired or
         // the ID isn't actually a group). Never blocks the lookup.
@@ -384,12 +399,22 @@ public class ConnectorDefinitionController {
             }
         }
 
-        java.util.List<String> memberUserIds = group != null && group.getUsers() != null
+        java.util.List<String> allMemberUserIds = group != null && group.getUsers() != null
                 ? new java.util.ArrayList<>(group.getUsers())
                 : java.util.Collections.emptyList();
         java.util.List<String> subGroupIds = group != null && group.getGroups() != null
                 ? new java.util.ArrayList<>(group.getGroups())
                 : java.util.Collections.emptyList();
+
+        // RC6 B3-2 review M: cap memberUserIds itself by memberLimit
+        // (not just perMemberImpact) so the response stays bounded for
+        // very large groups. memberCount preserves the untruncated size
+        // so the UI can show "N members, showing M".
+        int memberCap = Math.min(memberLimit, allMemberUserIds.size());
+        java.util.List<String> memberUserIds = memberCap < allMemberUserIds.size()
+                ? new java.util.ArrayList<>(allMemberUserIds.subList(0, memberCap))
+                : allMemberUserIds;
+        boolean memberUserIdsTruncated = memberCap < allMemberUserIds.size();
 
         // Direct grants: same logic as /by-principal/{groupId} with
         // expand=false. We don't expand for groups (NemakiWare groups
@@ -398,22 +423,13 @@ public class ConnectorDefinitionController {
         directSet.add(groupId);
         List<Map<String, Object>> directGrants = buildMatches(groupId, directSet);
 
-        var body = new LinkedHashMap<String, Object>();
-        body.put("groupId", groupId);
-        body.put("groupType", groupType);
-        body.put("groupName", group != null ? group.getName() : null);
-        body.put("repositoryId", repositoryId);
-        body.put("memberCount", memberUserIds.size());
-        body.put("subGroupCount", subGroupIds.size());
-        body.put("memberUserIds", memberUserIds);
-        body.put("subGroupIds", subGroupIds);
-        body.put("directGrants", directGrants);
-
-        if (includeMembers && !memberUserIds.isEmpty()) {
-            int cap = Math.min(memberLimit, memberUserIds.size());
-            List<Map<String, Object>> impact = new java.util.ArrayList<>(cap);
-            for (int i = 0; i < cap; i++) {
-                String memberId = memberUserIds.get(i);
+        // RC6 B3-2 review L: compute perMemberImpact (and its companion
+        // flags) unconditionally so the response shape is stable for the
+        // UI. includeMembers=false returns an empty array — no per-member
+        // expansion is done — which is the documented fast path.
+        List<Map<String, Object>> impact = new java.util.ArrayList<>();
+        if (includeMembers) {
+            for (String memberId : memberUserIds) {
                 // For each member, compute their effective principal set
                 // expanded across ALL their group memberships, then ask:
                 // "what would they lose if groupId were removed?" — a
@@ -445,12 +461,40 @@ public class ConnectorDefinitionController {
                 memberEntry.put("lostIfGroupRemoved", lost);
                 impact.add(memberEntry);
             }
-            body.put("perMemberImpact", impact);
-            body.put("perMemberImpactTruncated", cap < memberUserIds.size());
-            body.put("memberLimit", memberLimit);
         }
+
+        var body = new LinkedHashMap<String, Object>();
+        body.put("groupId", groupId);
+        body.put("groupType", groupType);
+        body.put("groupName", group != null ? group.getName() : null);
+        body.put("repositoryId", repositoryId);
+        body.put("memberCount", allMemberUserIds.size());
+        body.put("subGroupCount", subGroupIds.size());
+        body.put("memberUserIds", memberUserIds);
+        body.put("memberUserIdsTruncated", memberUserIdsTruncated);
+        body.put("subGroupIds", subGroupIds);
+        body.put("memberLimit", memberLimit);
+        body.put("directGrants", directGrants);
+        body.put("perMemberImpact", impact);
+        // perMemberImpactTruncated tracks whether the impact computation
+        // saw fewer members than the group actually has. Always present
+        // (review L); will be false when includeMembers=false (we didn't
+        // attempt the expansion at all in that case, which is not the
+        // same as truncation).
+        body.put("perMemberImpactTruncated",
+                includeMembers && memberUserIdsTruncated);
         return ResponseEntity.ok(body);
     }
+
+    /**
+     * RC6 B3-2 review M: server-side hard cap for the {@code memberLimit}
+     * query param on {@code /by-group/{id}}. Even an admin can't request
+     * a per-member impact list larger than this. Tuned for a single
+     * response that still fits comfortably in working memory at JSON
+     * encoding time — increase only if real groups exceed it AND the UI
+     * is prepared to paginate.
+     */
+    private static final int MAX_MEMBER_LIMIT = 1000;
 
     /**
      * W2 (RC5.3): server-side simulate-remove. Body specifies the
