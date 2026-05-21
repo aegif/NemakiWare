@@ -25,11 +25,14 @@ force-updated.
 | Item | Value |
 |---|---|
 | **Final candidate tag** | `v3.1.1-RC5.6` |
-| Tag peeled commit | see `git rev-parse v3.1.1-RC5.6^{}` |
+| Tag annotated object SHA | `f71782ad5b5308728743f5ba13fbc511a5983cd0` |
+| Tag peeled commit | `adf8db3b4b2ac6e588b3f93a6b5462d7686ec456` |
 | Branch | `release/3.1.1-RC5.5` (RC5.6 lives on the RC5.5 branch — branch name is **not** renamed per release) |
+| Branch HEAD at tag time | `adf8db3b4b2ac6e588b3f93a6b5462d7686ec456` (= tag peeled, zero divergence) |
 | Base of RC5 cycle | `v3.1.1-RC4.1` (`572aad18b`) |
 | **Cumulative diff cmd** | `git diff v3.1.1-RC4.1..v3.1.1-RC5.6` |
 | Previous historical candidate | `v3.1.1-RC5.5` (peeled `dfb912da9`) |
+| Earlier historical candidate | `v3.1.1-RC5.4` (peeled `014939eeb`) |
 | RC5.5 → RC5.6 diff cmd | `git diff v3.1.1-RC5.5..v3.1.1-RC5.6` |
 
 ---

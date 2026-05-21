@@ -436,7 +436,7 @@ reviewers and explicitly tracks this tag-vs-branch divergence.
 | R3 | RC5.4 feature commit `6283afc96` | V7 audit fires on explicit "Simulate (audit)" button (was 800ms debounce) |
 | R4 | RC5.4 feature commit `6283afc96` | `autoDisabledSince` malformed → HTTP 400 (was 200 pass-through with WARN) |
 
-After RC5.4: **outstanding follow-ups are R1 and R5**.
+At RC5.4 closure: **outstanding follow-ups were R1 and R5; R5 is now resolved in RC5.6 (`cee66573e`).**
 - R1 is infra/ops integration that lives outside this repository,
   not NemakiWare code work.
 - R5 is a small denialReason-label refactor inside
