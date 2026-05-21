@@ -208,6 +208,62 @@ export async function getConnectorsByPrincipal(
   return parseJsonOrThrow<ConnectorByPrincipalResponse>(res, 'getConnectorsByPrincipal');
 }
 
+// ── B3-2: group-membership governance ─────────────────────────────
+
+export interface MemberImpact {
+  userId: string;
+  lostIfGroupRemoved: ConnectorPrincipalMatch[];
+}
+
+export interface ConnectorsByGroupResponse {
+  groupId: string;
+  groupType: 'GROUP' | 'UNKNOWN';
+  groupName?: string | null;
+  repositoryId: string;
+  /** Untruncated group size — UI shows "N members, showing M". */
+  memberCount: number;
+  subGroupCount: number;
+  /** Capped at memberLimit; full count in memberCount. */
+  memberUserIds: string[];
+  memberUserIdsTruncated: boolean;
+  subGroupIds: string[];
+  /** Echo of the effective memberLimit (server clamps to MAX_MEMBER_LIMIT). */
+  memberLimit: number;
+  /** Connectors that list groupId directly in allowedPrincipalIds. */
+  directGrants: ConnectorPrincipalMatch[];
+  /** Empty when includeMembers=false (the fast path). */
+  perMemberImpact: MemberImpact[];
+  perMemberImpactTruncated: boolean;
+}
+
+/**
+ * RC6 B3-2: group-membership governance. Returns the group's direct
+ * connector grants AND a per-member "what would each member lose if
+ * the group were removed" view (sole-route detection per member).
+ *
+ * `includeMembers=false` is the fast path: skips per-member expansion
+ * and returns `perMemberImpact: []`. Use it when the UI only needs
+ * member count / direct grants.
+ *
+ * `memberLimit` caps both `memberUserIds` and `perMemberImpact` in
+ * lock-step. The server clamps it to a hard ceiling (currently 1000);
+ * the response echoes back the effective value so the UI can render
+ * "N members, showing M".
+ */
+export async function getConnectorsByGroup(
+  groupId: string,
+  repositoryId: string,
+  includeMembers: boolean,
+  memberLimit: number,
+): Promise<ConnectorsByGroupResponse> {
+  const url = `${CONNECTOR_URL}/by-group/${encodeURIComponent(groupId)}`
+    + `?repositoryId=${encodeURIComponent(repositoryId)}`
+    + `&includeMembers=${includeMembers ? 'true' : 'false'}`
+    + `&memberLimit=${Math.max(1, Math.floor(memberLimit))}`;
+  const res = await fetchWithAuth(url);
+  return parseJsonOrThrow<ConnectorsByGroupResponse>(res, 'getConnectorsByGroup');
+}
+
 /**
  * W2 (RC5.3): server-side simulate-remove. Same sole-route logic the
  * V5/V7 client computes, but invokable from CLI / scripts and used by

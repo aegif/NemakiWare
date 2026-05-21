@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AutoComplete, Card, Form, Switch, Button, Table, Tag, Space, App, Typography, Tooltip, Select, Spin } from 'antd';
+import { Alert, AutoComplete, Card, Form, Switch, Button, Table, Tag, Space, App, Typography, Tooltip, Select, Spin, Radio, InputNumber } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import {
   getConnectorsByPrincipal,
+  getConnectorsByGroup,
   simulateRemovePrincipals,
   type ConnectorByPrincipalResponse,
   type ConnectorPrincipalMatch,
+  type ConnectorsByGroupResponse,
+  type MemberImpact,
 } from '../../services/externalIngest';
 import { CMISService } from '../../services/cmis';
 import { useAuth } from '../../contexts/AuthContext';
@@ -83,8 +86,14 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
   const { message } = App.useApp();
   const { handleAuthError } = useAuth();
   const [form] = Form.useForm<{ principalId: string; expand: boolean }>();
+  const [groupForm] = Form.useForm<{ groupId: string; includeMembers: boolean; memberLimit: number }>();
+  // B3-2 (RC6): mode toggle. 'principal' = legacy by-principal lookup;
+  // 'group' = new by-group membership-impact view. Each mode owns its
+  // own form and result so switching modes doesn't lose context.
+  const [mode, setMode] = useState<'principal' | 'group'>('principal');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ConnectorByPrincipalResponse | null>(null);
+  const [groupResult, setGroupResult] = useState<ConnectorsByGroupResponse | null>(null);
   // V8: lazy-loaded options for the principal picker
   const [principalOptions, setPrincipalOptions] = useState<PrincipalOption[]>([]);
   const [pickerLoading, setPickerLoading] = useState(false);
@@ -194,6 +203,30 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
   useEffect(() => {
     setSimulateLastAuditedAt(null);
   }, [simulateRemove]);
+
+  const onSubmitGroup = async (values: { groupId: string; includeMembers: boolean; memberLimit: number }) => {
+    const gid = values.groupId?.trim();
+    if (!gid) {
+      message.warning(t('connectorGovernance.groupRequired'));
+      return;
+    }
+    setLoading(true);
+    try {
+      const resp = await getConnectorsByGroup(
+        gid,
+        repositoryId,
+        values.includeMembers !== false,
+        values.memberLimit ?? 200,
+      );
+      setGroupResult(resp);
+    } catch (err) {
+      message.error(t('connectorGovernance.groupLookupFailed')
+        + ': ' + (err instanceof Error ? err.message : String(err)));
+      setGroupResult(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const onSubmit = async (values: { principalId: string; expand: boolean }) => {
     const pid = values.principalId?.trim();
@@ -312,6 +345,39 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
     },
   ];
 
+  // B3-2 (RC6): group-mode table columns. Each row = one member;
+  // `lostIfGroupRemoved` is a per-row Tag list showing the connectors
+  // that member loses if this group is removed (sole-route detection).
+  const groupColumns = [
+    {
+      title: t('connectorGovernance.colUserId'),
+      dataIndex: 'userId',
+      key: 'userId',
+      render: (uid: string) => <Text code>{uid}</Text>,
+    },
+    {
+      title: t('connectorGovernance.colLost'),
+      key: 'lost',
+      render: (_: unknown, m: MemberImpact) => {
+        if (!m.lostIfGroupRemoved || m.lostIfGroupRemoved.length === 0) {
+          return <Tag color="default">{t('connectorGovernance.perMemberKept')}</Tag>;
+        }
+        return (
+          <Space size={4} wrap>
+            <Tag color="red">
+              {t('connectorGovernance.perMemberLostCount', { count: m.lostIfGroupRemoved.length })}
+            </Tag>
+            {m.lostIfGroupRemoved.map(c => (
+              <Tag key={c.connectorId} color="orange">
+                {c.displayName || c.connectorId}
+              </Tag>
+            ))}
+          </Space>
+        );
+      },
+    },
+  ];
+
   return (
     <Card title={t('connectorGovernance.title')}>
       <Alert
@@ -320,6 +386,18 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
         style={{ marginBottom: 16 }}
         message={t('connectorGovernance.intro')}
       />
+      <Form.Item label={t('connectorGovernance.modeLabel')} style={{ marginBottom: 16 }}>
+        <Radio.Group
+          value={mode}
+          onChange={e => setMode(e.target.value)}
+          optionType="button"
+          buttonStyle="solid"
+        >
+          <Radio.Button value="principal">{t('connectorGovernance.modePrincipal')}</Radio.Button>
+          <Radio.Button value="group">{t('connectorGovernance.modeGroup')}</Radio.Button>
+        </Radio.Group>
+      </Form.Item>
+      {mode === 'principal' && (
       <Form
         form={form}
         layout="inline"
@@ -363,8 +441,9 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
           </Button>
         </Form.Item>
       </Form>
+      )}
 
-      {result && (
+      {mode === 'principal' && result && (
         <>
           <Card type="inner" style={{ marginBottom: 16 }} size="small">
             <Space direction="vertical" size={4} style={{ width: '100%' }}>
@@ -481,6 +560,136 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
               size="middle"
             />
           )}
+        </>
+      )}
+
+      {mode === 'group' && (
+        <Form
+          form={groupForm}
+          layout="inline"
+          initialValues={{ includeMembers: true, memberLimit: 200 }}
+          onFinish={onSubmitGroup}
+          style={{ marginBottom: 16 }}
+        >
+          <Form.Item
+            name="groupId"
+            rules={[{ required: true, message: t('connectorGovernance.groupRequired') }]}
+          >
+            <AutoComplete
+              allowClear
+              placeholder={t('connectorGovernance.groupPlaceholder')}
+              style={{ width: 360 }}
+              options={principalOptions.filter(o => o.kind === 'GROUP')}
+              onSearch={onPrincipalSearch}
+              filterOption={false}
+              notFoundContent={pickerLoading ? <Spin size="small" /> : null}
+            />
+          </Form.Item>
+          <Form.Item
+            name="includeMembers"
+            valuePropName="checked"
+            label={t('connectorGovernance.includeMembersLabel')}
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            name="memberLimit"
+            label={t('connectorGovernance.memberLimitLabel')}
+          >
+            <InputNumber min={1} max={1000} step={50} style={{ width: 100 }} />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={loading} icon={<SearchOutlined />}>
+              {t('connectorGovernance.lookup')}
+            </Button>
+          </Form.Item>
+        </Form>
+      )}
+
+      {mode === 'group' && groupResult && (
+        <>
+          <Card type="inner" style={{ marginBottom: 16 }} size="small">
+            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+              <Space size={8} wrap>
+                <Text strong>{t('connectorGovernance.queriedPrincipal')}</Text>
+                <Text code>{groupResult.groupId}</Text>
+                {groupResult.groupType === 'GROUP'
+                  ? <Tag color="purple">GROUP</Tag>
+                  : <Tooltip title={t('connectorGovernance.groupNotResolved')}>
+                      <Tag color="default">UNKNOWN</Tag>
+                    </Tooltip>}
+                {groupResult.groupName && (
+                  <Text type="secondary">
+                    {t('connectorGovernance.groupSummary', {
+                      name: groupResult.groupName,
+                      count: groupResult.memberCount,
+                    })}
+                  </Text>
+                )}
+              </Space>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {t('connectorGovernance.groupMembersShowing', {
+                  shown: groupResult.memberUserIds.length,
+                  total: groupResult.memberCount,
+                })}
+              </Text>
+              {groupResult.memberUserIdsTruncated && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginTop: 8 }}
+                  message={t('connectorGovernance.groupMembersTruncated', {
+                    limit: groupResult.memberLimit,
+                  })}
+                />
+              )}
+            </Space>
+          </Card>
+
+          {/* Direct group grants — same shape as by-principal/{groupId}. */}
+          <Card
+            type="inner"
+            size="small"
+            title={t('connectorGovernance.directGrantsTitle')}
+            style={{ marginBottom: 16 }}
+          >
+            {groupResult.directGrants.length === 0 ? (
+              <Alert type="info" message={t('connectorGovernance.directGrantsEmpty')} />
+            ) : (
+              <Table
+                rowKey="connectorId"
+                columns={columns}
+                dataSource={groupResult.directGrants}
+                pagination={false}
+                size="small"
+              />
+            )}
+          </Card>
+
+          {/* Per-member impact — empty when includeMembers=false (fast path). */}
+          <Card
+            type="inner"
+            size="small"
+            title={t('connectorGovernance.perMemberImpactTitle')}
+          >
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 8 }}
+              message={t('connectorGovernance.perMemberImpactHint')}
+            />
+            {groupResult.perMemberImpact.length === 0 ? (
+              <Alert type="success" message={t('connectorGovernance.perMemberImpactEmpty')} />
+            ) : (
+              <Table
+                rowKey="userId"
+                columns={groupColumns}
+                dataSource={groupResult.perMemberImpact}
+                pagination={{ pageSize: 25, showSizeChanger: false }}
+                size="small"
+              />
+            )}
+          </Card>
         </>
       )}
     </Card>
