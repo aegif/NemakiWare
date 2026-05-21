@@ -12,16 +12,21 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import org.mockito.ArgumentCaptor;
 
 /**
  * RC5 (v2 §12.1): with the operator opt-in property ON, the scheduler
@@ -47,6 +52,7 @@ class IngestSchedulerDelegatedRunTest {
     private IngestAuthorizationService authService;
     private DelegatedCallContextFactory ctxFactory;
     private PropertyManager properties;
+    private jp.aegif.nemaki.audit.AuditLogger auditLogger;
 
     @BeforeEach
     void setUp() {
@@ -58,6 +64,7 @@ class IngestSchedulerDelegatedRunTest {
         authService = mock(IngestAuthorizationService.class);
         ctxFactory = mock(DelegatedCallContextFactory.class);
         properties = mock(PropertyManager.class);
+        auditLogger = mock(jp.aegif.nemaki.audit.AuditLogger.class);
 
         scheduler.setProfileService(profileService);
         scheduler.setConnectorService(connectorService);
@@ -66,6 +73,7 @@ class IngestSchedulerDelegatedRunTest {
         scheduler.setIngestAuthorizationService(authService);
         scheduler.setDelegatedCallContextFactory(ctxFactory);
         scheduler.setPropertyManager(properties);
+        scheduler.setAuditLogger(auditLogger);
 
         when(repositoryInfoMap.keys()).thenReturn(Set.of(REPO));
         // Default: opt-in ON
@@ -234,6 +242,107 @@ class IngestSchedulerDelegatedRunTest {
                 "reason must include the creator's user ID for operator review");
         // Persist call must have happened
         verify(profileService, atLeast(1)).update(p);
+    }
+
+    @Test
+    void targetFolderDisappearsBetweenTicks_emitsTargetFolderUnresolvable_notConnectorNotDelegated() {
+        // RC5.6 (R5): the audit denialReason for "resolveFolderId returned
+        // null on the second call" must be TARGET_FOLDER_UNRESOLVABLE.
+        // Before the fix, the second resolveFolderId(...) was inlined into
+        // the connector check; a null result silently caused the check to
+        // return false and the audit recorded CONNECTOR_NOT_DELEGATED,
+        // misattributing folder-resolution races to connector denial.
+        CallContext synth = mock(CallContext.class);
+        when(synth.getUsername()).thenReturn(CREATOR);
+        when(profileService.listByRepository(REPO))
+                .thenReturn(List.of(delegatedProfile()));
+        when(ctxFactory.buildOrNull(REPO, CREATOR)).thenReturn(synth);
+        // First call (in prepareDelegatedTick step 5) returns FOLDER.
+        // Second call (the new explicit resolve in pollScheduledProfiles)
+        // returns null — folder deleted between ticks.
+        when(authService.resolveFolderId(eq(REPO), eq(FOLDER), any()))
+                .thenReturn(FOLDER, (String) null);
+        when(authService.canManageProfileForFolderAsUser(eq(CREATOR), eq(REPO), eq(FOLDER)))
+                .thenReturn(true);
+        ConnectorDefinition delegatedConnector = new ConnectorDefinition();
+        delegatedConnector.setConnectorId("c1");
+        delegatedConnector.setEnabled(true);
+        delegatedConnector.setDelegated(true);
+        when(connectorService.get(eq("c1"))).thenReturn(delegatedConnector);
+
+        scheduler.pollScheduledProfiles();
+
+        // The connector delegation re-check must NOT run when the folder
+        // can't be resolved — otherwise we'd be back to misattributing.
+        verify(authService, never()).canUseConnectorForDelegatedProfileAsUser(
+                anyString(), anyString(), any(), anyString());
+        // canonicalImport must not have executed.
+        verify(canonicalImportService, never()).execute(any(), any());
+
+        // The audit emit must carry denialReason=TARGET_FOLDER_UNRESOLVABLE
+        // in the details map (not CONNECTOR_NOT_DELEGATED).
+        ArgumentCaptor<java.util.Map<String, ?>> detailsCap =
+                ArgumentCaptor.forClass(java.util.Map.class);
+        verify(auditLogger, atLeastOnce()).logOperation(
+                eq(jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST_FAILED),
+                eq(REPO), eq(CREATOR), anyString(), anyBoolean(), anyString(),
+                detailsCap.capture());
+
+        boolean sawTargetFolderUnresolvable = detailsCap.getAllValues().stream()
+                .anyMatch(d -> DenialReason.TARGET_FOLDER_UNRESOLVABLE.name()
+                        .equals(d.get("denialReason")));
+        boolean sawConnectorNotDelegated = detailsCap.getAllValues().stream()
+                .anyMatch(d -> DenialReason.CONNECTOR_NOT_DELEGATED.name()
+                        .equals(d.get("denialReason")));
+        assertTrue(sawTargetFolderUnresolvable,
+                "expected audit with denialReason=TARGET_FOLDER_UNRESOLVABLE, captured details: "
+                        + detailsCap.getAllValues());
+        assertFalse(sawConnectorNotDelegated,
+                "must NOT emit CONNECTOR_NOT_DELEGATED when the root cause is folder resolution failure, captured details: "
+                        + detailsCap.getAllValues());
+    }
+
+    @Test
+    void targetFolderResolves_butConnectorNoLongerDelegated_stillEmitsConnectorNotDelegated() {
+        // Companion to the R5 test above: when the folder DOES resolve on the
+        // second call but the connector was revoked, the denial must still be
+        // CONNECTOR_NOT_DELEGATED. This pins that the R5 fix didn't regress
+        // the legitimate connector-denial path.
+        CallContext synth = mock(CallContext.class);
+        when(synth.getUsername()).thenReturn(CREATOR);
+        when(profileService.listByRepository(REPO))
+                .thenReturn(List.of(delegatedProfile()));
+        when(ctxFactory.buildOrNull(REPO, CREATOR)).thenReturn(synth);
+        when(authService.resolveFolderId(eq(REPO), eq(FOLDER), any()))
+                .thenReturn(FOLDER);
+        when(authService.canManageProfileForFolderAsUser(eq(CREATOR), eq(REPO), eq(FOLDER)))
+                .thenReturn(true);
+        ConnectorDefinition revokedConnector = new ConnectorDefinition();
+        revokedConnector.setConnectorId("c1");
+        revokedConnector.setEnabled(true);
+        revokedConnector.setDelegated(true);
+        when(connectorService.get(eq("c1"))).thenReturn(revokedConnector);
+        // Connector check returns false → CONNECTOR_NOT_DELEGATED expected
+        when(authService.canUseConnectorForDelegatedProfileAsUser(
+                eq(CREATOR), eq(REPO), eq(revokedConnector), eq(FOLDER)))
+                .thenReturn(false);
+
+        scheduler.pollScheduledProfiles();
+
+        verify(canonicalImportService, never()).execute(any(), any());
+
+        ArgumentCaptor<java.util.Map<String, ?>> detailsCap =
+                ArgumentCaptor.forClass(java.util.Map.class);
+        verify(auditLogger, atLeastOnce()).logOperation(
+                eq(jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST_FAILED),
+                eq(REPO), eq(CREATOR), anyString(), anyBoolean(), anyString(),
+                detailsCap.capture());
+        boolean sawConnectorNotDelegated = detailsCap.getAllValues().stream()
+                .anyMatch(d -> DenialReason.CONNECTOR_NOT_DELEGATED.name()
+                        .equals(d.get("denialReason")));
+        assertTrue(sawConnectorNotDelegated,
+                "expected CONNECTOR_NOT_DELEGATED when folder resolves but connector check fails, captured: "
+                        + detailsCap.getAllValues());
     }
 
     @Test

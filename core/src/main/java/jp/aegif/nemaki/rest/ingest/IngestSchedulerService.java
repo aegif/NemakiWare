@@ -445,12 +445,27 @@ public class IngestSchedulerService {
                 // delegation against the creator. Catches admin-revoked
                 // connector scope between ticks.
                 if (delegatedCtx != null) {
+                    // RC5.6 (R5): resolve target folder first so we can
+                    // attribute a null result to TARGET_FOLDER_UNRESOLVABLE
+                    // (folder deleted / ACL change / transient lookup
+                    // failure) rather than misreporting it as
+                    // CONNECTOR_NOT_DELEGATED. The connector delegation
+                    // check returns false on null folderId, so the prior
+                    // shape masked folder-resolution failures as connector
+                    // denials in the audit trail.
+                    String delegatedFolderId = ingestAuthorizationService.resolveFolderId(
+                            profile.getRepositoryId(),
+                            profile.getTargetFolderId(),
+                            profile.getTargetFolderPath());
+                    if (delegatedFolderId == null) {
+                        auditScheduledDelegatedDenial(profile, connector,
+                                DenialReason.TARGET_FOLDER_UNRESOLVABLE,
+                                "Profile's target folder no longer resolvable");
+                        continue;
+                    }
                     if (!ingestAuthorizationService.canUseConnectorForDelegatedProfileAsUser(
                             delegatedCtx.getUsername(), profile.getRepositoryId(),
-                            connector, ingestAuthorizationService.resolveFolderId(
-                                    profile.getRepositoryId(),
-                                    profile.getTargetFolderId(),
-                                    profile.getTargetFolderPath()))) {
+                            connector, delegatedFolderId)) {
                         auditScheduledDelegatedDenial(profile, connector,
                                 DenialReason.CONNECTOR_NOT_DELEGATED,
                                 "Connector no longer delegated to "
