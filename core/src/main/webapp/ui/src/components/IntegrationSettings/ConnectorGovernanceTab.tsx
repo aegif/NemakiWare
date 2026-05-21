@@ -99,28 +99,68 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
   const [pickerLoading, setPickerLoading] = useState(false);
   // V7: array of principals to simulate removing (was string|null in V5)
   const [simulateRemove, setSimulateRemove] = useState<string[]>([]);
+  // V8/G2 (RC6): totals from the last picker fetch so the dropdown can
+  // surface "showing 50 of 12,350" + a "narrow the search" hint when the
+  // directory is bigger than the per-fetch cap. PICKER_LIMIT is shared
+  // by both sides so the truncation indicator is accurate.
+  const PICKER_LIMIT = 50;
+  const [pickerTotals, setPickerTotals] = useState<{
+    userTotal: number; groupTotal: number; lastQuery: string;
+  }>({ userTotal: 0, groupTotal: 0, lastQuery: '' });
+  // V8/G2 (RC6): track whether the initial fetch has run. Deferred until
+  // the dropdown is actually opened — saves a 100-record fetch on every
+  // tab mount that an operator never expands.
+  const initialFetchDoneRef = useRef(false);
 
   // V8: stable CMISService reference for debounced search
   const cmisRef = useRef(new CMISService(handleAuthError));
 
   /**
-   * V8: debounced server-side search. Empty query returns the first
-   * page of users + groups (limit 50) so the dropdown isn't empty
-   * before the admin starts typing. On every keystroke the dropdown
-   * fetches matching principals via the existing `query` param of
-   * /user/list and /group/list. Failures are non-fatal — the dropdown
-   * just shows whatever was previously loaded.
+   * V8 / G2 (RC6): debounced server-side search. Per-keystroke fetch
+   * against the existing `query` param of /user/list and /group/list.
+   * Each call is capped at {@link PICKER_LIMIT} records — the
+   * dropdown surfaces {@code totalCount} so the operator knows when
+   * to narrow the query.
+   *
+   * `kinds` lets the caller restrict to USER, GROUP, or both:
+   * - principal mode fetches both (user IDs and group IDs are both
+   *   valid input).
+   * - B3-2 group mode fetches GROUP only (typing a user ID into the
+   *   group-mode AutoComplete makes no sense, and skipping the user
+   *   fetch halves both the round-trips and the rendered DOM at any
+   *   given moment).
+   *
+   * Failures are non-fatal — the dropdown shows whatever was
+   * previously loaded.
    */
-  const fetchPrincipals = useCallback(async (query: string) => {
+  const fetchPrincipals = useCallback(async (
+    query: string,
+    kinds: Array<'USER' | 'GROUP'> = ['USER', 'GROUP'],
+  ) => {
     setPickerLoading(true);
     try {
       const cmis = cmisRef.current;
-      const [usersResp, groupsResp] = await Promise.all([
-        cmis.getUsers(repositoryId, { limit: 50, query: query || undefined })
-          .catch(() => ({ users: [] as { id: string; name?: string }[] })),
-        cmis.getGroups(repositoryId, { limit: 50, query: query || undefined })
-          .catch(() => ({ groups: [] as { id: string; name?: string }[] })),
-      ]);
+      const want = new Set(kinds);
+      // Structural shapes — keeps this fetch decoupled from the full
+      // User / Group type definitions (which carry many more fields the
+      // picker doesn't need).
+      type UserMin = { id: string; name?: string };
+      type GroupMin = { id: string; name?: string };
+      type UserResp = { users: UserMin[]; totalCount?: number };
+      type GroupResp = { groups: GroupMin[]; totalCount?: number };
+      // offset=0 is required alongside limit — the /user/list and
+      // /group/list endpoints treat (offset>=0 && limit>0) as the
+      // gate for paginated mode; with only `limit` the server falls
+      // back to "no pagination, return all" for backward compat.
+      const usersP: Promise<UserResp> = want.has('USER')
+        ? (cmis.getUsers(repositoryId, { offset: 0, limit: PICKER_LIMIT, query: query || undefined }) as Promise<UserResp>)
+            .catch(() => ({ users: [], totalCount: 0 }))
+        : Promise.resolve({ users: [], totalCount: 0 });
+      const groupsP: Promise<GroupResp> = want.has('GROUP')
+        ? (cmis.getGroups(repositoryId, { offset: 0, limit: PICKER_LIMIT, query: query || undefined }) as Promise<GroupResp>)
+            .catch(() => ({ groups: [], totalCount: 0 }))
+        : Promise.resolve({ groups: [], totalCount: 0 });
+      const [usersResp, groupsResp] = await Promise.all([usersP, groupsP]);
       const opts: PrincipalOption[] = [];
       for (const u of usersResp.users) {
         opts.push({
@@ -137,21 +177,31 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
         });
       }
       setPrincipalOptions(opts);
+      setPickerTotals({
+        userTotal: usersResp.totalCount ?? usersResp.users.length,
+        groupTotal: groupsResp.totalCount ?? groupsResp.groups.length,
+        lastQuery: query,
+      });
     } finally {
       setPickerLoading(false);
     }
   }, [repositoryId]);
 
-  // V8: initial population so the dropdown has suggestions on first open
-  useEffect(() => {
-    fetchPrincipals('');
+  // V8/G2 (RC6): deferred initial fetch. Previously the picker eagerly
+  // loaded 50 users + 50 groups at mount, even if the admin never
+  // opened the dropdown. We now wait for the first dropdown open
+  // (onDropdownVisibleChange below) and pass the current mode's kinds.
+  const ensureInitialFetch = useCallback((kinds: Array<'USER' | 'GROUP'>) => {
+    if (initialFetchDoneRef.current) return;
+    initialFetchDoneRef.current = true;
+    fetchPrincipals('', kinds);
   }, [fetchPrincipals]);
 
   // V8: debounce keystroke-driven search (300ms)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onPrincipalSearch = useCallback((q: string) => {
+  const onPrincipalSearch = useCallback((q: string, kinds: Array<'USER' | 'GROUP'> = ['USER', 'GROUP']) => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    searchTimerRef.current = setTimeout(() => fetchPrincipals(q), 300);
+    searchTimerRef.current = setTimeout(() => fetchPrincipals(q, kinds), 300);
   }, [fetchPrincipals]);
 
   // H1 (RC5.2): unmount cleanup for the debounce timer. Without this,
@@ -345,6 +395,49 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
     },
   ];
 
+  /**
+   * V8/G2 (RC6): dropdown footer showing how many records were loaded
+   * vs. how many exist in the directory. Renders as a small Alert
+   * inside `notFoundContent` so it's only visible when the dropdown
+   * is open. The footer is mode-aware: principal picker shows both
+   * user and group totals; group-only picker shows just the group
+   * total.
+   */
+  const renderPickerHint = useCallback((kinds: Array<'USER' | 'GROUP'>) => {
+    if (pickerLoading) return <Spin size="small" />;
+    const want = new Set(kinds);
+    const loaded = principalOptions.filter(o => want.has(o.kind)).length;
+    const total = (want.has('USER') ? pickerTotals.userTotal : 0)
+      + (want.has('GROUP') ? pickerTotals.groupTotal : 0);
+    if (total === 0) return null;
+    const truncated = total > loaded;
+    return (
+      <Space direction="vertical" size={2} style={{ padding: 4 }}>
+        <Text type="secondary" style={{ fontSize: 11 }}>
+          {t('connectorGovernance.pickerLoadedHint', {
+            loaded,
+            total: total.toLocaleString(),
+          })}
+        </Text>
+        {truncated && (
+          <Text type="warning" style={{ fontSize: 11 }}>
+            {t('connectorGovernance.pickerNarrowSearch')}
+          </Text>
+        )}
+      </Space>
+    );
+  }, [pickerLoading, principalOptions, pickerTotals, t]);
+
+  /**
+   * V8/G2 (RC6): GROUP-only options for the B3-2 group-mode picker.
+   * Filters the shared `principalOptions` state — the actual fetch is
+   * group-only (no user round-trip wasted on group-mode keystrokes).
+   */
+  const groupOnlyOptions = useMemo(
+    () => principalOptions.filter(o => o.kind === 'GROUP'),
+    [principalOptions],
+  );
+
   // B3-2 (RC6): group-mode table columns. Each row = one member;
   // `lostIfGroupRemoved` is a per-row Tag list showing the connectors
   // that member loses if this group is removed (sole-route detection).
@@ -423,9 +516,18 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
             placeholder={t('connectorGovernance.principalPlaceholder')}
             style={{ width: 360 }}
             options={principalOptions}
-            onSearch={onPrincipalSearch}
+            onSearch={q => onPrincipalSearch(q, ['USER', 'GROUP'])}
+            onDropdownVisibleChange={open => {
+              if (open) ensureInitialFetch(['USER', 'GROUP']);
+            }}
             filterOption={false}      // server-side filter — don't double-filter client-side
-            notFoundContent={pickerLoading ? <Spin size="small" /> : null}
+            notFoundContent={renderPickerHint(['USER', 'GROUP']) ?? null}
+            dropdownRender={menu => (
+              <>
+                {menu}
+                {renderPickerHint(['USER', 'GROUP'])}
+              </>
+            )}
           />
         </Form.Item>
         <Form.Item
@@ -579,10 +681,19 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
               allowClear
               placeholder={t('connectorGovernance.groupPlaceholder')}
               style={{ width: 360 }}
-              options={principalOptions.filter(o => o.kind === 'GROUP')}
-              onSearch={onPrincipalSearch}
+              options={groupOnlyOptions}
+              onSearch={q => onPrincipalSearch(q, ['GROUP'])}
+              onDropdownVisibleChange={open => {
+                if (open) ensureInitialFetch(['GROUP']);
+              }}
               filterOption={false}
-              notFoundContent={pickerLoading ? <Spin size="small" /> : null}
+              notFoundContent={renderPickerHint(['GROUP']) ?? null}
+              dropdownRender={menu => (
+                <>
+                  {menu}
+                  {renderPickerHint(['GROUP'])}
+                </>
+              )}
             />
           </Form.Item>
           <Form.Item

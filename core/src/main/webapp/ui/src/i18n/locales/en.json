@@ -3372,7 +3372,9 @@
     "perMemberLostCount": "{{count}} lost",
     "perMemberKept": "no impact",
     "colUserId": "User ID",
-    "colLost": "Connectors lost"
+    "colLost": "Connectors lost",
+    "pickerLoadedHint": "{{loaded}} of {{total}} loaded",
+    "pickerNarrowSearch": "Directory is large — only a subset is shown. Narrow the search to find more."
   },
   "folderPicker": {
     "title": "Select a target folder",

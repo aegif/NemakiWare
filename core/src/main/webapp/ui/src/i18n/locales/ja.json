@@ -3126,7 +3126,9 @@
     "perMemberLostCount": "{{count}} 件失う",
     "perMemberKept": "影響なし",
     "colUserId": "ユーザー ID",
-    "colLost": "失う connector"
+    "colLost": "失う connector",
+    "pickerLoadedHint": "{{loaded}} 件 / 全 {{total}} 件",
+    "pickerNarrowSearch": "ディレクトリが大きいため一部のみ表示しています。検索文字列で絞り込んでください。"
   },
   "folderPicker": {
     "title": "対象フォルダを選択",
