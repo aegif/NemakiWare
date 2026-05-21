@@ -439,10 +439,11 @@ reviewers and explicitly tracks this tag-vs-branch divergence.
 At RC5.4 closure: **outstanding follow-ups were R1 and R5; R5 is now resolved in RC5.6 (`cee66573e`).**
 - R1 is infra/ops integration that lives outside this repository,
   not NemakiWare code work.
-- R5 is a small denialReason-label refactor inside
-  `IngestSchedulerService`; safety property is already preserved,
-  only the emitted audit label is mislabeled in a microsecond race
-  window. Not a release blocker.
+- R5 was a small denialReason-label refactor inside
+  `IngestSchedulerService`; safety property was already preserved,
+  only the emitted audit label was mislabeled in a microsecond race
+  window. Not a release blocker at RC5.4. **Shipped in RC5.6
+  (`cee66573e`).**
 
 ---
 
