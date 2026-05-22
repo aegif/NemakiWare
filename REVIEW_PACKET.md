@@ -11,8 +11,7 @@ RC5.5 closure follow-up table (B3-2, V8/G2, H2, M2, M3, L1, L2)
 plus the 35-alert Dependabot security backlog.
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6` (peeled commit `{{TAG_PEELED}}` — filled in by
-  the tag commit immediately following this packet).
+  `v3.1.1-RC6` (peeled commit `9dfd87adb1e90a43885d825ef25039418eec22b2`).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
@@ -27,10 +26,10 @@ Previous historical tags (`v3.1.1-RC5.6`, `…-RC5.5`, `…-RC5.4`,
 | Item | Value |
 |---|---|
 | **Final candidate tag** | `v3.1.1-RC6` |
-| Tag annotated object SHA | filled in at tag time |
-| Tag peeled commit | filled in at tag time |
+| Tag annotated object SHA | `069e5abaa60925579d0717614d66f621615d8665` |
+| Tag peeled commit | `9dfd87adb1e90a43885d825ef25039418eec22b2` |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | filled in at tag time (= tag peeled, zero divergence) |
+| Branch HEAD at tag time | `9dfd87adb1e90a43885d825ef25039418eec22b2` (= tag peeled, zero divergence) |
 | Base of RC6 cycle | `v3.1.1-RC5.6` (peeled `adf8db3b4`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
 | **RC5.6 → RC6 diff cmd** | `git diff v3.1.1-RC5.6..v3.1.1-RC6` |
