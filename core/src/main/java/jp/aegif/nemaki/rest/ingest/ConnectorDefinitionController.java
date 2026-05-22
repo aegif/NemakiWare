@@ -330,7 +330,11 @@ public class ConnectorDefinitionController {
      *       effective principal set (sole-route detection over this
      *       group only). Always present (review L). Empty array when
      *       {@code includeMembers=false} — the fast path that skips per-
-     *       member expansion entirely.</li>
+     *       member expansion entirely. Each entry carries
+     *       {@code lostIfGroupRemoved} (capped at
+     *       {@link #MAX_LOST_PER_MEMBER}), {@code lostCount} (the
+     *       untruncated count), and {@code lostIfGroupRemovedTruncated}
+     *       (true iff the array was capped — RC6.1 P2-1).</li>
      *   <li>{@code perMemberImpactTruncated} — {@code true} iff
      *       {@code includeMembers=true} AND the member list was capped.
      *       {@code false} when {@code includeMembers=false} (which is
@@ -458,6 +462,7 @@ public class ConnectorDefinitionController {
                 List<Map<String, Object>> memberMatches =
                         buildMatches(memberId, memberPrincipals, allConnectors);
                 List<Map<String, Object>> lost = new java.util.ArrayList<>();
+                int lostTotal = 0;
                 for (Map<String, Object> m : memberMatches) {
                     @SuppressWarnings("unchecked")
                     List<String> matched = (List<String>) m.get("matchedPrincipalIds");
@@ -467,11 +472,27 @@ public class ConnectorDefinitionController {
                     // through the queried group for this member.
                     boolean allViaThisGroup = matched.stream()
                             .allMatch(p -> groupId.equals(p));
-                    if (allViaThisGroup) lost.add(m);
+                    if (!allViaThisGroup) continue;
+                    lostTotal++;
+                    // RC6.1 P2-1: cap per-member lost array to bound
+                    // response size. Without this cap, a member who
+                    // depends on N group-only connectors contributes N
+                    // full ConnectorPrincipalMatch entries to the
+                    // response — with memberLimit=1000 and many such
+                    // connectors, the JSON can run to millions of
+                    // entries even though the M3 list() cache cut the
+                    // CouchDB cost. Per-member truncation flag preserves
+                    // the lostCount signal so the UI / SOC can still
+                    // tell "this member loses a lot" without us
+                    // shipping the full payload.
+                    if (lost.size() < MAX_LOST_PER_MEMBER) lost.add(m);
                 }
                 var memberEntry = new LinkedHashMap<String, Object>();
                 memberEntry.put("userId", memberId);
                 memberEntry.put("lostIfGroupRemoved", lost);
+                memberEntry.put("lostCount", lostTotal);
+                memberEntry.put("lostIfGroupRemovedTruncated",
+                        lostTotal > lost.size());
                 impact.add(memberEntry);
             }
         }
@@ -508,6 +529,18 @@ public class ConnectorDefinitionController {
      * is prepared to paginate.
      */
     private static final int MAX_MEMBER_LIMIT = 1000;
+
+    /**
+     * RC6.1 P2-1: server-side hard cap on per-member
+     * {@code lostIfGroupRemoved} list size in
+     * {@code /by-group/{id}}. Without this cap, the response would
+     * amplify by `members × group-only-connectors-per-member`. The
+     * {@code lostCount} field still reports the untruncated count and
+     * {@code lostIfGroupRemovedTruncated} signals when the array was
+     * capped, so SOC / UI can detect "this member loses a lot"
+     * without forcing the server to ship the full payload.
+     */
+    private static final int MAX_LOST_PER_MEMBER = 50;
 
     /**
      * RC6 M2: server-side hard cap on the {@code removePrincipalIds}
@@ -693,22 +726,22 @@ public class ConnectorDefinitionController {
             if (allowed == null || allowed.isEmpty()) continue;
             // Intersect — preserves the matched principal IDs so the
             // operator can see WHY this connector is visible to the
-            // principal (direct vs. via group X). Iterate the smaller
-            // collection (M3): for connectors that allow only a handful
-            // of principals but the user is expanded to many groups,
-            // walking `allowed` (typical: 1-5 entries) is much cheaper
-            // than walking `principalsToMatch` (which can be 50+ for a
-            // user with many group memberships).
+            // principal (direct vs. via group X). Always iterate the
+            // connector's `allowed` list so the output order tracks
+            // the connector's declared principal order — clients +
+            // tests rely on this for stable matchedPrincipalIds
+            // arrays. `principalsToMatch` is always a Set (either
+            // LinkedHashSet or HashSet at the callsites), so the
+            // contains() lookup is O(1) without an extra wrap.
+            //
+            // RC6.1 P2-2: an earlier RC6 (M3) revision had a
+            // "iterate the smaller side" branch that yielded
+            // principalsToMatch-ordered results when the user was
+            // expanded into many groups, breaking the byte-identical
+            // response invariant claimed in REVIEW_PACKET. Reverted.
             java.util.List<String> matched = new java.util.ArrayList<>();
-            if (allowed.size() <= principalsToMatch.size()) {
-                for (String p : allowed) {
-                    if (p != null && principalsToMatch.contains(p)) matched.add(p);
-                }
-            } else {
-                java.util.Set<String> allowedSet = new java.util.HashSet<>(allowed);
-                for (String p : principalsToMatch) {
-                    if (p != null && allowedSet.contains(p)) matched.add(p);
-                }
+            for (String p : allowed) {
+                if (p != null && principalsToMatch.contains(p)) matched.add(p);
             }
             if (matched.isEmpty()) continue;
 

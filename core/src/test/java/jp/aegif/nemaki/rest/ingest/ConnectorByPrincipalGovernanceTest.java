@@ -585,6 +585,110 @@ class ConnectorByPrincipalGovernanceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void byGroup_perMemberLostList_cappedAt50_truncationFlagSet_P2_1() {
+        // RC6.1 P2-1: per-member lost array bounded at
+        // MAX_LOST_PER_MEMBER (50). The full `lostCount` field still
+        // reports the untruncated total + `lostIfGroupRemovedTruncated`
+        // signals truncation, so SOC + UI can detect "this member
+        // loses a lot" without forcing the server to ship the full
+        // payload. Without the cap a member-of-1000-connectors scenario
+        // would balloon the response O(members * connectors).
+        asAdmin();
+        // One member; 60 connectors all GROUP-only — every connector
+        // is sole-route via GROUP for this member, so all 60 would
+        // show up in lostIfGroupRemoved without the cap.
+        when(principalService.getGroupById(REPO, GROUP))
+                .thenReturn(makeGroup(GROUP, List.of("alice")));
+        java.util.List<ConnectorDefinition> sixty = new java.util.ArrayList<>();
+        for (int i = 0; i < 60; i++) sixty.add(conn("c-" + i, List.of(GROUP)));
+        when(connectorService.list()).thenReturn(sixty);
+        when(authService.expandPrincipals(eq(REPO), eq("alice")))
+                .thenReturn(Set.of(GROUP));
+
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, REPO, true, 200);
+
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        List<Map<String, Object>> impact =
+                (List<Map<String, Object>>) body.get("perMemberImpact");
+        assertEquals(1, impact.size());
+        Map<String, Object> alice = impact.get(0);
+        List<Map<String, Object>> aliceLost =
+                (List<Map<String, Object>>) alice.get("lostIfGroupRemoved");
+        // Array is capped at MAX_LOST_PER_MEMBER = 50
+        assertEquals(50, aliceLost.size(),
+                "lostIfGroupRemoved array must be capped at MAX_LOST_PER_MEMBER");
+        // lostCount preserves the untruncated total
+        assertEquals(60, alice.get("lostCount"),
+                "lostCount must report untruncated total");
+        assertEquals(Boolean.TRUE, alice.get("lostIfGroupRemovedTruncated"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void byGroup_perMemberLost_notTruncatedWhenUnderCap_P2_1() {
+        // Companion to the cap test: lostIfGroupRemovedTruncated must
+        // be false when the array fits under MAX_LOST_PER_MEMBER.
+        asAdmin();
+        when(principalService.getGroupById(REPO, GROUP))
+                .thenReturn(makeGroup(GROUP, List.of("alice")));
+        when(connectorService.list()).thenReturn(List.of(
+                conn("c1", List.of(GROUP)),
+                conn("c2", List.of(GROUP))));
+        when(authService.expandPrincipals(eq(REPO), eq("alice")))
+                .thenReturn(Set.of(GROUP));
+
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, REPO, true, 200);
+
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        List<Map<String, Object>> impact =
+                (List<Map<String, Object>>) body.get("perMemberImpact");
+        Map<String, Object> alice = impact.get(0);
+        assertEquals(2, alice.get("lostCount"));
+        assertEquals(Boolean.FALSE, alice.get("lostIfGroupRemovedTruncated"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void buildMatches_preservesAllowedPrincipalIdsOrder_P2_2() {
+        // RC6.1 P2-2: matchedPrincipalIds must follow the connector's
+        // declared allowedPrincipalIds order, regardless of how many
+        // entries principalsToMatch has. An earlier RC6 (M3) revision
+        // switched the loop direction "to iterate the smaller side"
+        // and accidentally emitted principalsToMatch-ordered results
+        // when the user was expanded into many groups, breaking the
+        // byte-identical response invariant. This test pins the
+        // post-revert behaviour: connector-declared order, regardless
+        // of principalsToMatch size.
+        asAdmin();
+        // Connector declares allowedPrincipalIds in a deliberate
+        // order: GROUP_A, USER, GROUP_B. The user is expanded into
+        // many groups so principalsToMatch ends up LARGER than
+        // allowed — exercising the previously-buggy branch.
+        ConnectorDefinition c = conn("c-order",
+                java.util.Arrays.asList(GROUP, USER, "other-group"));
+        when(connectorService.list()).thenReturn(List.of(c));
+        // User belongs to many groups in addition to the connector's
+        // allowed set — principalsToMatch ends up much larger than
+        // allowed (3 entries).
+        java.util.Set<String> expanded = new java.util.LinkedHashSet<>(java.util.Arrays.asList(
+                USER, "z-group", "y-group", "x-group", "w-group",
+                "other-group", "v-group", GROUP, "u-group"));
+        when(authService.expandPrincipals(eq(REPO), eq(USER))).thenReturn(expanded);
+
+        ResponseEntity<?> resp = controller.listByPrincipal(USER, REPO, true);
+
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        List<Map<String, Object>> matches = (List<Map<String, Object>>) body.get("matches");
+        assertEquals(1, matches.size());
+        List<String> matched = (List<String>) matches.get(0).get("matchedPrincipalIds");
+        // Must match the connector's declared order, NOT the
+        // principalsToMatch insertion order.
+        assertEquals(java.util.Arrays.asList(GROUP, USER, "other-group"), matched,
+                "matchedPrincipalIds must follow allowedPrincipalIds order, not principalsToMatch");
+    }
+
+    @Test
     void byPrincipal_connectorListReturnsNull_returnsEmptyMatches_L2() {
         // RC6 L2: ConnectorDefinitionService.list() returning null
         // must not NPE the governance endpoint. Treated as
