@@ -6,8 +6,7 @@ on the SOC templates that landed mid-cycle; that round produced
 5 findings (2 P1 + 2 P2 + 1 P3). RC6.3 closes all 5.
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.3` (peeled commit `{{TAG_PEELED}}` — populated by
-  the post-tag doc fix immediately following this packet).
+  `v3.1.1-RC6.3` (peeled commit `77ddfe071bf0cff3af8457ee37f208605b612699`).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
@@ -22,10 +21,10 @@ Previous historical tags (`v3.1.1-RC6.2`, `…-RC6.1`, `…-RC6`,
 | Item | Value |
 |---|---|
 | **Final candidate tag** | `v3.1.1-RC6.3` |
-| Tag annotated object SHA | filled in at tag time |
-| Tag peeled commit | filled in at tag time |
+| Tag annotated object SHA | `1a55eec67539e31cd7381a707252ca33f4378a26` |
+| Tag peeled commit | `77ddfe071bf0cff3af8457ee37f208605b612699` |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | filled in at tag time (= tag peeled, zero divergence) |
+| Branch HEAD at tag time | `77ddfe071bf0cff3af8457ee37f208605b612699` (= tag peeled, zero divergence) |
 | Base of RC6.3 cycle | `v3.1.1-RC6.2` (peeled `02afee891`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
 | **RC6.2 → RC6.3 diff cmd** | `git diff v3.1.1-RC6.2..v3.1.1-RC6.3` |
