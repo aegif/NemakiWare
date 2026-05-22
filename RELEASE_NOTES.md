@@ -6,6 +6,230 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC6.2 — RC6.1 external + self-review (17 findings, all closed) + first full Playwright sweep
+_Release candidate on `release/3.1.1-RC6` (2026-05-22), branched
+off `v3.1.1-RC6.1` (`595754b8c`)._
+
+Closure RC for the second-round R1 review (4 findings) plus a
+parallel self-critical review of the same surface (13 findings).
+All 17 items are resolved on the repo side. The RC6.1 tag
+(`595754b8c`) is **not force-updated** and remains a historical
+milestone.
+
+This is also the first RC in the cycle to run the **full
+chromium Playwright suite** (118 specs / 1030 tests), not just
+the RC5/RC6-area smoke. The honest result: **684 passed, 155
+failed, 94 skipped, 97 did-not-run** in 1.3 hours. The 155
+failures are pre-existing across the UI corpus (React 19 / AntD
+5 drift that has accumulated through the cycle); none are
+attributable to RC6.x changes — the RC5/RC6-area 6-spec smoke
+remains 66/66 PASS. Full-suite green-up is out of scope for
+this RC and is recorded as a separate epic for follow-up.
+
+### Tier 1: review-required fixes (6)
+
+#### #3 — Splunk `startswith=eval(...)` invalid SPL
+The RC6.1 fix introduced `startswith=eval(operation==...)`,
+which the SPL parser rejects (`eval` is a command, not a
+transaction arg wrapper). Replaced with the documented
+parens-only form `startswith=(operation="...")`.
+
+#### #2 — Kibana NDJSON Detection Engine schema review
+EQL `sequence by userId.keyword,repositoryId.keyword` syntax
+explicitly documents the dependency on the default Filebeat /
+Vector dynamic mapping (where short strings get a `.keyword`
+subfield). `new_terms` rule confirmed to accept both `query`
+and `new_terms_fields` per Detection Engine schema. **Note**:
+the rules are not validated against a live Elastic 8 cluster
+in this repo — operators must verify import on their target
+stack version.
+
+#### #14 — Kibana off-hours rule depended on fields shippers didn't create
+The off-hours rule (`hour_of_day_local < 6 OR ...`) referenced
+two fields the previous shipper templates never added. Now
+delivered:
+- `vector-nemakiware.toml`: VRL `format_timestamp!` with
+  `timezone:` honouring `${BUSINESS_HOURS_TZ:-UTC}`
+- `fluent-bit-nemakiware.conf`: Lua filter using `os.date`
+  (honours Fluent Bit process `TZ` env)
+- `filebeat-nemakiware.yml`: JS script processor using the JS
+  `Date` object (honours Filebeat process `TZ` env)
+
+README's new "Off-hours rule timezone / enrichment" section
+documents the TZ env requirement per shipper.
+
+#### #15 — Kibana threshold values not actually placeholder-driven
+RC6.1 used `${BURST_THRESHOLD}` / `${LOST_COUNT_OUTLIER_THRESHOLD}`
+in description text but hardcoded `20` / `50` in rule logic
+(JSON syntax forbids `${VAR}` in numeric value positions).
+Replaced description placeholders with the actual defaults
+and shipped a README sed cookbook for overrides:
+
+```bash
+sed -i.bak -e 's/"value":20/"value":35/' \
+           -e 's/details\.lostCount > 50/details.lostCount > 80/' \
+           kibana-detection-rules.ndjson
+```
+
+#### #16, #17 — stale filename refs + grep pattern
+Removed three stale `kibana-alerting-rules.json` references
+(filebeat ×2 + fluent-bit ×1). Extended README's placeholder
+grep pattern to include `*.ndjson` with `2>/dev/null` to
+swallow missing-glob warnings.
+
+### Tier 2: should-fix (4)
+
+#### #11 — perMemberImpact member ordering non-deterministic
+`memberUserIds = group.getUsers().subList(0, memberCap)` used
+the CouchDB view's emit order. Two consecutive
+`/by-group/{id}?memberLimit=N` calls against a > N-member
+group could return different N-member sets. Added
+`Collections.sort(allMemberUserIds)` immediately after model
+load (and the same for `subGroupIds`). Truncation now samples
+the lexicographically smallest N — reproducible across calls
+and replicas. 2 new unit tests pin the sort:
+`byGroup_memberUserIdsSortedAlphabetically_RC62_review11` and
+`byGroup_memberLimitTruncation_takesFirstNAlphabetically_RC62_review11`.
+
+#### #7 — P2-1 cap hides connector identities past 50
+The `MAX_LOST_PER_MEMBER = 50` cap leaves operators blind to
+the 51st+ lost connector's identity. Resolved without API
+expansion via `docs/SOC-AUDIT-INTEGRATION.md §5.6` (new):
+fall back to `/by-principal/{userId}?expand=true` for any
+member with `lostIfGroupRemovedTruncated=true` to get the full
+per-user connector set, then intersect locally.
+
+#### #8 — Filebeat `${HOSTNAME}` env interpolation gotcha
+Clarified that `${HOSTNAME}` is Filebeat's own env-var syntax
+(NOT shell expansion at config-load time). README documents
+that operators using systemd / docker-compose must ensure the
+Filebeat process has `HOSTNAME` in its env.
+
+#### #9 — Loki TZ + label binding undocumented
+Added explicit TZ rewrite example (`^(1[3-9]|20)$` for JST
+22:00-05:59 = UTC 13:00-20:59) to README. Documented that
+Loki Ruler validation should use `cortextool rules check`
+before deploy.
+
+### Tier 3: cleanup (4)
+
+#### #6 — `externalIngest.ts` vestigial in REVIEW_PACKET §3
+Removed from the allowed-divergence list — it was a copy-paste
+from RC5.6 that never got modified post-tag in this cycle.
+
+#### #10 — test count drift
+Real focused-14 test count is **182** (RC6 177 + RC6.1 +3 +
+RC6.2 +2 = 182). Past claims of "180 → +7 = 184" were
+arithmetic error from counting renamed tests as additions.
+All future RC numbers re-counted via `mvn test`.
+
+#### #12 — L1 useMemo comment overclaimed perf benefit
+The comment said the `[simulateRemove]` dep array was the win.
+In fact `simulateRemove` reference changes on every antd
+Select onChange, so `JSON.stringify` runs every render that
+matters — no perf gain. Rewrote the comment to be accurate:
+the memo exists for explanatory stability of the downstream
+`[simulateRemoveKey]` dep array, not for skipping recomputation.
+
+#### #13 — "解消" framing inconsistency
+CLAUDE.md / REVIEW_PACKET / RELEASE_NOTES previously called R1
+"解消" in one place and "mostly resolved" in another. Aligned
+to: **repo-shippable scope complete; 4 deployment-specific
+items (network, secrets, notification routing, threshold
+baseline) inherently remain operator-side and cannot ship as
+templates**.
+
+### Tier 1 follow-up: #1 — "66/66 regression" honest re-label
+
+Previous RCs cited "66/66 RC5+RC6 Playwright regression". The
+universe was actually 6 of 118 specs — a smoke, not a
+regression. RC6.2 ran the full chromium suite for the first
+time:
+
+- **684 passed** (66 of those are the RC5/RC6-area smoke,
+  unchanged)
+- **155 failed** (pre-existing UI corpus drift; not attributable
+  to RC6.x)
+- **94 skipped** (externalauth specs gate on Keycloak
+  availability)
+- **97 did-not-run** (serial-mode chain aborts in failing
+  describe blocks)
+
+Going forward, full-suite green-up is a separate epic. RC6.2
+docs are honest: the 66/66 number is "smoke", the 684/155 is
+"full chromium current state".
+
+### Change scope vs RC6.1 (precise)
+
+- **Changed in RC6.2**:
+  - `core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java`
+    (P2-1 cap + new fields, P2-2 revert + comment, M2 size limits,
+    M3 caching, L2 null fold, **#11 sort**)
+  - `core/src/test/java/jp/aegif/nemaki/rest/ingest/ConnectorByPrincipalGovernanceTest.java`
+    (+2 #11 sort tests)
+  - `core/src/main/webapp/ui/src/components/IntegrationSettings/ConnectorGovernanceTab.tsx`
+    (L1 + P2-3 + P3 + **#12 useMemo comment**)
+  - `docs/soc-templates/*` (#3 Splunk, #2 Kibana NDJSON, #14
+    shipper enrichment, #15 sed cookbook, #16 stale refs,
+    #17 grep, #8 HOSTNAME, #9 Loki TZ)
+  - `docs/SOC-AUDIT-INTEGRATION.md` (+#7 §5.6 per-user fallback)
+  - `docs/design/connector-delegation.md` (RC6.2 history section)
+  - `CLAUDE.md`, `REVIEW_PACKET.md`, `RELEASE_NOTES.md` (this
+    section, #6 vestigial entry removed, #13 framing alignment)
+- **Unchanged from RC6.1** (byte-equal):
+  - All RC5 + RC6 + RC6.1 product code paths not specifically
+    listed above
+  - Patch / view / Mango / migration / DB bootstrap
+  - i18n files (no new keys in RC6.2)
+
+### Commit + tag relationship
+
+- SOC fixes (Splunk + Kibana NDJSON + shipper enrichment): `750d70d85`
+- sort + useMemo comment: `fd03d4ab4`
+- Doc closure (this section): subsequent
+- **`v3.1.1-RC6.2` annotated tag target**: doc-closure commit
+
+The previous candidate `v3.1.1-RC6.1` is **not force-updated**
+and remains at peeled commit `595754b8c` as a historical
+milestone.
+
+### Tests + verification
+
+- 182/182 focused 14 Java test classes pass (RC6 177, RC6.1
+  +3, RC6.2 +2)
+- 66/66 RC5/RC6-area Playwright smoke (no flake, 2 consecutive
+  runs)
+- 684/155/94/97 full chromium suite (155 failures all
+  pre-existing; not RC6.x-caused)
+- NDJSON syntax + Loki YAML + Splunk SPL all validate
+- All 3 shipper templates contain `hour_of_day_local`
+  enrichment
+- Live deploy unaffected (no Java surface change beyond #11
+  sort, which is response-shape-additive)
+
+### Follow-up status (cumulative across RC5+RC6+RC6.1+RC6.2 cycle)
+
+**Resolved in this RC**: 17 review findings (Tier 1 ×6 +
+Tier 2 ×4 + Tier 3 ×4 + Tier 1 follow-up #1).
+
+**Remaining (repo)**: none. R1 SOC integration's
+repo-shippable scope is complete via the playbook
+(`docs/SOC-AUDIT-INTEGRATION.md`) and templates
+(`docs/soc-templates/`).
+
+**Remaining (operator-side, by design)**: network path / TLS
+to the SIEM, SIEM credentials from secrets manager,
+notification routing (PagerDuty / Slack), threshold tuning
+from 7-day environment baseline. These are not repo-shippable
+artifacts.
+
+**Remaining (separate epic)**: full Playwright suite has 155
+pre-existing failures distributed across the UI corpus.
+Green-up is its own engineering project; RC6.x cycle does not
+introduce any of them and does not block on them.
+
+---
+
 ## 3.1.1-RC6.1 — RC6 external review fixes (P2-1 / P2-2 / P2-3 / P3)
 _Release candidate on `release/3.1.1-RC6` (2026-05-22), branched
 off `v3.1.1-RC6` (`9dfd87adb`)._

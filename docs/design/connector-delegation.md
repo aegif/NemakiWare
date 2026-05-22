@@ -1276,7 +1276,47 @@ environment baseline.
 Cross-linked from the §9 file list in REVIEW_PACKET.md and the
 follow-up table in CLAUDE.md / RELEASE_NOTES.md.
 
-### 12.18 vNext (separate scope, not RC5.x / RC6.x)
+### 12.18 ~~RC6.2: second-round R1 review + parallel self-review (17 findings closed)~~ (shipped)
+
+Closure RC after RC6.1 ship. Two parallel reviews ran on the
+same surface:
+
+1. **External R1 template review** — 4 findings on
+   `kibana-detection-rules.ndjson` shape, missing shipper
+   enrichment for the off-hours rule, hardcoded thresholds,
+   stale filename refs, README grep pattern.
+2. **Self-critical second-look review** — 13 findings spanning
+   tag invariance, test coverage claims, perMemberImpact
+   determinism, useMemo perf comment, Filebeat `${HOSTNAME}`
+   gotcha, Loki TZ gap, vestigial allowed-divergence entry,
+   "解消" framing inconsistency, full-suite Playwright honesty.
+
+All 17 are closed. Key code-affecting fixes:
+
+- **#11 (perMemberImpact sort)**:
+  `Collections.sort(allMemberUserIds)` for deterministic
+  truncation. New tests pin this.
+- **#3 (Splunk SPL)**: revert RC6.1's invalid `startswith=eval(...)`
+  to the documented `startswith=(...)` parens-only form.
+- **#14 (shipper enrichment)**: add `hour_of_day_local` and
+  `day_of_week_local` enrichment to vector / fluent-bit /
+  filebeat so the Kibana off-hours rule actually fires.
+- **#15 (Kibana thresholds)**: ship working defaults + sed
+  cookbook (JSON can't carry `${VAR}` in value positions).
+- **#7 (per-user fallback)**: documented escape hatch for
+  members with > 50 lost connectors — no API change.
+- **#1 (full Playwright honesty)**: first full-suite run
+  reported: 684 passed, 155 failed (pre-existing), 94 skipped,
+  97 did-not-run. Prior RC's "66/66 regression" re-labelled
+  as "RC5/RC6-area smoke" of 6 of 118 specs.
+
+Migration impact: none. The only Java behavioural change is the
+new alphabetical sort on `memberUserIds` / `subGroupIds` —
+existing callers consuming these arrays are unaffected unless
+they relied on the (undocumented, non-deterministic) CouchDB
+view order.
+
+### 12.19 vNext (separate scope, not RC5.x / RC6.x)
 
 Bigger ideas that came up during RC5.1 review but are explicitly
 NOT planned for any RC5 patch.

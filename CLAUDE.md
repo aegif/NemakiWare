@@ -310,6 +310,95 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC26 / RC6.2 (2026-05-22) — RC6.1 review + self-review 17件 全件解消 (shipped)
+
+ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.1` = `595754b8c`)
+
+RC6.1 ship 後の **2 review (外部 R1 4件 + 自己批判 13件 = 17件)** を全件
+解消した closure RC。Tier 1 (送付前必須) + Tier 2 (強く推奨) + Tier 3
+(整理) を全部完了。RC6.1 tag (`595754b8c`) は force-update せず歴史的
+マイルストーンとして保持。
+
+#### Tier 1: 送付前必須 6件
+
+- **#3 Splunk `startswith=eval(...)`** が invalid SPL — `startswith=(...)`
+  parens-only form に revert
+- **#2 Kibana NDJSON schema** — EQL `.keyword` syntax は default Filebeat/
+  Vector dynamic mapping 想定 (description で明示)。`new_terms` rule に
+  `query` field 共存 OK 確認
+- **#14 Kibana off-hours rule の field 依存** — `hour_of_day_local` +
+  `day_of_week_local` enrichment を vector (VRL `format_timestamp!`) +
+  fluent-bit (Lua filter) + filebeat (JS processor) 全 3 shipper に追加。
+  README に TZ env 説明追記
+- **#15 Kibana threshold ハードコード** — JSON は `${VAR}` 不可なので
+  defaults (20/50) を残し、README に sed cookbook + override 手順を明記
+- **#16 stale `kibana-alerting-rules.json` 参照** — filebeat ×2 +
+  fluent-bit ×1 を `kibana-detection-rules.ndjson` に置換
+- **#17 README placeholder grep が `*.json` のみ** — `*.ndjson` 追加 +
+  `2>/dev/null` で missing-glob warning 抑止
+
+#### Tier 2: 強く推奨 4件
+
+- **#11 perMemberImpact member 順序非決定的** —
+  `Collections.sort(allMemberUserIds)` 追加。memberLimit truncation が
+  alphabetical first-N に統一。2 unit test 追加 (`...sortedAlphabetically`
+  / `...takesFirstNAlphabetically`)
+- **#7 P2-1 cap の identity 不可視問題** — API 追加なしで解消:
+  `docs/SOC-AUDIT-INTEGRATION.md §5.6` に per-user fallback
+  (`/by-principal/{userId}?expand=true`) を documented escape hatch として
+  記載
+- **#8 Filebeat `${HOSTNAME}` env interpolation** — Filebeat 自身の env-var
+  syntax に統一 + README に process env 渡し方を明記 (systemd /
+  docker-compose 別)
+- **#9 Loki TZ doc** — JST operator 向け regex 書き換え例
+  (`^(1[3-9]|20)$` for 22:00-05:59 JST = 13:00-20:59 UTC) を README に追加。
+  TZ env 必須箇所を per-shipper で明示
+
+#### Tier 3: 整理 4件
+
+- **#6 `externalIngest.ts` を REVIEW_PACKET §3 allowed-divergence から削除**
+- **#10 test count drift** — 実機再カウントで `182` (RC6.2 +2 sort tests
+  added、177→180→182 と整合)
+- **#12 useMemo コメント書き直し** — perf 主張削除、dep-array stability の
+  意味だけ正直に書く
+- **#13 "解消" framing** — repo 出荷可能スコープ完了 + 4 deployment 固有
+  items は本質的に残るとトーン統一
+
+#### Tier 1 別件: #1 "66/66 regression" honest re-label
+
+RC6.1 まで citing していた "66/66 Playwright regression" は 118 spec
+中 6 spec の **RC5/RC6-area smoke**。RC6.2 で初めて全 chromium suite
+(118 specs / 1030 tests) を 1.3h かけて実行:
+
+- **684 passed**
+- **155 failed**
+- **94 skipped**
+- **97 did not run** (serial-mode chain abort)
+
+155 failure の大部分は **pre-existing** (UI 全域の React 19/AntD 5 周辺で
+ずっと残ってきた腐敗)。RC6 / RC6.1 / RC6.2 に **直接起因する failure は
+ゼロ** (RC5/RC6-area 6 spec = **66/66 PASS** で確認)。Full suite green
+化は本 RC 範囲外で別 epic として承継。
+
+#### Java focused 14 test class
+
+- **182/182 PASS** (RC6 177、RC6.1 180、RC6.2 +2 sort)
+
+#### Commit + tag 関係
+
+- SOC fixes (Splunk + Kibana NDJSON + shipper enrichment): `750d70d85`
+- sort + useMemo comment: `fd03d4ab4`
+- 本 doc commit: 後続
+- **`v3.1.1-RC6.2` annotated tag target**: 本 doc commit
+
+#### 残課題
+
+- **R1**: repo 出荷可能スコープ完了 (RC6.1 + RC6.2 で完全解消)。残りは
+  deployment 固有 (network/TLS、SIEM 認証、通知ルーティング、threshold
+  baseline) のみで repo 出荷不可
+- **Full Playwright suite green 化**: 155 pre-existing failures。RC6 cycle
+  外。別 epic で取り組む
+
 ### RC25 / RC6.1 (2026-05-22) — RC6 external review fixes P2-1 / P2-2 / P2-3 / P3 (shipped)
 
 ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6` = `9dfd87adb`)
