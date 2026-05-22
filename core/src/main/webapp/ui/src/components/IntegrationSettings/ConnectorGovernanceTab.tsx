@@ -107,10 +107,17 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
   const [pickerTotals, setPickerTotals] = useState<{
     userTotal: number; groupTotal: number; lastQuery: string;
   }>({ userTotal: 0, groupTotal: 0, lastQuery: '' });
-  // V8/G2 (RC6): track whether the initial fetch has run. Deferred until
-  // the dropdown is actually opened — saves a 100-record fetch on every
-  // tab mount that an operator never expands.
-  const initialFetchDoneRef = useRef(false);
+  // V8/G2 (RC6): track which kinds have had their initial fetch run.
+  // Deferred until the dropdown is actually opened — saves a 100-record
+  // fetch on every tab mount that an operator never expands.
+  //
+  // RC6.1 P3: keyed per kind (USER / GROUP) so opening one mode's
+  // picker doesn't suppress the other mode's initial fetch. Previously
+  // a single boolean meant: open group mode first → flag flips → switch
+  // to principal mode → ensureInitialFetch sees the flag → never
+  // fetches USER, so the principal-mode dropdown shows only groups
+  // until the operator starts typing.
+  const initialFetchKindsRef = useRef<Set<'USER' | 'GROUP'>>(new Set());
 
   // V8: stable CMISService reference for debounced search
   const cmisRef = useRef(new CMISService(handleAuthError));
@@ -176,12 +183,29 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
           kind: 'GROUP',
         });
       }
-      setPrincipalOptions(opts);
-      setPickerTotals({
-        userTotal: usersResp.totalCount ?? usersResp.users.length,
-        groupTotal: groupsResp.totalCount ?? groupsResp.groups.length,
-        lastQuery: query,
+      // RC6.1 P3: merge with existing options instead of replacing
+      // wholesale. Keeps options of kinds we didn't fetch (e.g. switching
+      // from group mode to principal mode and fetching only the missing
+      // USER kind preserves the previously-fetched GROUP options in the
+      // dropdown). For kinds we DID fetch, the new fetch is the source
+      // of truth — the previous entries are dropped before the new ones
+      // are appended.
+      setPrincipalOptions(prev => {
+        const kept = prev.filter(o => !want.has(o.kind));
+        return [...kept, ...opts];
       });
+      // pickerTotals is similarly merged — preserve totals for kinds we
+      // didn't refetch so the dropdown footer "{loaded} of {total}"
+      // stays accurate across mode switches.
+      setPickerTotals(prev => ({
+        userTotal: want.has('USER')
+          ? (usersResp.totalCount ?? usersResp.users.length)
+          : prev.userTotal,
+        groupTotal: want.has('GROUP')
+          ? (groupsResp.totalCount ?? groupsResp.groups.length)
+          : prev.groupTotal,
+        lastQuery: query,
+      }));
     } finally {
       setPickerLoading(false);
     }
@@ -191,10 +215,17 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
   // loaded 50 users + 50 groups at mount, even if the admin never
   // opened the dropdown. We now wait for the first dropdown open
   // (onDropdownVisibleChange below) and pass the current mode's kinds.
+  //
+  // RC6.1 P3: only fetches kinds we haven't fetched yet. Opening the
+  // group-mode picker first records GROUP; switching to principal
+  // mode then fetches USER on the next dropdown open (the GROUP
+  // options are still cached from the first fetch). Each kind is
+  // fetched at most once per mount.
   const ensureInitialFetch = useCallback((kinds: Array<'USER' | 'GROUP'>) => {
-    if (initialFetchDoneRef.current) return;
-    initialFetchDoneRef.current = true;
-    fetchPrincipals('', kinds);
+    const missing = kinds.filter(k => !initialFetchKindsRef.current.has(k));
+    if (missing.length === 0) return;
+    for (const k of missing) initialFetchKindsRef.current.add(k);
+    fetchPrincipals('', missing);
   }, [fetchPrincipals]);
 
   // V8: debounce keystroke-driven search (300ms)
@@ -248,16 +279,19 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
     }
   }, [result, simulateRemove, message, t]);
 
-  // RC6 L1: reset audit-timestamp marker whenever the simulate
-  // selection CONTENT changes — the previous audit only matched the
-  // previous selection. Depending on the array reference would still
-  // work in current code (antd's Select always returns a fresh array
-  // on change), but a future refactor that memoised the value via
-  // useMemo would silently break the reset. Comparing the joined
-  // content is reference-stable and pins the intended semantics: any
-  // change to the selected principals (add, remove, reorder) resets;
-  // a no-op same-array re-render does not.
-  const simulateRemoveKey = useMemo(() => simulateRemove.join(' '), [simulateRemove]);
+  // RC6 L1 / RC6.1 P2-3: reset audit-timestamp marker whenever the
+  // simulate selection CONTENT changes — the previous audit only
+  // matched the previous selection. Depending on the array reference
+  // would still work in current code (antd's Select always returns a
+  // fresh array on change), but a future refactor that memoised the
+  // value via useMemo would silently break the reset. JSON.stringify
+  // is the content-stable comparator: any change to the selected
+  // principals (add, remove, reorder) resets; a no-op same-array
+  // re-render does not. We deliberately do NOT use a single-character
+  // separator (`.join(' ')` etc.) — a prior RC6 edit landed a literal
+  // NUL byte in that position and broke grep / file tooling that
+  // treats the file as binary.
+  const simulateRemoveKey = useMemo(() => JSON.stringify(simulateRemove), [simulateRemove]);
   useEffect(() => {
     setSimulateLastAuditedAt(null);
   }, [simulateRemoveKey]);
