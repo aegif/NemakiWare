@@ -13,7 +13,10 @@ filebeat.inputs:
     id: nemakiware-audit
     enabled: true
     paths:
-      - ${NEMAKIWARE_AUDIT_LOG_PATH:-/opt/tomcat/logs/audit.log}
+      # Beats env-var syntax is `${VAR:default}` (colon-only) — NOT
+      # `${VAR:-default}` (bash). The bash form silently fails parse
+      # in some Beats versions.
+      - ${NEMAKIWARE_AUDIT_LOG_PATH:/opt/tomcat/logs/audit.log}
     # Each audit line is already JSON, so parse at the input layer.
     # `target: ""` flattens the parsed fields onto the root document;
     # `overwrite_keys: true` lets the audit JSON's `@timestamp` field

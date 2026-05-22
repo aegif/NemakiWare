@@ -20,11 +20,14 @@ This is also the first RC in the cycle to run the **full
 chromium Playwright suite** (118 specs / 1030 tests), not just
 the RC5/RC6-area smoke. The honest result: **684 passed, 155
 failed, 94 skipped, 97 did-not-run** in 1.3 hours. The 155
-failures are pre-existing across the UI corpus (React 19 / AntD
-5 drift that has accumulated through the cycle); none are
-attributable to RC6.x changes — the RC5/RC6-area 6-spec smoke
-remains 66/66 PASS. Full-suite green-up is out of scope for
-this RC and is recorded as a separate epic for follow-up.
+failures cluster in non-RC6.x-touched UI areas (documents /
+permissions / search / versioning), most plausibly React 19 /
+AntD 5 drift that has accumulated through the cycle. We have
+NOT compared against an RC5.6 baseline in this RC, so the
+"pre-existing" framing is a working assumption rather than a
+proven claim. What IS proven: the RC5/RC6-area 6-spec smoke
+remains 66/66 PASS after all RC6.2 changes. Full-suite
+green-up + RC5.6 baseline-diff is its own epic for follow-up.
 
 ### Tier 1: review-required fixes (6)
 
@@ -148,8 +151,9 @@ time:
 
 - **684 passed** (66 of those are the RC5/RC6-area smoke,
   unchanged)
-- **155 failed** (pre-existing UI corpus drift; not attributable
-  to RC6.x)
+- **155 failed** (clustered in non-RC6.x-touched UI areas;
+  "pre-existing" treated as a working assumption — NOT validated
+  against an RC5.6 baseline in this RC)
 - **94 skipped** (externalauth specs gate on Keycloak
   availability)
 - **97 did-not-run** (serial-mode chain aborts in failing
@@ -199,8 +203,9 @@ milestone.
   +3, RC6.2 +2)
 - 66/66 RC5/RC6-area Playwright smoke (no flake, 2 consecutive
   runs)
-- 684/155/94/97 full chromium suite (155 failures all
-  pre-existing; not RC6.x-caused)
+- 684/155/94/97 full chromium suite (155 failures all in
+  non-RC6.x-touched UI areas; "pre-existing" remains a working
+  assumption — not validated against an RC5.6 baseline)
 - NDJSON syntax + Loki YAML + Splunk SPL all validate
 - All 3 shipper templates contain `hour_of_day_local`
   enrichment
@@ -224,9 +229,12 @@ from 7-day environment baseline. These are not repo-shippable
 artifacts.
 
 **Remaining (separate epic)**: full Playwright suite has 155
-pre-existing failures distributed across the UI corpus.
-Green-up is its own engineering project; RC6.x cycle does not
-introduce any of them and does not block on them.
+failures distributed across older UI specs. Most plausibly
+pre-existing React 19 / AntD 5 drift; that framing is a working
+assumption — we did NOT validate by re-running the same full
+suite against `v3.1.1-RC5.6`. The 6 RC5/RC6-area specs RC6.x
+directly touched remain 66/66 PASS. Green-up + RC5.6
+baseline-diff is its own engineering project.
 
 ---
 

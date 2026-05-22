@@ -375,10 +375,13 @@ RC6.1 まで citing していた "66/66 Playwright regression" は 118 spec
 - **94 skipped**
 - **97 did not run** (serial-mode chain abort)
 
-155 failure の大部分は **pre-existing** (UI 全域の React 19/AntD 5 周辺で
-ずっと残ってきた腐敗)。RC6 / RC6.1 / RC6.2 に **直接起因する failure は
-ゼロ** (RC5/RC6-area 6 spec = **66/66 PASS** で確認)。Full suite green
-化は本 RC 範囲外で別 epic として承継。
+155 failure は RC5/RC6-area 6 spec **外** に集中 (documents / permissions /
+search / versioning 等の古い spec、React 19 / AntD 5 drift 由来と推定)。
+**実証されている範囲**: RC6.x が直接触れた 6 spec は **66/66 PASS** (2連続
+runs、no flake)。**実証していない範囲**: RC5.6 ベースラインで同じ
+suite を流して 155 件と差分比較していない (この比較は別 epic、本 RC
+範囲外)。よって "155 件 pre-existing" は **作業仮説** として扱い、
+proven claim ではない。
 
 #### Java focused 14 test class
 
@@ -396,8 +399,9 @@ RC6.1 まで citing していた "66/66 Playwright regression" は 118 spec
 - **R1**: repo 出荷可能スコープ完了 (RC6.1 + RC6.2 で完全解消)。残りは
   deployment 固有 (network/TLS、SIEM 認証、通知ルーティング、threshold
   baseline) のみで repo 出荷不可
-- **Full Playwright suite green 化**: 155 pre-existing failures。RC6 cycle
-  外。別 epic で取り組む
+- **Full Playwright suite green 化**: 155 failures (RC5.6 baseline 未比較、
+  作業仮説として pre-existing と推定)。RC6 cycle 外、別 epic + baseline-diff
+  で取り組む
 
 ### RC25 / RC6.1 (2026-05-22) — RC6 external review fixes P2-1 / P2-2 / P2-3 / P3 (shipped)
 

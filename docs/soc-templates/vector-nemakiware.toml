@@ -34,14 +34,20 @@
     .service = "nemakiware"
     .source_type = "audit"
     .nemakiware_host = get_hostname!()
-    # Time-of-day enrichment for off-hours alerts. parse_timestamp!
-    # tolerates either the @timestamp ECS field (Z-suffixed UTC) or
-    # the legacy `timestamp` ISO-8601 field. Vector's `format_timestamp`
-    # converts to the operator-local TZ for the hour / day extraction.
-    .__ts = parse_timestamp!(.@timestamp, "%+")
-    .hour_of_day_local = to_int!(format_timestamp!(.__ts, "%H", timezone: "${BUSINESS_HOURS_TZ:-UTC}"))
-    .day_of_week_local = format_timestamp!(.__ts, "%A", timezone: "${BUSINESS_HOURS_TZ:-UTC}")
-    del(.__ts)
+    # Time-of-day enrichment for off-hours alerts. VRL field paths
+    # with special characters need quoted-path syntax — `."@timestamp"`
+    # not `.@timestamp`. We try the ECS @timestamp first then fall
+    # back to the legacy `timestamp` field (NemakiWare emits both
+    # on every audit event but the legacy field is more reliable
+    # in older configs).
+    ts_str = ."@timestamp" ?? .timestamp ?? null
+    if ts_str != null {
+      ts_parsed = parse_timestamp(ts_str, "%+")
+      if ts_parsed != null {
+        .hour_of_day_local = to_int!(format_timestamp!(ts_parsed, "%H", timezone: "${BUSINESS_HOURS_TZ:-UTC}"))
+        .day_of_week_local = format_timestamp!(ts_parsed, "%A", timezone: "${BUSINESS_HOURS_TZ:-UTC}")
+      }
+    }
   '''
 
 # ─── Loki sink ────────────────────────────────────────────
@@ -62,7 +68,7 @@
   auth.password = "${SIEM_PASSWORD}"
   # Audit must never be dropped on transient outage
   buffer.type = "disk"
-  buffer.max_size = 268435488  # 256 MB local buffer
+  buffer.max_size = 268435456  # 256 MB local buffer
   buffer.when_full = "block"
 
 # ─── Elasticsearch sink ────────────────────────────────────
@@ -78,7 +84,7 @@
 #   auth.password = "${SIEM_PASSWORD}"
 #   tls.verify_certificate = true
 #   buffer.type = "disk"
-#   buffer.max_size = 268435488
+#   buffer.max_size = 268435456
 #   buffer.when_full = "block"
 
 # ─── Splunk HEC sink ──────────────────────────────────────
@@ -92,5 +98,5 @@
 #   compression = "gzip"
 #   tls.verify_certificate = true
 #   buffer.type = "disk"
-#   buffer.max_size = 268435488
+#   buffer.max_size = 268435456
 #   buffer.when_full = "block"

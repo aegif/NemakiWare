@@ -100,11 +100,29 @@ fix", Tier 2 = "strongly recommended", Tier 3 = "cleanup"):
    document promising any specific order, so we're treating
    this as additive (deterministic vs. non-deterministic).
 
-4. **The 155 full-Playwright failures are pre-existing**, not
-   introduced by RC6.x. Spot-check by checking out
-   `v3.1.1-RC5.6` and running the same full suite would show
-   roughly the same failure count. Green-up of these 155 is a
-   separate epic and explicitly out of RC6.x scope.
+4. **The 155 full-Playwright failures are LIKELY pre-existing,
+   but not validated against an RC5.6 baseline in this cycle.**
+   What we can prove:
+   - The 6 RC5/RC6-area specs (the ones RC6 / RC6.1 / RC6.2
+     directly touched) are 66/66 PASS across 2 consecutive
+     runs after all RC6.2 changes.
+   - None of the 155 failures live in those 6 specs.
+   - Failed specs are clustered in older areas of the UI
+     corpus (documents / permissions / search / versioning)
+     where RC6.x made no changes.
+
+   What we have NOT proven:
+   - That running the same full suite against `v3.1.1-RC5.6`
+     (or an earlier baseline) would produce the same 155
+     failures. A diff comparison is a multi-hour exercise
+     that's worth doing as part of the full-suite green-up
+     epic but was not in this RC's scope.
+
+   Conservative reading: RC6.2 introduces 0 net new failures
+   to the 6 directly-touched specs. The 155 failures elsewhere
+   are most plausibly pre-existing drift that this RC neither
+   caused nor cured. Treat that as the boundary of the
+   evidence we ship, not as proof.
 
 ---
 
@@ -208,7 +226,7 @@ RC6.2 reconciles via real count.
 | Status | Count |
 |---|---|
 | Passed | **684** |
-| Failed | **155** (all pre-existing across UI corpus) |
+| Failed | **155** (clustered in non-RC6.x-touched UI areas; not validated against an RC5.6 baseline — see §2 note 4) |
 | Skipped | 94 (externalauth specs gate on Keycloak) |
 | Did not run | 97 (serial-mode chain aborts in failing describe blocks) |
 | **Total** | **1030** |
@@ -275,7 +293,7 @@ Unchanged since RC4.1.
 | ID | Severity | Scope | Status |
 |---|---|---|---|
 | **R1** (deployment-side) | Low (ops) | operator infrastructure | The 4 inherently per-deployment items remain: network path / TLS, SIEM credentials from secrets manager, notification routing (PagerDuty / Slack), threshold tuning from environment baseline. These are not repo-shippable. |
-| **Full Playwright green-up** | Medium | UI corpus | 155 pre-existing failures distributed across older specs (documents / permissions / search / versioning). React 19 / AntD 5 drift. Not RC6.x-caused. Separate epic; does not block this RC. |
+| **Full Playwright green-up** | Medium | UI corpus | 155 failures distributed across older specs (documents / permissions / search / versioning). Most plausibly React 19 / AntD 5 drift accumulated through the cycle; none in the 6 RC5/RC6-area specs that RC6.x directly touched. Comparison against an RC5.6 baseline NOT performed in this RC — treat the "pre-existing" framing as a working assumption, not a proven claim. Green-up + baseline-diff is its own epic; does not block this RC. |
 
 **Resolved during RC5+RC6+RC6.1+RC6.2 cycle**:
 
