@@ -1316,7 +1316,31 @@ existing callers consuming these arrays are unaffected unless
 they relied on the (undocumented, non-deterministic) CouchDB
 view order.
 
-### 12.19 vNext (separate scope, not RC5.x / RC6.x)
+### 12.19 ~~RC6.3: RC6.2 review (5 findings closed) + tag/branch realignment~~ (shipped)
+
+Closure RC for the external review on RC6.2 post-tag. Same
+pattern as RC5.5→RC5.6, RC6→RC6.1, RC6.1→RC6.2: substantive
+post-tag commits triggered a tag/branch divergence complaint
+(P1-A) and a divergence-rule mislabel (P1-B), both resolved
+by cutting RC6.3 against the current branch HEAD.
+
+Code-affecting fixes:
+
+- **P2-A** (Fluent Bit Lua DST sensitivity): per-record
+  `utc_offset_at(epoch)` instead of `now`-fixed offset.
+  Handles DST transitions and historical re-ingest correctly.
+  Non-DST TZs see no behavior change.
+- **P2-B** (Vector VRL `parse_timestamp` fallibility): added
+  `?? null` coalesce per VRL strict-mode requirement.
+- **P3** (REVIEW_PACKET §5 tone): "none of the 155 attributable"
+  weakened to "none show up in the 6 directly-touched specs"
+  to match the §2 note 4 evidence boundary.
+
+Migration impact: none. RC6.3 changes are limited to
+`docs/soc-templates/**` and REVIEW_PACKET. No Java / TS code
+delta vs RC6.2.
+
+### 12.20 vNext (separate scope, not RC5.x / RC6.x)
 
 Bigger ideas that came up during RC5.1 review but are explicitly
 NOT planned for any RC5 patch.

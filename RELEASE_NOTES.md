@@ -6,6 +6,148 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC6.3 — RC6.2 review (5 findings, all closed) + tag/branch realignment
+_Release candidate on `release/3.1.1-RC6` (2026-05-23), branched
+off `v3.1.1-RC6.2` (`02afee891`)._
+
+Closure RC for the external review that ran on RC6.2 post-tag.
+5 findings (P1 ×2 + P2 ×2 + P3 ×1). All resolved.
+
+The two P1 items are essentially the same complaint that
+RC5.5→RC5.6, RC6→RC6.1, and RC6.1→RC6.2 all surfaced: when
+substantive content lands as post-tag commits, the tag stops
+matching the shipping artifact and the "code artifact = tag"
+framing in REVIEW_PACKET §1 misleads reviewers. The repeat
+fix is the same: cut a new tag. RC6.2 (`02afee891`) is
+**not force-updated** and remains a historical milestone.
+
+### P1-A — Tag/branch mismatch (resolved via RC6.3 tag)
+
+After RC6.2 closure, 5 review fixes (commit `bf7c07b3f`)
+landed as post-tag doc/config. A reviewer checking out
+`v3.1.1-RC6.2` for code review would see the previous
+Filebeat / Fluent Bit / Vector bugs unfixed. RC6.3 tag is cut
+against the current branch HEAD so reviewers see the corrected
+shape.
+
+### P1-B — Divergence rule mislabel (resolved via RC6.3 tag)
+
+REVIEW_PACKET §3 listed `docs/soc-templates/**` as allowed
+divergence with the qualifier "review-time clarifying additions
+only". The `bf7c07b3f` post-tag commit was config-body fixes
+(executable shipper config), not clarifications. Cutting RC6.3
+collapses the divergence to zero and removes the need for the
+"clarifying additions only" qualifier.
+
+### P2-A — Fluent Bit DST sensitivity
+
+The previous Lua filter (`fluent-bit-nemakiware.conf` line 75
+in RC6.2-post-tag) used a single utc_offset computed from
+`now`. For TZs with DST (America/New_York, Europe/London, …)
+processing audit lines near or across DST transitions — or
+re-ingesting historical logs — produced a 1-hour error.
+
+Fix: per-record offset computation:
+```lua
+local function utc_offset_at(epoch)
+  return os.difftime(epoch, os.time(os.date("!*t", epoch)))
+end
+local naive = os.time({...UTC components treated as local...})
+local target = naive + utc_offset_at(naive)
+-- DST spring-forward boundary may need one more step
+if utc_offset_at(target) ~= utc_offset_at(naive) then
+  target = naive + utc_offset_at(target)
+end
+```
+
+For non-DST TZs (UTC / JST / KST / AEST / …) the offset is
+constant and the algorithm collapses to the previous shape.
+
+### P2-B — Vector parse_timestamp fallibility
+
+`parse_timestamp(...)` is a fallible VRL function. Without
+explicit error handling, VRL strict-mode compilation rejects
+the transform. Added `?? null` coalesce:
+
+```vrl
+ts_parsed = parse_timestamp(ts_str, "%+") ?? null
+if ts_parsed != null { ... }
+```
+
+Malformed timestamps now fall through to the null-guard
+rather than failing the entire transform.
+
+### P3 — REVIEW_PACKET §5 strong-claim leftover
+
+§5 still asserted "none of the 155 failures are attributable to
+RC6 / RC6.1 / RC6.2 code changes", stronger than the §2 note 4
+evidence boundary set in RC6.2-post-tag. Reworded to "none
+show up in the 6 directly-touched specs; what this does NOT
+prove: that the 155 elsewhere are all pre-existing." Now
+consistent with the rest of the doc.
+
+### Change scope vs RC6.2 (precise)
+
+- **Changed in RC6.3**:
+  - `docs/soc-templates/filebeat-nemakiware.yml` (post-tag
+    bf7c07b3f: `${VAR:default}` syntax, now in tag artifact)
+  - `docs/soc-templates/fluent-bit-nemakiware.conf` (P2-A
+    per-record DST-aware offset)
+  - `docs/soc-templates/vector-nemakiware.toml` (post-tag
+    bf7c07b3f: VRL field path fix + 256 MiB; RC6.3 P2-B
+    `?? null` coalesce)
+  - `REVIEW_PACKET.md` (P3 §5 tone + §3 divergence-rule
+    requalifier, this rewrite)
+  - `CLAUDE.md`, `RELEASE_NOTES.md`, `docs/design/connector-delegation.md`
+    (RC6.3 section)
+- **Unchanged from RC6.2** (byte-equal):
+  - All Java surface (Controller, services, tests)
+  - All TS surface (ConnectorGovernanceTab, services, specs)
+  - Kibana NDJSON / Loki YAML / Splunk SPL / Filebeat /
+    Fluent Bit / Vector except the explicit fixes above
+  - i18n, properties, patches, views, Mango, migrations, DB
+    bootstrap
+
+### Commit + tag relationship
+
+- P2/P3 fixes (Fluent Bit DST + Vector ?? + tone): `3afd284f5`
+- RC6.3 docs closure: subsequent
+- **`v3.1.1-RC6.3` annotated tag target**: doc-closure commit
+
+The previous candidate `v3.1.1-RC6.2` is **not force-updated**
+and remains at peeled commit `02afee891` as a historical
+milestone.
+
+### Tests + verification
+
+- 182/182 focused 14 Java test classes (unchanged from RC6.2 —
+  RC6.3 only touches docs/soc-templates and REVIEW_PACKET)
+- 66/66 RC5/RC6-area Playwright smoke (no flake)
+- Full chromium suite NOT re-run — RC6.3 changes are
+  config/doc-only, no UI behavior change.
+- NDJSON / YAML / SPL syntax revalidated
+- Fluent Bit Lua: inline math-traced for UTC / JST / DST
+  spring-forward boundary cases
+- Vector VRL: still NOT live-validated (`vector` binary absent
+  on the build host); the `?? null` fix is a syntax-spec
+  confidence fix, not runtime-proven
+
+### Follow-up status
+
+**Resolved in this RC**: 5 RC6.2 review findings.
+
+**Remaining (operator-side, by design)**: network / TLS, SIEM
+credentials, notification routing, threshold tuning.
+
+**Remaining (separate epic)**: Full Playwright RC5.6
+baseline-diff for the 155 cluster.
+
+**Remaining (verification gap)**: Vector VRL config not
+live-validated against a vector CLI; high-confidence syntax
+fix only.
+
+---
+
 ## 3.1.1-RC6.2 — RC6.1 external + self-review (17 findings, all closed) + first full Playwright sweep
 _Release candidate on `release/3.1.1-RC6` (2026-05-22), branched
 off `v3.1.1-RC6.1` (`595754b8c`)._

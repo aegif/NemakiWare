@@ -310,6 +310,84 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC27 / RC6.3 (2026-05-23) — RC6.2 review 5件 全件解消 + tag/branch 再整合 (shipped)
+
+ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.2` = `02afee891`)
+
+RC6.2 ship 直後の external review で挙がった 5 件 (P1 ×2 + P2 ×2 +
+P3 ×1) を全件解消。**RC6.2 と同様 P1 の 2件は「tag と shipping
+artifact 不一致 + divergence rule 矛盾」** で、RC5.5→RC5.6 /
+RC6→RC6.1 / RC6.1→RC6.2 と同じ pattern。新 tag を切ることで両方
+解消。
+
+#### P1 ×2: tag/branch 再整合 → RC6.3 tag 発行で解消
+
+- **P1-A**: RC6.2 tag (`02afee891`) には post-tag 5-fix commit
+  (`bf7c07b3f`) が含まれず、reviewer が tag を checkout すると
+  Filebeat / Fluent Bit / Vector の修正前 buggy 状態をレビュー
+  する状況
+- **P1-B**: REVIEW_PACKET §3 divergence rule で
+  `docs/soc-templates/**` を "review-time clarifying additions
+  only" としていたが、実際は executable config 本体の修正
+
+→ **解消方法**: RC6.3 tag を branch HEAD で切る + divergence rule
+の "clarifying additions only" 制約を緩和 (RC6.2 で SOC templates
+が tag 内に取り込まれた前例どおり)
+
+#### P2 ×2: Fluent Bit DST + Vector ??
+
+- **P2-A** (`fluent-bit-nemakiware.conf`): `utc_offset` 計算が
+  `now` 固定 → DST のある TZ で過去ログ処理時に 1h ズレ。per-record
+  で `offset_at(epoch)` を算出、DST 境界対応の re-validation を
+  追加。非 DST TZ では従来と同じ動作 (定数 offset)
+- **P2-B** (`vector-nemakiware.toml`): `parse_timestamp(...)`
+  は fallible function、VRL strict mode で error handling 必須。
+  `?? null` coalesce 追加 → malformed timestamp で transform 全体
+  落ちず null-guard を通る
+
+#### P3 ×1: REVIEW_PACKET §5 残った断定
+
+`"none of the 155 failures are attributable to RC6 / RC6.1 /
+RC6.2"` という強い主張が §5 に残存。§2 note 4 で確立した evidence
+boundary に合わせて `"none show up in the 6 directly-touched specs"`
+程度に弱化 (実証範囲のみに主張を絞る)
+
+#### Tests + verification
+
+- 182/182 focused 14 Java test classes pass (RC6.2 から変化なし)
+- 66/66 RC5/RC6-area Playwright smoke (no flake)
+- Full chromium suite 未再実行 — RC6.2 closure 時の 684/155/94/97
+  baseline を継承 (config-only 変更で UI 動作影響なし)
+- NDJSON / YAML / SPL syntax validates
+- Vector VRL は live `vector validate` 未実行 (本 repo に vector
+  binary なし、syntax fix は VRL 仕様準拠の confidence fix)
+- Fluent Bit Lua は inline 数式トレース済 (UTC / JST / DST 境界
+  3 ケース)
+
+#### Commit + tag 関係
+
+- P2/P3 fixes (Fluent Bit DST + Vector ?? + REVIEW_PACKET tone):
+  `3afd284f5`
+- RC6.3 docs closure: 後続
+- **`v3.1.1-RC6.3` annotated tag target**: doc-closure commit
+
+RC6.2 tag (`02afee891`) は force-update せず歴史的マイルストーン
+として保持。
+
+#### Follow-up status
+
+**Resolved**: 5 RC6.2 review findings (P1 ×2 via tag cut +
+P2 ×2 code fix + P3 ×1 doc tone)
+
+**Remaining**:
+
+- **R1 deployment-side** (network/TLS、SIEM credentials、通知ルー
+  ティング、threshold baseline): 本質的に repo 出荷不可
+- **Vector live validation**: vector CLI 利用可能時に
+  `vector validate vector-nemakiware.toml` で確認
+- **Full Playwright RC5.6 baseline-diff**: full-suite green-up
+  epic と一緒に取り組む
+
 ### RC26 / RC6.2 (2026-05-22) — RC6.1 review + self-review 17件 全件解消 (shipped)
 
 ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.1` = `595754b8c`)
