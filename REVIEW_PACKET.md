@@ -5,8 +5,7 @@ RC6. The first round returned 3 P2 findings + 1 P3 finding,
 all repo-local. RC6.1 closes all four.
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.1` (peeled commit `{{TAG_PEELED}}` — populated by
-  the post-tag doc fix immediately following this packet).
+  `v3.1.1-RC6.1` (peeled commit `595754b8ca3daa6d1e12de83f4e140c5f8c1491a`).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
@@ -22,10 +21,10 @@ promoted into GA.
 | Item | Value |
 |---|---|
 | **Final candidate tag** | `v3.1.1-RC6.1` |
-| Tag annotated object SHA | filled in at tag time |
-| Tag peeled commit | filled in at tag time |
+| Tag annotated object SHA | `ea821b883cf182de61812549d816133e038af32a` |
+| Tag peeled commit | `595754b8ca3daa6d1e12de83f4e140c5f8c1491a` |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | filled in at tag time (= tag peeled, zero divergence) |
+| Branch HEAD at tag time | `595754b8ca3daa6d1e12de83f4e140c5f8c1491a` (= tag peeled, zero divergence) |
 | Base of RC6.1 cycle | `v3.1.1-RC6` (peeled `9dfd87adb`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
 | **RC6 → RC6.1 diff cmd** | `git diff v3.1.1-RC6..v3.1.1-RC6.1` |
