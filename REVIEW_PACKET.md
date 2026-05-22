@@ -197,7 +197,7 @@ For the full per-RC narrative see `RELEASE_NOTES.md` 9 sections
 
 | ID | Severity | Scope | Description |
 |---|---|---|---|
-| **R1** | Low (ops) | NemakiWare repo external | SOC tooling integration for `EXTERNAL_GOVERNANCE_SIMULATE` audit event — query / alert template work in the operator monitoring stack, not this repository. |
+| **R1** | Low (ops, partially resolved) | NemakiWare repo external | SOC tooling integration for `EXTERNAL_GOVERNANCE_SIMULATE` audit event. Operator-side playbook + query templates + alert rules shipped in `docs/SOC-AUDIT-INTEGRATION.md`. Stack-specific wiring (Splunk / Elastic / Loki connector config) remains the operator's responsibility — out of repo scope. |
 
 **Resolved during RC5+RC6+RC6.1 cycle**:
 
@@ -273,6 +273,7 @@ the cumulative diff (since `v3.1.1-RC4.1`) in §1.
 | What changed and why (per RC) | `RELEASE_NOTES.md` (9 sections RC5 → RC6.1) |
 | Design rationale | `docs/design/connector-delegation.md` (§12.1 - §12.17) |
 | Multi-replica operational notes | `docs/MULTI-REPLICA-DEPLOYMENT.md` |
+| SOC / SIEM audit integration | `docs/SOC-AUDIT-INTEGRATION.md` |
 | Project-internal navigation (Japanese) | `CLAUDE.md` |
 | API entry points | `ConnectorDefinitionController.java`, `ImportProfileDefinitionController.java`, `IngestSchedulerService.java`, `AuditEmitSupport.java` |
 | Test coverage proof | `core/src/test/java/jp/aegif/nemaki/rest/ingest/*Test.java` (180 focused tests across 14 classes) |

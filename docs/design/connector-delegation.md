@@ -1225,7 +1225,36 @@ contract change.
 Total: 30/30 `ConnectorByPrincipalGovernanceTest`, 180/180
 across 14 focused Java test classes, 66/66 RC5+RC6 Playwright.
 
-### 12.17 vNext (separate scope, not RC5.x / RC6.x)
+### 12.17 ~~R1: SOC audit integration playbook~~ (shipped post-RC6.1)
+
+Closes the last R1 entry from the cumulative follow-up table.
+R1 is correctly classified as "repo-external" — SIEM stack
+wiring lives in the operator's monitoring infrastructure, not in
+NemakiWare — but the *operator playbook* (where the audit log
+lives, schema, sample queries, alert templates) is something the
+repo can ship.
+
+New file: `docs/SOC-AUDIT-INTEGRATION.md` covering
+1. audit log location (default `${catalina.home}/logs/audit.log`)
+   + format (JSONL) + rolling + ship patterns (Filebeat /
+   Fluent Bit / direct syslog)
+2. common audit event schema (eventId, timestamp, repositoryId,
+   userId, operation, objectId, result, details, plus ECS
+   mirror fields)
+3. `EXTERNAL_GOVERNANCE_SIMULATE`-specific schema +
+   correlation partners (`externalProfileUpdated`,
+   `externalProfileDeleted`, `externalIngestFailed` with
+   `denialReason=CONNECTOR_NOT_DELEGATED`)
+4. sample queries — jq / Splunk SPL / Elasticsearch Query DSL /
+   Grafana Loki LogQL
+5. 5 sample alert rules — burst detection, lost-count outlier,
+   asked-then-acted correlation, off-hours simulate, new-actor
+   first-time invoker — each with playbook steps
+
+Cross-linked from the §6 file list in REVIEW_PACKET.md and the
+follow-up table in CLAUDE.md / RELEASE_NOTES.md.
+
+### 12.18 vNext (separate scope, not RC5.x / RC6.x)
 
 Bigger ideas that came up during RC5.1 review but are explicitly
 NOT planned for any RC5 patch.

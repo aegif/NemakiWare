@@ -371,7 +371,7 @@ binary とみなす。
 
 #### Follow-up
 
-- **R1** (Low, ops, repo-external) のみ — RC6 と同じ
+- **R1** (Low, ops, repo-external) — **operator playbook 提供済 (`docs/SOC-AUDIT-INTEGRATION.md`)**. SOC stack (Splunk / Elastic / Loki) 側の wiring は operator 側、本 repo 内で出荷可能な部分は完了
 
 ### RC24 / RC6 (2026-05-21 → 2026-05-22) — B3-2 group view + V8/G2 + governance med/low + Dependabot (shipped)
 

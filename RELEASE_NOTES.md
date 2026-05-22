@@ -126,7 +126,13 @@ remains at peeled commit `9dfd87adb` as a historical milestone.
 
 **Resolved in this RC**: P2-1, P2-2, P2-3, P3.
 
-**Remaining**: `R1` (Low, ops, repo-external) — unchanged from RC6.
+**Remaining**: `R1` (Low, ops, repo-external) — the operator-side
+playbook (`docs/SOC-AUDIT-INTEGRATION.md`) has been added
+post-RC6.1 with the audit log location, schema, sample queries
+for jq/Splunk/Elasticsearch/Loki, and 5 alert rule templates.
+The remaining work is SOC stack wiring (Splunk forwarder /
+Filebeat / Fluent Bit config), which is operator-specific and
+out of repo scope.
 
 ---
 
