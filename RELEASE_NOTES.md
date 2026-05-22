@@ -6,6 +6,130 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC6.1 — RC6 external review fixes (P2-1 / P2-2 / P2-3 / P3)
+_Release candidate on `release/3.1.1-RC6` (2026-05-22), branched
+off `v3.1.1-RC6` (`9dfd87adb`)._
+
+Correction cycle from the first external review of RC6. The
+reviewer surfaced 3 P2 findings + 1 P3 finding, all repo-local
+and resolvable without API contract change. RC6.1 closes all four.
+RC6 tag (`9dfd87adb`) is **not force-updated** and remains a
+historical milestone.
+
+### P2-1: /by-group response amplification cap
+
+Each `perMemberImpact` entry carried the full
+`ConnectorPrincipalMatch` object for every group-only connector
+that member was about to lose. With `memberLimit=1000` and many
+such connectors, the JSON ballooned `O(members × connectors)`
+even after the M3 connector-list cache reduced the CouchDB
+roundtrips to 1.
+
+- New `MAX_LOST_PER_MEMBER = 50` constant caps each member's
+  `lostIfGroupRemoved` array.
+- New `lostCount` field (untruncated count) and new
+  `lostIfGroupRemovedTruncated` boolean signal truncation —
+  SOC and the UI can detect "this member loses a lot" without
+  forcing the server to ship the full payload.
+- JavaDoc on `listByGroup` updated; the new constant is
+  documented alongside `MAX_MEMBER_LIMIT`,
+  `MAX_REMOVE_PRINCIPAL_IDS`, `MAX_PRINCIPAL_ID_LENGTH` for
+  consistency.
+
+### P2-2: buildMatches matchedPrincipalIds order regression
+
+The RC6 M3 inner-loop direction switch ("iterate the smaller of
+`allowed` vs `principalsToMatch`") emitted matched entries in
+`principalsToMatch` order when the user was expanded into many
+groups. That broke the byte-identical response invariant claimed
+in REVIEW_PACKET §2 and would surface as flaky test assertions
+for any client comparing `matchedPrincipalIds` arrays directly.
+
+Reverted to always iterating `allowed` so the output order tracks
+the connector's declared principal order. `principalsToMatch` is
+always a Set at the callsites (LinkedHashSet or HashSet), so
+contains() is already O(1) — the direction switch was misguided
+and the HashSet wrap unnecessary.
+
+### P2-3: NUL byte in ConnectorGovernanceTab.tsx
+
+The RC6 L1 fix intended to land `simulateRemove.join(' ')` as the
+content-stable dep-array key, but the actual file content ended
+up with a literal NUL byte between the two single quotes
+(`join('\0')`). The `file` utility classified the source as
+binary; grep / IDE search treated it as non-text. TypeScript
+compiled fine but common dev tooling broke.
+
+Replaced with `JSON.stringify(simulateRemove)` per the reviewer's
+suggestion — content-stable, no ambiguous separator semantics,
+no control-byte hazard, order-sensitive. A permanent comment
+block explains why single-char separators are off-limits so a
+future edit doesn't regress to a delimiter.
+
+### P3: initialFetchDoneRef per-kind tracking
+
+`initialFetchDoneRef` was a single boolean shared across picker
+modes. Opening group mode first flipped the flag → switching to
+principal mode → `ensureInitialFetch` saw the flag → never
+fetched the USER kind → principal-mode dropdown showed only
+groups until the operator typed something.
+
+Replaced with a `Set<'USER' | 'GROUP'>` ref. Each kind is
+fetched at most once per mount; a missing kind is fetched on the
+next dropdown open regardless of what's already cached.
+`fetchPrincipals` now merges new options with the existing set
+instead of replacing wholesale — switching modes preserves the
+previously-fetched kind's options + totals. `pickerTotals` also
+merges so the dropdown footer (`{loaded} of {total}`) stays
+accurate across mode switches without an unnecessary refetch
+of the kind we already have.
+
+### Change scope vs RC6 (precise)
+
+- **Changed in RC6.1**:
+  - `core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java`
+    (P2-1 cap + new fields, P2-2 revert + comment)
+  - `core/src/test/java/jp/aegif/nemaki/rest/ingest/ConnectorByPrincipalGovernanceTest.java`
+    (+3 cases — P2-1 ×2, P2-2 ×1)
+  - `core/src/main/webapp/ui/src/components/IntegrationSettings/ConnectorGovernanceTab.tsx`
+    (P2-3 JSON.stringify, P3 per-kind Set ref + fetchPrincipals
+    merge)
+  - `CLAUDE.md`, `REVIEW_PACKET.md`, `RELEASE_NOTES.md` (this
+    section), `docs/design/connector-delegation.md` §12.18
+- **Unchanged from RC6** (byte-equal):
+  - All other product code (B3-2 server contract, V8/G2 scale
+    logic, M2 / M3, L2, Dependabot bumps)
+  - Patch / view / Mango / migration / DB bootstrap
+  - i18n files
+
+### Commit + tag relationship
+
+- P2-1 + P2-2 (server) commit: `be7160d48`
+- P2-3 + P3 (UI) commit: `a246ffe81`
+- **`v3.1.1-RC6.1` annotated tag target**: the doc commit
+  immediately following this section
+
+The previous candidate `v3.1.1-RC6` is **not force-updated** and
+remains at peeled commit `9dfd87adb` as a historical milestone.
+
+### Tests + verification
+
+- 30/30 `ConnectorByPrincipalGovernanceTest` pass (was 27)
+- 180/180 across the 14 focused Java test classes (was 177)
+- 66/66 RC5+RC6 Playwright regression (no flake)
+- TypeScript clean + UI build green
+- `file ConnectorGovernanceTab.tsx` → "Unicode text, UTF-8 text"
+  (was "data")
+- Live deploy + atom 200
+
+### Follow-up status (cumulative across RC5+RC6 cycle)
+
+**Resolved in this RC**: P2-1, P2-2, P2-3, P3.
+
+**Remaining**: `R1` (Low, ops, repo-external) — unchanged from RC6.
+
+---
+
 ## 3.1.1-RC6 — B3-2 group-membership impact + V8/G2 picker scale + governance medium/low cleanup + Dependabot security pass
 _Release candidate on `release/3.1.1-RC6` (2026-05-21 → 2026-05-22),
 branched off `v3.1.1-RC5.6` (`adf8db3b4`)._

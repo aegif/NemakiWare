@@ -310,6 +310,69 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC25 / RC6.1 (2026-05-22) — RC6 external review fixes P2-1 / P2-2 / P2-3 / P3 (shipped)
+
+ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6` = `9dfd87adb`)
+
+RC6 受け入れ後に外部 review で挙がった 4 件 (P2 ×3 + P3 ×1) を解消。
+public API 不変、追加された response field は additive。RC6 tag
+(`9dfd87adb`) は force-update せず歴史的マイルストーンとして保持。
+
+#### P2-1 /by-group response amplification
+
+`perMemberImpact[]` の各 member entry が group-only connector の
+full object をすべて保持 → `members × connectors` で爆発。
+M3 list() cache でも shape 自体の amplification は残っていた。
+
+- `MAX_LOST_PER_MEMBER = 50` 定数追加
+- 各 member の `lostIfGroupRemoved` array を 50 件で cap
+- 新 field `lostCount` (untruncated 件数) と
+  `lostIfGroupRemovedTruncated` (boolean) で SOC + UI が truncation
+  を検知可
+
+#### P2-2 buildMatches order regression
+
+M3 の "smaller side iterate" 最適化が `principalsToMatch` 順を
+emit してしまい、REVIEW_PACKET §2 "byte-identical" 主張に違反。
+- direction switch を revert、常に `allowed` を iterate
+- `principalsToMatch` は callsite で常に Set なので contains() は
+  すでに O(1)、HashSet wrap も不要
+
+#### P2-3 NUL byte in ConnectorGovernanceTab.tsx
+
+L1 fix で `simulateRemove.join(' ')` を意図したが、実 file content
+に NUL (`'\0'`) が混入。`file` utility で `data` 扱い、grep/IDE が
+binary とみなす。
+
+- `JSON.stringify(simulateRemove)` に置換 (reviewer 推奨)
+- 防止コメント追加: single-char separator は今後使わない
+
+#### P3 initialFetchDoneRef per-kind tracking
+
+`initialFetchDoneRef` (boolean) が mode 間で共有 → group mode を
+先に開く → flag 立つ → principal mode に切替 → USER fetch されない。
+
+- `Set<'USER' | 'GROUP'>` に変更、kind 単位で track
+- 不足 kind のみ fetch
+- `fetchPrincipals` も merge 動作に: 非 fetch 対象 kind の options +
+  totals を保持
+
+#### Tests
+
+- ConnectorByPrincipalGovernanceTest: 27 → **30 (P2-1 +2, P2-2 +1)**
+- 14 focused Java test class: 177 → **180 PASS**
+- RC5+RC6 Playwright regression: **66/66 PASS** (変更なし)
+
+#### Commit + tag 関係
+
+- P2-1+P2-2 (server): `be7160d48`
+- P2-3+P3 (UI): `a246ffe81`
+- **`v3.1.1-RC6.1` annotated tag target**: docs commit 後にカット
+
+#### Follow-up
+
+- **R1** (Low, ops, repo-external) のみ — RC6 と同じ
+
 ### RC24 / RC6 (2026-05-21 → 2026-05-22) — B3-2 group view + V8/G2 + governance med/low + Dependabot (shipped)
 
 ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC5.6` = `adf8db3b4`)

@@ -1049,7 +1049,7 @@ governance tab matching the same loose `/Connector/i` regex.
 **Migration impact**: none. No DB / patch / view / API contract
 change. R5 is a label fix inside an existing audit entry shape.
 
-### 12.16 ~~RC6: B3-2 group-membership impact + V8/G2 picker scale + governance medium/low cleanup~~ (shipped)
+### 12.15 ~~RC6: B3-2 group-membership impact + V8/G2 picker scale + governance medium/low cleanup~~ (shipped)
 
 Folded into RC6 — first independent feature RC after the RC5.x
 correction series. Closes the last open RC5.5 follow-up table
@@ -1194,7 +1194,38 @@ The new 400 responses on oversized simulate-remove bodies only
 trigger for requests outside the documented "dozens of principals"
 shape.
 
-### 12.17 vNext (separate scope, not RC5.x)
+### 12.16 ~~RC6.1: external review fixes P2-1 / P2-2 / P2-3 / P3~~ (shipped)
+
+Correction cycle from the first external review of RC6. Three P2
+findings + one P3 finding, all repo-local, resolved without API
+contract change.
+
+- **P2-1** (`ConnectorDefinitionController.listByGroup`):
+  per-member `lostIfGroupRemoved` capped at
+  `MAX_LOST_PER_MEMBER = 50`. New `lostCount` (untruncated)
+  and `lostIfGroupRemovedTruncated` (boolean) per-entry fields
+  preserve the signal without amplifying the response.
+- **P2-2** (`ConnectorDefinitionController.buildMatches`): the
+  M3 inner-loop direction switch is reverted. Always iterate
+  `allowed` so `matchedPrincipalIds` order tracks the connector
+  declaration. `principalsToMatch.contains()` is already O(1)
+  (callsites always pass a Set) — the optimisation was unneeded
+  and broke the byte-identical response invariant.
+- **P2-3** (`ConnectorGovernanceTab.tsx`): the L1 useEffect
+  dep-array key uses `JSON.stringify(simulateRemove)` instead of
+  a single-char join. A prior edit had landed a literal NUL byte
+  in the `join` separator, breaking `file` / grep / IDE tooling.
+- **P3** (`ConnectorGovernanceTab.tsx`): per-kind initial-fetch
+  tracking via `Set<'USER' | 'GROUP'>` instead of a single
+  boolean. Opening one mode's picker no longer suppresses the
+  other mode's USER/GROUP fetch. `fetchPrincipals` now merges
+  options + totals across mode switches.
+
+3 new unit tests pin the P2-1 cap (×2) and P2-2 order (×1).
+Total: 30/30 `ConnectorByPrincipalGovernanceTest`, 180/180
+across 14 focused Java test classes, 66/66 RC5+RC6 Playwright.
+
+### 12.17 vNext (separate scope, not RC5.x / RC6.x)
 
 Bigger ideas that came up during RC5.1 review but are explicitly
 NOT planned for any RC5 patch.
