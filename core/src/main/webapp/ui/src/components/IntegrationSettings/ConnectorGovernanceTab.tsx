@@ -279,18 +279,19 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
     }
   }, [result, simulateRemove, message, t]);
 
-  // RC6 L1 / RC6.1 P2-3: reset audit-timestamp marker whenever the
-  // simulate selection CONTENT changes — the previous audit only
-  // matched the previous selection. Depending on the array reference
-  // would still work in current code (antd's Select always returns a
-  // fresh array on change), but a future refactor that memoised the
-  // value via useMemo would silently break the reset. JSON.stringify
-  // is the content-stable comparator: any change to the selected
-  // principals (add, remove, reorder) resets; a no-op same-array
-  // re-render does not. We deliberately do NOT use a single-character
-  // separator (`.join(' ')` etc.) — a prior RC6 edit landed a literal
-  // NUL byte in that position and broke grep / file tooling that
-  // treats the file as binary.
+  // RC6 L1 / RC6.1 P2-3 / RC6.2 review #12: derive a content-stable
+  // key from simulateRemove so the audit-timestamp reset useEffect
+  // below depends on CONTENT, not array reference. The useMemo here
+  // doesn't deliver a perf win (antd's Select returns a fresh
+  // simulateRemove reference on every change, so JSON.stringify runs
+  // every render that matters) — it exists purely for explanatory
+  // stability: the next line's `[simulateRemoveKey]` dep array is
+  // demonstrably a string the React reconciler can equality-compare,
+  // surviving any future refactor that memoises simulateRemove itself.
+  // We deliberately do NOT use a single-character separator
+  // (`.join(' ')` etc.) — a prior RC6 edit landed a literal NUL byte
+  // in that position and broke grep / file tooling that treats the
+  // file as binary.
   const simulateRemoveKey = useMemo(() => JSON.stringify(simulateRemove), [simulateRemove]);
   useEffect(() => {
     setSimulateLastAuditedAt(null);

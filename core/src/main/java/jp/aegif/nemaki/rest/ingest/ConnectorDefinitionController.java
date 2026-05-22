@@ -410,6 +410,16 @@ public class ConnectorDefinitionController {
                 ? new java.util.ArrayList<>(group.getGroups())
                 : java.util.Collections.emptyList();
 
+        // RC6.2 review #11: sort member IDs alphabetically so the
+        // truncation at memberLimit is deterministic. Without this, two
+        // consecutive calls to /by-group/{id}?memberLimit=50 against a
+        // group with > 50 members could return different 50-member sets
+        // depending on the CouchDB view's ordering — flaky for the UI
+        // and harder for SOC to reproduce a finding. Sub-groups are
+        // sorted on the same principle.
+        java.util.Collections.sort(allMemberUserIds);
+        java.util.Collections.sort(subGroupIds);
+
         // RC6 B3-2 review M: cap memberUserIds itself by memberLimit
         // (not just perMemberImpact) so the response stays bounded for
         // very large groups. memberCount preserves the untruncated size

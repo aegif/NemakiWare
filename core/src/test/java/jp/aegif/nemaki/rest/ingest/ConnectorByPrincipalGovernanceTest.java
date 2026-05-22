@@ -586,6 +586,55 @@ class ConnectorByPrincipalGovernanceTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void byGroup_memberUserIdsSortedAlphabetically_RC62_review11() {
+        // RC6.2 review #11: memberUserIds must be returned in a
+        // deterministic alphabetical order so the memberLimit
+        // truncation samples the same first-N members across
+        // consecutive calls. Without sorting, the CouchDB view's
+        // emit order (insertion / hash / shard) leaks into the
+        // response and two consecutive `/by-group/{id}?memberLimit=N`
+        // calls against an N+1 member group could return different
+        // member sets — flaky for the UI, hard to reproduce for SOC.
+        asAdmin();
+        when(principalService.getGroupById(REPO, GROUP))
+                // Deliberately unsorted input — controller must sort
+                .thenReturn(makeGroup(GROUP,
+                        java.util.Arrays.asList("zelda", "alice", "carol", "bob")));
+        when(connectorService.list()).thenReturn(List.of());
+        when(authService.expandPrincipals(any(), any())).thenReturn(Set.of());
+
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, REPO, false, 200);
+
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        List<String> members = (List<String>) body.get("memberUserIds");
+        assertEquals(java.util.Arrays.asList("alice", "bob", "carol", "zelda"), members);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void byGroup_memberLimitTruncation_takesFirstNAlphabetically_RC62_review11() {
+        // Companion to the sort test: with sort + memberLimit=2, the
+        // returned set is the lexicographically smallest two, NOT the
+        // insertion-order first two.
+        asAdmin();
+        when(principalService.getGroupById(REPO, GROUP))
+                .thenReturn(makeGroup(GROUP,
+                        java.util.Arrays.asList("zelda", "alice", "carol", "bob")));
+        when(connectorService.list()).thenReturn(List.of());
+        when(authService.expandPrincipals(any(), any())).thenReturn(Set.of());
+
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, REPO, false, 2);
+
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        List<String> members = (List<String>) body.get("memberUserIds");
+        assertEquals(java.util.Arrays.asList("alice", "bob"), members,
+                "memberLimit truncation must sample alphabetically, not insertion-order");
+        assertEquals(4, body.get("memberCount"),
+                "memberCount preserves untruncated total");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void byGroup_perMemberLostList_cappedAt50_truncationFlagSet_P2_1() {
         // RC6.1 P2-1: per-member lost array bounded at
         // MAX_LOST_PER_MEMBER (50). The full `lostCount` field still
