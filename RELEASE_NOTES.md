@@ -6,6 +6,286 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC6 — B3-2 group-membership impact + V8/G2 picker scale + governance medium/low cleanup + Dependabot security pass
+_Release candidate on `release/3.1.1-RC6` (2026-05-21 → 2026-05-22),
+branched off `v3.1.1-RC5.6` (`adf8db3b4`)._
+
+First independent feature RC after the RC5.x correction series.
+Closes every open item from the RC5.5 closure follow-up table
+(B3-2, V8/G2, H2, M2, M3, L1, L2) plus the 35-alert Dependabot
+backlog. No public API contract regression, no DB / patch / view /
+migration change. RC5.6 tag (`adf8db3b4`) remains as a historical
+milestone.
+
+### B3-2: group-membership impact governance view
+
+New admin-only endpoint:
+
+```
+GET /v1/admin/connectors/by-group/{groupId}
+    ?repositoryId=...
+    &includeMembers=true|false  (default true)
+    &memberLimit=200            (default 200, server clamp 1000)
+```
+
+Complements the existing `/by-principal/{id}` view. For a given
+group ID returns:
+
+- `memberUserIds[]` (capped at `memberLimit`) +
+  `memberUserIdsTruncated` + `memberCount` (untruncated total)
+- `directGrants[]` — connectors that list the group ID directly
+  in `allowedPrincipalIds`
+- `perMemberImpact[]` — for each member (within `memberLimit`),
+  the connectors they would lose if the group were removed from
+  their effective principal set (sole-route detection per member)
+- `perMemberImpactTruncated` — true iff `includeMembers=true` and
+  member list was capped; false on the fast `includeMembers=false`
+  path (semantically "didn't attempt expansion", not "truncated
+  it")
+
+Server hard cap `MAX_MEMBER_LIMIT = 1000` clamps abusive query
+params. Response shape always includes every field (review L) so
+the UI doesn't need defensive null checks.
+
+UI: `ConnectorGovernanceTab` adds a Radio toggle (Principal mode
+/ Group membership impact mode). Each mode owns its own Form +
+result state so switching modes doesn't lose context. Group mode
+renders direct grants + per-member impact in two inner Cards;
+includeMembers Switch + memberLimit InputNumber (max 1000)
+control the per-member computation.
+
+i18n: 22 new keys added to ja + en
+(`modeLabel`/`modePrincipal`/`modeGroup`/`groupPlaceholder`/
+`groupSummary`/`groupMembersShowing`/`groupMembersTruncated`/
+`directGrantsTitle`/`directGrantsEmpty`/`perMemberImpactTitle`/
+`perMemberImpactHint`/`perMemberImpactEmpty`/`perMemberLostCount`/
+`perMemberKept`/`colUserId`/`colLost`/...).
+
+Tests: 27/27 `ConnectorByPrincipalGovernanceTest` (was 13;
+B3-2 +9, review M +1, L2 +2, M3 +2). 5/5 server-contract
+Playwright in `connector-governance-by-group.spec.ts`
+(stable-shape, memberLimit clamp, missing groupId/repositoryId,
+graceful anonymous).
+
+### V8/G2: principal picker scale-out for 10k+ directories
+
+The shared principal AutoComplete is now production-ready for
+large directories:
+
+- `fetchPrincipals(query, kinds)` accepts a kinds array; group
+  mode passes `['GROUP']`, halving the per-keystroke network
+  cost and rendered DOM compared to fetching both users and
+  groups.
+- **offset=0 fix**: previous `limit=50` alone made the server
+  fall back to "return all" (the paginated branch requires both
+  offset and limit). Verified against the dev bedroom repo —
+  `/user/list?offset=0&limit=50` now returns 50/112 instead of
+  112/112.
+- `totalCount` from the response surfaces in a dropdown footer
+  ("{loaded} of {total} loaded") with a warning when
+  `total > loaded` ("narrow the search to find more").
+- Initial fetch deferred until first dropdown open
+  (`onDropdownVisibleChange`) — operators who never expand the
+  picker pay no network cost.
+- Mode-aware footer + groupOnlyOptions memoisation.
+
+### Dependabot security pass (35 alerts surveyed, 12 real)
+
+Maven (10 alerts, all real):
+
+- `org.springframework:spring-webmvc` 7.0.5 → 7.0.7
+  (DoS / Script View Templates / cache poisoning / SSE corruption)
+- `ch.qos.logback:logback-core` + `logback-classic` 1.5.19 →
+  1.5.25 across `core/pom.xml`, `solr/pom.xml`,
+  `docker/solr/pom.xml` (ACE through file processing + class
+  instantiation)
+- `org.apache.commons:commons-lang3` 3.17.0 → 3.18.0 in
+  `solr/pom.xml` and `docker/solr/pom.xml` (uncontrolled
+  recursion)
+
+npm (25 alerts, 2 real):
+
+- `npm audit` against the actual RC6 lockfile reported only 2
+  vulnerabilities (brace-expansion 5.0.5→5.0.6 DoS, ws <8.20.1
+  uninitialized memory). Both resolved by `npm audit fix`
+  without overrides.
+- The other 23 Dashboard alerts were stale against the master
+  branch's older lockfile (axios 1.6→1.15.2 series, vite, lodash,
+  dompurify, etc. are already at or above patched versions).
+  Dashboard counter will catch up on master merge.
+
+Verified `npm audit` = 0 vulnerabilities post-fix.
+
+### H2: Simulate (audit) button Playwright coverage
+
+The RC5.4 R3 button — explicit "Record to audit" instead of the
+prior 800ms debounce — previously had only Java unit coverage
+(`ConnectorSimulateRemoveTest`). New
+`connector-governance-simulate-button.spec.ts` adds 9 cases:
+
+- 7 server contract (sole-route detection user+group, both-routes
+  lost, missing/empty/oversized body validation, graceful
+  anonymous)
+- 1 UI happy path (login → governance tab → look up → select
+  expanded principal → click button → audit POST fires + 200
+  → button transitions to disabled "Audited" state)
+- 1 additional M2 contract test (see below)
+
+The spec documents several AntD + React 19 + 17-tab pitfalls in
+comments so future test authors don't re-discover them:
+`data-node-key` click flips header [active] without mounting
+the panel (rely on governance card title visibility as the
+authoritative ready signal); antd `allowClear` binds Escape to
+clear-input (use Enter + button click); Look up button
+accessible name is "search 検索" (icon name prepended); multi-
+select virtualises options (target first option, not specific
+group ID); viewport widened to 1600x900 to keep all 17 tabs in
+the visible tab bar.
+
+### M2: simulate-remove body size limits
+
+`POST /by-principal/{id}/simulate-remove` now enforces:
+
+- `MAX_REMOVE_PRINCIPAL_IDS = 500` — inbound array count cap,
+  validated BEFORE the per-entry loop allocates the
+  LinkedHashSet. 501+ → 400 with named limit;
+  `connectorDefinitionService.list()` never called.
+- `MAX_PRINCIPAL_ID_LENGTH = 512` — per-entry string length cap.
+  Rejects the whole request rather than silently dropping the
+  offender so the caller notices.
+
+Real "what if I remove these groups" simulations involve dozens
+of principals at most. The endpoint is admin-only; these limits
+are defence in depth against a compromised admin token.
+
+Tests: 15/15 `ConnectorSimulateRemoveTest` (was 11; M2 +4 covers
+both boundaries — 500 OK, 501 reject, 512 OK, 513 reject).
+
+### M3: buildMatches per-request connector caching
+
+`listByGroup` previously called
+`connectorDefinitionService.list()` once per member
+(perMemberImpact loop) + once for directGrants — up to 201 calls
+per request at `memberLimit=200`. RC6:
+
+- New `buildMatches(principalId, principalsToMatch, connectors)`
+  overload accepts a pre-fetched list; the existing 2-arg
+  overload delegates to it.
+- `listByGroup` caches `allConnectors` at method-head scope and
+  shares the list across directGrants + every member iteration.
+  list() invocations now exactly 1 per request, regardless of
+  member count.
+- Inner-loop direction optimisation: iterate the smaller of
+  `allowed` (per-connector grants, typically 1-5) and
+  `principalsToMatch` (expanded user, often 50+); HashSet
+  contains() on the larger side. Same matched set, faster
+  constant factor.
+
+Tests: 2 new (`byGroup_perRequestConnectorListIsFetchedExactlyOnce_M3`
+pins list() count = 1 across 25 members;
+`byPrincipal_singleListCallPerRequest_M3_regressionGuard` pins
+the legacy single-call path).
+
+### L1 / L2 nit cleanups
+
+- **L1** (UI): `simulateLastAuditedAt` reset useEffect now
+  depends on `useMemo(() => simulateRemove.join(' '), …)` —
+  content-stable dependency surviving a future
+  memoised-array refactor.
+- **L2** (server): `buildMatches` null-folds
+  `connectorDefinitionService.list()` to an empty list →
+  empty matches[]. No NPE on a transient backend failure or
+  future service impl swap.
+
+Tests: 2 new L2 tests pin the null-defense on both
+`/by-principal` and `/by-group` paths.
+
+### Change scope vs RC5.6 (precise)
+
+- **Changed in RC6**:
+  - `core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java`
+    (B3-2 endpoint + review M cap + L stable shape, M2 size
+    limits, M3 caching + overload + inner-loop opt, L2 null fold)
+  - `core/src/test/java/jp/aegif/nemaki/rest/ingest/ConnectorByPrincipalGovernanceTest.java`
+    (+14 cases: B3-2 9, review M 1, M3 2, L2 2)
+  - `core/src/test/java/jp/aegif/nemaki/rest/ingest/ConnectorSimulateRemoveTest.java`
+    (+4 M2 cases)
+  - `core/src/main/webapp/ui/src/services/externalIngest.ts`
+    (`getConnectorsByGroup` + types)
+  - `core/src/main/webapp/ui/src/components/IntegrationSettings/ConnectorGovernanceTab.tsx`
+    (group mode toggle + Form + result panel; V8/G2
+    kinds-aware fetch + offset=0 + totalCount surfacing +
+    deferred initial fetch; L1 useEffect dep stability)
+  - `core/src/main/webapp/ui/src/i18n/locales/{ja,en}.json`
+    (24 new keys — 22 group mode + 2 picker hints)
+  - `core/src/main/webapp/ui/tests/admin/connector-governance-by-group.spec.ts`
+    (new, 5 cases)
+  - `core/src/main/webapp/ui/tests/admin/connector-governance-simulate-button.spec.ts`
+    (new, 9 cases — H2 + M2)
+  - `core/pom.xml`, `solr/pom.xml`, `docker/solr/pom.xml`
+    (Maven security bumps)
+  - `core/src/main/webapp/ui/package-lock.json` (npm audit fix)
+  - `docs/design/connector-delegation.md` (§12.16, §12.17 renumber)
+  - `CLAUDE.md`, `REVIEW_PACKET.md`, `RELEASE_NOTES.md` (this section)
+- **Unchanged from RC5.6** (byte-equal):
+  - Scheduler core (RC5 §12.1) + RC5.4 R3/R4 + RC5.5 C1/H1
+  - `AuditOperation`, `DenialReason` enums (no new entries)
+  - `nemakiware.properties`, `serviceContext.xml`
+  - Patch / view dumps / Mango index / DB bootstrap
+  - Existing single-call endpoints (`/by-principal/{id}`,
+    `simulate-remove` happy path) — response shapes are
+    byte-identical
+
+### Commit + tag relationship
+
+- B3-2 server commit: `15936c6b3`
+- B3-2 review M+L commit: `7f31c1d64`
+- B3-2 UI commit: `ca8295b39`
+- V8/G2 commit: `507d65253`
+- Maven security commit: `9204d3a95`
+- npm security commit: `9ea197c9a`
+- H2 spec commit: `581694272`
+- M2 commit: `06ac804cd`
+- M3 commit: `82012a221`
+- L1+L2 commit: `8db0eb254`
+- **`v3.1.1-RC6` annotated tag target**: see
+  `git rev-parse v3.1.1-RC6^{}` after the tag is cut against
+  the doc commit immediately following this section
+
+Previous candidates (`v3.1.1-RC5.6`, `…-RC5.5`, `…-RC5.4`, etc.)
+remain unchanged as historical milestones.
+
+### Tests + verification
+
+- 27/27 ConnectorByPrincipalGovernanceTest pass (was 13)
+- 15/15 ConnectorSimulateRemoveTest pass (was 11)
+- 129/129 across the 9 governance + scheduler Java test classes
+- 66/66 full RC5/RC6 Playwright regression
+- `npm audit` = 0 vulnerabilities
+- TypeScript clean + UI build green
+- Live: B3-2 endpoint validated against the dev bedroom repo's
+  39-member `cloud-google:a13@aegif.jp` group with memberLimit=5
+  (correct truncation flags); M2 boundaries (501/513 → 400 with
+  named limits, 500/512 → 200) live-verified; M3 collapsed
+  N+1 list() calls to 1 (confirmed via mockito.verify in
+  ConnectorByPrincipalGovernanceTest)
+
+### Follow-up status (cumulative across RC5+RC6 cycle)
+
+**Resolved in this RC**: B3-2, V8/G2, H2, M2, M3, L1, L2,
+Dependabot Maven 10, Dependabot npm 2 real (23 stale
+dashboard alerts resolve on master merge).
+
+**Remaining** (post-release / RC7+ candidates, not blocking
+external review):
+
+- **R1** (Low, ops, NemakiWare repo external) — SOC tooling
+  integration for `EXTERNAL_GOVERNANCE_SIMULATE` audit event.
+  Query / alert template work that lives in the operator
+  monitoring stack, not in this repository.
+
+---
+
 ## 3.1.1-RC5.6 — R5 denialReason accuracy + A2 spec CSRF cleanup
 _Release candidate on `release/3.1.1-RC5.5` (2026-05-21), branched
 off `v3.1.1-RC5.5` (`dfb912da9`)._

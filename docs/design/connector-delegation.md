@@ -1049,7 +1049,152 @@ governance tab matching the same loose `/Connector/i` regex.
 **Migration impact**: none. No DB / patch / view / API contract
 change. R5 is a label fix inside an existing audit entry shape.
 
-### 12.15 vNext (separate scope, not RC5.x)
+### 12.16 ~~RC6: B3-2 group-membership impact + V8/G2 picker scale + governance medium/low cleanup~~ (shipped)
+
+Folded into RC6 — first independent feature RC after the RC5.x
+correction series. Closes the last open RC5.5 follow-up table
+(B3-2, V8/G2, H2, M2, M3, L1, L2) plus the Dependabot security
+backlog. No DB / patch / view / Mango / migration change. The
+RC5.6 tag (`adf8db3b4`) remains as a historical milestone.
+
+**B3-2 group-membership impact view** (new endpoint)
+
+```
+GET /v1/admin/connectors/by-group/{groupId}
+    ?repositoryId=...
+    &includeMembers=true|false  (default true)
+    &memberLimit=200            (default 200, server clamp 1000)
+```
+
+Complements the §12.3 `/by-principal/{id}` endpoint. Where
+`/by-principal/{groupId}` answers "what does this group ID grant?",
+`/by-group/{id}` adds the membership lens: for each direct member
+of the group (up to `memberLimit`), compute the set of connectors
+that member would lose if the group were removed from their
+effective principal set (sole-route detection per member). Lets
+operators answer "deleting this group would impact N users; here's
+what each loses" without N separate `/by-principal/{user}` round
+trips.
+
+Response shape always includes `memberUserIds`,
+`memberUserIdsTruncated`, `memberLimit`, `directGrants`,
+`perMemberImpact[]`, `perMemberImpactTruncated`. When
+`includeMembers=false` the perMemberImpact array is empty (fast
+path that skips per-member expansion). Both `memberUserIds` AND
+`perMemberImpact` are capped by `memberLimit` in lock-step;
+`memberCount` always preserves the untruncated total so the UI can
+render "showing M of N members". Server hard cap
+`MAX_MEMBER_LIMIT = 1000` protects against abusive query params
+even from an admin token.
+
+UI: `ConnectorGovernanceTab` adds a Radio toggle (Principal mode /
+Group membership impact mode). Group mode reuses the V8/G2
+principal picker scoped to GROUP, and renders direct grants +
+per-member impact in two inner Cards. i18n added for both ja and
+en (22 new keys).
+
+**V8/G2 principal picker scale-out** (UI scale fix)
+
+The shared principal AutoComplete in `ConnectorGovernanceTab` is
+now production-ready for 10k+ principal directories:
+
+- `fetchPrincipals(query, kinds)` accepts a kinds array. Group
+  mode passes `['GROUP']` — skipping the user fetch halves both
+  the per-keystroke network cost and the rendered DOM.
+- `offset=0` is now sent alongside `limit=50` (previously
+  `limit` alone made the server fall back to "no pagination,
+  return all" — defeating the cap). Verified against the dev
+  bedroom repo: `/user/list` returns 50/112 instead of 112/112.
+- `totalCount` from the response is surfaced in a dropdown
+  footer ("{loaded} of {total} loaded") with a warning when
+  `total > loaded` ("narrow the search to find more").
+- Initial fetch deferred until first dropdown open
+  (`onDropdownVisibleChange`) — operators who never expand the
+  picker pay no network cost.
+
+**Dependabot security pass** (10 Maven + 25 npm alerts)
+
+Maven (10 alerts): spring-webmvc 7.0.5→7.0.7 (4 alerts: DoS +
+Script View Templates + cache poisoning + SSE corruption),
+logback-core+classic 1.5.19→1.5.25 across 3 poms (4 alerts: ACE
++ class instantiation), commons-lang3 3.17.0→3.18.0 in 2 solr
+poms (2 alerts: uncontrolled recursion).
+
+npm (25 alerts): `npm audit` against the actual RC6 lockfile
+reported only 2 real vulnerabilities (brace-expansion 5.0.5→5.0.6
+DoS, ws <8.20.1 uninitialized memory) — the other 23 were stale
+Dashboard counts against the master branch's older lockfile.
+Both real ones resolved by `npm audit fix` without override
+churn. Dashboard counter will catch up on master merge.
+
+**H2: Simulate (audit) button Playwright coverage**
+
+The RC5.4 R3 button — explicit "Record to audit" instead of a
+debounce — had no UI test. New `connector-governance-simulate-button.spec.ts`
+adds 9 cases: 7 server contract (sole-route detection,
+both-routes lost, missing/empty/oversized body validation,
+graceful anonymous) + 1 UI happy path (login → governance tab →
+look up → select expanded principal → click button → audit POST
+fires + 200 → button transitions to disabled "Audited" state).
+Documents the AntD + React 19 + 17-tab pitfalls in spec comments
+(data-node-key click flips header without mounting panel; antd
+allowClear binds Escape to clear-input; Look up button
+accessible name is "search 検索"; multi-select virtualises
+option list; viewport widened to 1600x900 to keep all tabs in
+the visible tab bar).
+
+**M2: simulate-remove body size limits**
+
+`POST /by-principal/{id}/simulate-remove` now enforces:
+
+- `MAX_REMOVE_PRINCIPAL_IDS = 500` — inbound array count cap,
+  validated BEFORE the per-entry loop allocates the LinkedHashSet
+  (501+ → 400 with named limit, `connectorDefinitionService.list()`
+  never called).
+- `MAX_PRINCIPAL_ID_LENGTH = 512` — per-entry string length cap.
+  Reject the whole request rather than silently dropping the
+  offender so the caller notices.
+
+Real "what if I remove these groups" simulations involve dozens
+of principals at most; 500 is past any operationally meaningful
+threshold. Defence in depth against compromised admin tokens.
+
+**M3: buildMatches per-request connector caching**
+
+`listByGroup` previously called `connectorDefinitionService.list()`
+once per member (perMemberImpact loop) + once for directGrants,
+yielding up to 201 list() calls per request at memberLimit=200.
+New `buildMatches(principalId, principalsToMatch, connectors)`
+overload accepts a pre-fetched connector list; the existing 2-arg
+overload still works for single-call endpoints and delegates to
+the new one. `listByGroup` caches `allConnectors` at method scope
+and shares it across all invocations — list() calls now exactly 1
+per request.
+
+Also: inner-loop direction optimisation. `buildMatches` iterates
+the smaller of `allowed` (per-connector grants, typically 1-5)
+and `principalsToMatch` (expanded user, often 50+). Picks the
+smaller as the loop driver with a HashSet contains() on the
+larger side. Same matched set, faster constant factor for the
+typical user-has-many-groups shape.
+
+**L1/L2: nit cleanups**
+
+- L1 (UI): `simulateLastAuditedAt` reset useEffect now depends
+  on `useMemo(() => simulateRemove.join(' '), …)` — content-stable
+  dependency that survives a future memoised-array refactor.
+- L2 (server): `buildMatches` null-folds
+  `connectorDefinitionService.list()` to an empty list, surfacing
+  empty matches[] rather than NPE-ing on a transient backend
+  failure or a future service impl swap.
+
+**Migration impact**: none. All endpoints additive; existing
+responses byte-identical for any input that worked pre-RC6.
+The new 400 responses on oversized simulate-remove bodies only
+trigger for requests outside the documented "dozens of principals"
+shape.
+
+### 12.17 vNext (separate scope, not RC5.x)
 
 Bigger ideas that came up during RC5.1 review but are explicitly
 NOT planned for any RC5 patch.

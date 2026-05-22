@@ -310,6 +310,113 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC24 / RC6 (2026-05-21 → 2026-05-22) — B3-2 group view + V8/G2 + governance med/low + Dependabot (shipped)
+
+ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC5.6` = `adf8db3b4`)
+
+RC5.x の correction series 終了後、最初の独立 feature RC。RC5.5 closure
+の follow-up テーブル (B3-2 / V8/G2 / H2 / M2 / M3 / L1 / L2) と
+35 件の Dependabot backlog を全件解消。public API 変更なし、DB / patch /
+view / migration なし。RC5.6 tag (`adf8db3b4`) は force-update せず
+歴史的マイルストーンとして保持。
+
+#### B3-2: group-membership impact view
+
+新 endpoint:
+```
+GET /v1/admin/connectors/by-group/{groupId}
+    ?repositoryId=...&includeMembers=true|false&memberLimit=200
+```
+
+既存 `/by-principal/{id}` の補完。「group を削除したら誰が何を失うか」
+を per-member sole-route detection で返す。
+
+レスポンス: `memberUserIds[]` (memberLimit cap)、`memberUserIdsTruncated`、
+`memberCount` (untruncated)、`directGrants[]`、`perMemberImpact[]`、
+`perMemberImpactTruncated`。`includeMembers=false` は per-member
+expansion を skip する fast path。`MAX_MEMBER_LIMIT=1000` server cap。
+
+UI: `ConnectorGovernanceTab` に Radio toggle (Principal / Group mode)。
+group mode は GROUP-only picker + directGrants Card + per-member impact
+Card。i18n ja/en に 22 新規 keys。
+
+検証: 27/27 governance Java test、5/5 server contract Playwright spec
++ live (dev bedroom の 39-member `cloud-google:a13@aegif.jp` で truncation
+flag 動作確認)。
+
+#### V8/G2: principal picker scale-out (10k+ directory)
+
+- `fetchPrincipals(query, kinds)` で USER/GROUP fetch を選択切替
+- **offset=0 fix**: 既存 server pagination 条件は `offset>=0 && limit>0`。
+  `limit` のみだと "全件返却" にフォールバック (bug。`/user/list` が live
+  で 112/112 → 50/112 に修正)
+- `totalCount` を dropdown footer に表示 + truncated 警告
+- 初回 fetch を `onDropdownVisibleChange` まで遅延
+
+#### Dependabot security pass
+
+Maven 10 件 (全件 real):
+- spring-webmvc 7.0.5 → 7.0.7 (DoS / Script View Templates /
+  cache poisoning / SSE)
+- logback-core+classic 1.5.19 → 1.5.25 (×3 pom、ACE + class
+  instantiation)
+- commons-lang3 3.17.0 → 3.18.0 (×2 pom、uncontrolled recursion)
+
+npm 25 件 (実 2 件):
+- `npm audit` 直接実行で brace-expansion 5.0.5→5.0.6 と ws<8.20.1 のみ
+  real。残り 23 件は master baseline の stale alert (lockfile 既 patched)
+- `npm audit fix` で override なしに解決
+- post-fix: `npm audit` → 0 vulnerabilities
+
+#### H2 / M2 / M3 / L1 / L2
+
+- **H2**: `connector-governance-simulate-button.spec.ts` 新規 (9 cases — 7
+  server contract + 1 UI happy path + 1 M2 contract)
+- **M2**: `simulate-remove` に `MAX_REMOVE_PRINCIPAL_IDS=500` +
+  `MAX_PRINCIPAL_ID_LENGTH=512` cap。loop allocate 前に early reject、
+  個別 entry length も per-entry check
+- **M3**: `buildMatches(principalId, principalsToMatch, connectors)` overload
+  追加。`listByGroup` で `allConnectors` を method scope で 1 回取得、
+  member loop で再利用。**list() 呼出 O(members+1) → O(1)**。内側 loop
+  方向最適化 (smaller side as driver + HashSet contains)
+- **L1**: `simulateLastAuditedAt` reset useEffect の dep array を
+  `useMemo(simulateRemove.join(' '))` に。content-stable
+- **L2**: `buildMatches` で `connectorDefinitionService.list()` null
+  フォールバック → empty matches[]
+
+#### 検証
+
+- 27/27 ConnectorByPrincipalGovernanceTest (was 13)
+- 15/15 ConnectorSimulateRemoveTest (was 11)
+- 129/129 ingest+governance Java regression
+- 66/66 full RC5/RC6 Playwright regression
+- `npm audit` 0 件
+- TypeScript clean + UI build green
+- Live deploy + atom 200
+
+#### Commit + tag 関係
+
+- B3-2 server: `15936c6b3`
+- B3-2 review M+L: `7f31c1d64`
+- B3-2 UI: `ca8295b39`
+- V8/G2: `507d65253`
+- Maven security: `9204d3a95`
+- npm security: `9ea197c9a`
+- H2 spec: `581694272`
+- M2: `06ac804cd`
+- M3: `82012a221`
+- L1+L2: `8db0eb254`
+- **`v3.1.1-RC6` annotated tag target**: 本 doc commit 後にカット
+
+#### Follow-up (post-RC6、release blocker なし)
+
+- **R1** (Low, ops): SOC tooling integration for
+  `EXTERNAL_GOVERNANCE_SIMULATE` (NemakiWare repo 外、operator
+  monitoring stack 領域)
+
+RC5.5 closure 時の H2 / M2 / M3 / L1 / L2 / B3-2 / V8/G2 全件解消、
+Dependabot Maven 全件 / npm real 全件解消、残るは external R1 のみ。
+
 ### RC23 / RC5.6 (2026-05-21) — R5 denialReason 精度 + A2 spec CSRF cleanup (shipped)
 
 ブランチ: `release/3.1.1-RC5.5` (off `v3.1.1-RC5.5` = `dfb912da9`)
