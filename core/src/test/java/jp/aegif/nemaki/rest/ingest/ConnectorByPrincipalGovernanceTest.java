@@ -540,6 +540,51 @@ class ConnectorByPrincipalGovernanceTest {
     }
 
     @Test
+    void byGroup_perRequestConnectorListIsFetchedExactlyOnce_M3() {
+        // RC6 M3: listByGroup with includeMembers=true previously called
+        // connectorDefinitionService.list() once per member + once for
+        // directGrants — up to 201 times for memberLimit=200. The M3
+        // refactor caches the connector list at controller-method scope
+        // and passes it through the buildMatches overload. This test
+        // pins the invariant: regardless of member count, list() runs
+        // exactly once per request.
+        asAdmin();
+        // 25 members — enough to make the prior O(members + 1) cost
+        // obvious if the cache regresses, but not so many that the
+        // test wastes wall time.
+        java.util.List<String> manyMembers = new java.util.ArrayList<>();
+        for (int i = 0; i < 25; i++) manyMembers.add("user-" + i);
+        when(principalService.getGroupById(REPO, GROUP))
+                .thenReturn(makeGroup(GROUP, manyMembers));
+        when(connectorService.list()).thenReturn(List.of(
+                conn("c1", List.of(GROUP)),
+                conn("c2", List.of("other-group"))
+        ));
+        when(authService.expandPrincipals(any(), any())).thenReturn(Set.of(GROUP));
+
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, REPO, true, 200);
+
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        // Pre-M3 baseline would have been 26 (25 members + 1 directGrants);
+        // M3 must collapse it to exactly 1.
+        org.mockito.Mockito.verify(connectorService, org.mockito.Mockito.times(1)).list();
+    }
+
+    @Test
+    void byPrincipal_singleListCallPerRequest_M3_regressionGuard() {
+        // Companion to the M3 test above: confirms the single-call path
+        // is unchanged. listByPrincipal still uses the no-arg
+        // buildMatches overload, which lists() once.
+        asAdmin();
+        when(connectorService.list()).thenReturn(List.of(conn("c1", List.of(USER))));
+        when(authService.expandPrincipals(any(), any())).thenReturn(Set.of(USER));
+
+        controller.listByPrincipal(USER, REPO, true);
+
+        org.mockito.Mockito.verify(connectorService, org.mockito.Mockito.times(1)).list();
+    }
+
+    @Test
     void byGroup_principalServiceThrows_fallsBackToUnknown() {
         asAdmin();
         when(principalService.getGroupById(REPO, GROUP))

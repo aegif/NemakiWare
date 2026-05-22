@@ -416,12 +416,19 @@ public class ConnectorDefinitionController {
                 : allMemberUserIds;
         boolean memberUserIdsTruncated = memberCap < allMemberUserIds.size();
 
+        // RC6 M3: list connectors ONCE per request and share the list
+        // across both the directGrants call and the per-member loop.
+        // Previously every buildMatches() call re-listed all connectors;
+        // for includeMembers=true with memberLimit=200 this meant up to
+        // 201 separate list() calls per request. Now it's exactly 1.
+        List<ConnectorDefinition> allConnectors = connectorDefinitionService.list();
+
         // Direct grants: same logic as /by-principal/{groupId} with
         // expand=false. We don't expand for groups (NemakiWare groups
         // don't nest; the by-principal endpoint already documents this).
         java.util.Set<String> directSet = new java.util.LinkedHashSet<>();
         directSet.add(groupId);
-        List<Map<String, Object>> directGrants = buildMatches(groupId, directSet);
+        List<Map<String, Object>> directGrants = buildMatches(groupId, directSet, allConnectors);
 
         // RC6 B3-2 review L: compute perMemberImpact (and its companion
         // flags) unconditionally so the response shape is stable for the
@@ -442,8 +449,9 @@ public class ConnectorDefinitionController {
                 } catch (RuntimeException ignored) {
                     // expansion fail-closed: caller still sees direct-only
                 }
+                // M3: reuse the cached connector list per member.
                 List<Map<String, Object>> memberMatches =
-                        buildMatches(memberId, memberPrincipals);
+                        buildMatches(memberId, memberPrincipals, allConnectors);
                 List<Map<String, Object>> lost = new java.util.ArrayList<>();
                 for (Map<String, Object> m : memberMatches) {
                     @SuppressWarnings("unchecked")
@@ -639,19 +647,54 @@ public class ConnectorDefinitionController {
      * Shared connector-match builder used by both V3 (listByPrincipal)
      * and W2 (simulateRemove). Returns the same shape so the two
      * endpoints stay byte-identical for any given principal set.
+     *
+     * <p>This single-arg variant fetches the connector list itself.
+     * Single-call endpoints (listByPrincipal / simulateRemove) use it.
+     * The multi-call path inside listByGroup's perMemberImpact loop
+     * uses the overload below to avoid re-listing N times per request.
      */
     private List<Map<String, Object>> buildMatches(
             String principalId, java.util.Set<String> principalsToMatch) {
+        return buildMatches(principalId, principalsToMatch, connectorDefinitionService.list());
+    }
+
+    /**
+     * RC6 M3: connector-list-aware overload. Callers that invoke
+     * {@code buildMatches} multiple times within a single HTTP request
+     * (notably {@code listByGroup}'s perMemberImpact loop, which calls
+     * it once per member up to memberLimit) pass the connector list
+     * exactly once and share it across all invocations. Cuts the
+     * governance call's connector-listing cost from O(members) round
+     * trips to {@link ConnectorDefinitionService#list()} down to O(1).
+     *
+     * <p>The {@code connectors} argument must not be mutated by the
+     * caller while {@code buildMatches} is iterating.
+     */
+    private List<Map<String, Object>> buildMatches(
+            String principalId, java.util.Set<String> principalsToMatch,
+            List<ConnectorDefinition> connectors) {
         List<Map<String, Object>> matches = new java.util.ArrayList<>();
-        for (ConnectorDefinition c : connectorDefinitionService.list()) {
+        for (ConnectorDefinition c : connectors) {
             List<String> allowed = c.getAllowedPrincipalIds();
             if (allowed == null || allowed.isEmpty()) continue;
             // Intersect — preserves the matched principal IDs so the
             // operator can see WHY this connector is visible to the
-            // principal (direct vs. via group X).
+            // principal (direct vs. via group X). Iterate the smaller
+            // collection (M3): for connectors that allow only a handful
+            // of principals but the user is expanded to many groups,
+            // walking `allowed` (typical: 1-5 entries) is much cheaper
+            // than walking `principalsToMatch` (which can be 50+ for a
+            // user with many group memberships).
             java.util.List<String> matched = new java.util.ArrayList<>();
-            for (String p : allowed) {
-                if (p != null && principalsToMatch.contains(p)) matched.add(p);
+            if (allowed.size() <= principalsToMatch.size()) {
+                for (String p : allowed) {
+                    if (p != null && principalsToMatch.contains(p)) matched.add(p);
+                }
+            } else {
+                java.util.Set<String> allowedSet = new java.util.HashSet<>(allowed);
+                for (String p : principalsToMatch) {
+                    if (p != null && allowedSet.contains(p)) matched.add(p);
+                }
             }
             if (matched.isEmpty()) continue;
 
