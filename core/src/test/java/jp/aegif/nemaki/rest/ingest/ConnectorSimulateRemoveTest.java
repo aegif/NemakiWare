@@ -271,6 +271,79 @@ class ConnectorSimulateRemoveTest {
     }
 
     @Test
+    void removePrincipalIdsExceedingMaxCount_returns400_M2() {
+        // RC6 M2: the server caps the inbound array at
+        // MAX_REMOVE_PRINCIPAL_IDS (500). 501 entries → 400. The cap
+        // gate must fire BEFORE the per-entry loop allocates — if the
+        // loop ran first, a million-entry payload would still bloat
+        // the LinkedHashSet allocation.
+        asAdmin();
+        java.util.ArrayList<String> tooMany = new java.util.ArrayList<>();
+        for (int i = 0; i < 501; i++) tooMany.add("group-" + i);
+        ResponseEntity<?> resp = controller.simulateRemove(USER, body(REPO, true, tooMany));
+        assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> b = (Map<String, Object>) resp.getBody();
+        assertTrue(((String) b.get("message")).contains("removePrincipalIds exceeds maximum size"),
+                "message must name the limit so the caller can tune: " + b.get("message"));
+        // The buildMatches loop must NOT have run — verify connector
+        // listing was never touched.
+        org.mockito.Mockito.verify(connectorService, org.mockito.Mockito.never()).list();
+    }
+
+    @Test
+    void removePrincipalIdsAtMaxCount_returns200_M2() {
+        // RC6 M2 boundary: exactly MAX_REMOVE_PRINCIPAL_IDS (500)
+        // entries → still accepted. Wired with a minimal connector list
+        // so the test verifies the gate boundary, not the matching
+        // semantics (those are covered elsewhere).
+        asAdmin();
+        jp.aegif.nemaki.model.User u = mock(jp.aegif.nemaki.model.User.class);
+        when(principalService.getUserById(REPO, USER)).thenReturn(u);
+        when(authService.expandPrincipals(REPO, USER)).thenReturn(Set.of(USER));
+        when(connectorService.list()).thenReturn(List.of());
+        java.util.ArrayList<String> exactlyMax = new java.util.ArrayList<>();
+        for (int i = 0; i < 500; i++) exactlyMax.add("group-" + i);
+        ResponseEntity<?> resp = controller.simulateRemove(USER, body(REPO, true, exactlyMax));
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+    }
+
+    @Test
+    void principalIdEntryExceedingMaxLength_returns400_M2() {
+        // RC6 M2: an individual principal ID >MAX_PRINCIPAL_ID_LENGTH
+        // (512 chars) rejects the whole request. We don't silently
+        // drop the offender because the caller would otherwise get a
+        // 200 with an empty removePrincipalIds (after filtering) and
+        // be confused about what was sent vs. accepted.
+        asAdmin();
+        // 513-char ASCII string — over the cap
+        String tooLong = "a".repeat(513);
+        ResponseEntity<?> resp = controller.simulateRemove(USER,
+                body(REPO, true, List.of("group-a", tooLong)));
+        assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> b = (Map<String, Object>) resp.getBody();
+        assertTrue(((String) b.get("message")).contains("removePrincipalIds entry exceeds maximum length"),
+                "message must name the limit so the caller can tune: " + b.get("message"));
+    }
+
+    @Test
+    void principalIdEntryAtMaxLength_returns200_M2() {
+        // RC6 M2 boundary: exactly MAX_PRINCIPAL_ID_LENGTH (512) chars
+        // — accepted. Combined with a normal entry to exercise the
+        // mixed-length code path.
+        asAdmin();
+        jp.aegif.nemaki.model.User u = mock(jp.aegif.nemaki.model.User.class);
+        when(principalService.getUserById(REPO, USER)).thenReturn(u);
+        when(authService.expandPrincipals(REPO, USER)).thenReturn(Set.of(USER));
+        when(connectorService.list()).thenReturn(List.of());
+        String maxLen = "a".repeat(512);
+        ResponseEntity<?> resp = controller.simulateRemove(USER,
+                body(REPO, true, List.of("group-a", maxLen)));
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void blankStringEntriesInRemovalSet_filteredOut() {
         // Defensive: client ships ["GROUP_A", "", "  "] → only GROUP_A

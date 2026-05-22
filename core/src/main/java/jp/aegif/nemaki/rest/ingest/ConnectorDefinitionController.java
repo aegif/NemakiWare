@@ -497,6 +497,25 @@ public class ConnectorDefinitionController {
     private static final int MAX_MEMBER_LIMIT = 1000;
 
     /**
+     * RC6 M2: server-side hard cap on the {@code removePrincipalIds}
+     * array on {@code /simulate-remove}. Validated BEFORE the per-entry
+     * loop allocates, so an oversized payload short-circuits at O(1).
+     * The endpoint is admin-only; this cap is defence in depth against
+     * a compromised admin token, NOT the primary access control.
+     */
+    private static final int MAX_REMOVE_PRINCIPAL_IDS = 500;
+
+    /**
+     * RC6 M2: maximum byte-length-ish cap for a single
+     * {@code removePrincipalIds} entry (counted as Java chars — not
+     * UTF-8 bytes — but real principal IDs are ASCII-heavy, so the
+     * approximation is close enough). Realistic principal IDs are
+     * under 100 chars; >512 is either a bug or an attempt to bloat
+     * the audit details map and downstream log sinks.
+     */
+    private static final int MAX_PRINCIPAL_ID_LENGTH = 512;
+
+    /**
      * W2 (RC5.3): server-side simulate-remove. Body specifies the
      * principal-set to remove from the expansion. Returns
      * {@code lost} (matches where every {@code matchedPrincipalIds}
@@ -539,9 +558,35 @@ public class ConnectorDefinitionController {
                     "removePrincipalIds must be an array");
         }
         List<?> removeList = (List<?>) removeRaw;
+        // RC6 M2: hard cap the inbound array size BEFORE the per-entry
+        // loop allocates. The endpoint is admin-gated, so abuse requires
+        // a compromised admin token — but bounding the input still pays
+        // off as defence in depth: a 1M-entry removePrincipalIds payload
+        // would otherwise allocate a 1M-element LinkedHashSet and
+        // iterate every connector's allowedPrincipalIds against it. 500
+        // is way past any realistic "what if I remove these groups"
+        // simulation (a user belongs to dozens, not hundreds, of groups
+        // in any plausible directory).
+        if (removeList.size() > MAX_REMOVE_PRINCIPAL_IDS) {
+            return errorResponse(HttpStatus.BAD_REQUEST,
+                    "removePrincipalIds exceeds maximum size ("
+                            + removeList.size() + " > " + MAX_REMOVE_PRINCIPAL_IDS + ")");
+        }
         java.util.Set<String> removalSet = new java.util.LinkedHashSet<>();
         for (Object o : removeList) {
-            if (o instanceof String s && !s.isBlank()) removalSet.add(s);
+            if (o instanceof String s && !s.isBlank()) {
+                // RC6 M2: also bound individual entry length. Real
+                // principal IDs are typically <100 chars; >512 is
+                // either a bug or abuse. We reject the whole request
+                // rather than silently dropping the offender so the
+                // caller notices.
+                if (s.length() > MAX_PRINCIPAL_ID_LENGTH) {
+                    return errorResponse(HttpStatus.BAD_REQUEST,
+                            "removePrincipalIds entry exceeds maximum length ("
+                                    + s.length() + " > " + MAX_PRINCIPAL_ID_LENGTH + ")");
+                }
+                removalSet.add(s);
+            }
         }
         if (removalSet.isEmpty()) {
             return errorResponse(HttpStatus.BAD_REQUEST,

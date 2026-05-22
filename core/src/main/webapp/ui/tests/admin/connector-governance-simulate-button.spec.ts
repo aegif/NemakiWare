@@ -143,6 +143,45 @@ test.describe('H2: simulate-remove server contract', () => {
     expect(res.status()).toBe(400);
   });
 
+  test('POST /simulate-remove: removePrincipalIds > MAX (500) → 400 (M2 count cap)', async ({ request }) => {
+    // RC6 M2: server-side hard cap on the inbound array (500 entries).
+    // Boundary documented in the controller's MAX_REMOVE_PRINCIPAL_IDS
+    // constant. The cap must fire BEFORE the per-entry loop allocates,
+    // so this same response time at 10k entries shouldn't differ
+    // materially from a normal call (verified by inspection — not
+    // benchmarked here to avoid CI flake).
+    const tooMany: string[] = [];
+    for (let i = 0; i < 501; i++) tooMany.push(`group-${i}`);
+    const res = await request.post(
+      `${API_BASE}/by-principal/${encodeURIComponent(TEST_USER)}/simulate-remove`,
+      {
+        headers: JSON_HEADERS,
+        data: { repositoryId: 'bedroom', expand: false, removePrincipalIds: tooMany },
+      },
+    );
+    expect(res.status()).toBe(400);
+    const body = await res.json();
+    expect(body.message).toContain('removePrincipalIds exceeds maximum size');
+  });
+
+  test('POST /simulate-remove: entry length > MAX (512) → 400 (M2 length cap)', async ({ request }) => {
+    // RC6 M2: individual entries longer than MAX_PRINCIPAL_ID_LENGTH
+    // (512 chars) reject the whole request. We deliberately don't
+    // silently drop the offender — a caller pushing a 1MB principal
+    // ID is either bugged or hostile and either way wants to know.
+    const tooLong = 'a'.repeat(513);
+    const res = await request.post(
+      `${API_BASE}/by-principal/${encodeURIComponent(TEST_USER)}/simulate-remove`,
+      {
+        headers: JSON_HEADERS,
+        data: { repositoryId: 'bedroom', expand: false, removePrincipalIds: [TEST_GROUP, tooLong] },
+      },
+    );
+    expect(res.status()).toBe(400);
+    const body = await res.json();
+    expect(body.message).toContain('removePrincipalIds entry exceeds maximum length');
+  });
+
   test('POST /simulate-remove: anonymous → 401 (graceful when Playwright shares auth)', async ({ playwright }) => {
     const ctx = await playwright.request.newContext({
       extraHTTPHeaders: {},
