@@ -1251,7 +1251,26 @@ New file: `docs/SOC-AUDIT-INTEGRATION.md` covering
    asked-then-acted correlation, off-hours simulate, new-actor
    first-time invoker — each with playbook steps
 
-Cross-linked from the §6 file list in REVIEW_PACKET.md and the
+**Plus** ready-to-import config templates under
+`docs/soc-templates/`:
+
+- `filebeat-nemakiware.yml`, `fluent-bit-nemakiware.conf`,
+  `vector-nemakiware.toml` — log-shipper config that tails
+  `audit.log` and forwards to the SIEM of choice (operator
+  picks one).
+- `kibana-alerting-rules.json`, `loki-ruler-rules.yml`,
+  `splunk-savedsearches.conf` — alert rule sets matching the
+  5 playbooks in §5, each parameterised via `${PLACEHOLDER}`
+  variables that a deploy-time linter (`grep '\${' …`) can
+  enforce as filled-in.
+
+Remaining operator work is limited to the four items that are
+inherently per-deployment: network path / firewall / TLS,
+SIEM credentials from secrets manager, notification routing
+(PagerDuty / Slack webhook), and threshold tuning from
+environment baseline.
+
+Cross-linked from the §9 file list in REVIEW_PACKET.md and the
 follow-up table in CLAUDE.md / RELEASE_NOTES.md.
 
 ### 12.18 vNext (separate scope, not RC5.x / RC6.x)

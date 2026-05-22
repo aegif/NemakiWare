@@ -126,13 +126,18 @@ remains at peeled commit `9dfd87adb` as a historical milestone.
 
 **Resolved in this RC**: P2-1, P2-2, P2-3, P3.
 
-**Remaining**: `R1` (Low, ops, repo-external) — the operator-side
-playbook (`docs/SOC-AUDIT-INTEGRATION.md`) has been added
-post-RC6.1 with the audit log location, schema, sample queries
-for jq/Splunk/Elasticsearch/Loki, and 5 alert rule templates.
-The remaining work is SOC stack wiring (Splunk forwarder /
-Filebeat / Fluent Bit config), which is operator-specific and
-out of repo scope.
+**Remaining**: `R1` (Low, ops, mostly resolved) — both the
+operator playbook (`docs/SOC-AUDIT-INTEGRATION.md`) AND the
+ready-to-import templates (`docs/soc-templates/` — Filebeat /
+Fluent Bit / Vector log shippers + Kibana Alerting / Loki
+Ruler / Splunk savedsearches alert rule sets) have been added
+post-RC6.1. The remaining operator work is limited to the four
+items that are inherently per-deployment and cannot be shipped
+as generic templates: (a) network path / firewall / TLS to the
+SIEM, (b) SIEM credentials from your secrets manager, (c)
+notification routing (PagerDuty integration key, Slack webhook
+URL), (d) `${BURST_THRESHOLD}` / `${LOST_COUNT_OUTLIER_THRESHOLD}`
+tuning from your environment's baseline.
 
 ---
 

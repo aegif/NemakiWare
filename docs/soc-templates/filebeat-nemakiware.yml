@@ -1,0 +1,77 @@
+# Filebeat input for NemakiWare audit log → Elasticsearch.
+# Drop into /etc/filebeat/inputs.d/ (or merge into filebeat.yml).
+# Pairs with kibana-alerting-rules.json.
+#
+# Pre-deploy checklist:
+#   1. Replace every ${PLACEHOLDER} value.
+#   2. `filebeat test config && filebeat test output`.
+#   3. Restart Filebeat. Confirm `audit.log` shows up in
+#      `monitor index` within 60 s.
+
+filebeat.inputs:
+  - type: filestream
+    id: nemakiware-audit
+    enabled: true
+    paths:
+      - ${NEMAKIWARE_AUDIT_LOG_PATH:-/opt/tomcat/logs/audit.log}
+    # Each audit line is already JSON, so parse at the input layer.
+    # `target: ""` flattens the parsed fields onto the root document;
+    # `overwrite_keys: true` lets the audit JSON's `@timestamp` field
+    # win over Filebeat's read-time `@timestamp`.
+    parsers:
+      - ndjson:
+          target: ""
+          overwrite_keys: true
+          add_error_key: true
+    # Skip rolled+gzipped files; Filebeat handles open audit.log only.
+    # Daily rotation produces audit.log.YYYY-MM-DD.gz; if you need the
+    # historical files indexed too, swap to a glob and remove the
+    # exclude_files (heavier — only do it on re-indexing).
+    exclude_files: ['\.gz$']
+    # Audit lines are <= ~4 KB after RC6.1 P2-1 cap; raise this if you
+    # carry custom audit details that push past 65 KB.
+    max_bytes: 65536
+
+# Tag every event so SIEM dashboards can filter "is_nemakiware_audit".
+processors:
+  - add_fields:
+      target: ""
+      fields:
+        service: nemakiware
+        source_type: audit
+        # Identify which physical host emitted the event in multi-replica
+        # setups — the audit event itself carries `hostname` from
+        # AuditEvent, but adding it here is a fall-through guarantee.
+        nemakiware_host: ${HOSTNAME}
+  - drop_fields:
+      # Filebeat adds ECS host metadata that overlaps with NemakiWare's
+      # own `hostname` field; keep the audit's own value and drop the
+      # noisier OS-inventory subset.
+      fields: ['host.os', 'host.architecture', 'host.containerized']
+      ignore_missing: true
+
+output.elasticsearch:
+  hosts: ["${SIEM_ENDPOINT}"]
+  # Use API key (recommended) or username/password. Pick exactly one.
+  api_key: "${SIEM_API_KEY}"
+  # username: "${SIEM_USERNAME}"
+  # password: "${SIEM_PASSWORD}"
+  index: "nemakiware-audit-%{+yyyy.MM.dd}"
+  ssl.verification_mode: full
+  # Audit events must not be dropped on transient SIEM unavailability.
+  # Buffer locally up to 5 min of disk-write load.
+  bulk_max_size: 200
+  worker: 2
+
+setup.template:
+  name: "nemakiware-audit"
+  pattern: "nemakiware-audit-*"
+  enabled: false   # we manage the mapping out-of-band; see kibana-alerting-rules.json header
+
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644

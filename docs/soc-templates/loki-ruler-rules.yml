@@ -1,0 +1,165 @@
+# Loki Ruler alert rule group for NemakiWare audit log.
+# Drop into the Loki Ruler config directory (typically
+# /etc/loki/rules/<tenant>/) and reload with SIGHUP or
+# `cortextool rules sync`.
+# Pairs with fluent-bit-nemakiware.conf or vector-nemakiware.toml
+# (Loki sink).
+#
+# Pre-deploy checklist:
+#   1. Replace every ${PLACEHOLDER}.
+#   2. `cortextool rules check --rule-files loki-ruler-rules.yml`.
+#   3. Confirm rules appear in Grafana's Alerting → Rules tab.
+
+groups:
+  - name: nemakiware-governance
+    interval: 1m
+    rules:
+
+      # ── 1. simulate burst — > 20 simulates by one actor in 5 min ──
+      - alert: NemakiWareGovernanceSimulateBurst
+        expr: |
+          sum by (userId) (
+            rate(
+              {service="nemakiware", source_type="audit", operation="externalGovernanceSimulate"}
+                | json
+              [5m]
+            )
+          ) > ${BURST_THRESHOLD_PER_SEC:-0.067}
+        for: 5m
+        labels:
+          severity: medium
+          category: governance
+          playbook: simulate-burst
+        annotations:
+          summary: "NemakiWare: governance simulate burst from {{ $labels.userId }}"
+          description: |
+            {{ $labels.userId }} emitted > ${BURST_THRESHOLD:-20}
+            externalGovernanceSimulate events in 5 minutes (rate
+            {{ $value | humanize }}/s). A human admin cannot realistically
+            click through that many what-if simulations — either legitimate
+            automation (deploy under a service account with its own
+            monitoring) or an exploration attack.
+            Playbook: docs/SOC-AUDIT-INTEGRATION.md §5.1
+
+      # ── 2. lost-count outlier ──
+      - alert: NemakiWareGovernanceLostCountOutlier
+        expr: |
+          count_over_time(
+            {service="nemakiware", source_type="audit", operation="externalGovernanceSimulate"}
+              | json
+              | details_lostCount > ${LOST_COUNT_OUTLIER_THRESHOLD:-50}
+            [5m]
+          ) > 0
+        for: 0m  # fire immediately on first matching event
+        labels:
+          severity: medium
+          category: governance
+          playbook: lost-count-outlier
+        annotations:
+          summary: "NemakiWare: sweeping-change simulate (lostCount > ${LOST_COUNT_OUTLIER_THRESHOLD:-50})"
+          description: |
+            An admin simulated removing principals that would lose access
+            to > ${LOST_COUNT_OUTLIER_THRESHOLD:-50} connectors. Worth
+            human review before the corresponding act fires.
+            Playbook: docs/SOC-AUDIT-INTEGRATION.md §5.2
+
+      # ── 3. asked-then-acted correlation ──
+      # Loki can't natively join two streams; this rule fires on the
+      # simulate side and the playbook step is to manually correlate
+      # with externalProfileUpdated / connector PUT events in Grafana
+      # Explore. A full join requires Grafana Mimir's Recording Rules
+      # or a Tempo-style trace correlation.
+      - alert: NemakiWareGovernanceSimulateThenInspectActs
+        expr: |
+          count_over_time(
+            {service="nemakiware", source_type="audit", operation="externalGovernanceSimulate"}
+              [30m]
+          ) > 0
+        for: 0m
+        labels:
+          severity: info
+          category: governance
+          playbook: asked-then-acted
+        annotations:
+          summary: "NemakiWare: governance simulate → check for follow-up acts in next 30 min"
+          description: |
+            externalGovernanceSimulate fired. The asked-then-acted
+            pattern (simulate followed by externalProfileUpdated /
+            externalProfileDeleted / connector PUT by same actor
+            within 30 min) is the deliberate change signal.
+            Open Grafana Explore:
+              {service="nemakiware", source_type="audit"}
+                | json
+                | userId = "<actor-from-this-alert>"
+                | __time__ within last 30m
+            Playbook: docs/SOC-AUDIT-INTEGRATION.md §5.3
+
+      # ── 4. off-hours simulate ──
+      # Loki time-of-day filtering: cast @timestamp to hour-of-day in
+      # the operator's TZ. Tweak ${OFF_HOURS_*} for your shift.
+      - alert: NemakiWareGovernanceOffHoursSimulate
+        expr: |
+          count_over_time(
+            {service="nemakiware", source_type="audit", operation="externalGovernanceSimulate"}
+              | json
+              | __error__ = ""
+              # Hour-of-day filter: only outside business hours
+              # Adjust the operator's local TZ in the timestamp parse.
+              | label_format hour=`{{ toDate "2006-01-02T15:04:05Z07:00" .timestamp | date "15" }}`
+              | hour < "${BUSINESS_HOURS_START_LOCAL:-06}"
+              or hour > "${BUSINESS_HOURS_END_LOCAL:-22}"
+            [10m]
+          ) > 0
+        for: 0m
+        labels:
+          severity: medium
+          category: governance
+          playbook: off-hours
+        annotations:
+          summary: "NemakiWare: off-hours governance simulate by {{ $labels.userId }}"
+          description: |
+            Emergency change management is rare. Off-hours governance
+            work paired with subsequent acts is one of the strongest
+            "credential compromised" signals you'll get from this event.
+            Playbook: docs/SOC-AUDIT-INTEGRATION.md §5.4
+
+      # ── 5. new-actor first-time invoker ──
+      # Loki's `absent_over_time` checks "no event from this label
+      # combination in the lookback window". Pair with a current-period
+      # count > 0 to detect "actor seen NOW but not in last 90 days".
+      # Note: full lookback requires Mimir / a longer Loki retention;
+      # for typical 7-day Loki retention this rule degenerates to
+      # "new actor this week", which is still useful for change review.
+      - alert: NemakiWareGovernanceNewActor
+        expr: |
+          (
+            count by (userId) (
+              count_over_time(
+                {service="nemakiware", source_type="audit", operation="externalGovernanceSimulate"}
+                  | json
+                [1h]
+              )
+            )
+          )
+          unless on (userId) (
+            count by (userId) (
+              count_over_time(
+                {service="nemakiware", source_type="audit", operation="externalGovernanceSimulate"}
+                  | json
+                [${NEW_ACTOR_LOOKBACK:-7d}]
+              ) offset 1h
+            )
+          )
+        for: 0m
+        labels:
+          severity: low
+          category: governance
+          playbook: new-actor
+        annotations:
+          summary: "NemakiWare: first-time governance simulate by {{ $labels.userId }}"
+          description: |
+            {{ $labels.userId }} just invoked the governance simulate
+            endpoint for the first time in ${NEW_ACTOR_LOOKBACK:-7d}.
+            Expected for rotation / new hire, but worth one human-look
+            confirmation that the actor is intended to have admin.
+            Playbook: docs/SOC-AUDIT-INTEGRATION.md §5.5

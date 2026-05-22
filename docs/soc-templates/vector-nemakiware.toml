@@ -1,0 +1,83 @@
+# Vector pipeline for NemakiWare audit log.
+# Three example sinks below — pick ONE and delete the others.
+# Pairs with the matching alert rules in this directory.
+#
+# Pre-deploy checklist:
+#   1. Replace every ${PLACEHOLDER}.
+#   2. `vector validate vector-nemakiware.toml`.
+#   3. Restart Vector with `--watch-config` for iterative tuning.
+
+# Tail audit.log; Vector handles file rotation automatically.
+[sources.nemakiware_audit]
+  type = "file"
+  include = ["${NEMAKIWARE_AUDIT_LOG_PATH}"]
+  # Don't tail rolled .gz historical files
+  exclude = ["**/audit.log.*.gz"]
+  read_from = "end"
+  # Local persistence — Vector survives restarts without re-shipping.
+  data_dir = "/var/lib/vector/nemakiware-audit"
+  # Audit lines are <= ~4 KB after RC6.1 P2-1 cap; raise for custom details.
+  max_line_bytes = 65536
+
+# Parse the JSON, add a service tag, drop ECS host fields that
+# duplicate the audit event's own `hostname`.
+[transforms.parse]
+  type = "remap"
+  inputs = ["nemakiware_audit"]
+  source = '''
+    . = parse_json!(.message)
+    .service = "nemakiware"
+    .source_type = "audit"
+    .nemakiware_host = get_hostname!()
+  '''
+
+# ─── Loki sink ────────────────────────────────────────────
+[sinks.loki]
+  type = "loki"
+  inputs = ["parse"]
+  endpoint = "${SIEM_ENDPOINT}"
+  encoding.codec = "json"
+  # Keep label cardinality low — high-cardinality fields (principalId,
+  # eventId) stay in the JSON log body, NOT in labels.
+  labels.service = "nemakiware"
+  labels.source_type = "audit"
+  labels.operation = "{{ operation }}"
+  labels.result = "{{ result }}"
+  labels.repositoryId = "{{ repositoryId }}"
+  auth.strategy = "basic"
+  auth.user = "${SIEM_USERNAME}"
+  auth.password = "${SIEM_PASSWORD}"
+  # Audit must never be dropped on transient outage
+  buffer.type = "disk"
+  buffer.max_size = 268435488  # 256 MB local buffer
+  buffer.when_full = "block"
+
+# ─── Elasticsearch sink ────────────────────────────────────
+# [sinks.elasticsearch]
+#   type = "elasticsearch"
+#   inputs = ["parse"]
+#   endpoints = ["${SIEM_ENDPOINT}"]
+#   mode = "bulk"
+#   bulk.index = "nemakiware-audit-%Y.%m.%d"
+#   compression = "gzip"
+#   auth.strategy = "basic"
+#   auth.user = "${SIEM_USERNAME}"
+#   auth.password = "${SIEM_PASSWORD}"
+#   tls.verify_certificate = true
+#   buffer.type = "disk"
+#   buffer.max_size = 268435488
+#   buffer.when_full = "block"
+
+# ─── Splunk HEC sink ──────────────────────────────────────
+# [sinks.splunk_hec]
+#   type = "splunk_hec_logs"
+#   inputs = ["parse"]
+#   endpoint = "${SIEM_ENDPOINT}"
+#   default_token = "${SIEM_API_KEY}"
+#   index = "${SIEM_SPLUNK_INDEX}"
+#   sourcetype = "nemakiware_audit"
+#   compression = "gzip"
+#   tls.verify_certificate = true
+#   buffer.type = "disk"
+#   buffer.max_size = 268435488
+#   buffer.when_full = "block"

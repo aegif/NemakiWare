@@ -341,6 +341,22 @@ sum by (userId) (
 
 ---
 
+### 4.5 Ready-to-import config templates
+
+Pasting the queries above into your shipper / SIEM by hand is
+fine for ad-hoc inspection. For production, see the file set in
+`docs/soc-templates/` — each shipper has a ready-to-import
+config and each SIEM has the 5 alert rules below pre-encoded:
+
+| Shipper template | SIEM rule template |
+|---|---|
+| `filebeat-nemakiware.yml` | `kibana-alerting-rules.json` |
+| `fluent-bit-nemakiware.conf` | `loki-ruler-rules.yml` / `splunk-savedsearches.conf` / `kibana-alerting-rules.json` |
+| `vector-nemakiware.toml` | (any of the above per chosen sink) |
+
+`docs/soc-templates/README.md` lists the placeholders each
+template uses and the validation commands per stack.
+
 ## 5. Sample alert rules
 
 Each rule below is a starting point — tune the thresholds for
