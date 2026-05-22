@@ -126,7 +126,7 @@ milestone.
 - Full chromium suite NOT re-run — RC6.3 changes are
   config/doc-only, no UI behavior change.
 - NDJSON / YAML / SPL syntax revalidated
-- Fluent Bit Lua: inline math-traced for UTC / JST / DST
+- Fluent Bit Lua: math-traced plausibility check for UTC / JST / DST
   spring-forward boundary cases
 - Vector VRL: still NOT live-validated (`vector` binary absent
   on the build host); the `?? null` fix is a syntax-spec

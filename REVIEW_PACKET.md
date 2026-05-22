@@ -63,15 +63,37 @@ landed mid-cycle:
    documented in `docs/soc-templates/README.md`'s validation
    commands list).
 
-3. **Fluent Bit DST fix is verified by manual math trace**, not
-   live test. The math: in UTC, `utc_offset_at(epoch) = 0` for
-   any epoch → naive_local already correct → no behavior change.
-   In JST, `utc_offset_at(any) = +32400` (no DST in JST) →
-   true UTC = naive + 32400 → correct. In US/Eastern,
-   `utc_offset_at(summer_epoch) = -14400`,
-   `utc_offset_at(winter_epoch) = -18000` → per-record offset
-   captures the right value. Spring-forward boundary minutes
-   trigger the second `if offset2 ~= offset` correction.
+3. **Fluent Bit DST fix is plausibility-checked by math trace,
+   NOT live-tested.** This is an honest validation gap, not a
+   "verified" claim. What the math trace covers (in the comment
+   block of `fluent-bit-nemakiware.conf`):
+   - In UTC, `utc_offset_at(epoch) = 0` for any epoch →
+     naive_local already correct → no behavior change.
+   - In JST (no DST), `utc_offset_at(any) = +32400` →
+     true UTC = naive + 32400 → correct.
+   - In US/Eastern,
+     `utc_offset_at(summer_epoch) = -14400`,
+     `utc_offset_at(winter_epoch) = -18000` → per-record
+     offset captures the right value for each season.
+   - Spring-forward boundary minutes trigger the second
+     `if offset2 ~= offset` correction.
+
+   What the math trace does NOT cover:
+   - A running Fluent Bit instance ingesting real audit lines.
+   - The Lua runtime version differences (Fluent Bit ships
+     LuaJIT; some `os.date` flags vary across LuaJIT minor
+     versions).
+   - Behaviour when `os.date("!*t", epoch)` returns nil for an
+     edge-case epoch (e.g., pre-1970 dates if someone
+     deliberately injects one — not a realistic audit scenario
+     but a theoretical Lua failure mode).
+
+   Recommended pre-deploy: drop the template into a Fluent
+   Bit instance with `TZ=America/New_York`, feed a synthetic
+   audit line dated 2025-03-09T07:00:00Z (DST spring-forward
+   day), and confirm `hour_of_day_local = 3` (EDT 03:00). The
+   build host doesn't have Fluent Bit installed so this gate
+   is operator-side.
 
 4. **REVIEW_PACKET tone was a real evidence-vs-claim gap.**
    The §2 note 4 fix in RC6.2 already weakened the broad
@@ -90,23 +112,27 @@ window. As of tag time the divergence is zero — both point at
 the same commit.
 
 When divergence happens, only the following files / paths are
-allowed to differ:
+allowed to differ — **and only at the indicated rigour level**:
 
-- `REVIEW_PACKET.md`
-- `RELEASE_NOTES.md`
-- `CLAUDE.md`
-- `docs/design/connector-delegation.md`
-- `docs/SOC-AUDIT-INTEGRATION.md`
-- `docs/soc-templates/**`
-
-The previous "clarifying additions only" qualifier is **dropped**:
-if a real config bug surfaces post-tag (as happened with the
-Fluent Bit DST issue), the fix may land as a body edit, and the
-honest framing is "config-body fix" not "clarification". The
-expectation remains that substantive config-body fixes trigger
-a new tag (as RC6.2 → RC6.3 just demonstrated).
+| Path | Allowed post-tag changes |
+|---|---|
+| `REVIEW_PACKET.md` | Any (this is the review correspondence file by design) |
+| `RELEASE_NOTES.md` | Doc-only — narrative additions, typo fixes, framing alignment |
+| `CLAUDE.md` | Doc-only |
+| `docs/design/connector-delegation.md` | Doc-only — review-time clarifications |
+| `docs/SOC-AUDIT-INTEGRATION.md` | Doc-only — playbook clarifications |
+| `docs/soc-templates/README.md` | Doc-only |
+| `docs/soc-templates/*.yml` / `*.conf` / `*.toml` / `*.ndjson` (shipper + alert rule body files) | **Comment-only** — comments may be added or rewritten; rule-engine-affecting changes (queries, thresholds, processors, output sinks) require a **new RC tag**. The body-fix history that triggered RC6.3 (Filebeat env syntax, Vector VRL field path, Fluent Bit DST handling) is exactly what this rule now forbids without a new tag. |
 
 Any other path diverging is a bug — please flag it.
+
+This rule is the response to the RC6.2 review's P1-B finding
+(the "clarifying additions only" qualifier was too vague —
+"config-body fix" silently masqueraded as "clarification").
+Going forward: if a SOC template has a bug, fix it on the
+branch and cut a new RC tag before the next review send;
+don't ship the fix as a post-tag commit and call it a
+clarification.
 
 External reviewers focused only on the code artifact should
 check out the tag and ignore later branch commits. The SOC
@@ -180,9 +206,13 @@ process):
     `JSON data` / `Java source` (no binary leakage).
   - NDJSON / Loki YAML / Splunk SPL syntax: validates.
   - Fluent Bit Lua: math-traced for UTC / JST / US/Eastern
-    summer / US/Eastern winter / spring-forward boundary.
-  - Vector VRL: syntax-spec confidence fix; live `vector
-    validate` not run (binary absent).
+    summer / US/Eastern winter / spring-forward boundary —
+    plausibility check only, NOT live-tested against a running
+    Fluent Bit (binary absent on build host; operator gate via
+    DST-day synthetic input documented in §2 note 3).
+  - Vector VRL: syntax-spec confidence fix only; live `vector
+    validate` not run (binary absent; operator gate documented
+    in §2 note 2 and `docs/soc-templates/README.md`).
 
 ### Full-suite evidence boundary (matches §2 note 4 / §5
 tone in RC6.2-post-tag, repeated here for clarity)

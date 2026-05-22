@@ -361,8 +361,10 @@ boundary に合わせて `"none show up in the 6 directly-touched specs"`
 - NDJSON / YAML / SPL syntax validates
 - Vector VRL は live `vector validate` 未実行 (本 repo に vector
   binary なし、syntax fix は VRL 仕様準拠の confidence fix)
-- Fluent Bit Lua は inline 数式トレース済 (UTC / JST / DST 境界
-  3 ケース)
+- Fluent Bit Lua は inline 数式トレースで plausibility check
+  (UTC / JST / DST 境界 3 ケース)。**実機 (Fluent Bit binary) で
+  の live test は未実施** — operator pre-deploy で DST 日の
+  synthetic input を入れて検証推奨 (REVIEW_PACKET §2 note 3)
 
 #### Commit + tag 関係
 
