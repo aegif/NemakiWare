@@ -22,7 +22,7 @@ Pick **one** shipper; they're alternatives, not stacked.
 
 | File | Use with | Rule format |
 |---|---|---|
-| `kibana-alerting-rules.json` | Elastic Stack 8+ | Kibana Alerting (Detection Engine) |
+| `kibana-detection-rules.ndjson` | Elastic Stack 8+ | Kibana Detection Engine (NDJSON import) |
 | `loki-ruler-rules.yml` | Loki / Grafana Loki Ruler | Prometheus-style ruleGroups |
 | `splunk-savedsearches.conf` | Splunk Enterprise 9+ | `savedsearches.conf` |
 
@@ -82,9 +82,12 @@ After dropping a template into your SIEM:
 - **Fluent Bit**: `fluent-bit -c fluent-bit-nemakiware.conf
   --dry-run` (3.0+) or just start with `--verbose`.
 - **Vector**: `vector validate vector-nemakiware.toml`.
-- **Kibana Alerting**: Stack Management → Rules → check rule
-  status; "Active" with last-run < interval is the success
-  signal.
+- **Kibana Detection Engine**: import the NDJSON via Security
+  → Manage rules → Import value lists / rules → Import rules.
+  Each line of `kibana-detection-rules.ndjson` is one rule;
+  the import surface accepts NDJSON directly. After import,
+  Detection rules tab shows "running" with last-execution
+  timestamp < interval as the success signal.
 - **Loki Ruler**: `cortextool rules check --rule-files
   loki-ruler-rules.yml`.
 - **Splunk**: `| rest /servicesNS/-/-/saved/searches | search

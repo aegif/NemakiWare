@@ -96,23 +96,30 @@ unaffected except that very-large arrays are now capped at 50
 ## 3. What's on the branch HEAD but NOT in the tag
 
 The tag (`v3.1.1-RC6.1`) and the branch HEAD
-(`release/3.1.1-RC6`) MAY diverge during the external review
-window as supplementary docs land. As of tag time the divergence
-is zero — both point at the same commit.
+(`release/3.1.1-RC6`) diverge during the external review
+window as supplementary docs land. At tag time the divergence
+was zero. As of this re-send the divergence is **doc-only**:
+the R1 SOC integration material (playbook + ready-to-import
+shipper / alert templates) landed on the branch after the tag
+was cut.
 
-When divergence happens, only the following files are allowed to
-differ:
+When divergence happens, only the following files / paths are
+allowed to differ:
 
 - `REVIEW_PACKET.md`
 - `RELEASE_NOTES.md`
 - `CLAUDE.md`
 - `docs/design/connector-delegation.md` (review-time clarifying additions only)
+- `docs/SOC-AUDIT-INTEGRATION.md` (post-tag R1 playbook — no runtime change)
+- `docs/soc-templates/**` (post-tag R1 ready-to-import templates — config only, no Java / TS code)
 - `core/src/main/webapp/ui/src/services/externalIngest.ts` (JSDoc only, no runtime change)
 
-Any other file diverging is a bug — please flag it.
+Any other path diverging is a bug — please flag it.
 
 External reviewers focused only on the code artifact should check
-out the tag and ignore later branch commits.
+out the tag and ignore later branch commits. The R1 docs are
+operator-facing and have no impact on the audited Java / TS
+surface.
 
 ---
 
@@ -197,7 +204,17 @@ For the full per-RC narrative see `RELEASE_NOTES.md` 9 sections
 
 | ID | Severity | Scope | Description |
 |---|---|---|---|
-| **R1** | Low (ops, mostly resolved) | partial repo-external | SOC tooling integration for `EXTERNAL_GOVERNANCE_SIMULATE`. Shipped: `docs/SOC-AUDIT-INTEGRATION.md` (playbook) AND `docs/soc-templates/` (ready-to-import Filebeat / Fluent Bit / Vector shippers + Kibana Alerting / Loki Ruler / Splunk savedsearches rule sets). Remaining operator work limited to (a) network path / firewall / TLS to the SIEM, (b) SIEM credentials from secrets manager, (c) notification routing (PagerDuty key / Slack webhook), (d) `${BURST_THRESHOLD}` / `${LOST_COUNT_OUTLIER_THRESHOLD}` tuning from environment baseline — all inherently per-deployment. |
+
+(No open repo-shippable items.)
+
+R1 (SOC tooling integration) was the last remaining item in
+the cumulative table. Its repo-shippable portion is fully
+resolved — see the Resolved table below. The residual
+deployment-side wiring (network path / TLS / SIEM credentials
+from secrets manager / notification routing / threshold tuning
+from environment baseline) is inherently per-installation and
+cannot be shipped as a generic template; that work lives in the
+operator's runbook, not in this repository.
 
 **Resolved during RC5+RC6+RC6.1 cycle**:
 
@@ -220,6 +237,7 @@ For the full per-RC narrative see `RELEASE_NOTES.md` 9 sections
 | Dependabot | RC6 commits `9204d3a95` + `9ea197c9a` | Maven + npm |
 | **P2-1, P2-2** | **RC6.1 commit `be7160d48`** | **per-member cap + order revert** |
 | **P2-3, P3** | **RC6.1 commit `a246ffe81`** | **NUL byte fix + per-kind tracking** |
+| **R1** | **RC6.1 post-tag doc commits `7384768a8` + `f01c20a63` + (this re-send's reviewer-fix commit)** | **`docs/SOC-AUDIT-INTEGRATION.md` playbook + `docs/soc-templates/` ready-to-import Filebeat / Fluent Bit / Vector shipper configs + Kibana Detection Engine NDJSON / Loki Ruler / Splunk savedsearches rule sets** |
 
 ---
 

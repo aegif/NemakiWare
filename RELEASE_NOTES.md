@@ -126,18 +126,22 @@ remains at peeled commit `9dfd87adb` as a historical milestone.
 
 **Resolved in this RC**: P2-1, P2-2, P2-3, P3.
 
-**Remaining**: `R1` (Low, ops, mostly resolved) — both the
-operator playbook (`docs/SOC-AUDIT-INTEGRATION.md`) AND the
-ready-to-import templates (`docs/soc-templates/` — Filebeat /
-Fluent Bit / Vector log shippers + Kibana Alerting / Loki
-Ruler / Splunk savedsearches alert rule sets) have been added
-post-RC6.1. The remaining operator work is limited to the four
-items that are inherently per-deployment and cannot be shipped
-as generic templates: (a) network path / firewall / TLS to the
-SIEM, (b) SIEM credentials from your secrets manager, (c)
-notification routing (PagerDuty integration key, Slack webhook
-URL), (d) `${BURST_THRESHOLD}` / `${LOST_COUNT_OUTLIER_THRESHOLD}`
-tuning from your environment's baseline.
+**Remaining**: none in repo scope. `R1` (the last open item
+from RC5.5 closure) is fully resolved on the repo-shippable
+side via the operator playbook
+(`docs/SOC-AUDIT-INTEGRATION.md`) and ready-to-import
+templates (`docs/soc-templates/` — Filebeat / Fluent Bit /
+Vector log shippers + Kibana Detection Engine NDJSON / Loki
+Ruler / Splunk savedsearches rule sets) added post-RC6.1.
+
+The four items that remain are deployment-specific and
+inherently cannot ship as generic templates: (a) network path
+/ firewall / TLS to the SIEM, (b) SIEM credentials from your
+secrets manager, (c) notification routing (PagerDuty
+integration key, Slack webhook URL), (d)
+`${BURST_THRESHOLD}` / `${LOST_COUNT_OUTLIER_THRESHOLD}`
+tuning from your environment's 7-day baseline. These belong in
+the operator's deployment runbook, not in this repository.
 
 ---
 

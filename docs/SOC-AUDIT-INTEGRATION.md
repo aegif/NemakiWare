@@ -350,8 +350,8 @@ config and each SIEM has the 5 alert rules below pre-encoded:
 
 | Shipper template | SIEM rule template |
 |---|---|
-| `filebeat-nemakiware.yml` | `kibana-alerting-rules.json` |
-| `fluent-bit-nemakiware.conf` | `loki-ruler-rules.yml` / `splunk-savedsearches.conf` / `kibana-alerting-rules.json` |
+| `filebeat-nemakiware.yml` | `kibana-detection-rules.ndjson` |
+| `fluent-bit-nemakiware.conf` | `loki-ruler-rules.yml` / `splunk-savedsearches.conf` / `kibana-detection-rules.ndjson` |
 | `vector-nemakiware.toml` | (any of the above per chosen sink) |
 
 `docs/soc-templates/README.md` lists the placeholders each

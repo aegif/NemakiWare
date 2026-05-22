@@ -371,7 +371,7 @@ binary とみなす。
 
 #### Follow-up
 
-- **R1** (Low, ops、ほぼ解消) — **playbook + ready-to-import テンプレ出荷済** (`docs/SOC-AUDIT-INTEGRATION.md` + `docs/soc-templates/` 配下に Filebeat / Fluent Bit / Vector の shipper config と Kibana / Loki / Splunk の alert rule set)。残るは deployment 固有のみ: (a) network/firewall/TLS、(b) SIEM 認証 (secrets manager)、(c) 通知ルーティング (PagerDuty / Slack)、(d) `${BURST_THRESHOLD}` 等の environment baseline チューニング
+- **R1** (Low, ops) — **解消** (repo 出荷可能部分完了)。`docs/SOC-AUDIT-INTEGRATION.md` playbook + `docs/soc-templates/` ready-to-import テンプレ (Filebeat / Fluent Bit / Vector shipper + Kibana Detection Engine NDJSON / Loki Ruler / Splunk savedsearches)。残るは deployment 固有 (network/TLS、SIEM 認証、通知ルーティング、threshold チューニング) のみで repo 出荷不可。
 
 ### RC24 / RC6 (2026-05-21 → 2026-05-22) — B3-2 group view + V8/G2 + governance med/low + Dependabot (shipped)
 

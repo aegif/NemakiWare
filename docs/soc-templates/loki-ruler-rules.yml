@@ -95,19 +95,28 @@ groups:
             Playbook: docs/SOC-AUDIT-INTEGRATION.md §5.3
 
       # ── 4. off-hours simulate ──
-      # Loki time-of-day filtering: cast @timestamp to hour-of-day in
-      # the operator's TZ. Tweak ${OFF_HOURS_*} for your shift.
+      # LogQL pipeline filters don't support `or` natively — the
+      # earlier draft used `| hour < ... or hour > ...` which
+      # cortextool rules check rejects. The portable shape is a
+      # single regex match against the hour string. Default below
+      # alerts when the hour is in {00..05, 22, 23} — adjust the
+      # alternation to match your business hours window in the
+      # operator's local timezone.
+      #
+      # Note: weekend filtering is intentionally omitted because
+      # the LogQL pipeline can't easily derive day-of-week from a
+      # parsed timestamp; if you need it, prefer the shipper-side
+      # enrichment approach used in kibana-detection-rules.ndjson
+      # (add `hour_of_day_local` and `day_of_week_local` fields at
+      # ingest, then match them as labels).
       - alert: NemakiWareGovernanceOffHoursSimulate
         expr: |
           count_over_time(
             {service="nemakiware", source_type="audit", operation="externalGovernanceSimulate"}
               | json
               | __error__ = ""
-              # Hour-of-day filter: only outside business hours
-              # Adjust the operator's local TZ in the timestamp parse.
               | label_format hour=`{{ toDate "2006-01-02T15:04:05Z07:00" .timestamp | date "15" }}`
-              | hour < "${BUSINESS_HOURS_START_LOCAL:-06}"
-              or hour > "${BUSINESS_HOURS_END_LOCAL:-22}"
+              | hour =~ "${OFF_HOURS_REGEX:-^(0[0-5]|2[2-3])$}"
             [10m]
           ) > 0
         for: 0m

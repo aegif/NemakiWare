@@ -1258,11 +1258,14 @@ New file: `docs/SOC-AUDIT-INTEGRATION.md` covering
   `vector-nemakiware.toml` — log-shipper config that tails
   `audit.log` and forwards to the SIEM of choice (operator
   picks one).
-- `kibana-alerting-rules.json`, `loki-ruler-rules.yml`,
-  `splunk-savedsearches.conf` — alert rule sets matching the
-  5 playbooks in §5, each parameterised via `${PLACEHOLDER}`
-  variables that a deploy-time linter (`grep '\${' …`) can
-  enforce as filled-in.
+- `kibana-detection-rules.ndjson` (Kibana Detection Engine
+  import format — NDJSON, one rule per line, validated against
+  the Detection Engine rule schema for threshold / query /
+  EQL sequence / new_terms rule types),
+  `loki-ruler-rules.yml`, `splunk-savedsearches.conf` — alert
+  rule sets matching the 5 playbooks in §5, each parameterised
+  via `${PLACEHOLDER}` variables that a deploy-time linter
+  (`grep '\${' …`) can enforce as filled-in.
 
 Remaining operator work is limited to the four items that are
 inherently per-deployment: network path / firewall / TLS,
