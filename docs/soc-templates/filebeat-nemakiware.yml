@@ -1,6 +1,6 @@
 # Filebeat input for NemakiWare audit log → Elasticsearch.
 # Drop into /etc/filebeat/inputs.d/ (or merge into filebeat.yml).
-# Pairs with kibana-alerting-rules.json.
+# Pairs with kibana-detection-rules.ndjson.
 #
 # Pre-deploy checklist:
 #   1. Replace every ${PLACEHOLDER} value.
@@ -42,7 +42,32 @@ processors:
         # Identify which physical host emitted the event in multi-replica
         # setups — the audit event itself carries `hostname` from
         # AuditEvent, but adding it here is a fall-through guarantee.
+        # ${HOSTNAME} here is Filebeat's own env-var interpolation —
+        # ensure the Filebeat process has HOSTNAME set (systemd does
+        # this by default; docker-compose may need `environment: -
+        # HOSTNAME=${HOSTNAME}` explicit).
         nemakiware_host: ${HOSTNAME}
+  # Time-of-day enrichment for the off-hours alert rule. Adds
+  # `hour_of_day_local` (integer 0-23) and `day_of_week_local`
+  # (Monday..Sunday) so the kibana-detection-rules.ndjson off-hours
+  # rule fires — without this enrichment, that rule never matches.
+  # Filebeat's `script` processor runs the JS at parse time. For
+  # operator-local TZ, set the Filebeat process's TZ env to your
+  # IANA zone (e.g. `TZ=Asia/Tokyo` in systemd) — JS Date object
+  # honours it.
+  - script:
+      lang: javascript
+      id: nemakiware_time_enrichment
+      source: |
+        function process(event) {
+          var ts = event.Get("@timestamp") || event.Get("timestamp");
+          if (!ts) return;
+          var d = new Date(ts);
+          if (isNaN(d.getTime())) return;
+          event.Put("hour_of_day_local", d.getHours());
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          event.Put("day_of_week_local", days[d.getDay()]);
+        }
   - drop_fields:
       # Filebeat adds ECS host metadata that overlaps with NemakiWare's
       # own `hostname` field; keep the audit's own value and drop the
@@ -66,7 +91,7 @@ output.elasticsearch:
 setup.template:
   name: "nemakiware-audit"
   pattern: "nemakiware-audit-*"
-  enabled: false   # we manage the mapping out-of-band; see kibana-alerting-rules.json header
+  enabled: false   # we manage the mapping out-of-band; see kibana-detection-rules.ndjson header
 
 logging.level: info
 logging.to_files: true

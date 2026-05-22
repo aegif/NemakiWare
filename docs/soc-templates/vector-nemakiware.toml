@@ -20,7 +20,12 @@
   max_line_bytes = 65536
 
 # Parse the JSON, add a service tag, drop ECS host fields that
-# duplicate the audit event's own `hostname`.
+# duplicate the audit event's own `hostname`. Also enrich with
+# operator-local hour_of_day_local (0-23) and day_of_week_local
+# (Monday..Sunday) so the kibana-detection-rules.ndjson off-hours
+# rule fires — without this enrichment, the rule never matches.
+# Adjust ${BUSINESS_HOURS_TZ} to your operator's IANA TZ (default
+# UTC; set e.g. Asia/Tokyo for JST).
 [transforms.parse]
   type = "remap"
   inputs = ["nemakiware_audit"]
@@ -29,6 +34,14 @@
     .service = "nemakiware"
     .source_type = "audit"
     .nemakiware_host = get_hostname!()
+    # Time-of-day enrichment for off-hours alerts. parse_timestamp!
+    # tolerates either the @timestamp ECS field (Z-suffixed UTC) or
+    # the legacy `timestamp` ISO-8601 field. Vector's `format_timestamp`
+    # converts to the operator-local TZ for the hour / day extraction.
+    .__ts = parse_timestamp!(.@timestamp, "%+")
+    .hour_of_day_local = to_int!(format_timestamp!(.__ts, "%H", timezone: "${BUSINESS_HOURS_TZ:-UTC}"))
+    .day_of_week_local = format_timestamp!(.__ts, "%A", timezone: "${BUSINESS_HOURS_TZ:-UTC}")
+    del(.__ts)
   '''
 
 # ─── Loki sink ────────────────────────────────────────────

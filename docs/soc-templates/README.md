@@ -38,20 +38,77 @@ The five alert rules in each file match the playbook in
 
 ## Placeholder convention
 
-Every template uses `${PLACEHOLDER}` for values you must fill in.
-A single `grep '\${' *.yml *.conf *.toml *.json` from this
-directory enumerates what needs editing before deploy. The
-typical placeholders are:
+Most templates use `${PLACEHOLDER}` for values you must fill in
+before deploy. A single
+`grep '\${' *.yml *.conf *.toml *.ndjson *.json 2>/dev/null`
+from this directory enumerates what needs editing.
+
+Typical placeholders:
 
 | Placeholder | Meaning |
 |---|---|
 | `${NEMAKIWARE_AUDIT_LOG_PATH}` | path to `audit.log` on the host (default: `/opt/tomcat/logs/audit.log`) |
 | `${SIEM_ENDPOINT}` | URL of your SIEM ingest endpoint |
 | `${SIEM_USERNAME}` / `${SIEM_PASSWORD}` / `${SIEM_API_KEY}` | SIEM auth |
-| `${BUSINESS_HOURS_START_LOCAL}` / `${BUSINESS_HOURS_END_LOCAL}` | off-hours alert window (e.g. `06:00` / `22:00`) |
-| `${BURST_THRESHOLD}` | simulate burst alert N (default 20) |
-| `${LOST_COUNT_OUTLIER_THRESHOLD}` | lost-count alert threshold (default 50; baseline first) |
+| `${BUSINESS_HOURS_TZ}` | IANA timezone for the off-hours rule (e.g. `Asia/Tokyo`; default `UTC`) |
+| `${BUSINESS_HOURS_START_LOCAL}` / `${BUSINESS_HOURS_END_LOCAL}` | off-hours alert window (Splunk-only; default `06` / `22`) |
+| `${OFF_HOURS_REGEX}` | Loki-only alternate form of the off-hours window (default `^(0[0-5]|2[2-3])$`) |
+| `${NEW_ACTOR_LOOKBACK}` | new-actor lookback window (default `90d`) |
 | `${NOTIFICATION_TARGET}` | PagerDuty service ID / Slack webhook URL / etc. — wired in your SIEM's notification connector, not in these files |
+
+### Kibana NDJSON — threshold values are baked-in defaults, override via sed
+
+`kibana-detection-rules.ndjson` cannot use `${VAR}` markers in
+numeric value positions (would break JSON parsing). The two
+thresholds — burst count and lost-count outlier — ship with
+working defaults of **20** and **50** respectively. To customise
+before import:
+
+```bash
+# Set burst threshold to 35 and lost-count outlier to 80
+sed -i.bak \
+    -e 's/"value":20/"value":35/' \
+    -e 's/details\.lostCount > 50/details.lostCount > 80/' \
+    kibana-detection-rules.ndjson
+```
+
+(GNU sed: drop the `.bak`. macOS BSD sed: keep `-i.bak` or use
+`-i ''`.) Adjust by editing the description text too so the
+in-UI rule reflects your actual numbers — the rule-engine reads
+the JSON values, but operators reading the description in
+Kibana's Rules tab will get the baked-in `20` / `50` if you
+don't update both.
+
+### Off-hours rule timezone / enrichment
+
+The Kibana off-hours rule expects two fields added by the
+shipper at ingest:
+
+| Field | Type | Producer |
+|---|---|---|
+| `hour_of_day_local` | int 0-23 | Vector `format_timestamp!`, Fluent Bit Lua filter, Filebeat JS script |
+| `day_of_week_local` | string `Monday..Sunday` | Same three shippers |
+
+All three shipper templates in this directory include the
+enrichment as of RC6.2 — verify with
+`grep -l hour_of_day_local filebeat-nemakiware.yml fluent-bit-nemakiware.conf vector-nemakiware.toml`.
+
+Operator-local TZ is controlled by:
+
+- **Vector**: `timezone:` param in `format_timestamp!` (default
+  `${BUSINESS_HOURS_TZ:-UTC}`).
+- **Fluent Bit**: the Lua filter uses `os.date`, which honours
+  the Fluent Bit process's `TZ` env var. Set `TZ=Asia/Tokyo`
+  (or your IANA zone) in the systemd unit / docker-compose
+  environment.
+- **Filebeat**: the JS script uses the JS `Date` object, which
+  honours the Filebeat process's `TZ` env var. Same systemd /
+  docker-compose env approach.
+
+For Loki, the rule defaults to a regex covering 22:00-05:59
+UTC. JST (UTC+9) operators wanting "off-hours 22:00-05:59 JST"
+must rewrite the regex to UTC-equivalent (`^(1[3-9]|20)$` covers
+13:00-20:59 UTC = 22:00-05:59 JST).
 
 ## What's NOT in these templates (and why)
 

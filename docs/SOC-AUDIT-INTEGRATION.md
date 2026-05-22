@@ -449,6 +449,28 @@ severity:  Low
 
 ---
 
+### 5.6 Per-member identity beyond the 50-cap (RC6.1 P2-1 follow-up)
+
+The `/by-group/{id}` endpoint caps `lostIfGroupRemoved` per
+member at 50 (`MAX_LOST_PER_MEMBER`). The `lostCount` field
+preserves the true count and `lostIfGroupRemovedTruncated`
+signals truncation, so SOC sees the size signal. To recover
+the specific connector identities past the 50th for a given
+member, fall back to the per-principal endpoint:
+
+```
+GET /v1/admin/connectors/by-principal/{userId}?repositoryId={r}&expand=true
+```
+
+The returned `matches[]` lists every connector that user has
+access to (no cap). Intersect with the group's
+`directGrants[]` (from the original `/by-group` response) plus
+the user's other group memberships to derive the
+"sole-route-via-this-group" subset for that one member, in
+full. This is the documented escape hatch for the small
+fraction of operators whose groups produce > 50 sole-route
+connectors per member.
+
 ## 6. Operational notes
 
 - **Simulate is read-only**: the endpoint never mutates state. A
