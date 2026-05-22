@@ -248,11 +248,19 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
     }
   }, [result, simulateRemove, message, t]);
 
-  // Reset audit-timestamp marker whenever the simulate selection
-  // changes — the previous audit only matched the previous selection.
+  // RC6 L1: reset audit-timestamp marker whenever the simulate
+  // selection CONTENT changes — the previous audit only matched the
+  // previous selection. Depending on the array reference would still
+  // work in current code (antd's Select always returns a fresh array
+  // on change), but a future refactor that memoised the value via
+  // useMemo would silently break the reset. Comparing the joined
+  // content is reference-stable and pins the intended semantics: any
+  // change to the selected principals (add, remove, reorder) resets;
+  // a no-op same-array re-render does not.
+  const simulateRemoveKey = useMemo(() => simulateRemove.join(' '), [simulateRemove]);
   useEffect(() => {
     setSimulateLastAuditedAt(null);
-  }, [simulateRemove]);
+  }, [simulateRemoveKey]);
 
   const onSubmitGroup = async (values: { groupId: string; includeMembers: boolean; memberLimit: number }) => {
     const gid = values.groupId?.trim();

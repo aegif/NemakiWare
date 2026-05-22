@@ -421,7 +421,12 @@ public class ConnectorDefinitionController {
         // Previously every buildMatches() call re-listed all connectors;
         // for includeMembers=true with memberLimit=200 this meant up to
         // 201 separate list() calls per request. Now it's exactly 1.
+        //
+        // RC6 L2: null-defensive (same rationale as the no-arg
+        // buildMatches overload — surface an empty matches[] rather
+        // than NPE on a transient backend failure).
         List<ConnectorDefinition> allConnectors = connectorDefinitionService.list();
+        if (allConnectors == null) allConnectors = java.util.Collections.emptyList();
 
         // Direct grants: same logic as /by-principal/{groupId} with
         // expand=false. We don't expand for groups (NemakiWare groups
@@ -655,7 +660,16 @@ public class ConnectorDefinitionController {
      */
     private List<Map<String, Object>> buildMatches(
             String principalId, java.util.Set<String> principalsToMatch) {
-        return buildMatches(principalId, principalsToMatch, connectorDefinitionService.list());
+        // RC6 L2: defensive null fold. The ConnectorDefinitionService
+        // contract returns a List (never null on the current impl), but
+        // a future impl swap or transient backend failure could surface
+        // a null here and NPE the overload below. Treat null as
+        // "no connectors known right now" — the governance endpoint
+        // returns an empty matches[] array, which is honest about the
+        // partial-result state.
+        List<ConnectorDefinition> connectors = connectorDefinitionService.list();
+        if (connectors == null) connectors = java.util.Collections.emptyList();
+        return buildMatches(principalId, principalsToMatch, connectors);
     }
 
     /**

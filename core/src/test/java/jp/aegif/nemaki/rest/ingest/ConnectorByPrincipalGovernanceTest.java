@@ -585,6 +585,55 @@ class ConnectorByPrincipalGovernanceTest {
     }
 
     @Test
+    void byPrincipal_connectorListReturnsNull_returnsEmptyMatches_L2() {
+        // RC6 L2: ConnectorDefinitionService.list() returning null
+        // must not NPE the governance endpoint. Treated as
+        // "no connectors known" → matches[] is empty, response
+        // shape stays stable.
+        asAdmin();
+        when(connectorService.list()).thenReturn(null);
+        when(authService.expandPrincipals(any(), any())).thenReturn(Set.of());
+
+        ResponseEntity<?> resp = controller.listByPrincipal(USER, REPO, false);
+
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> matches = (List<Map<String, Object>>) body.get("matches");
+        assertNotNull(matches);
+        assertEquals(0, matches.size());
+    }
+
+    @Test
+    void byGroup_connectorListReturnsNull_returnsEmptyMatches_L2() {
+        // Same defence on the by-group path. Both the directGrants
+        // call and the perMemberImpact loop share the same cached
+        // allConnectors list, so a single null surfaces as zero
+        // matches across the whole response without NPE.
+        asAdmin();
+        when(principalService.getGroupById(REPO, GROUP))
+                .thenReturn(makeGroup(GROUP, List.of("alice")));
+        when(connectorService.list()).thenReturn(null);
+        when(authService.expandPrincipals(any(), any())).thenReturn(Set.of(GROUP));
+
+        ResponseEntity<?> resp = controller.listByGroup(GROUP, REPO, true, 200);
+
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> direct = (List<Map<String, Object>>) body.get("directGrants");
+        assertEquals(0, direct.size());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> impact = (List<Map<String, Object>>) body.get("perMemberImpact");
+        assertEquals(1, impact.size());
+        @SuppressWarnings("unchecked")
+        List<?> aliceLost = (List<?>) impact.get(0).get("lostIfGroupRemoved");
+        assertEquals(0, aliceLost.size());
+    }
+
+    @Test
     void byGroup_principalServiceThrows_fallsBackToUnknown() {
         asAdmin();
         when(principalService.getGroupById(REPO, GROUP))
