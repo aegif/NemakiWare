@@ -242,13 +242,21 @@ Failure breakdown (informal triage):
 - Rest spread across `tests/api/*`, `tests/bugfix/*`,
   `tests/complex-scenarios/*`
 
-**Critically**: none of the 155 failures are attributable to
-RC6 / RC6.1 / RC6.2 code changes. The 6 RC5/RC6-area specs
-(connector-governance-by-group, connector-governance-simulate-button,
-integration-settings, connector-profile-management,
-external-ingest-api, ingest-pipeline-e2e) all stay at **66/66
-PASS** across 2 consecutive runs (no flake) AFTER all RC6.2
+**Evidence we can ship**: none of the 155 failures show up in
+the 6 RC5/RC6-area specs that RC6 / RC6.1 / RC6.2 directly
+touched (connector-governance-by-group,
+connector-governance-simulate-button, integration-settings,
+connector-profile-management, external-ingest-api,
+ingest-pipeline-e2e). Those 6 specs stay at **66/66 PASS**
+across 2 consecutive runs (no flake) AFTER all RC6.2 / RC6.3
 changes.
+
+What this does NOT prove: that the 155 failures elsewhere are
+all pre-existing, or all caused by drift outside this RC's
+changes. A pinned comparison would require running the same
+full suite against `v3.1.1-RC5.6` (and earlier baselines) —
+that work belongs to the full-suite green-up epic and was not
+performed here. See §2 note 4 for the full evidence boundary.
 
 ### Live verification
 

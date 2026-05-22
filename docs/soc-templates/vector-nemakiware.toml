@@ -40,9 +40,16 @@
     # back to the legacy `timestamp` field (NemakiWare emits both
     # on every audit event but the legacy field is more reliable
     # in older configs).
+    #
+    # parse_timestamp is fallible — VRL strict mode requires explicit
+    # error handling. The `?? null` coalesce produces a null result
+    # if either ts_str is non-string or doesn't match the format,
+    # which the if-guard below then skips. The format_timestamp!
+    # / to_int! calls inside the guard are infallible-on-valid-input
+    # since ts_parsed != null implies a real Timestamp by this point.
     ts_str = ."@timestamp" ?? .timestamp ?? null
     if ts_str != null {
-      ts_parsed = parse_timestamp(ts_str, "%+")
+      ts_parsed = parse_timestamp(ts_str, "%+") ?? null
       if ts_parsed != null {
         .hour_of_day_local = to_int!(format_timestamp!(ts_parsed, "%H", timezone: "${BUSINESS_HOURS_TZ:-UTC}"))
         .day_of_week_local = format_timestamp!(ts_parsed, "%A", timezone: "${BUSINESS_HOURS_TZ:-UTC}")
