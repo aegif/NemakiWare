@@ -503,7 +503,7 @@ remains at peeled commit `9dfd87adb` as a historical milestone.
 **Remaining**: none in repo scope. `R1` (the last open item
 from RC5.5 closure) is fully resolved on the repo-shippable
 side via the operator playbook
-(`docs/SOC-AUDIT-INTEGRATION.md`) and ready-to-import
+(`docs/SOC-AUDIT-INTEGRATION.md`) and import-ready
 templates (`docs/soc-templates/` — Filebeat / Fluent Bit /
 Vector log shippers + Kibana Detection Engine NDJSON / Loki
 Ruler / Splunk savedsearches rule sets) added post-RC6.1.

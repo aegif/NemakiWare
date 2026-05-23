@@ -544,7 +544,7 @@ binary とみなす。
 
 #### Follow-up
 
-- **R1** (Low, ops) — **解消** (repo 出荷可能部分完了)。`docs/SOC-AUDIT-INTEGRATION.md` playbook + `docs/soc-templates/` ready-to-import テンプレ (Filebeat / Fluent Bit / Vector shipper + Kibana Detection Engine NDJSON / Loki Ruler / Splunk savedsearches)。残るは deployment 固有 (network/TLS、SIEM 認証、通知ルーティング、threshold チューニング) のみで repo 出荷不可。
+- **R1** (Low, ops) — **解消** (repo 出荷可能部分完了)。`docs/SOC-AUDIT-INTEGRATION.md` playbook + `docs/soc-templates/` **import-ready テンプレ (operator validation required)** (Filebeat / Fluent Bit / Vector shipper + Kibana Detection Engine NDJSON / Loki Ruler / Splunk savedsearches)。残るは deployment 固有 (network/TLS、SIEM 認証、通知ルーティング、threshold チューニング) のみで repo 出荷不可。**Note**: 各テンプレートは syntax-spec confidence draft、live import 未済 — operator は `docs/soc-templates/README.md` の "Template validation status" / "Operator pre-deploy validation commands" 表を pre-deploy で実行する必要
 
 ### RC24 / RC6 (2026-05-21 → 2026-05-22) — B3-2 group view + V8/G2 + governance med/low + Dependabot (shipped)
 

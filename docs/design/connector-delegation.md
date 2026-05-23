@@ -1251,7 +1251,8 @@ New file: `docs/SOC-AUDIT-INTEGRATION.md` covering
    asked-then-acted correlation, off-hours simulate, new-actor
    first-time invoker — each with playbook steps
 
-**Plus** ready-to-import config templates under
+**Plus** import-ready config templates (operator validation
+required) under
 `docs/soc-templates/`:
 
 - `filebeat-nemakiware.yml`, `fluent-bit-nemakiware.conf`,

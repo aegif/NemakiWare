@@ -120,19 +120,81 @@ allowed to differ — **and only at the indicated rigour level**:
 | `RELEASE_NOTES.md` | Doc-only — narrative additions, typo fixes, framing alignment |
 | `CLAUDE.md` | Doc-only |
 | `docs/design/connector-delegation.md` | Doc-only — review-time clarifications |
-| `docs/SOC-AUDIT-INTEGRATION.md` | Doc-only — playbook clarifications |
+| `docs/SOC-AUDIT-INTEGRATION.md` | Doc-only — playbook clarifications, sample-query syntax corrections (which are themselves doc-only since the file IS the doc) |
 | `docs/soc-templates/README.md` | Doc-only |
-| `docs/soc-templates/*.yml` / `*.conf` / `*.toml` / `*.ndjson` (shipper + alert rule body files) | **Comment-only** — comments may be added or rewritten; rule-engine-affecting changes (queries, thresholds, processors, output sinks) require a **new RC tag**. The body-fix history that triggered RC6.3 (Filebeat env syntax, Vector VRL field path, Fluent Bit DST handling) is exactly what this rule now forbids without a new tag. |
+| `docs/soc-templates/*.yml` / `*.conf` / `*.toml` / `*.ndjson` (shipper + alert rule body files) | **Comment-only** — see rules below |
 
 Any other path diverging is a bug — please flag it.
 
-This rule is the response to the RC6.2 review's P1-B finding
-(the "clarifying additions only" qualifier was too vague —
-"config-body fix" silently masqueraded as "clarification").
-Going forward: if a SOC template has a bug, fix it on the
-branch and cut a new RC tag before the next review send;
-don't ship the fix as a post-tag commit and call it a
-clarification.
+### What "comment-only" means for the shipper / rule files
+
+**"Comment-only" does NOT mean small edits.** Multi-paragraph
+explanation blocks, full-section comment rewrites, header
+clarifications, even adding a 50-line block-comment with an
+ASCII-art TZ diagram — all of those are allowed. The rule
+constrains *effect*, not size.
+
+**A change is comment-only IFF every diff line is either**:
+
+1. A comment line (starts with the language's comment marker —
+   `#` for YAML/conf/toml/ini, `//` inside JSON if your lint
+   tolerates it, `--` for Lua block context inside a config
+   string), OR
+2. Whitespace / blank line additions or removals, OR
+3. A rename / restructure of an existing comment block.
+
+**A change is NOT comment-only and REQUIRES a new RC tag if it
+edits any of these — even by one character**:
+
+- A knob value (`Refresh_Interval 5` → `Refresh_Interval 10`,
+  `max_lines: 1000` → `2000`)
+- A `${VAR:default}` placeholder default value
+- A threshold (`"value":20` → `"value":35`,
+  `details.lostCount > 50` → `> 80`)
+- A query / search-string body (KQL / EQL / SPL / LogQL /
+  jq filter)
+- A processor / filter / output sink (`[OUTPUT]`, `[FILTER]`,
+  `processors: -`, VRL `.field = …`, Lua `function …`)
+- A path / glob (`paths: - …`, `Path …`, `include = [...]`)
+- A label / tag / metric name that the SIEM indexes
+- A rule-evaluation parameter (cron, interval, threshold field,
+  rule_type, language, EQL `by …`, new_terms field list)
+
+**If in doubt, treat it as not-comment-only and cut a new RC
+tag.** Boundary cases that look like "just a config tweak"
+have already burned three review rounds (RC6.1 P2-3 NUL byte,
+RC6.2 Filebeat env / Fluent Bit TZ / Vector VRL, RC6.3 Fluent
+Bit DST). Spending review time arguing the boundary is more
+expensive than spending five minutes cutting `v3.1.1-RC6.4`.
+
+### New file additions — also require a new RC tag
+
+The §3 table enumerates exactly the paths whose post-tag edits
+are allowed today. **Adding a new file under any of these
+paths (or anywhere else under the repo) is NOT a permitted
+post-tag change**, even if the new file is "obviously docs"
+or "obviously a SOC template". The reasoning:
+
+- A new template / dashboard / rule file ships to GA via the
+  branch HEAD merge to master; reviewers looking at the
+  tag don't see it. Same tag/branch mismatch class the §3
+  rule exists to prevent.
+- A new README or design-doc page is genuinely additive but
+  changes what the reviewer is supposed to read. Surface it
+  in the next RC tag so the review packet stays complete.
+
+So: **any new file under `release/3.1.1-RC6` post-tag → cut
+a new RC tag**. The table is a permission, not a wildcard.
+
+### Rationale recap
+
+This rule set is the response to the RC6.2 review's P1-B
+finding (the "clarifying additions only" qualifier was too
+vague — "config-body fix" silently masqueraded as
+"clarification"). Going forward: if a SOC template has a bug,
+fix it on the branch and cut a new RC tag before the next
+review send; don't ship the fix as a post-tag commit and call
+it a clarification.
 
 External reviewers focused only on the code artifact should
 check out the tag and ignore later branch commits. The SOC
@@ -179,20 +241,61 @@ RC6.3), `docs/design/connector-delegation.md` (§12.1 - §12.20).
 ### Blocking findings
 **0**.
 
-### Java unit tests
+### Java unit tests — carry-forward evidence
 
-Focused 14 test classes: **182** total, all pass. Unchanged
-from RC6.2 — RC6.3 only touches `docs/soc-templates/**` and
-the review docs.
+**Last executed**: at commit `fd03d4ab4` (RC6.2 cycle,
+`perMemberImpact` sort + useMemo comment commit).
+**Result at that run**: 182/182 across the focused 14 test
+classes, all pass.
+**Java / test code delta since `fd03d4ab4`**: zero. RC6.2
+closure docs (`02afee891`, `568f4ebb2`), all RC6.3 commits
+(`bf7c07b3f`, `3afd284f5`, `77ddfe071`, `0028a01cd`,
+`e0f00c7fb`), and this post-tag self-review follow-up touch
+only `docs/**`, `REVIEW_PACKET.md`, `RELEASE_NOTES.md`,
+`CLAUDE.md`. The 182/182 number is therefore the **current
+expected result if you re-run** — but treat it as
+carry-forward evidence, NOT "verified at branch HEAD this
+session".
 
-### Playwright E2E
+### Playwright E2E — carry-forward evidence
 
-- 6 RC5/RC6-area specs: **66/66 PASS** across 2 consecutive
-  runs (smoke).
-- Full chromium suite: NOT re-run for RC6.3. RC6.3 changes
-  are config / doc-only with zero Java / TS code delta vs
-  RC6.2. The RC6.2 baseline (684 passed / 155 failed / 94
-  skipped / 97 did-not-run) carries forward.
+- **6 RC5/RC6-area specs (smoke)** — **last executed**: at
+  RC6.2 closure window, against the deployed WAR built from
+  `fd03d4ab4`. Result: 66/66 PASS across 2 consecutive runs
+  (no flake). No Java / TS / spec body delta since; same
+  carry-forward caveat as the Java tests above.
+- **Full chromium suite** — **last executed**: at RC6.2
+  closure (`02afee891` window). Result: 684 passed / 155
+  failed / 94 skipped / 97 did-not-run. NOT re-run for RC6.3.
+  RC6.3 and this post-tag follow-up are config / doc-only
+  with zero Java / TS / spec code delta vs RC6.2 closure
+  baseline, so re-execution would surface the same numbers
+  modulo Playwright flake noise.
+
+If a reviewer wants live-at-HEAD verification, the commands
+are:
+
+```bash
+mvn test -Dtest="ConnectorByPrincipalGovernanceTest,\
+ConnectorSimulateRemoveTest,IngestSchedulerDelegatedRunTest,\
+ImportProfileSchedulerGateTest,ExternalIngestControllerGateTest,\
+IngestAuthorizationServiceTest,ImportProfileSinceFilterTest,\
+ConnectorDefinitionControllerPartialPutTest,IngestSchedulerDelegationSkipTest,\
+ImportProfileOwnershipTransferTest,ExternalIngestControllerTest,\
+IngestWebhookGraphValidationTest,ImportProfileDefinitionTest,\
+DelegatedCallContextFactoryTest" -f core/pom.xml -Pdevelopment
+```
+
+```bash
+cd core/src/main/webapp/ui
+npx playwright test --project=chromium \
+  tests/admin/connector-governance-by-group.spec.ts \
+  tests/admin/connector-governance-simulate-button.spec.ts \
+  tests/admin/integration-settings.spec.ts \
+  tests/admin/connector-profile-management.spec.ts \
+  tests/api/external-ingest-api.spec.ts \
+  tests/api/ingest-pipeline-e2e.spec.ts
+```
 
 ### Live verification
 
@@ -313,4 +416,4 @@ cumulative diff (since `v3.1.1-RC4.1`) in §1.
 | API entry points | `ConnectorDefinitionController.java`, `ImportProfileDefinitionController.java`, `IngestSchedulerService.java`, `AuditEmitSupport.java` |
 | Test coverage proof | `core/src/test/java/jp/aegif/nemaki/rest/ingest/*Test.java` (182 focused tests across 14 classes) |
 | SOC / SIEM audit integration (playbook) | `docs/SOC-AUDIT-INTEGRATION.md` |
-| SOC / SIEM audit integration (ready-to-import templates) | `docs/soc-templates/` (README + Filebeat / Fluent Bit / Vector shippers + Kibana Detection Engine NDJSON / Loki Ruler / Splunk savedsearches rule sets) |
+| SOC / SIEM audit integration (import-ready templates, operator validation required) | `docs/soc-templates/` (README + Filebeat / Fluent Bit / Vector shippers + Kibana Detection Engine NDJSON / Loki Ruler / Splunk savedsearches rule sets — see README "Template validation status" table for the per-template syntax-only / no-live-test gap) |

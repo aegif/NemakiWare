@@ -65,19 +65,40 @@ working defaults of **20** and **50** respectively. To customise
 before import:
 
 ```bash
-# Set burst threshold to 35 and lost-count outlier to 80
+# Set burst threshold to 35 and lost-count outlier to 80.
+# Updates the rule-engine values (threshold.value, KQL filter)
+# AND the in-UI description prose in a single sed invocation,
+# so an operator reading the Kibana Rules tab sees consistent
+# numbers. The prior cookbook updated only the values, leaving
+# descriptions claiming "default 20" / "default 50" while the
+# rule fired at 35 / 80.
 sed -i.bak \
     -e 's/"value":20/"value":35/' \
-    -e 's/details\.lostCount > 50/details.lostCount > 80/' \
+    -e 's/More than 20 externalGovernanceSimulate/More than 35 externalGovernanceSimulate/' \
+    -e 's/details\.lostCount > 50/details.lostCount > 80/g' \
     kibana-detection-rules.ndjson
 ```
 
 (GNU sed: drop the `.bak`. macOS BSD sed: keep `-i.bak` or use
-`-i ''`.) Adjust by editing the description text too so the
-in-UI rule reflects your actual numbers — the rule-engine reads
-the JSON values, but operators reading the description in
-Kibana's Rules tab will get the baked-in `20` / `50` if you
-don't update both.
+`-i ''`.)
+
+The `g` flag on the `details.lostCount` replacement is intentional
+— that string appears in both the description prose AND the KQL
+query body of the same NDJSON line, and both need to update.
+The `20` and `50` literals are unique to their respective rule
+descriptions / values, so single-pass replacement suffices.
+
+Verify consistency after running:
+
+```bash
+grep -oE '("value":[0-9]+|"description":"[^"]*"|"query":"[^"]*")' \
+    kibana-detection-rules.ndjson
+```
+
+Both the JSON value positions AND the description prose should
+reflect the new numbers consistently. If they drift, operators
+reading the Kibana UI's Rules tab description will see the old
+defaults and misjudge when alerts will fire.
 
 ### Off-hours rule timezone / enrichment
 
@@ -130,27 +151,74 @@ shipped as a generic template:
 The templates flag every such input with `${PLACEHOLDER}` so a
 deploy-time linter can refuse the file if anything is unfilled.
 
-## Verifying a template imported cleanly
+## Template validation status
 
-After dropping a template into your SIEM:
+**None of these templates has been live-tested against a
+running instance of the corresponding stack on the build host
+that produced this RC.** They are syntax-spec confidence
+drafts: each follows the public documentation of its engine,
+each survives whatever static check the build host can run
+(JSON parse, YAML parse, text-grep), but none has been
+imported into Elastic / Loki / Splunk and observed firing
+against real input.
 
-- **Filebeat**: `filebeat test config -c /etc/filebeat/filebeat.yml`
-  then `filebeat test output` for connectivity.
-- **Fluent Bit**: `fluent-bit -c fluent-bit-nemakiware.conf
-  --dry-run` (3.0+) or just start with `--verbose`.
-- **Vector**: `vector validate vector-nemakiware.toml`.
-- **Kibana Detection Engine**: import the NDJSON via Security
-  → Manage rules → Import value lists / rules → Import rules.
-  Each line of `kibana-detection-rules.ndjson` is one rule;
-  the import surface accepts NDJSON directly. After import,
-  Detection rules tab shows "running" with last-execution
-  timestamp < interval as the success signal.
-- **Loki Ruler**: `cortextool rules check --rule-files
-  loki-ruler-rules.yml`.
-- **Splunk**: `| rest /servicesNS/-/-/saved/searches | search
-  title="NemakiWare *"` should list all five rules.
+This matters because every RC in the RC6 series so far (RC6 →
+RC6.1 → RC6.2 → RC6.3) has shipped a SOC-template body bug
+that an external reviewer caught — Filebeat env syntax,
+Vector VRL field path, Fluent Bit DST handling. The
+syntax-spec confidence level is what we can ship; the
+operator pre-deploy validation step closes the remaining gap.
 
-After a clean import, generate one simulate event manually
-(call the `/by-principal/{id}/simulate-remove` endpoint as
-admin) and confirm it surfaces in your SIEM within the
-shipper's flush interval.
+### Validation matrix
+
+| Template | Build-host check performed | Live validation NOT performed |
+|---|---|---|
+| `kibana-detection-rules.ndjson` | `python3 -c 'import json; …'` per line — all 5 parse as JSON, all `rule_type` values are valid Detection Engine types | Elastic 8 cluster import via Security → Manage rules → Import rules; EQL sequence join semantics; new_terms history_window evaluation |
+| `loki-ruler-rules.yml` | `python3 -c 'import yaml; yaml.safe_load(…)'` | `cortextool rules check`; LogQL `label_format` → next-filter binding; off-hours regex match against label-formatted hour |
+| `splunk-savedsearches.conf` | `grep` for known-bad patterns (`startswith=eval`, raw `"details.…" > N`) — none present | `splunk btool savedsearches list --debug`; transaction startswith/endswith eval-form acceptance; `rename` + `tonumber` chain |
+| `filebeat-nemakiware.yml` | YAML parse + `${VAR:default}` syntax conformance (per Beats spec) | `filebeat test config`; JS script processor execution on a real ECMAScript 5.1 Goja runtime |
+| `fluent-bit-nemakiware.conf` | Hand math-trace of the Lua TZ algorithm against UTC / JST / US/Eastern (summer + winter) / spring-forward boundary | `fluent-bit -c fluent-bit-nemakiware.conf --dry-run`; LuaJIT minor-version variance in `os.date` / `os.time` |
+| `vector-nemakiware.toml` | VRL syntax-spec confidence per the published VRL grammar (`."@timestamp"` quoted-path, `parse_timestamp(…) ?? null` coalesce) | `vector validate vector-nemakiware.toml`; whether Vector's TOML reader interprets the multiline VRL `source = '''…'''` block as written |
+
+### Operator pre-deploy validation commands
+
+Run these against your installed stack before relying on the
+templates in production:
+
+| Stack | Command | Success signal |
+|---|---|---|
+| Filebeat | `filebeat test config -c /etc/filebeat/filebeat.yml` + `filebeat test output` | "Config OK" + reachable output |
+| Fluent Bit | `fluent-bit -c fluent-bit-nemakiware.conf --dry-run` (3.0+) | Returns 0, no parse error in stderr |
+| Vector | `vector validate vector-nemakiware.toml` | "Validated" with 0 errors |
+| Kibana Detection Engine | Import NDJSON via Security → Manage rules → Import rules. Detection rules tab shows "running" with last-execution timestamp < interval | All 5 rules import without "Failed" status |
+| Loki Ruler | `cortextool rules check --rule-files loki-ruler-rules.yml` | No errors per rule |
+| Splunk | `splunk btool savedsearches list --debug` (CLI) or UI Settings → Searches → filter "NemakiWare" | All 5 savedsearches listed, no syntax warnings |
+
+### End-to-end smoke after pre-deploy
+
+Once the shipper + alert rules import cleanly:
+
+1. Generate one simulate event manually as admin:
+   ```bash
+   curl -s -u admin:admin -X POST \
+        -H 'X-Requested-With: XMLHttpRequest' \
+        -H 'Content-Type: application/json' \
+        -d '{"repositoryId":"bedroom","expand":false,
+             "removePrincipalIds":["nemakiware-smoke-test-only"]}' \
+        http://localhost:8080/core/api/v1/admin/connectors/by-principal/admin/simulate-remove
+   ```
+2. Within the shipper's flush interval (default 5-10 sec) the
+   event should surface in your SIEM as
+   `operation=externalGovernanceSimulate`.
+3. If you set `BURST_THRESHOLD=1` and replay the curl twice,
+   the burst alert should fire — confirming the rule engine
+   is wired to the data.
+
+### Targeted DST gate (Fluent Bit operators only)
+
+Specific to the Fluent Bit DST fix in RC6.3: with
+`TZ=America/New_York`, feed a synthetic 2025-03-09T07:00:00Z
+audit line and assert `hour_of_day_local = 3` (EDT 03:00 —
+2025-03-09 is the second-Sunday DST spring-forward in US).
+Without this, a non-UTC operator can't be sure the per-record
+offset code path activated.

@@ -186,6 +186,20 @@ All examples assume each audit line is a parsed JSON document.
 Adjust field paths per your SIEM's JSON flattener convention
 (e.g. `details_lostCount` vs `details.lostCount`).
 
+> **Validation status of the samples below**: copy-paste
+> reference only. None of the four query bodies (jq, SPL,
+> Elasticsearch DSL, LogQL) has been executed against a live
+> instance of the corresponding stack on the build host. They
+> are syntax-spec confidence drafts derived from the public
+> docs of each engine. Operators should treat them with the
+> same pre-deploy scrutiny as the `docs/soc-templates/`
+> import-ready templates (operator validation required before
+> production deploy) — see the "operator pre-deploy
+> validation" table in `docs/soc-templates/README.md`. If
+> you find a syntax error in any sample below, please report
+> it; we will fix the doc and the corresponding template (if
+> any) together.
+
 ### 4.1 jq (raw `audit.log` inspection on the host)
 
 ```bash
@@ -250,21 +264,29 @@ index=nemakiware sourcetype=nemakiware_audit
 | where count > 20
 
 # Lost-count outliers
+# NOTE: dotted field names ("details.lostCount") are not stably
+# comparable as numbers in SPL without a coercion. Same fix as
+# splunk-savedsearches.conf shipped in RC6.1: rename + tonumber.
 index=nemakiware sourcetype=nemakiware_audit
     operation="externalGovernanceSimulate"
-    "details.lostCount" > 50
-| table _time userId details.principalId details.lostCount
+| rename "details.lostCount" AS lost_count,
+         "details.principalId" AS principal_id
+| where tonumber(lost_count) > 50
+| table _time userId principal_id lost_count
 
 # "Asked then acted" correlation (5-min window)
+# NOTE: transaction startswith/endswith accept (parens) eval form,
+# NOT search-string `startswith="operation=..."`. Same fix as
+# splunk-savedsearches.conf shipped in RC6.3.
 index=nemakiware sourcetype=nemakiware_audit
     (operation="externalGovernanceSimulate"
      OR operation="externalProfileUpdated"
      OR operation="externalProfileDeleted")
 | transaction userId
     maxspan=5m
-    startswith="operation=externalGovernanceSimulate"
-    endswith="operation=externalProfileUpdated OR operation=externalProfileDeleted"
-| table _time userId duration operation principal_id objectId
+    startswith=(operation="externalGovernanceSimulate")
+    endswith=(operation="externalProfileUpdated" OR operation="externalProfileDeleted")
+| table _time userId duration operation objectId
 ```
 
 ### 4.3 Elasticsearch Query DSL
@@ -345,8 +367,10 @@ sum by (userId) (
 
 Pasting the queries above into your shipper / SIEM by hand is
 fine for ad-hoc inspection. For production, see the file set in
-`docs/soc-templates/` — each shipper has a ready-to-import
-config and each SIEM has the 5 alert rules below pre-encoded:
+`docs/soc-templates/` — each shipper has an import-ready
+config (operator validation required, see
+`docs/soc-templates/README.md`) and each SIEM has the 5 alert
+rules below pre-encoded:
 
 | Shipper template | SIEM rule template |
 |---|---|
