@@ -311,6 +311,7 @@ NemakiWare uses custom OpenCMIS 1.1.0-nemakiware JARs (Jakarta EE compatible). P
 | [Connector Delegation](docs/design/connector-delegation.md) | Folder-scoped External Ingestion delegation (RC3+) |
 | [Multi-replica Deployment](docs/MULTI-REPLICA-DEPLOYMENT.md) | Required conditions and known limitations for N≥2 replicas |
 | [SOC Audit Integration](docs/SOC-AUDIT-INTEGRATION.md) | Audit log shipping + SIEM playbooks (Filebeat / Fluent Bit / Vector → Elastic / Loki / Splunk). Templates under [`docs/soc-templates/`](docs/soc-templates/) — 4 of 6 CLI-validated by `scripts/validate-soc-templates.sh` (RC6.4+) |
+| [Manual Verification — Connectors](docs/MANUAL-VERIFICATION-CONNECTORS.md) | コネクタ / インポートプロファイル / ガバナンス / Simulate-remove のステップバイステップ手動検証手順 (curl + UI 並記、RC6.4 時点) |
 
 ## Etymology
 
