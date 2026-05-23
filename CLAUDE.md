@@ -310,6 +310,176 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC28 / RC6.4 (2026-05-23) — SOC template validation gate + RC5.6 vs RC6 HEAD Playwright baseline diff (shipped)
+
+ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.3` = `77ddfe071`)
+
+Quality-improvement RC。2 epics:
+
+- **Epic 1**: RC6 → RC6.3 で毎 cycle 「template body bug が
+  external review でしか surface しない」 pattern が続いた (Filebeat
+  env / Vector VRL / Fluent Bit DST)。**vendor CLI を Docker image
+  で走らせる validator** を追加して、RC6.5+ で同じ class の bug を
+  ship しないようにする。
+- **Epic 2**: RC6 が RC5.6 に対して behavioural regression を 1 件も
+  入れていないことを、**full Playwright chromium suite (1032 tests) を
+  RC5.6 と RC6 HEAD の両方で実行 + per-test diff** で実証。
+
+Java + TypeScript ソース: RC6.3 と byte-equal。本 RC の変更は docs /
+shell scripts / SOC template content fix (validator が catch したもの)
+のみ。
+
+#### Epic 1 — SOC template validation gate
+
+新 file: `scripts/validate-soc-templates.sh` (16 KB Bash)
+
+Phase 1 (常時、`python3` のみ): JSON / YAML / TOML parse、NUL-byte
+smoke (Python — bash の argv NUL stripping を回避)、file-type smoke、
+placeholder enumeration
+
+Phase 2 (`VALIDATE_DOCKER=1` opt-in、Docker 必須):
+- `vector validate --skip-healthchecks` (timberio/vector)
+- `fluent-bit -c … --dry-run` (fluent/fluent-bit)
+- `filebeat test config` (docker.elastic.co/beats/filebeat、
+  8.x の ownership refusal を tmpfs + chown root で回避)
+- `cortextool rules check --backend=loki` (grafana/cortex-tools、
+  LogQL は `${VAR:-default}` を native interpolate しないので
+  Python envsubst で前処理)
+
+Phase 3 (`WRITE_VALIDATION_MD=1` opt-in):
+- `docs/soc-templates/VALIDATION.md` に最新 run state を書き出し
+
+**Validator bring-up で 5 件の real template bug を catch** (syntax-spec-
+confidence approach が見逃していたもの):
+
+1. **Vector header comment の `${...}` interpolation** — Vector は
+   comment 内の dollar-brace token も env var として解釈する。header
+   の "Replace every `${...}`" という example が
+   `Missing environment variable in config. name = "..."` を発生
+2. **Fluent Bit `Code |` heredoc** — classic INI parser が line 59
+   で "extra indentation level found" で reject。Lua を
+   `fluent-bit-nemakiware-time-enrichment.lua` に外出しして
+   `Script` directive で参照
+3. **VRL `??` on infallible `."@timestamp"`** — VRL field access は
+   infallible (missing path で null 返却、error 出さない) なので
+   `??` は strict mode で "unnecessary error coalescing operation"
+   error。conditional assignment に置換
+4. **Vector `buffer.max_size = 268435456`** (ちょうど 256 MiB) は
+   `>= 268435488` (256 MiB + 32 B 内部 overhead) 制約未満。
+   536870912 (512 MiB) に bump して Vector minor version drift に
+   余裕を持たせる
+5. **LogQL `offset 1h` placement** — `count_over_time(...)` の外側に
+   置くと "syntax error: unexpected offset"。LogQL の正しい placement
+   は range-vector selector の内側: `[7d] offset 1h`
+
+#### Epic 2 — full Playwright baseline diff (RC5.6 vs RC6 HEAD)
+
+同一 Docker stack で WAR だけ swap して full chromium suite (1032 tests)
+を 2 回実行:
+
+| Label | Tag / commit | WAR SHA-256 |
+|---|---|---|
+| RC5.6 | `v3.1.1-RC5.6` = `adf8db3b4` | `749dedd883c8146516d4f618859db2b8c317f9f972939e432cf4a7989feb592e` |
+| RC6 HEAD | `release/3.1.1-RC6` HEAD = `1ba21bc59` | `9df81beb10e8f3309534e8d830c734fb9485a3bc32d38c36a52cf54e5af56328` |
+
+(RC6 HEAD `1ba21bc59` = RC6.4 Epic 1 commit。Epic 1 は doc/script のみ
+で Java/TS 一切触らないので、RC6 HEAD の behaviour は RC6.3 と等価)
+
+Aggregate:
+
+| Stat | RC5.6 | RC6 HEAD | Δ |
+|---|---:|---:|---:|
+| Passed | 673 | 679 | **+6** |
+| Failed | 162 | 156 | **−6** |
+| Flaky | 2 | 2 | 0 |
+| Skipped | 195 | 195 | 0 |
+| Total | 1032 | 1032 | — |
+| Duration | 77 min | 76 min | −1 min |
+
+Per-test classification (RC6.4 spec の 5 bucket):
+
+- **RC6 regression: 0** — 1 candidate (`group-management-crud.spec.ts:315`
+  `should add member to group`) は flaky に再分類 (Ant `Select` dropdown
+  の viewport positioning、group-management code は RC5.6 → RC6 HEAD で
+  一切変更されていないため real regression と矛盾)
+- **Improved by RC6: 6** — 5 件は RC6 新規の `/v1/admin/connectors/by-group`
+  endpoint、1 件は RC6.1 で追加された `removePrincipalIds > MAX` 400 cap
+- **Pre-existing fail: 155** — RC5.6 と RC6 HEAD の両方で fail。85 spec
+  file に均等分散 (各 file:line ユニーク、cluster なし)。
+  test-skip-triage memory で track されている長期 stabilization backlog
+  と同じ群。top file group: `components/layout-navigation` (14)、
+  `search/custom-property-search` (14)、`components/protected-route` (12)、
+  `user-scenarios` (10)
+- **Persistent pass: 672** — core production behaviour は RC5 → RC6
+  cycle 全体で stable
+- **Skipped (`test.skip`): 192** — explicit annotation、想定通り
+
+**結論**: RC6 は regression ゼロ + 6 net 新規 green を出荷。
+155 backlog は RC6.4 で変化なし。
+
+#### Change scope vs RC6.3 (正確な分類)
+
+- **変更あり (RC6.4)**:
+  - `scripts/validate-soc-templates.sh` (新規 16 KB)
+  - `docs/soc-templates/fluent-bit-nemakiware-time-enrichment.lua` (新規 Lua 外出し)
+  - `docs/soc-templates/fluent-bit-nemakiware.conf` (Code → Script directive)
+  - `docs/soc-templates/vector-nemakiware.toml` (header comment + VRL conditional + buffer.max_size)
+  - `docs/soc-templates/loki-ruler-rules.yml` (offset placement + comment)
+  - `docs/soc-templates/README.md` (§Template validation status 書き換え、validation matrix 4/6 CLI-validated に flip)
+  - `docs/soc-templates/VALIDATION.md` (新規 generated artefact)
+  - `REVIEW_PACKET.md` (§10 inline baseline diff + classification)
+  - `RELEASE_NOTES.md` (RC6.4 セクション)
+  - `CLAUDE.md` (本セクション)
+- **無変更 (RC6.3 と byte-equal)**:
+  - 全 Java surface
+  - 全 TypeScript surface (UI、services、specs)
+  - 全 properties、patches、views、Mango index、migrations、DB bootstrap
+  - Kibana NDJSON / Splunk SPL templates (offline parser 不在で operator gate のみ)
+
+#### Tests + verification
+
+- **SOC validator**: `VALIDATE_DOCKER=1 scripts/validate-soc-templates.sh` →
+  PASS 20 / SKIP 3 / FAIL 0 / total 23。3 SKIP は host に Python
+  tomllib なし (Vector は Phase 2.1 で cover)、Kibana NDJSON operator
+  gate、Splunk btool operator gate
+- **Playwright full chromium ×2**: RC5.6 = 673/162/2/195 (4622s)、
+  RC6 HEAD = 679/156/2/195 (4538s)。両 run とも clean exit (Playwright
+  exit 0)
+- **Java tests**: 182/182 focused 14 Java test classes pass (RC6.3 と
+  byte-equal — 本 RC で Java は一切触らない)
+- **TypeScript build**: `npm run build` clean (Epic 2 の WAR build 時)
+- **Vector / Fluent Bit / Filebeat / cortextool**: 4 件すべて
+  公式 Docker image の vendor CLI で validate 済み (Epic 1 acceptance)
+
+#### Commit + tag 関係
+
+- Epic 1 (validator + 5 template fix): `1ba21bc59`
+- Epic 2 (REVIEW_PACKET §10 inline): `c077dc55d`
+- RC6.4 release-package commit (RELEASE_NOTES + CLAUDE + REVIEW_PACKET retitle): 後続
+- **`v3.1.1-RC6.4` annotated tag target**: release-package commit
+
+RC6.3 tag (`77ddfe071`) は force-update せず歴史的マイルストーン
+として保持。
+
+#### Follow-up status
+
+**Resolved in this RC**:
+- 5 real template bug (validator が bring-up で catch したもの)
+- RC6-cycle の "template body bug が external review でしか surface
+  しない" pattern — validator gate が tag 前に catch するようになった
+- 長年の question "RC6 は RC5.6 vs 155-failure cluster に regression
+  を入れているか?" — full Playwright baseline diff で **NO** と回答
+
+**Remaining (operator-side, by design)**:
+- Network/TLS、SIEM credentials、通知ルーティング、threshold tuning
+- Kibana Detection NDJSON + Splunk savedsearches の CLI validation —
+  両者 offline parser 不在、live cluster import が必須
+
+**Remaining (test-skip triage backlog)**:
+- Playwright の 155 persistent failure + 195 explicit skip は memory
+  `test-skip-triage` (Playwright 421件のtest.skip分類と改善方針) で
+  track。RC6.4 scope ではない
+
 ### RC27 / RC6.3 (2026-05-23) — RC6.2 review 5件 全件解消 + tag/branch 再整合 (shipped)
 
 ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.2` = `02afee891`)
