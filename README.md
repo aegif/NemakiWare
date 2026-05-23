@@ -302,7 +302,7 @@ NemakiWare uses custom OpenCMIS 1.1.0-nemakiware JARs (Jakarta EE compatible). P
 
 | Document | Description |
 |----------|-------------|
-| [Release Notes](RELEASE_NOTES.md) | User-facing changelog (latest: 3.1.1-RC3) |
+| [Release Notes](RELEASE_NOTES.md) | User-facing changelog (latest: 3.1.1-RC6.4) |
 | [Architecture](docs/ARCHITECTURE.md) | System architecture overview |
 | [AWS Deployment](docs/AWS-DEPLOYMENT-GUIDE.md) | Production deployment on AWS |
 | [Bedrock Embedding](docs/BEDROCK_EMBEDDING.md) | Amazon Bedrock setup |
@@ -310,6 +310,7 @@ NemakiWare uses custom OpenCMIS 1.1.0-nemakiware JARs (Jakarta EE compatible). P
 | [Archive Enhancement](docs/ARCHIVE_ENHANCEMENT.md) | Retention & cold storage |
 | [Connector Delegation](docs/design/connector-delegation.md) | Folder-scoped External Ingestion delegation (RC3+) |
 | [Multi-replica Deployment](docs/MULTI-REPLICA-DEPLOYMENT.md) | Required conditions and known limitations for N≥2 replicas |
+| [SOC Audit Integration](docs/SOC-AUDIT-INTEGRATION.md) | Audit log shipping + SIEM playbooks (Filebeat / Fluent Bit / Vector → Elastic / Loki / Splunk). Templates under [`docs/soc-templates/`](docs/soc-templates/) — 4 of 6 CLI-validated by `scripts/validate-soc-templates.sh` (RC6.4+) |
 
 ## Etymology
 

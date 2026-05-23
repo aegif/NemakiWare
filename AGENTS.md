@@ -334,6 +334,7 @@ election, cron schedulers duplicate work N×.
 - 🛠️ **Quick Reset**: `make reset-test-env` (one-command environment reset)
 - ✅ **Validation**: `make validate-env` or `scripts/validate-test-env.sh`
 - 🧪 **Run Tests**: `make test-e2e` (reset + validate + test)
+- 🛡️ **SOC template validation** (RC6.4+): `VALIDATE_DOCKER=1 scripts/validate-soc-templates.sh` — runs Vector / Fluent Bit / Filebeat / cortextool CLIs in their official Docker images against `docs/soc-templates/`. Phase 1 (host-only, `python3`) always runs; Phase 2 requires Docker. Outputs `docs/soc-templates/VALIDATION.md` when `WRITE_VALIDATION_MD=1`
 
 **Common Issue - Initial Content Setup Failures**:
 
@@ -482,12 +483,12 @@ const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');  // Not 
 - For Java 21, ensure `MAVEN_OPTS` includes required `--add-opens` (see `core/start-jetty-dev.sh`).
 - **External Ingest delegation (3.1.1-RC3+)**: connectors are admin-only by default. To let a folder owner use a connector, set `delegated=true` AND either `allowedFolderIds=[...]` or `delegateAllFolders=true` (the latter only when truly needed — credential reach is repo-wide). Empty `allowedFolderIds` while `delegated=true` is treated as no delegation. See `docs/design/connector-delegation.md`.
 
-## Current Work Status (2026-04-17)
+## Current Work Status (2026-05-23)
 
 ### Active Branch
-- **Branch**: `release/3.1.1-RC2`
-- **Focus**: CSRF hardening, External Ingest stabilization, Jetty dev parity
-- See `CLAUDE.md` for the canonical version log (RC1〜RC12) and security status.
+- **Branch**: `release/3.1.1-RC6` (latest tag: `v3.1.1-RC6.4`)
+- **Focus**: SOC audit-log shipping templates + validator gate; full Playwright baseline diff (RC5.6 vs RC6 HEAD) shipping 0 regressions
+- See `CLAUDE.md` for the canonical version log (RC1〜RC28) and security status; see `RELEASE_NOTES.md` for the user-facing per-RC narrative (12 sections RC5 → RC6.4).
 
 ### TCK Complete Success Achievement (2025-11-09) 🎉
 
