@@ -137,11 +137,22 @@ constrains *effect*, not size.
 **A change is comment-only IFF every diff line is either**:
 
 1. A comment line (starts with the language's comment marker —
-   `#` for YAML/conf/toml/ini, `//` inside JSON if your lint
-   tolerates it, `--` for Lua block context inside a config
-   string), OR
+   `#` for YAML/conf/toml/ini, `--` for Lua block context
+   inside a config string), OR
 2. Whitespace / blank line additions or removals, OR
 3. A rename / restructure of an existing comment block.
+
+**Exception: `docs/soc-templates/*.ndjson` has no comment-only
+mode at all.** The NDJSON files are imported as JSON Lines —
+the JSON grammar has no comment syntax, and adding any
+non-JSON line breaks the import. Comment-only post-tag edits
+to `.ndjson` files are therefore impossible: any change to a
+line is a content change, which falls under the "NOT
+comment-only, requires new RC tag" rule below regardless of
+whether it touches the value, the query body, or the
+description string. If you want to add an explanation about
+an NDJSON rule, put the prose in `docs/soc-templates/README.md`
+and leave the `.ndjson` body alone until the next RC tag.
 
 **A change is NOT comment-only and REQUIRES a new RC tag if it
 edits any of these — even by one character**:
