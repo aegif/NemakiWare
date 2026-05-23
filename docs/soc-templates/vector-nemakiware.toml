@@ -3,7 +3,11 @@
 # Pairs with the matching alert rules in this directory.
 #
 # Pre-deploy checklist:
-#   1. Replace every ${PLACEHOLDER}.
+#   1. Replace every dollar-brace placeholder marker used elsewhere
+#      in this file. (Vector interpolates dollar-brace tokens even
+#      inside comments — RC6.4 caught this when a literal example in
+#      this header tripped "Missing environment variable" at
+#      validate-time.)
 #   2. `vector validate vector-nemakiware.toml`.
 #   3. Restart Vector with `--watch-config` for iterative tuning.
 
@@ -41,13 +45,21 @@
     # on every audit event but the legacy field is more reliable
     # in older configs).
     #
-    # parse_timestamp is fallible — VRL strict mode requires explicit
+    # Field access in VRL is infallible — it returns `null` for a
+    # missing path, never errors. RC6.4 caught a `vector validate`
+    # failure ("unnecessary error coalescing operation") from the
+    # previous `."@timestamp" ?? .timestamp` form. The right way to
+    # do null-fallback is conditional assignment, not `??` (which is
+    # only for fallible expressions like parse_*).
+    #
+    # parse_timestamp IS fallible — VRL strict mode requires explicit
     # error handling. The `?? null` coalesce produces a null result
-    # if either ts_str is non-string or doesn't match the format,
-    # which the if-guard below then skips. The format_timestamp!
-    # / to_int! calls inside the guard are infallible-on-valid-input
-    # since ts_parsed != null implies a real Timestamp by this point.
-    ts_str = ."@timestamp" ?? .timestamp ?? null
+    # if ts_str is non-string or doesn't match the format, which the
+    # if-guard below then skips. The format_timestamp! / to_int! calls
+    # inside the guard are infallible-on-valid-input since ts_parsed
+    # != null implies a real Timestamp by this point.
+    ts_str = ."@timestamp"
+    if ts_str == null { ts_str = .timestamp }
     if ts_str != null {
       ts_parsed = parse_timestamp(ts_str, "%+") ?? null
       if ts_parsed != null {
@@ -73,9 +85,13 @@
   auth.strategy = "basic"
   auth.user = "${SIEM_USERNAME}"
   auth.password = "${SIEM_PASSWORD}"
-  # Audit must never be dropped on transient outage
+  # Audit must never be dropped on transient outage. Vector enforces
+  # `buffer.max_size >= 268435488` (256 MiB + 32 B internal overhead);
+  # RC6.4 caught a `vector validate` failure when this was set exactly
+  # at 268435456 = 256 MiB. Bump to a comfortable round value so the
+  # operator headroom isn't sensitive to Vector minor-version drift.
   buffer.type = "disk"
-  buffer.max_size = 268435456  # 256 MB local buffer
+  buffer.max_size = 536870912  # 512 MiB local buffer
   buffer.when_full = "block"
 
 # ─── Elasticsearch sink ────────────────────────────────────
@@ -91,7 +107,7 @@
 #   auth.password = "${SIEM_PASSWORD}"
 #   tls.verify_certificate = true
 #   buffer.type = "disk"
-#   buffer.max_size = 268435456
+#   buffer.max_size = 536870912
 #   buffer.when_full = "block"
 
 # ─── Splunk HEC sink ──────────────────────────────────────
@@ -105,5 +121,5 @@
 #   compression = "gzip"
 #   tls.verify_certificate = true
 #   buffer.type = "disk"
-#   buffer.max_size = 268435456
+#   buffer.max_size = 536870912
 #   buffer.when_full = "block"

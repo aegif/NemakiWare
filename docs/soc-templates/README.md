@@ -1,10 +1,19 @@
 # SOC ship-and-alert templates for NemakiWare audit log
 
-Ready-to-import config snippets for the most common SIEM stacks.
-Complements `docs/SOC-AUDIT-INTEGRATION.md` (which explains the
-audit schema and gives ad-hoc query examples) — these files are
-the **actual config you drop into your shipper / SIEM** with
-only the `${PLACEHOLDER}` values filled in for your environment.
+Config snippets for the most common SIEM stacks. Complements
+`docs/SOC-AUDIT-INTEGRATION.md` (which explains the audit schema
+and gives ad-hoc query examples) — these files are the **actual
+config you drop into your shipper / SIEM** after filling the
+`${PLACEHOLDER}` values for your environment.
+
+**Validation status (RC6.4)**: 4 of 6 templates are validated by
+their vendor's own CLI on every push via
+`scripts/validate-soc-templates.sh` (Vector / Fluent Bit /
+Filebeat / Loki Ruler). The other two (Kibana Detection NDJSON
++ Splunk savedsearches) still require operator import into a
+live cluster — they have no offline CLI. See the **Validation
+matrix** section below + `docs/soc-templates/VALIDATION.md` for
+the last automated run state.
 
 ## File catalogue
 
@@ -153,32 +162,49 @@ deploy-time linter can refuse the file if anything is unfilled.
 
 ## Template validation status
 
-**None of these templates has been live-tested against a
-running instance of the corresponding stack on the build host
-that produced this RC.** They are syntax-spec confidence
-drafts: each follows the public documentation of its engine,
-each survives whatever static check the build host can run
-(JSON parse, YAML parse, text-grep), but none has been
-imported into Elastic / Loki / Splunk and observed firing
-against real input.
+RC6 → RC6.3 shipped a SOC-template body bug in every cycle —
+Filebeat env syntax, Vector VRL field path, Fluent Bit DST
+handling — each caught only at external review. **RC6.4
+introduces `scripts/validate-soc-templates.sh`**, which runs
+the actual vendor CLI for 4 of the 6 templates inside their
+official Docker images. Phase 1 (host-only checks: JSON / YAML
+/ TOML parse, NUL-byte smoke, file-type smoke, placeholder
+enumeration) runs on any host with `python3`; Phase 2 (CLI
+validation) runs when `VALIDATE_DOCKER=1` is set.
 
-This matters because every RC in the RC6 series so far (RC6 →
-RC6.1 → RC6.2 → RC6.3) has shipped a SOC-template body bug
-that an external reviewer caught — Filebeat env syntax,
-Vector VRL field path, Fluent Bit DST handling. The
-syntax-spec confidence level is what we can ship; the
-operator pre-deploy validation step closes the remaining gap.
+The validator caught 5 real bugs during RC6.4 bring-up that
+the prior syntax-spec-confidence approach had missed:
+
+1. `${...}` literal in a Vector header comment was interpolated
+   as an env-var name (Vector interpolates inside comments).
+2. Fluent Bit `Code |` heredoc indentation rejected by classic
+   INI parser ("extra indentation level found") — fixed by
+   externalising the Lua to `fluent-bit-nemakiware-time-enrichment.lua`.
+3. VRL `??` on infallible field path (`."@timestamp" ?? …`) →
+   "unnecessary error coalescing operation".
+4. Vector `buffer.max_size = 268435456` (exact 256 MiB) below
+   the `>= 268435488` minimum.
+5. LogQL `offset 1h` placed AFTER the wrapping function instead
+   of inside the range-vector selector.
+
+Kibana NDJSON + Splunk savedsearches still need an operator
+import into a live cluster — their parsers ship only with the
+respective server installs.
+
+Latest automated run state: see `docs/soc-templates/VALIDATION.md`
+(regenerate via `WRITE_VALIDATION_MD=1 VALIDATE_DOCKER=1
+scripts/validate-soc-templates.sh`).
 
 ### Validation matrix
 
-| Template | Build-host check performed | Live validation NOT performed |
+| Template | RC6.4 automated check (every push) | Operator-side check still required |
 |---|---|---|
-| `kibana-detection-rules.ndjson` | `python3 -c 'import json; …'` per line — all 5 parse as JSON, all `rule_type` values are valid Detection Engine types | Elastic 8 cluster import via Security → Manage rules → Import rules; EQL sequence join semantics; new_terms history_window evaluation |
-| `loki-ruler-rules.yml` | `python3 -c 'import yaml; yaml.safe_load(…)'` | `cortextool rules check`; LogQL `label_format` → next-filter binding; off-hours regex match against label-formatted hour |
-| `splunk-savedsearches.conf` | `grep` for known-bad patterns (`startswith=eval`, raw `"details.…" > N`) — none present | `splunk btool savedsearches list --debug`; transaction startswith/endswith eval-form acceptance; `rename` + `tonumber` chain |
-| `filebeat-nemakiware.yml` | YAML parse + `${VAR:default}` syntax conformance (per Beats spec) | `filebeat test config`; JS script processor execution on a real ECMAScript 5.1 Goja runtime |
-| `fluent-bit-nemakiware.conf` | Hand math-trace of the Lua TZ algorithm against UTC / JST / US/Eastern (summer + winter) / spring-forward boundary | `fluent-bit -c fluent-bit-nemakiware.conf --dry-run`; LuaJIT minor-version variance in `os.date` / `os.time` |
-| `vector-nemakiware.toml` | VRL syntax-spec confidence per the published VRL grammar (`."@timestamp"` quoted-path, `parse_timestamp(…) ?? null` coalesce) | `vector validate vector-nemakiware.toml`; whether Vector's TOML reader interprets the multiline VRL `source = '''…'''` block as written |
+| `kibana-detection-rules.ndjson` | ✅ JSON parse (5/5 lines), NUL-byte scan, placeholder enumeration | Elastic 8 cluster import via Security → Manage rules → Import rules; EQL sequence join semantics; new_terms history_window evaluation. **No offline CLI exists** — operator gate is unavoidable |
+| `loki-ruler-rules.yml` | ✅ YAML parse + `cortextool rules check --backend=loki` (after Python envsubst of `${VAR:-default}` defaults) — full LogQL expression parse, range selectors, `offset` placement | LogQL semantic correctness against actual logs (label match cardinality, `label_format` → next-filter binding) — needs running Loki + sample data |
+| `splunk-savedsearches.conf` | ✅ `grep` for known-bad patterns (`startswith=eval`, raw `"details.…" > N`) — none present | `splunk btool savedsearches list --debug`; transaction startswith/endswith eval-form acceptance; `rename` + `tonumber` chain. **Splunk binary required** — no offline parser |
+| `filebeat-nemakiware.yml` | ✅ `filebeat test config` (full Beats parser, JS processor compilation) | `filebeat test output` against the real ES cluster; JS script processor runtime behaviour on actual events |
+| `fluent-bit-nemakiware.conf` | ✅ `fluent-bit -c … --dry-run` (full INI parse, Lua script load, plugin instantiation) + math-trace of the Lua TZ algorithm against UTC / JST / US/Eastern (summer + winter) / spring-forward boundary | Live `TZ=America/New_York` synthetic-event smoke (RC6.3 DST gate, see §Targeted DST gate below) — LuaJIT minor-version variance in `os.date` / `os.time` is the residual unknown |
+| `vector-nemakiware.toml` | ✅ `vector validate --skip-healthchecks` (config schema + full VRL transform compilation + buffer config) | Sink healthchecks against the real SIEM endpoint (skipped in CI because `${SIEM_HOST}` is synthetic); `vector tap` against a sample line to confirm enrichment fields populate |
 
 ### Operator pre-deploy validation commands
 

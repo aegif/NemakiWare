@@ -139,6 +139,13 @@ groups:
       # Note: full lookback requires Mimir / a longer Loki retention;
       # for typical 7-day Loki retention this rule degenerates to
       # "new actor this week", which is still useful for change review.
+      #
+      # The `offset` modifier in LogQL goes INSIDE the range-vector
+      # selector (`[7d] offset 1h`), not after the wrapping function
+      # — placing it outside the range trips
+      # "parse error: syntax error: unexpected offset" in cortextool.
+      # RC6.4 caught this when the earlier draft put it after the
+      # closing `count_over_time(...)` paren.
       - alert: NemakiWareGovernanceNewActor
         expr: |
           (
@@ -155,8 +162,8 @@ groups:
               count_over_time(
                 {service="nemakiware", source_type="audit", operation="externalGovernanceSimulate"}
                   | json
-                [${NEW_ACTOR_LOOKBACK:-7d}]
-              ) offset 1h
+                [${NEW_ACTOR_LOOKBACK:-7d}] offset 1h
+              )
             )
           )
         for: 0m
