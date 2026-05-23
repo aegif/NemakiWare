@@ -22,7 +22,7 @@ changes are docs, shell scripts, or SOC template content fixes
 (caught by the new validator).
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.4` (peeled commit `<POST-TAG-FILL>`).
+  `v3.1.1-RC6.4` (peeled commit `afdf4d8328f5612adf5d38ef33cb57446ea80498`).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
@@ -37,10 +37,10 @@ Previous historical tags (`v3.1.1-RC6.3`, `…-RC6.2`, `…-RC6.1`,
 | Item | Value |
 |---|---|
 | **Final candidate tag** | `v3.1.1-RC6.4` |
-| Tag annotated object SHA | `<POST-TAG-FILL>` |
-| Tag peeled commit | `<POST-TAG-FILL>` |
+| Tag annotated object SHA | `68533fc57a5d3d11db7805048df15191e127179e` |
+| Tag peeled commit | `afdf4d8328f5612adf5d38ef33cb57446ea80498` |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | `<POST-TAG-FILL>` (= tag peeled, zero divergence at tag time) |
+| Branch HEAD at tag time | `afdf4d8328f5612adf5d38ef33cb57446ea80498` (= tag peeled, zero divergence at tag time) |
 | Base of RC6.4 cycle | `v3.1.1-RC6.3` (peeled `77ddfe071`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
 | **RC6.3 → RC6.4 diff cmd** | `git diff v3.1.1-RC6.3..v3.1.1-RC6.4` |
