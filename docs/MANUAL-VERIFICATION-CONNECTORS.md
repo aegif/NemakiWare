@@ -79,10 +79,16 @@ UI 確認: ブラウザで `http://localhost:8080/core/ui/` → `admin / admin`
 ### 1.2 アダプタ登録状況の確認
 
 ```bash
-curl -s $AUTH $NW/core/api/v1/admin/connectors/adapter-registry | jq 'keys | length'
-# expect: 11 以上 (IMAP / Gmail / M365Mail / Notion / Salesforce /
-# Slack / Teams / Mattermost / Chatwork / Box / Dropbox + 任意の
-# レガシー file_share)
+# レスポンスは {sourceSystem, displayName, archetype, requiredParams,
+# optionalParams, ...} のオブジェクト配列
+curl -s $AUTH $NW/core/api/v1/admin/connectors/adapter-registry | jq 'length'
+# expect: 13 (RC6.4 時点: imap / gmail_mail / m365_mail / slack /
+#              teams / mattermost / chatwork / notion / salesforce /
+#              box / dropbox / google_drive / onedrive)
+
+# sourceSystem 一覧だけ見たい場合
+curl -s $AUTH $NW/core/api/v1/admin/connectors/adapter-registry \
+  | jq -r '.[].sourceSystem'
 ```
 
 ---
@@ -562,14 +568,21 @@ cat /tmp/p.out  # expect: HTTP 200 {"status":"success"}
 curl -s $AUTH "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" \
   | jq '.profile.defaultProfile'  # expect: true
 
-# 同 archetype + targetFolderId で別 profile を defaultProfile=true で作成 → 拒否
-curl -s -o /dev/null -w "%{http_code}\n" $AUTH $H $JSON -X POST -d '{
+# 同 defaultConnectorId を別 profile が取ろうとする → 拒否
+curl -s -o /tmp/p.out -w "%{http_code}\n" $AUTH $H $JSON -X POST -d '{
   "profileId":"admin-fs-profile-2","displayName":"Conflict",
   "repositoryId":"'$REPO'","targetFolderId":"'$TARGET_FOLDER'",
   "allowedArchetypes":["FILE_SHARE"],"allowedConnectorIds":["verify-fs-1"],
   "defaultConnectorId":"verify-fs-1","enabled":true,"defaultProfile":true
 }' $NW/core/api/v1/admin/import-profiles
-# expect: 400 もしくは 409 (一意性違反)
+cat /tmp/p.out
+# expect: HTTP 400
+#   {"status":"error","message":"Profile 'admin-fs-profile' already
+#    claims defaultConnectorId='verify-fs-1' in repository 'bedroom'.
+#    Only one enabled profile per defaultConnectorId is allowed..."}
+# (defaultProfile 重複ではなく defaultConnectorId 一意性違反として
+#  reject される。この制約は §6.2 で delegated profile が
+#  defaultConnectorId を省略する理由でもある。)
 ```
 
 ### 5.4 自動無効化マーカー (RC5.1 V1)
@@ -687,11 +700,16 @@ curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH_FO $H $JSON -X PUT -d '{
   "schedulerEnabled":true
 }' "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile"
 cat /tmp/p.out
-# expect: nemakiware.ingest.delegated.schedulerEnabled プロパティに
-# よる: OFF (default) → 400 (status:error) もしくは 200 で
-# schedulerEnabled=false に正規化される
+# expect (default OFF): HTTP 403
+#   {"status":"error","denialReason":"SCHEDULER_REQUIRES_ADMIN",
+#    "message":"Scheduled ingestion requires admin privileges
+#    (or operator opt-in via
+#    nemakiware.ingest.delegated.schedulerEnabled=true)"}
+# operator が true に切り替えた環境では HTTP 200 で受理され、
+# scheduler が per-tick で再評価する。
 
-# GET で確認 (wrapper .profile を経由)
+# 403 で reject される場合、profile 状態は変更されないので
+# GET で確認: schedulerEnabled=false のまま (PUT は適用されていない)
 curl -s $AUTH_FO "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile" \
   | jq '.profile | {schedulerEnabled, defaultProfile}'
 # expect: 両方 false (delegated profile では admin 専用フィールド)
@@ -717,14 +735,17 @@ curl -s $AUTH $H $JSON -X POST -d '{
 }' "$NW/core/api/v1/admin/connectors?repositoryId=$REPO" > /dev/null
 
 # folder-owner が allowedConnectorIds に admin-only-fs を入れる → 拒否
-curl -s -o /dev/null -w "%{http_code}\n" $AUTH_FO $H $JSON -X PUT -d '{
+curl -s -o /tmp/p.out -w "%{http_code} " $AUTH_FO $H $JSON -X PUT -d '{
   "profileId":"delegated-fs-profile","displayName":"D",
   "repositoryId":"'$REPO'","targetFolderId":"'$TARGET_FOLDER'",
   "allowedArchetypes":["FILE_SHARE"],
   "allowedConnectorIds":["verify-fs-1","admin-only-fs"],
   "enabled":true,"delegated":true
 }' "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile"
-# expect: 403 (admin-only-fs は委譲外)
+cat /tmp/p.out
+# expect: HTTP 403
+#   {"status":"error","denialReason":"CONNECTOR_NOT_DELEGATED",
+#    "message":"Connector not delegated for this folder/user: admin-only-fs"}
 ```
 
 UI 確認: コネクタ picker で `admin-only-fs` は **候補に出てこない**
@@ -765,13 +786,20 @@ curl -s $AUTH -X POST \
 # expect: 出力なし (folder-owner が ACE から消えた)
 
 # folder-owner が委譲 profile を update しようとする → 403
-curl -s -o /dev/null -w "%{http_code}\n" $AUTH_FO $H $JSON -X PUT -d '{
+curl -s -o /tmp/p.out -w "%{http_code} " $AUTH_FO $H $JSON -X PUT -d '{
   "profileId":"delegated-fs-profile","displayName":"D-renamed",
   "repositoryId":"'$REPO'","targetFolderId":"'$TARGET_FOLDER'",
   "allowedArchetypes":["FILE_SHARE"],"allowedConnectorIds":["verify-fs-1"],
   "enabled":true,"delegated":true
 }' "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile"
-# expect: 403 (TARGET_FOLDER_PERMISSION_DENIED / CMIS_ALL_REQUIRED)
+cat /tmp/p.out
+# expect: HTTP 403
+#   {"status":"error","denialReason":"CMIS_ALL_REQUIRED_OLD",
+#    "message":"cmis:all required on existing target folder"}
+# (cmis:all を「既存 target」と「新規 target」両方で確認する TOCTOU
+#  ガードのため、既存側で失敗すると CMIS_ALL_REQUIRED_OLD が返る。
+#  新規 target side で fail する場合は CMIS_ALL_REQUIRED_NEW。
+#  enum 一覧は docs/design/connector-delegation.md §10 参照。)
 
 # admin が cmis:all を戻す (後続テスト継続のため)
 curl -s $AUTH -X POST \
@@ -893,8 +921,11 @@ curl -s -o /tmp/i.out -w "HTTP %{http_code}\n" $AUTH_FO $H -X POST \
   -F "content=@/tmp/delegated-verify.txt;type=text/plain" \
   "$NW/core/api/v1/repo/$REPO/ingest"
 cat /tmp/i.out
-# expect: 403 (connector が profile.allowedConnectorIds に含まれない、
-# あるいは success=false で errors に DenialReason 文字列)
+# expect: HTTP 403
+#   {"success":false,
+#    "errors":["Connector not in profile's allowedConnectorIds"],...}
+# (ingest controller の error は plain text 文字列。
+#  profile CRUD path の構造化 denialReason enum とは別系統。)
 ```
 
 ### 8.3 targetFolderOverride 禁止
@@ -908,19 +939,23 @@ curl -s -o /tmp/i.out -w "HTTP %{http_code}\n" $AUTH_FO $H -X POST \
   -F "content=@/tmp/delegated-verify.txt;type=text/plain" \
   "$NW/core/api/v1/repo/$REPO/ingest"
 cat /tmp/i.out
-# expect: 403 もしくは success=false errors に TARGET_FOLDER_OVERRIDE_FORBIDDEN
+# expect: HTTP 403
+#   {"success":false,
+#    "errors":["targetFolderOverride is not permitted for non-admin callers"],...}
 ```
 
 ### 8.4 profileId 必須 (admin と挙動を分ける)
 
 ```bash
-# folder-owner が profileId 省略 → 400 / fail
+# folder-owner が profileId 省略 → 403
 curl -s -o /tmp/i.out -w "HTTP %{http_code}\n" $AUTH_FO $H -X POST \
   -F 'request={"connectorId":"verify-fs-1","sourceObjectId":"no-profile","fileName":"no-profile.txt"};type=application/json' \
   -F "content=@/tmp/delegated-verify.txt;type=text/plain" \
   "$NW/core/api/v1/repo/$REPO/ingest"
 cat /tmp/i.out
-# expect: 400 もしくは 403、errors に PROFILE_ID_REQUIRED_FOR_DELEGATED
+# expect: HTTP 403
+#   {"success":false,
+#    "errors":["profileId is required for non-admin ingestion"],...}
 ```
 
 ---
@@ -1024,7 +1059,7 @@ curl -s $AUTH "$NW/core/api/v1/admin/connectors/by-group/team-alpha?repositoryId
 ```bash
 curl -s $AUTH "$NW/core/api/v1/admin/connectors/by-group/team-alpha?repositoryId=$REPO&includeMembers=false" \
   | jq '{groupId, directGrants: (.directGrants | map(.connectorId)), perMemberImpact}'
-# expect: perMemberImpact は null もしくは [] (member 展開を skip)
+# expect: perMemberImpact = [] (member 展開を skip)
 ```
 
 ### 10.3 memberLimit truncation
@@ -1054,14 +1089,17 @@ curl -s $AUTH "$NW/core/api/v1/admin/connectors/by-group/no-such-group?repositor
 # expect: groupType="UNKNOWN", stable shape (空配列)、200 OK
 ```
 
-### 10.6 missing param → 400
+### 10.6 missing param
 
 ```bash
+# missing repositoryId — controller が param validation で reject
 curl -s -o /dev/null -w "%{http_code}\n" $AUTH "$NW/core/api/v1/admin/connectors/by-group/team-alpha"
-# expect: 400 (missing repositoryId)
+# expect: HTTP 400
 
+# missing groupId — Spring の route が一致せず 404 になる
+# (空 path variable は他 endpoint route として認識されない)
 curl -s -o /dev/null -w "%{http_code}\n" $AUTH "$NW/core/api/v1/admin/connectors/by-group/?repositoryId=$REPO"
-# expect: 400 or 404 (missing groupId)
+# expect: HTTP 404
 ```
 
 ### 10.7 UI: Group モード
@@ -1119,26 +1157,30 @@ curl -s $AUTH $H $JSON -X POST -d '{
 ```bash
 # 501 件の removePrincipalIds を作って投げる → 400
 python3 -c "import json; print(json.dumps({'repositoryId':'$REPO','expand':False,'removePrincipalIds':['p'+str(i) for i in range(501)]}))" \
-  | curl -s -o /dev/null -w "%{http_code}\n" $AUTH $H $JSON -X POST -d @- \
+  | curl -s -o /tmp/r.out -w "%{http_code}\n" $AUTH $H $JSON -X POST -d @- \
     "$NW/core/api/v1/admin/connectors/by-principal/folder-owner/simulate-remove"
-# expect: 400 (REMOVE_PRINCIPAL_IDS_LIMIT_EXCEEDED)
+cat /tmp/r.out
+# expect: HTTP 400
+#   {"status":"error","message":"removePrincipalIds exceeds maximum size (501 > 500)"}
 
 # 500 件以内は受理される (内容は何でも OK)
 python3 -c "import json; print(json.dumps({'repositoryId':'$REPO','expand':False,'removePrincipalIds':['p'+str(i) for i in range(500)]}))" \
   | curl -s -o /dev/null -w "%{http_code}\n" $AUTH $H $JSON -X POST -d @- \
     "$NW/core/api/v1/admin/connectors/by-principal/folder-owner/simulate-remove"
-# expect: 200
+# expect: HTTP 200
 ```
 
 ### 11.4 per-entry length cap (MAX_PRINCIPAL_ID_LENGTH=512)
 
 ```bash
 LONG=$(python3 -c "print('x'*600)")
-curl -s -o /dev/null -w "%{http_code}\n" $AUTH $H $JSON -X POST -d "$(cat <<EOF
+curl -s -o /tmp/r.out -w "%{http_code}\n" $AUTH $H $JSON -X POST -d "$(cat <<EOF
 {"repositoryId":"$REPO","expand":false,"removePrincipalIds":["$LONG"]}
 EOF
 )" "$NW/core/api/v1/admin/connectors/by-principal/folder-owner/simulate-remove"
-# expect: 400
+cat /tmp/r.out
+# expect: HTTP 400
+#   {"status":"error","message":"removePrincipalIds entry exceeds maximum length (600 > 512)"}
 ```
 
 ### 11.5 UI: 「Simulate (audit)」ボタン (RC5.4 R3)
@@ -1220,20 +1262,20 @@ UI 確認: 統合設定 → コネクタ ベータ / インポートプロファ
 | 4.4 | `/summary` が secret / endpoint / scope を含まない | ☐ |
 | 5.1 | admin で profile CRUD ができる (POST → 201、GET wrapper `.profile.*`、admin の createdByUserId は null) | ☐ |
 | 5.2 | schedulerEnabled トグル後に `.scheduledProfiles[]` に表示される | ☐ |
-| 5.3 | 同 archetype × targetFolderId で defaultProfile=true 重複は拒否される | ☐ |
+| 5.3 | 同 defaultConnectorId 重複は **HTTP 400** `"Only one enabled profile per defaultConnectorId is allowed"` | ☐ |
 | 5.4 | admin re-enable で marker (lastAutoDisabledAt) がクリアされる | ☐ |
 | 6.2 | folder-owner で委譲 profile 作成: `defaultConnectorId` 省略必須 (admin と衝突回避)、GET `.profile.createdByUserId="folder-owner"` | ☐ |
-| 6.3 | 委譲 profile は schedulerEnabled / defaultProfile が強制 false | ☐ |
-| 6.4 | folder-owner が委譲外 connector を allowedConnectorIds に入れて PUT すると 403 | ☐ |
+| 6.3 | delegated profile + schedulerEnabled=true (default OFF) は **HTTP 403** `denialReason="SCHEDULER_REQUIRES_ADMIN"` で reject | ☐ |
+| 6.4 | folder-owner が委譲外 connector を入れると **HTTP 403** `denialReason="CONNECTOR_NOT_DELEGATED"` | ☐ |
 | 6.5 | folder-owner の lastAutoDisabledAt 書き込みは silent drop される (spoof 防止) | ☐ |
-| 6.6 | folder-owner の cmis:all 失効後は委譲 profile 操作が 403 | ☐ |
+| 6.6 | folder-owner の cmis:all 失効後は **HTTP 403** `denialReason="CMIS_ALL_REQUIRED_OLD"` | ☐ |
 | 7.1 | admin で manual ingest 成功 (multipart `request` part + `content` part) | ☐ |
 | 7.2 | 同 sourceObjectId 再 ingest で `isNewVersion=true` (hash 変化時) | ☐ |
 | 7.3 | dryRun=true で実体作成されない (`objectId=null, success=true`) | ☐ |
 | 8.1 | folder-owner で manual ingest 成功 | ☐ |
-| 8.2 | folder-owner が委譲外 connectorId 指定で 403 / errors | ☐ |
-| 8.3 | folder-owner が targetFolderOverride 指定で 403 / errors | ☐ |
-| 8.4 | folder-owner が profileId 省略で 400 / errors | ☐ |
+| 8.2 | 委譲外 connectorId 指定で **HTTP 403** `errors:["Connector not in profile's allowedConnectorIds"]` | ☐ |
+| 8.3 | targetFolderOverride 指定で **HTTP 403** `errors:["targetFolderOverride is not permitted for non-admin callers"]` | ☐ |
+| 8.4 | profileId 省略で **HTTP 403** `errors:["profileId is required for non-admin ingestion"]` | ☐ |
 | 9.1 | by-principal が USER 単独で正しく matches を返す | ☐ |
 | 9.2 | by-principal が GROUP 単独で `principalType=GROUP` を返す | ☐ |
 | 9.3 | expand=false で group 経由 match が出ない | ☐ |
@@ -1243,12 +1285,12 @@ UI 確認: 統合設定 → コネクタ ベータ / インポートプロファ
 | 10.2 | includeMembers=false で perMemberImpact 省略される (高速パス) | ☐ |
 | 10.3 | memberLimit truncation で memberUserIdsTruncated=true | ☐ |
 | 10.5 | unknown group で `groupType="UNKNOWN"` + 200 + stable shape | ☐ |
-| 10.6 | missing repositoryId で 400 | ☐ |
+| 10.6 | missing repositoryId で **HTTP 400**、missing groupId で **HTTP 404** (Spring route mismatch) | ☐ |
 | 10.7 | UI Group モード で perMemberImpact カードが表示される | ☐ |
 | 11.1 | simulate-remove が lost / kept を分けて返す | ☐ |
 | 11.2 | multi-removal で両ルート失う connector が lost に入る | ☐ |
-| 11.3 | removePrincipalIds > 500 で 400 (RC6.1 M2 cap) | ☐ |
-| 11.4 | 1 entry > 512 字で 400 | ☐ |
+| 11.3 | removePrincipalIds > 500 で **HTTP 400** `"removePrincipalIds exceeds maximum size (N > 500)"` (RC6.1 M2 cap) | ☐ |
+| 11.4 | 1 entry > 512 字で **HTTP 400** `"removePrincipalIds entry exceeds maximum length (N > 512)"` | ☐ |
 | 11.5 | UI で Simulate ボタンクリック毎に audit エントリ 1 件 | ☐ |
 
 ---
