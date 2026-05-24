@@ -155,11 +155,18 @@ TARGET_FOLDER=$(curl -s $AUTH -X POST \
 echo "TARGET_FOLDER=$TARGET_FOLDER"
 
 # folder-owner に cmis:all を付与
+# Browser Binding は OpenCMIS 標準の addACEPrincipal[n] / addACEPermission[n][m]
+# 形式を要求する (NemakiBrowserBindingServlet.java L4336)。
+# 旧形式の principalId[0] / permission[0] では ACL が更新されず、
+# 後続の §6 で 403 CMIS_ALL_REQUIRED になる。
 curl -s $AUTH -X POST \
   -F "cmisaction=applyACL" \
-  -F "principalId[0]=folder-owner" -F "permission[0]=cmis:all" \
-  -F "ACLPropagation=propagate" \
-  "$NW/core/browser/$REPO/root?objectId=$TARGET_FOLDER" | jq .
+  -F "addACEPrincipal[0]=folder-owner" \
+  -F "addACEPermission[0][0]=cmis:all" \
+  -F "ACLPropagation=repositorydetermined" \
+  "$NW/core/browser/$REPO/root?objectId=$TARGET_FOLDER" \
+  | jq '.acl.aces[] | select(.principal == "folder-owner")'
+# expect: {"principal":"folder-owner","permissions":["cmis:all"]}
 ```
 
 > 既に同名 `delegated-inbox` フォルダがある場合は createFolder が
@@ -494,9 +501,13 @@ EOF
 cat /tmp/p.out  # expect: HTTP 201 {"status":"success","profileId":"admin-fs-profile"}
 
 # GET で full shape を確認
+# レスポンスは {"profile": {...}, "warnings": [...]} の wrapper 形式。
+# 個別フィールドは .profile.{field} で参照する。
 curl -s $AUTH "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" \
-  | jq '{profileId, createdByUserId, delegated, schedulerEnabled, defaultProfile}'
-# expect: createdByUserId="admin", delegated=false, scheduler/default=false
+  | jq '.profile | {profileId, createdByUserId, delegated, schedulerEnabled, defaultProfile}'
+# expect: createdByUserId=null (admin profile では空、§6 の delegated
+#         profile では "folder-owner" がセットされる)、
+#         delegated=false, scheduler/default=false
 ```
 
 UI 確認: 統合設定 → 「インポートプロファイル」タブ →
@@ -523,9 +534,9 @@ EOF
 )" "$NW/core/api/v1/admin/import-profiles/admin-fs-profile"
 cat /tmp/p.out  # expect: HTTP 200 {"status":"success"}
 
-# GET で確認
+# GET で確認 (.profile wrapper を経由)
 curl -s $AUTH "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" \
-  | jq '{schedulerEnabled, schedulerParams}'
+  | jq '.profile | {schedulerEnabled, schedulerParams}'
 
 # scheduler status を確認 (admin only)
 # レスポンス shape は {count, scheduledProfiles, idleProfiles}
@@ -549,7 +560,7 @@ curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH $H $JSON -X PUT -d '{
 cat /tmp/p.out  # expect: HTTP 200 {"status":"success"}
 
 curl -s $AUTH "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" \
-  | jq '.defaultProfile'  # expect: true
+  | jq '.profile.defaultProfile'  # expect: true
 
 # 同 archetype + targetFolderId で別 profile を defaultProfile=true で作成 → 拒否
 curl -s -o /dev/null -w "%{http_code}\n" $AUTH $H $JSON -X POST -d '{
@@ -581,7 +592,7 @@ curl -s -o /dev/null -w "%{http_code}\n" $AUTH $H $JSON -X PUT -d '{
 # expect: HTTP 200
 
 curl -s $AUTH "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" \
-  | jq '{enabled, lastAutoDisabledAt, lastAutoDisabledReason}'
+  | jq '.profile | {enabled, lastAutoDisabledAt, lastAutoDisabledReason}'
 # expect: enabled=false, marker フィールド両方に値あり
 
 # admin が enabled=true に戻す → marker クリア + audit に
@@ -595,7 +606,7 @@ curl -s -o /dev/null -w "%{http_code}\n" $AUTH $H $JSON -X PUT -d '{
 # expect: HTTP 200
 
 curl -s $AUTH "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" \
-  | jq '{enabled, lastAutoDisabledAt, lastAutoDisabledReason}'
+  | jq '.profile | {enabled, lastAutoDisabledAt, lastAutoDisabledReason}'
 # expect: enabled=true、marker 両フィールドが null
 ```
 
@@ -628,6 +639,12 @@ UI 確認: ログアウト → `folder-owner / changeme01` でログイン →
 
 ### 6.2 委譲プロファイル作成 (folder-owner)
 
+> ⚠ `defaultConnectorId` は **enabled profile 間で 1 connector に
+> つき 1 profile** 制約があり、§5.1 で admin-fs-profile が既に
+> `defaultConnectorId=verify-fs-1` を取得している。delegated-fs-profile
+> を作るときは **defaultConnectorId を省略する** (admin と衝突して
+> 400 になる)。手動 ingest 用途なら `allowedConnectorIds` だけで十分。
+
 ```bash
 curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH_FO $H $JSON -X POST -d "$(cat <<EOF
 {
@@ -637,7 +654,6 @@ curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH_FO $H $JSON -X POST -d "$(c
   "targetFolderId": "$TARGET_FOLDER",
   "allowedArchetypes": ["FILE_SHARE"],
   "allowedConnectorIds": ["verify-fs-1"],
-  "defaultConnectorId": "verify-fs-1",
   "enabled": true,
   "delegated": true,
   "schedulerEnabled": false,
@@ -647,9 +663,9 @@ EOF
 )" $NW/core/api/v1/admin/import-profiles
 cat /tmp/p.out  # expect: HTTP 201 {"status":"success","profileId":"delegated-fs-profile"}
 
-# GET で full shape を確認
+# GET で full shape を確認 (wrapper .profile を経由)
 curl -s $AUTH_FO "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile" \
-  | jq '{profileId, createdByUserId, delegated, schedulerEnabled}'
+  | jq '.profile | {profileId, createdByUserId, delegated, schedulerEnabled}'
 # expect: createdByUserId="folder-owner", delegated=true,
 # schedulerEnabled=false (強制)
 ```
@@ -666,7 +682,7 @@ curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH_FO $H $JSON -X PUT -d '{
   "profileId":"delegated-fs-profile","displayName":"D",
   "repositoryId":"'$REPO'","targetFolderId":"'$TARGET_FOLDER'",
   "allowedArchetypes":["FILE_SHARE"],"allowedConnectorIds":["verify-fs-1"],
-  "defaultConnectorId":"verify-fs-1","enabled":true,
+  "enabled":true,
   "delegated":true,
   "schedulerEnabled":true
 }' "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile"
@@ -675,9 +691,9 @@ cat /tmp/p.out
 # よる: OFF (default) → 400 (status:error) もしくは 200 で
 # schedulerEnabled=false に正規化される
 
-# GET で確認
+# GET で確認 (wrapper .profile を経由)
 curl -s $AUTH_FO "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile" \
-  | jq '{schedulerEnabled, defaultProfile}'
+  | jq '.profile | {schedulerEnabled, defaultProfile}'
 # expect: 両方 false (delegated profile では admin 専用フィールド)
 ```
 
@@ -706,7 +722,7 @@ curl -s -o /dev/null -w "%{http_code}\n" $AUTH_FO $H $JSON -X PUT -d '{
   "repositoryId":"'$REPO'","targetFolderId":"'$TARGET_FOLDER'",
   "allowedArchetypes":["FILE_SHARE"],
   "allowedConnectorIds":["verify-fs-1","admin-only-fs"],
-  "defaultConnectorId":"verify-fs-1","enabled":true,"delegated":true
+  "enabled":true,"delegated":true
 }' "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile"
 # expect: 403 (admin-only-fs は委譲外)
 ```
@@ -723,7 +739,7 @@ curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH_FO $H $JSON -X PUT -d '{
   "profileId":"delegated-fs-profile","displayName":"D",
   "repositoryId":"'$REPO'","targetFolderId":"'$TARGET_FOLDER'",
   "allowedArchetypes":["FILE_SHARE"],"allowedConnectorIds":["verify-fs-1"],
-  "defaultConnectorId":"verify-fs-1","enabled":true,"delegated":true,
+  "enabled":true,"delegated":true,
   "lastAutoDisabledAt":"2099-12-31T23:59:59Z",
   "lastAutoDisabledReason":"FAKE"
 }' "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile"
@@ -731,7 +747,7 @@ cat /tmp/p.out  # expect: HTTP 200 {"status":"success"}
 
 # GET で確認: marker は permanently null (spoof は silent drop)
 curl -s $AUTH_FO "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile" \
-  | jq '{lastAutoDisabledAt, lastAutoDisabledReason}'
+  | jq '.profile | {lastAutoDisabledAt, lastAutoDisabledReason}'
 # expect: 両方 null (非 admin の書き込みは強制的に消される)
 ```
 
@@ -741,25 +757,31 @@ curl -s $AUTH_FO "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile" \
 # admin が folder-owner の cmis:all を剥奪
 curl -s $AUTH -X POST \
   -F "cmisaction=applyACL" \
-  -F "removeACEPrincipalId[0]=folder-owner" -F "removeACEPermission[0]=cmis:all" \
-  -F "ACLPropagation=propagate" \
-  "$NW/core/browser/$REPO/root?objectId=$TARGET_FOLDER" > /dev/null
+  -F "removeACEPrincipal[0]=folder-owner" \
+  -F "removeACEPermission[0][0]=cmis:all" \
+  -F "ACLPropagation=repositorydetermined" \
+  "$NW/core/browser/$REPO/root?objectId=$TARGET_FOLDER" \
+  | jq '.acl.aces[] | select(.principal == "folder-owner") | "still-present-after-remove"'
+# expect: 出力なし (folder-owner が ACE から消えた)
 
 # folder-owner が委譲 profile を update しようとする → 403
 curl -s -o /dev/null -w "%{http_code}\n" $AUTH_FO $H $JSON -X PUT -d '{
   "profileId":"delegated-fs-profile","displayName":"D-renamed",
   "repositoryId":"'$REPO'","targetFolderId":"'$TARGET_FOLDER'",
   "allowedArchetypes":["FILE_SHARE"],"allowedConnectorIds":["verify-fs-1"],
-  "defaultConnectorId":"verify-fs-1","enabled":true,"delegated":true
+  "enabled":true,"delegated":true
 }' "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile"
-# expect: 403 (TARGET_FOLDER_PERMISSION_DENIED)
+# expect: 403 (TARGET_FOLDER_PERMISSION_DENIED / CMIS_ALL_REQUIRED)
 
-# admin が cmis:all を戻す
+# admin が cmis:all を戻す (後続テスト継続のため)
 curl -s $AUTH -X POST \
   -F "cmisaction=applyACL" \
-  -F "principalId[0]=folder-owner" -F "permission[0]=cmis:all" \
-  -F "ACLPropagation=propagate" \
-  "$NW/core/browser/$REPO/root?objectId=$TARGET_FOLDER" > /dev/null
+  -F "addACEPrincipal[0]=folder-owner" \
+  -F "addACEPermission[0][0]=cmis:all" \
+  -F "ACLPropagation=repositorydetermined" \
+  "$NW/core/browser/$REPO/root?objectId=$TARGET_FOLDER" \
+  | jq '.acl.aces[] | select(.principal == "folder-owner") | .permissions'
+# expect: ["cmis:all"]
 ```
 
 ---
@@ -1186,6 +1208,7 @@ UI 確認: 統合設定 → コネクタ ベータ / インポートプロファ
 
 | # | 確認項目 | OK |
 |---|---|---|
+| 2.3 | ACL は `addACEPrincipal[n]` / `addACEPermission[n][m]` 形式で適用される (旧 `principalId[n]` / `permission[n]` は silent no-op) | ☐ |
 | 3.2 | admin が connector 作成できる (POST → HTTP 201 + `{status:success,connectorId}`) | ☐ |
 | 3.3 | GET で `credentialRef:"[configured]"` / `webhookSecret` がマスクされる | ☐ |
 | 3.4 | PUT で list field (allowedFolderIds/allowedPrincipalIds) を omit すると既存値が保持される | ☐ |
@@ -1195,11 +1218,11 @@ UI 確認: 統合設定 → コネクタ ベータ / インポートプロファ
 | 4.1 | `delegated=true` + `allowedFolderIds=[F]` + `allowedPrincipalIds=[P]` で適正委譲できる | ☐ |
 | 4.3 | `delegateAllFolders=true` で UI 警告が出る | ☐ |
 | 4.4 | `/summary` が secret / endpoint / scope を含まない | ☐ |
-| 5.1 | admin で profile CRUD ができる (POST → 201、GET で createdByUserId=admin) | ☐ |
+| 5.1 | admin で profile CRUD ができる (POST → 201、GET wrapper `.profile.*`、admin の createdByUserId は null) | ☐ |
 | 5.2 | schedulerEnabled トグル後に `.scheduledProfiles[]` に表示される | ☐ |
 | 5.3 | 同 archetype × targetFolderId で defaultProfile=true 重複は拒否される | ☐ |
 | 5.4 | admin re-enable で marker (lastAutoDisabledAt) がクリアされる | ☐ |
-| 6.2 | folder-owner で委譲 profile を作成できる (`createdByUserId=folder-owner`) | ☐ |
+| 6.2 | folder-owner で委譲 profile 作成: `defaultConnectorId` 省略必須 (admin と衝突回避)、GET `.profile.createdByUserId="folder-owner"` | ☐ |
 | 6.3 | 委譲 profile は schedulerEnabled / defaultProfile が強制 false | ☐ |
 | 6.4 | folder-owner が委譲外 connector を allowedConnectorIds に入れて PUT すると 403 | ☐ |
 | 6.5 | folder-owner の lastAutoDisabledAt 書き込みは silent drop される (spoof 防止) | ☐ |
@@ -1241,10 +1264,13 @@ UI 確認: 統合設定 → コネクタ ベータ / インポートプロファ
   は default OFF。委譲 profile の `schedulerEnabled=true` が
   受理されるかどうかはこのプロパティに従う。本書 §6.3 は default
   OFF を前提。
-- **テストフォルダの `cmis:all` 付与時に `ACLPropagation=propagate`
-  を忘れない**。配下にも継承される(folder ancestor walk が
-  cap 128 hop で打ち切られる仕様、§§4.x の `nemakiware.ingest.
-  ancestorWalk.maxHops` 参照)。
+- **ACL 操作 (applyACL) は OpenCMIS 標準の `addACEPrincipal[n]` /
+  `addACEPermission[n][m]` / `removeACEPrincipal[n]` /
+  `removeACEPermission[n][m]` 形式**を使う。`principalId[n]` /
+  `permission[n]` 形式は受理されるが ACL を更新しない (silent
+  no-op)。`ACLPropagation=repositorydetermined` が推奨。folder
+  ancestor walk は cap 128 hop で打ち切られる仕様(§§4.x の
+  `nemakiware.ingest.ancestorWalk.maxHops` 参照)。
 - **`createdByUserId` は SyntheticCallContext 用 (RC5 §12.1)**。
   scheduler が delegated profile を走らせるとき、この user の
   active 状態と cmis:all を per-tick で再評価する。本書では
