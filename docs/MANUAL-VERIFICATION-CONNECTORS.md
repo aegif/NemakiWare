@@ -27,15 +27,40 @@
 
 ### 共通 shell 設定
 
+> ⚠ **本書のコマンドは bash で実行することを前提**にしている。
+> zsh は `$AUTH` の `-u admin:admin` のような **空白を含む変数を
+> word-split せず単一引数として渡す** ため、curl が `-u admin:admin`
+> を「ユーザー名」として解釈して 401 になる。zsh で実行する場合は
+> 下記の配列形式に切り替えること。
+
+**bash** (本書の標準):
+
 ```bash
 NW=http://localhost:8080
 AUTH="-u admin:admin"
 H="-H X-Requested-With:XMLHttpRequest"
 JSON="-H Content-Type:application/json"
 REPO=bedroom
+
+# 使い方
+curl -s $AUTH $H $JSON $NW/...
 ```
 
-以降のすべての curl で `$NW $AUTH $H $JSON` を組み合わせて使う。
+**zsh** (配列形式):
+
+```zsh
+NW=http://localhost:8080
+AUTH=(-u admin:admin)
+H=(-H 'X-Requested-With: XMLHttpRequest')
+JSON=(-H 'Content-Type: application/json')
+REPO=bedroom
+
+# 使い方
+curl -s "${AUTH[@]}" "${H[@]}" "${JSON[@]}" $NW/...
+```
+
+以降のコマンドはすべて bash 形式で記載する。zsh の場合は適宜
+`${AUTH[@]}` 等に置き換える(quote 必須)。
 
 ---
 
@@ -107,17 +132,26 @@ UI 確認: 管理メニュー → グループ → `team-alpha` をクリック�
 
 ### 2.3 テストフォルダ作成 + `cmis:all` 付与
 
+> CMIS Browser Binding は **2 種類の JSON 形状** で object を返す:
+> - `properties` (デフォルト): `{"cmis:objectId":{"id":"...","value":"<ID>"}}` のネスト構造
+> - `succinctProperties` (`createFolder` などのレスポンスや
+>   `succinct=true` 付きクエリ): `{"cmis:objectId":"<ID>"}` のフラット形状
+>
+> 両方に対応する jq 表現を使う。
+
 ```bash
-# Root folder ID を取得 (bedroom)
-ROOT=$(curl -s $AUTH "$NW/core/browser/$REPO/root?cmisselector=object" | jq -r .properties.\"cmis:objectId\".value)
+# Root folder ID (GET cmisselector=object → properties で返る)
+ROOT=$(curl -s $AUTH "$NW/core/browser/$REPO/root?cmisselector=object" \
+  | jq -r ".succinctProperties.\"cmis:objectId\" // .properties.\"cmis:objectId\".value")
 echo "ROOT=$ROOT"
 
-# 委譲対象フォルダ
+# 委譲対象フォルダ (POST createFolder → succinctProperties で返る)
 TARGET_FOLDER=$(curl -s $AUTH -X POST \
   -F "cmisaction=createFolder" \
   -F "propertyId[0]=cmis:objectTypeId" -F "propertyValue[0]=cmis:folder" \
   -F "propertyId[1]=cmis:name"         -F "propertyValue[1]=delegated-inbox" \
-  "$NW/core/browser/$REPO/root?objectId=$ROOT" | jq -r .properties.\"cmis:objectId\".value)
+  "$NW/core/browser/$REPO/root?objectId=$ROOT" \
+  | jq -r ".succinctProperties.\"cmis:objectId\" // .properties.\"cmis:objectId\".value")
 echo "TARGET_FOLDER=$TARGET_FOLDER"
 
 # folder-owner に cmis:all を付与
@@ -127,6 +161,11 @@ curl -s $AUTH -X POST \
   -F "ACLPropagation=propagate" \
   "$NW/core/browser/$REPO/root?objectId=$TARGET_FOLDER" | jq .
 ```
+
+> 既に同名 `delegated-inbox` フォルダがある場合は createFolder が
+> エラーになる(または重複作成される)。先に
+> `curl -s $AUTH "$NW/core/browser/$REPO/root?cmisselector=children&objectId=$ROOT"`
+> で確認 → 既存があれば §12 のクリーンアップを先に実施。
 
 UI 確認: ドキュメント → `delegated-inbox` フォルダが見える → ACL 画面
 で `folder-owner` が `cmis:all` を持つことを確認。
@@ -149,7 +188,7 @@ default cloud-drive 系コネクタが見える(初期パッチで投入され�
 最小限の FILE_SHARE コネクタを作成。
 
 ```bash
-curl -s $AUTH $H $JSON -X POST -d "$(cat <<EOF
+curl -s -o /tmp/post.out -w "HTTP %{http_code}\n" $AUTH $H $JSON -X POST -d "$(cat <<EOF
 {
   "connectorId": "verify-fs-1",
   "displayName": "Verify FS 1",
@@ -164,15 +203,18 @@ curl -s $AUTH $H $JSON -X POST -d "$(cat <<EOF
   "delegated": false
 }
 EOF
-)" "$NW/core/api/v1/admin/connectors?repositoryId=$REPO" | jq .
+)" "$NW/core/api/v1/admin/connectors?repositoryId=$REPO"
+cat /tmp/post.out
+# expect: HTTP 201
+#         {"status":"success","connectorId":"verify-fs-1"}
 ```
+
+> POST / PUT は full resource を返さず `{"status":"success", ...}`
+> のスリムなレスポンスのみ。永続化された full shape を見たい場合は
+> 直後に `GET /{connectorId}` を叩く(§3.3 でやる)。
 
 UI 確認: コネクタ ベータ タブで `verify-fs-1` が新規行として
 表示される。
-
-期待: HTTP 200 + 返却 JSON で `connectorId=verify-fs-1`、
-`credentialRef` が **空または [configured]** にマスクされている
-こと。
 
 ### 3.3 secret masking 確認 (GET)
 
@@ -180,21 +222,27 @@ UI 確認: コネクタ ベータ タブで `verify-fs-1` が新規行として
 curl -s $AUTH "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO" \
   | jq '{credentialRef, webhookSecret}'
 # expect: {"credentialRef":"[configured]","webhookSecret":null}
-# あるいは credentialRef が空文字。secret 本体は絶対に返らない。
+# secret 本体は絶対に返らない。webhookSecret は今回未設定なので null。
 ```
 
-UI 確認: コネクタ ベータ タブ → `verify-fs-1` を編集 → 「資格情報
-参照 (credentialRef)」フィールドが `[configured]` 表示で、編集
-しない限り元の値が保たれる。
+UI 確認: コネクタ ベータ タブ → `verify-fs-1` を編集 →
+**`webhookSecret` (Webhook 署名検証用) フィールドは `[configured]`
+プレースホルダで表示される(値を入れていれば)**。
+`credentialRef` は UI の Form.Item として存在しない(secret は
+API / CouchDB 直接編集前提)ので、UI 上の masking 確認は
+`webhookSecret` で行う。
 
-### 3.4 PUT partial payload で scope clobber しないこと
+### 3.4 PUT partial payload で list-field が clobber しないこと
 
-`allowedFolderIds` を omit (null) して PUT した場合に既存値が
-保持されることを確認 (RC4.x の review fix)。
+`allowedFolderIds` / `allowedPrincipalIds` を payload から **omit
+(null) すると既存値が保持される** (RC4.x の review fix)。
+**注意**: 保持されるのは list 系フィールドのみ。`credentialRef`
+等のスカラ secret は omit すると null に上書きされる(別途
+明示送信が必要)。
 
 ```bash
-# 一旦 allowedFolderIds に値を入れる
-curl -s $AUTH $H $JSON -X PUT -d "$(cat <<EOF
+# (a) 一旦 allowedFolderIds / allowedPrincipalIds に値を入れる
+curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH $H $JSON -X PUT -d "$(cat <<EOF
 {
   "connectorId": "verify-fs-1",
   "displayName": "Verify FS 1",
@@ -202,16 +250,27 @@ curl -s $AUTH $H $JSON -X PUT -d "$(cat <<EOF
   "sourceSystem": "google_drive",
   "adapterKind": "google_drive",
   "authType": "oauth2",
+  "credentialRef": "secret://test/verify-fs-1",
   "endpoint": "https://www.googleapis.com/drive/v3",
+  "delegated": true,
   "allowedFolderIds": ["$TARGET_FOLDER"],
-  "allowedPrincipalIds": ["folder-owner"],
-  "delegated": true
+  "allowedPrincipalIds": ["folder-owner"]
 }
 EOF
-)" "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO" | jq '{allowedFolderIds, allowedPrincipalIds, delegated}'
+)" "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO"
+cat /tmp/p.out  # expect: HTTP 200 {"status":"success"}
 
-# PUT で allowedFolderIds を omit (null) — 既存値が残るはず
-curl -s $AUTH $H $JSON -X PUT -d "$(cat <<EOF
+# (b) 確認: GET で full shape を取る
+curl -s $AUTH "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO" \
+  | jq '{allowedFolderIds, allowedPrincipalIds, credentialRef, delegated}'
+# expect:
+#   allowedFolderIds: ["<TARGET_FOLDER>"]
+#   allowedPrincipalIds: ["folder-owner"]
+#   credentialRef: "[configured]"
+#   delegated: true
+
+# (c) PUT で list-field を omit + displayName だけ変更
+curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH $H $JSON -X PUT -d "$(cat <<EOF
 {
   "connectorId": "verify-fs-1",
   "displayName": "Verify FS 1 (renamed)",
@@ -219,16 +278,37 @@ curl -s $AUTH $H $JSON -X PUT -d "$(cat <<EOF
   "sourceSystem": "google_drive",
   "adapterKind": "google_drive",
   "authType": "oauth2",
+  "credentialRef": "secret://test/verify-fs-1",
   "endpoint": "https://www.googleapis.com/drive/v3",
   "delegated": true
 }
 EOF
-)" "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO" | jq '{allowedFolderIds, allowedPrincipalIds, displayName}'
-# expect: allowedFolderIds と allowedPrincipalIds は前回値を保持、
-# displayName だけ更新される。
+)" "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO"
+cat /tmp/p.out  # expect: HTTP 200 {"status":"success"}
 
-# 明示的に [] で clear したいときは [] を指定する
-curl -s $AUTH $H $JSON -X PUT -d "$(cat <<EOF
+# (d) GET で再確認
+curl -s $AUTH "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO" \
+  | jq '{displayName, allowedFolderIds, allowedPrincipalIds, credentialRef}'
+# expect:
+#   displayName: "Verify FS 1 (renamed)"   ← 更新された
+#   allowedFolderIds: ["<TARGET_FOLDER>"]  ← omit でも保持
+#   allowedPrincipalIds: ["folder-owner"]  ← omit でも保持
+#   credentialRef: "[configured]"          ← payload に同じ値を入れたので保持
+```
+
+> ⚠ **secret 系 (`credentialRef`, `webhookSecret`) は omit で null
+> に上書きされる**。PUT 毎に同じ値を再送するか、別途 secrets manager
+> から注入する想定。`[configured]` 文字列を送り返しても masking は
+> 復号されない(UI 側の `[configured]` placeholder は内部で undefined
+> に置き換えてから送信、§7 でも触れる)。
+
+### 3.5 list-field を明示的に clear したい場合の挙動
+
+`delegated=true` のまま `allowedFolderIds=[]` を送ると **400 で
+拒否される**(意図しない repo-wide 委譲を防ぐためのセーフティ)。
+
+```bash
+curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH $H $JSON -X PUT -d "$(cat <<EOF
 {
   "connectorId": "verify-fs-1",
   "displayName": "Verify FS 1",
@@ -237,18 +317,44 @@ curl -s $AUTH $H $JSON -X PUT -d "$(cat <<EOF
   "adapterKind": "google_drive",
   "authType": "oauth2",
   "endpoint": "https://www.googleapis.com/drive/v3",
+  "delegated": true,
   "allowedFolderIds": [],
-  "allowedPrincipalIds": [],
-  "delegated": true
+  "allowedPrincipalIds": []
 }
 EOF
-)" "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO" | jq '{allowedFolderIds, allowedPrincipalIds}'
-# expect: 両方 [] にクリアされる
+)" "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO"
+cat /tmp/p.out
+# expect: HTTP 400
+# {"status":"error","message":"delegated=true requires either
+# delegateAllFolders=true or a non-empty allowedFolderIds list..."}
 ```
 
-> ⚠ `allowedFolderIds=[]` かつ `delegated=true` は「委譲不可」
-> として扱われる(誤設定での広域委譲を防ぐため)。後続 §4 で
-> 確認する。
+clear したい場合は `delegated=false` も同時に送る:
+
+```bash
+curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH $H $JSON -X PUT -d "$(cat <<EOF
+{
+  "connectorId": "verify-fs-1",
+  "displayName": "Verify FS 1",
+  "sourceArchetype": "FILE_SHARE",
+  "sourceSystem": "google_drive",
+  "adapterKind": "google_drive",
+  "authType": "oauth2",
+  "endpoint": "https://www.googleapis.com/drive/v3",
+  "delegated": false,
+  "allowedFolderIds": [],
+  "allowedPrincipalIds": []
+}
+EOF
+)" "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO"
+# expect: HTTP 200 {"status":"success"}
+
+curl -s $AUTH "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO" \
+  | jq '{delegated, allowedFolderIds, allowedPrincipalIds}'
+# expect: delegated=false, 両 list=[]
+```
+
+→ 次の §4 のために §4.1 で適正委譲設定に戻す。
 
 ---
 
@@ -266,7 +372,7 @@ RC3 で導入された「フォルダオーナーへの委譲」を構成する 
 ### 4.1 適正委譲のセットアップ
 
 ```bash
-curl -s $AUTH $H $JSON -X PUT -d "$(cat <<EOF
+curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH $H $JSON -X PUT -d "$(cat <<EOF
 {
   "connectorId": "verify-fs-1",
   "displayName": "Verify FS 1",
@@ -274,13 +380,18 @@ curl -s $AUTH $H $JSON -X PUT -d "$(cat <<EOF
   "sourceSystem": "google_drive",
   "adapterKind": "google_drive",
   "authType": "oauth2",
+  "credentialRef": "secret://test/verify-fs-1",
   "endpoint": "https://www.googleapis.com/drive/v3",
   "delegated": true,
   "allowedFolderIds": ["$TARGET_FOLDER"],
   "allowedPrincipalIds": ["folder-owner", "team-alpha"]
 }
 EOF
-)" "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO" \
+)" "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO"
+cat /tmp/p.out  # expect: HTTP 200 {"status":"success"}
+
+# 確認
+curl -s $AUTH "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO" \
   | jq '{delegated, allowedFolderIds, allowedPrincipalIds, delegateAllFolders}'
 ```
 
@@ -288,30 +399,20 @@ UI 確認: コネクタ ベータ タブ → `verify-fs-1` 行の「委譲」列
 バッジ表示。編集モーダルで `delegated` チェック ON、許可フォルダ /
 プリンシパルが入っている。
 
-### 4.2 委譲不可パターン: allowedFolderIds 空
+### 4.2 委譲不可パターン: allowedFolderIds 空 → 400 で拒否
+
+§3.5 で確認済(`delegated=true` + `allowedFolderIds=[]` は
+**HTTP 400** "no delegation safe default" で拒否される)。
+この振る舞いがガード。
+
+加えて、誤って delegateAllFolders=true で逃げないように:
 
 ```bash
-curl -s $AUTH $H $JSON -X PUT -d "$(cat <<EOF
-{
-  "connectorId": "verify-fs-1",
-  "displayName": "Verify FS 1",
-  "sourceArchetype": "FILE_SHARE",
-  "sourceSystem": "google_drive",
-  "adapterKind": "google_drive",
-  "authType": "oauth2",
-  "endpoint": "https://www.googleapis.com/drive/v3",
-  "delegated": true,
-  "allowedFolderIds": [],
-  "allowedPrincipalIds": ["folder-owner"]
-}
-EOF
-)" "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO" > /dev/null
+# delegated=true + allowedFolderIds=[] + delegateAllFolders=false → 400
+# (§3.5 と同じ振る舞い、ここでは省略)
 
-# summary で委譲フォルダ問い合わせ → このフォルダで使える connector
-# として返ってこないはず
-curl -s $AUTH "$NW/core/api/v1/admin/connectors/summary?repositoryId=$REPO&targetFolderId=$TARGET_FOLDER" \
-  | jq '[.[] | select(.connectorId == "verify-fs-1")] | length'
-# expect: 0
+# 適正委譲に戻す
+# §4.1 を再実行 (allowedFolderIds に TARGET_FOLDER を入れる)
 ```
 
 → 適正委譲に戻す: §4.1 を再実行。
@@ -319,7 +420,7 @@ curl -s $AUTH "$NW/core/api/v1/admin/connectors/summary?repositoryId=$REPO&targe
 ### 4.3 delegateAllFolders=true の警告
 
 ```bash
-curl -s $AUTH $H $JSON -X PUT -d "$(cat <<EOF
+curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH $H $JSON -X PUT -d "$(cat <<EOF
 {
   "connectorId": "verify-fs-1",
   "displayName": "Verify FS 1",
@@ -327,13 +428,20 @@ curl -s $AUTH $H $JSON -X PUT -d "$(cat <<EOF
   "sourceSystem": "google_drive",
   "adapterKind": "google_drive",
   "authType": "oauth2",
+  "credentialRef": "secret://test/verify-fs-1",
   "endpoint": "https://www.googleapis.com/drive/v3",
   "delegated": true,
   "delegateAllFolders": true,
   "allowedPrincipalIds": ["folder-owner"]
 }
 EOF
-)" "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO" | jq .
+)" "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO"
+cat /tmp/p.out  # expect: HTTP 200 {"status":"success"}
+
+# 確認
+curl -s $AUTH "$NW/core/api/v1/admin/connectors/verify-fs-1?repositoryId=$REPO" \
+  | jq '{delegateAllFolders, allowedFolderIds}'
+# expect: delegateAllFolders=true (allowedFolderIds は ignored or null)
 ```
 
 UI 確認: 編集モーダルで `delegateAllFolders` ON にすると
@@ -365,7 +473,7 @@ curl -s $AUTH "$NW/core/api/v1/admin/connectors/summary?repositoryId=$REPO&targe
 ### 5.1 admin プロファイル作成
 
 ```bash
-curl -s $AUTH $H $JSON -X POST -d "$(cat <<EOF
+curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH $H $JSON -X POST -d "$(cat <<EOF
 {
   "profileId": "admin-fs-profile",
   "displayName": "Admin FS Profile",
@@ -382,17 +490,23 @@ curl -s $AUTH $H $JSON -X POST -d "$(cat <<EOF
   "defaultProfile": false
 }
 EOF
-)" $NW/core/api/v1/admin/import-profiles | jq .
+)" $NW/core/api/v1/admin/import-profiles
+cat /tmp/p.out  # expect: HTTP 201 {"status":"success","profileId":"admin-fs-profile"}
+
+# GET で full shape を確認
+curl -s $AUTH "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" \
+  | jq '{profileId, createdByUserId, delegated, schedulerEnabled, defaultProfile}'
+# expect: createdByUserId="admin", delegated=false, scheduler/default=false
 ```
 
 UI 確認: 統合設定 → 「インポートプロファイル」タブ →
-`admin-fs-profile` が一覧。`createdByUserId=admin`、`delegated=false`。
+`admin-fs-profile` が一覧。
 
 ### 5.2 schedulerEnabled トグル + defaultProfile 検証
 
 ```bash
 # scheduler を ON
-curl -s $AUTH $H $JSON -X PUT -d "$(cat <<EOF
+curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH $H $JSON -X PUT -d "$(cat <<EOF
 {
   "profileId": "admin-fs-profile",
   "displayName": "Admin FS Profile",
@@ -406,12 +520,17 @@ curl -s $AUTH $H $JSON -X PUT -d "$(cat <<EOF
   "schedulerParams": {"intervalSeconds": "300"}
 }
 EOF
-)" "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" \
+)" "$NW/core/api/v1/admin/import-profiles/admin-fs-profile"
+cat /tmp/p.out  # expect: HTTP 200 {"status":"success"}
+
+# GET で確認
+curl -s $AUTH "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" \
   | jq '{schedulerEnabled, schedulerParams}'
 
 # scheduler status を確認 (admin only)
+# レスポンス shape は {count, scheduledProfiles, idleProfiles}
 curl -s $AUTH "$NW/core/api/v1/admin/ingest-scheduler/status" \
-  | jq '.[] | select(.profileId == "admin-fs-profile")'
+  | jq '.scheduledProfiles[] | select(.profileId == "admin-fs-profile")'
 ```
 
 UI 確認: 「スケジューラ状態」タブで `admin-fs-profile` が
@@ -421,13 +540,16 @@ running として表示される。
 
 ```bash
 # admin-fs-profile を defaultProfile=true に
-curl -s $AUTH $H $JSON -X PUT -d '{
+curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH $H $JSON -X PUT -d '{
   "profileId":"admin-fs-profile","displayName":"Admin FS Profile",
   "repositoryId":"'$REPO'","targetFolderId":"'$TARGET_FOLDER'",
   "allowedArchetypes":["FILE_SHARE"],"allowedConnectorIds":["verify-fs-1"],
   "defaultConnectorId":"verify-fs-1","enabled":true,"defaultProfile":true
-}' "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" | jq .defaultProfile
-# expect: true
+}' "$NW/core/api/v1/admin/import-profiles/admin-fs-profile"
+cat /tmp/p.out  # expect: HTTP 200 {"status":"success"}
+
+curl -s $AUTH "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" \
+  | jq '.defaultProfile'  # expect: true
 
 # 同 archetype + targetFolderId で別 profile を defaultProfile=true で作成 → 拒否
 curl -s -o /dev/null -w "%{http_code}\n" $AUTH $H $JSON -X POST -d '{
@@ -448,24 +570,31 @@ scheduler が creator inactive を理由に auto-disable した profile は
 ```bash
 # シミュレーション: マーカーが立った状態を admin が手動で書ける
 # (data repair 用、非 admin は §6.5 で確認するように spoof 不可)
-curl -s $AUTH $H $JSON -X PUT -d '{
+curl -s -o /dev/null -w "%{http_code}\n" $AUTH $H $JSON -X PUT -d '{
   "profileId":"admin-fs-profile","displayName":"Admin FS Profile",
   "repositoryId":"'$REPO'","targetFolderId":"'$TARGET_FOLDER'",
   "allowedArchetypes":["FILE_SHARE"],"allowedConnectorIds":["verify-fs-1"],
   "defaultConnectorId":"verify-fs-1","enabled":false,
   "lastAutoDisabledAt":"2026-05-24T00:00:00Z",
   "lastAutoDisabledReason":"CREATOR_USER_INACTIVE: synthetic test"
-}' "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" \
+}' "$NW/core/api/v1/admin/import-profiles/admin-fs-profile"
+# expect: HTTP 200
+
+curl -s $AUTH "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" \
   | jq '{enabled, lastAutoDisabledAt, lastAutoDisabledReason}'
+# expect: enabled=false, marker フィールド両方に値あり
 
 # admin が enabled=true に戻す → marker クリア + audit に
 # clearedAutoDisableMarker=true が記録される
-curl -s $AUTH $H $JSON -X PUT -d '{
+curl -s -o /dev/null -w "%{http_code}\n" $AUTH $H $JSON -X PUT -d '{
   "profileId":"admin-fs-profile","displayName":"Admin FS Profile",
   "repositoryId":"'$REPO'","targetFolderId":"'$TARGET_FOLDER'",
   "allowedArchetypes":["FILE_SHARE"],"allowedConnectorIds":["verify-fs-1"],
   "defaultConnectorId":"verify-fs-1","enabled":true
-}' "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" \
+}' "$NW/core/api/v1/admin/import-profiles/admin-fs-profile"
+# expect: HTTP 200
+
+curl -s $AUTH "$NW/core/api/v1/admin/import-profiles/admin-fs-profile" \
   | jq '{enabled, lastAutoDisabledAt, lastAutoDisabledReason}'
 # expect: enabled=true、marker 両フィールドが null
 ```
@@ -500,7 +629,7 @@ UI 確認: ログアウト → `folder-owner / changeme01` でログイン →
 ### 6.2 委譲プロファイル作成 (folder-owner)
 
 ```bash
-curl -s $AUTH_FO $H $JSON -X POST -d "$(cat <<EOF
+curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH_FO $H $JSON -X POST -d "$(cat <<EOF
 {
   "profileId": "delegated-fs-profile",
   "displayName": "Delegated FS Profile",
@@ -515,7 +644,12 @@ curl -s $AUTH_FO $H $JSON -X POST -d "$(cat <<EOF
   "defaultProfile": false
 }
 EOF
-)" $NW/core/api/v1/admin/import-profiles | jq '{profileId, createdByUserId, delegated, schedulerEnabled}'
+)" $NW/core/api/v1/admin/import-profiles
+cat /tmp/p.out  # expect: HTTP 201 {"status":"success","profileId":"delegated-fs-profile"}
+
+# GET で full shape を確認
+curl -s $AUTH_FO "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile" \
+  | jq '{profileId, createdByUserId, delegated, schedulerEnabled}'
 # expect: createdByUserId="folder-owner", delegated=true,
 # schedulerEnabled=false (強制)
 ```
@@ -528,7 +662,7 @@ folder ID 単一決定で運用するため)。
 
 ```bash
 # folder-owner が schedulerEnabled=true で送っても無視 or 拒否
-curl -s -o /dev/null -w "%{http_code}\n" $AUTH_FO $H $JSON -X PUT -d '{
+curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH_FO $H $JSON -X PUT -d '{
   "profileId":"delegated-fs-profile","displayName":"D",
   "repositoryId":"'$REPO'","targetFolderId":"'$TARGET_FOLDER'",
   "allowedArchetypes":["FILE_SHARE"],"allowedConnectorIds":["verify-fs-1"],
@@ -536,9 +670,12 @@ curl -s -o /dev/null -w "%{http_code}\n" $AUTH_FO $H $JSON -X PUT -d '{
   "delegated":true,
   "schedulerEnabled":true
 }' "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile"
+cat /tmp/p.out
 # expect: nemakiware.ingest.delegated.schedulerEnabled プロパティに
-# よる: OFF (default) → 4xx もしくは schedulerEnabled=false に正規化
-# 確認:
+# よる: OFF (default) → 400 (status:error) もしくは 200 で
+# schedulerEnabled=false に正規化される
+
+# GET で確認
 curl -s $AUTH_FO "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile" \
   | jq '{schedulerEnabled, defaultProfile}'
 # expect: 両方 false (delegated profile では admin 専用フィールド)
@@ -582,14 +719,18 @@ UI 確認: コネクタ picker で `admin-only-fs` は **候補に出てこな�
 folder-owner が `lastAutoDisabledAt` を仕込んでも無視されること。
 
 ```bash
-curl -s $AUTH_FO $H $JSON -X PUT -d '{
+curl -s -o /tmp/p.out -w "HTTP %{http_code}\n" $AUTH_FO $H $JSON -X PUT -d '{
   "profileId":"delegated-fs-profile","displayName":"D",
   "repositoryId":"'$REPO'","targetFolderId":"'$TARGET_FOLDER'",
   "allowedArchetypes":["FILE_SHARE"],"allowedConnectorIds":["verify-fs-1"],
   "defaultConnectorId":"verify-fs-1","enabled":true,"delegated":true,
   "lastAutoDisabledAt":"2099-12-31T23:59:59Z",
   "lastAutoDisabledReason":"FAKE"
-}' "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile" \
+}' "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile"
+cat /tmp/p.out  # expect: HTTP 200 {"status":"success"}
+
+# GET で確認: marker は permanently null (spoof は silent drop)
+curl -s $AUTH_FO "$NW/core/api/v1/admin/import-profiles/delegated-fs-profile" \
   | jq '{lastAutoDisabledAt, lastAutoDisabledReason}'
 # expect: 両方 null (非 admin の書き込みは強制的に消される)
 ```
@@ -625,63 +766,71 @@ curl -s $AUTH -X POST \
 
 ## 7. Manual Ingest — admin
 
-### 7.1 JSON ingest (FILE_SHARE archetype、payload-only テスト)
+ExternalIngest endpoint には 2 形式ある:
 
-実コネクタを呼ばずに canonical pipeline をテストするには、本物の
-source ファイルを multipart で送るのが一番簡単。FILE_SHARE では
-content stream + メタデータの両方が必要。
+- **JSON** (`Content-Type: application/json`) — メタデータのみ、
+  content stream なし。
+- **multipart** (`Content-Type: multipart/form-data`) — `request`
+  という名前の part に JSON 本体、optional `content` part に
+  バイナリ。**flat な form field (`profileId=...` のような) は
+  受け付けない** (`@RequestPart("request")` を要求するため)。
+
+リクエスト JSON のフィールド名は ExternalIngestRequest に従う —
+**`fileName` (`displayName` ではない)**、`sourceArchetype` は
+**送らない** (profile から導出される)。
+
+### 7.1 multipart ingest (content + メタデータ)
 
 ```bash
 echo "manual verification content $(date)" > /tmp/manual-verify.txt
 
-curl -s $AUTH $H -X POST \
-  -F "profileId=admin-fs-profile" \
-  -F "connectorId=verify-fs-1" \
-  -F "sourceArchetype=FILE_SHARE" \
-  -F "sourceObjectId=verify-001" \
-  -F "displayName=manual-verify.txt" \
+curl -s -o /tmp/i.out -w "HTTP %{http_code}\n" $AUTH $H -X POST \
+  -F 'request={"profileId":"admin-fs-profile","connectorId":"verify-fs-1","sourceObjectId":"verify-001","fileName":"manual-verify.txt"};type=application/json' \
   -F "content=@/tmp/manual-verify.txt;type=text/plain" \
-  "$NW/core/api/v1/repo/$REPO/ingest" | jq .
-# expect: HTTP 200/201、返却 JSON に objectId / version など
+  "$NW/core/api/v1/repo/$REPO/ingest"
+cat /tmp/i.out | jq .
+# expect: HTTP 200、レスポンスは ExternalIngestResult:
+#   { requestId, objectId, versionLabel, isNewVersion, dryRun,
+#     skipped, skipReason, lineageEventId, errors, warnings, success }
+#   success=true、objectId が新規 CMIS document ID
 ```
 
-UI 確認: ドキュメント → `delegated-inbox` フォルダ → 
+UI 確認: ドキュメント → `delegated-inbox` フォルダ →
 `manual-verify.txt` が表示される。プロパティを開くと
 **Secondary Type に `nemaki:externalIntegration`** が付与され、
-`sourceArchetype=FILE_SHARE` / `sourceSystem=googledrive` /
+`sourceArchetype=FILE_SHARE` / `sourceSystem=google_drive` /
 `sourceObjectId=verify-001` がセットされている。
 
-### 7.2 同一 sourceObjectId で再 ingest → dedupe
+### 7.2 同一 sourceObjectId で再 ingest → dedupe / version-up
 
 ```bash
 echo "modified content $(date)" > /tmp/manual-verify.txt
 
-curl -s $AUTH $H -X POST \
-  -F "profileId=admin-fs-profile" \
-  -F "connectorId=verify-fs-1" \
-  -F "sourceArchetype=FILE_SHARE" \
-  -F "sourceObjectId=verify-001" \
-  -F "displayName=manual-verify.txt" \
+curl -s -o /tmp/i.out -w "HTTP %{http_code}\n" $AUTH $H -X POST \
+  -F 'request={"profileId":"admin-fs-profile","connectorId":"verify-fs-1","sourceObjectId":"verify-001","fileName":"manual-verify.txt"};type=application/json' \
   -F "content=@/tmp/manual-verify.txt;type=text/plain" \
-  "$NW/core/api/v1/repo/$REPO/ingest" | jq '{operation, objectId, versionLabel}'
+  "$NW/core/api/v1/repo/$REPO/ingest"
+cat /tmp/i.out | jq '{objectId, versionLabel, isNewVersion, success}'
 # expect: updatePolicy="version_up_on_content_change" のため、
-# 内容ハッシュが変わっていれば新バージョン (major up) が作成される
+# 内容ハッシュが変わっていれば isNewVersion=true で新バージョン作成
 ```
 
 UI 確認: 同名ドキュメントを開く → バージョン履歴に 2 件。
 
-### 7.3 dry-run (副作用なしの validation)
+### 7.3 dry-run (副作用なしの validation) — JSON でも multipart でも可
+
+JSON 形式が一番シンプル(content stream 不要):
 
 ```bash
-curl -s $AUTH $H $JSON -X POST -d '{
+curl -s -o /tmp/i.out -w "HTTP %{http_code}\n" $AUTH $H $JSON -X POST -d '{
   "profileId": "admin-fs-profile",
   "connectorId": "verify-fs-1",
-  "sourceArchetype": "FILE_SHARE",
   "sourceObjectId": "dryrun-only",
-  "displayName": "dryrun.txt",
+  "fileName": "dryrun.txt",
   "dryRun": true
-}' "$NW/core/api/v1/repo/$REPO/ingest" | jq .
-# expect: validation 結果のみ、CouchDB / Solr には反映なし
+}' "$NW/core/api/v1/repo/$REPO/ingest"
+cat /tmp/i.out | jq '{dryRun, objectId, success, errors}'
+# expect: HTTP 200、dryRun=true、objectId=null、success=true
 ```
 
 確認: ドキュメント一覧に `dryrun.txt` は **存在しない**。
@@ -694,20 +843,20 @@ UI 確認: 管理 → 統合設定 → 「手動インポート」タブ → adm
 
 ## 8. Manual Ingest — 委譲ユーザー
 
+§7 と同じ multipart 形式 (`-F 'request={...};type=application/json'`)
+を使う。
+
 ### 8.1 委譲ユーザーで ingest 実行
 
 ```bash
 echo "delegated ingest $(date)" > /tmp/delegated-verify.txt
 
-curl -s $AUTH_FO $H -X POST \
-  -F "profileId=delegated-fs-profile" \
-  -F "connectorId=verify-fs-1" \
-  -F "sourceArchetype=FILE_SHARE" \
-  -F "sourceObjectId=delegated-001" \
-  -F "displayName=delegated-verify.txt" \
+curl -s -o /tmp/i.out -w "HTTP %{http_code}\n" $AUTH_FO $H -X POST \
+  -F 'request={"profileId":"delegated-fs-profile","connectorId":"verify-fs-1","sourceObjectId":"delegated-001","fileName":"delegated-verify.txt"};type=application/json' \
   -F "content=@/tmp/delegated-verify.txt;type=text/plain" \
-  "$NW/core/api/v1/repo/$REPO/ingest" | jq .
-# expect: HTTP 200/201、ドキュメントが TARGET_FOLDER 配下に作成
+  "$NW/core/api/v1/repo/$REPO/ingest"
+cat /tmp/i.out | jq '{objectId, success, errors}'
+# expect: HTTP 200、success=true、ドキュメントが TARGET_FOLDER 配下に作成
 ```
 
 UI 確認: 「手動インポート」タブ → folder-owner は
@@ -717,15 +866,13 @@ profile.allowedConnectorIds から絞り込み)。
 ### 8.2 委譲外 connector で 403
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" $AUTH_FO $H -X POST \
-  -F "profileId=delegated-fs-profile" \
-  -F "connectorId=admin-only-fs" \
-  -F "sourceArchetype=FILE_SHARE" \
-  -F "sourceObjectId=should-fail" \
-  -F "displayName=should-fail.txt" \
+curl -s -o /tmp/i.out -w "HTTP %{http_code}\n" $AUTH_FO $H -X POST \
+  -F 'request={"profileId":"delegated-fs-profile","connectorId":"admin-only-fs","sourceObjectId":"should-fail","fileName":"should-fail.txt"};type=application/json' \
   -F "content=@/tmp/delegated-verify.txt;type=text/plain" \
   "$NW/core/api/v1/repo/$REPO/ingest"
-# expect: 403 (connector が profile.allowedConnectorIds に含まれない)
+cat /tmp/i.out
+# expect: 403 (connector が profile.allowedConnectorIds に含まれない、
+# あるいは success=false で errors に DenialReason 文字列)
 ```
 
 ### 8.3 targetFolderOverride 禁止
@@ -734,30 +881,24 @@ curl -s -o /dev/null -w "%{http_code}\n" $AUTH_FO $H -X POST \
 # admin なら override 可能、folder-owner は禁止
 OTHER_FOLDER=$ROOT  # ルート(folder-owner は cmis:all なし)
 
-curl -s -o /dev/null -w "%{http_code}\n" $AUTH_FO $H -X POST \
-  -F "profileId=delegated-fs-profile" \
-  -F "connectorId=verify-fs-1" \
-  -F "sourceArchetype=FILE_SHARE" \
-  -F "sourceObjectId=override-test" \
-  -F "displayName=override-test.txt" \
-  -F "targetFolderOverride=$OTHER_FOLDER" \
+curl -s -o /tmp/i.out -w "HTTP %{http_code}\n" $AUTH_FO $H -X POST \
+  -F "request={\"profileId\":\"delegated-fs-profile\",\"connectorId\":\"verify-fs-1\",\"sourceObjectId\":\"override-test\",\"fileName\":\"override-test.txt\",\"targetFolderOverride\":\"$OTHER_FOLDER\"};type=application/json" \
   -F "content=@/tmp/delegated-verify.txt;type=text/plain" \
   "$NW/core/api/v1/repo/$REPO/ingest"
-# expect: 403 (TARGET_FOLDER_OVERRIDE_FORBIDDEN)
+cat /tmp/i.out
+# expect: 403 もしくは success=false errors に TARGET_FOLDER_OVERRIDE_FORBIDDEN
 ```
 
 ### 8.4 profileId 必須 (admin と挙動を分ける)
 
 ```bash
-# folder-owner が profileId 省略 → 400
-curl -s -o /dev/null -w "%{http_code}\n" $AUTH_FO $H -X POST \
-  -F "connectorId=verify-fs-1" \
-  -F "sourceArchetype=FILE_SHARE" \
-  -F "sourceObjectId=no-profile" \
-  -F "displayName=no-profile.txt" \
+# folder-owner が profileId 省略 → 400 / fail
+curl -s -o /tmp/i.out -w "HTTP %{http_code}\n" $AUTH_FO $H -X POST \
+  -F 'request={"connectorId":"verify-fs-1","sourceObjectId":"no-profile","fileName":"no-profile.txt"};type=application/json' \
   -F "content=@/tmp/delegated-verify.txt;type=text/plain" \
   "$NW/core/api/v1/repo/$REPO/ingest"
-# expect: 400 もしくは 403 (PROFILE_ID_REQUIRED_FOR_DELEGATED)
+cat /tmp/i.out
+# expect: 400 もしくは 403、errors に PROFILE_ID_REQUIRED_FOR_DELEGATED
 ```
 
 ---
@@ -830,13 +971,17 @@ UI 確認:
 
 ### 10.1 group 削除影響の問い合わせ
 
+レスポンスは by-principal と別のフィールド名を使う:
+- `groupType` (by-principal の `principalType` に相当)
+- per-member entry は `userId` (`memberUserId` ではない)
+
 ```bash
 curl -s $AUTH "$NW/core/api/v1/admin/connectors/by-group/team-alpha?repositoryId=$REPO&includeMembers=true&memberLimit=200" \
   | jq '{
-       groupId, principalType, memberCount, memberUserIds, memberUserIdsTruncated,
+       groupId, groupType, memberCount, memberUserIds, memberUserIdsTruncated,
        directGrants: (.directGrants | map(.connectorId)),
        perMemberImpact: (.perMemberImpact | map({
-         memberUserId,
+         userId,
          lostCount,
          lostIfGroupRemovedTruncated,
          lostIfGroupRemoved: (.lostIfGroupRemoved | map(.connectorId))
@@ -847,9 +992,9 @@ curl -s $AUTH "$NW/core/api/v1/admin/connectors/by-group/team-alpha?repositoryId
 #   memberCount: 2 (folder-owner + team-member)
 #   directGrants: 空 [] もしくは verify-fs-1 (team-alpha が直接書かれている場合)
 #   perMemberImpact:
-#     - folder-owner: lostCount=0 (folder-owner は直接 allowedPrincipalIds に居るので group 削除しても残る)
-#     - team-member:  lostCount=1 (group 経由でしか到達できない)
-#                     lostIfGroupRemoved に verify-fs-1
+#     - userId=folder-owner: lostCount=0 (folder-owner は直接 allowedPrincipalIds に居るので group 削除しても残る)
+#     - userId=team-member:  lostCount=1 (group 経由でしか到達できない)
+#                            lostIfGroupRemoved に verify-fs-1
 ```
 
 ### 10.2 includeMembers=false で高速パス
@@ -883,8 +1028,8 @@ curl -s $AUTH "$NW/core/api/v1/admin/connectors/by-group/team-alpha?repositoryId
 
 ```bash
 curl -s $AUTH "$NW/core/api/v1/admin/connectors/by-group/no-such-group?repositoryId=$REPO" \
-  | jq '{principalType, directGrants, perMemberImpact}'
-# expect: principalType="UNKNOWN", stable shape (空配列)、200 OK
+  | jq '{groupType, directGrants, perMemberImpact}'
+# expect: groupType="UNKNOWN", stable shape (空配列)、200 OK
 ```
 
 ### 10.6 missing param → 400
@@ -1041,16 +1186,17 @@ UI 確認: 統合設定 → コネクタ ベータ / インポートプロファ
 
 | # | 確認項目 | OK |
 |---|---|---|
-| 3.2 | admin が connector 作成できる | ☐ |
-| 3.3 | GET で credentialRef / webhookSecret が `[configured]` でマスクされる | ☐ |
-| 3.4 | PUT で list field を omit (null) すると既存値が保持される | ☐ |
-| 3.4 | PUT で `[]` を明示すると clear される | ☐ |
+| 3.2 | admin が connector 作成できる (POST → HTTP 201 + `{status:success,connectorId}`) | ☐ |
+| 3.3 | GET で `credentialRef:"[configured]"` / `webhookSecret` がマスクされる | ☐ |
+| 3.4 | PUT で list field (allowedFolderIds/allowedPrincipalIds) を omit すると既存値が保持される | ☐ |
+| 3.4 | PUT で `credentialRef` 等の scalar secret を omit すると null に上書きされる(再送が必要) | ☐ |
+| 3.5 | `delegated=true` + `allowedFolderIds=[]` を送ると **400** で拒否される(セーフティ) | ☐ |
+| 3.5 | clear するには `delegated=false` + 空 list を同時送信する必要がある | ☐ |
 | 4.1 | `delegated=true` + `allowedFolderIds=[F]` + `allowedPrincipalIds=[P]` で適正委譲できる | ☐ |
-| 4.2 | `delegated=true` + `allowedFolderIds=[]` は委譲不可扱い (summary で出ない) | ☐ |
-| 4.3 | `delegateAllFolders=true` で警告 UI が出る | ☐ |
+| 4.3 | `delegateAllFolders=true` で UI 警告が出る | ☐ |
 | 4.4 | `/summary` が secret / endpoint / scope を含まない | ☐ |
-| 5.1 | admin で profile CRUD ができる | ☐ |
-| 5.2 | schedulerEnabled トグル後に scheduler status に表示される | ☐ |
+| 5.1 | admin で profile CRUD ができる (POST → 201、GET で createdByUserId=admin) | ☐ |
+| 5.2 | schedulerEnabled トグル後に `.scheduledProfiles[]` に表示される | ☐ |
 | 5.3 | 同 archetype × targetFolderId で defaultProfile=true 重複は拒否される | ☐ |
 | 5.4 | admin re-enable で marker (lastAutoDisabledAt) がクリアされる | ☐ |
 | 6.2 | folder-owner で委譲 profile を作成できる (`createdByUserId=folder-owner`) | ☐ |
@@ -1058,22 +1204,22 @@ UI 確認: 統合設定 → コネクタ ベータ / インポートプロファ
 | 6.4 | folder-owner が委譲外 connector を allowedConnectorIds に入れて PUT すると 403 | ☐ |
 | 6.5 | folder-owner の lastAutoDisabledAt 書き込みは silent drop される (spoof 防止) | ☐ |
 | 6.6 | folder-owner の cmis:all 失効後は委譲 profile 操作が 403 | ☐ |
-| 7.1 | admin で manual ingest 成功 (nemaki:externalIntegration secondary type 付与) | ☐ |
-| 7.2 | 同 sourceObjectId 再 ingest で hash 変化があれば新バージョン作成 | ☐ |
-| 7.3 | dryRun=true で実体作成されない | ☐ |
+| 7.1 | admin で manual ingest 成功 (multipart `request` part + `content` part) | ☐ |
+| 7.2 | 同 sourceObjectId 再 ingest で `isNewVersion=true` (hash 変化時) | ☐ |
+| 7.3 | dryRun=true で実体作成されない (`objectId=null, success=true`) | ☐ |
 | 8.1 | folder-owner で manual ingest 成功 | ☐ |
-| 8.2 | folder-owner が委譲外 connectorId 指定で 403 | ☐ |
-| 8.3 | folder-owner が targetFolderOverride 指定で 403 | ☐ |
-| 8.4 | folder-owner が profileId 省略で 400 | ☐ |
+| 8.2 | folder-owner が委譲外 connectorId 指定で 403 / errors | ☐ |
+| 8.3 | folder-owner が targetFolderOverride 指定で 403 / errors | ☐ |
+| 8.4 | folder-owner が profileId 省略で 400 / errors | ☐ |
 | 9.1 | by-principal が USER 単独で正しく matches を返す | ☐ |
-| 9.2 | by-principal が GROUP 単独で principalType=GROUP を返す | ☐ |
+| 9.2 | by-principal が GROUP 単独で `principalType=GROUP` を返す | ☐ |
 | 9.3 | expand=false で group 経由 match が出ない | ☐ |
-| 9.4 | 不存在 principal で principalType=UNKNOWN + 200 (graceful) | ☐ |
+| 9.4 | 不存在 principal で `principalType=UNKNOWN` + 200 (graceful) | ☐ |
 | 9.5 | UI Governance タブで matchType badge 色分けが表示される | ☐ |
-| 10.1 | by-group が perMemberImpact を返す (sole-route 検出が正しい) | ☐ |
+| 10.1 | by-group が perMemberImpact を返す (フィールド名は `userId` / `groupType`、`memberUserId` / `principalType` ではない) | ☐ |
 | 10.2 | includeMembers=false で perMemberImpact 省略される (高速パス) | ☐ |
 | 10.3 | memberLimit truncation で memberUserIdsTruncated=true | ☐ |
-| 10.5 | unknown group で principalType=UNKNOWN + 200 + stable shape | ☐ |
+| 10.5 | unknown group で `groupType="UNKNOWN"` + 200 + stable shape | ☐ |
 | 10.6 | missing repositoryId で 400 | ☐ |
 | 10.7 | UI Group モード で perMemberImpact カードが表示される | ☐ |
 | 11.1 | simulate-remove が lost / kept を分けて返す | ☐ |
