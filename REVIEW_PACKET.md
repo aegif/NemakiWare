@@ -40,7 +40,7 @@ Java change: 3 main files (`AdapterHttpClient.java` +170 LOC,
 test-mode `allowLocalhost` property.
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.8` (peeled commit `<POST-TAG-FILL>`).
+  `v3.1.1-RC6.8` (peeled commit `cd82452f40af48166d643a74f37a2a21f8872dc2`).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
@@ -56,10 +56,10 @@ Previous historical tags (`v3.1.1-RC6.7`, `…-RC6.6`, `…-RC6.5`,
 | Item | Value |
 |---|---|
 | **Final candidate tag** | `v3.1.1-RC6.8` |
-| Tag annotated object SHA | `<POST-TAG-FILL>` |
-| Tag peeled commit | `<POST-TAG-FILL>` |
+| Tag annotated object SHA | `8a158e9f9170a2a2cc0e54166640e3141aafa5b4` |
+| Tag peeled commit | `cd82452f40af48166d643a74f37a2a21f8872dc2` |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | `<POST-TAG-FILL>` (= tag peeled, zero divergence at tag time) |
+| Branch HEAD at tag time | `cd82452f40af48166d643a74f37a2a21f8872dc2` (= tag peeled, zero divergence at tag time) |
 | Base of RC6.8 cycle | `v3.1.1-RC6.7` (peeled `b48d9e0c1`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
 | **RC6.7 → RC6.8 diff cmd** | `git diff v3.1.1-RC6.7..v3.1.1-RC6.8` |
