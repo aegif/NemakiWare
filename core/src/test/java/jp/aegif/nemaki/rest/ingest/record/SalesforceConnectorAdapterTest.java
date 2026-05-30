@@ -29,8 +29,18 @@ class SalesforceConnectorAdapterTest {
     @BeforeEach
     void setUp() {
         wireMock.resetAll();
+        // RC6.8 P1: sendWithRetry now validates + IP-pins every request
+        // against the SSRF blocklist, including localhost. WireMock binds
+        // to localhost so tests must opt-in via the documented test-only
+        // property (never set in production).
+        System.setProperty("nemaki.ingest.allowLocalhost", "true");
         adapter = new SalesforceConnectorAdapter(
                 "http://localhost:" + wireMock.port(), "test-sf-token");
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        System.clearProperty("nemaki.ingest.allowLocalhost");
     }
 
     // ── Auth contract ────────────────────────────────────────────

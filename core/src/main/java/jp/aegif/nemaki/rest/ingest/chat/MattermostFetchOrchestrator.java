@@ -39,6 +39,15 @@ public class MattermostFetchOrchestrator implements FetchOrchestrator {
         List<String> errors = new ArrayList<>();
         int fetched = 0, imported = 0, skipped = 0;
         try {
+            // RC6.8 P2: re-validate the connector endpoint at runtime as
+            // defense-in-depth. ConnectorDefinitionServiceImpl validates on
+            // save, but an endpoint that was saved before this hardening
+            // landed, or modified at storage level, would otherwise reach
+            // the adapter without revalidation. sendWithRetry inside the
+            // adapter will validate + IP-pin again (RC6.8 P1), but failing
+            // early here gives a clearer audit message and avoids building
+            // the adapter for an obviously-bad endpoint.
+            jp.aegif.nemaki.rest.ingest.AdapterHttpClient.validateExternalUrl(connector.getEndpoint());
             var mm = new MattermostConnectorAdapter(connector.getEndpoint(), token);
             String lastCreateAt = checkpointManager.loadSimpleCheckpoint(profile.getProfileId(), "mattermost." + channelId);
             List<MattermostPost> posts = mm.getPosts(channelId, limit);

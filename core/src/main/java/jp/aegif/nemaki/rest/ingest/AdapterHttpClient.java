@@ -64,11 +64,25 @@ public final class AdapterHttpClient {
      * Send an HTTP request following redirects manually, validating each
      * redirect target against {@link #validateExternalUrl} to prevent SSRF
      * via open redirects.
+     *
+     * <p>Each hop resolves the {@code Location} header against the
+     * <em>current</em> request URI (not the original), so multi-hop relative
+     * redirects (e.g. hop 1 jumps to a different host, hop 2 returns
+     * {@code Location: /file}) resolve correctly against that intermediate
+     * host. This is also a correctness fix: prior to RC6.8, all relative
+     * Location values resolved against the original URI, which could
+     * silently misroute a multi-hop chain.
+     *
+     * <p>Each hop also goes through {@link #pinRequestToValidatedAddress}
+     * before send, so DNS rebinding between the {@code validateExternalUrl}
+     * call above and the actual {@code NO_REDIRECT.send} call cannot
+     * succeed.
      */
     public static <T> HttpResponse<T> sendWithRedirectValidation(
             HttpRequest request, HttpResponse.BodyHandler<T> bodyHandler, int maxRedirects)
             throws java.io.IOException, InterruptedException {
-        HttpResponse<T> response = NO_REDIRECT.send(request, bodyHandler);
+        HttpRequest currentRequest = request;
+        HttpResponse<T> response = NO_REDIRECT.send(pinRequestToValidatedAddress(currentRequest), bodyHandler);
         for (int i = 0; i < maxRedirects; i++) {
             int status = response.statusCode();
             if (status != 301 && status != 302 && status != 303 && status != 307 && status != 308) {
@@ -76,16 +90,19 @@ public final class AdapterHttpClient {
             }
             String location = response.headers().firstValue("Location").orElse(null);
             if (location == null) return response;
-            URI redirectUri = request.uri().resolve(location);
-            // Validate redirect target
+            // Resolve relative Location against the CURRENT request URI,
+            // not the original. RC6.8 P3 fix.
+            URI redirectUri = currentRequest.uri().resolve(location);
+            // Validate redirect target (config-time semantics; pinRequestToValidatedAddress
+            // below will re-validate at send time as belt-and-suspenders).
             validateExternalUrl(redirectUri.toString());
             // Build new request WITHOUT auth headers (dropped on all redirects for safety)
-            HttpRequest redirect = HttpRequest.newBuilder()
+            currentRequest = HttpRequest.newBuilder()
                     .uri(redirectUri)
-                    .timeout(request.timeout().orElse(Duration.ofSeconds(60)))
+                    .timeout(currentRequest.timeout().orElse(Duration.ofSeconds(60)))
                     .GET()
                     .build();
-            response = NO_REDIRECT.send(redirect, bodyHandler);
+            response = NO_REDIRECT.send(pinRequestToValidatedAddress(currentRequest), bodyHandler);
         }
         return response;
     }
@@ -275,6 +292,136 @@ public final class AdapterHttpClient {
     }
 
     /**
+     * Re-resolve the request URI at send time, validate every resolved
+     * address against {@link #isAddressSafe}, and for HTTP rewrite the
+     * URI to use the validated IP literal.
+     *
+     * <p>This closes a DNS rebinding gap: {@link #validateExternalUrl(String)}
+     * called at config time (e.g. when an admin saves a connector endpoint)
+     * resolves the host once and validates the result; an attacker
+     * controlling the DNS for that host could return a public IP at the
+     * config-time resolve and a private / loopback / metadata IP at the
+     * actual {@code HttpClient.send} time. Without this method, the JDK
+     * {@code HttpClient} would re-resolve and connect to the rebound IP.
+     *
+     * <p><strong>HTTP</strong>: the returned request has its URI rewritten
+     * to use the validated IP literal (in {@code [...]} brackets for IPv6).
+     * We deliberately do NOT set a {@code Host} header to the original
+     * hostname because the JDK {@code HttpClient.Builder.header} rejects
+     * the restricted {@code Host} name without the
+     * {@code -Djdk.httpclient.allowRestrictedHeaders=host} JVM property.
+     * Most connector adapters target named API endpoints (Mattermost,
+     * Salesforce on-prem) that respond to any Host; shared-vhost servers
+     * may misroute. Operators that need a shared-vhost endpoint should
+     * configure the connector with the IP directly OR enable the JVM
+     * property and call a future host-preserving overload.
+     *
+     * <p><strong>HTTPS</strong>: the original request is returned unchanged.
+     * The JDK will re-resolve, but TLS certificate verification against the
+     * original hostname will fail the handshake if the rebound IP serves
+     * an unrelated certificate. The re-validation above still catches
+     * rebound IPs at the same instant a malicious resolve would happen,
+     * so a rebind window only allows a TLS failure, not a SSRF.
+     *
+     * <p>If the host cannot be resolved at all, a {@link SecurityException}
+     * is thrown — this is a behaviour change from "let HttpClient try and
+     * fail with a network error" to "fail fast with a security-flavoured
+     * error", which is the right side of the trade-off for outbound
+     * connector requests.
+     */
+    static HttpRequest pinRequestToValidatedAddress(HttpRequest request) {
+        URI uri = request.uri();
+        if (uri == null) {
+            return request;
+        }
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+        if (scheme == null || host == null || host.isBlank()) {
+            return request;
+        }
+        if (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https")) {
+            return request;
+        }
+        if (isLocalhostAllowed()) {
+            // Test mode (WireMock): bypass pinning + validation. The
+            // -Dnemaki.ingest.allowLocalhost=true property is documented
+            // as test-only; never set in production.
+            return request;
+        }
+        InetAddress[] addrs;
+        try {
+            addrs = InetAddress.getAllByName(host);
+        } catch (UnknownHostException e) {
+            throw new SecurityException("Cannot resolve host at send time: " + host);
+        }
+        if (addrs.length == 0) {
+            throw new SecurityException("Host resolved to no addresses at send time: " + host);
+        }
+        for (InetAddress addr : addrs) {
+            if (!isAddressSafe(addr)) {
+                throw new SecurityException(
+                        "URL must not target private/loopback/special-use addresses "
+                        + "(DNS rebinding check at send time): "
+                        + host + " -> " + addr.getHostAddress());
+            }
+        }
+        if (scheme.equalsIgnoreCase("https")) {
+            // TLS certificate verification handles rebinding for HTTPS.
+            return request;
+        }
+        // HTTP: pin URI to the first validated address.
+        InetAddress picked = addrs[0];
+        String hostLiteral = picked.getHostAddress();
+        if (picked.getAddress().length == 16) {
+            hostLiteral = "[" + hostLiteral + "]";
+        }
+        int port = uri.getPort();
+        String authority = port == -1 ? hostLiteral : hostLiteral + ":" + port;
+        String pathQuery = (uri.getRawPath() == null ? "" : uri.getRawPath())
+                + (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery());
+        URI pinnedUri;
+        try {
+            pinnedUri = new URI(scheme + "://" + authority + pathQuery);
+        } catch (Exception e) {
+            // Unrebuildable URI (e.g. exotic chars). Fall back to original;
+            // the re-validation above still closes the rebinding window
+            // for any meaningful exploit.
+            return request;
+        }
+        HttpRequest.Builder b = HttpRequest.newBuilder().uri(pinnedUri);
+        // Copy headers from original except restricted ones JDK forbids.
+        request.headers().map().forEach((name, vals) -> {
+            if (!isRestrictedHeaderForJdkHttpClient(name)) {
+                vals.forEach(v -> b.header(name, v));
+            }
+        });
+        request.timeout().ifPresent(b::timeout);
+        b.method(request.method(),
+                request.bodyPublisher().orElse(HttpRequest.BodyPublishers.noBody()));
+        return b.build();
+    }
+
+    /**
+     * Headers the JDK {@link HttpRequest.Builder} rejects by default
+     * (without {@code -Djdk.httpclient.allowRestrictedHeaders=...}).
+     * We strip these when copying headers from the original request
+     * into a pinned-IP rebuild — the JDK will set safe defaults
+     * (Host, Connection, Content-Length, etc.) on the new request.
+     */
+    private static boolean isRestrictedHeaderForJdkHttpClient(String name) {
+        if (name == null) return true;
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        switch (lower) {
+            case "connection": case "content-length": case "expect":
+            case "host": case "http2-settings": case "keep-alive":
+            case "origin": case "upgrade": case "via":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /**
      * Check HTTP response status and close the InputStream body on error.
      * Prevents connection pool exhaustion from undrained error responses.
      *
@@ -344,9 +491,18 @@ public final class AdapterHttpClient {
                                                      HttpRequest request,
                                                      HttpResponse.BodyHandler<T> bodyHandler)
             throws IOException, InterruptedException {
+        // RC6.8 P1: re-validate and IP-pin at send time to defeat DNS
+        // rebinding between an earlier validateExternalUrl call (config-time
+        // or constructor-time) and the actual HttpClient.send below.
+        // pinRequestToValidatedAddress throws SecurityException if the host
+        // now resolves to a blocked address. For HTTP it rewrites the URI
+        // to use the validated IP literal; for HTTPS it returns the original
+        // request (TLS cert verification handles rebinding against the
+        // declared hostname).
+        HttpRequest sendable = pinRequestToValidatedAddress(request);
         HttpResponse<T> response = null;
         for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-            response = client.send(request, bodyHandler);
+            response = client.send(sendable, bodyHandler);
             int status = response.statusCode();
             if (status != 429 && status != 503) {
                 return response;

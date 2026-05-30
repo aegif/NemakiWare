@@ -170,6 +170,71 @@ class AdapterRegistryTest {
         assertEquals(HttpClient.Redirect.NEVER, AdapterHttpClient.shared().followRedirects());
     }
 
+    // ─── RC6.8 P1: pinRequestToValidatedAddress (DNS rebinding close) ───
+
+    @Test
+    void pinRequestRewritesHttpUriToValidatedIpv4Literal() throws Exception {
+        // 8.8.8.8 resolves to itself (literal IP); pinning should produce a URI
+        // whose host is the IP literal (no DNS dependency at this layer).
+        var req = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create("http://8.8.8.8/some/path?q=1"))
+                .GET().build();
+        var pinned = AdapterHttpClient.pinRequestToValidatedAddress(req);
+        assertEquals("8.8.8.8", pinned.uri().getHost(),
+                "HTTP path should pin URI host to validated IPv4 literal");
+        assertEquals("/some/path", pinned.uri().getRawPath());
+        assertEquals("q=1", pinned.uri().getRawQuery());
+    }
+
+    @Test
+    void pinRequestLeavesHttpsUriUnchanged() throws Exception {
+        // HTTPS: TLS cert verification handles DNS rebinding, so the URI is
+        // returned unchanged (re-validation still happens — verified by the
+        // SecurityException tests below).
+        var req = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create("https://8.8.8.8/api/x"))
+                .GET().build();
+        var pinned = AdapterHttpClient.pinRequestToValidatedAddress(req);
+        assertEquals("https", pinned.uri().getScheme());
+        assertEquals("8.8.8.8", pinned.uri().getHost(),
+                "HTTPS path returns request unchanged");
+        assertEquals("/api/x", pinned.uri().getRawPath());
+    }
+
+    @Test
+    void pinRequestThrowsWhenHostResolvesToBlockedIpv4() {
+        // 127.0.0.1 literal resolves to loopback → must throw at pin time.
+        var req = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create("http://127.0.0.1/file"))
+                .GET().build();
+        assertThrows(SecurityException.class,
+                () -> AdapterHttpClient.pinRequestToValidatedAddress(req));
+    }
+
+    @Test
+    void pinRequestThrowsWhenHostResolvesToBlockedIpv6Transition() {
+        // 64:ff9b::a9fe:a9fe = NAT64 wrap of 169.254.169.254 (cloud metadata).
+        var req = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create("http://[64:ff9b::a9fe:a9fe]/latest/"))
+                .GET().build();
+        assertThrows(SecurityException.class,
+                () -> AdapterHttpClient.pinRequestToValidatedAddress(req));
+    }
+
+    @Test
+    void pinRequestPreservesNonRestrictedHeadersOnHttpPin() throws Exception {
+        var req = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create("http://8.8.8.8/api"))
+                .header("Authorization", "Bearer abc")
+                .header("X-Custom-Trace", "trace-123")
+                .GET().build();
+        var pinned = AdapterHttpClient.pinRequestToValidatedAddress(req);
+        assertEquals(java.util.Optional.of("Bearer abc"),
+                pinned.headers().firstValue("Authorization"));
+        assertEquals(java.util.Optional.of("trace-123"),
+                pinned.headers().firstValue("X-Custom-Trace"));
+    }
+
     @Test
     void allParamsCombinesRequiredAndOptional() {
         var desc = AdapterRegistry.get("teams");
