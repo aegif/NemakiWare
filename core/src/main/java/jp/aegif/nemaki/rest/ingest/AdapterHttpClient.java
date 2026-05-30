@@ -12,6 +12,9 @@ package jp.aegif.nemaki.rest.ingest;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.InetAddress;
+import java.net.URI;
+import java.net.UnknownHostException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -45,7 +48,7 @@ public final class AdapterHttpClient {
 
     private static final HttpClient SHARED = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
-            .followRedirects(HttpClient.Redirect.NORMAL)
+            .followRedirects(HttpClient.Redirect.NEVER)
             .build();
 
     /** HttpClient that does NOT follow redirects — for SSRF-safe file downloads. */
@@ -73,11 +76,12 @@ public final class AdapterHttpClient {
             }
             String location = response.headers().firstValue("Location").orElse(null);
             if (location == null) return response;
+            URI redirectUri = request.uri().resolve(location);
             // Validate redirect target
-            validateExternalUrl(location);
+            validateExternalUrl(redirectUri.toString());
             // Build new request WITHOUT auth headers (dropped on all redirects for safety)
             HttpRequest redirect = HttpRequest.newBuilder()
-                    .uri(java.net.URI.create(location))
+                    .uri(redirectUri)
                     .timeout(request.timeout().orElse(Duration.ofSeconds(60)))
                     .GET()
                     .build();
@@ -142,12 +146,11 @@ public final class AdapterHttpClient {
                 throw new SecurityException("URL must have a valid host");
             }
             // Check ALL resolved addresses to prevent DNS rebinding attacks
-            // where public + private IPs are mixed in the same A/AAAA record set
+            // where public + private IPs are mixed in the same A/AAAA record set.
             if (!isLocalhostAllowed()) {
-                for (java.net.InetAddress addr : java.net.InetAddress.getAllByName(host)) {
-                    if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()
-                            || addr.isSiteLocalAddress() || addr.isAnyLocalAddress()) {
-                        throw new SecurityException("URL must not target private/loopback addresses");
+                for (InetAddress addr : InetAddress.getAllByName(host)) {
+                    if (!isAddressSafe(addr)) {
+                        throw new SecurityException("URL must not target private/loopback/special-use addresses");
                     }
                 }
             }
@@ -155,6 +158,119 @@ public final class AdapterHttpClient {
             throw se;
         } catch (Exception e) {
             throw new SecurityException("Invalid URL: " + e.getMessage());
+        }
+    }
+
+    private static boolean isAddressSafe(InetAddress address) {
+        if (address.isLoopbackAddress()
+                || address.isLinkLocalAddress()
+                || address.isSiteLocalAddress()
+                || address.isAnyLocalAddress()
+                || address.isMulticastAddress()) {
+            return false;
+        }
+
+        byte[] b = address.getAddress();
+        if (b.length == 4) {
+            int first = b[0] & 0xFF;
+            int second = b[1] & 0xFF;
+            int third = b[2] & 0xFF;
+            int fourth = b[3] & 0xFF;
+
+            if (first == 10) return false;
+            if (first == 172 && second >= 16 && second <= 31) return false;
+            if (first == 192 && second == 168) return false;
+            if (first == 169 && second == 254) return false;
+            if (first == 0) return false;
+            if (first == 100 && second >= 64 && second <= 127) return false;
+            if (first == 192 && second == 0 && third == 0) return false;
+            if (first == 198 && (second == 18 || second == 19)) return false;
+            if (first >= 240) return false;
+            if (first == 255 && second == 255 && third == 255 && fourth == 255) return false;
+        } else if (b.length == 16) {
+            int first = b[0] & 0xFF;
+            if (first == 0xFC || first == 0xFD) {
+                return false;
+            }
+            InetAddress embedded = extractEmbeddedIpv4(address);
+            return embedded == null || isAddressSafe(embedded);
+        }
+        return true;
+    }
+
+    private static InetAddress extractEmbeddedIpv4(InetAddress address) {
+        byte[] b = address.getAddress();
+        if (b.length != 16) {
+            return null;
+        }
+        byte[] embedded = null;
+
+        boolean mappedPrefix = true;
+        for (int i = 0; i < 10; i++) {
+            if (b[i] != 0) { mappedPrefix = false; break; }
+        }
+        if (mappedPrefix && (b[10] & 0xFF) == 0xFF && (b[11] & 0xFF) == 0xFF) {
+            embedded = new byte[]{b[12], b[13], b[14], b[15]};
+        }
+
+        if (embedded == null) {
+            boolean compatPrefix = true;
+            for (int i = 0; i < 12; i++) {
+                if (b[i] != 0) { compatPrefix = false; break; }
+            }
+            boolean trivialLow = b[12] == 0 && b[13] == 0 && b[14] == 0
+                    && (b[15] == 0 || b[15] == 1);
+            if (compatPrefix && !trivialLow) {
+                embedded = new byte[]{b[12], b[13], b[14], b[15]};
+            }
+        }
+
+        if (embedded == null
+                && (b[0] & 0xFF) == 0x00 && (b[1] & 0xFF) == 0x64
+                && (b[2] & 0xFF) == 0xFF && (b[3] & 0xFF) == 0x9B) {
+            boolean nat64WellKnown = true;
+            for (int i = 4; i < 12; i++) {
+                if (b[i] != 0) { nat64WellKnown = false; break; }
+            }
+            if (nat64WellKnown) {
+                embedded = new byte[]{b[12], b[13], b[14], b[15]};
+            }
+        }
+
+        if (embedded == null
+                && (b[0] & 0xFF) == 0x00 && (b[1] & 0xFF) == 0x64
+                && (b[2] & 0xFF) == 0xFF && (b[3] & 0xFF) == 0x9B
+                && (b[4] & 0xFF) == 0x00 && (b[5] & 0xFF) == 0x01) {
+            boolean rfc6052SuffixClear = true;
+            for (int i = 11; i < 16; i++) {
+                if (b[i] != 0) { rfc6052SuffixClear = false; break; }
+            }
+            if (rfc6052SuffixClear) {
+                embedded = new byte[]{b[6], b[7], b[9], b[10]};
+            } else {
+                embedded = new byte[]{b[12], b[13], b[14], b[15]};
+            }
+        }
+
+        if (embedded == null && (b[0] & 0xFF) == 0x20 && (b[1] & 0xFF) == 0x02) {
+            embedded = new byte[]{b[2], b[3], b[4], b[5]};
+        }
+
+        if (embedded == null
+                && (b[0] & 0xFF) == 0x20 && (b[1] & 0xFF) == 0x01
+                && b[2] == 0 && b[3] == 0) {
+            embedded = new byte[]{
+                    (byte) ~b[12], (byte) ~b[13], (byte) ~b[14], (byte) ~b[15]
+            };
+        }
+
+        if (embedded == null) {
+            return null;
+        }
+        try {
+            return InetAddress.getByAddress(embedded);
+        } catch (UnknownHostException e) {
+            return null;
         }
     }
 

@@ -2,6 +2,7 @@ package jp.aegif.nemaki.rest.ingest;
 
 import org.junit.jupiter.api.Test;
 
+import java.net.http.HttpClient;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -138,6 +139,35 @@ class AdapterRegistryTest {
         String encoded = AdapterHttpClient.encodePathSegment("hello world");
         assertTrue(encoded.contains("%20"), "Space should be %20 not +");
         assertFalse(encoded.contains("+"), "Should not contain + for spaces");
+    }
+
+    @Test
+    void validateExternalUrlBlocksIpv6TransitionWrappedPrivateTargets() {
+        assertThrows(SecurityException.class,
+                () -> AdapterHttpClient.validateExternalUrl("http://[64:ff9b::7f00:1]/file"));
+        assertThrows(SecurityException.class,
+                () -> AdapterHttpClient.validateExternalUrl("http://[64:ff9b::a9fe:a9fe]/file"));
+        assertThrows(SecurityException.class,
+                () -> AdapterHttpClient.validateExternalUrl("http://[2002:7f00:1::]/file"));
+        assertThrows(SecurityException.class,
+                () -> AdapterHttpClient.validateExternalUrl("http://[64:ff9b:1:7f00:0:100::]/file"));
+        assertThrows(SecurityException.class,
+                () -> AdapterHttpClient.validateExternalUrl("http://[2001:0:4136:e378:8000:63bf:ffff:fffe]/file"));
+    }
+
+    @Test
+    void validateExternalUrlBlocksIpv4SpecialUseRanges() {
+        assertThrows(SecurityException.class,
+                () -> AdapterHttpClient.validateExternalUrl("http://100.64.0.1/file"));
+        assertThrows(SecurityException.class,
+                () -> AdapterHttpClient.validateExternalUrl("http://198.18.0.1/file"));
+        assertThrows(SecurityException.class,
+                () -> AdapterHttpClient.validateExternalUrl("http://240.0.0.1/file"));
+    }
+
+    @Test
+    void sharedHttpClientDoesNotFollowRedirectsAutomatically() {
+        assertEquals(HttpClient.Redirect.NEVER, AdapterHttpClient.shared().followRedirects());
     }
 
     @Test
