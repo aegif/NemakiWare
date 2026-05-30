@@ -478,7 +478,7 @@ public class HttpWebhookDispatcherTest {
         assertFalse(invokeIsValidHeaderValue("inject\r\nFake-Header: bad"));
         assertFalse(invokeIsValidHeaderValue("inject\nFake"));
         assertFalse(invokeIsValidHeaderValue("inject\rFake"));
-        assertFalse(invokeIsValidHeaderValue("with nul"));
+        assertFalse(invokeIsValidHeaderValue("with\0nul"));
     }
 
     @Test
