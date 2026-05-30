@@ -6,6 +6,140 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC6.5 — Security: SSRF guard unwraps IPv6 transition addresses (NAT64 / 6to4) + connector-area manual-verification doc closure
+_Release candidate on `release/3.1.1-RC6` (2026-05-30), branched
+off `v3.1.1-RC6.4` (`afdf4d832`)._
+
+Single-fix security RC + accumulated doc fixes from three rounds of
+external review on the connector-area manual-verification guide.
+
+### Security fix — SSRF bypass via IPv6 transition addresses (CWE-918)
+
+`HttpWebhookDispatcher.isAddressSafe` classified `InetAddress` via
+`isLoopbackAddress` / `isLinkLocalAddress` / `isSiteLocalAddress` +
+manual IPv4 range checks for 4-byte arrays + IPv6 ULA (`fc00::/7`)
+check for 16-byte arrays. Missing: IPv6 transition addresses that
+embed an IPv4 destination. The JDK does not classify those as local
+because the prefixes (NAT64 `64:ff9b::/96` + `64:ff9b:1::/48`, 6to4
+`2002::/16`, IPv4-compatible `::a.b.c.d`) are globally routable in
+its view. An attacker (admin for the read-capable `/webhook/test`
+endpoint, any `cmis:write` user for the event-dispatched config
+path) could encode an internal IPv4 destination as such a literal
+and the dispatcher would connect to the embedded internal endpoint
+on dual-stack / NAT64 networks (kernel routes the literal to the
+wrapped IPv4).
+
+Reported via GitHub security advisory by **tonghuaroot** with a
+working PoC: 5 internal targets reachable
+(`64:ff9b::7f00:1` → 127.0.0.1, `64:ff9b::a9fe:a9fe` → cloud
+metadata 169.254.169.254, `64:ff9b:1::7f00:1` → 127.0.0.1 via
+RFC 8215 local-use prefix, `2002:7f00:1::` → 127.0.0.1 via 6to4,
+`::7f00:1` → 127.0.0.1 via IPv4-compatible). Bypassed all existing
+SSRF guards while `127.0.0.1`, `10.0.0.1`, `169.254.169.254`, and
+`::ffff:127.0.0.1` were correctly blocked.
+
+Fix in `core/src/main/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcher.java`:
+
+- New private `extractEmbeddedIpv4(InetAddress)` that returns the
+  embedded `Inet4Address` for any of the 5 recognized transition
+  formats (byte-prefix comparison; safe re-extraction even for
+  non-/96 PLR NAT64 local-use because the result is re-classified).
+- `isAddressSafe` now calls `extractEmbeddedIpv4` after the
+  existing IPv6 ULA check and recursively re-runs itself on the
+  result. If the embedded IPv4 hits any block rule (loopback /
+  RFC 1918 / link-local 169.254 / multicast / etc.), the
+  transition literal is blocked too.
+- Logged at WARN (existing plain blocks remain at DEBUG) because
+  hitting a transition wrap of a private/loopback target is an
+  attempted bypass, not benign config.
+
+15 new regression tests added covering each transition format
+against blocked / allowed IPv4 targets, plus a direct test of the
+extractor. Total `HttpWebhookDispatcherTest` count: 37 → 52 PASS.
+
+Fix commit: `94d3355a4`.
+
+### Manual-verification doc closure (3 rounds of external review)
+
+After RC6.4 shipped, the connector-area manual-verification guide
+(`docs/MANUAL-VERIFICATION-CONNECTORS.md`, 1300+ lines) went through
+3 rounds of external review with live execution by the reviewer.
+Each round surfaced doc/actual drift. All fixed and live-verified:
+
+- **Round 1** (P1 ×4 + P2 ×3): zsh env-var word-splitting, multipart
+  ingest `request` part required, POST/PUT slim responses (not full
+  resource), `allowedFolderIds=[] + delegated=true` → 400 (not
+  silent clear), scheduler status `.scheduledProfiles[]` wrapper,
+  by-group field names (`groupType` not `principalType`, `userId`
+  not `memberUserId`), UI `credentialRef` Form.Item doesn't exist.
+- **Round 2** (P1 ×2 + P2 ×1): ACL parameter names (`addACEPrincipal[n]`
+  / `addACEPermission[n][m]`, not `principalId[n]` / `permission[n]`
+  — silent no-op), delegated profile `defaultConnectorId` collision
+  with admin profile (`Only one enabled profile per defaultConnectorId`),
+  Import Profile GET wrapper `{"profile":{...},"warnings":[...]}`.
+- **Round 3** (P2 ×1 + self-review of 8 more): delegated
+  schedulerEnabled=true → HTTP 403 `denialReason="SCHEDULER_REQUIRES_ADMIN"`
+  (was "400 or 200 normalized"), plus self-review tightening of
+  every "expect:" line to a single HTTP code + exact response shape.
+
+Result: every documented HTTP code and message snippet is now
+verified against the live RC6 HEAD stack. The pattern of vague
+"X or Y" disjunctions in expect values is fully eliminated. The
+guide added a §14 note explaining the `addACEPrincipal[n]` silent
+no-op trap and the `defaultConnectorId` uniqueness constraint.
+
+### Change scope vs RC6.4 (precise)
+
+- **Changed in RC6.5**:
+  - `core/src/main/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcher.java` (security fix)
+  - `core/src/test/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcherTest.java` (15 new tests)
+  - `docs/MANUAL-VERIFICATION-CONNECTORS.md` (3-round closure)
+  - `docs/soc-templates/VALIDATION.md` (regenerated; same validator state)
+  - `README.md`, `AGENTS.md` (RC6.5 references)
+  - `REVIEW_PACKET.md`, `RELEASE_NOTES.md`, `CLAUDE.md` (this RC)
+- **Unchanged from RC6.4** (byte-equal):
+  - All other Java surface
+  - All TypeScript surface (UI, services, tests)
+  - All properties, patches, views, Mango indexes, migrations, DB bootstrap
+  - All SOC templates + validator script (`scripts/validate-soc-templates.sh`)
+
+### Commit + tag relationship
+
+- Security fix (HttpWebhookDispatcher + tests): `94d3355a4`
+- Manual-verification doc rounds 1 / 2 / 3: `a3ac2bc94` / `5b43eb7b4` / `343fe5545`
+- RC6.5 release-package commit (RELEASE_NOTES + CLAUDE + REVIEW_PACKET): subsequent
+- **`v3.1.1-RC6.5` annotated tag target**: release-package commit
+
+The previous candidate `v3.1.1-RC6.4` is **not force-updated** and
+remains at peeled commit `afdf4d832` as a historical milestone.
+
+### Tests + verification
+
+- `HttpWebhookDispatcherTest`: **52/52 PASS** (37 existing + 15
+  new transition-address regression tests, all clean).
+- Maven build: `mvn clean package -f core/pom.xml -Pdevelopment
+  -DskipTests` → BUILD SUCCESS, WAR produced.
+- Manual-verification §2 → §11 paths: live-verified against
+  running RC6 HEAD stack, every HTTP code and response shape
+  matches the documented expectation.
+
+### Follow-up status
+
+**Resolved in this RC**:
+- GHSA SSRF via IPv6 transition wraps (NAT64 / 6to4 / IPv4-compatible).
+- 3 rounds of manual-verification doc drift (15 individual findings
+  + 9 self-review tightening passes).
+
+**Remaining (operator-side, by design, carried from RC6.4)**:
+- Network/TLS, SIEM credentials, notification routing, threshold tuning.
+- Kibana Detection NDJSON + Splunk savedsearches CLI validation.
+
+**Remaining (test-skip triage backlog, carried from RC6.4)**:
+- The 155 persistent Playwright failures + 195 explicit skips are
+  tracked under memory `test-skip-triage`. Not RC6.5 scope.
+
+---
+
 ## 3.1.1-RC6.4 — SOC template validation gate + RC5.6 vs RC6 HEAD Playwright baseline diff
 _Release candidate on `release/3.1.1-RC6` (2026-05-23), branched
 off `v3.1.1-RC6.3` (`77ddfe071`)._

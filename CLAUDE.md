@@ -253,8 +253,9 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 
 ---
 
-## セキュリティステータス (2026-05-09)
+## セキュリティステータス (2026-05-30)
 
+- Webhook SSRF — IPv6 transition wrap bypass (RC6.5): 対応済み (`HttpWebhookDispatcher` で NAT64 `64:ff9b::/96` + `64:ff9b:1::/48` / 6to4 `2002::/16` / IPv4-compatible `::a.b.c.d` から embedded IPv4 を抽出 → 再分類で loopback / RFC 1918 / link-local 169.254 を block。外部 reporter tonghuaroot 経由の GHSA、PoC で 5 形式すべて bypass を確認、修正後すべて block + 15 regression tests 追加)
 - npm脆弱性: 0件 (axios 1.15.2, postcss 8.5.10 など更新)
 - Maven主要依存: netty 4.1.124, logback 1.5.19, commons-io 2.20.0, HttpClient 4.5.14
 - xml-apis 1.4.01: 削除 (Java 9+ の java.xml で代替)
@@ -309,6 +310,113 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 ## 現在のバージョン
 
 **3.1.1** (2026-04-02)
+
+### RC29 / RC6.5 (2026-05-30) — Security: SSRF guard IPv6 transition unwrap + manual-verification doc 3-round closure (shipped)
+
+ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.4` = `afdf4d832`)
+
+#### Security fix — SSRF via IPv6 transition addresses (CWE-918)
+
+外部 (tonghuaroot) からの GitHub security advisory:
+`HttpWebhookDispatcher.isAddressSafe` の IPv6 側チェックが ULA
+(`fc00::/7`) しか弾いておらず、IPv6 transition addresses で internal
+IPv4 destination を encode すると素通り。dual-stack / NAT64 ネット
+ワークでは kernel が embedded IPv4 にルーティング → 内部リソース
+(cloud metadata 含む) に到達。
+
+確認した bypass 経路 (PoC が示した 5 形式):
+- `64:ff9b::7f00:1`     → 127.0.0.1 (NAT64 wrap, RFC 6052)
+- `64:ff9b::a9fe:a9fe`  → 169.254.169.254 (cloud metadata)
+- `64:ff9b:1::7f00:1`   → 127.0.0.1 (NAT64 local-use, RFC 8215)
+- `2002:7f00:1::`       → 127.0.0.1 (6to4 wrap, RFC 3056)
+- `::7f00:1`            → 127.0.0.1 (IPv4-compatible, RFC 4291)
+
+修正 (`HttpWebhookDispatcher.java`):
+- 新規 `extractEmbeddedIpv4(InetAddress)` ヘルパー。5 形式を byte-prefix
+  で recognize、`Inet4Address` を返す。NAT64 local-use の non-/96 PLR は
+  best-effort 抽出 (再分類で safety net)
+- `isAddressSafe` の IPv6 ULA check の後で extract → 再帰呼び出し。
+  embedded IPv4 が block rule にヒットすれば transition literal も block
+- attempted bypass を WARN ログ可視化 (既存の plain block は DEBUG)
+
+テスト (`HttpWebhookDispatcherTest.java`):
+- 15 新規 regression: NAT64 / NAT64-local-use / 6to4 / IPv4-compatible の
+  blocked / allowed 両ケース + extractor 単体
+- 計 52/52 PASS (既存 37 + 新規 15)
+
+Read-capable SSRF (`/webhook/test` がレスポンス body を呼び出し元に
+返す) のため重要度は **High**。advisory に reporter (tonghuaroot) を
+credit。
+
+#### Manual-verification doc — 3 rounds of external review closure
+
+RC6.4 で出荷した `docs/MANUAL-VERIFICATION-CONNECTORS.md` (1300+ 行)
+が、3 巡の外部 review (live 実行) で doc/actual drift を 15 件 + 自己
+review 9 件、計 24 件発見 → 全件 live で再確認 → 修正 → push。
+
+- **Round 1** (P1 ×4 + P2 ×3): zsh env-var word-splitting、multipart
+  ingest `request` part 必須、POST/PUT は slim response、
+  `allowedFolderIds=[]` + `delegated=true` → 400、scheduler status
+  wrapper、by-group field name (`groupType` / `userId`)、UI に
+  credentialRef Form.Item なし
+- **Round 2** (P1 ×2 + P2 ×1): ACL parameter name (`addACEPrincipal[n]`
+  / `addACEPermission[n][m]` 必須、旧形式は silent no-op)、delegated
+  profile `defaultConnectorId` collision (`Only one enabled profile
+  per defaultConnectorId`)、Import Profile GET wrapper
+  `{"profile":{...},"warnings":[...]}`
+- **Round 3** (P2 ×1 + self-review of 8): delegated schedulerEnabled=true
+  → HTTP **403** `denialReason="SCHEDULER_REQUIRES_ADMIN"` (旧 "400 or
+  200 normalized")、+ 全 "expect:" 行を「単一 HTTP code + 完全 message
+  snippet」形式に tighten
+
+結果: 全 documented HTTP code と message snippet が live RC6 HEAD stack
+に対して verify 済み。「X もしくは Y」の曖昧表現は doc 内で根絶。§14 に
+`addACEPrincipal[n]` silent no-op trap と `defaultConnectorId` 一意性
+制約の注記追加。
+
+#### Change scope vs RC6.4 (precise)
+
+- **変更あり (RC6.5)**:
+  - `HttpWebhookDispatcher.java` (security fix)
+  - `HttpWebhookDispatcherTest.java` (15 new tests)
+  - `docs/MANUAL-VERIFICATION-CONNECTORS.md` (3 round 累積 fix)
+  - `docs/soc-templates/VALIDATION.md` (regenerated; validator state 同一)
+  - `README.md`, `AGENTS.md` (RC6.5 references)
+  - `REVIEW_PACKET.md`, `RELEASE_NOTES.md`, `CLAUDE.md` (本 RC)
+- **無変更 (RC6.4 と byte-equal)**:
+  - 他 Java surface 全件
+  - TS surface 全件 (UI、services、tests)
+  - properties / patches / views / Mango index / migrations / DB bootstrap
+  - SOC templates + `scripts/validate-soc-templates.sh`
+
+#### Commit + tag 関係
+
+- Security fix: `94d3355a4`
+- Manual-verification doc rounds 1/2/3: `a3ac2bc94` / `5b43eb7b4` / `343fe5545`
+- RC6.5 release-package commit (本 doc + RELEASE_NOTES + REVIEW_PACKET): 後続
+- **`v3.1.1-RC6.5` annotated tag target**: release-package commit
+
+RC6.4 tag (`afdf4d832`) は force-update せず歴史的マイルストーンとして保持。
+
+#### Tests + verification
+
+- `HttpWebhookDispatcherTest`: **52/52 PASS** (37 既存 + 15 新規)
+- `mvn clean package -f core/pom.xml -Pdevelopment -DskipTests`: BUILD SUCCESS
+- Manual-verification §2 → §11: live RC6 HEAD stack で全 path verify 済
+
+#### Follow-up status
+
+**Resolved in this RC**:
+- GHSA SSRF via IPv6 transition wrap (5 形式すべて block)
+- 3 round の manual-verification doc drift 全 24 件
+
+**Remaining (operator-side, RC6.4 から継続)**:
+- Network/TLS、SIEM credentials、通知ルーティング、threshold tuning
+- Kibana Detection NDJSON + Splunk savedsearches CLI validation
+
+**Remaining (test-skip triage backlog, RC6.4 から継続)**:
+- 155 persistent Playwright failure + 195 explicit skip は memory
+  `test-skip-triage` で track
 
 ### RC28 / RC6.4 (2026-05-23) — SOC template validation gate + RC5.6 vs RC6 HEAD Playwright baseline diff (shipped)
 

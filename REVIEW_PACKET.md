@@ -1,34 +1,37 @@
-# NemakiWare v3.1.1-RC6.4 — External Review Packet
+# NemakiWare v3.1.1-RC6.5 — External Review Packet
 
-Single entry point for the **fifth-round external review** of
-the RC6 series. RC6.3 closed the last "template body bug
-surfacing only at external review" cycle. RC6.4 is a
-quality-improvement RC that does two things to prevent the
-pattern from recurring AND to prove the prior RC6 work shipped
-no regressions:
+Single entry point for the **sixth-round external review** of the
+RC6 series. RC6.5 is a focused security RC: it closes one
+externally-reported SSRF bypass (GHSA via tonghuaroot) plus a
+three-round closure of the connector-area manual-verification
+guide that surfaced 24 doc/actual drift findings (15 from external
+review + 9 from self-review).
 
-- **Epic 1**: add `scripts/validate-soc-templates.sh` that runs
-  the actual vendor CLI for 4 of 6 SOC templates inside their
-  official Docker images. Caught 5 real template bugs at
-  bring-up that prior syntax-spec-confidence had missed.
-- **Epic 2**: run the full Playwright chromium suite (1032 tests)
-  against both `v3.1.1-RC5.6` and `release/3.1.1-RC6` HEAD, and
-  classify every test into RC6 regression / pre-existing /
-  improved / environment-flaky / explicit skip. Result: **0 RC6
-  regressions, 6 net new green from RC6 functionality**.
+- **Security fix**: `HttpWebhookDispatcher.isAddressSafe` now
+  unwraps IPv6 transition addresses (NAT64 `64:ff9b::/96` +
+  `64:ff9b:1::/48`, 6to4 `2002::/16`, IPv4-compatible `::a.b.c.d`)
+  and re-classifies the embedded IPv4. The advisory's PoC showed
+  all 5 transition forms bypassing the existing guard to reach
+  internal IPv4 targets (loopback, RFC 1918, cloud metadata) via
+  dual-stack / NAT64 routing; with the fix all 5 are blocked.
+  15 regression tests added.
+- **Manual-verification doc closure**: three rounds of external
+  review on `docs/MANUAL-VERIFICATION-CONNECTORS.md` with live
+  reviewer execution. Every documented HTTP code and response
+  shape now matches the live RC6 HEAD stack; the pattern of
+  vague "X or Y" disjunctions in expect values is fully eliminated.
 
-Java + TypeScript source: byte-equal vs RC6.3. All RC6.4
-changes are docs, shell scripts, or SOC template content fixes
-(caught by the new validator).
+Java change: one file (`HttpWebhookDispatcher.java`) + its test.
+TypeScript: no change. SOC templates / validator script: no change.
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.4` (peeled commit `afdf4d8328f5612adf5d38ef33cb57446ea80498`).
+  `v3.1.1-RC6.5` (peeled commit `<POST-TAG-FILL>`).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
 
-Previous historical tags (`v3.1.1-RC6.3`, `…-RC6.2`, `…-RC6.1`,
-`…-RC6`, `…-RC5.6`, …) remain unchanged for traceability.
+Previous historical tags (`v3.1.1-RC6.4`, `…-RC6.3`, `…-RC6.2`,
+`…-RC6.1`, `…-RC6`, `…-RC5.6`, …) remain unchanged for traceability.
 
 ---
 
@@ -36,114 +39,130 @@ Previous historical tags (`v3.1.1-RC6.3`, `…-RC6.2`, `…-RC6.1`,
 
 | Item | Value |
 |---|---|
-| **Final candidate tag** | `v3.1.1-RC6.4` |
-| Tag annotated object SHA | `68533fc57a5d3d11db7805048df15191e127179e` |
-| Tag peeled commit | `afdf4d8328f5612adf5d38ef33cb57446ea80498` |
+| **Final candidate tag** | `v3.1.1-RC6.5` |
+| Tag annotated object SHA | `<POST-TAG-FILL>` |
+| Tag peeled commit | `<POST-TAG-FILL>` |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | `afdf4d8328f5612adf5d38ef33cb57446ea80498` (= tag peeled, zero divergence at tag time) |
-| Base of RC6.4 cycle | `v3.1.1-RC6.3` (peeled `77ddfe071`) |
+| Branch HEAD at tag time | `<POST-TAG-FILL>` (= tag peeled, zero divergence at tag time) |
+| Base of RC6.5 cycle | `v3.1.1-RC6.4` (peeled `afdf4d832`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
-| **RC6.3 → RC6.4 diff cmd** | `git diff v3.1.1-RC6.3..v3.1.1-RC6.4` |
-| Cumulative diff cmd (since RC4.1) | `git diff v3.1.1-RC4.1..v3.1.1-RC6.4` |
-| Previous historical candidates | `v3.1.1-RC6.3` (`77ddfe071`), `…-RC6.2` (`02afee891`), `…-RC6.1` (`595754b8c`), `…-RC6` (`9dfd87adb`), `…-RC5.6` (`adf8db3b4`) |
+| **RC6.4 → RC6.5 diff cmd** | `git diff v3.1.1-RC6.4..v3.1.1-RC6.5` |
+| Cumulative diff cmd (since RC4.1) | `git diff v3.1.1-RC4.1..v3.1.1-RC6.5` |
+| Previous historical candidates | `v3.1.1-RC6.4` (`afdf4d832`), `…-RC6.3` (`77ddfe071`), `…-RC6.2` (`02afee891`), `…-RC6.1` (`595754b8c`), `…-RC6` (`9dfd87adb`), `…-RC5.6` (`adf8db3b4`) |
 
 ---
 
-## 2. What changed since the previous external review (RC6.3 → RC6.4)
+## 2. What changed since the previous external review (RC6.4 → RC6.5)
 
-Two epics, both quality-improvement / verification, both fully
-documented in §10 (inline summary, written at the time the work
-was done so the framing is preserved verbatim). This §2 gives
-the executive summary; §10 has the per-bug and per-test detail.
+Two pieces of work: one security fix (the externally-reported SSRF
+bypass) and the closure of three rounds of external review on the
+manual-verification doc.
 
-### 2.1 — SOC template validation gate (Epic 1)
+### 2.1 — Security: SSRF via IPv6 transition addresses (CWE-918)
 
-New script `scripts/validate-soc-templates.sh` runs the actual
-vendor CLI for 4 of 6 SOC templates inside their official Docker
-images. **5 real template bugs caught at validator bring-up** that
-prior syntax-spec-confidence approach had missed:
+Reported via GitHub security advisory by **tonghuaroot** with a
+working PoC against the unmodified `HttpWebhookDispatcher`. The
+existing SSRF guard classified `InetAddress` correctly for plain
+IPv4 (loopback, RFC 1918, link-local 169.254) and IPv4-mapped
+(`::ffff:a.b.c.d`, which JDK collapses to `Inet4Address`), but
+**did not unwrap IPv6 transition addresses** that embed an IPv4
+destination. The 5 PoC vectors all bypassed the guard and reached
+internal services / cloud metadata:
 
-| # | Template | Bug | Fix |
-|---|---|---|---|
-| 1 | `vector-nemakiware.toml` | Vector interpolates `${...}` *inside comments* — header example triggered "Missing environment variable" at validate-time | Rewrote header without literal `${...}` token |
-| 2 | `fluent-bit-nemakiware.conf` | `Code |` heredoc rejected by INI parser ("extra indentation level found") | Externalised Lua to `fluent-bit-nemakiware-time-enrichment.lua`, referenced via `Script` directive |
-| 3 | `vector-nemakiware.toml` | VRL `??` on infallible `."@timestamp"` field path → "unnecessary error coalescing operation" | Switched to conditional assignment for the null-fallback |
-| 4 | `vector-nemakiware.toml` | `buffer.max_size = 268435456` (exact 256 MiB) below required `>= 268435488` | Bumped to 536870912 (512 MiB) |
-| 5 | `loki-ruler-rules.yml` | LogQL `offset 1h` placed AFTER `count_over_time(...)` rather than inside the range selector | Moved to `[7d] offset 1h` inside the range |
+| Wrap form | Resolves to | Bypassed? |
+|---|---|---:|
+| `64:ff9b::7f00:1` | 127.0.0.1 (loopback) | ✗ yes (was bypassed) |
+| `64:ff9b::a9fe:a9fe` | 169.254.169.254 (AWS metadata) | ✗ yes |
+| `64:ff9b:1::7f00:1` | 127.0.0.1 (NAT64 local-use, RFC 8215) | ✗ yes |
+| `2002:7f00:1::` | 127.0.0.1 (6to4 wrap) | ✗ yes |
+| `::7f00:1` | 127.0.0.1 (IPv4-compatible, deprecated) | ✗ yes |
 
-Validator final state: PASS 20 / SKIP 3 / FAIL 0 / total 23
-(`VALIDATE_DOCKER=1 scripts/validate-soc-templates.sh`). The 3
-SKIPs are: Python tomllib unavailable on the host (Vector is
-covered by Phase 2.1 anyway), Kibana NDJSON operator import gate,
-Splunk btool operator gate.
+Because `POST /rest/repo/{repositoryId}/webhook/test` returns the
+fetched response body to the caller, this was a **read-capable**
+SSRF (not just blind) — observed responses included the simulated
+"internal secret" body in the PoC.
 
-The README's "Template validation status" table was rewritten to
-reflect the new reality: 4 of 6 CLI-validated, Kibana + Splunk
-remain operator gates because no offline parser exists for either.
+Fix (`core/src/main/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcher.java`):
 
-### 2.2 — Full Playwright baseline diff (Epic 2)
+- New private `extractEmbeddedIpv4(InetAddress)` recognizes the
+  5 transition formats by exact byte-prefix comparison and returns
+  the embedded `Inet4Address`.
+- `isAddressSafe` now (after the existing IPv6 ULA check) calls
+  `extractEmbeddedIpv4` and recursively re-runs itself. If the
+  embedded IPv4 hits any block rule, the transition literal is
+  blocked too.
+- Logged at WARN (plain blocks remain at DEBUG) because hitting a
+  transition wrap of a private/loopback target is an attempted
+  bypass, not benign config.
 
-Ran full chromium Playwright suite (1032 tests) against both
-RC5.6 and RC6 HEAD on the same Docker stack, swapping only the
-WAR. Aggregate:
+Tests: 15 new regression tests in `HttpWebhookDispatcherTest`
+covering each of the 5 transition forms against
+{loopback, AWS metadata, 10.x, 192.168.x} (must block) and against
+{8.8.8.8, 203.0.113.0, Cloudflare 2606:4700::1111} (must NOT
+over-block). `extractEmbeddedIpv4` is also unit-tested directly.
 
-| Stat | RC5.6 | RC6 HEAD | Δ |
-|---|---:|---:|---:|
-| Passed | 673 | 679 | **+6** |
-| Failed | 162 | 156 | **−6** |
-| Flaky | 2 | 2 | 0 |
-| Skipped | 195 | 195 | 0 |
-| Duration | 77 min | 76 min | −1 min |
+  Tests run: 52, Failures: 0, Errors: 0, Skipped: 0
+  (37 pre-existing + 15 new transition-address tests)
 
-Per-test classification (per the RC6.4 spec):
+Fix commit: `94d3355a4`.
 
-- **RC6 regression: 0** — 1 candidate found, reclassified as flaky
-  (Ant `Select` dropdown viewport positioning; no group-management
-  code touched between RC5.6 and RC6 HEAD).
-- **Improved by RC6: 6** — `/v1/admin/connectors/by-group` (RC6) + `removePrincipalIds > MAX` 400 cap (RC6.1).
-- **Pre-existing fail: 155** — fail in both, scattered across ~85
-  spec files. Tracked under memory `test-skip-triage` backlog.
-- **Persistent pass: 672**.
-- **Skipped (`test.skip`): 192**.
+### 2.2 — Manual-verification doc: 3-round closure
 
-§10 has the full per-improvement spec list, the candidate
-regression analysis, and the file-group breakdown of the 155
-persistent failures.
+After RC6.4 shipped, `docs/MANUAL-VERIFICATION-CONNECTORS.md` was
+sent for external review with **live reviewer execution against
+the deployed RC6 HEAD stack**. Each of the three rounds surfaced
+doc/actual drift. All fixed and live-re-verified:
+
+| Round | Findings | Highlight |
+|---|---|---|
+| 1 | P1 ×4 + P2 ×3 | zsh env-var word-splitting / multipart `request` part required / POST/PUT return slim `{status,...}` not full resource / `allowedFolderIds=[] + delegated=true` → 400 / scheduler status wrapper / by-group field names (`groupType` / `userId`) / UI `credentialRef` Form.Item doesn't exist |
+| 2 | P1 ×2 + P2 ×1 | ACL form (`addACEPrincipal[n]` / `addACEPermission[n][m]` required, old form silent no-op) / delegated profile `defaultConnectorId` collision rule / Import Profile GET wrapper `{"profile":{...},"warnings":[...]}` |
+| 3 | P2 ×1 + self-review of 8 | delegated `schedulerEnabled=true` (default OFF) → HTTP **403** `denialReason="SCHEDULER_REQUIRES_ADMIN"` (was "400 or 200 normalized") + self-review tightened every "expect:" line to a single HTTP code + exact response shape |
+
+Result: every documented HTTP code and message snippet in the
+guide is verified against the live RC6 HEAD stack. The pattern of
+vague "X or Y" disjunctions in expect values is fully eliminated.
+§14 adds notes on the `addACEPrincipal[n]` silent no-op trap and
+the `defaultConnectorId` uniqueness constraint.
+
+Doc rounds commits: `a3ac2bc94` / `5b43eb7b4` / `343fe5545`.
 
 ### Notable framing decisions
 
-1. **§5 evidence-vs-claim gap from RC6.3 is now closed.** The
-   long-standing question "are the 155 full-suite failures all
-   pre-existing or did RC6 introduce any?" — RC6.3's §5 honestly
-   said "we don't know, we never compared against RC5.6". RC6.4
-   §10.2 compares against RC5.6: the 155 are pre-existing
-   (identical set fails on both, no cluster correlates with
-   RC6-touched code).
+1. **One-file Java change.** The security fix touches only
+   `HttpWebhookDispatcher.java` (+ its test). No TypeScript, no
+   SOC templates, no validator script, no patches/views/migrations,
+   no API contract change. Reviewers can focus the security review
+   entirely on `extractEmbeddedIpv4` + the recursive
+   `isAddressSafe` call site.
 
-2. **RC6.4 introduces zero source code risk.** Java + TS are
-   byte-equal vs RC6.3. The risk surface is the SOC template
-   content fixes and the new validator script. Both are
-   exercised by the validator itself, which is the canonical
-   verification artefact (PASS 20 / FAIL 0).
+2. **No regression risk for legitimate webhook traffic.** The fix
+   is additive: `extractEmbeddedIpv4` returns null for any address
+   not in one of the 5 recognized transition formats, and the
+   recursive `isAddressSafe` call only **blocks** — it never
+   un-blocks an address. Public IPv6 (`2606:4700::1111`) and 6to4
+   of public IPv4 (`2002:0808:0808::`) explicitly pass in the new
+   tests.
 
-3. **The CLI validator is the answer to the recurring "template
-   bug surfaces only at external review" pattern.** RC6 → RC6.3
-   shipped a template bug every cycle. Going forward, the
-   validator runs at every push, so the bug class either
-   doesn't ship or is caught before tag.
+3. **Doc rounds 1–3 are about closing a documentation gap, not
+   fixing server behaviour.** The server matched its design all
+   along; the doc described it imprecisely. Server source is
+   byte-equal except for the SSRF fix in §2.1.
 
-4. **Kibana NDJSON + Splunk savedsearches remain operator gates
-   by necessity.** Neither has an offline parser; their
-   validation requires importing into a running Elastic /
-   Splunk cluster. This is documented in
-   `docs/soc-templates/README.md` validation matrix and in §10.1
-   here.
+4. **§4 cumulative content is unchanged from RC6.4.** All the RC5
+   → RC6.4 features (scheduled delegated profiles, governance
+   views, simulate-remove cap, validator gate, baseline diff, etc.)
+   carry forward unmodified.
+
+5. **RC6.4's §10 (validator + Playwright baseline diff)** is kept
+   as historical context. RC6.5's §10 (this RC) covers the new
+   security fix in detail.
 
 ---
 
 ## 3. What's on the branch HEAD but NOT in the tag
 
-The tag (`v3.1.1-RC6.4`) and the branch HEAD
+The tag (`v3.1.1-RC6.5`) and the branch HEAD
 (`release/3.1.1-RC6`) MAY diverge during the external review
 window. As of tag time the divergence is zero — both point at
 the same commit.
@@ -215,9 +234,9 @@ RC6.2 Filebeat env / Fluent Bit TZ / Vector VRL, RC6.3 Fluent
 Bit DST, RC6.4 Vector comment-interpolation / VRL `??` / buffer
 min / LogQL offset / Fluent Bit `Code |` heredoc). Spending
 review time arguing the boundary is more expensive than
-spending five minutes cutting `v3.1.1-RC6.5`. **RC6.4 added the
-validator gate so future RCs catch the bug class before tag —
-but the §3 cut-new-tag rule still applies for any post-tag
+spending five minutes cutting `v3.1.1-RC6.6` (or higher). **RC6.4
+added the validator gate so future RCs catch the bug class before
+tag — but the §3 cut-new-tag rule still applies for any post-tag
 content-class change.**
 
 ### New file additions — also require a new RC tag
@@ -255,9 +274,9 @@ templates AND playbook are part of the tag artifact now.
 
 ---
 
-## 4. What's in the v3.1.1-RC6.4 tag (cumulative since RC4.1)
+## 4. What's in the v3.1.1-RC6.5 tag (cumulative since RC4.1)
 
-RC5 cycle (RC5 → RC5.6) + RC6 + RC6.1 + RC6.2 + RC6.3 + RC6.4:
+RC5 cycle (RC5 → RC5.6) + RC6 + RC6.1 + RC6.2 + RC6.3 + RC6.4 + RC6.5:
 
 - **Scheduled delegated profiles** (RC5 §12.1)
 - **Connector governance view** (RC5 §12.3) — `/by-principal/{id}`
@@ -288,32 +307,37 @@ RC5 cycle (RC5 → RC5.6) + RC6 + RC6.1 + RC6.2 + RC6.3 + RC6.4:
   every push (caught 5 real template bugs at bring-up); full
   Playwright chromium ×2 (RC5.6 vs RC6 HEAD) proves 0 RC6
   regressions + 6 net new green from new RC6 functionality
+- **RC6.5 SSRF hardening + manual-verification doc closure** —
+  `HttpWebhookDispatcher` now unwraps IPv6 transition addresses
+  (NAT64 / 6to4 / IPv4-compatible) and recursively re-classifies
+  the embedded IPv4, closing a GHSA-reported bypass; 15 regression
+  tests added (52/52 PASS). `docs/MANUAL-VERIFICATION-CONNECTORS.md`
+  closed against 3 rounds of external review (15 + 9 = 24 findings).
 
-Full per-RC narrative: `RELEASE_NOTES.md` (12 sections, RC5 →
-RC6.4), `docs/design/connector-delegation.md` (§12.1 - §12.20).
+Full per-RC narrative: `RELEASE_NOTES.md` (13 sections, RC5 →
+RC6.5), `docs/design/connector-delegation.md` (§12.1 - §12.20).
 
 ---
 
-## 5. Acceptance status summary (RC6.4)
+## 5. Acceptance status summary (RC6.5)
 
 ### Blocking findings
 **0**.
 
-### Java unit tests — carry-forward evidence
+### Java unit tests — verified at HEAD this session
 
-**Last executed**: at commit `fd03d4ab4` (RC6.2 cycle,
-`perMemberImpact` sort + useMemo comment commit).
-**Result at that run**: 182/182 across the focused 14 test
-classes, all pass.
-**Java / test code delta since `fd03d4ab4`**: zero. RC6.2
-closure docs (`02afee891`, `568f4ebb2`), all RC6.3 commits
-(`bf7c07b3f`, `3afd284f5`, `77ddfe071`, `0028a01cd`,
-`e0f00c7fb`), and all RC6.4 commits (`1ba21bc59`, `c077dc55d`,
-and the release-package commit) touch only `docs/**`,
-`scripts/**`, `REVIEW_PACKET.md`, `RELEASE_NOTES.md`,
-`CLAUDE.md`. The 182/182 number is therefore the **current
-expected result if you re-run** — treat it as carry-forward
-evidence, NOT "verified at branch HEAD this session".
+- **`HttpWebhookDispatcherTest`**: **52/52 PASS** (37 pre-existing
+  + 15 new transition-address regression tests added in RC6.5 to
+  guard the SSRF fix). Re-run command:
+  ```bash
+  mvn test -Dtest=HttpWebhookDispatcherTest -f core/pom.xml -Pdevelopment
+  ```
+- **Focused 14-class connector / governance / scheduler / ingest
+  suite — carry-forward** at 182/182 PASS from `fd03d4ab4` (RC6.2
+  cycle). RC6.3 / RC6.4 / RC6.5 touched zero files in those test
+  classes (all those RCs were docs / shell scripts / the single
+  webhook-dispatcher fix above). Treat as carry-forward evidence;
+  re-run with the command in §5 below.
 
 ### Playwright E2E — verified at HEAD this session
 
@@ -363,44 +387,48 @@ npx playwright test --project=chromium \
 
 ### Live verification
 
-- **SOC validator** — run live in RC6.4:
-  `VALIDATE_DOCKER=1 scripts/validate-soc-templates.sh` →
-  PASS 20 / SKIP 3 / FAIL 0 / total 23. All 4 dockerized
-  vendor CLIs (Vector / Fluent Bit / Filebeat / cortextool-Loki)
-  PASS against the templates as shipped in this tag.
-- **Playwright full chromium ×2** — run live in RC6.4 against
-  RC5.6 + RC6 HEAD on the same Docker stack with WAR swap; see
-  §5 Playwright E2E above.
+- **SSRF fix regression tests (RC6.5)** — run live this session:
+  `mvn test -Dtest=HttpWebhookDispatcherTest` → 52/52 PASS. All
+  5 transition formats (NAT64 well-known + NAT64 local-use + 6to4
+  + IPv4-compatible + IPv4-mapped) verified blocked for embedded
+  loopback / RFC 1918 / link-local / metadata, AND verified NOT
+  blocked for embedded public IPv4 (8.8.8.8, 203.0.113.0) or
+  pure-IPv6 public addresses (Cloudflare 2606:4700::1111).
+- **Manual-verification §2 → §11 paths** — run live this session
+  against the deployed RC6 HEAD stack. Every documented HTTP code
+  and response shape in `docs/MANUAL-VERIFICATION-CONNECTORS.md`
+  matches the live response (3 rounds of external review +
+  self-review tightening).
+- **SOC validator (RC6.4 carry-forward)** — `VALIDATE_DOCKER=1
+  scripts/validate-soc-templates.sh` → PASS 20 / SKIP 3 / FAIL 0
+  / total 23, unchanged from RC6.4 (no template / script change).
+- **Playwright full chromium baseline diff (RC6.4 carry-forward)**
+  — RC5.6 vs RC6 HEAD = 0 regressions, see §10 (RC6.4 entry).
 - B3-2, M2, M3 smokes — carry-forward valid as of RC6.2.
-- File-level smokes for the RC6.4 changes — covered by Phase 1
-  of the validator script: JSON parse, YAML parse, TOML parse,
-  NUL-byte smoke, file-type smoke (all PASS for all 6 templates).
 
-### Full-suite evidence boundary (now closed)
+### Full-suite evidence boundary (carry-forward from RC6.4)
 
-What is now proven (newly in RC6.4):
-- The full 1032-test Playwright suite was run against both
-  `v3.1.1-RC5.6` and `release/3.1.1-RC6` HEAD (= RC6.3 server
-  behaviour). Test-level diff: 0 regressions, 6 improvements,
-  155 persistent failures (same set fails on both — i.e., NOT
-  introduced by RC6).
-- The 155 persistent failures are scattered across ~85 spec
-  files with no clustering correlating to RC6-touched code.
-  This is the structural evidence that the previous "they
-  cluster in non-RC6.x-touched UI areas" framing pointed at.
+- The full 1032-test Playwright suite ran against both
+  `v3.1.1-RC5.6` and `release/3.1.1-RC6` HEAD in RC6.4. Diff:
+  0 regressions, 6 improvements, 155 persistent failures.
+  RC6.5 touches one Java file (`HttpWebhookDispatcher.java`) +
+  one test class; neither has a Playwright spec, so the RC6.4
+  baseline-diff conclusion carries forward unchanged.
 
-What remains operator-side:
+What remains operator-side (unchanged from RC6.4):
 - Kibana NDJSON + Splunk savedsearches CLI validation (no
   offline parser exists for either; live cluster import only).
-- Vector / Fluent Bit / Filebeat / Loki Ruler `pre-deploy
-  smoke against the actual SIEM endpoint` — the validator
+- Vector / Fluent Bit / Filebeat / Loki Ruler pre-deploy
+  smoke against the actual SIEM endpoint — the validator
   uses synthetic env values, so DNS / TLS / auth against the
   real SIEM is operator's pre-deploy gate.
 
 ### API contract
 
-Additive only across RC5 → RC6.4 (RC6.4 adds zero API surface;
-all RC6.4 work is doc / validator script / SOC template content).
+Additive only across RC5 → RC6.5 (RC6.5 adds zero API surface;
+the only code change is internal SSRF-guard hardening in
+`HttpWebhookDispatcher`, which strengthens validation without
+changing the existing dispatch / response contract).
 
 ### Patch / view / Mango / migration / DB bootstrap
 
@@ -412,7 +440,7 @@ Unchanged since RC4.1.
 
 ---
 
-## 6. Remaining follow-ups (post-RC6.4, not blocking review)
+## 6. Remaining follow-ups (post-RC6.5, not blocking review)
 
 (No open repo-shippable items.)
 
@@ -423,70 +451,74 @@ Unchanged since RC4.1.
 | **Splunk savedsearches CLI validation** | Low | template QA | No offline parser; `splunk btool` requires a Splunk install. Operator pre-deploy gate. |
 | **Full Playwright green-up of the 155 pre-existing failures** | Medium | UI corpus | RC6.4 proved they are pre-existing (RC5.6 vs RC6 HEAD diff). The triage backlog lives under memory `test-skip-triage`. Separate engineering project. |
 
-**Resolved in RC6.4 (newly closed)**:
-- Vector VRL live validation gap — now run via
-  `vector validate --skip-healthchecks` in the validator script.
-- Fluent Bit DST live validation gap — now run via
-  `fluent-bit -c … --dry-run` in the validator script.
-- Filebeat live config validation gap — now run via
-  `filebeat test config` in the validator script.
-- Loki ruler live validation gap — now run via
-  `cortextool rules check --backend=loki` in the validator script
-  (with Python envsubst for `${VAR:-default}` form).
-- RC5.6 baseline diff — closed by Epic 2 (§10.2).
-- Recurring "template body bug surfaces only at external review"
-  pattern — closed by Epic 1 (§10.1) introducing the
-  validator gate.
+**Resolved in RC6.5 (newly closed)**:
+- GHSA SSRF via IPv6 transition wrap (NAT64 / 6to4 / IPv4-compatible)
+  reported by tonghuaroot — `HttpWebhookDispatcher` now extracts
+  embedded IPv4 and re-classifies. 15 regression tests.
+- 3 rounds of external review on `MANUAL-VERIFICATION-CONNECTORS.md`
+  (15 findings + 9 self-review tightenings = 24 fixes), with
+  live-verified expectations matching the deployed stack.
 
-**Resolved during RC5+RC6+RC6.1+RC6.2+RC6.3+RC6.4 cycle**: all
+**Resolved in RC6.4 (carry-forward, still closed)**:
+- Vector VRL / Fluent Bit DST / Filebeat config / Loki ruler live
+  validation gaps — addressed by `scripts/validate-soc-templates.sh`.
+- RC5.6 baseline diff — Epic 2 (§10.2).
+- Recurring "template body bug surfaces only at external review"
+  pattern — Epic 1 (§10.1) validator gate.
+
+**Resolved during RC5+RC6+RC6.1+RC6.2+RC6.3+RC6.4+RC6.5 cycle**: all
 listed in `RELEASE_NOTES.md` per-section.
 
 ---
 
 ## 7. Promotion path (operational)
 
-`v3.1.1-RC6.4` is and remains a release candidate. GA path:
+`v3.1.1-RC6.5` is and remains a release candidate. GA path:
 
 1. External review concludes with approval.
-2. Merge `release/3.1.1-RC6` into `master`.
+2. Merge `release/3.1.1-RC6` into `master`. The SSRF fix in
+   `HttpWebhookDispatcher.java` MUST land on master before any
+   public 3.1.1 release because the advisory tracks master as the
+   affected branch.
 3. Cut a **new** annotated tag `v3.1.1` against the merge
    commit on `master`.
 4. Optionally create a single GitHub Release attached to
    `v3.1.1`.
-5. The RC tags (`v3.1.1-RC5`, `…-RC5.1`, …, `…-RC6.4`) stay
+5. The RC tags (`v3.1.1-RC5`, `…-RC5.1`, …, `…-RC6.5`) stay
    as internal milestones.
+6. Reply on the GHSA advisory linking the fix commit (`94d3355a4`)
+   and the cut tag (`v3.1.1-RC6.5`) so the reporter has a clear
+   landing reference.
 
 ---
 
 ## 8. Re-send delta summary (what reviewers should focus on)
 
-If you reviewed RC6.3 already, the smallest possible review
-for RC6.4 is:
+If you reviewed RC6.4 already, the smallest possible review
+for RC6.5 is:
 
 ```bash
-git diff v3.1.1-RC6.3..v3.1.1-RC6.4
+git diff v3.1.1-RC6.4..v3.1.1-RC6.5
 ```
 
-Focused set (~10 files):
+Focused set:
 
-- `scripts/validate-soc-templates.sh` (new — the validator script;
-  Phase 1 + Phase 2 + Phase 3)
-- `docs/soc-templates/fluent-bit-nemakiware-time-enrichment.lua`
-  (new — Lua externalised from the `Code |` heredoc to satisfy
-  Fluent Bit's INI parser)
-- `docs/soc-templates/fluent-bit-nemakiware.conf` (Code → Script
-  directive)
-- `docs/soc-templates/vector-nemakiware.toml` (header comment
-  escape + VRL `??` → conditional + `buffer.max_size` bump)
-- `docs/soc-templates/loki-ruler-rules.yml` (`offset 1h`
-  placement + comment)
-- `docs/soc-templates/README.md` (§Template validation status
-  rewrite, validation matrix 4 of 6 CLI-validated)
-- `docs/soc-templates/VALIDATION.md` (new — generated artefact
-  capturing the last validator run state)
-- `REVIEW_PACKET.md` (this rewrite, §10 inline diff +
-  classification)
-- `CLAUDE.md`, `RELEASE_NOTES.md` (RC6.4 section)
+- `core/src/main/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcher.java`
+  — the security fix. Read `extractEmbeddedIpv4` and the recursive
+  `isAddressSafe` call site (added immediately after the existing
+  IPv6 ULA check).
+- `core/src/test/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcherTest.java`
+  — 15 new regression tests covering each transition format for
+  blocked / allowed targets + a direct extractor test.
+- `docs/MANUAL-VERIFICATION-CONNECTORS.md` — 3 rounds of external
+  review closure (HTTP code + response shape tightening, ACL
+  parameter form, `defaultConnectorId` collision, wrapper `.profile`,
+  zsh env-var caveat).
+- `REVIEW_PACKET.md`, `RELEASE_NOTES.md`, `CLAUDE.md` (RC6.5
+  section).
+
+Security-focused reviewers can scope to the first two files
+(~270 LOC delta) and the GHSA advisory text.
 
 If you are reviewing RC5+RC6 cold for the first time, use the
 cumulative diff (since `v3.1.1-RC4.1`) in §1.
@@ -498,7 +530,7 @@ cumulative diff (since `v3.1.1-RC4.1`) in §1.
 | Purpose | File |
 |---|---|
 | Re-send overview (this file) | `REVIEW_PACKET.md` |
-| What changed and why (per RC) | `RELEASE_NOTES.md` (12 sections RC5 → RC6.4) |
+| What changed and why (per RC) | `RELEASE_NOTES.md` (13 sections RC5 → RC6.5) |
 | Design rationale | `docs/design/connector-delegation.md` (§12.1 - §12.20) |
 | Multi-replica operational notes | `docs/MULTI-REPLICA-DEPLOYMENT.md` |
 | Project-internal navigation (Japanese) | `CLAUDE.md` |
@@ -506,6 +538,7 @@ cumulative diff (since `v3.1.1-RC4.1`) in §1.
 | Test coverage proof | `core/src/test/java/jp/aegif/nemaki/rest/ingest/*Test.java` (182 focused tests across 14 classes) |
 | SOC / SIEM audit integration (playbook) | `docs/SOC-AUDIT-INTEGRATION.md` |
 | SOC / SIEM audit integration (import-ready templates, operator validation required) | `docs/soc-templates/` (README + Filebeat / Fluent Bit / Vector shippers + Kibana Detection Engine NDJSON / Loki Ruler / Splunk savedsearches rule sets — see README "Template validation status" table for the per-template syntax-only / no-live-test gap) |
+| Connector-area manual verification (RC6.5) | `docs/MANUAL-VERIFICATION-CONNECTORS.md` (1300+ lines step-by-step curl + UI, 3-round live-verified) |
 
 ---
 

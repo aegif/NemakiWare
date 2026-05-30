@@ -302,7 +302,7 @@ NemakiWare uses custom OpenCMIS 1.1.0-nemakiware JARs (Jakarta EE compatible). P
 
 | Document | Description |
 |----------|-------------|
-| [Release Notes](RELEASE_NOTES.md) | User-facing changelog (latest: 3.1.1-RC6.4) |
+| [Release Notes](RELEASE_NOTES.md) | User-facing changelog (latest: 3.1.1-RC6.5) |
 | [Architecture](docs/ARCHITECTURE.md) | System architecture overview |
 | [AWS Deployment](docs/AWS-DEPLOYMENT-GUIDE.md) | Production deployment on AWS |
 | [Bedrock Embedding](docs/BEDROCK_EMBEDDING.md) | Amazon Bedrock setup |
